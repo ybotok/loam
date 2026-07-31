@@ -17,6 +17,8 @@ state. Feature deltas (ADDED/MODIFIED/REMOVED requirements) merge in here on `lo
 ### Requirement: Authorize payment
 The service SHALL reserve funds for an order before capture.
 
+Operations: authorizePayment
+
 #### Scenario: Successful authorization
 - **Given** an order with a valid payment method
 - **When** authorization is requested
@@ -24,6 +26,8 @@ The service SHALL reserve funds for an order before capture.
 
 ### Requirement: Capture payment
 The service SHALL settle a previously authorized payment.
+
+Operations: capturePayment
 
 #### Scenario: Capture an authorized payment
 - **Given** an authorized payment

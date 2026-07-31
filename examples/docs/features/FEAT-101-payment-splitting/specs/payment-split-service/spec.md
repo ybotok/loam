@@ -5,6 +5,8 @@
 ### Requirement: Split a payment
 The service SHALL split a payment across two or more payees such that the shares sum to the total.
 
+Operations: createSplit
+
 #### Scenario: Split across two payees
 - **Given** a payment of 100.00 USD for order "A-1"
 - **When** it is split 60.00 to "seller-x" and 40.00 to "seller-y"

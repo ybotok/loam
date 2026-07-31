@@ -18,6 +18,8 @@ export interface Requirement {
   kind: DeltaKind;
   name: string;
   text: string[];
+  /** OpenAPI operationIds this requirement governs, from an `Operations:` line. */
+  operations: string[];
   scenarios: Scenario[];
 }
 
@@ -40,7 +42,7 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const mr = REQ_RE.exec(line);
     if (mr) {
-      req = { kind, name: mr[1]!, text: [], scenarios: [] };
+      req = { kind, name: mr[1]!, text: [], operations: [], scenarios: [] };
       out.push(req);
       scn = null;
       continue;
@@ -51,8 +53,13 @@ export function parseRequirements(md: string): Requirement[] {
       req.scenarios.push(scn);
       continue;
     }
-    if (scn) scn.lines.push(line);
-    else if (req) req.text.push(line);
+    if (scn) {
+      scn.lines.push(line);
+    } else if (req) {
+      req.text.push(line);
+      const mo = /^\s*Operations?:\s*(.+?)\s*$/i.exec(line);
+      if (mo) req.operations = mo[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    }
   }
 
   return out;

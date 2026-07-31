@@ -1,0 +1,14 @@
+# API delta for FEAT-101 — payment-split-service (new) gains the split API.
+# On `loam archive` this folds into services/payment-split-service/openapi.yaml (living).
+openapi: 3.1.0
+info:
+  title: payment-split-service
+  version: "1.0"
+paths:
+  /splits:
+    post:
+      operationId: createSplit
+      summary: Create a split of a payment across payees
+      responses:
+        "201":
+          description: Split created

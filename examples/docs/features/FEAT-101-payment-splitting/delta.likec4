@@ -22,8 +22,14 @@ model {
     }
   }
 
-  paymentService -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
-  checkoutWeb -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
+  paymentService -> paymentSplitService 'Calls createSplit' {
+    #FEAT-101
+    metadata { op 'createSplit' }
+  }
+  checkoutWeb -> paymentSplitService 'Calls createSplit' {
+    #FEAT-101
+    metadata { op 'createSplit' }
+  }
   paymentSplitService -> kafka 'Publishes PaymentSplit' { #FEAT-101 }
 }
 

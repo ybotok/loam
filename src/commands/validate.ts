@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
+import { operationIds, serviceOperationIds } from "../core/openapi.js";
 
 interface ValidateOptions {
   service?: string;
@@ -55,9 +56,22 @@ async function validateService(docsDir: string, service: string | undefined): Pr
 
   // Requirement coverage
   const specPath = join(docsDir, "services", service, "spec.md");
+  let reqs: Requirement[] = [];
   if (existsSync(specPath)) {
-    const reqs = parseRequirements(await readFile(specPath, "utf8"));
+    reqs = parseRequirements(await readFile(specPath, "utf8"));
     ok = reportCoverage(`${service}: requirements`, reqs) && ok;
+  }
+
+  // API coverage: every operation in openapi.yaml is governed by a requirement.
+  const ops = await operationIds(join(docsDir, "services", service, "openapi.yaml"));
+  if (ops.length > 0) {
+    const governed = new Set(reqs.flatMap((r) => r.operations));
+    const orphans = ops.filter((op) => !governed.has(op));
+    if (orphans.length === 0) {
+      console.log(`✓ ${service}: API covered (${ops.length} operation(s) governed by requirements)`);
+    } else {
+      console.log(`⚠ ${service}: ${orphans.length} operation(s) not governed by any requirement — ${orphans.join(", ")}`);
+    }
   }
   return ok;
 }
@@ -94,6 +108,7 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
   // Requirement coverage across every per-service delta, and collect scenario text
   const specsDir = join(featureDir, "specs");
   let scenarioText = "";
+  const featureOps = new Set<string>();
   if (existsSync(specsDir)) {
     const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
     for (const svc of svcs) {
@@ -102,6 +117,7 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
       const raw = await readFile(p, "utf8");
       scenarioText += "\n" + raw.toLowerCase();
       const reqs = parseRequirements(raw);
+      for (const r of reqs) for (const op of r.operations) featureOps.add(op);
       ok = reportCoverage(`${svc.name}: requirements`, reqs) && ok;
     }
   }
@@ -115,6 +131,25 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
         console.log(`    ✓ ${titleOf(elements, r.source)} → ${target}  "${r.title ?? ""}"`);
       } else {
         console.log(`    ⚠ ${titleOf(elements, r.source)} → ${target}  "${r.title ?? ""}"  — no scenario names it`);
+      }
+    }
+  }
+
+  // API linkage: each tagged edge's op exists in the target's OpenAPI (contract) + is governed by a requirement.
+  const opRels = taggedRels.filter((r) => r.op !== undefined);
+  if (opRels.length > 0) {
+    console.log("  API linkage:");
+    for (const r of opRels) {
+      const op = r.op ?? "";
+      const target = titleOf(elements, r.target);
+      const ids = await serviceOperationIds(docsDir, target, featureDir);
+      if (!ids.includes(op)) {
+        console.error(`    ✗ ${op} → ${target}: not defined in ${target}'s OpenAPI (contract broken)`);
+        ok = false;
+      } else if (!featureOps.has(op)) {
+        console.log(`    ⚠ ${op} → ${target}: defined, but no requirement governs it`);
+      } else {
+        console.log(`    ✓ ${op} → ${target}: contract + requirement OK`);
       }
     }
   }

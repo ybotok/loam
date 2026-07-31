@@ -6,6 +6,8 @@
 The service SHALL reserve funds for an order before capture, and MAY delegate splitting to
 `payment-split-service` when the order is flagged for splitting.
 
+Operations: authorizePayment
+
 #### Scenario: Successful authorization
 - **Given** an order with a valid payment method
 - **When** authorization is requested

@@ -22,6 +22,8 @@ export interface Rel {
   source: string;
   target: string;
   title?: string;
+  /** OpenAPI operationId this call uses, from the relationship's `metadata { op '...' }`. */
+  op?: string;
   tags: string[];
 }
 
@@ -51,6 +53,7 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
       target: { id: string };
       title?: string;
       tags?: string[];
+      metadata?: unknown;
     }>;
   };
 
@@ -65,10 +68,20 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
     source: r.source.id,
     target: r.target.id,
     title: r.title,
+    op: metaOp(r.metadata),
     tags: [...(r.tags ?? [])],
   }));
 
   return { errors, elements, relationships };
+}
+
+/** Read the `op` key from a relationship's metadata object (the linked OpenAPI operationId). */
+function metaOp(m: unknown): string | undefined {
+  if (m && typeof m === "object") {
+    const v = (m as Record<string, unknown>)["op"];
+    if (typeof v === "string") return v;
+  }
+  return undefined;
 }
 
 /** LikeC4 descriptions can be a string or a rich-text object ({ txt } / { text } / { md }). */

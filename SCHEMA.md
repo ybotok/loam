@@ -49,6 +49,13 @@ docs/
 
 **Tags (LikeC4)**: element kinds and tags are declared in a `specification` block; a delta's new/changed elements carry the feature id as a tag (`#FEAT-101`) so `loam` can project the delta by tag and validate it.
 
+**API linkage (operationId)**: OpenAPI's `operationId` joins architecture and behavior — it is the token both C4 and specs reference.
+- a C4 relationship names the operation it calls: `... -> ... 'Calls createSplit' { metadata { op 'createSplit' } }`;
+- a requirement declares the operations it governs: an `Operations: createSplit` line;
+- the operation is defined in the provider service's `openapi.yaml`.
+
+`loam validate` then checks the **contract** (every edge's `op` exists in the target's OpenAPI — consumer-driven, gates) and **coverage** (every operation is governed by a requirement).
+
 **Page-specs** link architecture and behavior:
 ```yaml
 consumes: [{ service, op }]                  # OpenAPI operations the page calls
@@ -72,4 +79,4 @@ Rule (`loam validate`): every requirement has ≥1 scenario.
 
 ## Status
 
-`init`, `validate` (C4 + requirement coverage), `delta` (per-service projection), and `archive` (requirements + C4 merge into the living landscape) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `validate` (C4 + requirement + API-linkage coverage), `delta` (per-service projection), and `archive` (requirements + C4 merge into the living landscape) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
