@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
-import { operationIds, serviceOperationIds } from "../core/openapi.js";
+import { operationIds } from "../core/openapi.js";
+import { featureCoherence } from "../core/coherence.js";
 
 interface ValidateOptions {
   service?: string;
@@ -108,7 +109,6 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
   // Requirement coverage across every per-service delta, and collect scenario text
   const specsDir = join(featureDir, "specs");
   let scenarioText = "";
-  const featureOps = new Set<string>();
   if (existsSync(specsDir)) {
     const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
     for (const svc of svcs) {
@@ -117,7 +117,6 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
       const raw = await readFile(p, "utf8");
       scenarioText += "\n" + raw.toLowerCase();
       const reqs = parseRequirements(raw);
-      for (const r of reqs) for (const op of r.operations) featureOps.add(op);
       ok = reportCoverage(`${svc.name}: requirements`, reqs) && ok;
     }
   }
@@ -135,22 +134,15 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
     }
   }
 
-  // API linkage: each tagged edge's op exists in the target's OpenAPI (contract) + is governed by a requirement.
-  const opRels = taggedRels.filter((r) => r.op !== undefined);
-  if (opRels.length > 0) {
-    console.log("  API linkage:");
-    for (const r of opRels) {
-      const op = r.op ?? "";
-      const target = titleOf(elements, r.target);
-      const ids = await serviceOperationIds(docsDir, target, featureDir);
-      if (!ids.includes(op)) {
-        console.error(`    ✗ ${op} → ${target}: not defined in ${target}'s OpenAPI (contract broken)`);
-        ok = false;
-      } else if (!featureOps.has(op)) {
-        console.log(`    ⚠ ${op} → ${target}: defined, but no requirement governs it`);
-      } else {
-        console.log(`    ✓ ${op} → ${target}: contract + requirement OK`);
-      }
+  // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
+  const issues = await featureCoherence(docsDir, featureDir, featureId);
+  if (issues.length === 0) {
+    console.log("  coherence: ✓ C4 · requirements · OpenAPI agree");
+  } else {
+    console.log("  coherence:");
+    for (const i of issues) {
+      console.log(`    ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+      if (i.severity === "error") ok = false;
     }
   }
   return ok;

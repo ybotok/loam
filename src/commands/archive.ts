@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
 import { operationIds } from "../core/openapi.js";
+import { featureCoherence } from "../core/coherence.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -17,7 +18,8 @@ export function registerArchive(program: Command): void {
     .command("archive")
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Merge a shipped feature's deltas into the living specs + model, then archive it")
-    .action(async (featureId: string) => {
+    .option("--approve", "archive even if the feature is not coherent (may corrupt the living docs)")
+    .action(async (featureId: string, opts: { approve?: boolean }) => {
       const config = await loadConfig();
       if (!config) {
         console.error("No loam.json found. Run `loam init --docs <dir>` first.");
@@ -32,6 +34,23 @@ export function registerArchive(program: Command): void {
         return;
       }
       const featureDir = join(featuresDir, dirName);
+
+      // Gate: never archive an incoherent feature without explicit approval — the merge would corrupt the living docs.
+      const issues = await featureCoherence(config.docsDir, featureDir, featureId);
+      if (issues.length > 0 && !opts.approve) {
+        const errs = issues.filter((i) => i.severity === "error").length;
+        console.error(`archive ${featureId} — BLOCKED: not coherent (${errs} error(s), ${issues.length - errs} warning(s)):`);
+        for (const i of issues) console.error(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+        console.error(`\nFix these, or re-run with --approve to archive anyway (may corrupt the living docs).`);
+        process.exitCode = 1;
+        return;
+      }
+      if (issues.length > 0) {
+        console.log(`⚠ archiving despite ${issues.length} coherence issue(s) (--approve):`);
+        for (const i of issues) console.log(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+        console.log("");
+      }
+
       console.log(`archive ${featureId}\n`);
 
       // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.

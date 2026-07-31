@@ -69,8 +69,9 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 - **Living spec** — `services/<svc>/spec.md` (+ `landscape.likec4`): the complete current state — the "final spec of the whole product".
 - **Delta** — `features/<FEAT>/specs/<svc>/spec.md` (+ `delta.likec4`): a change, reviewed as a diff, tagged to the feature.
 - **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`).
+- **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`); `loam archive` **refuses an incoherent feature unless `--approve`** — the merge would otherwise corrupt the living docs.
 
-Rule (`loam validate`): every requirement has ≥1 scenario.
+Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op` resolves to an OpenAPI operation governed by a requirement.
 
 ## Two flows
 
@@ -79,4 +80,4 @@ Rule (`loam validate`): every requirement has ≥1 scenario.
 
 ## Status
 
-`init`, `validate` (C4 + requirement + API-linkage coverage), `delta` (per-service projection), and `archive` (three-axis merge: requirements + OpenAPI + C4 into the living state) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `validate` (C4 + requirement + API coverage + cross-axis coherence), `delta` (per-service projection), and `archive` (three-axis merge, gated on coherence) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
