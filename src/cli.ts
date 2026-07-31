@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { registerInit } from "./commands/init.js";
 import { registerAdopt } from "./commands/adopt.js";
 import { registerDelta } from "./commands/delta.js";
+import { registerArchive } from "./commands/archive.js";
 import { registerValidate } from "./commands/validate.js";
 
 const program = new Command();
@@ -15,6 +16,7 @@ program
 registerInit(program);
 registerAdopt(program);
 registerDelta(program);
+registerArchive(program);
 registerValidate(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {

@@ -5,12 +5,21 @@ owner: checkout-team
 last_verified: 2026-07-31
 ---
 
-# checkout-web — capability spec
+# checkout-web
 
-## Capabilities
-- **Checkout flow** — cart -> payment -> confirmation.
-- **Split payment** — let a customer split a payment across payees (FEAT-101).
+Customer-facing checkout UI.
+
+## Requirements
+
+### Requirement: Checkout flow
+The UI SHALL take a customer from cart to payment to confirmation.
+
+#### Scenario: Complete a checkout
+- **Given** a cart with items
+- **When** the customer pays
+- **Then** an order confirmation is shown
 
 ## UI
+
 Pages live under `ui/pages/`. Each page-spec links the endpoints it consumes and the
-scenarios that govern it. `loam` generates an HTML prototype from each page-spec.
+scenarios that govern it; `loam render` generates an HTML prototype.

@@ -17,4 +17,4 @@ Marketplaces need to split one customer payment across multiple payees (sellers)
 
 ## Architectural summary
 New `payment-split-service`; `payment-service` and `checkout-web` call it; it publishes
-`PaymentSplit`. UI adds a split-payment page in `checkout-web`. See `delta.dsl`.
+`PaymentSplit`. UI adds a split-payment page in `checkout-web`. See `delta.likec4`.

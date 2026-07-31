@@ -13,4 +13,4 @@ layout:
 consumes:
   - { service: payment-split-service, op: createSplit }   # POST /splits
 behavior:
-  - "FEAT-101: split.feature#Customer splits a payment across two payees"
+  - "FEAT-101 / checkout-web / Split payment on checkout / Customer splits a payment across two payees"

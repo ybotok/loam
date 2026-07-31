@@ -29,7 +29,7 @@ docs/
     landscape.health.yaml            composed health model              [derived, later]
   services/<svc>/
     model.likec4                        service C4 (containers/components)  [adopt]
-    spec.md                          capability spec + frontmatter       [adopt]
+    spec.md                          living requirements (Requirement/Scenario)  [adopt]
     openapi.yaml                     API contract                        [adopt / authored]
     adrs/NNNN-*.md                   MADR decisions                      [adopt-seed / authored]
     runbook.md                       operational runbook                 [adopt-draft / authored]
@@ -37,10 +37,10 @@ docs/
     ui/pages/*.page.yaml             page-specs (UI services)            [authored]
     flows/                           interaction flows -> sequence views  [later]
   features/<FEAT>/
-    intent.md                        business intent + acceptance         [authored]
-    delta.likec4                        C4 delta                            [authored]
+    intent.md                        business intent / proposal (why)     [authored]
+    delta.likec4                     C4 delta (architecture)             [authored]
+    specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
-    scenarios/*.feature              gherkin (behavioral)                [authored/generated]
 ```
 
 ## Conventions
@@ -55,6 +55,16 @@ consumes: [{ service, op }]                  # OpenAPI operations the page calls
 behavior: [ "FEAT-101: file#Scenario" ]      # gherkin scenarios governing the page
 ```
 
+## Living spec vs delta (OpenSpec model)
+
+Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, RFC-2119 SHALL/MUST) with **scenarios** (`#### Scenario:`, Given/When/Then). Scenarios are the acceptance criteria and the source for tests.
+
+- **Living spec** — `services/<svc>/spec.md` (+ `landscape.likec4`): the complete current state — the "final spec of the whole product".
+- **Delta** — `features/<FEAT>/specs/<svc>/spec.md` (+ `delta.likec4`): a change, reviewed as a diff, tagged to the feature.
+- **`loam archive <FEAT>`** merges the delta into the living spec + model (requirements *and* C4), then archives the feature — so the living spec stays complete. Archived deltas are the evolution history (like `git log`).
+
+Rule (`loam validate`): every requirement has ≥1 scenario.
+
 ## Two flows
 
 - **Bootstrap (reverse):** `loam adopt` reads code -> draft `model.likec4` + `spec.md` + `openapi.yaml` + seeded `adrs/`, `runbook.md`, `health.yaml`. Human promotes `draft` -> `verified`.
@@ -62,4 +72,4 @@ behavior: [ "FEAT-101: file#Scenario" ]      # gherkin scenarios governing the p
 
 ## Status
 
-MVP encodes this layout + `init`. `adopt`/`delta`/`validate` land next; `render` (sequence/C4 diagrams), `health` compose, and UI-prototype generation follow.
+`init`, `validate` (C4 + requirement coverage), `delta` (per-service projection), and `archive` (requirements merge; C4 merge reported) are implemented. Remaining: C4 auto-merge into the landscape, `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
