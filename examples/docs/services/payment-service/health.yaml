@@ -1,0 +1,19 @@
+# Service health model. Targets are authored; dependency graph comes from C4 (landscape).
+# `loam health` composes these across the fleet -> cascade / blast-radius.
+service: payment-service
+status: verified
+slis:
+  - name: availability
+    query: "sum(rate(http_requests_total{code!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+    slo: 0.999
+  - name: latency_p99_ms
+    query: "histogram_quantile(0.99, http_request_duration_seconds_bucket)"
+    slo: 300
+checks:
+  liveness: GET /actuator/health/liveness
+  readiness: GET /actuator/health/readiness
+dependencies:
+  - service: kafka
+    criticality: critical        # kafka down -> payment-service unhealthy
+  - service: payment-split-service
+    criticality: degradable      # split unavailable -> fall back to single payee

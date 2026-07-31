@@ -1,0 +1,26 @@
+# API contract. `loam adopt` extracts this from legacy code; forward-flow authors changes in the delta.
+openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments:
+    post:
+      operationId: authorizePayment
+      summary: Authorize a payment
+      responses:
+        "201":
+          description: Authorized
+  /payments/{id}/capture:
+    post:
+      operationId: capturePayment
+      summary: Capture an authorized payment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Captured

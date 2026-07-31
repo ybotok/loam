@@ -1,0 +1,34 @@
+// Per-service C4. Seeded by `loam adopt` from code, then curated.
+specification {
+  element softwareSystem
+  element container
+  element database
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    description 'Owns payment authorization/capture'
+
+    api = container 'api' {
+      description 'REST API'
+      technology 'Spring Boot'
+    }
+    domain = container 'domain' {
+      description 'Payment domain logic'
+      technology 'Java'
+    }
+    db = database 'db' {
+      description 'Payments store'
+      technology 'PostgreSQL'
+    }
+
+    api -> domain 'Uses'
+    domain -> db 'Reads/writes'
+  }
+}
+
+views {
+  view payment_service {
+    include *
+  }
+}

@@ -1,0 +1,16 @@
+# Page-spec (source of truth). `loam render` generates an HTML prototype from this (model A).
+# Links the architecture (consumes endpoints) and behavior (governing scenarios).
+page: split-payment
+title: Split payment
+service: checkout-web
+feature: FEAT-101
+status: draft
+layout:
+  - { type: heading, text: "Split this payment" }
+  - { type: list, id: payees, itemFields: [name, amount] }
+  - { type: button, id: add-payee, text: "Add payee" }
+  - { type: button, id: confirm, text: "Confirm split" }
+consumes:
+  - { service: payment-split-service, op: createSplit }   # POST /splits
+behavior:
+  - "FEAT-101: split.feature#Customer splits a payment across two payees"

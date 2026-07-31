@@ -1,0 +1,34 @@
+// C4 DELTA for FEAT-101 — new/changed elements + relationships tagged #FEAT-101.
+// Self-contained so it validates on its own; loam projects the #FEAT-101 subset per service.
+specification {
+  element softwareSystem
+  element container
+  tag FEAT-101
+}
+
+model {
+  // existing elements, referenced for context
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+  kafka = softwareSystem 'kafka'
+
+  // new
+  paymentSplitService = softwareSystem 'payment-split-service' {
+    #FEAT-101
+    description 'Splits a payment across payees'
+
+    api = container 'api' {
+      technology 'Spring Boot'
+    }
+  }
+
+  paymentService -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
+  checkoutWeb -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
+  paymentSplitService -> kafka 'Publishes PaymentSplit' { #FEAT-101 }
+}
+
+views {
+  view feat_101 {
+    include *
+  }
+}

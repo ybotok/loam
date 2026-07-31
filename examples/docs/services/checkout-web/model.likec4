@@ -1,0 +1,22 @@
+// A UI service. The UI is a first-class C4 container; its pages live under ui/pages/.
+specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web' {
+    description 'Customer-facing checkout UI'
+
+    spa = container 'spa' {
+      description 'Checkout SPA'
+      technology 'React'
+    }
+  }
+}
+
+views {
+  view checkout_web {
+    include *
+  }
+}
