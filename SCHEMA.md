@@ -68,7 +68,7 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 
 - **Living spec** — `services/<svc>/spec.md` (+ `landscape.likec4`): the complete current state — the "final spec of the whole product".
 - **Delta** — `features/<FEAT>/specs/<svc>/spec.md` (+ `delta.likec4`): a change, reviewed as a diff, tagged to the feature.
-- **`loam archive <FEAT>`** merges the delta into the living spec + model (requirements *and* C4), then archives the feature — so the living spec stays complete. Archived deltas are the evolution history (like `git log`).
+- **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`).
 
 Rule (`loam validate`): every requirement has ≥1 scenario.
 
@@ -79,4 +79,4 @@ Rule (`loam validate`): every requirement has ≥1 scenario.
 
 ## Status
 
-`init`, `validate` (C4 + requirement + API-linkage coverage), `delta` (per-service projection), and `archive` (requirements + C4 merge into the living landscape) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `validate` (C4 + requirement + API-linkage coverage), `delta` (per-service projection), and `archive` (three-axis merge: requirements + OpenAPI + C4 into the living state) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.

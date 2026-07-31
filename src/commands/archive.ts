@@ -1,9 +1,10 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, rename, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import { operationIds } from "../core/openapi.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -60,6 +61,28 @@ export function registerArchive(program: Command): void {
 
           const c = summarize(deltaReqs);
           console.log(`  requirements: ${svc.name} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+        }
+      }
+
+      // 1b. OpenAPI merge — fold the feature's openapi deltas into the living service APIs.
+      if (existsSync(specsDir)) {
+        const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
+        for (const svc of svcs) {
+          const featOpenapi = join(specsDir, svc.name, "openapi.yaml");
+          if (!existsSync(featOpenapi)) continue;
+          const livingOpenapi = join(config.docsDir, "services", svc.name, "openapi.yaml");
+          const ops = await operationIds(featOpenapi);
+          if (!existsSync(livingOpenapi)) {
+            await mkdir(join(config.docsDir, "services", svc.name), { recursive: true });
+            await copyFile(featOpenapi, livingOpenapi);
+            console.log(`  openapi: ${svc.name} — created (${ops.join(", ")})`);
+          } else {
+            const block = pathsBlock(await readFile(featOpenapi, "utf8"));
+            if (block) {
+              await writeFile(livingOpenapi, insertPaths(await readFile(livingOpenapi, "utf8"), block), "utf8");
+              console.log(`  openapi: ${svc.name} — merged (${ops.join(", ")})`);
+            }
+          }
         }
       }
 
@@ -131,6 +154,30 @@ function elementLines(e: Elem): string[] {
 
 function relLine(r: Rel): string {
   return `${r.source} -> ${r.target}${r.title ? ` '${r.title}'` : ""}`;
+}
+
+/** Extract the indented entries under a top-level `paths:` key from an OpenAPI YAML string. */
+function pathsBlock(openapi: string): string | null {
+  const lines = openapi.split("\n");
+  const idx = lines.findIndex((l) => /^paths:\s*$/.test(l));
+  if (idx === -1) return null;
+  const block: string[] = [];
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    const l = lines[i]!;
+    if (l.trim() === "" || /^\s/.test(l)) block.push(l);
+    else break;
+  }
+  while (block.length > 0 && block[block.length - 1]!.trim() === "") block.pop();
+  return block.length > 0 ? block.join("\n") : null;
+}
+
+/** Insert path entries under the living OpenAPI's `paths:` key (or append a paths block). */
+function insertPaths(living: string, pathLines: string): string {
+  const lines = living.split("\n");
+  const idx = lines.findIndex((l) => /^paths:\s*$/.test(l));
+  if (idx === -1) return `${living.trimEnd()}\npaths:\n${pathLines}\n`;
+  lines.splice(idx + 1, 0, pathLines);
+  return lines.join("\n");
 }
 
 function insertIntoModelBlock(text: string, lines: string[]): string {
