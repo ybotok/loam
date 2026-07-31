@@ -1,9 +1,9 @@
-// Global C4 fleet landscape. Self-contained for now; cross-file merge (fromWorkspace)
-// is how loam will aggregate the real landscape from per-service files later.
+// Global C4 fleet landscape — the LIVING current state (before FEAT-101 is archived).
+// `loam archive` folds a feature's #FEAT-tagged elements/relationships in here.
+// Cross-file merge (fromWorkspace) is how loam will aggregate this from per-service files later.
 specification {
   element softwareSystem
   element person
-  tag FEAT-101
 }
 
 model {
@@ -17,18 +17,10 @@ model {
   kafka = softwareSystem 'kafka' {
     description 'Event backbone'
   }
-  paymentSplitService = softwareSystem 'payment-split-service' {
-    #FEAT-101
-    description 'Splits a payment across payees'
-  }
 
   customer -> checkoutWeb 'Uses'
   checkoutWeb -> paymentService 'Calls'
   paymentService -> kafka 'Publishes PaymentAuthorized'
-
-  paymentService -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
-  checkoutWeb -> paymentSplitService 'Calls createSplit' { #FEAT-101 }
-  paymentSplitService -> kafka 'Publishes PaymentSplit' { #FEAT-101 }
 }
 
 views {

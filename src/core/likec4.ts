@@ -13,6 +13,7 @@ export interface Elem {
   id: string;
   kind: string;
   title: string;
+  description?: string;
   tags: string[];
 }
 
@@ -44,7 +45,7 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
   }
 
   const model = (await likec4.computedModel()) as {
-    elements: () => Iterable<{ id: string; kind: string; title: string; tags?: string[] }>;
+    elements: () => Iterable<{ id: string; kind: string; title: string; description?: unknown; tags?: string[] }>;
     relationships: () => Iterable<{
       source: { id: string };
       target: { id: string };
@@ -57,6 +58,7 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
     id: e.id,
     kind: e.kind,
     title: e.title,
+    description: descText(e.description),
     tags: [...(e.tags ?? [])],
   }));
   const relationships: Rel[] = [...model.relationships()].map((r) => ({
@@ -67,4 +69,17 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
   }));
 
   return { errors, elements, relationships };
+}
+
+/** LikeC4 descriptions can be a string or a rich-text object ({ txt } / { text } / { md }). */
+function descText(d: unknown): string | undefined {
+  if (typeof d === "string") return d;
+  if (d && typeof d === "object") {
+    const o = d as Record<string, unknown>;
+    for (const key of ["txt", "text", "md", "value"]) {
+      const v = o[key];
+      if (typeof v === "string") return v;
+    }
+  }
+  return undefined;
 }

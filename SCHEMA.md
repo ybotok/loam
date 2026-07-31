@@ -72,4 +72,4 @@ Rule (`loam validate`): every requirement has ≥1 scenario.
 
 ## Status
 
-`init`, `validate` (C4 + requirement coverage), `delta` (per-service projection), and `archive` (requirements merge; C4 merge reported) are implemented. Remaining: C4 auto-merge into the landscape, `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `validate` (C4 + requirement coverage), `delta` (per-service projection), and `archive` (requirements + C4 merge into the living landscape) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
