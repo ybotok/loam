@@ -16,7 +16,7 @@ model {
 }
 
 views {
-  view checkout_web {
+  view checkout_web of checkoutWeb {
     include *
   }
 }

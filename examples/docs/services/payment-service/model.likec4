@@ -28,7 +28,7 @@ model {
 }
 
 views {
-  view payment_service {
+  view payment_service of paymentService {
     include *
   }
 }
