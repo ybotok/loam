@@ -8,7 +8,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
+import { isMap, parse, parseDocument } from "yaml";
 
 export interface Frontmatter {
   /** True when a terminated `---` block was found, even if it was empty. */
@@ -19,21 +19,46 @@ export interface Frontmatter {
   body: string;
 }
 
+/** Where the header sits in the raw text. */
+interface Bounds {
+  /** First character of the YAML text. */
+  start: number;
+  /** One past its last character — the newline before the closing fence included. */
+  end: number;
+  /** First character of the body. */
+  bodyStart: number;
+}
+
 /**
- * Split a markdown document into its frontmatter and body. The block must open
- * on the very first line and is closed by the FIRST `\n---` — a later horizontal
- * rule is body, not a second fence. An unterminated opener is not frontmatter at
- * all, and the document is returned whole rather than truncated.
+ * Locate the frontmatter block. The block must open on the very first line and
+ * is closed by the FIRST `\n---` — a later horizontal rule is body, not a second
+ * fence. An unterminated opener is not frontmatter at all.
+ *
+ * The reader and the writer both go through this, so they can never disagree
+ * about which bytes are the header — the writer's promise to leave the body
+ * untouched depends on that being one decision, not two.
+ */
+function bounds(md: string): Bounds | null {
+  if (!md.startsWith("---")) return null;
+  const close = md.indexOf("\n---", 3);
+  if (close === -1) return null;
+  const firstNl = md.indexOf("\n");
+  // An empty block (`---\n---`) has no text between the fences: start === end.
+  const start = firstNl !== -1 && firstNl < close ? firstNl + 1 : close + 1;
+  const afterFence = md.indexOf("\n", close + 1);
+  return { start, end: close + 1, bodyStart: afterFence === -1 ? md.length : afterFence + 1 };
+}
+
+/**
+ * Split a markdown document into its frontmatter and body. A document with no
+ * frontmatter is returned whole rather than truncated.
  */
 export function parseFrontmatter(md: string): Frontmatter {
-  if (!md.startsWith("---")) return { present: false, data: {}, body: md };
-  const close = md.indexOf("\n---", 3);
-  if (close === -1) return { present: false, data: {}, body: md };
+  const at = bounds(md);
+  if (at === null) return { present: false, data: {}, body: md };
 
-  const firstNl = md.indexOf("\n");
-  const yamlText = firstNl === -1 || firstNl > close ? "" : md.slice(firstNl + 1, close);
-  const afterFence = md.indexOf("\n", close + 1);
-  const body = afterFence === -1 ? "" : md.slice(afterFence + 1).trimStart();
+  const yamlText = md.slice(at.start, at.end);
+  const body = md.slice(at.bodyStart).trimStart();
 
   let data: Record<string, unknown> = {};
   try {
@@ -65,6 +90,34 @@ export function listField(fm: Frontmatter, key: string): string[] {
   if (Array.isArray(v)) return v.map((x) => String(x)).filter((s) => s.length > 0);
   const one = stringField(fm, key);
   return one === undefined ? [] : [one];
+}
+
+/**
+ * Return `md` with these frontmatter fields set and everything below the closing
+ * fence byte-identical.
+ *
+ * The header is edited through yaml's document model rather than rebuilt from
+ * the parsed data: keys keep their order and their comments, fields nobody named
+ * are left exactly as they were, and a value that would read back as something
+ * else — a digest of all digits, say — gets quoted for us. Stamping a document
+ * is not a licence to reformat it: the diff a reviewer sees should be the lines
+ * that changed, and nothing else.
+ *
+ * A document with no frontmatter gets one, and the text that was there becomes
+ * the body. A header that does not parse (or is not a mapping) is replaced
+ * rather than merged into — it cannot be edited without guessing what it meant.
+ */
+export function withFrontmatterFields(md: string, fields: Record<string, string>): string {
+  const at = bounds(md);
+  const parsed = parseDocument(at === null ? "" : md.slice(at.start, at.end));
+  const editable = parsed.errors.length === 0 && (parsed.contents === null || isMap(parsed.contents));
+  const doc = editable ? parsed : parseDocument("");
+
+  for (const [key, value] of Object.entries(fields)) doc.set(key, value);
+  const yamlText = doc.toString();
+
+  if (at === null) return `---\n${yamlText}---\n\n${md}`;
+  return md.slice(0, at.start) + yamlText + md.slice(at.end);
 }
 
 /** Read a markdown file's frontmatter; a missing file reads as absent. */

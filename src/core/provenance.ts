@@ -12,8 +12,10 @@
  * the wrong thing (a spec claiming to be another service, a status nobody
  * defined) is a bug, and gates.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   listField,
   readFrontmatter,
@@ -53,7 +55,7 @@ export async function serviceProvenance(
   });
   // With no frontmatter at all, "it names no sources" says nothing the missing
   // header did not already say.
-  if (fm.present) findings.push(...sourceFindings(fm, `${service}: spec.md`, opts.repoDir));
+  if (fm.present) findings.push(...(await sourceFindings(fm, service, opts.repoDir)));
   return findings;
 }
 
@@ -130,7 +132,12 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
   return findings;
 }
 
-function sourceFindings(fm: Frontmatter, label: string, repoDir: string | undefined): Finding[] {
+async function sourceFindings(
+  fm: Frontmatter,
+  service: string,
+  repoDir: string | undefined,
+): Promise<Finding[]> {
+  const label = `${service}: spec.md`;
   const sources = listField(fm, "sources");
   if (sources.length === 0) {
     return [
@@ -144,7 +151,7 @@ function sourceFindings(fm: Frontmatter, label: string, repoDir: string | undefi
   // Someone else's repository: the paths describe a tree loam is not standing in.
   if (repoDir === undefined) return [];
 
-  const missing = sources.filter((s) => !sourceExists(repoDir, s));
+  const missing = missingSources(repoDir, sources);
   if (missing.length > 0) {
     return [
       {
@@ -156,13 +163,195 @@ function sourceFindings(fm: Frontmatter, label: string, repoDir: string | undefi
       },
     ];
   }
+  const resolved: Finding = {
+    severity: "ok",
+    code: "sources.resolved",
+    message: `${label}: ${sources.length} source(s) resolve`,
+  };
+
+  // The paths are there; the question staleness answers is whether what is AT
+  // them is still what somebody read.
+  const stamped = stringField(fm, "sources_digest");
+  if (stamped === undefined) {
+    return [
+      resolved,
+      {
+        severity: "warn",
+        code: "sources.unvouched",
+        message: `${label}: no sources_digest — nobody has vouched for this against the code, so nothing can tell you when it goes stale. Run \`loam vouch --service ${service}\`.`,
+      },
+    ];
+  }
+
+  const since = stringField(fm, "last_verified") ?? "it was stamped";
+  const { digest, files } = await sourcesDigest(repoDir, sources);
+  if (digest === stamped) {
+    return [
+      resolved,
+      {
+        severity: "ok",
+        code: "sources.current",
+        message: `${label}: sources unchanged since ${since} (${files.length} file(s), digest ${digest})`,
+      },
+    ];
+  }
   return [
+    resolved,
     {
-      severity: "ok",
-      code: "sources.resolved",
-      message: `${label}: ${sources.length} source(s) resolve`,
+      // A warning, not an error: the doc may still be right, and only a person
+      // can say. What loam knows is that nobody has looked since the code moved.
+      severity: "warn",
+      code: "sources.stale",
+      message: `${label}: sources changed since ${since} — re-read them and \`loam vouch --service ${service}\``,
+      details: sources,
+      text: { detailPrefix: "- " },
     },
   ];
+}
+
+/* ------------------------------------------------------------------ */
+/* The content digest                                                  */
+/* ------------------------------------------------------------------ */
+
+/** How much of the sha256 is written into the document. */
+const DIGEST_LENGTH = 16;
+
+export interface SourcesDigest {
+  /** The stamp that goes in `sources_digest`. */
+  digest: string;
+  /** Repo-relative paths, sorted — exactly what went into it. */
+  files: string[];
+}
+
+/**
+ * Digest the CONTENT of the files `sources` names. The recipe is spelled out
+ * because the value is written into documents, and anything reading them has to
+ * be able to reproduce it:
+ *
+ *   1. expand each entry to repo-relative file paths (`/` separators), sorted
+ *      and de-duplicated;
+ *   2. per file, `sha256(bytes)`;
+ *   3. feed `<path>\0<hex>\n` for each file, in that order, into an outer
+ *      sha256;
+ *   4. keep the first 16 hex characters.
+ *
+ * Content, not mtime: git does not preserve modification times, so after a
+ * fresh clone every file looks changed and the check would be false positives
+ * end to end. Bytes survive the clone. Hashing the path alongside the content
+ * means a rename registers, which is what a reader of the doc would want.
+ *
+ * 64 bits is a change detector, not a seal — it answers "did this move?", and
+ * an adversary who wants a collision can have one.
+ */
+export async function sourcesDigest(repoDir: string, sources: string[]): Promise<SourcesDigest> {
+  const files = await expandSources(repoDir, sources);
+  const outer = createHash("sha256");
+  for (const file of files) {
+    const content = createHash("sha256").update(await readFile(file.abs)).digest("hex");
+    outer.update(`${file.rel}\0${content}\n`);
+  }
+  return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: files.map((f) => f.rel) };
+}
+
+interface SourceFile {
+  /** Repo-relative, `/`-separated — the spelling that goes into the hash. */
+  rel: string;
+  abs: string;
+}
+
+/**
+ * The files a `sources` list names: a literal path is itself, a directory is
+ * everything beneath it, and a glob is matched against the tree under its
+ * deepest wildcard-free ancestor.
+ *
+ * Dot-entries are skipped while walking — `.git` is not what the doc was
+ * written from — though a path naming one outright is still honoured. Only
+ * `*`, `**` and `?` are patterns; a bracket class is matched literally.
+ */
+async function expandSources(repoDir: string, sources: string[]): Promise<SourceFile[]> {
+  const found = new Map<string, string>();
+  const relOf = (abs: string): string => relative(repoDir, abs).split(sep).join("/");
+
+  for (const source of sources) {
+    const cleaned = source.trim();
+    if (cleaned.length === 0) continue;
+    const wildcard = cleaned.search(GLOB_CHAR);
+
+    if (wildcard === -1) {
+      const root = isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned);
+      for (const abs of await filesUnder(root)) found.set(relOf(abs), abs);
+      continue;
+    }
+
+    // Walk from the deepest directory the pattern is anchored to, then keep what
+    // the pattern actually matches — an absolute pattern against absolute paths,
+    // a repo-relative one against repo-relative paths.
+    const prefix = globPrefix(cleaned, wildcard);
+    const anchor = prefix.length === 0 ? repoDir : resolve(repoDir, prefix);
+    const pattern = globToRegExp(cleaned);
+    for (const abs of await filesUnder(anchor)) {
+      if (pattern.test(isAbsolute(cleaned) ? abs : relOf(abs))) found.set(relOf(abs), abs);
+    }
+  }
+
+  // Plain codepoint order, not locale order: the digest has to be the same
+  // everywhere it is computed.
+  return [...found.entries()]
+    .map(([rel, abs]) => ({ rel, abs }))
+    .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+}
+
+/** Every file at or beneath `path`; nothing, if it does not exist. */
+async function filesUnder(path: string): Promise<string[]> {
+  const info = await stat(path).catch(() => null);
+  if (info === null) return [];
+  if (info.isFile()) return [path];
+  if (!info.isDirectory()) return [];
+
+  const out: string[] = [];
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) out.push(...(await filesUnder(child)));
+    else if (entry.isFile()) out.push(child);
+  }
+  return out;
+}
+
+const GLOB_CHAR = /[*?[]/;
+
+/** The wildcard-free directory prefix of a pattern: `src/main/**\/*.java` -> `src/main`. */
+function globPrefix(pattern: string, wildcard: number): string {
+  const head = pattern.slice(0, wildcard);
+  return head.includes("/") ? head.slice(0, head.lastIndexOf("/")) : "";
+}
+
+/** `src/main/**\/*.java` -> `/^src\/main\/(?:[^/]+\/)*[^/]*\.java$/`. */
+function globToRegExp(pattern: string): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i += 1) {
+    const c = pattern[i]!;
+    if (c === "?") {
+      out += "[^/]";
+    } else if (c !== "*") {
+      out += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    } else if (pattern[i + 1] !== "*") {
+      out += "[^/]*";
+    } else if (pattern[i + 2] === "/") {
+      // `**/` spans any number of directory levels, including none.
+      out += "(?:[^/]+/)*";
+      i += 2;
+    } else {
+      out += ".*";
+      i += 1;
+    }
+  }
+  return new RegExp(`^${out}$`);
+}
+
+/** The `sources` entries that resolve to nothing in this repo. */
+export function missingSources(repoDir: string, sources: string[]): string[] {
+  return sources.filter((s) => !sourceExists(repoDir, s));
 }
 
 /**
@@ -171,20 +360,19 @@ function sourceFindings(fm: Frontmatter, label: string, repoDir: string | undefi
  * A literal path is checked exactly. A glob is checked down to its deepest
  * non-glob ancestor: `src/main/**\/*.java` passes when `src/main` exists. That
  * catches the failure that actually happens — code moved or deleted wholesale —
- * without shipping a glob engine. A glob whose leaf pattern matches nothing is
- * not caught; that needs the staleness work.
+ * without shipping a glob engine. A glob whose leaf pattern matches nothing
+ * still passes here; `loam vouch` is where that is caught, by refusing to stamp
+ * a digest over an empty file set.
  */
 function sourceExists(repoDir: string, source: string): boolean {
   const cleaned = source.trim();
   if (cleaned.length === 0) return false;
   if (isAbsolute(cleaned)) return existsSync(cleaned);
 
-  const glob = cleaned.search(/[*?[]/);
+  const glob = cleaned.search(GLOB_CHAR);
   if (glob === -1) return existsSync(resolve(repoDir, cleaned));
 
-  let prefix = cleaned.slice(0, glob);
-  // Back up to the last complete path segment before the wildcard.
-  prefix = prefix.includes("/") ? prefix.slice(0, prefix.lastIndexOf("/")) : "";
+  const prefix = globPrefix(cleaned, glob);
   const anchor = prefix.length === 0 ? repoDir : resolve(repoDir, prefix);
   return existsSync(anchor) && existsSync(dirname(anchor));
 }

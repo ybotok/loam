@@ -8,8 +8,20 @@
  * the shell what happened.
  */
 
-/** Stable failure codes. Prose may change; these may not. */
-export type ErrorCode = "no-config" | "unknown-target" | "unknown-section" | "invalid-option";
+/**
+ * Stable failure codes. Prose may change; these may not.
+ *
+ * The `sources-*` pair mirrors the `sources.*` finding codes on purpose: the
+ * same breach is recognisable whether it arrives as a refusal from `vouch` or
+ * as a finding from `validate`.
+ */
+export type ErrorCode =
+  | "no-config"
+  | "unknown-target"
+  | "unknown-section"
+  | "invalid-option"
+  | "sources-absent"
+  | "sources-path-missing";
 
 export function emitJson(payload: Record<string, unknown>): void {
   console.log(JSON.stringify({ ok: true, ...payload }, null, 2));

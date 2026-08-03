@@ -21,6 +21,7 @@ import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerValidate } from "../../src/commands/validate.js";
+import { registerVouch } from "../../src/commands/vouch.js";
 
 export interface RunResult {
   /** process.exitCode after the command (0 if it never set one). */
@@ -126,6 +127,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerDelta(program);
     registerArchive(program);
     registerValidate(program);
+    registerVouch(program);
     await program.parseAsync(["node", "loam", ...args]);
   } finally {
     console.log = origLog;

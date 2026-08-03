@@ -8,6 +8,7 @@ import { registerShow } from "./commands/show.js";
 import { registerDelta } from "./commands/delta.js";
 import { registerArchive } from "./commands/archive.js";
 import { registerValidate } from "./commands/validate.js";
+import { registerVouch } from "./commands/vouch.js";
 
 const program = new Command();
 
@@ -24,6 +25,7 @@ registerShow(program);
 registerDelta(program);
 registerArchive(program);
 registerValidate(program);
+registerVouch(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : err);

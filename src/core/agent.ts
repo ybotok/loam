@@ -49,9 +49,10 @@ service: payment-service     # or  feature: FEAT-101
 status: verified             # services: draft -> verified
                              # features: proposed -> in_progress -> built -> done
 owner: payments-team
-last_verified: 2026-07-31
+last_verified: 2026-07-31    # written by \`loam vouch\` — do not hand-edit
 sources:                     # paths in the SERVICE'S repo this was written from
   - src/main/java/com/shop/payment/
+sources_digest: 6f1c0a…      # written by \`loam vouch\` — do not hand-edit
 ---
 \`\`\`
 
@@ -60,8 +61,17 @@ consistency — and a corpus can agree with itself perfectly while describing no
 that exists. \`sources\` is the one thing tying a document to code: \`loam validate\`,
 run inside that service's repository, checks every listed path is still there.
 
+\`sources_digest\` is what makes that tie say something over time: a hash of the
+CONTENT of those files, taken when a human last vouched for the document. Every
+later \`loam validate\` re-computes it, so it can tell a document nobody has checked
+(\`sources.unvouched\`) from one that still matches the code (\`sources.current\`) from
+one the code has moved out from under (\`sources.stale\`).
+
 Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
-until a human has read it. Promoting draft to verified is their call, not yours.
+until a human has read it. Promoting draft to verified is their call, not yours, and
+it has its own command — \`loam vouch --service <id>\`, run inside that service's repo,
+which stamps the status, the date and the digest together. Never write those three
+fields by hand: a status with no digest behind it is a claim with nothing behind it.
 
 ## The ID spine
 
@@ -82,6 +92,20 @@ Features are joined the same way: a delta's new elements and edges carry the
 feature id as a LikeC4 tag (\`#FEAT-101\`), and that tag is exactly what
 \`loam archive\` folds into the living landscape. Untagged elements in a delta are
 context for the diagram, not changes.
+
+## Which element IS which service
+
+An element says which service it is with \`metadata { service 'payment-service' }\`.
+Without one, its **title** is used instead — which is what most of this repo relies
+on, and also the trap: rename a box in a diagram and every check joining it to
+\`services/<svc>/\` silently stops matching. Bind an element whenever its title is
+not exactly the directory name, and prefer binding over renaming a directory.
+
+\`services/\` is the list of services — there is no manifest, and none should be
+added. \`loam validate --all\` compares that list to the landscape both ways: a
+directory nothing draws is an error, and an element with no directory is a warning.
+Systems that are not ours — kafka, a payment gateway — carry \`#external\`, which
+says so once and stops the warning for good.
 
 ## The cycle
 
@@ -116,6 +140,9 @@ history behind it.
 - every C4 edge's \`op\` resolves to an operation the target actually exposes;
 - every operation is governed by some requirement (warning);
 - a "Calls" edge with no \`metadata { op }\` is unlinked (warning);
+- **the map is complete**: every \`services/<svc>/\` has an element in the landscape,
+  and every element that looks like a service has a directory (warning) or is
+  tagged \`#external\`;
 - **the diff applies**: a \`MODIFIED\` or \`REMOVED\` requirement exists in the living
   spec, an \`ADDED\` one does not, and a section heading matches the grammar exactly.
 
@@ -132,9 +159,14 @@ Every command takes \`--json\`. Branch on \`findings[].code\` (\`c4.invalid\`,
 \`requirements.missing-scenarios\`, \`spec-api.op-undefined\`, \`c4-api.op-undefined\`,
 \`c4.op-ungoverned\`, \`api.op-unconsumed\`, \`spine.op-link-missing\`,
 \`delta.unknown-section\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
-\`delta.added-duplicate\`), never on the prose — the wording changes, the codes do not.
+\`delta.added-duplicate\`, \`sources.stale\`, \`sources.unvouched\`,
+\`landscape.service-unmodelled\`, \`landscape.service-undocumented\`,
+\`landscape.binding-unknown\`), never on the prose — the wording changes, the codes do not.
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
 command ran) from \`valid\` (the docs pass).
+
+\`--all\` reports a target per service, a target per feature in flight, and one target
+of kind \`landscape\` for the fleet-level checks that belong to no single service.
 
 ## The archive gate
 
@@ -223,6 +255,10 @@ Branch on \`findings[].code\`, not the prose:
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
 | \`spine.op-link-missing\` (warn) | a "Calls" edge with no \`metadata { op }\` | link it to the operationId |
 | \`service.no-requirement-delta\` (warn) | a new service with no spec delta | write \`specs/<svc>/spec.md\` |
+| \`landscape.invalid\` | the living landscape does not parse | fix it first — the fleet cross-check cannot run against a document nobody can read |
+| \`landscape.service-unmodelled\` | a \`services/<svc>/\` no element in the landscape resolves to | draw it, or bind an existing element with \`metadata { service '<svc>' }\` — the fleet map is incomplete until you do |
+| \`landscape.service-undocumented\` (warn) | a landscape element with no \`services/<id>/\` | document the service, bind the element to the directory it means, or tag it \`#external\` if it is not ours |
+| \`landscape.binding-unknown\` | an element's \`metadata { service }\` names a directory that does not exist | fix the id or create the service — a binding is a claim, and this one is false |
 | \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
 | \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
 | \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
@@ -234,9 +270,14 @@ Branch on \`findings[].code\`, not the prose:
 | \`frontmatter.missing\` (warn) | no frontmatter at all | add owner, status and sources |
 | \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
 | \`sources.absent\` (warn) | the doc names no sources | nothing ties it to the code, so nothing can tell you when it goes stale |
+| \`sources.stale\` (warn) | the source files changed since the doc was vouched for | re-read the code, correct the doc, then ask a human to \`loam vouch --service <id>\` |
+| \`sources.unvouched\` (warn) | \`sources\` with no \`sources_digest\` — nobody ever stamped it | leave it: vouching is a human's reading, not yours |
 
 Errors gate; warnings do not. Fix every error. Leave a warning only if you can say
 why, and say it.
+
+\`sources.stale\` is the one warning you cannot close by yourself. Fix what the code
+now says, then hand it back — the stamp is a person's claim to have read it.
 `,
 
   "loam-ship": `---

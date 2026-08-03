@@ -12,20 +12,24 @@
  *  - the parser: present / absent / unterminated / scalar-vs-list / body
  *  - required fields, and the difference between absent and contradictory
  *  - `sources` resolution against the repo loam is running in
+ *  - the digest recipe, and the staleness findings it makes possible
  *  - the draft/verified inventory in list and show
  */
 import { describe, expect, it } from "vitest";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   coherentFixture,
   makeProject,
+  makeTmpDir,
   runLoam,
+  writeFiles,
   LIVING_OPENAPI,
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
 import { parseFrontmatter, listField, stringField } from "../src/core/frontmatter.js";
+import { sourcesDigest } from "../src/core/provenance.js";
 
 const SVC = "payment-service";
 
@@ -343,6 +347,160 @@ describe("sources — the tie to the code", () => {
         expect(finding.severity).toBe("warn");
       },
     );
+  });
+});
+
+describe("the sources digest", () => {
+  /** A throwaway repo with these files in it. */
+  async function repoOf(files: Record<string, string>): Promise<string> {
+    const dir = await makeTmpDir();
+    await writeFiles(dir, files);
+    return dir;
+  }
+
+  /** The digest `sources` produces over a repo holding exactly these files. */
+  async function digestOf(files: Record<string, string>, sources: string[]): Promise<string> {
+    return (await sourcesDigest(await repoOf(files), sources)).digest;
+  }
+
+  it("is content-addressed, not mtime-addressed — a fresh clone must not read as stale", async () => {
+    const dir = await makeTmpDir();
+    await writeFiles(dir, { "src/a.ts": "a\n" });
+    const before = (await sourcesDigest(dir, ["src/a.ts"])).digest;
+    // What a clone does to a file: same bytes, brand-new timestamps.
+    const future = new Date(Date.now() + 86_400_000);
+    await utimes(join(dir, "src/a.ts"), future, future);
+    expect((await sourcesDigest(dir, ["src/a.ts"])).digest).toBe(before);
+  });
+
+  it("changes when the content of a source changes", async () => {
+    const before = await digestOf({ "src/a.ts": "a\n" }, ["src/a.ts"]);
+    const after = await digestOf({ "src/a.ts": "b\n" }, ["src/a.ts"]);
+    expect(after).not.toBe(before);
+  });
+
+  it("changes when a source is renamed, even with the content untouched", async () => {
+    const before = await digestOf({ "src/a.ts": "a\n" }, ["src/"]);
+    const after = await digestOf({ "src/b.ts": "a\n" }, ["src/"]);
+    expect(after).not.toBe(before);
+  });
+
+  it("does not depend on the order the sources are listed", async () => {
+    const files = { "src/a.ts": "a\n", "src/b.ts": "b\n" };
+    expect(await digestOf(files, ["src/a.ts", "src/b.ts"])).toBe(
+      await digestOf(files, ["src/b.ts", "src/a.ts"]),
+    );
+  });
+
+  it("covers a directory source recursively, so a file added under it shows up", async () => {
+    const tree = { "src/a.ts": "a\n", "src/deep/b.ts": "b\n" };
+    expect(await digestOf(tree, ["src/"])).not.toBe(await digestOf({ "src/a.ts": "a\n" }, ["src/"]));
+    // The file list is part of the contract: it is what `vouch` reports and what
+    // makes an empty expansion refusable rather than silently vacuous.
+    const { files } = await sourcesDigest(await repoOf(tree), ["src/"]);
+    expect(files).toEqual(["src/a.ts", "src/deep/b.ts"]);
+  });
+
+  it("takes a glob at its word — a file the pattern does not match is not covered", async () => {
+    const java = { "src/main/App.java": "class App {}\n" };
+    const before = await digestOf(java, ["src/main/**/*.java"]);
+    const after = await digestOf({ ...java, "src/main/notes.md": "notes\n" }, ["src/main/**/*.java"]);
+    expect(after).toBe(before);
+    expect(await digestOf({ "src/main/App.java": "class B {}\n" }, ["src/main/**/*.java"])).not.toBe(
+      before,
+    );
+  });
+});
+
+describe("staleness — has the code moved since anyone vouched?", () => {
+  /** payment-service's own repo, with `sources` pointing at real files in it. */
+  async function repoProject(
+    frontmatter: string,
+    repoFiles: Record<string, string>,
+  ): Promise<Project> {
+    const p = await makeProject(fixtureWith(frontmatter), { service: SVC });
+    await writeFiles(p.workDir, repoFiles);
+    return p;
+  }
+
+  const CODE = { "src/payment.ts": "export const authorize = () => true;\n" };
+  const HEAD = `service: ${SVC}\nstatus: verified\nlast_verified: 2026-07-31\nsources:\n  - src/payment.ts`;
+
+  it("sources with no digest are unvouched — nobody has ever stamped them against the code", async () => {
+    const p = await repoProject(HEAD, CODE);
+    try {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "sources.unvouched",
+      );
+      expect(f.severity).toBe("warn");
+      // `status: verified` alone is a claim with nothing behind it; the message
+      // has to say what would put something behind it.
+      expect(f.message).toContain("loam vouch");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a digest that still matches is `sources.current`", async () => {
+    const p = await repoProject(HEAD, CODE);
+    try {
+      const { digest } = await sourcesDigest(p.workDir, ["src/payment.ts"]);
+      await p.write(`services/${SVC}/spec.md`, spec(`${HEAD}\nsources_digest: "${digest}"`));
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "sources.current",
+      );
+      expect(f.severity).toBe("ok");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a digest that no longer matches is a warning that names where to look", async () => {
+    const p = await repoProject(`${HEAD}\nsources_digest: "0000000000000000"`, CODE);
+    try {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      // A stale doc is still a valid doc: staleness never gates.
+      expect(res.code).toBe(0);
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "sources.stale",
+      );
+      expect(f.severity).toBe("warn");
+      expect(f.details).toEqual(["src/payment.ts"]);
+      expect(f.message).toContain("2026-07-31");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("is not checked for a service this repo is not — there is nothing here to hash", async () => {
+    const files = fixtureWith(`${HEAD}\nsources_digest: "0000000000000000"`);
+    files["services/checkout-web/model.likec4"] = SERVICE_MODEL;
+    await withProject(files, { service: "checkout-web" }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      const codes = codesOf(JSON.parse(res.stdout));
+      expect(codes).not.toContain("sources.stale");
+      expect(codes).not.toContain("sources.current");
+      expect(codes).not.toContain("sources.unvouched");
+    });
+  });
+
+  it("a source that no longer exists outranks staleness — the doc points into the void", async () => {
+    const p = await repoProject(
+      `service: ${SVC}\nstatus: verified\nsources:\n  - src/gone.ts\nsources_digest: "0000000000000000"`,
+      CODE,
+    );
+    try {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1);
+      const codes = codesOf(JSON.parse(res.stdout));
+      expect(codes).toContain("sources.path-missing");
+      expect(codes).not.toContain("sources.stale");
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

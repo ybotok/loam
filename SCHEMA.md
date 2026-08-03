@@ -23,7 +23,7 @@ All artifacts are wired by one **ID spine**: `FEAT-<id>`, service id, and C4 ele
 
 ```
 docs/
-  loam.docs.json                     manifest { version, services[] }
+  AGENTS.md                        the process contract, travelling with the docs
   architecture/
     landscape.likec4                    global C4 (fleet landscape)
     landscape.health.yaml            composed health model              [derived, later]
@@ -45,14 +45,27 @@ docs/
 
 ## Conventions
 
-**Frontmatter** (spec/adr/runbook/health/intent): `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs). Checked by `loam validate`:
+**Frontmatter** (spec/adr/runbook/health/intent): `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs), `sources_digest`. Checked by `loam validate`:
 
 - `status` — services: `draft` -> `verified`; features: `proposed` -> `in_progress` -> `built` -> `done`. An undocumented value is an **error**: a typo (`verifed`) would otherwise read as unverified forever.
 - `service` / `feature` — must match the directory the file lives under. A mismatch is an **error**; absence is a warning.
 - `sources` — paths in the *service's own repo* the artifact was written from. Resolved when `loam` runs inside that repo (`service` in `loam.json`); a path that no longer exists is an **error**. This is the only mechanical tie between the docs and the code: everything else loam checks is internal consistency, which a fluent fiction satisfies too.
+- `sources_digest` / `last_verified` — written by `loam vouch`, never by hand. The digest is a content hash of the files `sources` names, taken when a human last read them; `loam validate`, run in that repo, recomputes it and reports `sources.current`, `sources.stale` (the code moved since anyone looked), or `sources.unvouched` (`sources` with no digest — nobody has ever stamped it). All warnings: staleness is a signal, and only a person can say whether the doc is still right.
 - Missing fields are warnings, and `loam list` reports the fleet's draft/verified/unmarked split.
 
+**Vouching** (`loam vouch --service <id>`, run in the service's own repo) is the human promotion `draft` -> `verified`: it stamps `status`, `last_verified` and `sources_digest` together, rewriting only the frontmatter. It refuses what it cannot verify — no `sources`, a source path that is gone, a pattern matching no file, or a repo that is not that service's — so a `verified` status always has a digest behind it.
+
+The digest recipe (stable, and part of the contract): expand `sources` to repo-relative file paths — a directory means everything beneath it, `*`/`**`/`?` are matched as patterns, dot-entries are skipped — sort them, hash each file's bytes with sha256, feed `<path>\0<sha256-hex>\n` per file into an outer sha256, and keep the first 16 hex characters. Content, not mtime: git does not preserve modification times, so an mtime check would call every file stale after a fresh clone.
+
 **Tags (LikeC4)**: element kinds and tags are declared in a `specification` block; a delta's new/changed elements carry the feature id as a tag (`#FEAT-101`) so `loam` can project the delta by tag and validate it.
+
+**Service binding (element ↔ `services/<svc>/`)**: an element says which service it *is* with `metadata { service 'payment-service' }`. Without one, its **title** is used — which is what every existing repo relies on, and also the trap: rename a box in a diagram and every check that joined it to its directory silently stops matching. The binding is what makes a rename safe.
+
+There is no manifest of services: the directories under `services/` **are** the list. `loam validate --all` cross-checks that list against the landscape in both directions:
+
+- a `services/<svc>/` no element resolves to → `landscape.service-unmodelled` (**error**): the fleet map is incomplete, and every view derived from it is wrong;
+- an element that looks like a service (top-level, not a `person`) with no directory → `landscape.service-undocumented` (**warning**): it may be someone else's system. Tag it `#external` to say so, and the warning stops;
+- an element whose explicit binding names a directory that does not exist → `landscape.binding-unknown` (**error**). A binding is a claim about this repo; a title that fails to match is only a guess at one, which is why the two are graded differently.
 
 **API linkage (operationId)**: OpenAPI's `operationId` joins architecture and behavior — it is the token both C4 and specs reference.
 - a C4 relationship names the operation it calls: `... -> ... 'Calls createSplit' { metadata { op 'createSplit' } }`;
@@ -85,4 +98,4 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 
 ## Status
 
-`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence, single target or `--all`), `delta` (per-service projection), and `archive` (three-axis merge, gated on coherence) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `archive` (three-axis merge, gated on coherence) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
