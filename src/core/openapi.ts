@@ -8,9 +8,10 @@ import { featureSpecPaths, servicePaths } from "./repo.js";
  * `parameters`, `servers` and vendor `x-*` extensions — an object-valued one with
  * an `operationId` inside (x-legacy and friends) is not an operation, and a
  * phantom id from it would make a broken contract look "available" to the
- * op-exists checks.
+ * op-exists checks. Shared with archive's merge, which asks the same question
+ * of the same keys.
  */
-const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+export const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 
 /**
  * Extract operationIds from an OpenAPI document by walking the parsed YAML

@@ -14,6 +14,7 @@
  * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
 import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { configPath } from "./config.js";
 
 /**
@@ -81,6 +82,11 @@ export type ErrorCode =
 
 export function emitJson(payload: Record<string, unknown>): void {
   console.log(JSON.stringify({ ok: true, ...payload }, null, 2));
+}
+
+/** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
+export function repoPath(docsDir: string, abs: string): string {
+  return relative(docsDir, abs).split(/[\\/]/).join("/");
 }
 
 /** Emit a failure envelope and set the exit code. Returns false, to `return` from a caller. */

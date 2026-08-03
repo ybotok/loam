@@ -18,9 +18,8 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
-import { repoPath } from "./list.js";
 import {
   message,
   quietRm,
@@ -35,7 +34,7 @@ import {
   SNAPSHOT_VERSION,
   type PlannedWrite,
   type SnapshotManifest,
-} from "./archive.js";
+} from "../core/staging.js";
 
 interface UnarchiveOptions {
   json?: boolean;

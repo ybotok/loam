@@ -20,11 +20,10 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
 import { contentDigest, missingSources, sourcesDigest } from "../core/provenance.js";
 import { servicePaths } from "../core/repo.js";
-import { repoPath } from "./list.js";
 
 interface VouchOptions {
   service?: string;

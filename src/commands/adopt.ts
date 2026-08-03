@@ -11,7 +11,7 @@
  */
 import type { Command } from "commander";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
 import { serviceBrief, VIA_ALL, type Brief, type BriefCheck, type BriefTarget } from "../core/brief.js";
 
 interface AdoptOptions {
@@ -36,12 +36,7 @@ export function registerAdopt(program: Command): void {
 
       const service = opts.service ?? config.service;
       if (service === undefined) {
-        const msg = "No service. Pass --service <id> or set it in loam.json.";
-        if (json) emitJsonError("invalid-option", msg);
-        else {
-          console.error(msg);
-          process.exitCode = 1;
-        }
+        fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
         return;
       }
 

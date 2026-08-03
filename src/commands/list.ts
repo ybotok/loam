@@ -1,7 +1,6 @@
 import type { Command } from "commander";
-import { relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import {
   compareIds,
   listFeatures,
@@ -29,13 +28,8 @@ export function registerList(program: Command): void {
     .action(async (section: string | undefined, opts: ListOptions) => {
       const wanted = section ? SECTIONS.filter((s) => s === section) : SECTIONS;
       if (section && wanted.length === 0) {
-        const msg = `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`;
         // `invalid-option`, same as show's bad --type: one mistake class, one code.
-        if (opts.json) emitJsonError("invalid-option", msg);
-        else {
-          console.error(msg);
-          process.exitCode = 1;
-        }
+        fail(opts.json === true, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
         return;
       }
 
@@ -105,11 +99,6 @@ function featureJson(
     has: f.has,
     verification,
   };
-}
-
-/** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
-export function repoPath(docsDir: string, abs: string): string {
-  return relative(docsDir, abs).split(/[\\/]/).join("/");
 }
 
 /* ------------------------------------------------------------------ */

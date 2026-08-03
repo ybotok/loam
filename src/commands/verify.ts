@@ -24,9 +24,8 @@ import type { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { featuresDir, resolveFeature } from "../core/repo.js";
-import { repoPath } from "./list.js";
 import {
   buildVerification,
   checkAnswers,

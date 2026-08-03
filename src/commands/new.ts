@@ -2,8 +2,7 @@ import type { Command } from "commander";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { repoPath } from "./list.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { featureIdFromDirName, featuresDir, resolveFeature } from "../core/repo.js";
 
 /**

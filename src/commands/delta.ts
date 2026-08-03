@@ -2,9 +2,8 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { elementService, loadFile, serviceOf, type Rel } from "../core/likec4.js";
-import { repoPath } from "./list.js";
 import { featurePaths, featureSpecPaths, missingFeatureMessage, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
 
@@ -43,12 +42,7 @@ export function registerDelta(program: Command): void {
       }
       const service = opts.service ?? config.service;
       if (!service) {
-        const msg = "No service. Pass --service <id> or set it in loam.json.";
-        if (json) emitJsonError("invalid-option", msg);
-        else {
-          console.error(msg);
-          process.exitCode = 1;
-        }
+        fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
         return;
       }
 

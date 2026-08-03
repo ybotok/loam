@@ -2,11 +2,10 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { listField, readFrontmatter, stringField } from "../core/frontmatter.js";
 import { loadFile, serviceOf, type Elem } from "../core/likec4.js";
 import { operationIds } from "../core/openapi.js";
-import { repoPath } from "./list.js";
 import {
   featurePaths,
   featureSpecPaths,
@@ -35,12 +34,7 @@ export function registerShow(program: Command): void {
     .action(async (target: string, opts: ShowOptions) => {
       const json = opts.json === true;
       if (opts.type !== undefined && opts.type !== "service" && opts.type !== "feature") {
-        const msg = `Unknown --type '${opts.type}'. Expected: service | feature.`;
-        if (json) emitJsonError("invalid-option", msg);
-        else {
-          console.error(msg);
-          process.exitCode = 1;
-        }
+        fail(json, "invalid-option", `Unknown --type '${opts.type}'. Expected: service | feature.`);
         return;
       }
       const forced = opts.type as TargetType | undefined;
@@ -68,12 +62,7 @@ export function registerShow(program: Command): void {
       }
 
       const looked = forced ? forced : "service or feature";
-      const msg = `No ${looked} '${target}' in ${docsDir}.`;
-      if (json) emitJsonError("unknown-target", msg);
-      else {
-        console.error(msg);
-        process.exitCode = 1;
-      }
+      fail(json, "unknown-target", `No ${looked} '${target}' in ${docsDir}.`);
     });
 }
 
