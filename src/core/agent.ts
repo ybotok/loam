@@ -118,7 +118,8 @@ says so once and stops the warning for good.
 5. **Build** — \`loam delta FEAT-101 --service <svc> --json\` is the task for one service:
    intent, its requirement delta with scenarios verbatim, and the edges around it.
    Write one test per scenario **first**, from the Given/When/Then lines as written.
-6. **Ship** — \`loam archive FEAT-101\` once the code is merged.
+6. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows
+   every file the merge would write, and writes none of them.
 
 ## What you author, what loam derives
 
@@ -144,12 +145,20 @@ history behind it.
   and every element that looks like a service has a directory (warning) or is
   tagged \`#external\`;
 - **the diff applies**: a \`MODIFIED\` or \`REMOVED\` requirement exists in the living
-  spec, an \`ADDED\` one does not, and a section heading matches the grammar exactly.
+  spec, an \`ADDED\` one does not, and a section heading matches the grammar exactly;
+- **every requirement in a delta is under a delta section**: one under a prose heading
+  (\`## Behavior\`) is documentation as far as the merge is concerned and is dropped
+  (warning). \`## Requirements\` is exempt — quoting the living state is legal.
 
-That last rule exists because each of its failures used to be silent. \`MODIFIED\` of a
-requirement that does not exist merged as a creation; \`ADDED\` of one that does exist
-REPLACED it, scenarios and all; and a near-miss heading like \`## ADDED Requirement\`
-(singular) parses as plain prose, so archive merged nothing and said nothing.
+That last pair of rules exists because each of its failures used to be silent.
+\`MODIFIED\` of a requirement that does not exist merged as a creation; \`ADDED\` of one
+that does exist REPLACED it, scenarios and all; a near-miss heading like
+\`## ADDED Requirement\` (singular) parses as plain prose, so archive merged nothing and
+said nothing; and a requirement under \`## Behavior\` vanished the same way.
+
+Write the delta section heading on its own line exactly as \`## ADDED Requirements\`.
+The heading is the only thing that gives a requirement its kind: without a matching
+one, archive merges the requirement as nothing.
 
 Errors gate. Warnings do not, but leave one only deliberately.
 
@@ -158,8 +167,8 @@ Errors gate. Warnings do not, but leave one only deliberately.
 Every command takes \`--json\`. Branch on \`findings[].code\` (\`c4.invalid\`,
 \`requirements.missing-scenarios\`, \`spec-api.op-undefined\`, \`c4-api.op-undefined\`,
 \`c4.op-ungoverned\`, \`api.op-unconsumed\`, \`spine.op-link-missing\`,
-\`delta.unknown-section\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
-\`delta.added-duplicate\`, \`sources.stale\`, \`sources.unvouched\`,
+\`delta.unknown-section\`, \`delta.requirement-not-merged\`, \`delta.modified-unknown\`,
+\`delta.removed-unknown\`, \`delta.added-duplicate\`, \`sources.stale\`, \`sources.unvouched\`,
 \`landscape.service-unmodelled\`, \`landscape.service-undocumented\`,
 \`landscape.binding-unknown\`), never on the prose — the wording changes, the codes do not.
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
@@ -177,6 +186,22 @@ where every later reader inherits it.
 
 \`--approve\` overrides the gate. It is a human decision, not an agent's: if archive
 refuses, fix the breach or hand it back.
+
+## Taking an archive back
+
+\`loam unarchive <FEAT>\` restores the living docs and re-opens the feature. It works
+by putting bytes back, not by inverting the merge — archive copies every file it is
+about to overwrite into \`features/archive/<FEAT>/.loam-before/\` first, because the
+previous text of a \`MODIFIED\` requirement is written down nowhere else. Do not edit
+or delete that directory, and never reconstruct an old living spec by hand from an
+archived delta: what the requirement said BEFORE is not in there, and a plausible
+reconstruction is a lie the next reader has no way to catch.
+
+It refuses rather than guesses, under codes you can branch on: \`feature-active\` (a
+feature of that id is in flight again), \`snapshot-missing\` (archived before loam
+recorded this — the docs have to come back from version control), \`snapshot-stale\`
+(a merged file changed after the archive, so restoring would revert someone else's
+work). \`--force\` overrides the last one, and like \`--approve\` it is a human's call.
 `;
 
 /** Claude Code slash commands: `.claude/commands/<name>.md` -> `/<name>`. */
@@ -260,6 +285,7 @@ Branch on \`findings[].code\`, not the prose:
 | \`landscape.service-undocumented\` (warn) | a landscape element with no \`services/<id>/\` | document the service, bind the element to the directory it means, or tag it \`#external\` if it is not ours |
 | \`landscape.binding-unknown\` | an element's \`metadata { service }\` names a directory that does not exist | fix the id or create the service — a binding is a claim, and this one is false |
 | \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
+| \`delta.requirement-not-merged\` (warn) | a requirement under a prose heading (\`## Behavior\`) instead of a delta section | move it under \`## ADDED\`/\`## MODIFIED\`/\`## REMOVED Requirements\` — as written, archive drops it. Leave it only if it really is documentation; \`## Requirements\` quoting the living state is exempt |
 | \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
 | \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
 | \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |
@@ -290,13 +316,25 @@ Archive a shipped feature.
 1. Confirm the code is actually built and merged. Archiving folds the delta into the
    living docs; doing it early makes the docs claim something that does not exist.
 2. \`loam validate --feature $1 --json\` — must come back \`valid: true\`.
-3. \`loam archive $1\`. It merges three axes into the living state — requirements into
+3. \`loam archive $1 --dry-run\` first. It prints every file the merge would write and
+   writes none of them — read that list before letting it touch the source of truth,
+   and stop if a file you did not expect is on it.
+4. \`loam archive $1\`. It merges three axes into the living state — requirements into
    \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`, elements and
    edges into \`architecture/landscape.likec4\` — then moves the feature under
    \`features/archive/\`.
-4. If it refuses, the feature is not coherent. Fix the reported breaches.
+5. If it refuses, the feature is not coherent. Fix the reported breaches.
    \`--approve\` overrides the gate and may corrupt the living docs — that is a human's
    call to make, not yours. Report the breach and stop.
+
+If the merge itself fails partway, it rolls the living docs back and says so; the
+feature stays active, so fix the cause and re-run. If it reports ROLLBACK INCOMPLETE,
+stop and hand it to a human — some files are half-merged.
+
+Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
+archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not
+hand-edit the living docs back instead: the previous text of a \`MODIFIED\` requirement
+is in that snapshot and nowhere else, so anything you write by hand is a guess.
 `,
 };
 

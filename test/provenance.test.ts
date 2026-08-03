@@ -130,6 +130,24 @@ describe("the parser", () => {
     expect(fm.body).toContain("# Title");
   });
 
+  it("sees through a leading BOM — otherwise provenance switches itself off in silence", () => {
+    // The opening `---` is no longer at position 0, so without the strip the whole
+    // header reads as absent: the service counts as unmarked, `sources` are never
+    // checked, and nothing says why.
+    const fm = parseFrontmatter("﻿---\nservice: payment\nstatus: verified\nsources:\n  - src/a\n---\n\n# Title\n");
+    expect(fm.present).toBe(true);
+    expect(stringField(fm, "service")).toBe("payment");
+    expect(stringField(fm, "status")).toBe("verified");
+    expect(listField(fm, "sources")).toEqual(["src/a"]);
+    expect(fm.body.startsWith("# Title")).toBe(true);
+  });
+
+  it("keeps a U+FEFF that is not at position 0 — there it is the author's text", () => {
+    const fm = parseFrontmatter("---\nowner: a﻿b\n---\n\nBody﻿text\n");
+    expect(stringField(fm, "owner")).toBe("a﻿b");
+    expect(fm.body).toContain("Body﻿text");
+  });
+
   it("coerces a non-string scalar to its text — a bare date is not a Date to us", () => {
     const fm = parseFrontmatter("---\nlast_verified: 2026-07-31\n---\n");
     expect(stringField(fm, "last_verified")).toBe("2026-07-31");

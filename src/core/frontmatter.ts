@@ -38,6 +38,22 @@ interface Bounds {
  * about which bytes are the header — the writer's promise to leave the body
  * untouched depends on that being one decision, not two.
  */
+/**
+ * Drop a leading byte-order mark.
+ *
+ * With one in front, the opening `---` is no longer at position 0, so the whole
+ * header reads as absent: a documented artifact silently becomes an
+ * undocumented one — no owner, no status, no `sources` — and nothing says why.
+ * The same blindness `spec.ts` had at `^##`.
+ *
+ * Only at position 0: elsewhere U+FEFF is a zero-width no-break space and is the
+ * author's content. Callers strip before measuring, so the offsets `bounds`
+ * returns index the same string the caller then slices.
+ */
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 function bounds(md: string): Bounds | null {
   if (!md.startsWith("---")) return null;
   const close = md.indexOf("\n---", 3);
@@ -53,7 +69,8 @@ function bounds(md: string): Bounds | null {
  * Split a markdown document into its frontmatter and body. A document with no
  * frontmatter is returned whole rather than truncated.
  */
-export function parseFrontmatter(md: string): Frontmatter {
+export function parseFrontmatter(source: string): Frontmatter {
+  const md = stripBom(source);
   const at = bounds(md);
   if (at === null) return { present: false, data: {}, body: md };
 
@@ -107,7 +124,11 @@ export function listField(fm: Frontmatter, key: string): string[] {
  * the body. A header that does not parse (or is not a mapping) is replaced
  * rather than merged into — it cannot be edited without guessing what it meant.
  */
-export function withFrontmatterFields(md: string, fields: Record<string, string>): string {
+export function withFrontmatterFields(source: string, fields: Record<string, string>): string {
+  // Stamping a BOM-prefixed document drops the BOM. It sits above the header, so
+  // the promise about the body still holds — and leaving it would re-break the
+  // file for every parser anchored at position 0, including ours.
+  const md = stripBom(source);
   const at = bounds(md);
   const parsed = parseDocument(at === null ? "" : md.slice(at.start, at.end));
   const editable = parsed.errors.length === 0 && (parsed.contents === null || isMap(parsed.contents));

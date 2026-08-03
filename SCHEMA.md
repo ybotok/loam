@@ -41,6 +41,8 @@ docs/
     delta.likec4                     C4 delta (architecture)             [authored]
     specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
+  features/archive/<FEAT>/           a shipped change — the same files, plus:
+    .loam-before/                    the bytes the merge overwrote        [written by loam]
 ```
 
 ## Conventions
@@ -86,10 +88,27 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 
 - **Living spec** — `services/<svc>/spec.md` (+ `landscape.likec4`): the complete current state — the "final spec of the whole product".
 - **Delta** — `features/<FEAT>/specs/<svc>/spec.md` (+ `delta.likec4`): a change, reviewed as a diff, tagged to the feature.
-- **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`).
+- **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`). `--dry-run` prints the whole plan and writes nothing.
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`); `loam archive` **refuses an incoherent feature unless `--approve`** — the merge would otherwise corrupt the living docs.
+- **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the feature.
+
+### How archive writes, and how unarchive undoes it
+
+The merge is computed in full before anything is written, and then committed file by file: each new version is staged as a temp file **in the target's own directory** and renamed into place, so a reader sees either the old bytes or the new ones and never a half-written document. If any file fails — including the final move into `features/archive/` — the files already swapped are put back from the bytes read before the swap, and the command says so. There is no journal: a process killed between two renames leaves a half-merged repo that nothing will roll back.
+
+Undoing that merge is not a matter of inverting it. **A `MODIFIED` requirement's previous text is recorded nowhere** — the delta says what the requirement became, never what it was — and the landscape merge drops the feature tags, so the lines it added stop being identifiable the moment they land. Anything reconstructed would be a plausible guess at the old docs, which is the kind of quiet fiction the rest of loam exists to prevent.
+
+So archive writes the bytes down. Before it swaps anything it copies every file it is about to overwrite into `<feature>/.loam-before/`, with a `manifest.json` naming each one, whether it existed at all (a file the merge *created* is restored by deleting it), and a hash of what the merge wrote. That directory travels with the feature into `features/archive/`, and `loam unarchive` puts it back.
+
+`unarchive` refuses rather than guesses, each refusal under its own `--json` `error.code`:
+
+- `feature-active` — a feature of that id is active again; restoring over it would bury work in flight;
+- `snapshot-missing` — archived before snapshots existed (or by a different layout version); the living docs have to come back from version control instead;
+- `snapshot-stale` — a merged file changed after the archive, so this would be a revert of someone else's work rather than an undo. `--force` says that was meant.
 
 Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op` resolves to an OpenAPI operation governed by a requirement; and **the diff applies** — a `MODIFIED`/`REMOVED` requirement exists in the living spec, an `ADDED` one does not, and a section heading matches `## ADDED|MODIFIED|REMOVED Requirements` exactly. A near-miss heading (`## ADDED Requirement`, singular) parses as prose, so without this check archive merges nothing and reports nothing.
+
+**The section heading is what gives a requirement its kind.** A requirement under any other H2 (`## Behavior`, `## Error Handling` — the shape older OpenSpec "complete future state" deltas use) has no kind, and archive merges nothing for it; `delta.requirement-not-merged` (warning) names each one and the heading that stranded it. `## Requirements` is exempt: quoting the living state inside a delta is legal and merges nothing by design. The heading must be reachable, too — a leading UTF-8 BOM used to hide `## MODIFIED Requirements` on line 1 and void the entire delta, so the parser strips one.
 
 ## Two flows
 
@@ -98,4 +117,4 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 
 ## Status
 
-`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `archive` (three-axis merge, gated on coherence) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `archive` (three-axis merge, gated on coherence) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.

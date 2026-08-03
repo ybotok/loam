@@ -42,13 +42,16 @@ The reverse extractor is reused twice: to create the baseline, and at done-time 
 | `loam adopt --service <id>` | Reverse-engineer this repo's C4 + spec into the docs repo as `draft` for review. |
 | `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here + generated Gherkin. Output doubles as a coding-agent task. |
 | `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
-| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence. |
+| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence. `--dry-run` prints the plan and writes nothing. |
+| `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
 
-Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope separates `ok` (the command ran) from `valid` (the docs pass).
+Every command except `archive` takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope separates `ok` (the command ran) from `valid` (the docs pass). `archive` still speaks only prose — use `--dry-run` to see its plan.
 
 `init` also writes `AGENTS.md` into the docs repo — the process contract, travelling with the thing it describes — and `/loam-feature`, `/loam-implement`, `/loam-check`, `/loam-ship` into `.claude/commands/`. Neither is ever overwritten; `--no-commands` skips the latter.
 
-Status: `init`, `list`, `show`, `new`, `delta`, `validate` and `archive` are implemented. **`adopt` is the remaining stub** — and the one everything else is waiting on.
+`archive` is the one command that rewrites the source of truth, so it computes the whole merge before touching disk, commits each file through a temp-file rename, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature, which is what makes `unarchive` an undo rather than a guess — the previous text of a `MODIFIED` requirement exists nowhere else.
+
+Status: `init`, `list`, `show`, `new`, `delta`, `validate`, `archive` and `unarchive` are implemented. **`adopt` is the remaining stub** — and the one everything else is waiting on.
 
 ## Prerequisites
 
