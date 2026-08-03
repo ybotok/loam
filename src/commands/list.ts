@@ -57,7 +57,12 @@ export function registerList(program: Command): void {
       if (opts.json) {
         emitJson({
           docsDir,
-          ...(services ? { services: services.map((s) => serviceJson(docsDir, s)) } : {}),
+          ...(services
+            ? {
+                services: services.map((s) => serviceJson(docsDir, s)),
+                maturity: maturityRollup(services),
+              }
+            : {}),
           ...(features
             ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
             : {}),
@@ -76,7 +81,14 @@ export function registerList(program: Command): void {
 /* ------------------------------------------------------------------ */
 
 function serviceJson(docsDir: string, s: ServiceEntry): Record<string, unknown> {
-  return { id: s.id, path: repoPath(docsDir, s.dir), has: s.has, adrs: s.adrs, status: s.status };
+  return {
+    id: s.id,
+    path: repoPath(docsDir, s.dir),
+    has: s.has,
+    adrs: s.adrs,
+    status: s.status,
+    maturity: maturity(s),
+  };
 }
 
 function featureJson(
@@ -98,6 +110,45 @@ function featureJson(
 /** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
 export function repoPath(docsDir: string, abs: string): string {
   return relative(docsDir, abs).split(/[\\/]/).join("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* Maturity — the adoption campaign's dial                             */
+/* ------------------------------------------------------------------ */
+
+/** The adoption-maturity ladder, in order. Each rung stands on every rung below it. */
+const MATURITY_LADDER = ["empty", "partial", "documented", "sourced", "vouched"] as const;
+type Maturity = (typeof MATURITY_LADDER)[number];
+
+/**
+ * One monotone word for how far a service's documentation has got. Derived
+ * from artifact PRESENCE and provenance state only — the data list already
+ * holds — never from what the artifacts say. COMPLETENESS of adopted docs is
+ * explicitly on the unchecked list (brief.ts): a service with one endpoint
+ * documented out of thirty climbs this ladder exactly as fast as a thorough
+ * one, which is why no rung is called "adopted".
+ *
+ *   empty       services/<id>/ exists, no artifact is in it
+ *   partial     some artifacts, but not the model+spec+openapi triple
+ *   documented  the triple the adopt brief marks required is present
+ *   sourced     the living spec declares `sources` — something ties it to code
+ *   vouched     status: verified with a sources_digest behind it — a person
+ *               stamped it. `verified` with no digest is a claim with nothing
+ *               behind it and stays below this rung.
+ */
+function maturity(s: ServiceEntry): Maturity {
+  if (!Object.values(s.has).some(Boolean) && s.adrs === 0) return "empty";
+  if (!(s.has.model && s.has.spec && s.has.openapi)) return "partial";
+  if (!s.sources.declared) return "documented";
+  if (!(s.status === "verified" && s.sources.stamped)) return "sourced";
+  return "vouched";
+}
+
+/** Counts per rung, every rung present — a stable shape a fleet dashboard can diff. */
+function maturityRollup(services: ServiceEntry[]): Record<Maturity, number> {
+  const out = Object.fromEntries(MATURITY_LADDER.map((m) => [m, 0])) as Record<Maturity, number>;
+  for (const s of services) out[maturity(s)] += 1;
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +226,12 @@ function printServices(services: ServiceEntry[]): void {
       .sort((a, b) => compareIds(a[0], b[0]))
       .map(([status, n]) => `${n} ${status}`);
     console.log(`  status: ${parts.join(" · ")}`);
+    // The campaign dial next to the trust dial: rungs in ladder order, so the
+    // line reads as progress left to right. Presence and provenance state only
+    // — completeness is unchecked, so this line never says "adopted".
+    const rollup = maturityRollup(services);
+    const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map((m) => `${rollup[m]} ${m}`);
+    console.log(`  maturity: ${rungs.join(" · ")}`);
   }
 }
 

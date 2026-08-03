@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { readFrontmatter, stringField } from "./frontmatter.js";
+import { listField, readFrontmatter, stringField } from "./frontmatter.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";
@@ -33,6 +33,13 @@ export interface ServiceEntry {
   adrs: number;
   /** `status` from the living spec's frontmatter; null when nobody has said. */
   status: string | null;
+  /**
+   * Provenance signals from the living spec's frontmatter: whether it declares
+   * any `sources`, and whether a `sources_digest` stamp exists. Presence only —
+   * whether the digest still matches the code is `validate`'s question, and it
+   * can only be answered from inside the service's own repo.
+   */
+  sources: { declared: boolean; stamped: boolean };
 }
 
 export interface FeatureEntry {
@@ -180,6 +187,7 @@ export async function listServices(docsDir: string): Promise<ServiceEntry[]> {
   return Promise.all(
     names.map(async (id): Promise<ServiceEntry> => {
       const p = servicePaths(docsDir, id);
+      const fm = await readFrontmatter(p.spec);
       return {
         id,
         dir: p.dir,
@@ -191,7 +199,11 @@ export async function listServices(docsDir: string): Promise<ServiceEntry[]> {
           health: existsSync(p.health),
         },
         adrs: await countMarkdown(p.adrsDir),
-        status: stringField(await readFrontmatter(p.spec), "status") ?? null,
+        status: stringField(fm, "status") ?? null,
+        sources: {
+          declared: listField(fm, "sources").length > 0,
+          stamped: stringField(fm, "sources_digest") !== undefined,
+        },
       };
     }),
   );

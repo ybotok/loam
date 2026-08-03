@@ -426,6 +426,95 @@ describe("--json findings", () => {
   });
 });
 
+describe("the per-service summary contract (SCHEMA.md, Operating at fleet scale)", () => {
+  /**
+   * SCHEMA.md documents a jq derivation each service repo's CI runs over
+   * `loam validate --service <id> --json` to publish its fleet summary. This is
+   * that derivation, verbatim in JS: if the payload ever drifts out from under
+   * the documented recipe — targets[0] moves, a sources code is renamed, the
+   * summary counters change meaning — it breaks here, not in a hundred
+   * pipelines. `generatedAt` is the CI's clock, never loam's: loam output is
+   * timestamp-free by design, which is what keeps these tests deterministic.
+   */
+  interface Payload {
+    valid: boolean;
+    summary: { errors: number; warnings: number };
+    targets: Target[];
+  }
+  function deriveSummary(payload: Payload, generatedAt: string): Record<string, unknown> {
+    const t = payload.targets[0]!;
+    const byCode = (code: string): number => t.findings.filter((f) => f.code === code).length;
+    return {
+      service: t.id,
+      valid: payload.valid,
+      errors: payload.summary.errors,
+      warnings: payload.summary.warnings,
+      sources: {
+        current: byCode("sources.current"),
+        stale: byCode("sources.stale"),
+        unvouched: byCode("sources.unvouched"),
+        absent: byCode("sources.absent"),
+      },
+      generatedAt,
+    };
+  }
+
+  it("derives the documented shape from a service whose spec names no sources", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(deriveSummary(payload, "2026-08-03T12:00:00Z")).toEqual({
+        service: SVC,
+        valid: true,
+        errors: 0,
+        // the fixture's spec names no owner and no sources
+        warnings: 2,
+        sources: { current: 0, stale: 0, unvouched: 0, absent: 1 },
+        generatedAt: "2026-08-03T12:00:00Z",
+      });
+    });
+  });
+
+  it("moves a source through the rollup: declared-but-unvouched shows up as unvouched", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = files[`services/${SVC}/spec.md`]!.replace(
+      "status: verified\n",
+      "status: verified\nowner: payments-team\nsources:\n  - src/\n",
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      // the sources resolve against the repo loam runs in — give them something real
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      await mkdir(join(p.workDir, "src"), { recursive: true });
+      await writeFile(join(p.workDir, "src", "main.ts"), "export {};\n", "utf8");
+
+      const payload = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      const summary = deriveSummary(payload, "2026-08-03T12:00:00Z") as {
+        sources: Record<string, number>;
+        valid: boolean;
+      };
+      expect(summary.valid).toBe(true);
+      expect(summary.sources).toEqual({ current: 0, stale: 0, unvouched: 1, absent: 0 });
+    });
+  });
+
+  it("SCHEMA.md still documents the exact fields and codes this derivation reads", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const schema = await readFile(new URL("../SCHEMA.md", import.meta.url), "utf8");
+    // the recipe's inputs
+    for (const expr of [".targets[0].id", ".valid", ".summary.errors", ".summary.warnings"]) {
+      expect(schema, `SCHEMA.md recipe no longer reads ${expr}`).toContain(expr);
+    }
+    for (const code of ["sources.current", "sources.stale", "sources.unvouched", "sources.absent"]) {
+      expect(schema, `SCHEMA.md recipe no longer counts ${code}`).toContain(`"${code}"`);
+    }
+    // the output shape, and the liveness rule that makes silence visible
+    for (const key of ['"service"', '"valid"', '"errors"', '"warnings"', '"generatedAt"']) {
+      expect(schema, `SCHEMA.md summary shape lost ${key}`).toContain(key);
+    }
+    expect(schema).toContain("now | todate");
+  });
+});
+
 describe("text output is unchanged for a single target", () => {
   it("still prints the service lines it always printed", async () => {
     await withProject(coherentFixture(), { service: SVC }, async (p) => {

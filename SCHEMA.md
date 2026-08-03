@@ -197,6 +197,41 @@ One docs repo, a hundred services, many teams. The repo scales the way any share
 - **`vouch` and `archive` land through reviewed PRs.** Both rewrite the source of truth, and the PR supplies exactly what loam deliberately does not record: who approved, when, and the diff they saw. The voucher's identity is the PR author's git identity — no `vouched_by:` field, because git already refuses to forget.
 - **Provenance runs where the code is.** `sources` resolve only inside a service's own repo, so each service repo's CI runs `loam validate --service <id> --json` and branches on the finding codes (`sources.current`, `sources.stale`, `sources.unvouched`). The docs repo's CI runs `loam validate --all`, which counts what it cannot check from there (`sourcesUnverifiableFromHere`). Aggregating the per-repo results into a fleet view happens outside loam, on purpose: the stable codes are the interface, and any CI system can pivot on them.
 
+**The adoption readout measures presence, not truth.** `loam list --json` grades every service on one monotone ladder — `empty` (a directory and nothing else) → `partial` (some artifacts, but not the required triple) → `documented` (`model.likec4` + `spec.md` + `openapi.yaml` all present) → `sourced` (the living spec declares `sources`) → `vouched` (`status: verified` with a `sources_digest` behind it) — as a `maturity` string per service and a fleet rollup of counts per rung, with the same rollup as a line in the text view. Every rung is derived from artifact presence and provenance state alone; COMPLETENESS of what was written is on the adopt brief's unchecked list, so no rung is called "adopted" — a service with one endpoint documented out of thirty reaches `vouched` exactly as fast as a thorough one, and only a reader can tell them apart.
+
+**The per-service summary a CI pipeline publishes.** Staleness and validity are computable only one service repo at a time, and loam ships no aggregator — but a fleet view needs a defined thing to aggregate, and without one "no report" is indistinguishable from "clean". So the contract is a shape, not a tool. Each service repo's CI derives this from `loam validate --service <id> --json` and publishes it wherever the fleet view reads:
+
+```json
+{
+  "service": "payment-service",
+  "valid": true,
+  "errors": 0,
+  "warnings": 2,
+  "sources": { "current": 1, "stale": 0, "unvouched": 0, "absent": 0 },
+  "generatedAt": "2026-08-03T12:00:00Z"
+}
+```
+
+The derivation, verbatim (`jq`; the same logic fits a `node -e` one-liner):
+
+```sh
+loam validate --service "$SVC" --json | jq '{
+  service: .targets[0].id,
+  valid: .valid,
+  errors: .summary.errors,
+  warnings: .summary.warnings,
+  sources: {
+    current:   [.targets[0].findings[] | select(.code == "sources.current")]   | length,
+    stale:     [.targets[0].findings[] | select(.code == "sources.stale")]     | length,
+    unvouched: [.targets[0].findings[] | select(.code == "sources.unvouched")] | length,
+    absent:    [.targets[0].findings[] | select(.code == "sources.absent")]    | length
+  },
+  generatedAt: (now | todate)
+}'
+```
+
+`generatedAt` is the CI's clock, never loam's — loam output carries no timestamps, by design, so the same repo state always yields the same bytes. That is also what makes the timestamp the liveness signal: the rule is that every service repo's CI publishes this summary on every run, so a summary that is missing or whose `generatedAt` is old IS the "no report" state, and a fleet view renders it as unknown, never as clean. The derivation is pinned in `test/validate-contract.test.ts`, so the payload cannot drift out from under this recipe silently.
+
 **One `landscape.likec4`, by decision.** A shared file every feature merges into sounds like a conflict factory, but archive appends disjoint regions far more often than not, and PRs resolve the rest. The trigger for revisiting is written down so nobody relitigates it early: when landscape merge conflicts become routine — weekly, not monthly — move per-service internals fully into `services/<svc>/model.likec4` and thin the landscape down to top-level elements plus cross-service edges. Until then, one file keeps the fleet map one diffable document.
 
 ## Two flows

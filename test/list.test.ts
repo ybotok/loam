@@ -253,6 +253,79 @@ describe("verification column", () => {
   });
 });
 
+describe("maturity ladder", () => {
+  /** One service per rung. Presence and provenance state only — never content. */
+  function ladderFixture(): Record<string, string> {
+    return {
+      // empty: the directory exists (a stray untracked file creates it), no artifact does
+      "services/svc-empty/notes.txt": "todo\n",
+      // partial: some artifacts, not the model+spec+openapi triple
+      "services/svc-partial/model.likec4": "model {}\n",
+      "services/svc-partial/runbook.md": "# runbook\n",
+      // documented: the triple the adopt brief marks required, no sources
+      "services/svc-documented/model.likec4": "model {}\n",
+      "services/svc-documented/spec.md": "# svc-documented\n",
+      "services/svc-documented/openapi.yaml": "openapi: 3.1.0\n",
+      // sourced: the triple + declared sources, nobody has vouched
+      "services/svc-sourced/model.likec4": "model {}\n",
+      "services/svc-sourced/spec.md":
+        "---\nservice: svc-sourced\nstatus: draft\nsources:\n  - src/\n---\n\n# svc-sourced\n",
+      "services/svc-sourced/openapi.yaml": "openapi: 3.1.0\n",
+      // vouched: verified WITH the digest stamp behind it
+      "services/svc-vouched/model.likec4": "model {}\n",
+      "services/svc-vouched/spec.md":
+        "---\nservice: svc-vouched\nstatus: verified\nsources:\n  - src/\nsources_digest: 0123456789abcdef\n---\n\n# svc-vouched\n",
+      "services/svc-vouched/openapi.yaml": "openapi: 3.1.0\n",
+    };
+  }
+
+  it("grades each service by artifact presence and provenance state", async () => {
+    await withProject(ladderFixture(), async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
+      const rung = (id: string): string =>
+        json.services.find((s: { id: string }) => s.id === id).maturity;
+      expect(rung("svc-empty")).toBe("empty");
+      expect(rung("svc-partial")).toBe("partial");
+      expect(rung("svc-documented")).toBe("documented");
+      expect(rung("svc-sourced")).toBe("sourced");
+      expect(rung("svc-vouched")).toBe("vouched");
+    });
+  });
+
+  it("rolls the fleet up as counts per rung, every rung present", async () => {
+    await withProject(ladderFixture(), async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
+      expect(json.maturity).toEqual({ empty: 1, partial: 1, documented: 1, sourced: 1, vouched: 1 });
+    });
+  });
+
+  it("a hand-written verified with no digest stays below vouched — a claim with nothing behind it", async () => {
+    const files = ladderFixture();
+    files["services/svc-sourced/spec.md"] =
+      "---\nservice: svc-sourced\nstatus: verified\nsources:\n  - src/\n---\n\n# svc-sourced\n";
+    files["services/svc-documented/spec.md"] =
+      "---\nservice: svc-documented\nstatus: verified\n---\n\n# svc-documented\n";
+    await withProject(files, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
+      const rung = (id: string): string =>
+        json.services.find((s: { id: string }) => s.id === id).maturity;
+      // no digest: sources alone hold it at sourced
+      expect(rung("svc-sourced")).toBe("sourced");
+      // no sources at all: the status cannot lift it past documented
+      expect(rung("svc-documented")).toBe("documented");
+    });
+  });
+
+  it("prints the rollup as one text line next to the status line, in ladder order", async () => {
+    await withProject(ladderFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "list", "services");
+      expect(res.out).toContain(
+        "maturity: 1 empty · 1 partial · 1 documented · 1 sourced · 1 vouched",
+      );
+    });
+  });
+});
+
 describe("--json contract", () => {
   it("emits one ok-enveloped object with both collections", async () => {
     await withProject(fleetFixture(), async (p) => {
@@ -276,6 +349,8 @@ describe("--json contract", () => {
         has: { model: true, spec: true, openapi: true, runbook: true, health: true },
         adrs: 1,
         status: null,
+        // every artifact, no sources: presence says documented, nothing more
+        maturity: "documented",
       });
     });
   });
@@ -329,11 +404,15 @@ describe("--json contract", () => {
     });
   });
 
-  it("omits the section that was filtered out", async () => {
+  it("omits the section that was filtered out, and maturity travels with services", async () => {
     await withProject(fleetFixture(), async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
       expect(json.services).toBeDefined();
+      expect(json.maturity).toBeDefined();
       expect(json.features).toBeUndefined();
+
+      const feats = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
+      expect(feats.maturity).toBeUndefined();
     });
   });
 
@@ -350,7 +429,13 @@ describe("--json contract", () => {
   it("emits valid JSON even for an empty docs repo", async () => {
     await withProject({}, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
-      expect(json).toEqual({ ok: true, docsDir: p.docsDir, services: [], features: [] });
+      expect(json).toEqual({
+        ok: true,
+        docsDir: p.docsDir,
+        services: [],
+        maturity: { empty: 0, partial: 0, documented: 0, sourced: 0, vouched: 0 },
+        features: [],
+      });
     });
   });
 });
