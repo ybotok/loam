@@ -10,6 +10,10 @@
 // Systems that are not ours carry #external and are exempt.
 specification {
   element softwareSystem
+  // Declared here because archive SPLICES a delta's additions verbatim: FEAT-101's
+  // new system carries its `api` container along, and the kind has to be legal in
+  // THIS document for the merged landscape to parse (archive refuses otherwise).
+  element container
   element person
   tag external
 }

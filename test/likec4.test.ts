@@ -12,7 +12,15 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc } from "../src/core/likec4.js";
+import {
+  elementService,
+  loadFile,
+  maskSource,
+  scanModel,
+  serviceOf,
+  type Elem,
+  type LoadedDoc,
+} from "../src/core/likec4.js";
 import { makeTmpDir, writeFiles, LANDSCAPE, FEATURE_DELTA } from "./helpers/harness.js";
 
 const tmpDirs: string[] = [];
@@ -652,5 +660,94 @@ describe("missing file", () => {
     tmpDirs.push(dir);
     const missing = join(dir, "does-not-exist.likec4");
     await expect(loadFile(missing)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* scanModel — the splice map archive merges the landscape with        */
+/* ------------------------------------------------------------------ */
+
+describe("scanModel locates every declaration's authored bytes under its computed id", () => {
+  const SRC = `specification {
+  element system
+  element container
+}
+
+model {
+  a = system 'A' {
+    b = container 'B' {
+      -> c.d 'Inner'
+    }
+  }
+  c = system 'C' {
+    container d
+  }
+  bare = system 'Bare'
+  a.b -> c 'Dotted' {
+    metadata { op 'x' }
+    #later
+  }
+}
+
+views {
+  view v { include * }
+}
+`;
+
+  it("ids are dotted FQNs and each span slices back to the exact source text, both declaration forms included", () => {
+    const scan = scanModel(SRC)!;
+    expect(scan).not.toBeNull();
+    expect(scan.elements.map((e) => e.id)).toEqual(["a", "a.b", "c", "c.d", "bare"]);
+    const slice = (id: string): string => {
+      const e = scan.elements.find((x) => x.id === id)!;
+      return SRC.slice(e.start, e.end);
+    };
+    // The `kind name` form is a declaration too — swallowing it as a property
+    // would hide every element inside it from the merge.
+    expect(slice("c.d")).toBe("container d");
+    expect(slice("bare")).toBe("bare = system 'Bare'");
+    expect(slice("a")).toMatch(/^a = system 'A' \{[^]*\n {2}\}$/);
+    // A nested declaration's span lies inside its parent's — what lets the
+    // merge see that a spliced parent already carries its children.
+    const a = scan.elements.find((x) => x.id === "a")!;
+    const b = scan.elements.find((x) => x.id === "a.b")!;
+    expect(b.start).toBeGreaterThan(a.start);
+    expect(b.end).toBeLessThan(a.end);
+  });
+
+  it("relationship endpoints resolve like LikeC4 reads them: enclosing element for an omitted source, dotted ids as written", () => {
+    const scan = scanModel(SRC)!;
+    expect(
+      scan.rels.map((r) => `${r.source}->${r.target}`),
+    ).toEqual(["a.b->c.d", "a.b->c"]);
+    const dotted = scan.rels[1]!;
+    expect(dotted.title).toBe("Dotted");
+    expect(dotted.op).toBe("x");
+    expect(dotted.tags).toEqual(["later"]);
+    expect(SRC.slice(dotted.start, dotted.end)).toMatch(/^a\.b -> c 'Dotted' \{[^]*\}$/);
+  });
+
+  it("braces, arrows and tags inside strings are masked out — structure cannot be derailed by content", () => {
+    const tricky = `specification {
+  element system
+}
+
+model {
+  x = system 'looks { like -> #chaos }' {
+    description "also 'quoted' -> { #FEAT-9 }"
+  }
+}
+`;
+    const { code } = maskSource(tricky);
+    expect(code).not.toContain("#chaos");
+    expect(code).not.toContain("#FEAT-9");
+    const scan = scanModel(tricky)!;
+    expect(scan.elements.map((e) => e.id)).toEqual(["x"]);
+    expect(scan.rels).toEqual([]);
+    expect(tricky.slice(scan.elements[0]!.start, scan.elements[0]!.end)).toMatch(/\n {2}\}$/);
+  });
+
+  it("returns null when there is no model block", () => {
+    expect(scanModel("specification {\n  element system\n}\n")).toBeNull();
   });
 });

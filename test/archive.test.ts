@@ -9,11 +9,12 @@
  *
  * Three families were added after the merge grew teeth:
  *
- *  - SPINE PRESERVATION. The merge rewrites a delta's elements and edges as
- *    living-landscape source, and every field it forgets to write is a link
- *    silently cut: `metadata { op }` joins an edge to the OpenAPI contract, and
- *    `metadata { service }` joins an element to its `services/<svc>/` directory.
- *    Dropping the latter makes a bound element unmodelled the moment it lands.
+ *  - SPINE PRESERVATION. The merge carries a delta's elements and edges into
+ *    the living landscape (by splicing their authored source), and every field
+ *    lost on the way is a link silently cut: `metadata { op }` joins an edge to
+ *    the OpenAPI contract, and `metadata { service }` joins an element to its
+ *    `services/<svc>/` directory. Dropping the latter makes a bound element
+ *    unmodelled the moment it lands.
  *
  *  - EDGE IDENTITY. Merging is idempotent because it skips edges the landscape
  *    already has, so what counts as "already has" decides what gets lost. An
@@ -379,6 +380,129 @@ model {
 
 views {
   view feat_13 {
+    include *
+  }
+}
+`;
+
+/**
+ * A living landscape whose specification also declares the kinds and tags the
+ * rich deltas below carry. The merge splices authored source VERBATIM, so a
+ * kind or tag the living document does not declare makes the merged landscape
+ * unparseable — which the safety-net test pins as a plan-time refusal.
+ */
+const RICH_LANDSCAPE = `specification {
+  element softwareSystem
+  element container
+  element person
+  tag critical
+}
+
+model {
+  customer = person 'Customer'
+  checkoutWeb = softwareSystem 'checkout-web' {
+    description 'Customer-facing checkout UI'
+  }
+  paymentService = softwareSystem 'payment-service' {
+    description 'Owns payment authorization/capture'
+  }
+
+  customer -> checkoutWeb 'Uses'
+  checkoutWeb -> paymentService 'Calls authorizePayment' {
+    metadata { op 'authorizePayment' }
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+/**
+ * FEAT-20: an element carrying everything the old re-serializer destroyed —
+ * technology, style (color + icon), a link, a second tag — plus a titled
+ * op-linked edge and an edge whose body holds ONLY the feature tag.
+ */
+const RICH_ELEMENT_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-20
+  tag critical
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  ledgerService = softwareSystem 'ledger-service' {
+    #FEAT-20 #critical
+    description 'Tracks every balance'
+    technology 'Kotlin + Spring'
+    metadata { service 'ledger-service' }
+    style {
+      color green
+      icon tech:kubernetes
+    }
+    link https://example.com/runbook 'runbook'
+  }
+
+  paymentService -> ledgerService 'Posts entries' {
+    #FEAT-20
+    metadata { op 'postEntry' }
+  }
+  checkoutWeb -> paymentService 'Retries once' { #FEAT-20 }
+}
+
+views {
+  view feat_20 {
+    include *
+  }
+}
+`;
+
+/** FEAT-21: a tagged child whose parent already lives in the landscape. */
+const NESTED_CHILD_DELTA = `specification {
+  element softwareSystem
+  element container
+  tag FEAT-21
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    splitEngine = container 'Split engine' {
+      #FEAT-21
+      technology 'Rust'
+    }
+  }
+}
+
+views {
+  view feat_21 {
+    include *
+  }
+}
+`;
+
+/** FEAT-22: a NEW tagged parent whose children (one tagged, one not) ride inside it. */
+const NEW_PARENT_DELTA = `specification {
+  element softwareSystem
+  element container
+  tag FEAT-22
+}
+
+model {
+  ledgerService = softwareSystem 'ledger-service' {
+    #FEAT-22
+    api = container 'Ledger API' {
+      #FEAT-22
+    }
+    store = container 'Ledger store'
+  }
+}
+
+views {
+  view feat_22 {
     include *
   }
 }
@@ -1006,6 +1130,140 @@ describe("edge identity", () => {
         pairs(await loadFile(landscapePath(p))),
         "counting duplicates must not cost idempotence — the landscape already has both",
       ).toEqual(once);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("landscape splice fidelity (the merge copies authored source, it does not re-serialize)", () => {
+  it("an element with technology, style, icon, link and a second tag survives byte-verbatim minus the feature tag", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": RICH_LANDSCAPE,
+      "features/FEAT-20-ledger/delta.likec4": RICH_ELEMENT_DELTA,
+    });
+    try {
+      // --approve: the op-linked edge targets a service with no OpenAPI — this
+      // test is about fidelity, not the contract.
+      const res = await runLoam(p.workDir, "archive", "FEAT-20", "--approve");
+      expect(res.code).toBe(0);
+      const landText = await p.read(LANDSCAPE_REL);
+      expect(landText).toContain(
+        "  ledgerService = softwareSystem 'ledger-service' {\n" +
+          "    #critical\n" +
+          "    description 'Tracks every balance'\n" +
+          "    technology 'Kotlin + Spring'\n" +
+          "    metadata { service 'ledger-service' }\n" +
+          "    style {\n" +
+          "      color green\n" +
+          "      icon tech:kubernetes\n" +
+          "    }\n" +
+          "    link https://example.com/runbook 'runbook'\n" +
+          "  }",
+      );
+      expect(landText, "the feature's own tag — and only that tag — is stripped").not.toContain("#FEAT-20");
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "ledger-service")[0]!.tags).toEqual(["critical"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a relationship keeps its title and metadata { op } verbatim; one whose body held only the tag collapses to a bodyless statement", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": RICH_LANDSCAPE,
+      "features/FEAT-20-ledger/delta.likec4": RICH_ELEMENT_DELTA,
+    });
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-20", "--approve")).code).toBe(0);
+      const landText = await p.read(LANDSCAPE_REL);
+      expect(landText).toContain(
+        "  paymentService -> ledgerService 'Posts entries' {\n    metadata { op 'postEntry' }\n  }",
+      );
+      // `{ #FEAT-20 }` emptied by the strip: the cleanest legal form is no body at all.
+      expect(landText).toContain("\n  checkoutWeb -> paymentService 'Retries once'\n");
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(edgesBetween(land, "payment-service", "ledger-service", "postEntry")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a child whose parent lives in the landscape lands INSIDE the parent's block — never as a flat dotted id", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": RICH_LANDSCAPE,
+      "features/FEAT-21-engine/delta.likec4": NESTED_CHILD_DELTA,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-21", "--approve");
+      expect(res.code).toBe(0);
+      const landText = await p.read(LANDSCAPE_REL);
+      expect(landText).toContain(
+        "  paymentService = softwareSystem 'payment-service' {\n" +
+          "    description 'Owns payment authorization/capture'\n" +
+          "    splitEngine = container 'Split engine' {\n" +
+          "      technology 'Rust'\n" +
+          "    }\n" +
+          "  }",
+      );
+      // A dotted id at model top level is not LikeC4 — the child must not be spelled flat.
+      expect(landText).not.toContain("paymentService.splitEngine");
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(land.elements.some((e) => e.id === "paymentService.splitEngine")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a new parent arrives nested, children riding verbatim inside it — none of them inserted twice", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": RICH_LANDSCAPE,
+      "features/FEAT-22-ledger/delta.likec4": NEW_PARENT_DELTA,
+    });
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-22", "--approve")).code).toBe(0);
+      const landText = await p.read(LANDSCAPE_REL);
+      expect(landText).toContain(
+        "  ledgerService = softwareSystem 'ledger-service' {\n" +
+          "    api = container 'Ledger API'\n" +
+          "    store = container 'Ledger store'\n" +
+          "  }",
+      );
+      expect(landText).not.toContain("#FEAT-22");
+      expect(landText.split("ledgerService = ").length, "the tagged child must not be inserted a second time").toBe(2);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      for (const id of ["ledgerService", "ledgerService.api", "ledgerService.store"]) {
+        expect(land.elements.some((e) => e.id === id), `${id} missing from the merged landscape`).toBe(true);
+      }
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("safety net: a merge whose result would not parse is refused at plan time and writes nothing (merge-failed)", async () => {
+    // Legal inputs, unparseable merge: the delta's child is a `container`, a
+    // kind the LIVING landscape's specification never declares. The spliced
+    // text is valid in the delta and invalid in the landscape — exactly the
+    // class of corruption the in-memory parse exists to refuse.
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-21-engine/delta.likec4": NESTED_CHILD_DELTA,
+    });
+    try {
+      const before = await treeHashes(p.docsDir);
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", "FEAT-21", "--approve", "--json");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      const json = JSON.parse(res!.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain("would not parse");
+      expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
+      expect(p.exists("features/FEAT-21-engine/delta.likec4")).toBe(true);
     } finally {
       await p.destroy();
     }

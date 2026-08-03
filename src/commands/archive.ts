@@ -8,7 +8,18 @@ import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
 import { fail, emitJson, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { gatesArchive, type Issue } from "../core/issue.js";
-import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import {
+  loadFile,
+  loadSource,
+  maskSource,
+  matchBrace,
+  scanModel,
+  type Elem,
+  type Rel,
+  type ScannedElement,
+  type ScannedModel,
+  type ScannedRel,
+} from "../core/likec4.js";
 import {
   featurePaths,
   featureSpecPaths,
@@ -324,7 +335,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     const newEls = delta.elements.filter((e) => e.tags.includes(id));
     const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
-      const plan = await planLandscapeMerge(landscapePath, delta.elements, newEls, newRels);
+      const plan = await planLandscapeMerge(landscapePath, deltaLikec4, delta.elements, newEls, newRels, id);
       writes.push(...plan.writes);
       say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
       for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
@@ -847,19 +858,41 @@ interface LandscapePlan {
 }
 
 /**
- * Plan the insertion of the feature's new elements + relationships into the living
- * landscape's `model { ... }` block (preserving the rest of the file). Existence is
- * checked semantically against the parsed landscape (by element id/title and by
- * edge identity), so re-archiving is idempotent and title strings appearing
- * elsewhere in the source cause no false skips. Feature tags are dropped — the
- * additions are now part of the baseline. Assumes the delta reuses the landscape's
- * element identifiers for existing services.
+ * Plan the merge of the feature's new elements + relationships into the living
+ * landscape's `model { ... }` block (preserving the rest of the file).
+ *
+ * The additions are SPLICED from delta.likec4 as authored — byte for byte,
+ * technology, style, icons, links, metadata, nested children and all — never
+ * re-serialized from the parsed model: a rebuild keeps only the fields loam
+ * models, and every field it forgets is authored detail destroyed. The one
+ * edit on the way over is dropping the feature's own tag — the additions are
+ * baseline now (SCHEMA.md documents the drop as why unarchive restores bytes
+ * instead of recomputing) — and a construct the strip empties goes with it.
+ *
+ * Placement: a top-level addition lands in the single "// merged by loam
+ * archive" block before the model's closing brace. A NESTED element lands
+ * inside its parent's block — inside the living parent when the landscape
+ * already has it, riding verbatim inside the spliced parent when the parent
+ * is new from the same delta — never as a flat dotted id at top level, which
+ * LikeC4 rejects.
+ *
+ * Existence is checked semantically against the parsed landscape (by element
+ * id/title and by edge identity), so re-archiving is idempotent and title
+ * strings appearing elsewhere in the source cause no false skips. Assumes the
+ * delta reuses the landscape's element identifiers for existing services.
+ *
+ * Splicing is text surgery, so the computed result is PARSED before it is
+ * returned: a merged landscape LikeC4 rejects refuses the archive at plan time
+ * (merge-failed, nothing written — the unparseable-delta discipline) instead
+ * of landing in the living docs.
  */
 async function planLandscapeMerge(
   landscapePath: string,
+  deltaPath: string,
   deltaElements: Elem[],
   newEls: Elem[],
   newRels: Rel[],
+  featureId: string,
 ): Promise<LandscapePlan> {
   const text = await readFile(landscapePath, "utf8");
   const land = await loadFile(landscapePath);
@@ -896,15 +929,251 @@ async function planLandscapeMerge(
     addedRels.push(r);
   }
 
-  const lines: string[] = [];
-  for (const e of addedEls) lines.push(...elementLines(e));
-  for (const r of addedRels) lines.push(relLine(r));
-  if (lines.length === 0) return { writes: [], addedEls, addedRels };
-  return {
-    writes: [{ path: landscapePath, content: insertIntoModelBlock(text, lines) }],
-    addedEls,
-    addedRels,
+  if (addedEls.length === 0 && addedRels.length === 0) return { writes: [], addedEls, addedRels };
+
+  const deltaText = await readFile(deltaPath, "utf8");
+  const scan = scanModel(deltaText);
+  if (scan === null) {
+    throw new ArchiveFailure("merge-failed", "delta.likec4 has no model block — nothing to splice the additions from");
+  }
+
+  // Everything below either locates a declaration's authored bytes or refuses.
+  // `spliced` remembers the delta ranges already carried over, so a child whose
+  // parent is itself new is recognised as riding inside the parent's text and
+  // is never inserted twice.
+  const byId = new Map(scan.elements.map((e) => [e.id, e]));
+  const spliced: Array<{ start: number; end: number }> = [];
+  const rides = (start: number, end: number): boolean =>
+    spliced.some((r) => start >= r.start && end <= r.end);
+
+  const topBlocks: Array<{ at: number; text: string }> = [];
+  const nested: Array<{ at: number; insert: string; seq: number }> = [];
+
+  let livingScanned: ScannedModel | null | undefined;
+  const livingParentOf = (parentId: string): ScannedElement | null => {
+    if (livingScanned === undefined) livingScanned = scanModel(text);
+    if (livingScanned === null) return null;
+    const direct = livingScanned.elements.find((e) => e.id === parentId);
+    if (direct !== undefined) return direct;
+    // The delta may spell an existing element under its own id; the title is
+    // the stable cross-namespace name (the same rule the existence check uses).
+    const title = deltaElements.find((e) => e.id === parentId)?.title;
+    const livingId = title === undefined ? undefined : land.elements.find((e) => e.title === title)?.id;
+    if (livingId === undefined) return null;
+    return livingScanned.elements.find((e) => e.id === livingId) ?? null;
   };
+
+  // Ancestors first: a spliced parent covers its children before they are seen.
+  const depth = (id: string): number => id.split(".").length;
+  const sortedEls = [...addedEls].sort(
+    (a, b) => depth(a.id) - depth(b.id) || (byId.get(a.id)?.start ?? 0) - (byId.get(b.id)?.start ?? 0),
+  );
+  for (const e of sortedEls) {
+    const src = byId.get(e.id);
+    if (src === undefined) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `cannot locate '${e.id}' in delta.likec4 — the landscape merge splices authored source, and this declaration was not found`,
+      );
+    }
+    if (rides(src.start, src.end)) continue;
+    const dot = e.id.lastIndexOf(".");
+    if (dot === -1) {
+      topBlocks.push({ at: src.start, text: spliceSource(deltaText, src, featureId, "  ") });
+      spliced.push({ start: src.start, end: src.end });
+      continue;
+    }
+    const parentId = e.id.slice(0, dot);
+    const parent = livingParentOf(parentId);
+    if (parent === null) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `'${e.id}' nests under '${parentId}', which is neither in the living landscape nor added by this delta — there is nowhere to insert it`,
+      );
+    }
+    nested.push({
+      ...nestedInsert(text, parent, spliceSource(deltaText, src, featureId, parent.indent + "  ")),
+      seq: nested.length,
+    });
+    spliced.push({ start: src.start, end: src.end });
+  }
+
+  // Relationships: match each parsed addition back to its statement in the
+  // delta source — full identity (endpoints, title, op, tags), consumed one
+  // statement per addition so duplicates stay duplicates.
+  const relKeyOf = (source: string, target: string, title?: string, op?: string, tags: string[] = []): string =>
+    JSON.stringify([source, target, title ?? "", op ?? "", [...tags].sort()]);
+  const pool = new Map<string, ScannedRel[]>();
+  for (const s of scan.rels) {
+    const k = relKeyOf(s.source, s.target, s.title, s.op, s.tags);
+    pool.set(k, [...(pool.get(k) ?? []), s]);
+  }
+  for (const r of addedRels) {
+    const s = pool.get(relKeyOf(r.source, r.target, r.title, r.op, r.tags))?.shift();
+    if (s === undefined) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `cannot locate the '${r.source} -> ${r.target}' relationship in delta.likec4 — the landscape merge splices authored source, and no matching declaration was found`,
+      );
+    }
+    if (rides(s.start, s.end)) continue;
+    topBlocks.push({ at: s.start, text: spliceSource(deltaText, s, featureId, "  ") });
+  }
+
+  // Compose: the top-level block first (it sits at the model's closing brace,
+  // after every nested position, so the nested offsets — which index the
+  // ORIGINAL text — survive it), then the nested inserts back to front so they
+  // do not shift each other. Same position means same parent: later inserts go
+  // in first, which keeps the children in delta order.
+  let content = text;
+  if (topBlocks.length > 0) {
+    topBlocks.sort((a, b) => a.at - b.at);
+    content = insertIntoModelBlock(
+      content,
+      topBlocks.map((b) => b.text),
+    );
+  }
+  for (const n of [...nested].sort((a, b) => b.at - a.at || b.seq - a.seq)) {
+    content = content.slice(0, n.at) + n.insert + content.slice(n.at);
+  }
+
+  // The safety net: prove the computed landscape parses before anything is
+  // written. Splice bugs — and legal inputs the living document cannot absorb,
+  // like a kind its specification never declares — refuse here, at plan time,
+  // instead of corrupting the one file the whole fleet reads.
+  const check = await loadSource(content);
+  if (check.errors.length > 0) {
+    const detail = check.errors
+      .slice(0, 3)
+      .map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message))
+      .join("; ");
+    throw new ArchiveFailure(
+      "merge-failed",
+      `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
+        `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
+        `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
+    );
+  }
+
+  return { writes: [{ path: landscapePath, content }], addedEls, addedRels };
+}
+
+/**
+ * A declaration's authored source, ready to land in the living landscape:
+ * byte-verbatim except that the feature's own tag is stripped and the
+ * indentation is rebased from where the block sat in the delta to where it
+ * lands. A construct the strip leaves empty goes too — a line that held only
+ * the tag disappears whole, and `x = kind 'y' { #FEAT-1 }` lands as
+ * `x = kind 'y'`, not as a pair of empty braces.
+ */
+function spliceSource(
+  deltaText: string,
+  decl: { start: number; end: number; indent: string },
+  featureId: string,
+  targetIndent: string,
+): string {
+  const block = deltaText.slice(decl.start, decl.end);
+  return reindent(stripFeatureTag(block, featureId), decl.indent, targetIndent);
+}
+
+function stripFeatureTag(block: string, featureId: string): string {
+  const { code } = maskSource(block);
+  const esc = featureId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const removals: Array<[number, number]> = [];
+  for (const m of block.matchAll(new RegExp(`#${esc}(?![\\w-])`, "g"))) {
+    // Only tags in CODE count — a description quoting "#FEAT-1" is content.
+    if (code.slice(m.index, m.index + m[0].length) !== m[0]) continue;
+    let s = m.index;
+    let e = s + m[0].length;
+    // Take the whitespace on ONE side with the token — trailing first, so
+    // `#FEAT-1 #critical` leaves `#critical` at its own indent, and a token at
+    // the end of a line does not leave a trailing space behind.
+    if (block[e] === " " || block[e] === "\t") {
+      while (block[e] === " " || block[e] === "\t") e += 1;
+    } else {
+      while (s > 0 && (block[s - 1] === " " || block[s - 1] === "\t")) s -= 1;
+    }
+    removals.push([s, e]);
+  }
+  if (removals.length === 0) return block;
+
+  // A line the strip emptied disappears whole, newline included.
+  for (let lineStart = 0; lineStart < block.length; ) {
+    const nl = block.indexOf("\n", lineStart);
+    const lineEnd = nl === -1 ? block.length : nl + 1;
+    if (
+      removals.some(([s, e]) => s >= lineStart && e <= lineEnd) &&
+      /^\s*$/.test(residual(block, lineStart, nl === -1 ? block.length : nl, removals))
+    ) {
+      removals.push([lineStart, lineEnd]);
+    }
+    lineStart = lineEnd;
+  }
+
+  // A body the strip emptied goes too, braces and all — but only one the strip
+  // emptied: braces that were authored empty are authored bytes and survive.
+  for (let at = code.indexOf("{"); at !== -1; at = code.indexOf("{", at + 1)) {
+    const closeAt = matchBrace(code, at);
+    if (closeAt === -1) continue;
+    if (!removals.some(([s, e]) => s > at && e <= closeAt)) continue;
+    if (!/^\s*$/.test(residual(block, at + 1, closeAt, removals))) continue;
+    let s = at;
+    while (s > 0 && /\s/.test(block[s - 1]!)) s -= 1;
+    removals.push([s, closeAt + 1]);
+  }
+  return applyRemovals(block, removals);
+}
+
+/** The text of [from, to) with the removal ranges cut out. */
+function residual(text: string, from: number, to: number, removals: Array<[number, number]>): string {
+  let out = "";
+  for (let i = from; i < to; i += 1) {
+    if (!removals.some(([s, e]) => i >= s && i < e)) out += text[i];
+  }
+  return out;
+}
+
+function applyRemovals(text: string, removals: Array<[number, number]>): string {
+  const sorted = [...removals].sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  let out = "";
+  let i = 0;
+  for (const [s, e] of sorted) {
+    if (s > i) out += text.slice(i, s);
+    if (e > i) i = e;
+  }
+  return out + text.slice(i);
+}
+
+/**
+ * Rebase a block's indentation: the `base` its lines carried in the delta
+ * becomes `target`. The first line arrives with no leading whitespace (the
+ * scanner's span starts at the declaration itself), so it only gains `target`.
+ */
+function reindent(block: string, base: string, target: string): string {
+  return block
+    .split("\n")
+    .map((line, k) => {
+      const body = k === 0 ? line : line.startsWith(base) ? line.slice(base.length) : line;
+      return body.length === 0 ? "" : target + body;
+    })
+    .join("\n");
+}
+
+/**
+ * Where a child block enters an existing living parent: before the closing
+ * brace of the parent's body, on its own line at the parent's inner indent —
+ * and a parent that never had a body gains one around the child.
+ */
+function nestedInsert(text: string, parent: ScannedElement, block: string): { at: number; insert: string } {
+  if (parent.bodyOpen === -1) {
+    return { at: parent.end, insert: ` {\n${block}\n${parent.indent}}` };
+  }
+  const lineStart = text.lastIndexOf("\n", parent.bodyClose - 1) + 1;
+  if (/^[ \t]*$/.test(text.slice(lineStart, parent.bodyClose))) {
+    return { at: lineStart, insert: `${block}\n` };
+  }
+  // `{ ... }` on one line — break the brace onto its own line to make room.
+  return { at: parent.bodyClose, insert: `\n${block}\n${parent.indent}` };
 }
 
 /**
@@ -923,38 +1192,12 @@ function relKey(els: Elem[], r: Rel): string {
   return JSON.stringify(r.op !== undefined ? ["op", src, tgt, r.op] : ["title", src, tgt, r.title ?? ""]);
 }
 
-/** Quote a string as LikeC4 source — single-quoted with backslash/apostrophe escapes. */
-function lq(s: string): string {
-  return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-}
-
 /**
- * An element as living-landscape source. Both spines survive the rewrite: the
- * description, and `metadata { service }` — the binding that says which
- * `services/<svc>/` this box IS. Dropping the binding does not merely lose
- * decoration, it unmodels the directory the same archive just created.
+ * Insert pre-indented source blocks before the closing brace of the top-level
+ * `model { ... }` block. The brace scan is string- and comment-aware — braces
+ * inside quoted titles, descriptions, or comments must not derail the balance.
  */
-function elementLines(e: Elem): string[] {
-  const body: string[] = [];
-  if (e.description) body.push(`  description ${lq(e.description)}`);
-  if (e.service) body.push(`  metadata { service ${lq(e.service)} }`);
-  const head = `${e.id} = ${e.kind} ${lq(e.title)}`;
-  return body.length === 0 ? [head] : [`${head} {`, ...body, `}`];
-}
-
-function relLine(r: Rel): string {
-  const base = `${r.source} -> ${r.target}${r.title ? ` ${lq(r.title)}` : ""}`;
-  // Preserve the operationId spine link. Dropping `metadata { op }` here de-links the
-  // merged edge from the OpenAPI contract on the living side (was a silent bug).
-  return r.op ? `${base} { metadata { op ${lq(r.op)} } }` : base;
-}
-
-/**
- * Insert lines before the closing brace of the top-level `model { ... }` block.
- * The brace scan is string- and comment-aware — braces inside quoted titles,
- * descriptions, or comments must not derail the balance.
- */
-function insertIntoModelBlock(text: string, lines: string[]): string {
+function insertIntoModelBlock(text: string, blocks: string[]): string {
   const m = /\bmodel\s*\{/.exec(text);
   if (!m) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
   let depth = 0;
@@ -993,7 +1236,7 @@ function insertIntoModelBlock(text: string, lines: string[]): string {
     }
   }
   if (close === -1) throw new ArchiveFailure("merge-failed", "landscape.likec4 has an unbalanced model block");
-  const block = `\n  // merged by loam archive\n${lines.map((l) => `  ${l}`).join("\n")}\n`;
+  const block = `\n  // merged by loam archive\n${blocks.join("\n")}\n`;
   return text.slice(0, close) + block + text.slice(close);
 }
 
