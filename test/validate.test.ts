@@ -146,9 +146,13 @@ describe("service mode: model + requirement + API coverage", () => {
     await withProject(files, { service: SVC }, async (p) => {
       const res = await runLoam(p.workDir, "validate");
       expect(res.code).toBe(1);
-      expect(res.out).toMatch(new RegExp(`✗ ${SVC}: C4 model has \\d+ error`));
-      // at least one indented detail line follows the header
-      expect(res.stderr).toMatch(/\n\s+\S+/);
+      expect(res.stdout).toMatch(new RegExp(`✗ ${SVC}: C4 model has \\d+ error`));
+      // at least one indented detail line follows the header — on stdout with
+      // the rest of the report. loam's report never writes to stderr; what may
+      // land there on a broken model is LikeC4's own library logger, not us.
+      expect(res.stdout).toMatch(/\n\s+\S+/);
+      expect(res.stderr).not.toContain("✗");
+      expect(res.stderr).not.toContain("C4 model has");
     });
   });
 
@@ -361,6 +365,83 @@ describe("option conflicts", () => {
       // neither target was validated
       expect(res.out).not.toContain("C4 model valid");
       expect(res.out).not.toContain("delta.likec4");
+    });
+  });
+});
+
+describe("positional target", () => {
+  it("validates a feature by positional id, exactly as --feature does", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const positional = await runLoam(p.workDir, "validate", "FEAT-1", "--json");
+      const flagged = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(positional.code).toBe(0);
+      expect(JSON.parse(positional.stdout)).toEqual(JSON.parse(flagged.stdout));
+    });
+  });
+
+  it("validates a service by positional id, exactly as --service does", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const positional = await runLoam(p.workDir, "validate", SVC, "--json");
+      const flagged = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(positional.code).toBe(0);
+      expect(JSON.parse(positional.stdout)).toEqual(JSON.parse(flagged.stdout));
+    });
+  });
+
+  it("a slugged directory name resolves and reports under the canonical feature id", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "FEAT-1-split", "--json");
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout).targets[0].id).toBe("FEAT-1");
+    });
+  });
+
+  it("the feature reading wins when a name is both a feature and a service; --service forces the other", async () => {
+    const files = coherentFixture();
+    // a service directory that happens to be named like a feature id
+    files["services/FEAT-7/model.likec4"] = SERVICE_MODEL;
+    files["features/FEAT-7-both/specs/svc-b/spec.md"] = goodDeltaSpec("svc-b");
+    await withProject(files, {}, async (p) => {
+      const positional = JSON.parse((await runLoam(p.workDir, "validate", "FEAT-7", "--json")).stdout);
+      expect(positional.targets[0].kind).toBe("feature");
+      expect(positional.targets[0].id).toBe("FEAT-7");
+      const forced = JSON.parse(
+        (await runLoam(p.workDir, "validate", "--service", "FEAT-7", "--json")).stdout,
+      );
+      expect(forced.targets[0].kind).toBe("service");
+    });
+  });
+
+  it("an archived feature id refuses with 'already archived', never the service typo treatment", async () => {
+    const files = coherentFixture();
+    files["features/archive/FEAT-9-shipped/intent.md"] = "# shipped\n";
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "FEAT-9", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json).toMatchObject({ ok: false, error: { code: "unknown-target" } });
+      expect(json.error.message).toContain("already archived");
+    });
+  });
+
+  it("an unknown positional falls to the service reading: service.unknown with did-you-mean", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "paymnt-service");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("No service directory");
+      expect(res.out).toContain("Did you mean: payment-service");
+    });
+  });
+
+  it("the positional with --all, --service or --feature is refused as invalid-option", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      for (const extra of [["--all"], ["--service", SVC], ["--feature", "FEAT-1"]]) {
+        const res = await runLoam(p.workDir, "validate", "FEAT-1", ...extra, "--json");
+        expect(res.code).toBe(1);
+        const json = JSON.parse(res.stdout);
+        expect(json.ok).toBe(false);
+        expect(json.error.code).toBe("invalid-option");
+      }
     });
   });
 });
@@ -745,6 +826,90 @@ describe("exit-code discipline", () => {
       expect(res.code).toBe(1);
       expect(res.out).toContain("without a scenario");
       expect(res.out).toContain("not governed by any requirement");
+    });
+  });
+});
+
+describe("--strict", () => {
+  /** The living spec with complete frontmatter — owner and sources present — so
+   * single-service validation from the docs repo reports zero warnings. */
+  const COMPLETE_SPEC = LIVING_SPEC.replace(
+    "status: verified\n",
+    "status: verified\nowner: payments-team\nsources:\n  - src/\n",
+  );
+
+  it("exits 0 when there are no findings at all", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = COMPLETE_SPEC;
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", SVC, "--strict");
+      expect(res.code).toBe(0);
+    });
+  });
+
+  it("warnings flip the exit code to 1 — and only under --strict", async () => {
+    // the stock fixture's spec names no owner and no sources: two warnings
+    await withProject(coherentFixture(), {}, async (p) => {
+      const plain = await runLoam(p.workDir, "validate", "--service", SVC);
+      expect(plain.code).toBe(0);
+      const strict = await runLoam(p.workDir, "validate", "--service", SVC, "--strict");
+      expect(strict.code).toBe(1);
+    });
+  });
+
+  it("changes the exit code and nothing else: the --json payload is byte-for-byte identical", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const plain = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      const strict = await runLoam(p.workDir, "validate", "--service", SVC, "--strict", "--json");
+      expect(plain.code).toBe(0);
+      expect(strict.code).toBe(1);
+      expect(strict.stdout).toBe(plain.stdout);
+      expect(JSON.parse(strict.stdout).valid).toBe(true); // valid still means "no errors"
+    });
+  });
+
+  it("works with --all", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const plain = await runLoam(p.workDir, "validate", "--all");
+      expect(plain.code).toBe(0);
+      const strict = await runLoam(p.workDir, "validate", "--all", "--strict");
+      expect(strict.code).toBe(1);
+    });
+  });
+
+  it("works with --feature", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      // the intent's frontmatter names no owner: one warning
+      const strict = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--strict");
+      expect(strict.code).toBe(1);
+    });
+  });
+});
+
+describe("the report is one stream", () => {
+  it("errors land on stdout with the ok lines, in document order; stderr stays empty", async () => {
+    const files = coherentFixture();
+    // an error early in the report (spec) with ok findings after it (api, spine)
+    files[`services/${SVC}/spec.md`] = LIVING_SPEC.slice(0, LIVING_SPEC.indexOf("#### Scenario:"));
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(1);
+      expect(res.stderr).toBe("");
+      const lines = res.stdout.split("\n");
+      const error = lines.findIndex((l) => l.includes("without a scenario"));
+      const spine = lines.findIndex((l) => l.includes("landscape spine"));
+      expect(error).toBeGreaterThanOrEqual(0);
+      expect(spine).toBeGreaterThan(error);
+    });
+  });
+
+  it("a text-mode refusal still goes to stderr, with nothing on stdout", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--feature", "FEAT-1");
+      expect(res.code).toBe(1);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("--service");
+      expect(res.stderr).toContain("--feature");
     });
   });
 });

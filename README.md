@@ -45,7 +45,7 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
 | `loam adopt --service <id>` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, the checks that follow — and the ones that do not exist. Writes nothing. |
 | `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here + generated Gherkin. Output doubles as a coding-agent task. |
-| `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
+| `loam validate [<id>] [--all]` | Validate one service or feature — positional id, feature reading first; `--service`/`--feature` force it — or the whole fleet in one run (CI gate). `--strict` exits 1 on warnings too: exit code only, the report and `valid` are unchanged. |
 | `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--record <answers.json>` takes the answers back and writes `verification.yaml`. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
 | `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on gating coherence issues. `--dry-run` prints the plan and writes nothing. |

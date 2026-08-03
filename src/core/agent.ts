@@ -118,7 +118,7 @@ says so once and stops the warning for good.
 2. **Scaffold** — \`loam new FEAT-101 --title "..." --touches <existing> --new-service <new>\`.
 3. **Author** the four files the scaffold left as TODO: intent, delta.likec4,
    a spec.md per service, an openapi.yaml per new service.
-4. **Check** — \`loam validate --feature FEAT-101 --json\`. Fix every error before writing code.
+4. **Check** — \`loam validate FEAT-101 --json\`. Fix every error before writing code.
 5. **Build** — \`loam delta FEAT-101 --service <svc> --json\` is the task for one service:
    intent, its requirement delta with scenarios verbatim, and the edges around it.
    Write one test per scenario **first**, from the Given/When/Then lines as written.
@@ -251,6 +251,17 @@ down; the map of which invocation surfaces what:
   \`sources.unvouched\`, \`sources.stale\`).
 - \`loam archive\` alone reports the two breaches only the merge computation can see:
   \`living.requirement-outside-requirements\` (error) and \`openapi.op-modified\` (warn).
+
+\`loam validate <target>\` is the positional spelling of the first two: a feature id
+or a service id, tried in that order, so the feature wins when one name could be
+both and \`--service\`/\`--feature\` force the reading. The positional together with
+\`--all\`, \`--service\` or \`--feature\` is refused (\`invalid-option\`).
+
+\`--strict\` (every targeting mode, \`--all\` included) exits 1 when any finding
+exists at all — warnings included. It changes the exit code and nothing else:
+\`valid\` still means "no errors", and the \`--json\` payload stays byte-for-byte
+what it was. The stricter grade is a per-invocation lever, visible in the CI
+pipeline that passes the flag — deliberately not a per-repo profile.
 
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
 \`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
@@ -430,8 +441,10 @@ argument-hint: [--all | <FEAT-id> | <service>]
 Run loam's checks and fix what they find.
 
 - whole fleet: \`loam validate --all --json\`
-- one feature: \`loam validate --feature <FEAT-id> --json\`
-- one service: \`loam validate --service <id> --json\`
+- one target: \`loam validate <FEAT-id | service-id> --json\` — the feature reading is
+  tried first; \`--feature <id>\` / \`--service <id>\` force one when a name could be both
+- \`--strict\` (any mode) exits 1 on any warning too. Exit code only: \`valid\` and the
+  payload do not change, so the stricter grade lives in the CI invocation, not the repo
 
 Branch on \`findings[].code\`, not the prose. Errors fail validate; a coherence finding
 with \`gates: true\` will stop \`loam archive\` even when it is a warning. Fix every

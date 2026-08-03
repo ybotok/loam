@@ -44,20 +44,27 @@ interface ValidateOptions {
   service?: string;
   feature?: string;
   all?: boolean;
+  strict?: boolean;
   json?: boolean;
 }
 
 export function registerValidate(program: Command): void {
   program
     .command("validate")
+    .argument("[target]", "service or feature id (a feature wins when both match; --service/--feature force the reading)")
     .description("Validate a service (C4 + requirement coverage) or a feature (delta + coverage)")
     .option("--service <id>", "service to validate (defaults to the configured service)")
     .option("--feature <id>", "validate a feature delta instead of a service")
     .option("--all", "validate every service and every active feature")
+    .option("--strict", "exit 1 on any warning too — a per-invocation CI lever; the report and --json payload do not change")
     .option("--json", "emit the machine contract instead of the human view")
-    .action(async (opts: ValidateOptions) => {
+    .action(async (target: string | undefined, opts: ValidateOptions) => {
       const json = opts.json === true;
 
+      if (target !== undefined && (opts.all || opts.service || opts.feature)) {
+        fail(json, "invalid-option", `'${target}' already names the target; drop --all/--service/--feature.`);
+        return;
+      }
       if (opts.all && (opts.service || opts.feature)) {
         fail(json, "invalid-option", "--all validates everything; drop --service/--feature.");
         return;
@@ -112,6 +119,25 @@ export function registerValidate(program: Command): void {
           return;
         }
         targets.push(await validateFeature(docsDir, feature));
+      } else if (target !== undefined) {
+        // The positional reads the way `show` reads one: try the feature first
+        // (ids like FEAT-101 are distinctive, service names are arbitrary), then
+        // the service. --service/--feature stay as the explicit spellings for a
+        // name that could be both.
+        const feature = await resolveFeature(docsDir, target, "exclude");
+        if (feature) {
+          targets.push(await validateFeature(docsDir, feature));
+        } else {
+          const isService = (await listServices(docsDir)).some((s) => s.id === target);
+          // Neither reading exists. An archived feature is its own diagnosis
+          // ("already archived", not "no such thing"); anything else reads as a
+          // service, so the did-you-mean hints in service.unknown fire.
+          if (!isService && (await resolveFeature(docsDir, target, "only")) !== null) {
+            fail(json, "unknown-target", await missingFeatureMessage(docsDir, target));
+            return;
+          }
+          targets.push(await validateService(docsDir, target, repoOf(target)));
+        }
       } else {
         const service = opts.service ?? config.service;
         if (!service) {
@@ -134,7 +160,14 @@ export function registerValidate(program: Command): void {
       } else {
         renderText(targets, opts.all === true, unverifiable);
       }
-      if (!valid) process.exitCode = 1;
+      // --strict is a per-invocation CI lever: it fails the run on ANY finding,
+      // warnings included, and changes nothing else — `valid` keeps meaning "no
+      // errors" in text and JSON alike, so two pipelines reading the same repo
+      // may grade the same report differently and both are telling the truth.
+      const strictFailed =
+        opts.strict === true &&
+        countSeverity(targets, "error") + countSeverity(targets, "warn") > 0;
+      if (!valid || strictFailed) process.exitCode = 1;
     });
 }
 
@@ -550,10 +583,13 @@ function renderText(targets: TargetReport[], all: boolean, unverifiable: number)
         header = hint.header;
         console.log(`  ${header}`);
       }
-      const write = f.severity === "error" ? console.error : console.log;
+      // The whole report goes to stdout, in document order. Splitting errors
+      // onto stderr meant a piped stdout silently lost them from the middle of
+      // the report and 2>&1 could reorder it; the exit code carries failure,
+      // and stderr stays reserved for refusals (the fail() path).
       const marker = hint.marker === false ? "" : `${MARKER[f.severity]} `;
-      write(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}`);
-      for (const d of f.details ?? []) write(`    ${hint.detailPrefix ?? ""}${d}`);
+      console.log(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}`);
+      for (const d of f.details ?? []) console.log(`    ${hint.detailPrefix ?? ""}${d}`);
     }
   }
 
