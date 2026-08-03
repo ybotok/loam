@@ -45,7 +45,12 @@ docs/
 
 ## Conventions
 
-**Frontmatter** (spec/adr/runbook/health/intent): `status` (`draft` -> `verified`, or `proposed` -> `done`), `owner`, `service` or `feature`, `last_verified`, `sources` (globs).
+**Frontmatter** (spec/adr/runbook/health/intent): `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs). Checked by `loam validate`:
+
+- `status` — services: `draft` -> `verified`; features: `proposed` -> `in_progress` -> `built` -> `done`. An undocumented value is an **error**: a typo (`verifed`) would otherwise read as unverified forever.
+- `service` / `feature` — must match the directory the file lives under. A mismatch is an **error**; absence is a warning.
+- `sources` — paths in the *service's own repo* the artifact was written from. Resolved when `loam` runs inside that repo (`service` in `loam.json`); a path that no longer exists is an **error**. This is the only mechanical tie between the docs and the code: everything else loam checks is internal consistency, which a fluent fiction satisfies too.
+- Missing fields are warnings, and `loam list` reports the fleet's draft/verified/unmarked split.
 
 **Tags (LikeC4)**: element kinds and tags are declared in a `specification` block; a delta's new/changed elements carry the feature id as a tag (`#FEAT-101`) so `loam` can project the delta by tag and validate it.
 

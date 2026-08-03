@@ -158,6 +158,7 @@ describe("--json contract", () => {
         path: "services/payment-service",
         has: { model: true, spec: true, openapi: true, runbook: true, health: true },
         adrs: 1,
+        status: null,
       });
     });
   });

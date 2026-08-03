@@ -39,6 +39,30 @@ features/archive/<FEAT>/          shipped changes — the evolution history
 requirements grouped under \`## ADDED\`, \`## MODIFIED\` or \`## REMOVED Requirements\`.
 \`loam archive\` folds the delta into the living state.
 
+## Frontmatter — who vouched for this, and from what
+
+Every markdown artifact opens with a YAML block:
+
+\`\`\`yaml
+---
+service: payment-service     # or  feature: FEAT-101
+status: verified             # services: draft -> verified
+                             # features: proposed -> in_progress -> built -> done
+owner: payments-team
+last_verified: 2026-07-31
+sources:                     # paths in the SERVICE'S repo this was written from
+  - src/main/java/com/shop/payment/
+---
+\`\`\`
+
+\`sources\` matters more than it looks. Everything else loam checks is internal
+consistency — and a corpus can agree with itself perfectly while describing nothing
+that exists. \`sources\` is the one thing tying a document to code: \`loam validate\`,
+run inside that service's repository, checks every listed path is still there.
+
+Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
+until a human has read it. Promoting draft to verified is their call, not yours.
+
 ## The ID spine
 
 Three artifacts describe the same call in three languages. They are joined by the
@@ -205,6 +229,11 @@ Branch on \`findings[].code\`, not the prose:
 | \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |
 | \`delta.modified-pending\` (warn) | the requirement is introduced by another feature in flight | archive that feature first |
 | \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives second overwrites the first |
+| \`frontmatter.field-mismatch\` | the doc names a different service/feature than the one it lives under | fix the frontmatter, or move the file |
+| \`frontmatter.status-unknown\` | a status nobody defined (\`verifed\`) | use the documented vocabulary — a typo here reads as unverified forever |
+| \`frontmatter.missing\` (warn) | no frontmatter at all | add owner, status and sources |
+| \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
+| \`sources.absent\` (warn) | the doc names no sources | nothing ties it to the code, so nothing can tell you when it goes stale |
 
 Errors gate; warnings do not. Fix every error. Leave a warning only if you can say
 why, and say it.

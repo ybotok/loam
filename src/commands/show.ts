@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { listField, readFrontmatter, stringField } from "../core/frontmatter.js";
 import { loadFile, type Elem } from "../core/likec4.js";
 import { operationIds } from "../core/openapi.js";
 import { repoPath } from "./list.js";
@@ -102,6 +103,14 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
   const reqs = has.spec ? parseRequirements(await readFile(paths.spec, "utf8")) : [];
   const ops = await operationIds(paths.openapi);
 
+  const fm = await readFrontmatter(paths.spec);
+  const provenance = {
+    status: stringField(fm, "status") ?? null,
+    owner: stringField(fm, "owner") ?? null,
+    last_verified: stringField(fm, "last_verified") ?? null,
+    sources: listField(fm, "sources"),
+  };
+
   const governs = (op: string): string[] =>
     reqs.filter((r) => r.operations.includes(op)).map((r) => r.name);
 
@@ -113,6 +122,7 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
       id,
       path: repoPath(docsDir, paths.dir),
       has,
+      frontmatter: provenance,
       model: {
         elements: model.elements.length,
         relationships: model.relationships.length,
@@ -130,7 +140,15 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
     return;
   }
 
-  console.log(`${id}   ${repoPath(docsDir, paths.dir)}\n`);
+  const badge = [provenance.status, provenance.owner].filter((s) => s !== null).join(" · ");
+  console.log(`${id}   ${repoPath(docsDir, paths.dir)}${badge ? `   ${badge}` : ""}\n`);
+
+  if (provenance.sources.length > 0 || provenance.last_verified !== null) {
+    console.log("  provenance");
+    if (provenance.last_verified !== null) console.log(`    verified  ${provenance.last_verified}`);
+    for (const s of provenance.sources) console.log(`    sources   ${s}`);
+    console.log("");
+  }
 
   console.log("  artifacts");
   const modelNote =

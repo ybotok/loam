@@ -148,6 +148,7 @@ function intentTemplate(featureId: string, title: string | undefined): string {
   return `---
 feature: ${featureId}
 ${title ? `title: ${title}\n` : ""}status: proposed
+owner:                       # the team or person who answers for this
 ---
 
 # ${heading}

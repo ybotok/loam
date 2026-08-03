@@ -192,9 +192,12 @@ describe("--json findings", () => {
         "requirements.covered",
         "api.covered",
         "spine.resolved",
+        // the fixture's spec names no owner and no sources — incomplete, not wrong
+        "frontmatter.field-missing",
+        "sources.absent",
       ]);
       for (const f of t.findings) {
-        expect(f.severity).toBe("ok");
+        expect(["ok", "warn"]).toContain(f.severity);
         expect(typeof f.message).toBe("string");
         expect(Array.isArray(f.details)).toBe(true);
       }
@@ -297,7 +300,9 @@ describe("--json findings", () => {
     await withProject(files, {}, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
       expect(json.targets.map((t: Target) => t.id)).toEqual(["checkout-web", SVC, "FEAT-1"]);
-      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 0 });
+      // three provenance warnings: the payment-service spec names no owner and no
+      // sources, and the feature's intent names no owner either
+      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 3 });
     });
   });
 

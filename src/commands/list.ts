@@ -2,7 +2,13 @@ import type { Command } from "commander";
 import { relative } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
-import { listFeatures, listServices, type FeatureEntry, type ServiceEntry } from "../core/repo.js";
+import {
+  compareIds,
+  listFeatures,
+  listServices,
+  type FeatureEntry,
+  type ServiceEntry,
+} from "../core/repo.js";
 
 type Section = "services" | "features";
 const SECTIONS: Section[] = ["services", "features"];
@@ -63,7 +69,7 @@ export function registerList(program: Command): void {
 /* ------------------------------------------------------------------ */
 
 function serviceJson(docsDir: string, s: ServiceEntry): Record<string, unknown> {
-  return { id: s.id, path: repoPath(docsDir, s.dir), has: s.has, adrs: s.adrs };
+  return { id: s.id, path: repoPath(docsDir, s.dir), has: s.has, adrs: s.adrs, status: s.status };
 }
 
 function featureJson(docsDir: string, f: FeatureEntry): Record<string, unknown> {
@@ -103,6 +109,19 @@ function printServices(services: ServiceEntry[]): void {
   for (const s of services) {
     const adrs = s.adrs > 0 ? `  (${s.adrs} adr${s.adrs === 1 ? "" : "s"})` : "";
     console.log(`  ${serviceFlags(s)}  ${s.id.padEnd(width)}${adrs}`.trimEnd());
+  }
+  // How much of the fleet anyone has actually vouched for. On 100+ services this
+  // is the number that says whether the docs can be trusted at all.
+  if (services.length > 0) {
+    const counted = new Map<string, number>();
+    for (const s of services) {
+      const key = s.status ?? "unmarked";
+      counted.set(key, (counted.get(key) ?? 0) + 1);
+    }
+    const parts = [...counted.entries()]
+      .sort((a, b) => compareIds(a[0], b[0]))
+      .map(([status, n]) => `${n} ${status}`);
+    console.log(`  status: ${parts.join(" · ")}`);
   }
 }
 

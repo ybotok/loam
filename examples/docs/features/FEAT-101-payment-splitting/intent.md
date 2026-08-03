@@ -1,5 +1,5 @@
 ---
-id: FEAT-101
+feature: FEAT-101
 title: Payment splitting
 status: proposed            # proposed -> in_progress -> built -> done
 owner: payments-team

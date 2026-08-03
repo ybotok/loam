@@ -9,6 +9,7 @@
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { readFrontmatter, stringField } from "./frontmatter.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";
@@ -29,6 +30,8 @@ export interface ServiceEntry {
   has: ServiceArtifacts;
   /** Number of ADR files under adrs/. */
   adrs: number;
+  /** `status` from the living spec's frontmatter; null when nobody has said. */
+  status: string | null;
 }
 
 export interface FeatureEntry {
@@ -187,6 +190,7 @@ export async function listServices(docsDir: string): Promise<ServiceEntry[]> {
           health: existsSync(p.health),
         },
         adrs: await countMarkdown(p.adrsDir),
+        status: stringField(await readFrontmatter(p.spec), "status") ?? null,
       };
     }),
   );

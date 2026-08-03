@@ -28,6 +28,7 @@ import {
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
 import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
+import { featureProvenance, serviceProvenance } from "../core/provenance.js";
 
 interface ValidateOptions {
   service?: string;
@@ -58,10 +59,16 @@ export function registerValidate(program: Command): void {
       }
       const { docsDir } = config;
 
+      // `sources` are paths into a service's own repository, so they only mean
+      // something when loam is standing in that repository — which is exactly
+      // what loam.json's `service` records.
+      const repoOf = (service: string): string | undefined =>
+        config.service === service ? process.cwd() : undefined;
+
       const targets: TargetReport[] = [];
       if (opts.all) {
         for (const svc of await listServices(docsDir)) {
-          targets.push(await validateService(docsDir, svc.id));
+          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id)));
         }
         for (const feat of await listFeatures(docsDir)) {
           targets.push(await validateFeature(docsDir, feat));
@@ -77,7 +84,7 @@ export function registerValidate(program: Command): void {
         if (!service) {
           return fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
         }
-        targets.push(await validateService(docsDir, service));
+        targets.push(await validateService(docsDir, service, repoOf(service)));
       }
 
       const valid = reportValid(targets);
@@ -116,7 +123,11 @@ function summary(targets: TargetReport[]): Record<string, number> {
 /* Checks — every one produces findings, none of them print            */
 /* ------------------------------------------------------------------ */
 
-async function validateService(docsDir: string, service: string): Promise<TargetReport> {
+async function validateService(
+  docsDir: string,
+  service: string,
+  repoDir?: string,
+): Promise<TargetReport> {
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
   const paths = servicePaths(docsDir, service);
@@ -224,6 +235,9 @@ async function validateService(docsDir: string, service: string): Promise<Target
     }
   }
 
+  // Provenance last: who vouched for this, and what code it was written from.
+  findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));
+
   return report;
 }
 
@@ -255,6 +269,8 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
       });
     }
   }
+
+  findings.push(...(await featureProvenance(featureDir, featureId)));
 
   // Requirement coverage across every per-service delta, and collect scenario text
   let scenarioText = "";
