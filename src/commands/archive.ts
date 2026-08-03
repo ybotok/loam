@@ -436,12 +436,21 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     // feature that is staying put, and features/archive/ if we are the ones who
     // created it (mkdir reports nothing when it was already there).
     const failures = await rollbackStaged(staged);
-    if (snapshot) await quietRm(snapshotDir(featureDir));
+    // The snapshot goes only when the rollback HELD. On rollback-incomplete it
+    // holds the only on-disk pre-images of the very files the message tells the
+    // reader to repair by hand — a MODIFIED requirement's previous text appears
+    // nowhere else. Retaining it is harmless: the next archive's writeSnapshot
+    // begins by clearing the same directory.
+    if (snapshot && failures.length === 0) await quietRm(snapshotDir(featureDir));
     if (createdArchiveDir !== undefined) await quietRm(createdArchiveDir);
     // The code is a caller's answer to "can I trust the repo?": merge-failed
     // means yes (rolled back), rollback-incomplete means look at it by hand.
     const wrapped = rollbackError(err, failures);
-    throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message);
+    const kept =
+      snapshot && failures.length > 0
+        ? ` Pre-images of the overwritten files are kept in features/${dirName}/${SNAPSHOT_DIR}/files/.`
+        : "";
+    throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message + kept);
   }
 
   if (json) {
@@ -1001,47 +1010,19 @@ function relKey(els: Elem[], r: Rel): string {
 
 /**
  * Insert pre-indented source blocks before the closing brace of the top-level
- * `model { ... }` block. The brace scan is string- and comment-aware — braces
- * inside quoted titles, descriptions, or comments must not derail the balance.
+ * `model { ... }` block. The block is LOCATED on masked source — maskSource
+ * blanks string interiors and comments while preserving every offset, the same
+ * view scanModel reads — because finding it on raw text let a `model {` spelled
+ * inside a block comment (or a string) above the real block capture the match:
+ * the brace scan then closed inside the comment and every top-level addition
+ * was spliced into it — legal LikeC4, so the parse net passed and the archive
+ * reported success over a landscape that contained none of the architecture.
  */
 function insertIntoModelBlock(text: string, blocks: string[]): string {
-  const m = /\bmodel\s*\{/.exec(text);
+  const { code } = maskSource(text);
+  const m = /\bmodel\s*\{/.exec(code);
   if (!m) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
-  let depth = 0;
-  let close = -1;
-  type State = "code" | "squote" | "dquote" | "lineComment" | "blockComment";
-  let state: State = "code";
-  for (let i = m.index + m[0].length - 1; i < text.length && close === -1; i += 1) {
-    const ch = text[i]!;
-    const next = text[i + 1];
-    switch (state) {
-      case "code":
-        if (ch === "'") state = "squote";
-        else if (ch === '"') state = "dquote";
-        else if (ch === "/" && next === "/") { state = "lineComment"; i += 1; }
-        else if (ch === "/" && next === "*") { state = "blockComment"; i += 1; }
-        else if (ch === "{") depth += 1;
-        else if (ch === "}") {
-          depth -= 1;
-          if (depth === 0) close = i;
-        }
-        break;
-      case "squote":
-        if (ch === "\\") i += 1;
-        else if (ch === "'") state = "code";
-        break;
-      case "dquote":
-        if (ch === "\\") i += 1;
-        else if (ch === '"') state = "code";
-        break;
-      case "lineComment":
-        if (ch === "\n") state = "code";
-        break;
-      case "blockComment":
-        if (ch === "*" && next === "/") { state = "code"; i += 1; }
-        break;
-    }
-  }
+  const close = matchBrace(code, m.index + m[0].length - 1);
   if (close === -1) throw new ArchiveFailure("merge-failed", "landscape.likec4 has an unbalanced model block");
   const block = `\n  // merged by loam archive\n${blocks.join("\n")}\n`;
   return text.slice(0, close) + block + text.slice(close);

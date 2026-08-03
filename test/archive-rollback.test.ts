@@ -181,6 +181,9 @@ describe("rollback under mid-write failure", () => {
       // openapi.yaml (the failed swap), landscape (never reached), the feature
       // itself, and no snapshot or temp files left behind.
       expect(await treeHashes(p.docsDir), "the rollback must be byte-identical, tree-wide").toEqual(before);
+      // Explicitly: the rollback HELD, so the snapshot describes a merge that
+      // never happened and must be gone.
+      expect(p.exists("features/FEAT-30-capture/.loam-before")).toBe(false);
     } finally {
       fsFault.onRename = undefined;
       await p.destroy();
@@ -239,6 +242,17 @@ describe("rollback under mid-write failure", () => {
       expect(await p.read("services/payment-service/spec.md")).toContain("within 2 seconds");
       expect(await p.read("services/payment-service/openapi.yaml")).toBe(LIVING_OPENAPI);
       expect(await p.read("architecture/landscape.likec4")).toBe(LANDSCAPE);
+
+      // The snapshot SURVIVES: it holds the only on-disk pre-image of the
+      // half-merged spec.md — deleting it here used to destroy the very bytes
+      // the message above sends a human off to restore by hand.
+      expect(p.exists("features/FEAT-30-capture/.loam-before/manifest.json")).toBe(true);
+      expect(
+        await p.read("features/FEAT-30-capture/.loam-before/files/services/payment-service/spec.md"),
+        "the pre-image must be byte-identical to the living spec before the merge",
+      ).toBe(LIVING_SPEC);
+      // and the message says where the pre-images live, so the repairer finds them
+      expect(json.error.message).toContain("features/FEAT-30-capture/.loam-before/files/");
       // The feature was not archived — it is still here to re-run once the
       // repo has been looked at.
       expect(p.exists("features/FEAT-30-capture/delta.likec4")).toBe(true);

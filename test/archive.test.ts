@@ -983,6 +983,72 @@ describe("landscape merge adversarial", () => {
     }
   });
 
+  it("a 'model {' inside a block comment above the real block cannot entomb the additions — the PARSED model contains them", async () => {
+    // The killer variant: a header comment spelling `model { ... }` used to
+    // capture the raw-text regex, the brace scan closed inside the comment, and
+    // every top-level addition was spliced INTO the comment — the result still
+    // parsed, archive exited 0, and the architecture was silently lost.
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] =
+      "/* Landscape overview: the model { payments, billing } drawn as C4. */\n" + LANDSCAPE;
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      // Not just "parses": the additions must exist in the PARSED model, not as
+      // bytes inside the comment.
+      expect(elementsTitled(land, "payment-split-service")).toHaveLength(1);
+      expect(edgesBetween(land, "payment-service", "payment-split-service", "createSplit")).toHaveLength(1);
+      // and the comment itself survives verbatim
+      expect(await p.read(LANDSCAPE_REL)).toContain(
+        "/* Landscape overview: the model { payments, billing } drawn as C4. */",
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a 'model {' inside a line comment above the real block does not refuse a valid archive", async () => {
+    // Sibling symptom, same root cause: the raw-text scan hit the comment's
+    // sequence and produced a bogus merge the parse net rejected — refusing a
+    // perfectly legal archive.
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = "// the model { of the fleet, drawn as C4\n" + LANDSCAPE;
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "payment-split-service")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a 'model {' inside a string literal does not derail the merge either way", async () => {
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = LANDSCAPE.replace(
+      "Customer-facing checkout UI",
+      "renders the model { view",
+    );
+    const p = await makeProject(files);
+    try {
+      // Sanity: the adversarial living landscape is valid LikeC4 before the merge.
+      expect((await loadFile(landscapePath(p))).errors).toEqual([]);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "payment-split-service")).toHaveLength(1);
+      expect(edgesBetween(land, "payment-service", "payment-split-service", "createSplit")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("a new element is still added when its title string already appears as an op string in the landscape", async () => {
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
