@@ -209,9 +209,14 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
   const writes: PlannedWrite[] = [];
-  // Warnings born in the plan itself (openapi.op-modified) — printed with the
-  // plan and carried into the --json envelope beside the coherence warnings.
+  // Warnings born in the plan itself (openapi.op-modified,
+  // openapi.component-modified) — printed with the plan and carried into the
+  // --json envelope beside the coherence warnings.
   const planWarns: Issue[] = [];
+  // Gating issues born in the plan itself (openapi.ref-unresolved). The gate
+  // ran before the plan, but only the computed merge can see these; they block
+  // the same way, and --approve overrides them the same way.
+  const planGates: Issue[] = [];
 
   // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.
   for (const svc of deltaServices) {
@@ -263,7 +268,11 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
       writes.push({ path: livingOpenapi, content: featText });
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
-      const { text, modified } = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
+      const { text, modified, componentsModified, unresolved } = mergeOpenapiPaths(
+        await readFile(livingOpenapi, "utf8"),
+        featText,
+        svc,
+      );
       if (text !== null) {
         writes.push({ path: livingOpenapi, content: text });
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
@@ -276,6 +285,23 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
           message: `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale`,
         });
         say(`      ⚠ overwrites ${label} — the living definition differs`);
+      }
+      for (const comp of componentsModified) {
+        planWarns.push({
+          severity: "warn",
+          code: "openapi.component-modified",
+          subject: svc,
+          message: `${svc}: the merged operations carry component '${comp}', which the living OpenAPI already defines differently — the merge overwrites the living component wholesale`,
+        });
+        say(`      ⚠ overwrites component ${comp} — the living definition differs`);
+      }
+      for (const u of unresolved) {
+        planGates.push({
+          severity: "error",
+          code: "openapi.ref-unresolved",
+          subject: svc,
+          message: `${svc}: $ref '${u.ref}' (referenced from ${u.from}) resolves in neither the feature's openapi.yaml nor the living one — the merged document would carry a dangling reference`,
+        });
       }
     }
   }
@@ -310,11 +336,33 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     }
   }
 
+  // Gate on what only the plan could see: a merged operation pointing at a
+  // component that exists nowhere. Same doctrine as the coherence gate — a
+  // judgment call --approve overrides (unlike the mechanical merge-failed
+  // refusals), and a dry run is gated too. Checked after the whole plan so the
+  // refusal costs nothing: no write has happened yet either way.
+  if (planGates.length > 0 && !opts.approve) {
+    const msg = `archive ${id} — BLOCKED: ${planGates.length} unresolved $ref(s) in the OpenAPI merge`;
+    if (json) {
+      refuseJson("not-coherent", msg, [...issues, ...planWarns, ...planGates]);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const i of planGates) console.error(`  ✗ ${i.message}`);
+    console.error(`\nDefine the referenced component(s) in the feature's openapi.yaml, or fix the ref — or re-run with --approve to merge the dangling reference anyway.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (planGates.length > 0) {
+    say(`\n  ⚠ archiving despite ${planGates.length} unresolved $ref(s) (--approve):`);
+    for (const i of planGates) say(`      ✗ ${i.message}`);
+  }
+
   // The plan as data, verb decided now — after the commit everything would read
   // as an update. The `--json` payload is identical for a dry run and the real
   // thing except for `archived`; what WOULD happen is what DOES happen.
   const warnings = [...advisory, ...planWarns];
-  const overridden = opts.approve === true ? gating : [];
+  const overridden = opts.approve === true ? [...gating, ...planGates] : [];
   const plan: Array<Record<string, unknown>> = writes.map((w) => ({
     path: repoPath(config.docsDir, w.path),
     action: existsSync(w.path) ? "update" : "create",
@@ -602,6 +650,18 @@ async function writeSnapshot(
 /** The keys of a path item that ARE operations — vendor extensions and `parameters` are not. */
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 
+/** What mergeOpenapiPaths computed: the merged text, and everything the plan owes an eye. */
+interface OpenapiMerge {
+  /** The merged living document, or null when the feature document has no paths to merge. */
+  text: string | null;
+  /** Labels of EXISTING operations the merge overwrites with different content. */
+  modified: string[];
+  /** `<kind>/<name>` of living components the closure copy overwrites with different content. */
+  componentsModified: string[];
+  /** Local $refs reachable from the merged content that resolve in NEITHER document. */
+  unresolved: Array<{ ref: string; from: string }>;
+}
+
 /**
  * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
  * text splicing): a new path is inserted whole; an existing path gains/overwrites
@@ -612,18 +672,31 @@ const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head",
  * feature file restates the full API, so only the operationId set-difference is
  * ever examined elsewhere, and a changed schema/params/response would otherwise
  * land with zero signal. Set membership + deep-equal only; no schema-diff semantics.
+ *
+ * The merged operations' `$ref` closure rides along: every
+ * `#/components/<kind>/<name>` reachable from the merged path items — recursively
+ * through the FEATURE's own components, a component referencing another pulls it
+ * in — is copied into the living document, so an operation never lands pointing
+ * at a schema that stayed behind. A needed component the living document already
+ * has identically is left alone; one it has differently is overwritten wholesale
+ * and reported (`componentsModified`, the op-modified discipline). A local ref
+ * that resolves in NEITHER document is reported as `unresolved` — the caller
+ * gates on it. External refs (URLs, file paths — anything not starting `#/`)
+ * are out of scope: left untouched, never gated.
  */
 function mergeOpenapiPaths(
   livingText: string,
   featureText: string,
   service: string,
-): { text: string | null; modified: string[] } {
+): OpenapiMerge {
   const feature = parseDocument(featureText);
   if (feature.errors.length > 0) {
     throw new ArchiveFailure("merge-failed", `feature openapi for ${service} is not valid YAML: ${feature.errors[0]!.message}`);
   }
   const featPaths = feature.get("paths");
-  if (!isMap(featPaths) || featPaths.items.length === 0) return { text: null, modified: [] };
+  if (!isMap(featPaths) || featPaths.items.length === 0) {
+    return { text: null, modified: [], componentsModified: [], unresolved: [] };
+  }
 
   const living = parseDocument(livingText);
   if (living.errors.length > 0) {
@@ -647,7 +720,104 @@ function mergeOpenapiPaths(
       living.setIn(["paths", path], toPlain(featItem));
     }
   }
-  return { text: living.toString(), modified };
+
+  // The $ref closure of what was just merged. Resolution is checked against
+  // plain snapshots (components untouched so far); the copies land afterwards,
+  // in discovery order, so the walk never chases its own writes.
+  const featPlain = (feature.toJS() ?? {}) as unknown;
+  const livingPlain = (living.toJS() ?? {}) as unknown;
+  const componentsModified: string[] = [];
+  const unresolved: OpenapiMerge["unresolved"] = [];
+  const visited = new Set<string>();
+  const copies: Array<{ kind: string; name: string; value: unknown }> = [];
+
+  const visitRef = (ref: string, from: string): void => {
+    if (!ref.startsWith("#/")) return; // external — out of scope, untouched, never gated
+    const m = /^#\/components\/([^/]+)\/([^/]+)(?:\/|$)/.exec(ref);
+    if (!m) {
+      // A local ref outside components (rare). Nothing to copy, but it must
+      // point at something in one of the two documents being merged.
+      if (!resolvePointer(featPlain, ref).found && !resolvePointer(livingPlain, ref).found) {
+        unresolved.push({ ref, from });
+      }
+      return;
+    }
+    const kind = m[1]!;
+    const name = m[2]!;
+    const key = `${kind}/${name}`;
+    if (visited.has(key)) return;
+    visited.add(key);
+    const inFeature = resolvePointer(featPlain, `#/components/${kind}/${name}`);
+    if (inFeature.found) {
+      copies.push({ kind, name, value: inFeature.value });
+      walk(inFeature.value, `components/${key}`);
+      return;
+    }
+    // Not the feature's to provide — fine if the living document has it.
+    if (!resolvePointer(livingPlain, `#/components/${kind}/${name}`).found) {
+      unresolved.push({ ref, from });
+    }
+  };
+
+  const walk = (node: unknown, from: string): void => {
+    for (const ref of collectRefs(node)) visitRef(ref, from);
+  };
+
+  for (const item of featPaths.items) {
+    walk(toPlain(item.value), `paths ${scalarKey(item.key)}`);
+  }
+
+  for (const { kind, name, value } of copies) {
+    const existing = living.getIn(["components", kind, name]);
+    if (existing !== undefined) {
+      if (isDeepStrictEqual(toPlain(existing), value)) continue;
+      componentsModified.push(`${kind}/${name}`);
+    }
+    living.setIn(["components", kind, name], value);
+  }
+
+  return { text: living.toString(), modified, componentsModified, unresolved };
+}
+
+/** Every `$ref` string value anywhere in a plain JS tree, in document order. */
+function collectRefs(node: unknown): string[] {
+  const out: string[] = [];
+  const walk = (n: unknown): void => {
+    if (Array.isArray(n)) {
+      for (const v of n) walk(v);
+      return;
+    }
+    if (n !== null && typeof n === "object") {
+      for (const [k, v] of Object.entries(n)) {
+        if (k === "$ref" && typeof v === "string") out.push(v);
+        else walk(v);
+      }
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/**
+ * Resolve a local JSON pointer (`#/a/b~1c`) against a plain JS tree. `found`
+ * distinguishes "resolves to null/undefined-shaped content" from "no such
+ * spot": a component whose body is legitimately null still resolves.
+ */
+function resolvePointer(root: unknown, ref: string): { found: boolean; value: unknown } {
+  let cur: unknown = root;
+  for (const raw of ref.slice(2).split("/")) {
+    const seg = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (Array.isArray(cur)) {
+      const i = Number(seg);
+      if (!Number.isInteger(i) || i < 0 || i >= cur.length) return { found: false, value: undefined };
+      cur = cur[i];
+    } else if (cur !== null && typeof cur === "object" && seg in (cur as Record<string, unknown>)) {
+      cur = (cur as Record<string, unknown>)[seg];
+    } else {
+      return { found: false, value: undefined };
+    }
+  }
+  return { found: true, value: cur };
 }
 
 /** Name an overwritten operation by its operationId (feature's, else living's), or by path+method. */

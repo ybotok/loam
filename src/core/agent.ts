@@ -266,8 +266,9 @@ down; the map of which invocation surfaces what:
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md
   additionally carries the sources chain (\`sources.absent\`, \`sources.path-missing\`,
   \`sources.unvouched\`, \`sources.stale\`).
-- \`loam archive\` alone reports the two breaches only the merge computation can see:
-  \`living.requirement-outside-requirements\` (error) and \`openapi.op-modified\` (warn).
+- \`loam archive\` alone reports the breaches only the merge computation can see:
+  \`living.requirement-outside-requirements\` (error), \`openapi.op-modified\` (warn),
+  \`openapi.component-modified\` (warn) and \`openapi.ref-unresolved\` (error).
 
 \`loam validate <target>\` is the positional spelling of the first two: a feature id
 or a service id, tried in that order, so the feature wins when one name could be
@@ -326,7 +327,7 @@ before the merge runs, not after.
 ones it overrode. It is a human decision, not an agent's: if archive refuses, fix the
 breach or hand it back.
 
-Two breaches only the merge computation itself can see are reported at plan time,
+Breaches only the merge computation itself can see are reported at plan time,
 after the gate. \`living.requirement-outside-requirements\` (error): the LIVING spec
 holds a requirement outside \`## Requirements\`, and the merge rewrites only that
 section, so the requirement would land in the file twice — \`--approve\` does not
@@ -334,6 +335,16 @@ override it, because the duplication is mechanical, not a judgment call; re-home
 requirement first. \`openapi.op-modified\` (warn): the feature redefines an operation
 the living OpenAPI already has, and the merge overwrites the living definition
 wholesale.
+
+The OpenAPI merge also carries the merged operations' \`$ref\` closure: every
+\`#/components/<kind>/<name>\` they reference — recursively, a component's own refs
+included — is copied from the feature document into the living one, so an operation
+never lands pointing at a schema that stayed behind. \`openapi.component-modified\`
+(warn): a carried component overwrites a living one that differs, wholesale, same
+discipline as an operation. \`openapi.ref-unresolved\` (error, \`--approve\`
+overrides): a ref reachable from the merged operations resolves in neither
+document, so merging would write a dangling reference. External refs — URLs, file
+paths, anything not starting \`#/\` — are out of scope: left untouched, never gated.
 
 ## Taking an archive back
 
@@ -551,6 +562,8 @@ plan time (they never appear in \`validate\`):
 |---|---|---|
 | \`living.requirement-outside-requirements\` | the LIVING spec holds a requirement outside \`## Requirements\`, and the merge rewrites only that section — it would land in the file twice | re-home the requirement under \`## Requirements\`, then re-run; \`--approve\` does not override this |
 | \`openapi.op-modified\` (warn) | the feature redefines an operation the living OpenAPI already has — the merge overwrites the living definition wholesale | make sure the redefinition is intended; if not, align the feature's openapi.yaml with the living one |
+| \`openapi.component-modified\` (warn) | a component the merged operations reference already exists in the living OpenAPI with different content — the merge copies the feature's version over it wholesale | make sure the redefinition is intended; if not, align the feature's component with the living one |
+| \`openapi.ref-unresolved\` | a \`$ref\` reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — the merge would write a dangling reference | define the missing component or fix the ref; \`--approve\` merges the dangling reference anyway. External refs (not starting \`#/\`) are never checked |
 
 \`sources.stale\` is the one warning you cannot close by yourself. Fix what the code
 now says, then hand it back — the stamp is a person's claim to have read it.
@@ -618,7 +631,8 @@ Archive a shipped feature.
    truth, and stop if a file you did not expect is on it. \`warnings[]\` is what the
    merge will do that is legal but lossy — advisory warnings never block, which is
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
-   contract already defines gets overwritten wholesale, and \`delta.added-conflict\`
+   contract already defines gets overwritten wholesale (\`openapi.component-modified\`
+   is the same story for a component the merged operations carry), and \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
    ADDED now collides with the living spec) unless a human \`--approve\`s the

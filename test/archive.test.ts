@@ -1752,6 +1752,281 @@ describe("overwriting an existing living operation (openapi.op-modified)", () =>
   });
 });
 
+describe("openapi components ride the merged operations' $refs", () => {
+  /*
+   * The closed loss: mergeOpenapiPaths merged ONLY the `paths` map, so a
+   * feature operation whose schema lived in the FEATURE's `components:` landed
+   * in the living document with dangling $refs — nothing merged or checked the
+   * components section. Now the $ref closure of the merged path items rides
+   * along: copied from the feature doc (recursively — a component's own refs
+   * pull in more), identical living components left alone, differing ones
+   * overwritten under the op-modified discipline (openapi.component-modified,
+   * warn), and a ref resolving in NEITHER document gates the archive
+   * (openapi.ref-unresolved, --approve overrides). External refs (anything not
+   * starting '#/') are out of scope: untouched, never gated.
+   */
+
+  const FEATURE_OPENAPI_WITH_REFS = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/refund:
+    post:
+      operationId: refundPayment
+      summary: Refund a payment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        "200":
+          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+components:
+  schemas:
+    RefundRequest:
+      type: object
+      properties:
+        paymentId:
+          type: string
+    Refund:
+      type: object
+      properties:
+        amount:
+          $ref: '#/components/schemas/Money'
+    Money:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount:
+          type: number
+    Unrelated:
+      type: object
+      description: defined in the feature doc but referenced by no merged operation
+`;
+
+  /** The living OpenAPI already holding Money — identical to the feature's version. */
+  const LIVING_OPENAPI_MONEY_SAME = `${LIVING_OPENAPI}components:
+  schemas:
+    Money:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount:
+          type: number
+`;
+
+  /** The living OpenAPI holding a DIFFERENT Money (no amount property). */
+  const LIVING_OPENAPI_MONEY_DIFFERS = `${LIVING_OPENAPI}components:
+  schemas:
+    Money:
+      type: object
+      properties:
+        currency:
+          type: string
+`;
+
+  function componentsFixture(
+    featureOpenapi: string,
+    livingOpenapi: string = LIVING_OPENAPI,
+  ): Record<string, string> {
+    return {
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": livingOpenapi,
+      "features/FEAT-3-refunds/delta.likec4": REFUND_DELTA,
+      "features/FEAT-3-refunds/specs/payment-service/spec.md": REFUND_SPEC,
+      "features/FEAT-3-refunds/specs/payment-service/openapi.yaml": featureOpenapi,
+    };
+  }
+
+  it("a new operation's schema refs land in the living components — the whole nested closure, nothing more", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_WITH_REFS));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-3")).code).toBe(0);
+      const doc = parse(await p.read("services/payment-service/openapi.yaml"));
+      expect(doc.paths["/payments/refund"].post.operationId).toBe("refundPayment");
+      expect(doc.components.schemas.RefundRequest).toBeDefined();
+      expect(doc.components.schemas.Refund).toBeDefined();
+      expect(
+        doc.components.schemas.Money,
+        "Refund references Money — a component's own $refs must pull their targets in too",
+      ).toBeDefined();
+      expect(
+        doc.components.schemas.Unrelated,
+        "the closure is of the MERGED content — an unreferenced feature component must stay behind",
+      ).toBeUndefined();
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a needed component the living doc already has identically is untouched, with no warning", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_WITH_REFS, LIVING_OPENAPI_MONEY_SAME));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("overwrites component");
+      const doc = parse(await p.read("services/payment-service/openapi.yaml"));
+      expect(doc.components.schemas.Money.properties.amount).toEqual({ type: "number" });
+      expect(doc.components.schemas.RefundRequest).toBeDefined();
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a differing living component is overwritten wholesale, and the plan says so by name", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_WITH_REFS, LIVING_OPENAPI_MONEY_DIFFERS));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("overwrites component schemas/Money");
+      const doc = parse(await p.read("services/payment-service/openapi.yaml"));
+      expect(
+        doc.components.schemas.Money.properties.amount,
+        "the overwrite is wholesale — the feature's version of the component lands",
+      ).toEqual({ type: "number" });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("openapi.component-modified is in the --json envelope, dry run included", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_WITH_REFS, LIVING_OPENAPI_MONEY_DIFFERS));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.out);
+      const warn = json.warnings.find((w: { code: string }) => w.code === "openapi.component-modified");
+      expect(warn).toMatchObject({ severity: "warn", subject: "payment-service", gates: false });
+      expect(warn.message).toContain("schemas/Money");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  const FEATURE_OPENAPI_GHOST_REF = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/refund:
+    post:
+      operationId: refundPayment
+      summary: Refund a payment
+      responses:
+        "200":
+          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ghost'
+`;
+
+  it("a $ref resolving in neither document gates the archive, naming the ref and where it is referenced from", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_GHOST_REF));
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(res.out).toContain("#/components/schemas/Ghost");
+      expect(res.out).toContain("/payments/refund");
+      expect(await treeHashes(p.docsDir), "the refusal is plan-phase: nothing written").toEqual(before);
+      // A dry run is gated too — a plan for a refused merge describes nothing.
+      expect((await runLoam(p.workDir, "archive", "FEAT-3", "--dry-run")).code).toBe(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the gate speaks --json: not-coherent, with openapi.ref-unresolved attached and gates resolved", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_GHOST_REF));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("not-coherent");
+      const issue = json.issues.find((i: { code: string }) => i.code === "openapi.ref-unresolved");
+      expect(issue).toMatchObject({ severity: "error", gates: true, subject: "payment-service" });
+      expect(issue.message).toContain("#/components/schemas/Ghost");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve overrides it — a judgment call, unlike the mechanical refusals — and records the override", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_GHOST_REF));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3", "--approve", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(true);
+      expect(json.archived).toBe(true);
+      expect(json.overridden.map((i: { code: string }) => i.code)).toContain("openapi.ref-unresolved");
+      expect(await p.read("services/payment-service/openapi.yaml")).toContain("#/components/schemas/Ghost");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a ref the LIVING document resolves is fine as it stands: nothing copied, nothing gated", async () => {
+    const livingOnly = FEATURE_OPENAPI_GHOST_REF.replace("schemas/Ghost", "schemas/LivingThing");
+    const living = `${LIVING_OPENAPI}components:
+  schemas:
+    LivingThing:
+      type: object
+`;
+    const p = await makeProject(componentsFixture(livingOnly, living));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("unresolved");
+      expect(res.out).not.toContain("overwrites component");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("external refs (URLs, file paths) are out of scope: untouched, never gated", async () => {
+    const external = FEATURE_OPENAPI_GHOST_REF.replace(
+      "'#/components/schemas/Ghost'",
+      "'https://schemas.example.com/payments.json#/Refund'",
+    );
+    const p = await makeProject(componentsFixture(external));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("unresolved");
+      expect(await p.read("services/payment-service/openapi.yaml")).toContain(
+        "https://schemas.example.com/payments.json#/Refund",
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("archive then unarchive restores the living openapi byte-identically — the snapshot already covers components", async () => {
+    const p = await makeProject(componentsFixture(FEATURE_OPENAPI_WITH_REFS, LIVING_OPENAPI_MONEY_DIFFERS));
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-3")).code).toBe(0);
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-3")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("the machine contract (--json)", () => {
   it("success emits one valid JSON document: feature, archived, plan, warnings", async () => {
     const p = await makeProject(coherentFixture());
