@@ -6,7 +6,7 @@ Everything here is plain files. `loam` derives views and indexes from them; dele
 
 ## Layer stack
 
-C4 is the center. Each artifact is a **source** (authored), a **hybrid** (extracted at bootstrap, authored forward), or a **derived** view (generated from the model + spine).
+C4 is the center. Each artifact is a **source** (authored), a **hybrid** (agent-written at bootstrap, authored forward), or a **derived** view (generated from the model + spine).
 
 ```
 presentation │ UI page-prototypes ─(consume)─► endpoints     spec = source · proto = derived  [later]
@@ -49,7 +49,7 @@ docs/
 
 ## Conventions
 
-**Frontmatter** (spec/adr/runbook/health/intent): `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs), `sources_digest`. Checked by `loam validate`:
+**Frontmatter**: `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs), `sources_digest`. `loam validate` reads it in exactly two files — a service's living `spec.md` and a feature's `intent.md`, the two documents whose identity and status everything else joins on. `adrs/`, `runbook.md` and `health.yaml` are presence-tracked only (`loam list` says whether they exist); their frontmatter is read by nothing today, so a field written there is a note to a future reader, not a claim any check will catch. For the two checked files:
 
 - `status` — services: `draft` -> `verified`; features: `proposed` -> `in_progress` -> `built` -> `done`. An undocumented value is an **error**: a typo (`verifed`) would otherwise read as unverified forever.
 - `service` / `feature` — must match the directory the file lives under. A mismatch is an **error**; absence is a warning.
@@ -91,6 +91,18 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 - **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`). `--dry-run` prints the whole plan and writes nothing.
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`). `loam archive` **blocks on the gating issues**. Severity and gating answer two different questions — severity says whether the *document* is valid (`validate` fails on errors), gating says whether the *merge* is safe — and they usually agree: errors gate, warnings do not. Where they diverge, the finding says so (`gates` in `--json`); today that is exactly `delta.requirement-not-merged`, a warning (the shape is legal OpenSpec, so adopted repos keep a green `validate`) that gates (the merge would silently drop the requirement). Advisory warnings are printed with the plan and never block. `--approve` overrides the gating issues only, and names each one it overrode. An operation that is missing from the provider's OpenAPI but defined by another feature still in flight is graded down to a warning (`spec-api.op-pending` / `c4-api.op-pending`) naming that feature — archive it first — because the fix is ordering, not authoring.
 - **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the feature.
+
+### The smallest legal feature
+
+A one-service bugfix needs exactly one file: `features/<FEAT>/specs/<svc>/spec.md` holding one `MODIFIED` requirement with its scenarios. That floor is verified against the checks, not asserted: with no `intent.md`, no `delta.likec4` and no openapi delta, `loam validate --feature` passes with zero errors and zero warnings, and `loam archive` plans exactly two writes — the living spec update and the move into `features/archive/`.
+
+Each axis may be legitimately empty, and the checks grade absence differently from emptiness-by-accident:
+
+- **`delta.likec4`** — absent, or present with an empty `model {}` (both verified: `delta.valid`, no landscape write in the plan): a behaviour fix moves no boxes and no edges, and the architecture merge simply has nothing to do. The line is drawn at content: a file that *declares* elements or relationships with none carrying the feature tag is an error (`delta.nothing-tagged`), because declared-but-untagged is almost always a forgotten tag, while declaring nothing is a legible statement that the architecture is unchanged.
+- **openapi delta** — absent whenever the feature adds no operations; a requirement change that stays inside the existing contract has no API axis to speak on.
+- **requirement delta** — the axis that is nearly always present, because a feature that changes no requirement changes no promised behaviour. The exception is architecture-only work: a new service in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning, not an error.
+
+`intent.md` is required by no check today — an absent one produces no finding at all — but it is where the "why" lives, and `loam new` scaffolds it for a reason: the delta says what changed, and nothing else says what for.
 
 ### Where a capability lives (and why there is no capability layer)
 
@@ -134,7 +146,7 @@ Two checks run at plan time rather than in the gate, because only the computed m
 - `snapshot-missing` — archived before snapshots existed (or by a different layout version); the living docs have to come back from version control instead;
 - `snapshot-stale` — a merged file changed after the archive, so this would be a revert of someone else's work rather than an undo. `--force` says that was meant.
 
-Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op` resolves to an OpenAPI operation governed by a requirement; and **the diff applies** — a `MODIFIED`/`REMOVED` requirement exists in the living spec, an `ADDED` one does not, and a section heading matches `## ADDED|MODIFIED|REMOVED Requirements` exactly. A near-miss heading (`## ADDED Requirement`, singular) parses as prose, so without this check archive merges nothing and reports nothing. `## RENAMED Requirements` — OpenSpec's fourth delta operation — gets the same error with a pointed message: loam does not merge renames; express one as a `REMOVED` requirement plus an `ADDED` one. And an `ADDED` name that differs from a living requirement's only in case is a warning (`delta.added-near-duplicate`): merge identity is exact-string, so both spellings would coexist in the living spec.
+Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op` resolves to an OpenAPI operation governed by a requirement; and **the diff applies** — a `MODIFIED`/`REMOVED` requirement exists in the living spec, an `ADDED` one does not, and a section heading matches `## ADDED|MODIFIED|REMOVED Requirements` exactly. A near-miss heading (`## ADDED Requirement`, singular) parses as prose, so without this check archive merges nothing and reports nothing. `## RENAMED Requirements` — OpenSpec's fourth delta operation — gets the same error (`delta.unknown-section`) with a pointed message: loam does not merge renames; express one as a `REMOVED` requirement plus an `ADDED` one. And an `ADDED` name that differs from a living requirement's only in case is a warning (`delta.added-near-duplicate`): merge identity is exact-string, so both spellings would coexist in the living spec.
 
 **The section heading is what gives a requirement its kind.** A requirement under any other H2 (`## Behavior`, `## Error Handling` — the shape older OpenSpec "complete future state" deltas use) has no kind, and archive merges nothing for it; `delta.requirement-not-merged` names each one and the heading that stranded it — a warning (the shape is legal OpenSpec, `validate` stays green) that **gates archive** (authored content must not vanish silently; `--approve` overrides). When *no* requirement in the file sits under a delta section — prose headings only, requirements above every heading, or a file that only quotes the living state — the grade goes up to an **error**, `delta.no-delta-sections`: a delta that would merge nothing as a whole is not a valid delta. `## Requirements` stays exempt from the per-requirement warning: quoting the living state inside a delta is legal and merges nothing by design. The heading must be reachable, too — a leading UTF-8 BOM used to hide `## MODIFIED Requirements` on line 1 and void the entire delta, so the parser strips one.
 
@@ -196,4 +208,4 @@ There is no code extractor on either side, by decision. Nothing deterministic re
 
 ## Status
 
-`init`, `list` / `show` (navigation), `adopt` (the baseline brief), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `verify` (the done-check checklist + its record), `archive` (three-axis merge, gated on coherence errors) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
+`init`, `list` / `show` (navigation), `adopt` (the baseline brief), `new` (feature scaffolding), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `verify` (the done-check checklist + its record), `archive` (three-axis merge, gated on gating coherence issues) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.

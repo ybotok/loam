@@ -473,7 +473,7 @@ what lets a feature ship:
 | \`delta.added-near-duplicate\` (warn) | ADDED a name that differs only in case from a living requirement — the merge matches exactly, so both would coexist | match the living spelling and use MODIFIED, or pick a distinct name |
 | \`delta.modified-pending\` (warn) | the requirement is introduced by another feature in flight | archive that feature first |
 | \`delta.removed-pending\` (warn) | REMOVED something another feature in flight introduces | archive that feature first |
-| \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives second overwrites the first |
+| \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives first lands it; the other's ADDED then collides with the living spec (\`delta.added-duplicate\`, error) and its archive is refused — coordinate now, or rework the later one as MODIFIED after the first ships |
 
 \`--all\` — everything above for every target, plus the fleet cross-check:
 
@@ -573,7 +573,10 @@ Archive a shipped feature.
    merge will do that is legal but lossy — advisory warnings never block, which is
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
    contract already defines gets overwritten wholesale, and \`delta.added-conflict\`
-   means whichever feature archives second overwrites the other's requirement.
+   means another feature in flight adds the same requirement — the first to archive
+   lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
+   ADDED now collides with the living spec) unless a human \`--approve\`s the
+   replacement.
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` — then moves the feature

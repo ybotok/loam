@@ -48,7 +48,7 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
 | `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--record <answers.json>` takes the answers back and writes `verification.yaml`. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
-| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence errors. `--dry-run` prints the plan and writes nothing. |
+| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on gating coherence issues. `--dry-run` prints the plan and writes nothing. |
 | `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
 
 Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope keeps three different questions apart — `ok` (the command ran), `valid` (the docs pass), `verified` (somebody says the code was built, and showed evidence). `archive --json` carries the whole merge plan, the warnings it is not blocking on, and — on refusal — a stable `error.code`; with `--dry-run` it is the same payload without the writes.

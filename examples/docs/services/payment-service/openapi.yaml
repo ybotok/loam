@@ -1,4 +1,4 @@
-# API contract. `loam adopt` extracts this from legacy code; forward-flow authors changes in the delta.
+# API contract. Written by an agent from the `loam adopt` brief; forward-flow authors changes in the delta.
 openapi: 3.1.0
 info:
   title: payment-service
