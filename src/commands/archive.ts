@@ -725,6 +725,12 @@ async function planLandscapeMerge(
   const haveTitles = new Set(land.elements.map((e) => e.title));
   const addedEls: Elem[] = [];
   for (const e of newEls) {
+    // KNOWN: the title half of this check is cross-service — a delta adding a
+    // DIFFERENT service's element under a box title the landscape already uses
+    // (two services can legitimately both title a box 'API') is silently
+    // skipped here, and any delta edge referencing it then refuses the whole
+    // archive at the parse net below. Pre-existing behaviour, older than
+    // service-grouped placement; scoping titles per service is backlog work.
     if (haveIds.has(e.id) || haveTitles.has(e.title)) continue;
     haveIds.add(e.id);
     haveTitles.add(e.title);
@@ -768,36 +774,66 @@ async function planLandscapeMerge(
   const rides = (start: number, end: number): boolean =>
     spliced.some((r) => start >= r.start && end <= r.end);
 
-  // The living model, scanned once on MASKED source (scanModel): nested
-  // children need their parents' spans, and top-level placement needs the
-  // statement layout. Masking matters — a `model {` spelled inside a comment
-  // or string above the real block must not capture the match, or every
-  // top-level addition lands inside the comment (legal LikeC4, so the parse
-  // net below would pass a landscape containing none of the architecture).
-  const livingScan = scanModel(text);
-  const stmts = livingScan === null ? [] : topStatements(livingScan, land.elements);
+  // The living model, scanned on MASKED source (scanModel) and RE-SCANNED
+  // after every splice: each addition lands in the text exactly as the
+  // previous one left it, so an archive of N additions produces the same
+  // bytes as N single-addition archives run back to back. Placement then
+  // composes per statement — the unit the order-independence argument below
+  // is stated in — instead of per archive, where a batch computed against a
+  // stale layout could interleave with itself. Masking matters — a `model {`
+  // spelled inside a comment or string above the real block must not capture
+  // the match, or every top-level addition lands inside the comment (legal
+  // LikeC4, so the parse net below would pass a landscape containing none of
+  // the architecture).
+  let content = text;
+  // Service binding for placement: living elements first (they win a shared
+  // id), the delta's after — a spliced statement's id resolves to its service
+  // the moment its bytes land in the scan.
+  const bindEls = [...land.elements, ...deltaElements.filter((d) => !land.elements.some((l) => l.id === d.id))];
+  let livingScan = scanModel(content);
+  let stmts = livingScan === null ? [] : topStatements(livingScan, bindEls);
+  const rescan = (): void => {
+    livingScan = scanModel(content);
+    stmts = livingScan === null ? [] : topStatements(livingScan, bindEls);
+  };
   const requireModel = (): ScannedModel => {
     if (livingScan === null) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
     return livingScan;
   };
-
-  /** Every planned insertion, `at` an offset into the ORIGINAL living text. */
-  const inserts: Array<{ at: number; insert: string; band: number; key: string; seq: number }> = [];
-  let seq = 0;
-  const pushTop = (spot: Spot, block: string, kind: "element" | "rel", key: string): void => {
-    inserts.push({
-      at: spot.at,
-      // A bare spot is the closing brace itself (it shares its line) — the
-      // block brings its own newlines; a line-start spot slots between lines.
-      insert: spot.bare ? `\n${block}\n` : `${block}\n`,
-      // Same-offset order: elements before relationships, anchored inserts
-      // before trailing ones, trailing ones by their sort key — the same
-      // ordering the placement walks read off the merged text next time.
-      band: (kind === "element" ? 0 : 2) + (spot.grouped ? 0 : 1),
-      key: spot.grouped ? "" : key,
-      seq: seq++,
-    });
+  const applyAt = (at: number, insert: string): void => {
+    content = content.slice(0, at) + insert + content.slice(at);
+    rescan();
   };
+  const applyTop = (spot: Spot, block: string): void => {
+    // A bare spot shares its line with other text (the closing brace, or a
+    // statement the block displaces) — it brings its own newlines; a
+    // line-start spot slots between lines.
+    applyAt(spot.at, spot.bare ? `\n${block}\n` : `${block}\n`);
+  };
+
+  // Placement walks the scanned statement layout, so a declaration the scan
+  // cannot see is one placement would blindly splice around — LikeC4 accepts
+  // two declarations on one line, but scanModel's statement head runs to the
+  // end of the line, so the second rides invisibly inside the first: an
+  // element bound to its service would miss its neighborhood, and a bodyless
+  // parent gaining a body could wrap the wrong declaration. Refuse
+  // mechanically (the parse-net discipline) instead of splicing blind.
+  if (livingScan !== null) {
+    const seen = new Set(livingScan.elements.map((e) => e.id));
+    const invisible = land.elements.find((e) => !seen.has(e.id));
+    if (invisible !== undefined) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `landscape.likec4 declares '${invisible.id}' in a form placement cannot locate — most often two declarations sharing one line; give each its own line, then re-run`,
+      );
+    }
+    if (livingScan.rels.length < land.relationships.length) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `landscape.likec4 declares ${land.relationships.length} relationship(s) but placement can locate only ${livingScan.rels.length} — most often two statements sharing one line; give each its own line, then re-run`,
+      );
+    }
+  }
 
   const livingParentOf = (parentId: string): ScannedElement | null => {
     if (livingScan === null) return null;
@@ -827,8 +863,8 @@ async function planLandscapeMerge(
     if (rides(src.start, src.end)) continue;
     const dot = e.id.lastIndexOf(".");
     if (dot === -1) {
-      const spot = elementSpot(text, stmts, requireModel().close, e.id, elementService(e));
-      pushTop(spot, spliceSource(deltaText, src, featureId, "  "), "element", e.id);
+      const spot = elementSpot(content, stmts, requireModel().close, e.id, elementService(e));
+      applyTop(spot, spliceSource(deltaText, src, featureId, "  "));
       spliced.push({ start: src.start, end: src.end });
       continue;
     }
@@ -840,12 +876,8 @@ async function planLandscapeMerge(
         `'${e.id}' nests under '${parentId}', which is neither in the living landscape nor added by this delta — there is nowhere to insert it`,
       );
     }
-    inserts.push({
-      ...nestedInsert(text, parent, spliceSource(deltaText, src, featureId, parent.indent + "  ")),
-      band: 0,
-      key: "",
-      seq: seq++,
-    });
+    const nested = nestedInsert(content, parent, spliceSource(deltaText, src, featureId, parent.indent + "  "));
+    applyAt(nested.at, nested.insert);
     spliced.push({ start: src.start, end: src.end });
   }
 
@@ -869,20 +901,8 @@ async function planLandscapeMerge(
     }
     if (rides(s.start, s.end)) continue;
     const key = relSortKey(deltaElements, r);
-    const spot = relSpot(text, stmts, requireModel().close, serviceOf(deltaElements, r.source), key);
-    pushTop(spot, spliceSource(deltaText, s, featureId, "  "), "rel", key);
-  }
-
-  // Compose back to front: every offset indexes the ORIGINAL text, so applying
-  // in descending order leaves the earlier offsets valid. Inserts landing on
-  // the same offset keep their (band, key, seq) rank — reversing a sorted list
-  // and splicing at one point puts the first-ranked block first.
-  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-  inserts.sort((a, b) => a.at - b.at || a.band - b.band || cmp(a.key, b.key) || a.seq - b.seq);
-  let content = text;
-  for (let i = inserts.length - 1; i >= 0; i -= 1) {
-    const n = inserts[i]!;
-    content = content.slice(0, n.at) + n.insert + content.slice(n.at);
+    const spot = relSpot(content, stmts, requireModel().close, serviceOf(deltaElements, r.source), key);
+    applyTop(spot, spliceSource(deltaText, s, featureId, "  "));
   }
 
   // The safety net: prove the computed landscape parses before anything is
@@ -1060,27 +1080,27 @@ function relKey(els: Elem[], r: Rel): string {
  *    (SCHEMA.md sends that conflict to the PR flow).
  *  - An element opening a NEW service lands in the trailing region before the
  *    model's closing brace: skip the trailing relationship run, then walk left
- *    past trailing elements with a lexicographically greater id — an
- *    insertion sort by id against whatever is already there, which is what
- *    makes the region's final order independent of archive order.
+ *    per same-service RUN, past every run whose leading id is
+ *    lexicographically greater — an insertion sort of neighborhood heads
+ *    against whatever is already there, which is what makes the region's
+ *    final order independent of archive order (see the note on elementSpot:
+ *    per-statement comparison was order-dependent).
  *  - A RELATIONSHIP lands after the last top-level relationship touching its
- *    SOURCE's service (either endpoint counts), then past any directly
- *    following relationships with a smaller sort key — two edges anchored to
- *    the same statement must order by key, not by which archived first. With
- *    no such neighborhood it falls to the trailing region, key-sorted the
- *    same insertion-sort way, after the trailing elements.
+ *    SOURCE's service (either endpoint counts), then past the anchor's own
+ *    CLUSTER members with a smaller sort key — two edges anchored to the same
+ *    statement must order by key, not by which archived first. With no such
+ *    neighborhood it falls to the trailing region, cluster-head-key-sorted
+ *    the same insertion-sort way, after the trailing elements.
  *
  * LikeC4 reference resolution is not order-dependent, so a relationship
  * placed before an element it names still parses; the in-memory parse net in
  * planLandscapeMerge stays as the backstop regardless.
  */
 interface Spot {
-  /** Offset into the living text: a line start, or the closing brace itself. */
+  /** Offset into the living text: a line start, or a point inside a shared line. */
   at: number;
-  /** True when `at` is the closing brace sharing its line — the block must bring its own newlines. */
+  /** True when `at` shares its line with other text (the closing brace, or a displaced statement) — the block must bring its own newlines. */
   bare: boolean;
-  /** True when the insert joins an existing neighborhood (anchored, authoring order). */
-  grouped: boolean;
 }
 
 /** A top-level statement of the living model, with everything placement asks of it. */
@@ -1138,65 +1158,135 @@ function relSortKey(
   return JSON.stringify([titleOf(els, r.source), titleOf(els, r.target), r.op ?? "", r.title ?? ""]);
 }
 
+/**
+ * The trailing walks move in PLACEMENT UNITS, never single statements. A unit
+ * is a service neighborhood: a contiguous run of top-level elements resolving
+ * to one service, or a contiguous cluster of relationships grown around the
+ * statements touching one — keyed by its LEADING statement's id/key. Anchored
+ * inserts extend a neighborhood without changing its head, so the insertion
+ * sort the trailing region maintains is over neighborhood heads, which
+ * archive order cannot reshuffle. Comparing per statement instead let an
+ * anchored insert legally sit a LOWER id/key after a higher one (its anchor
+ * decides where it lives, not its own sort key), and a later trailing walk
+ * then stopped at different statements depending on which archive had run
+ * first — order-DEPENDENT bytes for features touching disjoint services, the
+ * exact regime the scheme guarantees.
+ */
 function elementSpot(text: string, stmts: TopStmt[], close: number, id: string, service: string): Spot {
   let anchor: TopStmt | undefined;
   for (const s of stmts) {
     if (s.kind === "element" && s.services.includes(service)) anchor = s;
   }
-  if (anchor !== undefined) return spotAfter(text, close, anchor.end, true);
+  if (anchor !== undefined) return spotAfter(text, close, anchor.end);
   let i = stmts.length - 1;
   let before: TopStmt | undefined;
   while (i >= 0 && stmts[i]!.kind === "rel") {
     before = stmts[i];
     i -= 1;
   }
-  while (i >= 0 && stmts[i]!.kind === "element" && stmts[i]!.id > id) {
-    before = stmts[i];
-    i -= 1;
+  while (i >= 0 && stmts[i]!.kind === "element") {
+    // The same-service run ending here is one unit: skip it whole or stop
+    // before it whole — an anchored member may carry any id, the run's
+    // LEADING id is its sort key.
+    let j = i;
+    while (j > 0 && stmts[j - 1]!.kind === "element" && stmts[j - 1]!.services[0] === stmts[i]!.services[0]) j -= 1;
+    if (!(stmts[j]!.id > id)) break;
+    before = stmts[j];
+    i = j - 1;
   }
-  return before !== undefined
-    ? { at: lineStartAt(text, before.start), bare: false, grouped: false }
-    : closeSpot(text, close, false);
+  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+}
+
+/**
+ * Each top-level statement's cluster, as the index of the cluster's leading
+ * statement. A relationship whose SOURCE's service some earlier relationship
+ * in the same contiguous stretch already touches is an anchored join — it
+ * belongs to that neighborhood wherever its own key would sort. One whose
+ * source's service nothing before it touches opens a new cluster; sharing
+ * only a TARGET does not join (every trailing edge into a busy hub would
+ * otherwise dissolve into one giant cluster, and the trailing sort with it).
+ * Recomputed from bytes alone, so the next archive sees the same units this
+ * one placed.
+ */
+function relClusterHeads(stmts: TopStmt[]): number[] {
+  const heads = stmts.map((_, i) => i);
+  let head = -1;
+  let services: Set<string> | null = null;
+  for (let i = 0; i < stmts.length; i += 1) {
+    const s = stmts[i]!;
+    if (s.kind !== "rel") {
+      head = -1;
+      services = null;
+      continue;
+    }
+    if (services !== null && services.has(s.services[0]!)) {
+      for (const svc of s.services) services.add(svc);
+    } else {
+      head = i;
+      services = new Set(s.services);
+    }
+    heads[i] = head;
+  }
+  return heads;
 }
 
 function relSpot(text: string, stmts: TopStmt[], close: number, sourceService: string, key: string): Spot {
+  const heads = relClusterHeads(stmts);
   let anchorAt = -1;
   for (let i = 0; i < stmts.length; i += 1) {
     const s = stmts[i]!;
     if (s.kind === "rel" && s.services.includes(sourceService)) anchorAt = i;
   }
   if (anchorAt !== -1) {
+    // Past the anchor, order among the cluster's OWN members is by key — two
+    // edges anchored to the same statement must order by key, not by which
+    // archived first — but the walk never leaves the cluster: the next
+    // cluster is another neighborhood's, and stepping over it would depend
+    // on which archive put it there.
     let last = stmts[anchorAt]!;
     for (let j = anchorAt + 1; j < stmts.length; j += 1) {
       const s = stmts[j]!;
-      if (s.kind !== "rel" || s.key >= key) break;
+      if (s.kind !== "rel" || heads[j] !== heads[anchorAt] || s.key >= key) break;
       last = s;
     }
-    return spotAfter(text, close, last.end, true);
+    return spotAfter(text, close, last.end);
   }
   let i = stmts.length - 1;
   let before: TopStmt | undefined;
-  while (i >= 0 && stmts[i]!.kind === "rel" && stmts[i]!.key > key) {
-    before = stmts[i];
-    i -= 1;
+  while (i >= 0 && stmts[i]!.kind === "rel") {
+    const j = heads[i]!;
+    if (!(stmts[j]!.key > key)) break;
+    before = stmts[j];
+    i = j - 1;
   }
-  return before !== undefined
-    ? { at: lineStartAt(text, before.start), bare: false, grouped: false }
-    : closeSpot(text, close, false);
+  return before !== undefined ? beforeSpot(text, before) : closeSpot(text, close);
+}
+
+/**
+ * Insertion before an existing statement: at the start of its line when only
+ * whitespace precedes it there, at the statement itself — bare, displacing it
+ * onto a fresh line — when other text shares the line (a statement written on
+ * the `model {` line, say). The unguarded line start spliced the block BEFORE
+ * the model keyword, and the parse net refused a perfectly legal landscape.
+ */
+function beforeSpot(text: string, before: TopStmt): Spot {
+  const ls = lineStartAt(text, before.start);
+  if (/^[ \t]*$/.test(text.slice(ls, before.start))) return { at: ls, bare: false };
+  return { at: before.start, bare: true };
 }
 
 /** The line following the statement that ends at `end` — clamped to the closing brace's own spot. */
-function spotAfter(text: string, close: number, end: number, grouped: boolean): Spot {
+function spotAfter(text: string, close: number, end: number): Spot {
   const nl = text.indexOf("\n", end);
   const at = nl === -1 ? text.length : nl + 1;
-  return at > close ? closeSpot(text, close, grouped) : { at, bare: false, grouped };
+  return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 
 /** The last resort: directly before the model's closing brace. */
-function closeSpot(text: string, close: number, grouped: boolean): Spot {
+function closeSpot(text: string, close: number): Spot {
   const ls = lineStartAt(text, close);
-  if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: ls, bare: false, grouped };
-  return { at: close, bare: true, grouped };
+  if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: ls, bare: false };
+  return { at: close, bare: true };
 }
 
 function lineStartAt(text: string, at: number): number {

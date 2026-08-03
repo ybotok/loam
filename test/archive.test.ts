@@ -1458,6 +1458,373 @@ views {
     expect(alpha).toBeGreaterThan(beta);
   });
 
+  /**
+   * Archive the features of `files` in `order` on a fresh fixture; assert every
+   * step exits 0 and the final landscape parses; return its bytes.
+   */
+  async function archiveSeq(files: Record<string, string>, order: string[]): Promise<string> {
+    const p = await makeProject(files);
+    try {
+      for (const id of order) {
+        expect((await runLoam(p.workDir, "archive", id, "--approve")).code, `archive ${id} in order ${order.join(",")}`).toBe(0);
+      }
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors, `the merged landscape must parse after ${order.join(",")}`).toEqual([]);
+      return await p.read(LANDSCAPE_REL);
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  /** A one-element delta bound (or not) to a service. */
+  const oneElementDelta = (feat: string, id: string, title: string, boundTo?: string): string => `specification {
+  element softwareSystem
+  tag ${feat}
+}
+
+model {
+  ${id} = softwareSystem '${title}' {
+    #${feat}${boundTo === undefined ? "" : `\n    metadata { service '${boundTo}' }`}
+  }
+}
+
+views {
+  view v_${feat.toLowerCase().replace(/-/g, "_")} {
+    include *
+  }
+}
+`;
+
+  it("an anchored join whose id sorts BELOW its anchor cannot reshuffle a later trailing insert (element flavor)", async () => {
+    // The regression regime: `apple` joins zulu-service's neighborhood (anchored
+    // AFTER zulu, though apple < zulu), and disjoint FEAT-51 adds `mango` with
+    // apple < mango < zulu. A per-statement trailing walk stopped at `apple` in
+    // one order and walked past `zulu` in the other — order-DEPENDENT bytes for
+    // features touching DISJOINT services. Runs are the placement unit now:
+    // [zulu, apple] moves as one block keyed by `zulu`.
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element person
+}
+
+model {
+  customer = person 'Customer'
+  zulu = softwareSystem 'zulu-service' {
+    description 'z'
+  }
+
+  customer -> zulu 'Uses'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-50-a/delta.likec4": oneElementDelta("FEAT-50", "apple", "apple-worker", "zulu-service"),
+      "features/FEAT-51-b/delta.likec4": oneElementDelta("FEAT-51", "mango", "mango-service"),
+    };
+    const ab = await archiveSeq(files, ["FEAT-50", "FEAT-51"]);
+    const ba = await archiveSeq(files, ["FEAT-51", "FEAT-50"]);
+    expect(ba, "disjoint features must compose to the same bytes whichever archived first").toBe(ab);
+    // The service run stayed intact: apple directly follows zulu, mango outside.
+    expect(ab.indexOf("mango = ")).toBeGreaterThan(0);
+    expect(ab.indexOf("mango = ")).toBeLessThan(ab.indexOf("zulu = "));
+    expect(ab.indexOf("apple = ")).toBeGreaterThan(ab.indexOf("zulu = "));
+  });
+
+  it("a trailing insert whose id falls INSIDE an anchored neighborhood lands outside it, both orders (element flavor)", async () => {
+    // The mirror regime: authZ joins auth-service (anchored, authZ > authService),
+    // and disjoint authX sorts BETWEEN authService and authZ. Per-statement
+    // insertion-sort spliced 'x-service' into the middle of auth-service's run in
+    // one order — breaking the grouping promise itself, not just byte equality.
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+}
+
+model {
+  authService = softwareSystem 'auth-service' {
+    description 'auth'
+  }
+  webApp = softwareSystem 'web-app'
+
+  webApp -> authService 'Calls login'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-60-a/delta.likec4": oneElementDelta("FEAT-60", "authZ", "authz-worker", "auth-service"),
+      "features/FEAT-61-b/delta.likec4": oneElementDelta("FEAT-61", "authX", "x-service"),
+    };
+    const ab = await archiveSeq(files, ["FEAT-60", "FEAT-61"]);
+    const ba = await archiveSeq(files, ["FEAT-61", "FEAT-60"]);
+    expect(ba, "disjoint features must compose to the same bytes whichever archived first").toBe(ab);
+    const at = (needle: string): number => ab.indexOf(needle);
+    expect(at("authZ = ")).toBeGreaterThan(at("authService = "));
+    expect(at("authX = "), "a foreign service must never land inside another service's run").toBeGreaterThan(at("authZ = "));
+    expect(at("webApp = ")).toBeGreaterThan(at("authX = "));
+  });
+
+  it("an anchored edge whose key sorts BELOW its anchor cannot reshuffle a later trailing edge (relationship flavor)", async () => {
+    // call-a (source bound to c-service) anchors after r1 though its key sorts
+    // first; disjoint call-d's key falls between call-a's and r1's. The trailing
+    // key-walk assumed a sorted suffix and stopped at the polluted key in one
+    // order only. Clusters are the unit now — [r1, call-a] carries r1's key —
+    // and both orders converge on [call-d, r1, call-a, r9].
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+}
+
+model {
+  aService = softwareSystem 'a-service'
+  cService = softwareSystem 'c-service'
+  dService = softwareSystem 'd-service'
+  pService = softwareSystem 'p-service'
+
+  cService -> dService 'r1'
+  pService -> dService 'r9'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-70-a/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-70
+}
+
+model {
+  aService = softwareSystem 'a-service'
+  bWorker = softwareSystem 'b-worker' {
+    #FEAT-70
+    metadata { service 'c-service' }
+  }
+
+  bWorker -> aService 'call-a' {
+    #FEAT-70
+  }
+}
+
+views {
+  view f70 {
+    include *
+  }
+}
+`,
+      "features/FEAT-71-b/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-71
+}
+
+model {
+  dService = softwareSystem 'd-service'
+  bzNew = softwareSystem 'bz-new-service' {
+    #FEAT-71
+  }
+
+  bzNew -> dService 'call-d' {
+    #FEAT-71
+  }
+}
+
+views {
+  view f71 {
+    include *
+  }
+}
+`,
+    };
+    const ab = await archiveSeq(files, ["FEAT-70", "FEAT-71"]);
+    const ba = await archiveSeq(files, ["FEAT-71", "FEAT-70"]);
+    expect(ba, "disjoint features must compose to the same bytes whichever archived first").toBe(ab);
+    const at = (needle: string): number => ab.indexOf(needle);
+    expect(at("bzNew -> dService 'call-d'")).toBeGreaterThan(0);
+    expect(at("bzNew -> dService 'call-d'")).toBeLessThan(at("cService -> dService 'r1'"));
+    expect(at("bWorker -> aService 'call-a'")).toBeGreaterThan(at("cService -> dService 'r1'"));
+    expect(at("pService -> dService 'r9'")).toBeGreaterThan(at("bWorker -> aService 'call-a'"));
+  });
+
+  it("three disjoint features — anchored joins below their anchors included — converge across all six archive orders", async () => {
+    // The stress control: FEAT-32 anchors an element AND an edge below their
+    // anchors' sort keys (the exact shape that broke the per-statement walks),
+    // FEAT-30/31 add trailing elements plus edges anchoring to the same living
+    // statement. Every permutation must produce one byte sequence.
+    const helperDelta = `specification {
+  element softwareSystem
+  element person
+  tag FEAT-32
+}
+
+model {
+  customer = person 'Customer'
+  aaHelper = softwareSystem 'aa-helper' {
+    #FEAT-32
+    metadata { service 'Customer' }
+  }
+
+  aaHelper -> customer 'call-c' {
+    #FEAT-32
+  }
+}
+
+views {
+  view f32 {
+    include *
+  }
+}
+`;
+    const files = {
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-30-alpha/delta.likec4": ALPHA_DELTA,
+      "features/FEAT-31-beta/delta.likec4": BETA_DELTA,
+      "features/FEAT-32-helper/delta.likec4": helperDelta,
+    };
+    const ids = ["FEAT-30", "FEAT-31", "FEAT-32"];
+    const orders: string[][] = [];
+    for (const a of ids) for (const b of ids) for (const c of ids) {
+      if (new Set([a, b, c]).size === 3) orders.push([a, b, c]);
+    }
+    // Serial on purpose: runLoam chdirs and intercepts the console in-process.
+    const results: string[] = [];
+    for (const o of orders) results.push(await archiveSeq(files, o));
+    for (let i = 1; i < results.length; i += 1) {
+      expect(results[i], `order ${orders[i]!.join(",")} must match order ${orders[0]!.join(",")}`).toBe(results[0]);
+    }
+    const text = results[0]!;
+    // The anchored element joined its run; the anchored edge sits right after
+    // its anchor, ahead of the higher-keyed statement that follows.
+    expect(text.indexOf("aaHelper = ")).toBeGreaterThan(text.indexOf("customer = "));
+    expect(text.indexOf("aaHelper = ")).toBeLessThan(text.indexOf("checkoutWeb = "));
+    expect(text.indexOf("aaHelper -> customer 'call-c'")).toBeGreaterThan(text.indexOf("customer -> checkoutWeb 'Uses'"));
+    expect(text.indexOf("aaHelper -> customer 'call-c'")).toBeLessThan(text.indexOf("checkoutWeb -> paymentService"));
+  });
+
+  it("a statement written on the `model {` line is displaced onto its own line — not refused, not spliced before the keyword", async () => {
+    // Legal LikeC4 that validated clean but refused to archive: the trailing
+    // walk chose 'insert before zulu' and the unclamped line start pointed at
+    // the `model {` line itself, splicing the block before the keyword. The
+    // insert now lands bare at the statement's start, pushing it to a fresh line.
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+}
+
+model { zulu = softwareSystem 'zulu-service'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-51-b/delta.likec4": oneElementDelta("FEAT-51", "mango", "mango-service"),
+    };
+    const text = await archiveSeq(files, ["FEAT-51"]);
+    expect(text.indexOf("mango = ")).toBeGreaterThan(text.indexOf("model {"));
+    expect(text.indexOf("mango = ")).toBeLessThan(text.indexOf("zulu = "));
+  });
+
+  it("a landscape starting as one-line `model {}` composes byte-identically in either archive order", async () => {
+    // The first archive's insert is bare (the braces share a line) and brings
+    // its own newlines; every later insert is line-start based. Sequential
+    // application keeps the wrapping uniform, so the spacing cannot diverge by
+    // which feature archived first.
+    const edgeDelta = `specification {
+  element softwareSystem
+  tag FEAT-80
+}
+
+model {
+  alphaSvc = softwareSystem 'alpha-service' {
+    #FEAT-80
+  }
+  gammaSvc = softwareSystem 'gamma-service' {
+    #FEAT-80
+  }
+
+  alphaSvc -> gammaSvc 'call-g' {
+    #FEAT-80
+  }
+}
+
+views {
+  view f80 {
+    include *
+  }
+}
+`;
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+}
+
+model {}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-80-a/delta.likec4": edgeDelta,
+      "features/FEAT-81-b/delta.likec4": oneElementDelta("FEAT-81", "betaSvc", "beta-service"),
+    };
+    const ab = await archiveSeq(files, ["FEAT-80", "FEAT-81"]);
+    const ba = await archiveSeq(files, ["FEAT-81", "FEAT-80"]);
+    expect(ba, "an initially empty one-line model must not make spacing archive-order-dependent").toBe(ab);
+    expect(ab).toContain("model {\n");
+  });
+
+  it("two declarations sharing one line refuse the merge loudly — placement cannot see the second, so it must not splice blind", async () => {
+    // LikeC4 accepts `a = kind 'x'  b = kind 'y'` on one line, but the splice
+    // map's statement head runs to the newline, so `zulu` rides invisibly
+    // inside `apple`'s span: an element bound to zulu-service would miss its
+    // neighborhood and a bodyless `zulu` gaining a body could wrap the wrong
+    // bytes. Mechanical refusal, nothing written.
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+}
+
+model {
+  apple = softwareSystem 'apple-service'  zulu = softwareSystem 'zulu-service'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "features/FEAT-51-b/delta.likec4": oneElementDelta("FEAT-51", "mango", "mango-service"),
+    };
+    const p = await makeProject(files);
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-51", "--approve", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain("own line");
+      expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("two features touching the SAME service land adjacently after its last element — that concurrency still conflicts, by design", async () => {
     const retryDelta = `specification {
   element softwareSystem
