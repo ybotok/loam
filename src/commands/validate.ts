@@ -51,6 +51,7 @@ import {
   type CoverageScope,
   type CoversEntry,
 } from "../core/arch.js";
+import { gherkinFindings } from "../core/gherkin.js";
 import { readHealthIds } from "../core/health.js";
 import { LOAM_VERSION } from "../core/version.js";
 
@@ -135,7 +136,7 @@ export function registerValidate(program: Command): void {
           else targets.push({ kind: "landscape", id: "landscape", findings: [agents] });
         }
         for (const svc of await listServices(docsDir)) {
-          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land));
+          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land, config.gherkinDir));
           if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
         }
         for (const feat of await listFeatures(docsDir)) {
@@ -165,7 +166,7 @@ export function registerValidate(program: Command): void {
             fail(json, "unknown-target", await missingFeatureMessage(docsDir, target));
             return;
           }
-          targets.push(await validateService(docsDir, target, repoOf(target)));
+          targets.push(await validateService(docsDir, target, repoOf(target), undefined, config.gherkinDir));
         }
       } else {
         const service = opts.service ?? config.service;
@@ -173,7 +174,7 @@ export function registerValidate(program: Command): void {
           fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
           return;
         }
-        targets.push(await validateService(docsDir, service, repoOf(service)));
+        targets.push(await validateService(docsDir, service, repoOf(service), undefined, config.gherkinDir));
       }
 
       const valid = reportValid(targets);
@@ -328,6 +329,7 @@ async function validateService(
   service: string,
   repoDir?: string,
   preloaded?: LoadedDoc | null,
+  gherkinDir?: string,
 ): Promise<TargetReport> {
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
@@ -532,6 +534,11 @@ async function validateService(
 
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));
+
+  // The generated-gherkin freshness chain, service-repo-scoped like sources.*:
+  // it needs the repo (the suite lives there), and it stays quiet until
+  // <gherkinDir>/loam/ exists — a service that never generated has not opted in.
+  findings.push(...(await gherkinFindings({ docsDir, service, repoDir, gherkinDir })));
 
   return report;
 }

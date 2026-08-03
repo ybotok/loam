@@ -291,7 +291,13 @@ down; the map of which invocation surfaces what:
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
   \`requirements.missing-scenarios\`, \`api.ungoverned\`, \`api.ops-unlinked\`,
   \`spine.landscape-invalid\`, \`spine.op-undefined\`, \`spine.op-link-missing\`, and
-  the architecture spec axis: \`covers.unknown\`, \`health.uncovered\`.
+  the architecture spec axis: \`covers.unknown\`, \`health.uncovered\`. Run inside
+  the service's own repo, once a generated suite exists under
+  \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
+  \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\` (all warn — the fix is
+  always regeneration, never editing a generated file). A service that never ran
+  \`loam gherkin\` stays quiet, and a file tagged with a feature still in flight
+  answers to that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
@@ -343,7 +349,8 @@ before consuming the slice as a task brief.
 
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
 \`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
-\`landscape.matched\`, \`archedge.covered\`, \`sources.resolved\`, \`sources.current\`.
+\`landscape.matched\`, \`archedge.covered\`, \`sources.resolved\`, \`sources.current\`,
+\`gherkin.current\`.
 
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
 command ran) from \`valid\` (the docs pass). A refusal is \`ok: false\` with a stable
@@ -566,6 +573,9 @@ and say it.
 | \`spine.op-link-missing\` (warn) | a landscape "Calls" edge into this service with no \`metadata { op }\` | link it to the operationId |
 | \`covers.unknown\` (warn) | a \`Covers:\` entry in arch.spec.md resolves to no element, edge, alert or SLI — living and feature deltas alike | fix the id (the message offers close ones); a mistyped entry silently costs the coverage it was written for |
 | \`health.uncovered\` (warn) | health.yaml declares an alert or SLI no arch.spec.md requirement covers | write the arch requirement with \`Covers: alert:<id>\` / \`Covers: sli:<id>\` — a signal nothing tests is dashboard decoration |
+| \`gherkin.missing\` (warn) | a living scenario no generated .feature scenario carries a digest for — the suite has no test for these words. Fires only in the service's repo, once \`<gherkinDir>/loam/\` exists | \`loam gherkin --service <id>\` regenerates the suite |
+| \`gherkin.stale\` (warn) | a generated scenario's digest matches no living scenario while its requirement still exists — the spec moved under the file (a reworded scenario reports stale + missing together) | regenerate; never edit a generated file to catch it up |
+| \`gherkin.orphaned\` (warn) | a generated file whose requirement no longer exists in the living spec (a file for a feature still in flight is exempt — it answers to its feature until it archives) | regenerate; the orphaned file is deleted and reported |
 
 \`--feature <FEAT-id>\` — a change's three axes against each other. The SAME checks
 gate \`loam archive\` (errors block it; warnings never do), so a clean run here is

@@ -412,6 +412,135 @@ describe("the service-repo gate", () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* validate: the staleness chain                                       */
+/* ------------------------------------------------------------------ */
+
+interface FindingLike {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+/** The gherkin.* findings validate reports for one service. */
+async function gherkinValidate(p: Project, service: string): Promise<FindingLike[]> {
+  const res = await runLoam(p.workDir, "validate", "--service", service, "--json");
+  const payload = JSON.parse(res.stdout) as {
+    targets: Array<{ id: string; findings: FindingLike[] }>;
+  };
+  return payload.targets
+    .find((t) => t.id === service)!
+    .findings.filter((f) => f.code.startsWith("gherkin."));
+}
+
+describe("validate: the staleness chain", () => {
+  const livingFixture = (): Record<string, string> => ({
+    "architecture/landscape.likec4": LANDSCAPE,
+    "services/payment-service/model.likec4": SERVICE_MODEL,
+    "services/payment-service/spec.md": LIVING_SPEC,
+    "services/payment-service/arch.spec.md": LIVING_ARCH_SPEC,
+    "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+  });
+
+  it("stays quiet before opting in, and grades current after generating", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    expect(await gherkinValidate(p, "payment-service")).toEqual([]);
+
+    expect((await runLoam(p.workDir, "gherkin")).code).toBe(0);
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => [f.code, f.severity])).toEqual([["gherkin.current", "ok"]]);
+  });
+
+  it("gherkin.missing fires when the spec grows, and regeneration clears it", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+    await p.write(
+      "services/payment-service/spec.md",
+      LIVING_SPEC +
+        "\n#### Scenario: Declined authorization\n- **Given** an invalid card\n- **When** authorization is requested\n- **Then** the payment is declined\n",
+    );
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => f.code)).toEqual(["gherkin.missing"]);
+    expect(findings[0]!.severity).toBe("warn");
+    expect(findings[0]!.message).toContain("'Declined authorization'");
+
+    await runLoam(p.workDir, "gherkin");
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  it("a reworded scenario is stale AND missing — the old words untested, the new words unstamped", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+    await p.write(
+      "services/payment-service/spec.md",
+      LIVING_SPEC.replace("the payment is authorized", "the payment is authorized and receipted"),
+    );
+    const codes = (await gherkinValidate(p, "payment-service")).map((f) => f.code).sort();
+    expect(codes).toEqual(["gherkin.missing", "gherkin.stale"]);
+
+    await runLoam(p.workDir, "gherkin");
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  it("gherkin.orphaned fires per file when the requirement goes away, and regeneration removes the file", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+    // a rename is REMOVED + ADDED: the old file's requirement is gone, while its
+    // digests still match the (renamed) living scenario — orphaned, not missing
+    await p.write(
+      "services/payment-service/spec.md",
+      LIVING_SPEC.replace("Requirement: Authorize a payment", "Requirement: Capture a payment"),
+    );
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => f.code)).toEqual(["gherkin.orphaned"]);
+    expect(findings[0]!.message).toContain("authorize-a-payment.feature");
+    expect(findings[0]!.message).toContain("'Authorize a payment'");
+
+    const regen = await runLoam(p.workDir, "gherkin", "--json");
+    expect(JSON.parse(regen.stdout).deleted).toEqual(["features/loam/authorize-a-payment.feature"]);
+    expect(existsSync(join(p.workDir, "features/loam/capture-a-payment.feature"))).toBe(true);
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  it("staleness reads gherkinDir too", async () => {
+    const p = await project(livingFixture(), { service: "payment-service", gherkinDir: "bdd" });
+    await runLoam(p.workDir, "gherkin");
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+});
+
+describe("the feature lifecycle: in flight, archived, abandoned", () => {
+  it("in-flight files answer to their feature; after archive they grade current with no rewrite", async () => {
+    const p = await project(fixtureWithArch(), { service: "payment-split-service" });
+    expect((await runLoam(p.workDir, "gherkin", "FEAT-1")).code).toBe(0);
+
+    // mid-flight: the requirements are nowhere in the living specs, and that is
+    // not orphanhood — the files are tagged with an active feature
+    expect((await gherkinValidate(p, "payment-split-service")).map((f) => f.code)).toEqual([
+      "gherkin.current",
+    ]);
+
+    const before = await treeHashes(join(p.workDir, "features", "loam"));
+    expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+
+    // post-archive: the feature's scenarios ARE living scenarios now, digests
+    // unchanged — the same bytes grade current against spec.md and arch.spec.md
+    expect(await treeHashes(join(p.workDir, "features", "loam"))).toEqual(before);
+    expect((await gherkinValidate(p, "payment-split-service")).map((f) => f.code)).toEqual([
+      "gherkin.current",
+    ]);
+  });
+
+  it("an abandoned feature's files become orphans — the tag names nothing active", async () => {
+    const p = await project(fixtureWithArch(), { service: "payment-split-service" });
+    await runLoam(p.workDir, "gherkin", "FEAT-1");
+    await rm(join(p.docsDir, "features", "FEAT-1-split"), { recursive: true, force: true });
+
+    const codes = (await gherkinValidate(p, "payment-split-service")).map((f) => f.code).sort();
+    expect(codes).toEqual(["gherkin.orphaned", "gherkin.orphaned"]);
+  });
+});
+
 describe("gherkinDir", () => {
   it("defaults to features/, honours loam.json, and refuses a malformed value", async () => {
     const p = await project(

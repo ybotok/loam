@@ -19,10 +19,11 @@
  * of by guesswork.
  */
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
-import type { Requirement } from "./spec.js";
-import type { SpecAxis } from "./repo.js";
+import { readdir, readFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
+import { parseRequirements, type Requirement } from "./spec.js";
+import { listFeatures, servicePaths, SPEC_AXES, type SpecAxis } from "./repo.js";
+import type { Finding } from "./report.js";
 import { scenarioBodyHash } from "./verify.js";
 
 /** Where Gherkin lives in a service repo when loam.json does not say. */
@@ -285,6 +286,146 @@ export function parseStampedFeature(text: string): StampedFeature | null {
     if (pending !== null && line.trim().length > 0) pending = null;
   }
   return { version: m[1]!, tags, featureName, scenarios };
+}
+
+/* ------------------------------------------------------------------ */
+/* Staleness — what `loam validate` reports about a generated suite    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The gherkin freshness chain, service-repo-scoped like `sources.*`: it needs
+ * the repo (the suite lives there), and it stays quiet until
+ * `<gherkinDir>/loam/` exists — a service that never generated has not opted
+ * in, and silence there is honest, not vacuous.
+ *
+ * The LIVING specs are the reference, with one carve-out. A stamped file
+ * tagged with a feature still in flight answers to that feature's delta, not
+ * to the living spec its requirements have not merged into yet — so it is
+ * skipped here (its regeneration is `loam gherkin <FEAT>`), and the moment the
+ * feature archives, its requirements ARE living requirements, digests
+ * unchanged, and the same file grades current with no rewrite. A tag naming
+ * no active feature (the feature was archived, or abandoned) gets no
+ * exemption: the living spec is all there is to answer to.
+ *
+ * Three warnings, one per way the suite and the spec can disagree, judged
+ * digest-first and by requirement name second:
+ *
+ * - `gherkin.missing` — a living scenario whose digest no stamped scenario of
+ *   its axis carries: the suite has no test for these words.
+ * - `gherkin.stale` — a stamped scenario whose digest matches no living
+ *   scenario while its file's requirement still exists: the spec moved under
+ *   the generated file. (A reworded scenario therefore reports both: the old
+ *   words are stale, the new words are missing — one regeneration clears
+ *   both.)
+ * - `gherkin.orphaned` — a whole file whose requirement no longer exists in
+ *   its axis's living spec; reported once per file, because every scenario in
+ *   it is moot together.
+ *
+ * Digests are content identity, deliberately: two identically-worded
+ * scenarios share one digest, so one stamped copy covers both — the same
+ * doctrine as the axes being separate namespaces, which is why every
+ * comparison here is axis-scoped (an arch scenario's integration test is not
+ * answered by a business .feature that happens to spell the same words).
+ *
+ * All warnings — `--strict` is the CI escalation — plus one `ok` confirmation
+ * (`gherkin.current`, the `sources.current` pattern) when a generated suite
+ * exists and nothing disagrees.
+ */
+export async function gherkinFindings(ctx: {
+  docsDir: string;
+  service: string;
+  /** The service repo, when loam is standing in it. Undefined disables the chain, like sources.*. */
+  repoDir?: string;
+  gherkinDir?: string;
+}): Promise<Finding[]> {
+  if (ctx.repoDir === undefined) return [];
+  const root = gherkinRoot(ctx.repoDir, ctx.gherkinDir);
+  if (!existsSync(root)) return [];
+
+  // The living reference, per axis: requirement names, and scenario digests.
+  interface AxisState {
+    file: string;
+    reqNames: Set<string>;
+    digests: Set<string>;
+    scenarios: Array<{ req: string; name: string; digest: string }>;
+  }
+  const paths = servicePaths(ctx.docsDir, ctx.service);
+  const axes = new Map<"business" | "arch", AxisState>();
+  for (const axis of SPEC_AXES) {
+    const state: AxisState = { file: axis.file, reqNames: new Set(), digests: new Set(), scenarios: [] };
+    const path = paths[axis.key];
+    if (existsSync(path)) {
+      for (const r of parseRequirements(await readFile(path, "utf8"))) {
+        if (r.kind === "REMOVED") continue;
+        state.reqNames.add(r.name);
+        for (const s of r.scenarios) {
+          const digest = scenarioDigest(s.lines);
+          state.digests.add(digest);
+          state.scenarios.push({ req: r.name, name: s.name, digest });
+        }
+      }
+    }
+    axes.set(axisLabel(axis), state);
+  }
+
+  // The stamped side. Every stamped digest counts toward coverage — an
+  // in-flight file whose scenario matches the living words IS a test for them.
+  const active = new Set((await listFeatures(ctx.docsDir)).map((f) => f.id));
+  const stampedDigests = { business: new Set<string>(), arch: new Set<string>() };
+  const parsed: Array<{ rel: string; axis: "business" | "arch"; file: StampedFeature }> = [];
+  let stampedScenarios = 0;
+  for (const abs of await featureFilesUnder(root)) {
+    const file = parseStampedFeature(await readFile(abs, "utf8"));
+    if (file === null) continue;
+    const axis = file.tags.includes("architecture") ? "arch" : "business";
+    for (const s of file.scenarios) stampedDigests[axis].add(s.digest);
+    stampedScenarios += file.scenarios.length;
+    parsed.push({ rel: relative(ctx.repoDir, abs).split(sep).join("/"), axis, file });
+  }
+
+  const findings: Finding[] = [];
+  const regen = `\`loam gherkin --service ${ctx.service}\``;
+  for (const [axis, state] of axes) {
+    for (const sc of state.scenarios) {
+      if (stampedDigests[axis].has(sc.digest)) continue;
+      findings.push({
+        severity: "warn",
+        code: "gherkin.missing",
+        subject: ctx.service,
+        message: `${ctx.service}: scenario '${sc.name}' of requirement '${sc.req}' (${state.file}) has no generated .feature scenario — the suite has no test for these words; ${regen} regenerates it`,
+      });
+    }
+  }
+  for (const { rel, axis, file } of parsed) {
+    if (file.tags.some((t) => active.has(t))) continue;
+    const state = axes.get(axis)!;
+    if (file.featureName === null || !state.reqNames.has(file.featureName)) {
+      findings.push({
+        severity: "warn",
+        code: "gherkin.orphaned",
+        subject: ctx.service,
+        message: `${ctx.service}: ${rel}: requirement '${file.featureName ?? "(unnamed)"}' no longer exists in the living ${state.file} — the whole file is orphaned; ${regen} removes it`,
+      });
+      continue;
+    }
+    for (const s of file.scenarios) {
+      if (state.digests.has(s.digest)) continue;
+      findings.push({
+        severity: "warn",
+        code: "gherkin.stale",
+        subject: ctx.service,
+        message: `${ctx.service}: ${rel}: scenario '${s.name}' matches no scenario in the living ${state.file} — the spec moved under the generated file; ${regen} regenerates it`,
+      });
+    }
+  }
+  if (findings.length === 0) {
+    findings.push({
+      severity: "ok",
+      code: "gherkin.current",
+      message: `${ctx.service}: generated gherkin current (${parsed.length} file(s), ${stampedScenarios} stamped scenario(s) agree with the living specs)`,
+    });
+  }
+  return findings;
 }
 
 /**
