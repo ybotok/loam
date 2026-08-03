@@ -157,6 +157,21 @@ export function withFrontmatterFields(source: string, fields: Record<string, str
   return md.slice(0, at.start) + yamlText + md.slice(at.end);
 }
 
+/**
+ * The document's body, byte-exact: everything after the frontmatter block —
+ * the closing `---` line and its newline belong to the HEADER, every byte
+ * after them (blank lines included) is body. A document with no frontmatter is
+ * all body. This is what `content_digest` hashes, and it deliberately does NOT
+ * go through `parseFrontmatter` (whose `body` is trimmed for callers that want
+ * text): the digest's writer and its checker must slice the same bytes, so
+ * both go through here.
+ */
+export function rawBody(source: string): string {
+  const md = stripBom(source);
+  const at = bounds(md);
+  return at === null ? md : md.slice(at.bodyStart);
+}
+
 /** Read a markdown file's frontmatter; a missing file reads as absent. */
 export async function readFrontmatter(path: string): Promise<Frontmatter> {
   if (!existsSync(path)) return { present: false, data: {}, body: "" };

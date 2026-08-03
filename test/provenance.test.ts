@@ -30,7 +30,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { parseFrontmatter, listField, stringField } from "../src/core/frontmatter.js";
-import { sourcesDigest } from "../src/core/provenance.js";
+import { contentDigest, sourcesDigest } from "../src/core/provenance.js";
 
 const SVC = "payment-service";
 
@@ -520,6 +520,57 @@ describe("staleness — has the code moved since anyone vouched?", () => {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+describe("doc staleness — has the DOCUMENT moved since anyone vouched?", () => {
+  /**
+   * The other half of the freshness check. `sources_digest` needs the service's
+   * own repo; `content_digest` hashes the doc's own body, so validate can see a
+   * forged `verified` — prose edited after the vouch, stamp left standing —
+   * from the docs repo alone. Every project here configures NO service, which
+   * is exactly the situation the sources chain goes quiet in.
+   */
+  const HEAD = `service: ${SVC}\nstatus: verified\nlast_verified: 2026-07-31\nsources:\n  - src/payment.ts`;
+
+  it("a verified doc whose body no longer matches its content_digest warns, naming the date and the fix", async () => {
+    await withProject(fixtureWith(`${HEAD}\ncontent_digest: "0000000000000000"`), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      // Staleness never gates — the doc may still be right, and only a person can say.
+      expect(res.code).toBe(0);
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "content.stale",
+      );
+      expect(f.severity).toBe("warn");
+      expect(f.message).toContain("2026-07-31");
+      expect(f.message).toContain("loam vouch");
+    });
+  });
+
+  it("a matching digest is quiet — and the header is not part of it, so a header-only difference cannot fire", async () => {
+    // The digest is computed over a spec whose HEADER differs from the one
+    // written below (no content_digest line vs one with it): only the body is
+    // hashed, which is what lets vouch itself stamp the header it rewrites.
+    const digest = contentDigest(spec(HEAD));
+    await withProject(fixtureWith(`${HEAD}\ncontent_digest: "${digest}"`), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codesOf(JSON.parse(res.stdout))).not.toContain("content.stale");
+    });
+  });
+
+  it("a verified doc with NO content_digest stays quiet — pre-stamp vouches are not retroactively suspect", async () => {
+    await withProject(fixtureWith(HEAD), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codesOf(JSON.parse(res.stdout))).not.toContain("content.stale");
+    });
+  });
+
+  it("a draft doc is never checked — the stamp guards 'verified', not edits to a draft", async () => {
+    const head = HEAD.replace("status: verified", "status: draft");
+    await withProject(fixtureWith(`${head}\ncontent_digest: "0000000000000000"`), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codesOf(JSON.parse(res.stdout))).not.toContain("content.stale");
+    });
   });
 });
 

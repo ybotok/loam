@@ -195,7 +195,7 @@ export const FRONTMATTER_BRIEF: FrontmatterBrief = {
     sources:
       "the paths in THIS SERVICE'S repository you actually read to write the document — files, directories or globs. Not the paths a reader would expect to have been read.",
   },
-  never: ["last_verified", "sources_digest"],
+  never: ["last_verified", "sources_digest", "content_digest"],
   why:
     "`sources` is the only mechanical tie between this document and the code. Everything else loam checks is internal consistency, and a corpus can agree with itself perfectly while describing nothing that exists. `loam validate`, run inside the service's repo, checks every listed path is still there; `loam vouch` hashes their content so a later `validate` can say the code has moved since anyone read it. Both are worth exactly as much as the list is honest.",
 };
@@ -298,6 +298,9 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_SERVICE,
     what: "`sources` with no digest — nobody has vouched for the document yet. Expected on a fresh baseline; only a human closes it",
   },
+  // sources.stale, sources.current and content.stale are deliberately absent:
+  // all three compare against digests `loam vouch` stamps, and a fresh baseline
+  // has no stamp to compare — the table lists what a baseline can actually meet.
   {
     code: "landscape.service-unmodelled",
     severity: "error",

@@ -62,6 +62,7 @@ last_verified: 2026-07-31    # written by \`loam vouch\` — do not hand-edit
 sources:                     # paths in the SERVICE'S repo this was written from
   - src/main/java/com/shop/payment/
 sources_digest: 6f1c0a…      # written by \`loam vouch\` — do not hand-edit
+content_digest: 9b2f41…      # written by \`loam vouch\` — do not hand-edit
 ---
 \`\`\`
 
@@ -76,10 +77,18 @@ later \`loam validate\` re-computes it, so it can tell a document nobody has che
 (\`sources.unvouched\`) from one that still matches the code (\`sources.current\`) from
 one the code has moved out from under (\`sources.stale\`).
 
+\`content_digest\` is the same promise about the document itself: a hash of the
+body below the frontmatter, stamped by the same vouch. It closes the other half of
+the forgery — editing a spec after it was vouched used to leave \`status: verified\`
+standing over words nobody read. \`loam validate\` recomputes it wherever it can
+read the doc (no service repo needed, so it fires from the docs repo too) and
+reports \`content.stale\` (warn): only a person can say whether verified still
+holds of the new words.
+
 Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
 until a human has read it. Promoting draft to verified is their call, not yours, and
 it has its own command — \`loam vouch --service <id>\`, run inside that service's repo,
-which stamps the status, the date and the digest together. Never write those three
+which stamps the status, the date and both digests together. Never write those four
 fields by hand: a status with no digest behind it is a claim with nothing behind it.
 
 ## The ID spine
@@ -265,7 +274,9 @@ down; the map of which invocation surfaces what:
 - Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.field-mismatch\`,
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md
   additionally carries the sources chain (\`sources.absent\`, \`sources.path-missing\`,
-  \`sources.unvouched\`, \`sources.stale\`).
+  \`sources.unvouched\`, \`sources.stale\`) and the doc-side freshness check
+  (\`content.stale\`) — the one provenance warning that needs no service repo, so
+  it is reported from the docs repo too, \`--service\` and \`--all\` alike.
 - \`loam archive\` alone reports the breaches only the merge computation can see:
   \`living.requirement-outside-requirements\` (error), \`openapi.op-modified\` (warn),
   \`openapi.component-modified\` (warn) and \`openapi.ref-unresolved\` (error).
@@ -404,7 +415,8 @@ result. It never reads the service — so anything you cannot show, do not write
    **Keep a list of every path you actually open.** That list becomes \`sources\`, and
    it is the only line tying the document to the repository.
 3. Write the artifacts under \`services/$1/\`, in the order the brief lists them.
-   Everything \`status: draft\`. Never write \`last_verified\` or \`sources_digest\`.
+   Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\` or
+   \`content_digest\`.
 4. \`loam validate --service $1 --json\`. Fix every error. \`sources.unvouched\` is
    expected on a fresh baseline — it closes when a person vouches, not when you do.
 5. Hand back, and say three things: what you could not determine from the code, what
@@ -554,6 +566,7 @@ frontmatter and provenance — services' spec.md and features' intent.md, both m
 | \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
 | \`sources.stale\` (warn) | the source files changed since the doc was vouched for | re-read the code, correct the doc, then ask a human to \`loam vouch --service <id>\` |
 | \`sources.unvouched\` (warn) | \`sources\` with no \`sources_digest\` — nobody ever stamped it | leave it: vouching is a human's reading, not yours |
+| \`content.stale\` (warn) | the spec's body changed since it was vouched — \`status: verified\` is standing over words nobody has read. Unlike \`sources.*\` it needs no service repo, so it fires from the docs repo too | if you edited the doc, that is the point: report it and ask a human to re-vouch. Never revert the doc or touch the digest just to silence it |
 
 \`loam archive\` alone — breaches only the merge computation can see, reported at
 plan time (they never appear in \`validate\`):
@@ -565,8 +578,9 @@ plan time (they never appear in \`validate\`):
 | \`openapi.component-modified\` (warn) | a component the merged operations reference already exists in the living OpenAPI with different content — the merge copies the feature's version over it wholesale | make sure the redefinition is intended; if not, align the feature's component with the living one |
 | \`openapi.ref-unresolved\` | a \`$ref\` reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — the merge would write a dangling reference | define the missing component or fix the ref; \`--approve\` merges the dangling reference anyway. External refs (not starting \`#/\`) are never checked |
 
-\`sources.stale\` is the one warning you cannot close by yourself. Fix what the code
-now says, then hand it back — the stamp is a person's claim to have read it.
+\`sources.stale\` and \`content.stale\` are the warnings you cannot close by yourself.
+Fix what the code now says, then hand it back — the stamp is a person's claim to
+have read it.
 `,
 
   "loam-verify": `---

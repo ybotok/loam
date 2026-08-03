@@ -5,9 +5,11 @@
  * Everything else loam checks is internal consistency, and an agent writing
  * fluent prose satisfies all of it. This is the one command that records a
  * person: they read the code, they say the document matches it, and loam stamps
- * a digest of what they read. From then on `loam validate` can tell the
- * difference between a document nobody has checked, one that still matches the
- * code, and one the code has moved out from under.
+ * a digest of what they read — and a digest of the document they read it
+ * against, so neither side can move quietly. From then on `loam validate` can
+ * tell the difference between a document nobody has checked, one that still
+ * matches the code, one the code has moved out from under, and one whose own
+ * prose changed after the stamp.
  *
  * The stamp is only worth what it claims, so vouch refuses everything it cannot
  * actually verify — a spec with no sources, a source that is gone, a pattern
@@ -20,7 +22,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
-import { missingSources, sourcesDigest } from "../core/provenance.js";
+import { contentDigest, missingSources, sourcesDigest } from "../core/provenance.js";
 import { servicePaths } from "../core/repo.js";
 import { repoPath } from "./list.js";
 
@@ -46,6 +48,8 @@ export type VouchOutcome =
       status: "verified";
       lastVerified: string;
       digest: string;
+      /** Digest of the document's own body, as stamped into `content_digest`. */
+      contentDigest: string;
       /** The `sources` entries, as written in the frontmatter. */
       sources: string[];
       /** How many files those entries expanded to. */
@@ -100,6 +104,7 @@ export function registerVouch(program: Command): void {
           last_verified: outcome.lastVerified,
           sources: outcome.sources,
           sources_digest: outcome.digest,
+          content_digest: outcome.contentDigest,
           files: outcome.files,
         });
         return;
@@ -110,17 +115,22 @@ export function registerVouch(program: Command): void {
       console.log(
         `  sources_digest  ${outcome.digest}  (${plural(outcome.files, "file")} from ${plural(outcome.sources.length, "source")})`,
       );
-      console.log(`\n\`loam validate\` will now say when that code moves out from under the spec.`);
+      console.log(`  content_digest  ${outcome.contentDigest}`);
+      console.log(
+        `\n\`loam validate\` will now say when that code moves out from under the spec — or when the spec moves under its own stamp.`,
+      );
     });
 }
 
 /**
- * Stamp `status`, `last_verified` and `sources_digest` into a service's living
- * spec, leaving the body byte-identical.
+ * Stamp `status`, `last_verified`, `sources_digest` and `content_digest` into
+ * a service's living spec, leaving the body byte-identical.
  *
- * Nothing is written unless all three can be stamped truthfully — a half-stamp
+ * Nothing is written unless all four can be stamped truthfully — a half-stamp
  * (verified, but with no digest behind it) is exactly the claim this command
- * exists to stop being possible.
+ * exists to stop being possible. The two digests are the two halves of one
+ * promise: `sources_digest` pins the code that was read, `content_digest` pins
+ * the words it was read against, so `loam validate` can see either side move.
  */
 export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   const path = servicePaths(req.docsDir, req.service).spec;
@@ -163,21 +173,25 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
     };
   }
 
-  await writeFile(
-    path,
-    withFrontmatterFields(raw, {
-      status: "verified",
-      last_verified: req.today,
-      sources_digest: digest,
-    }),
-    "utf8",
-  );
+  // Two passes on purpose: `content_digest` hashes the body BELOW the
+  // frontmatter, and withFrontmatterFields promises that body byte-identical —
+  // so hashing after the first stamp and writing the hash in a second one
+  // yields a digest that is true of the file exactly as written. A re-vouch
+  // takes the same road and refreshes every field, this one included.
+  const stamped = withFrontmatterFields(raw, {
+    status: "verified",
+    last_verified: req.today,
+    sources_digest: digest,
+  });
+  const bodyDigest = contentDigest(stamped);
+  await writeFile(path, withFrontmatterFields(stamped, { content_digest: bodyDigest }), "utf8");
   return {
     ok: true,
     path,
     status: "verified",
     lastVerified: req.today,
     digest,
+    contentDigest: bodyDigest,
     sources,
     files: files.length,
   };

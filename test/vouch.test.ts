@@ -6,17 +6,21 @@
  * checks those paths still exist. What it could not say until now is whether
  * the code MOVED since anyone read it. `vouch` is the act that makes that
  * answerable: a human reads the code, and loam stamps `status: verified`, the
- * date, and a digest of the source content. Every later `validate` compares the
- * digest and says `sources.current` or `sources.stale`.
+ * date, a digest of the source content — and a digest of the document's own
+ * body, so the words cannot move under the stamp either. Every later
+ * `validate` compares them and says `sources.current`, `sources.stale`, or
+ * `content.stale`.
  *
  * So the invariants worth pinning are the ones that make the stamp trustworthy:
  *  - it is a claim, not an edit — the body comes out byte-identical;
  *  - it never stamps something it cannot verify (no sources, a missing path, a
  *    glob matching nothing, a repo that is not this service's);
  *  - a refusal writes nothing at all;
- *  - and the round trip closes: unvouched -> current -> stale.
+ *  - and both round trips close: unvouched -> current -> stale for the code,
+ *    vouched -> edited -> re-vouched for the document.
  */
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { coherentFixture, makeProject, runLoam, writeFiles, type Project } from "./helpers/harness.js";
@@ -211,6 +215,80 @@ describe("what vouch refuses", () => {
   });
 });
 
+describe("the content digest (the stamp covers the words, not just the code)", () => {
+  it("stamps content_digest with the documented recipe: sha256 of the body below the closing '---', first 16 hex", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      await runLoam(p.workDir, "vouch");
+      // BODY is byte-for-byte what follows the closing fence line — the vouch
+      // rewrites only the header, so the digest recipe is pinnable from here.
+      const expected = createHash("sha256").update(BODY, "utf8").digest("hex").slice(0, 16);
+      expect(stringField(parseFrontmatter(await p.read(SPEC)), "content_digest")).toBe(expected);
+    });
+  });
+
+  it("a body edit after the vouch fires content.stale — with no service repo in reach at all", async () => {
+    // The forgery this closes: edit the prose, keep `status: verified`. It has
+    // to surface from the DOCS repo, where sources.* cannot run — so loam.json
+    // here names no service, and the vouch itself goes through the function.
+    const files = coherentFixture();
+    files[SPEC] = `---\n${ONE_SOURCE}\n---\n${BODY}`;
+    const p = await makeProject(files);
+    try {
+      await writeFiles(p.workDir, CODE);
+      const out = await vouch({ docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-03" });
+      expect(out.ok).toBe(true);
+      await p.write(SPEC, (await p.read(SPEC)) + "\nThe service SHALL also do a thing nobody vouched for.\n");
+
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      // A warning, not a breach: only a person can say whether verified still holds.
+      expect(res.code).toBe(0);
+      const findings = JSON.parse(res.stdout).targets[0].findings;
+      const stale = findings.find((f: { code: string }) => f.code === "content.stale");
+      expect(stale.severity).toBe("warn");
+      expect(stale.message).toContain("loam vouch");
+      expect(
+        findings.map((f: { code: string }) => f.code),
+        "sources.* need the service repo; the doc-side check must not",
+      ).not.toContain("sources.current");
+
+      // --all sees it too — the docs repo's own CI is the audience.
+      const all = await runLoam(p.workDir, "validate", "--all", "--json");
+      const allCodes = JSON.parse(all.stdout).targets.flatMap((t: { findings: Array<{ code: string }> }) =>
+        t.findings.map((f) => f.code),
+      );
+      expect(allCodes).toContain("content.stale");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a frontmatter-only edit does not fire it — vouch itself rewrites the header, so the header cannot count", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      await runLoam(p.workDir, "vouch");
+      const stamped = await p.read(SPEC);
+      await p.write(SPEC, stamped.replace("owner: payments-team", "owner: platform-team"));
+      const codes = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout).targets[0].findings.map(
+        (f: { code: string }) => f.code,
+      );
+      expect(codes).not.toContain("content.stale");
+    });
+  });
+
+  it("re-vouching refreshes the stamp and clears the warning", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      const codes = async (): Promise<string[]> => {
+        const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+        return json.targets[0].findings.map((f: { code: string }) => f.code);
+      };
+      await runLoam(p.workDir, "vouch");
+      await p.write(SPEC, (await p.read(SPEC)) + "\nAn edit the vouch never saw.\n");
+      expect(await codes()).toContain("content.stale");
+      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect(await codes()).not.toContain("content.stale");
+    });
+  });
+});
+
 describe("the loop it closes", () => {
   it("turns validate's `sources.unvouched` into `sources.current`", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
@@ -251,10 +329,12 @@ describe("the machine contract", () => {
       expect(json.status).toBe("verified");
       expect(json.sources).toEqual(["src/payment.ts"]);
       expect(json.sources_digest).toMatch(/^[0-9a-f]{16}$/);
+      expect(json.content_digest).toMatch(/^[0-9a-f]{16}$/);
       expect(json.files).toBe(1);
-      // The digest it reports is the one it wrote.
+      // The digests it reports are the ones it wrote.
       const fm = parseFrontmatter(await p.read(SPEC));
       expect(stringField(fm, "sources_digest")).toBe(json.sources_digest);
+      expect(stringField(fm, "content_digest")).toBe(json.content_digest);
     });
   });
 

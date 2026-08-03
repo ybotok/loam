@@ -18,6 +18,8 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   listField,
+  parseFrontmatter,
+  rawBody,
   readFrontmatter,
   stringField,
   FEATURE_STATUSES,
@@ -46,7 +48,8 @@ export async function serviceProvenance(
 ): Promise<Finding[]> {
   const path = servicePaths(docsDir, service).spec;
   if (!existsSync(path)) return [];
-  const fm = await readFrontmatter(path);
+  const raw = await readFile(path, "utf8");
+  const fm = parseFrontmatter(raw);
   const findings = identityFindings(fm, {
     label: `${service}: spec.md`,
     idField: "service",
@@ -55,7 +58,10 @@ export async function serviceProvenance(
   });
   // With no frontmatter at all, "it names no sources" says nothing the missing
   // header did not already say.
-  if (fm.present) findings.push(...(await sourceFindings(fm, service, opts.repoDir)));
+  if (fm.present) {
+    findings.push(...(await sourceFindings(fm, service, opts.repoDir)));
+    findings.push(...contentFindings(fm, raw, service));
+  }
   return findings;
 }
 
@@ -209,6 +215,37 @@ async function sourceFindings(
   ];
 }
 
+/**
+ * The doc-side half of the freshness check. `sources_digest` says whether the
+ * CODE moved since a person looked, and only that service's repo can recompute
+ * it; `content_digest` says whether the DOCUMENT did, and needs nothing but
+ * the document — so this runs wherever the spec is readable, `--service` and
+ * `--all` alike. Without it, editing a spec after it was vouched left
+ * `status: verified` standing over words nobody read — forged freshness, in
+ * the exact agent-written-prose threat model this layer exists for.
+ */
+function contentFindings(fm: Frontmatter, raw: string, service: string): Finding[] {
+  const label = `${service}: spec.md`;
+  if (stringField(fm, "status") !== "verified") return [];
+  const stamped = stringField(fm, "content_digest");
+  // A verified doc with no stamp predates the field. Quiet on purpose: the fix
+  // is re-vouching, and grading years of pre-feature vouches as suspect would
+  // drown the fleet in warnings nobody chose.
+  if (stamped === undefined) return [];
+  if (contentDigest(raw) === stamped) return [];
+  const since = stringField(fm, "last_verified") ?? "it was vouched";
+  return [
+    {
+      // A warning, not an error — the sources.stale doctrine: the doc changed
+      // since it was vouched, and only a person can say whether verified still
+      // holds of the new words.
+      severity: "warn",
+      code: "content.stale",
+      message: `${label} changed since ${since} — the doc moved under its vouch, and only a person can say whether 'verified' still holds. Re-read it and \`loam vouch --service ${service}\`.`,
+    },
+  ];
+}
+
 /* ------------------------------------------------------------------ */
 /* The content digest                                                  */
 /* ------------------------------------------------------------------ */
@@ -251,6 +288,20 @@ export async function sourcesDigest(repoDir: string, sources: string[]): Promise
     outer.update(`${file.rel}\0${content}\n`);
   }
   return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: files.map((f) => f.rel) };
+}
+
+/**
+ * The stamp `loam vouch` writes into `content_digest`: sha256 of the
+ * document's own BODY — every byte after the frontmatter block (below the
+ * closing `---` line and its newline; `rawBody` is the one definition of that
+ * cut) — first 16 hex characters, the sources recipe's length.
+ *
+ * Byte-exact, no normalization. Body-only is load-bearing: vouch itself
+ * rewrites the frontmatter as it stamps, and a later frontmatter-only edit
+ * (another vouch, a corrected owner) must not read as the document moving.
+ */
+export function contentDigest(source: string): string {
+  return createHash("sha256").update(rawBody(source), "utf8").digest("hex").slice(0, DIGEST_LENGTH);
 }
 
 interface SourceFile {
