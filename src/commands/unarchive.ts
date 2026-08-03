@@ -19,7 +19,7 @@ import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { compareIds, featuresDir as featuresRoot, listFeatures, type FeatureEntry } from "../core/repo.js";
+import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import { repoPath } from "./list.js";
 import {
   message,
@@ -69,8 +69,7 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
   const featuresDir = featuresRoot(docsDir);
   const archiveDir = join(featuresDir, "archive");
 
-  const all = await listFeatures(docsDir, { includeArchived: true });
-  const feature = pickArchived(all, featureId);
+  const feature = await resolveFeature(docsDir, featureId, "only");
   if (!feature) {
     fail(json, "unknown-target", `No archived feature '${featureId}' under ${archiveDir}.`);
     return;
@@ -78,9 +77,11 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
   const dest = join(featuresDir, feature.dirName);
 
   // Refuse to clobber. A feature that is active again carries its own delta, and
-  // dropping the archived copy on top of it would bury work in flight.
-  const active = all.find((f) => !f.archived && (f.id === feature.id || f.dirName === feature.dirName));
-  if (active !== undefined || existsSync(dest)) {
+  // dropping the archived copy on top of it would bury work in flight. Resolved
+  // by the feature's OWN id, not the raw argument — the collision is with
+  // whatever answers to this feature's name, however the caller spelled it.
+  const active = await resolveFeature(docsDir, feature.id, "exclude");
+  if (active !== null || existsSync(dest)) {
     const name = active?.dirName ?? feature.dirName;
     fail(
       json,
@@ -168,18 +169,6 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
   for (const p of removed) console.log(`  removed:  ${p}`);
   console.log(`\n  reopened: features/archive/${feature.dirName} → features/${feature.dirName}`);
   console.log("  the living docs are back to what they said before the archive.");
-}
-
-/** The archive's own resolution rule (`resolveFeature`), except it never looks at active features. */
-function pickArchived(all: FeatureEntry[], featureId: string): FeatureEntry | null {
-  const candidates = all
-    .filter((f) => f.archived && (f.dirName === featureId || f.dirName.startsWith(featureId + "-")))
-    .sort(
-      (a, b) =>
-        Number(b.dirName === featureId) - Number(a.dirName === featureId) ||
-        compareIds(a.dirName, b.dirName),
-    );
-  return candidates[0] ?? null;
 }
 
 /**

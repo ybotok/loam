@@ -277,22 +277,30 @@ describe("resolveFeature", () => {
 
   it("resolves a feature by id when the directory carries a slug", async () => {
     await withDocs(files, async (docsDir) => {
-      const feat = await resolveFeature(docsDir, "FEAT-1");
+      const feat = await resolveFeature(docsDir, "FEAT-1", "exclude");
       expect(feat?.dirName).toBe("FEAT-1-split");
+    });
+  });
+
+  it("resolves a directory name to its canonical id — a caller never keeps the raw argument", async () => {
+    await withDocs(files, async (docsDir) => {
+      const feat = await resolveFeature(docsDir, "FEAT-1-split", "exclude");
+      expect(feat?.dirName).toBe("FEAT-1-split");
+      expect(feat?.id).toBe("FEAT-1");
     });
   });
 
   it("resolves a feature whose directory is the bare id", async () => {
     await withDocs(files, async (docsDir) => {
-      const feat = await resolveFeature(docsDir, "FEAT-3");
+      const feat = await resolveFeature(docsDir, "FEAT-3", "exclude");
       expect(feat?.dirName).toBe("FEAT-3");
     });
   });
 
   it("does not let FEAT-1 match FEAT-10 (prefix match respects the id boundary)", async () => {
     await withDocs(files, async (docsDir) => {
-      expect((await resolveFeature(docsDir, "FEAT-1"))?.dirName).toBe("FEAT-1-split");
-      expect((await resolveFeature(docsDir, "FEAT-10"))?.dirName).toBe("FEAT-10-other");
+      expect((await resolveFeature(docsDir, "FEAT-1", "exclude"))?.dirName).toBe("FEAT-1-split");
+      expect((await resolveFeature(docsDir, "FEAT-10", "exclude"))?.dirName).toBe("FEAT-10-other");
     });
   });
 
@@ -303,7 +311,7 @@ describe("resolveFeature", () => {
         "features/FEAT-5-slug/intent.md": "# slug\n",
       },
       async (docsDir) => {
-        expect((await resolveFeature(docsDir, "FEAT-5"))?.dirName).toBe("FEAT-5");
+        expect((await resolveFeature(docsDir, "FEAT-5", "exclude"))?.dirName).toBe("FEAT-5");
       },
     );
   });
@@ -315,8 +323,8 @@ describe("resolveFeature", () => {
         "features/FEAT-6-aaa/intent.md": "# a\n",
       },
       async (docsDir) => {
-        const first = await resolveFeature(docsDir, "FEAT-6");
-        const second = await resolveFeature(docsDir, "FEAT-6");
+        const first = await resolveFeature(docsDir, "FEAT-6", "exclude");
+        const second = await resolveFeature(docsDir, "FEAT-6", "exclude");
         expect(first?.dirName).toBe(second?.dirName);
         expect(first?.dirName).toBe("FEAT-6-aaa");
       },
@@ -325,32 +333,37 @@ describe("resolveFeature", () => {
 
   it("returns null for an unknown id and for a missing features/ dir", async () => {
     await withDocs(files, async (docsDir) => {
-      expect(await resolveFeature(docsDir, "FEAT-999")).toBeNull();
+      expect(await resolveFeature(docsDir, "FEAT-999", "exclude")).toBeNull();
     });
     await withDocs({}, async (docsDir) => {
-      expect(await resolveFeature(docsDir, "FEAT-1")).toBeNull();
+      expect(await resolveFeature(docsDir, "FEAT-1", "exclude")).toBeNull();
     });
   });
 
-  it("does not reach into archive/ by default, but does on request", async () => {
+  it("'exclude' never reaches into archive/, 'include' does, 'only' reaches nowhere else", async () => {
     await withDocs(files, async (docsDir) => {
-      expect(await resolveFeature(docsDir, "FEAT-0")).toBeNull();
-      const archived = await resolveFeature(docsDir, "FEAT-0", { includeArchived: true });
+      expect(await resolveFeature(docsDir, "FEAT-0", "exclude")).toBeNull();
+      const archived = await resolveFeature(docsDir, "FEAT-0", "include");
       expect(archived?.dirName).toBe("FEAT-0-old");
       expect(archived?.archived).toBe(true);
+      expect(await resolveFeature(docsDir, "FEAT-0", "only")).toMatchObject({ dirName: "FEAT-0-old" });
+      expect(await resolveFeature(docsDir, "FEAT-1", "only")).toBeNull();
     });
   });
 
-  it("prefers an active feature over an archived one with the same id", async () => {
+  it("'include' prefers an active feature over an archived one; 'only' picks the archived one", async () => {
     await withDocs(
       {
         "features/FEAT-7-live/intent.md": "# live\n",
         "features/archive/FEAT-7-old/intent.md": "# old\n",
       },
       async (docsDir) => {
-        const feat = await resolveFeature(docsDir, "FEAT-7", { includeArchived: true });
+        const feat = await resolveFeature(docsDir, "FEAT-7", "include");
         expect(feat?.dirName).toBe("FEAT-7-live");
         expect(feat?.archived).toBe(false);
+        const shipped = await resolveFeature(docsDir, "FEAT-7", "only");
+        expect(shipped?.dirName).toBe("FEAT-7-old");
+        expect(shipped?.archived).toBe(true);
       },
     );
   });

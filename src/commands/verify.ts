@@ -73,7 +73,7 @@ export function registerVerify(program: Command): void {
 
       // Archived features resolve too: a shipped feature's verification is worth
       // reading back, and it travelled into the archive with everything else.
-      const feature = await resolveFeature(docsDir, featureId, { includeArchived: true });
+      const feature = await resolveFeature(docsDir, featureId, "include");
       if (!feature) {
         return fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir(docsDir)}.`);
       }

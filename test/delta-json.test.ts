@@ -98,6 +98,20 @@ describe("--json contract", () => {
     });
   });
 
+  it("an archived feature keeps the unknown-target code, but the message says it is already archived", async () => {
+    const files = coherentFixture();
+    files["features/archive/FEAT-9-shipped/intent.md"] = "# shipped\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-9", "--service", NEW_SVC, "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("unknown-target");
+      expect(json.error.message).toContain("already archived");
+      expect(json.error.message).toContain("loam show FEAT-9");
+    });
+  });
+
   it("reports a missing service selection inside the envelope", async () => {
     await withProject(coherentFixture(), async (p) => {
       const res = await runLoam(p.workDir, "delta", "FEAT-1", "--json");

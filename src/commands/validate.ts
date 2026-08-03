@@ -17,10 +17,10 @@ import {
   featurePaths,
   featureSpecPaths,
   featureSpecServices,
-  featuresDir,
   landscapePath as landscapeFile,
   listFeatures,
   listServices,
+  missingFeatureMessage,
   resolveFeature,
   servicePaths,
   type FeatureEntry,
@@ -106,9 +106,9 @@ export function registerValidate(program: Command): void {
           targets.push(await validateFeature(docsDir, feat));
         }
       } else if (opts.feature) {
-        const feature = await resolveFeature(docsDir, opts.feature);
+        const feature = await resolveFeature(docsDir, opts.feature, "exclude");
         if (!feature) {
-          fail(json, "unknown-target", `No feature '${opts.feature}' under ${featuresDir(docsDir)}.`);
+          fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature));
           return;
         }
         targets.push(await validateFeature(docsDir, feature));

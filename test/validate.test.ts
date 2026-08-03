@@ -466,6 +466,20 @@ describe("feature mode: delta + coverage + coherence", () => {
     });
   });
 
+  it("an archived feature still refuses (unknown-target), but says 'already archived', not 'no feature'", async () => {
+    const files = coherentFixture();
+    files["features/archive/FEAT-9-shipped/intent.md"] = "# shipped\n";
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-9", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json).toMatchObject({ ok: false, error: { code: "unknown-target" } });
+      expect(json.error.message).toContain("already archived");
+      expect(json.error.message).toContain("loam show FEAT-9");
+      expect(json.error.message).not.toContain("No feature");
+    });
+  });
+
   it("a broken delta.likec4 fails and shows the error lines", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/delta.likec4"] = BROKEN_LIKEC4;

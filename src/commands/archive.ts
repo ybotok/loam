@@ -15,6 +15,7 @@ import {
   featureSpecServices,
   featuresDir as featuresRoot,
   landscapePath as landscapeFile,
+  missingFeatureMessage,
   resolveFeature,
   servicePaths,
 } from "../core/repo.js";
@@ -104,11 +105,14 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     return;
   }
   const featuresDir = featuresRoot(config.docsDir);
-  const feature = await resolveFeature(config.docsDir, featureId);
+  const feature = await resolveFeature(config.docsDir, featureId, "exclude");
   if (!feature) {
-    fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir}.`);
+    fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureId));
     return;
   }
+  // The raw argument's last appearance: from here on the feature answers only to
+  // its canonical id — tags, coherence, and the self-exclusion scans all match
+  // on `id`, and `archive FEAT-5-slug` must plan exactly like `archive FEAT-5`.
   const { id, dirName, dir: featureDir } = feature;
 
   // Gate: GATING issues block the archive. Severity and gating are two
@@ -120,11 +124,11 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // overrides the gating issues ONLY, and must say exactly which ones it is
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
-  const issues = await featureCoherence(config.docsDir, featureDir, featureId);
+  const issues = await featureCoherence(config.docsDir, featureDir, id);
   const gating = issues.filter(gatesArchive);
   const advisory = issues.filter((i) => !gatesArchive(i));
   if (gating.length > 0 && !opts.approve) {
-    const msg = `archive ${featureId} — BLOCKED: not coherent (${gating.length} gating issue(s), ${advisory.length} advisory warning(s))`;
+    const msg = `archive ${id} — BLOCKED: not coherent (${gating.length} gating issue(s), ${advisory.length} advisory warning(s))`;
     if (json) {
       refuseJson("not-coherent", msg, issues);
       return;
@@ -176,7 +180,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     }
   }
   if (strayed.length > 0) {
-    const msg = `archive ${featureId} — BLOCKED: ${strayed.length} living requirement(s) outside '## Requirements'`;
+    const msg = `archive ${id} — BLOCKED: ${strayed.length} living requirement(s) outside '## Requirements'`;
     if (json) {
       refuseJson("living-outside-requirements", msg, strayed);
       return;
@@ -193,11 +197,11 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   const archiveDir = join(featuresDir, "archive");
   const archiveDest = join(archiveDir, dirName);
   if (existsSync(archiveDest)) {
-    fail(json, "archive-exists", `archive ${featureId} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
+    fail(json, "archive-exists", `archive ${id} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
     return;
   }
 
-  say(`archive ${featureId}${dryRun ? "  (dry run)" : ""}\n`);
+  say(`archive ${id}${dryRun ? "  (dry run)" : ""}\n`);
 
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
@@ -274,11 +278,11 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
       // unparseable landscape or openapi: the plan stops before anything is written.
       throw new ArchiveFailure(
         "merge-failed",
-        `delta.likec4 has ${delta.errors.length} parse error(s) — the architecture axis cannot be merged; fix it (\`loam validate --feature ${featureId}\`) or delete the file`,
+        `delta.likec4 has ${delta.errors.length} parse error(s) — the architecture axis cannot be merged; fix it (\`loam validate --feature ${id}\`) or delete the file`,
       );
     }
-    const newEls = delta.elements.filter((e) => e.tags.includes(featureId));
-    const newRels = delta.relationships.filter((r) => r.tags.includes(featureId));
+    const newEls = delta.elements.filter((e) => e.tags.includes(id));
+    const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
       const plan = await planLandscapeMerge(landscapePath, delta.elements, newEls, newRels);
       writes.push(...plan.writes);
@@ -323,7 +327,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   let snapshot = false;
   let createdArchiveDir: string | undefined;
   try {
-    await writeSnapshot(featureDir, config.docsDir, featureId, dirName, staged);
+    await writeSnapshot(featureDir, config.docsDir, id, dirName, staged);
     snapshot = true;
     await swapStaged(staged);
     createdArchiveDir = await mkdir(archiveDir, { recursive: true });
@@ -346,7 +350,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     return;
   }
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
-  console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${featureId}\` puts it back`);
+  console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${id}\` puts it back`);
   console.log("  living spec + landscape are now complete + current.");
 }
 

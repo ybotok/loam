@@ -55,7 +55,7 @@ export function registerShow(program: Command): void {
       // A feature id is distinctive (FEAT-101); a service name is arbitrary. When
       // both could match, the feature wins and --type forces the other reading.
       const feature =
-        forced === "service" ? null : await resolveFeature(docsDir, target, { includeArchived: true });
+        forced === "service" ? null : await resolveFeature(docsDir, target, "include");
       if (feature) {
         await showFeature(docsDir, feature, json);
         return;

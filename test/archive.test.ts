@@ -1127,6 +1127,55 @@ describe("--dry-run", () => {
   });
 });
 
+describe("addressing a feature by its directory name", () => {
+  // The regression this pins: the raw argument used to flow into the tag filter
+  // and featureCoherence, so `archive FEAT-1-split` matched `#FEAT-1-split`
+  // against tags spelled `#FEAT-1` — a spurious delta.nothing-tagged gate — and
+  // the self-exclusion scans reported the feature conflicting with itself.
+  it("produces the identical dry-run plan as the canonical id", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const byId = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      const byDir = await runLoam(p.workDir, "archive", "FEAT-1-split", "--dry-run", "--json");
+      expect(byId.code).toBe(0);
+      expect(byDir.code).toBe(0);
+      expect(JSON.parse(byDir.stdout)).toEqual(JSON.parse(byId.stdout));
+      expect(JSON.parse(byDir.stdout).feature).toBe("FEAT-1");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("does not report the feature's own additions as a cross-feature conflict", async () => {
+    // No delta.likec4, so nothing-tagged cannot mask the activeAdditions path:
+    // an ADDED requirement absent from the living spec consults the in-flight
+    // scan, and a raw dirName used to fail the `feature.id !== arg` exclusion.
+    const p = await makeProject({
+      "features/FEAT-2-solo/specs/core-service/spec.md": `# core-service — delta for FEAT-2
+
+## ADDED Requirements
+
+### Requirement: Do the thing
+The service SHALL do the thing.
+
+#### Scenario: It does
+- **Given** a thing
+- **When** asked
+- **Then** it is done
+`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-2-solo", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.feature).toBe("FEAT-2");
+      expect(JSON.stringify(json.warnings)).not.toContain("also added by");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("coherence gate", () => {
   let p: Project;
   let blocked: RunResult;
@@ -1607,6 +1656,22 @@ The service SHALL do the stranded thing.
       const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
       expect(res.code).toBe(1);
       expect(JSON.parse(res.out)).toMatchObject({ ok: false, error: { code: "archive-exists" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("an ALREADY-ARCHIVED feature is unknown-target too, but the message says so honestly", async () => {
+    const p = await makeProject({ "features/archive/FEAT-9-shipped/intent.md": "# shipped\n" });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-9", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      // The code stays stable — the ErrorCode union does not grow for a nicer story.
+      expect(json).toMatchObject({ ok: false, error: { code: "unknown-target" } });
+      expect(json.error.message).toContain("already archived");
+      expect(json.error.message).toContain("loam show FEAT-9");
+      expect(json.error.message).not.toContain("No feature");
     } finally {
       await p.destroy();
     }

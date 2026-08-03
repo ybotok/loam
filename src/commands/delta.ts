@@ -2,10 +2,10 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { emitJson, emitJsonError, fail, reportNoConfig } from "../core/json.js";
 import { elementService, loadFile, serviceOf, type Rel } from "../core/likec4.js";
 import { repoPath } from "./list.js";
-import { featurePaths, featureSpecPaths, featuresDir, resolveFeature } from "../core/repo.js";
+import { featurePaths, featureSpecPaths, missingFeatureMessage, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
 
 interface DeltaOptions {
@@ -52,16 +52,14 @@ export function registerDelta(program: Command): void {
         return;
       }
 
-      const feature = await resolveFeature(config.docsDir, featureId);
+      const feature = await resolveFeature(config.docsDir, featureId, "exclude");
       if (!feature) {
-        const msg = `No feature '${featureId}' under ${featuresDir(config.docsDir)}.`;
-        if (json) emitJsonError("unknown-target", msg);
-        else {
-          console.error(msg);
-          process.exitCode = 1;
-        }
+        fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureId));
         return;
       }
+      // Canonical id from here on — the delta's tags carry `#FEAT-5`, so a raw
+      // `FEAT-5-slug` argument used to empty the architecture slice silently.
+      const { id } = feature;
       const paths = featurePaths(feature.dir);
 
       // Why — business intent
@@ -74,11 +72,11 @@ export function registerDelta(program: Command): void {
       const reqs = existsSync(reqPath) ? parseRequirements(await readFile(reqPath, "utf8")) : [];
 
       // C4 architecture slice
-      const arch = await archSlice(paths.delta, service, featureId);
+      const arch = await archSlice(paths.delta, service, id);
 
       if (json) {
         emitJson({
-          feature: featureId,
+          feature: id,
           service,
           path: repoPath(config.docsDir, feature.dir),
           intent,
@@ -96,7 +94,7 @@ export function registerDelta(program: Command): void {
         return;
       }
 
-      console.log(`${featureId} · ${service}\n`);
+      console.log(`${id} · ${service}\n`);
       if (intent) {
         console.log(indent(intent, "  "));
         console.log();

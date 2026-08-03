@@ -48,7 +48,7 @@ export function registerNew(program: Command): void {
       }
       const { docsDir } = config;
 
-      const existing = await resolveFeature(docsDir, featureId, { includeArchived: true });
+      const existing = await resolveFeature(docsDir, featureId, "include");
       if (existing) {
         return fail(
           json,

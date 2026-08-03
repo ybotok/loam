@@ -231,25 +231,59 @@ export async function listFeatures(
 }
 
 /**
- * Resolve a feature id to its directory: an exact directory name wins over a
- * slugged one (`FEAT-5` over `FEAT-5-slug`), and an active feature wins over an
- * archived one. Prefix matching respects the id boundary, so `FEAT-1` never
- * resolves to `FEAT-10-x`. Ties among slugged candidates go to the first by
- * name — deterministic, unlike the raw readdir order this replaces.
+ * Which side of `features/archive/` a lookup may land on. The policy is an
+ * argument, not a default, so every command's stance on shipped features is
+ * visible at its call site: delta/validate/archive work on in-flight features
+ * ("exclude"), show/verify/new read shipped ones too ("include"), unarchive
+ * takes back nothing else ("only").
+ */
+export type ArchivedPolicy = "exclude" | "include" | "only";
+
+/**
+ * Resolve a feature argument — a canonical id (`FEAT-5`) or an exact directory
+ * name (`FEAT-5-slug`) — to its entry. The entry's `id` is the canonical
+ * spelling, and it is the only name a caller may use from here on: tag filters,
+ * coherence, and the cross-feature self-exclusion scans all compare against
+ * `feature.id`, never against the raw argument.
+ *
+ * An exact directory name wins over a slugged one (`FEAT-5` over `FEAT-5-slug`),
+ * and under "include" an active feature wins over an archived one. Prefix
+ * matching respects the id boundary, so `FEAT-1` never resolves to `FEAT-10-x`.
+ * Ties among slugged candidates go to the first by name — deterministic, unlike
+ * the raw readdir order this replaces.
  */
 export async function resolveFeature(
   docsDir: string,
-  featureId: string,
-  opts: { includeArchived?: boolean } = {},
+  arg: string,
+  archived: ArchivedPolicy,
 ): Promise<FeatureEntry | null> {
-  const all = await listFeatures(docsDir, opts);
+  const all = await listFeatures(docsDir, { includeArchived: archived !== "exclude" });
   const candidates = all
-    .filter((f) => f.dirName === featureId || f.dirName.startsWith(featureId + "-"))
+    .filter((f) => archived === "include" || f.archived === (archived === "only"))
+    .filter((f) => f.dirName === arg || f.dirName.startsWith(arg + "-"))
     .sort(
       (a, b) =>
-        Number(b.dirName === featureId) - Number(a.dirName === featureId) ||
+        Number(b.dirName === arg) - Number(a.dirName === arg) ||
         Number(a.archived) - Number(b.archived) ||
         compareIds(a.dirName, b.dirName),
     );
   return candidates[0] ?? null;
+}
+
+/**
+ * The message for an exclude-mode miss. When the feature exists under
+ * `features/archive/`, "no feature" is a lie the caller would have to debug —
+ * the honest answer is "already archived", plus how to look at it. The `--json`
+ * code stays `unknown-target` either way: the target is unknown to the command
+ * that asked, and the prose carries the diagnosis.
+ */
+export async function missingFeatureMessage(docsDir: string, arg: string): Promise<string> {
+  const shipped = await resolveFeature(docsDir, arg, "only");
+  if (shipped !== null) {
+    return (
+      `Feature '${shipped.id}' is already archived (features/archive/${shipped.dirName}) — ` +
+      `\`loam show ${shipped.id}\` reads it, \`loam unarchive ${shipped.id}\` re-opens it.`
+    );
+  }
+  return `No feature '${arg}' under ${featuresDir(docsDir)}.`;
 }
