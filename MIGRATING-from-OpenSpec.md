@@ -22,7 +22,7 @@ OpenSpec's unit is the capability (`openspec/specs/<capability>/spec.md`); loam'
 
 ## What must be added
 
-- **Frontmatter** — `service:` and `status:` on every living spec (plus `sources:` naming the code it was written from, so `loam vouch` has something to stamp). `loam validate` warns on absent fields and errors on a mismatched `service:` or an undocumented `status:`.
+- **Frontmatter** — `service:` and `status:` on every living spec (plus `sources:` naming the code it was written from — literal files and directories, never glob patterns — so `loam vouch` has something to stamp). `loam validate` warns on absent fields and errors on a mismatched `service:` or an undocumented `status:`.
 - **`Operations:` lines** — loam's extension, absent upstream (no corpus file has one, and none accidentally matches the regex). Until requirements carry them, the API axis is unchecked and `loam validate` says so per service: `api.ops-unlinked`.
 - **`model.likec4` and a landscape element** — the C4 center OpenSpec never had. `loam adopt --service <id>` emits the brief for an agent to write the baseline model, spec and OpenAPI from the code.
 

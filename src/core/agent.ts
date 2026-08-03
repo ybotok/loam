@@ -134,7 +134,7 @@ status: verified             # services: draft -> verified
                              # features: proposed -> in_progress -> built -> done
 owner: payments-team
 last_verified: 2026-07-31    # written by \`loam vouch\` — do not hand-edit
-sources:                     # paths in the SERVICE'S repo this was written from
+sources:                     # files/directories in the SERVICE'S repo this was written from — no globs
   - src/main/java/com/shop/payment/
 sources_digest: 6f1c0a…      # written by \`loam vouch\` — do not hand-edit
 content_digest: 9b2f41…      # written by \`loam vouch\` — do not hand-edit
@@ -145,6 +145,10 @@ content_digest: 9b2f41…      # written by \`loam vouch\` — do not hand-edit
 consistency — and a corpus can agree with itself perfectly while describing nothing
 that exists. \`sources\` is the one thing tying a document to code: \`loam validate\`,
 run inside that service's repository, checks every listed path is still there.
+Entries are literal files and directories only — a directory covers everything
+beneath it. Glob patterns are refused loudly (\`loam vouch\` will not stamp them,
+\`loam validate\` errors on them): a pattern dialect nobody can be sure of digests
+a different file set than intended, corrupting the staleness signal silently.
 
 \`sources_digest\` is what makes that tie say something over time: a hash of the
 CONTENT of those files, taken when a human last vouched for the document. Every
@@ -532,8 +536,9 @@ result. It never reads the service — so anything you cannot show, do not write
    - \`checks[]\` — what \`loam validate\` will run. \`unchecked[]\` — what it will not.
 2. Read \`AGENTS.md\` at the docs repo root, then read the code: entry points, HTTP
    routes and handlers, published events, config, deploy manifests, tests.
-   **Keep a list of every path you actually open.** That list becomes \`sources\`, and
-   it is the only line tying the document to the repository.
+   **Keep a list of every path you actually open.** That list becomes \`sources\` —
+   written as files and directories, never glob patterns — and it is the only line
+   tying the document to the repository.
 3. Write the artifacts under \`services/$1/\`, in the order the brief lists them.
    Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\` or
    \`content_digest\`.
@@ -706,7 +711,7 @@ intent.md, both modes:
 | \`frontmatter.status-unknown\` | a status nobody defined (\`verifed\`) | use the documented vocabulary — a typo here reads as unverified forever |
 | \`frontmatter.field-missing\` (warn) | owner, status or the identity field is absent | fill them in |
 | \`sources.absent\` (warn) | the doc names no sources | nothing ties it to the code, so nothing can tell you when it goes stale |
-| \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
+| \`sources.path-missing\` | a listed source no longer exists, or is a glob pattern (no longer supported) | the code moved — re-read it and update the doc, do not just fix the path. For a pattern, name files or directories instead |
 | \`sources.stale\` (warn) | the source files changed since the doc was vouched for | re-read the code, correct the doc, then ask a human to \`loam vouch --service <id>\` |
 | \`sources.unvouched\` (warn) | \`sources\` with no \`sources_digest\` — nobody ever stamped it | leave it: vouching is a human's reading, not yours |
 | \`content.stale\` (warn) | the spec's body changed since it was vouched — \`status: verified\` is standing over words nobody has read. Unlike \`sources.*\` it needs no service repo, so it fires from the docs repo too | if you edited the doc, that is the point: report it and ask a human to re-vouch. Never revert the doc or touch the digest just to silence it |

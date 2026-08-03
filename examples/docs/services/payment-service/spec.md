@@ -3,7 +3,7 @@ service: payment-service
 status: draft
 owner: payments-team
 sources:
-  - src/main/java/**
+  - src/main/java/
 ---
 
 # payment-service

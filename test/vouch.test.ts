@@ -14,7 +14,8 @@
  * So the invariants worth pinning are the ones that make the stamp trustworthy:
  *  - it is a claim, not an edit — the body comes out byte-identical;
  *  - it never stamps something it cannot verify (no sources, a missing path, a
- *    glob matching nothing, a repo that is not this service's);
+ *    glob pattern — no longer supported — a directory holding no files, a repo
+ *    that is not this service's);
  *  - a refusal writes nothing at all;
  *  - both round trips close: unvouched -> current -> stale for the code,
  *    vouched -> edited -> re-vouched for the document;
@@ -171,14 +172,36 @@ describe("what vouch refuses", () => {
     });
   });
 
-  it("refuses a glob that matches no file — an empty digest would read as verified forever", async () => {
-    // The directory exists, so the path check passes; the pattern still covers
-    // nothing, and a digest over nothing never changes.
+  it("refuses a glob pattern outright, naming it — patterns are no longer supported", async () => {
+    // Under the removed engine this pattern had a real anchor and would have
+    // been matched (by a dialect of loam's own). Now the entry itself refuses
+    // the run, before any existence check can mislabel it.
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/**/*.java`, CODE, async (p) => {
+      const before = await p.read(SPEC);
       const res = await runLoam(p.workDir, "vouch", "--json");
       expect(res.code).toBe(1);
-      expect(JSON.parse(res.stdout).error.code).toBe("sources-absent");
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("sources-path-missing");
+      expect(json.error.message).toContain("src/**/*.java");
+      expect(json.error.message).toContain("no longer supported");
+      // The refusal discipline holds: nothing was written.
+      expect(await p.read(SPEC)).toBe(before);
     });
+  });
+
+  it("refuses sources that expand to no file — an empty digest would read as verified forever", async () => {
+    // The directory exists (holding only a dot-entry, which the walk skips), so
+    // the path check passes; the expansion still covers nothing, and a digest
+    // over nothing never changes.
+    await withRepo(
+      `service: ${SVC}\nstatus: draft\nsources:\n  - src/empty/`,
+      { ...CODE, "src/empty/.gitkeep": "" },
+      async (p) => {
+        const res = await runLoam(p.workDir, "vouch", "--json");
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("sources-absent");
+      },
+    );
   });
 
   it("refuses to vouch for a service this repo is not — the paths would be someone else's", async () => {

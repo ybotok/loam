@@ -30,7 +30,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { parseFrontmatter, listField, stringField } from "../src/core/frontmatter.js";
-import { contentDigest, sourcesDigest } from "../src/core/provenance.js";
+import { contentDigest, patternSources, sourcesDigest } from "../src/core/provenance.js";
 
 const SVC = "payment-service";
 
@@ -320,23 +320,32 @@ describe("sources — the tie to the code", () => {
     }
   });
 
-  it("a glob is satisfied by its deepest real directory (documented limitation)", async () => {
-    const ok = await repoProject("sources:\n  - src/main/**/*.java", ["src/main/App.java"]);
+  it("a glob pattern is an ERROR naming the entry — never silently resolved or graded absent", async () => {
+    // The anchor directory exists, so under the removed glob engine this would
+    // have quietly "resolved". Now the pattern itself is the finding.
+    const p = await repoProject("sources:\n  - src/main/**/*.java", ["src/main/App.java"]);
     try {
-      const res = await runLoam(ok.workDir, "validate", "--json");
-      expect(res.code).toBe(0);
-    } finally {
-      await ok.destroy();
-    }
-
-    const bad = await repoProject("sources:\n  - src/absent/**/*.java", ["src/main/App.java"]);
-    try {
-      const res = await runLoam(bad.workDir, "validate", "--json");
+      const res = await runLoam(p.workDir, "validate", "--json");
       expect(res.code).toBe(1);
-      expect(codesOf(JSON.parse(res.stdout))).toContain("sources.path-missing");
+      const findings = JSON.parse(res.stdout).targets[0].findings;
+      const finding = findings.find((f: { code: string }) => f.code === "sources.path-missing");
+      expect(finding.severity).toBe("error");
+      expect(finding.message).toContain("src/main/**/*.java");
+      expect(finding.message).toContain("no longer supported");
+      const codes = findings.map((f: { code: string }) => f.code);
+      expect(codes).not.toContain("sources.resolved");
+      expect(codes).not.toContain("sources.absent");
     } finally {
-      await bad.destroy();
+      await p.destroy();
     }
+  });
+
+  it("catches every pattern character — `*`, `?` and `[` alike, literal paths untouched", () => {
+    expect(patternSources(["src/*.ts", "src/a?.ts", "pages/[id].tsx", "src/lib/", "notes.md"])).toEqual([
+      "src/*.ts",
+      "src/a?.ts",
+      "pages/[id].tsx",
+    ]);
   });
 
   it("is not checked for a service this repo is not — paths would be meaningless", async () => {
@@ -420,14 +429,20 @@ describe("the sources digest", () => {
     expect(files).toEqual(["src/a.ts", "src/deep/b.ts"]);
   });
 
-  it("takes a glob at its word — a file the pattern does not match is not covered", async () => {
-    const java = { "src/main/App.java": "class App {}\n" };
-    const before = await digestOf(java, ["src/main/**/*.java"]);
-    const after = await digestOf({ ...java, "src/main/notes.md": "notes\n" }, ["src/main/**/*.java"]);
-    expect(after).toBe(before);
-    expect(await digestOf({ "src/main/App.java": "class B {}\n" }, ["src/main/**/*.java"])).not.toBe(
-      before,
-    );
+  it("is byte-stable for literal paths across the glob removal — the recipe did not move", async () => {
+    // The hex literal was computed by the implementation BEFORE glob support
+    // was deleted, over this exact tree. If it moves, every repo vouched with
+    // literal-only sources reads `sources.stale` after upgrading — the exact
+    // false alarm the removal promised not to raise.
+    const tree = {
+      "src/a.ts": "a\n",
+      "src/deep/b.ts": "b\n",
+      "src/.hidden.ts": "h\n", // dot-entries skipped while walking: part of the recipe
+      "notes.md": "n\n",
+    };
+    const { digest, files } = await sourcesDigest(await repoOf(tree), ["src/", "notes.md"]);
+    expect(files).toEqual(["notes.md", "src/a.ts", "src/deep/b.ts"]);
+    expect(digest).toBe("a03929ca47f90eca");
   });
 });
 
@@ -466,6 +481,27 @@ describe("staleness — has the code moved since anyone vouched?", () => {
     try {
       const { digest } = await sourcesDigest(p.workDir, ["src/payment.ts"]);
       await p.write(`services/${SVC}/spec.md`, spec(`${HEAD}\nsources_digest: "${digest}"`));
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "sources.current",
+      );
+      expect(f.severity).toBe("ok");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a repo vouched before the glob removal still reads sources.current — literal stamps survive the upgrade", async () => {
+    // The digest is a pre-removal literal (the recipe pin's fixture): exactly
+    // what a spec vouched under the old binary carries in its frontmatter.
+    // Nothing here recomputes the "expected" side — the point is that the NEW
+    // expansion reproduces the OLD stamp for literal paths.
+    const p = await repoProject(
+      `service: ${SVC}\nstatus: verified\nlast_verified: 2026-08-01\nsources:\n  - src/\n  - notes.md\nsources_digest: "a03929ca47f90eca"`,
+      { "src/a.ts": "a\n", "src/deep/b.ts": "b\n", "src/.hidden.ts": "h\n", "notes.md": "n\n" },
+    );
+    try {
       const res = await runLoam(p.workDir, "validate", "--json");
       expect(res.code).toBe(0);
       const f = JSON.parse(res.stdout).targets[0].findings.find(

@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   listField,
   parseFrontmatter,
@@ -169,6 +169,21 @@ async function sourceFindings(
   // Someone else's repository: the paths describe a tree loam is not standing in.
   if (repoDir === undefined) return [];
 
+  // Before existence: a pattern entry would "not exist" as a literal path, and
+  // grading it missing would send the author fixing the wrong thing.
+  const patterns = patternSources(sources);
+  if (patterns.length > 0) {
+    return [
+      {
+        severity: "error",
+        code: "sources.path-missing",
+        message: `${label}: ${patterns.length} source(s) are glob patterns — ${patterns.join(", ")}. Patterns are no longer supported: name files or directories (a directory already covers everything beneath it).`,
+        details: patterns,
+        text: { detailPrefix: "- " },
+      },
+    ];
+  }
+
   const missing = missingSources(repoDir, sources);
   if (missing.length > 0) {
     return [
@@ -276,8 +291,8 @@ export interface SourcesDigest {
  * because the value is written into documents, and anything reading them has to
  * be able to reproduce it:
  *
- *   1. expand each entry to repo-relative file paths (`/` separators), sorted
- *      and de-duplicated;
+ *   1. expand each entry to repo-relative file paths (`/` separators) — a file
+ *      is itself, a directory everything beneath it — sorted and de-duplicated;
  *   2. per file, `sha256(bytes)`;
  *   3. feed `<path>\0<hex>\n` for each file, in that order, into an outer
  *      sha256;
@@ -322,13 +337,17 @@ interface SourceFile {
 }
 
 /**
- * The files a `sources` list names: a literal path is itself, a directory is
- * everything beneath it, and a glob is matched against the tree under its
- * deepest wildcard-free ancestor.
+ * The files a `sources` list names: a file is itself, a directory is everything
+ * beneath it. Nothing else — glob patterns used to be matched here, by a
+ * hand-rolled dialect that silently differed from the gitignore/minimatch
+ * conventions authors assume, so a pattern quietly digested a DIFFERENT file
+ * set than its author intended. Pattern-looking entries are now refused loudly
+ * upstream (see patternSources); this function only ever sees literal paths.
  *
  * Dot-entries are skipped while walking — `.git` is not what the doc was
- * written from — though a path naming one outright is still honoured. Only
- * `*`, `**` and `?` are patterns; a bracket class is matched literally.
+ * written from — though a path naming one outright is still honoured. Both
+ * rules are part of the digest recipe's contract: for literal paths the
+ * expansion is byte-identical to what it was when globs existed.
  */
 async function expandSources(repoDir: string, sources: string[]): Promise<SourceFile[]> {
   const found = new Map<string, string>();
@@ -337,23 +356,8 @@ async function expandSources(repoDir: string, sources: string[]): Promise<Source
   for (const source of sources) {
     const cleaned = source.trim();
     if (cleaned.length === 0) continue;
-    const wildcard = cleaned.search(GLOB_CHAR);
-
-    if (wildcard === -1) {
-      const root = isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned);
-      for (const abs of await filesUnder(root)) found.set(relOf(abs), abs);
-      continue;
-    }
-
-    // Walk from the deepest directory the pattern is anchored to, then keep what
-    // the pattern actually matches — an absolute pattern against absolute paths,
-    // a repo-relative one against repo-relative paths.
-    const prefix = globPrefix(cleaned, wildcard);
-    const anchor = prefix.length === 0 ? repoDir : resolve(repoDir, prefix);
-    const pattern = globToRegExp(cleaned);
-    for (const abs of await filesUnder(anchor)) {
-      if (pattern.test(isAbsolute(cleaned) ? abs : relOf(abs))) found.set(relOf(abs), abs);
-    }
+    const root = isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned);
+    for (const abs of await filesUnder(root)) found.set(relOf(abs), abs);
   }
 
   // Plain codepoint order, not locale order: the digest has to be the same
@@ -380,35 +384,24 @@ async function filesUnder(path: string): Promise<string[]> {
   return out;
 }
 
-const GLOB_CHAR = /[*?[]/;
+/** The characters that made an entry a pattern under the glob dialect loam no longer ships. */
+const PATTERN_CHARS = /[*?[]/;
 
-/** The wildcard-free directory prefix of a pattern: `src/main/**\/*.java` -> `src/main`. */
-function globPrefix(pattern: string, wildcard: number): string {
-  const head = pattern.slice(0, wildcard);
-  return head.includes("/") ? head.slice(0, head.lastIndexOf("/")) : "";
-}
-
-/** `src/main/**\/*.java` -> `/^src\/main\/(?:[^/]+\/)*[^/]*\.java$/`. */
-function globToRegExp(pattern: string): RegExp {
-  let out = "";
-  for (let i = 0; i < pattern.length; i += 1) {
-    const c = pattern[i]!;
-    if (c === "?") {
-      out += "[^/]";
-    } else if (c !== "*") {
-      out += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    } else if (pattern[i + 1] !== "*") {
-      out += "[^/]*";
-    } else if (pattern[i + 2] === "/") {
-      // `**/` spans any number of directory levels, including none.
-      out += "(?:[^/]+/)*";
-      i += 2;
-    } else {
-      out += ".*";
-      i += 1;
-    }
-  }
-  return new RegExp(`^${out}$`);
+/**
+ * The `sources` entries that look like glob patterns — anything containing
+ * `*`, `?` or `[`. Patterns are refused loudly everywhere sources are consumed
+ * (`loam vouch` refuses the run, `loam validate` grades an error), never
+ * resolved: the glob dialect loam used to ship silently differed from the
+ * gitignore/minimatch conventions authors assume — bracket classes literal,
+ * its own `**` handling — so a pattern quietly digested a different file set
+ * than intended, corrupting the staleness signal in both directions. A
+ * directory already means "everything beneath it", so the fix is to name one.
+ *
+ * The cost accepted with the rule: a real file with `[` in its name (a Next.js
+ * route, say) cannot be listed on its own — its parent directory covers it.
+ */
+export function patternSources(sources: string[]): string[] {
+  return sources.filter((s) => PATTERN_CHARS.test(s.trim()));
 }
 
 /** The `sources` entries that resolve to nothing in this repo. */
@@ -416,25 +409,9 @@ export function missingSources(repoDir: string, sources: string[]): string[] {
   return sources.filter((s) => !sourceExists(repoDir, s));
 }
 
-/**
- * Does a `sources` entry point at something real?
- *
- * A literal path is checked exactly. A glob is checked down to its deepest
- * non-glob ancestor: `src/main/**\/*.java` passes when `src/main` exists. That
- * catches the failure that actually happens — code moved or deleted wholesale —
- * without shipping a glob engine. A glob whose leaf pattern matches nothing
- * still passes here; `loam vouch` is where that is caught, by refusing to stamp
- * a digest over an empty file set.
- */
+/** Does a `sources` entry point at something real? Literal paths only, checked exactly. */
 function sourceExists(repoDir: string, source: string): boolean {
   const cleaned = source.trim();
   if (cleaned.length === 0) return false;
-  if (isAbsolute(cleaned)) return existsSync(cleaned);
-
-  const glob = cleaned.search(GLOB_CHAR);
-  if (glob === -1) return existsSync(resolve(repoDir, cleaned));
-
-  const prefix = globPrefix(cleaned, glob);
-  const anchor = prefix.length === 0 ? repoDir : resolve(repoDir, prefix);
-  return existsSync(anchor) && existsSync(dirname(anchor));
+  return existsSync(isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned));
 }

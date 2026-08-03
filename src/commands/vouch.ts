@@ -12,9 +12,9 @@
  * prose changed after the stamp.
  *
  * The stamp is only worth what it claims, so vouch refuses everything it cannot
- * actually verify — a spec with no sources, a source that is gone, a pattern
- * matching no file, or a repo that is not this service's — and refuses without
- * writing anything.
+ * actually verify — a spec with no sources, a glob pattern (no longer
+ * supported), a source that is gone, a directory holding no files, or a repo
+ * that is not this service's — and refuses without writing anything.
  *
  * "The document" is every spec-axis file the service has: spec.md always, and
  * arch.spec.md beside it when present — same frontmatter conventions, same
@@ -28,7 +28,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
-import { contentDigest, missingSources, sourcesDigest } from "../core/provenance.js";
+import { contentDigest, missingSources, patternSources, sourcesDigest } from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
 
 interface VouchOptions {
@@ -253,6 +253,17 @@ async function verifySpec(
   // where they did not name the file, only the newer axis adds it.
   const label = file === "spec.md" ? req.service : `${req.service}: ${file}`;
 
+  // Before the existence check: a pattern is not a path that "does not exist",
+  // it is an entry loam no longer reads at all, and the refusal has to say so.
+  const patterns = patternSources(sources);
+  if (patterns.length > 0) {
+    return {
+      ok: false,
+      code: "sources-path-missing",
+      message: `${label}: ${patterns.length} source(s) are glob patterns — ${patterns.join(", ")}. Patterns are no longer supported: name files or directories (a directory already covers everything beneath it). A stamp over a pattern would vouch for a file set nobody can be sure of.`,
+    };
+  }
+
   const missing = missingSources(req.repoDir, sources);
   if (missing.length > 0) {
     return {
@@ -264,9 +275,9 @@ async function verifySpec(
 
   const { digest, files } = await sourcesDigest(req.repoDir, sources);
   if (files.length === 0) {
-    // A pattern anchored at a real directory that matches no file: the paths
-    // "resolve", but a digest over nothing never changes, so the stamp would
-    // read as current forever.
+    // A directory that exists but holds no files (or only dot-entries, which
+    // the walk skips): the paths "resolve", but a digest over nothing never
+    // changes, so the stamp would read as current forever.
     return {
       ok: false,
       code: "sources-absent",

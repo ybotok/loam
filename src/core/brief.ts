@@ -229,7 +229,7 @@ export const FRONTMATTER_BRIEF: FrontmatterBrief = {
       "`draft`, always. `verified` is a human's word, stamped by `loam vouch --service <id>` run inside the service's own repo — never written by hand.",
     owner: "the team or person who answers for this service.",
     sources:
-      "the paths in THIS SERVICE'S repository you actually read to write the document — files, directories or globs. Not the paths a reader would expect to have been read.",
+      "the paths in THIS SERVICE'S repository you actually read to write the document — files and directories only, a directory covering everything beneath it; glob patterns are refused. Not the paths a reader would expect to have been read.",
   },
   never: ["last_verified", "sources_digest", "content_digest"],
   why:
@@ -355,7 +355,7 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     code: "sources.path-missing",
     severity: "error",
     via: VIA_SERVICE,
-    what: "a listed source does not exist (checked when loam runs inside the service's repo)",
+    what: "a listed source does not exist, or is a glob pattern — no longer supported (checked when loam runs inside the service's repo)",
   },
   {
     code: "sources.unvouched",
