@@ -80,4 +80,4 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 
 ## Status
 
-`init`, `validate` (C4 + requirement + API coverage + cross-axis coherence), `delta` (per-service projection), and `archive` (three-axis merge, gated on coherence) are implemented. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence, single target or `--all`), `delta` (per-service projection), and `archive` (three-axis merge, gated on coherence) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.

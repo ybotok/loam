@@ -36,11 +36,16 @@ The reverse extractor is reused twice: to create the baseline, and at done-time 
 | Command | What it does |
 |---|---|
 | `loam init --docs <dir>` | Point at (and scaffold) the single shared docs repo; write local `loam.json`. |
+| `loam list [services\|features]` | What is in the docs repo, and what is missing from it. |
+| `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
 | `loam adopt --service <id>` | Reverse-engineer this repo's C4 + spec into the docs repo as `draft` for review. |
 | `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here + generated Gherkin. Output doubles as a coding-agent task. |
-| `loam validate` | Validate a service's C4 model via LikeC4 (in-process parse + validation). Slice/coverage checks next. |
+| `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
+| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence. |
 
-Status: **early scaffold.** `init` is real; `adopt` / `delta` / `validate` are stubs with documented contracts.
+Every read command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope separates `ok` (the command ran) from `valid` (the docs pass).
+
+Status: `init`, `list`, `show`, `delta`, `validate` and `archive` are implemented. **`adopt` is the remaining stub** — and the one everything else is waiting on.
 
 ## Prerequisites
 
