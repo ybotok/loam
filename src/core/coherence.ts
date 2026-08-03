@@ -147,6 +147,23 @@ export async function featureCoherence(
     return set.has(op);
   };
 
+  // ...unless this feature IS the un-deprecation: an openapi delta that
+  // restates the op WITHOUT `deprecated: true` retires the flag on archive
+  // (the path-item overwrite is wholesale), so "prefer the replacement
+  // operation" would point the author away from the exact change they are
+  // shipping. A delta that restates the op still deprecated — or has no
+  // delta for the service at all — keeps the warning.
+  const featureUndeprecated = new Map<string, Set<string>>();
+  const undeprecatedByFeature = async (service: string, op: string): Promise<boolean> => {
+    let set = featureUndeprecated.get(service);
+    if (!set) {
+      const list = await operations(featureSpecPaths(featureDir, service).openapi);
+      set = new Set(list.filter((o) => !o.deprecated).map((o) => o.id));
+      featureUndeprecated.set(service, set);
+    }
+    return set.has(op);
+  };
+
   // E2 / W1 / W4: C4 edges vs API + requirements.
   for (const r of taggedRels) {
     if (r.op === undefined) {
@@ -171,8 +188,10 @@ export async function featureCoherence(
     // Lifecycle: this NEW tagged edge builds consumption on an operation the
     // living provider contract already marks deprecated. Advisory, never an
     // archive gate — the edge is legal and the contract holds — but new
-    // consumption of a dying op deserves an eye before it ships.
-    if (await deprecatedInLiving(target, r.op)) {
+    // consumption of a dying op deserves an eye before it ships. Quiet when
+    // the feature's own openapi delta drops the flag: that state is the fix
+    // in progress, not new consumption of a dying op.
+    if ((await deprecatedInLiving(target, r.op)) && !(await undeprecatedByFeature(target, r.op))) {
       issues.push({ severity: "warn", code: "c4-api.op-deprecated", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which ${target}'s living OpenAPI marks deprecated — prefer the replacement operation` });
     }
   }

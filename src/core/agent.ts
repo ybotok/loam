@@ -672,7 +672,7 @@ what lets a feature ship:
 | \`spec-api.op-pending\` (warn) | the governed operation is defined by another feature in flight | archive that feature first |
 | \`c4-api.op-undefined\` | an edge calls an operation the target does not expose | a broken contract between services — fix the caller or add the endpoint |
 | \`c4-api.op-pending\` (warn) | the called operation is defined by another feature in flight | archive that feature first |
-| \`c4-api.op-deprecated\` (warn) | a NEW tagged edge consumes an operation the living provider's OpenAPI marks \`deprecated: true\` — building new consumption on a dying op | point the edge at the replacement operation, or say why the deprecated one is right; never gates archive |
+| \`c4-api.op-deprecated\` (warn) | a NEW tagged edge consumes an operation the living provider's OpenAPI marks \`deprecated: true\` — building new consumption on a dying op (quiet when this feature's own openapi delta drops the flag: that IS the un-deprecation) | point the edge at the replacement operation, or say why the deprecated one is right; never gates archive |
 | \`c4.op-ungoverned\` (warn) | an operation is called but no requirement governs it | write the requirement |
 | \`c4.op-link-missing\` (warn) | a "Calls" edge in the delta with no \`metadata { op }\` | link it to the operationId |
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |

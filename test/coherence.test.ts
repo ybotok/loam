@@ -700,6 +700,23 @@ describe("c4-api.op-deprecated: a NEW tagged edge on an op the living provider m
     expect(await coherenceOf(consumingFixture(LIVING_OPENAPI))).toEqual([]);
   });
 
+  it("stays quiet when the feature's own openapi delta restates the op WITHOUT the flag — that feature IS the un-deprecation", async () => {
+    // After archive, the wholesale path-item overwrite drops `deprecated: true`
+    // and the whole warning family stops; telling this author to "prefer the
+    // replacement operation" would point them away from the exact change they
+    // are shipping.
+    const files = consumingFixture(DEPRECATED_LIVING);
+    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = LIVING_OPENAPI;
+    expect(await coherenceOf(files)).toEqual([]);
+  });
+
+  it("still warns when the feature's openapi delta restates the op deprecated — restating the flag is not retiring it", async () => {
+    const files = consumingFixture(DEPRECATED_LIVING);
+    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = DEPRECATED_LIVING;
+    const issues = await coherenceOf(files);
+    expect(issues.map((i) => i.code)).toContain("c4-api.op-deprecated");
+  });
+
   it("never gates archive: the merge proceeds with the warning printed as non-blocking", async () => {
     const p = await makeProject(consumingFixture(DEPRECATED_LIVING));
     try {

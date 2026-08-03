@@ -638,6 +638,32 @@ describe("service mode: the deprecation bridge (spine.op-deprecated / api.requir
     });
   });
 
+  it("a requirement whose Operations resolve to NOTHING raises no deprecation warning — zero resolved ops prove nothing", async () => {
+    // Pins the `resolved.length === 0` half of the guard: without it,
+    // `[].every(...)` is vacuously true and every requirement naming only
+    // undefined ops would read "governs only deprecated operation(s) ()" —
+    // empty list included — while staying invisible to every exit-code assert.
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = DEPRECATED_OPENAPI;
+    files["services/payment-service/spec.md"] = LIVING_SPEC.replace(
+      "Operations: authorizePayment\n",
+      "Operations: ghostOp\n",
+    );
+    const { code, codes } = await serviceCodes(files);
+    expect(code).toBe(0);
+    expect(codes).not.toContain("api.requirement-deprecated");
+  });
+
+  it("a requirement with no Operations line raises no deprecation warning either — the unlinked-API finding speaks instead", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = DEPRECATED_OPENAPI;
+    files["services/payment-service/spec.md"] = LIVING_SPEC.replace("Operations: authorizePayment\n\n", "");
+    const { code, codes } = await serviceCodes(files);
+    expect(code).toBe(0);
+    expect(codes).not.toContain("api.requirement-deprecated");
+    expect(codes).toContain("api.ops-unlinked");
+  });
+
   it("one live op keeps the requirement quiet — it still governs living behaviour", async () => {
     const twoOps = `openapi: 3.1.0
 info:
