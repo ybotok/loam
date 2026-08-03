@@ -34,7 +34,7 @@ import { parse, stringify } from "yaml";
 import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
 import { operationIds } from "./openapi.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
-import { parseRequirements } from "./spec.js";
+import { parseRequirements, type Scenario } from "./spec.js";
 
 /**
  * What a claim is about. The order is the order the checklist comes back in,
@@ -148,7 +148,7 @@ export async function featureChecklist(
             claim(
               "scenario.tested",
               svc,
-              [svc, r.name, s.name],
+              [svc, r.name, s.name, scenarioBody(s)],
               `scenario '${s.name}' of requirement '${r.name}' (${svc}) is covered by a test`,
             ),
           );
@@ -187,6 +187,19 @@ function claimId(
   seen.set(tuple, n);
   const canonical = n === 1 ? tuple : `${tuple}\u0000#${n}`;
   return `${kind}-${createHash("sha256").update(canonical).digest("hex").slice(0, ID_LENGTH)}`;
+}
+
+/**
+ * The scenario's BODY, folded into its claim id. The title alone is not the
+ * claim: rewriting the Given/When/Then under an unchanged heading is new text
+ * nobody answered for, and the promise in the header — rewording a scenario
+ * renames its claim — has to hold for the words that actually specify the
+ * behaviour. Edge-trimmed like `serializeRequirements`, so moving a scenario
+ * down the page changes its framing blank lines without renaming it. Hashed to
+ * ID_LENGTH: it is one part of the id tuple, not a fingerprint anybody reads.
+ */
+function scenarioBody(s: Scenario): string {
+  return createHash("sha256").update(s.lines.join("\n").trim()).digest("hex").slice(0, ID_LENGTH);
 }
 
 /**

@@ -24,7 +24,8 @@
  * Families:
  *  - section-heading grammar: near misses vs legitimate non-delta sections
  *  - requirements a prose heading strands, and the gate around them
- *  - MODIFIED / REMOVED / ADDED against the living spec
+ *  - deltas that would merge nothing at all: requirements present, delta kinds absent
+ *  - MODIFIED / REMOVED / ADDED against the living spec, including case drift
  *  - features in flight: another active feature supplying the requirement
  *  - the gate: archive refuses, --approve overrides, validate reports the code
  */
@@ -240,16 +241,19 @@ The service SHALL do the thing.
     expect(issue.message).toContain("## ADDED Requirements");
   });
 
-  it("is a warning, not an error — nothing is corrupted, the change simply does not land", async () => {
-    // Errors mean the merge would write something wrong. Here the merge writes
-    // nothing, and the shape is legal OpenSpec, so an error would fail `loam
-    // validate` on every adopted OpenSpec repo. Archive still stops on it: the
-    // gate refuses ANY issue without --approve.
+  it("is a warning that GATES archive — the one check where the two axes diverge", async () => {
+    // Severity and gating answer different questions (issue.ts). The document
+    // is legal OpenSpec — an error would fail `loam validate` on every adopted
+    // repo whose active deltas still use the shape — so severity stays warn.
+    // But the merge would silently drop authored content, the exact loss this
+    // module exists to prevent, so the issue gates archive all the same.
     const issues = await shapeIssues({
       [`services/${SVC}/spec.md`]: LIVING,
       "features/FEAT-1-x/specs/payment-service/spec.md": stranded("## Behavior", "Capture a payment"),
     });
-    expect(issues.find((i) => i.code === "delta.requirement-not-merged")!.severity).toBe("warn");
+    const issue = issues.find((i) => i.code === "delta.requirement-not-merged")!;
+    expect(issue.severity).toBe("warn");
+    expect(issue.gates).toBe(true);
   });
 
   it("reports every stranded requirement, not just the first under the heading", async () => {
@@ -371,15 +375,21 @@ The service SHALL capture an authorized payment.
 `,
   });
 
-  it("validate --feature reports the code but still passes — a warning never gates validate", async () => {
+  it("validate --feature passes but marks the finding as gating — the two answers, side by side", async () => {
+    // The document is valid (warnings never gate validate); the merge is not
+    // safe (`gates: true` — archive will refuse). An agent reading this output
+    // knows both without running archive.
     const p = await makeProject(strandedFixture());
     try {
       const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-12", "--json");
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);
       expect(json.valid).toBe(true);
-      const found = json.targets[0].findings.map((f: { code: string }) => f.code);
-      expect(found).toContain("delta.requirement-not-merged");
+      const finding = json.targets[0].findings.find(
+        (f: { code: string }) => f.code === "delta.requirement-not-merged",
+      );
+      expect(finding.severity).toBe("warn");
+      expect(finding.gates).toBe(true);
     } finally {
       await p.destroy();
     }
@@ -407,6 +417,145 @@ The service SHALL capture an authorized payment.
       const living = await p.read(`services/${SVC}/spec.md`);
       expect(living).toContain("Refund a payment");
       expect(living).not.toContain("Capture a payment");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a delta with requirements but no delta section at all", () => {
+  /* The whole-file backstop. The near-miss check only sees single-word misses
+   * (`## NEW Requirements`), and the stranded-requirement warning fires per
+   * requirement — neither states the sum: this file, as written, merges NOTHING.
+   * That is the BOM failure class reached by authoring instead of encoding, and
+   * with LLM authors it arrives via headings no regex anticipates. */
+
+  /** Two requirements, both under a prose heading — a delta that is all inert. */
+  const inert = `# ${SVC} — delta
+
+## Behavior
+
+### Requirement: Capture a payment
+The service SHALL capture an authorized payment.
+
+#### Scenario: It happens
+- **Then** the capture is recorded
+
+### Requirement: Refund a payment
+The service SHALL refund a payment.
+
+#### Scenario: It happens
+- **Then** the refund is recorded
+`;
+
+  it("is an error that names the file, counts the loss, and says the delta merges nothing", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": inert,
+    });
+    const issue = issues.find((i) => i.code === "delta.no-delta-sections")!;
+    expect(issue.severity).toBe("error");
+    expect(issue.subject).toBe(SVC);
+    expect(issue.message).toContain("specs/payment-service/spec.md");
+    expect(issue.message).toContain("2 requirement");
+    expect(issue.message).toContain("merge nothing");
+  });
+
+  it("catches a multi-word near miss the heading check cannot see", async () => {
+    // `## NEWLY ADDED Requirements` has two words before `Requirements`, so
+    // NEAR_SECTION_RE never matches it — the whole-file check is what makes the
+    // heading grammar impossible to dodge rather than merely hard.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section(
+        "## NEWLY ADDED Requirements",
+        "New thing",
+      ),
+    });
+    expect(codes(issues)).not.toContain("delta.unknown-section");
+    expect(codes(issues)).toContain("delta.no-delta-sections");
+  });
+
+  it("catches a requirement above every heading — no heading needed to detect a no-op delta", async () => {
+    // The stranded-requirement warning stays silent here (no heading to name);
+    // the whole-file check does not care WHY nothing merges, only that it would.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": `# ${SVC} — delta
+
+### Requirement: Floating thing
+The service SHALL do the thing.
+
+#### Scenario: It happens
+- **Then** the thing happens
+`,
+    });
+    expect(codes(issues)).toContain("delta.no-delta-sections");
+  });
+
+  it("a delta that only quotes the living state merges nothing, and is told so", async () => {
+    // Quoting under `## Requirements` is legal AS A SECTION — the not-merged
+    // warning stays exempt. But a file that is nothing but quotes is a delta that
+    // does nothing, which is not a delta.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section(
+        "## Requirements",
+        "Authorize a payment",
+      ),
+    });
+    expect(codes(issues)).toContain("delta.no-delta-sections");
+    expect(codes(issues)).not.toContain("delta.requirement-not-merged");
+  });
+
+  it("one delta-kind requirement rescues the file — mixing with quoted BASE is legal", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": `# ${SVC} — delta
+
+## ADDED Requirements
+
+### Requirement: Refund a payment
+The service SHALL refund a payment.
+
+#### Scenario: It happens
+- **Then** the refund is recorded
+
+## Behavior
+
+### Requirement: Capture a payment
+The service SHALL capture an authorized payment.
+
+#### Scenario: It happens
+- **Then** the capture is recorded
+`,
+    });
+    // The stranded requirement keeps its per-requirement warning; the whole-file
+    // error is only for a delta with NO live payload at all.
+    expect(codes(issues)).not.toContain("delta.no-delta-sections");
+    expect(codes(issues)).toContain("delta.requirement-not-merged");
+  });
+
+  it("a file with no requirements at all is not a no-op delta — there is nothing to lose", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": `# ${SVC} — delta\n\nContext prose only.\n`,
+    });
+    expect(codes(issues)).not.toContain("delta.no-delta-sections");
+  });
+
+  it("validate --feature reports the code and fails — an error gates validate", async () => {
+    const p = await makeProject({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-13-inert/specs/payment-service/spec.md": inert,
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-13", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.valid).toBe(false);
+      const found = json.targets[0].findings.map((f: { code: string }) => f.code);
+      expect(found).toContain("delta.no-delta-sections");
     } finally {
       await p.destroy();
     }
@@ -498,6 +647,39 @@ describe("ADDED against the living spec", () => {
     const issue = issues.find((i) => i.code === "delta.added-duplicate")!;
     expect(issue.severity).toBe("error");
     expect(issue.message).toContain("MODIFIED");
+  });
+
+  it("ADDING a case variant of a living name warns, naming both spellings", async () => {
+    // Merge identity is exact string equality, so 'Authorize A Payment' passes the
+    // duplicate check and lands as a SECOND requirement beside the living one — the
+    // drift vector when the author is an LLM. A warning, not an error: nothing
+    // living is overwritten, and the author may genuinely mean a distinct name.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section(
+        "## ADDED Requirements",
+        "Authorize A Payment",
+      ),
+    });
+    const issue = issues.find((i) => i.code === "delta.added-near-duplicate")!;
+    expect(issue.severity).toBe("warn");
+    expect(issue.subject).toBe(SVC);
+    // Both spellings, verbatim — seeing the difference IS the fix.
+    expect(issue.message).toContain("'Authorize A Payment'");
+    expect(issue.message).toContain("'Authorize a payment'");
+    expect(codes(issues)).not.toContain("delta.added-duplicate");
+  });
+
+  it("an exact duplicate is the replace error alone — near-duplicate never fires for the same pair", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section(
+        "## ADDED Requirements",
+        "Authorize a payment",
+      ),
+    });
+    expect(codes(issues)).toContain("delta.added-duplicate");
+    expect(codes(issues)).not.toContain("delta.added-near-duplicate");
   });
 });
 

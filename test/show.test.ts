@@ -117,9 +117,12 @@ describe("service view", () => {
       expect(res.out).toContain("openapi.yaml");
       expect(res.out).toContain("runbook.md");
       expect(res.out).toContain("health.yaml");
-      // the fixture has no runbook/health — they must be shown as missing, not omitted
+      // the fixture has no runbook/health — they must be shown as missing, not
+      // omitted, and with the same "-" `list` uses: ✗ is the error glyph, and a
+      // missing runbook is not an error
       const runbook = res.out.split("\n").find((l) => l.includes("runbook.md"))!;
-      expect(runbook).toContain("✗");
+      expect(runbook.trimStart().startsWith("- ")).toBe(true);
+      expect(runbook).not.toContain("✗");
     });
   });
 
@@ -210,6 +213,16 @@ describe("feature view", () => {
       expect(res.out).toContain("payment-split-service");
       expect(res.out).toContain("+1");
       expect(res.out).toContain("createSplit");
+    });
+  });
+
+  it("marks an absent artifact with '-', keeping ✗ for errors alone", async () => {
+    await withProject({ "features/FEAT-3-bare/intent.md": "# bare\n" }, async (p) => {
+      const res = await runLoam(p.workDir, "show", "FEAT-3");
+      expect(res.code).toBe(0);
+      const delta = res.out.split("\n").find((l) => l.includes("delta.likec4"))!;
+      expect(delta.trimStart().startsWith("- ")).toBe(true);
+      expect(res.out).not.toContain("✗");
     });
   });
 

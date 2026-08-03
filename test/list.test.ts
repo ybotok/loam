@@ -8,11 +8,21 @@
  * Families:
  *  - text output: sections, counts, artifact flags, ordering
  *  - filtering: services-only / features-only / archived
+ *  - verification column: -, recorded (confirmed/claims), stale, frozen when archived
  *  - --json: envelope, field shape, repo-relative paths, ordering
  *  - failure modes: no config, empty repo
  */
 import { describe, expect, it } from "vitest";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  coherentFixture,
+  FEATURE_SPEC,
+  makeProject,
+  makeTmpDir,
+  runLoam,
+  type Project,
+} from "./helpers/harness.js";
 
 async function withProject(
   files: Record<string, string>,
@@ -136,6 +146,105 @@ describe("text output", () => {
   });
 });
 
+describe("verification column", () => {
+  /**
+   * Record FEAT-1's checklist the way an agent would: derive it via `verify
+   * --json`, answer every claim (the first `unconfirm` of them honestly no),
+   * and record the answers. coherentFixture's FEAT-1 derives 4 claims.
+   */
+  async function recordFeat1(p: Project, unconfirm = 0): Promise<void> {
+    const derived = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+    expect(derived.code, derived.out).toBe(0);
+    const claims: { id: string }[] = JSON.parse(derived.stdout).claims;
+    const answers = claims.map((c, i) =>
+      i < unconfirm
+        ? { id: c.id, verdict: "unconfirmed", evidence: [], note: "not yet" }
+        : { id: c.id, verdict: "confirmed", evidence: ["src/split/Service.ts:12"] },
+    );
+    await writeFile(join(p.workDir, "answers.json"), JSON.stringify(answers, null, 2), "utf8");
+    const rec = await runLoam(p.workDir, "verify", "FEAT-1", "--record", "answers.json");
+    expect(rec.code, rec.out).toBe(0);
+  }
+
+  const featureRow = (out: string, id: string): string =>
+    out.split("\n").find((l) => l.includes(id))!;
+
+  it("shows '-' and verification: null for a feature nobody has recorded", async () => {
+    await withProject(fleetFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "list", "features");
+      expect(featureRow(res.out, "FEAT-10")).toMatch(/FEAT-10\s+-\s+payment-service/);
+
+      const json = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
+      for (const f of json.features) expect(f.verification).toBeNull();
+    });
+  });
+
+  it("shows confirmed/claims for a record that answers the current checklist", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      await recordFeat1(p, 1);
+      const res = await runLoam(p.workDir, "list", "features");
+      expect(featureRow(res.out, "FEAT-1")).toContain("3/4");
+      expect(res.out).not.toContain("stale");
+
+      const json = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
+      const feat = json.features.find((f: { id: string }) => f.id === "FEAT-1");
+      expect(feat.verification).toEqual({
+        state: "recorded",
+        recorded: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        confirmed: 3,
+        claims: 4,
+      });
+    });
+  });
+
+  it("shows 'stale' when the feature moved after the record was written", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      await recordFeat1(p);
+      // Rewriting a scenario body renames its claim (the ids hash the body), so
+      // the record's digest no longer answers the current checklist.
+      await p.write(
+        "features/FEAT-1-split/specs/payment-split-service/spec.md",
+        FEATURE_SPEC.replace("two shares are recorded", "three shares are recorded"),
+      );
+      const res = await runLoam(p.workDir, "list", "features");
+      expect(featureRow(res.out, "FEAT-1")).toContain("stale");
+
+      const json = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
+      const feat = json.features.find((f: { id: string }) => f.id === "FEAT-1");
+      expect(feat.verification.state).toBe("stale");
+    });
+  });
+
+  it("reports an archived feature's record as frozen history, never stale", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      await recordFeat1(p);
+      const archived = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(archived.code, archived.out).toBe(0);
+
+      // Archive merged createSplit into the living openapi, so a re-derived
+      // checklist would be smaller and the digest would mismatch — the frozen
+      // record must be reported by its own summary, not judged against that.
+      const res = await runLoam(p.workDir, "list", "features", "--archived");
+      const row = featureRow(res.out, "FEAT-1");
+      expect(row).toContain("4/4");
+      expect(row).toContain("(archived)");
+      expect(res.out).not.toContain("stale");
+
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "list", "features", "--archived", "--json")).stdout,
+      );
+      const feat = json.features.find((f: { id: string }) => f.id === "FEAT-1");
+      expect(feat.archived).toBe(true);
+      expect(feat.verification).toEqual({
+        state: "recorded",
+        recorded: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        confirmed: 4,
+        claims: 4,
+      });
+    });
+  });
+});
+
 describe("--json contract", () => {
   it("emits one ok-enveloped object with both collections", async () => {
     await withProject(fleetFixture(), async (p) => {
@@ -174,6 +283,7 @@ describe("--json contract", () => {
         archived: false,
         services: ["payment-service"],
         has: { intent: true, delta: true },
+        verification: null,
       });
     });
   });

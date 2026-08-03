@@ -15,8 +15,12 @@
  *
  *  - a claim's id is a function of the claim, not of the run: two runs are
  *    diffable, reordering the delta renames nothing, and REWORDING a scenario
- *    does rename its claim — an answer about text nobody wrote must not carry
- *    over as if it were still true;
+ *    does rename its claim — title or body — an answer about text nobody wrote
+ *    must not carry over as if it were still true;
+ *  - an ARCHIVED feature's record is frozen history: archive merged the
+ *    feature's ops into the living openapi, so a re-derived checklist would
+ *    shrink and read a faithful record as stale forever — verify renders the
+ *    record verbatim instead, and refuses --record;
  *  - `--record` refuses anything that does not correspond to the current
  *    checklist. An unknown id, an unanswered claim, a "yes" with no evidence:
  *    each is a way an unchecked claim could masquerade as checked, which is the
@@ -249,6 +253,21 @@ Operations: createSplit
     expect(after).not.toBe(before);
   });
 
+  it("change when a scenario's BODY is rewritten under the same title", async () => {
+    // The title survives but the Given/When/Then is new text: a recorded
+    // "confirmed" about the old steps must not stand for steps nobody checked.
+    const p = await project();
+    const before = of(await claims(p), "scenario.tested")[0]!.id;
+
+    const files = coherentFixture();
+    files[`${DIR}/specs/${SPLIT}/spec.md`] = files[`${DIR}/specs/${SPLIT}/spec.md`]!.replace(
+      "- **Then** two shares are recorded",
+      "- **Then** three shares are recorded",
+    );
+    const after = of(await claims(await project(files)), "scenario.tested")[0]!.id;
+    expect(after).not.toBe(before);
+  });
+
   it("are not shared between features that happen to claim the same thing", async () => {
     // An answers file for FEAT-1 must never validate against FEAT-2.
     const files = coherentFixture();
@@ -474,6 +493,60 @@ describe("reading the verification back", () => {
     expect(res.code).toBe(0);
     expect(res.out).toContain("Split across two payees");
     expect(res.out).toContain("--record");
+  });
+});
+
+describe("archived features — the record is frozen history", () => {
+  // Archive merges the feature's ops into the living openapi. Re-deriving the
+  // checklist afterwards computes a SMALLER claim set — the api.exposes claims
+  // vanish because their operations are living now — so the digest mismatches
+  // and a faithful record would read "stale" forever with an untrue diagnosis:
+  // archive changed the environment, not the feature. So verify does not
+  // re-derive at all; it renders verification.yaml verbatim and says so.
+  it("shows the record verbatim after archive, not a stale re-derivation", async () => {
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+
+    const c = await checklist(p);
+    expect(c.frozen).toBe(true);
+    expect(c.verified).toBe(true);
+    // all four claims exactly as recorded — including the api.exposes claim
+    // whose operation archive merged into the living openapi
+    expect(c.summary).toEqual({ claims: 4, confirmed: 4, unconfirmed: 0 });
+    expect(c.claims).toHaveLength(4);
+    expect(c.claims.map((x: Claim) => x.kind)).toContain("api.exposes");
+    // and no staleness verdict: there is nothing current to be stale against
+    expect(c.recorded.stale).toBeUndefined();
+  });
+
+  it("says frozen in prose too, and never STALE", async () => {
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+
+    const res = await runLoam(p.workDir, "verify", FEAT);
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("frozen");
+    expect(res.out).toContain("createSplit");
+    expect(res.out).not.toContain("STALE");
+  });
+
+  it("an archived feature nobody verified says exactly that — no invented checklist", async () => {
+    const p = await project();
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+
+    const c = await checklist(p);
+    expect(c.frozen).toBe(true);
+    expect(c.recorded).toBe(null);
+    expect(c.verified).toBe(false);
+    // null, not zero claims — zero would falsely say the feature promised nothing
+    expect(c.summary).toBe(null);
+    expect(c.claims).toEqual([]);
+
+    const res = await runLoam(p.workDir, "verify", FEAT);
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("no verification record");
   });
 });
 

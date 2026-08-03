@@ -6,6 +6,14 @@
  * been answered. With `--record <answers.json>` it takes the answers back, and
  * refuses everything that does not correspond to the current checklist.
  *
+ * An ARCHIVED feature is the one place the checklist is NOT derived. Archive
+ * merged the feature's operations into the living openapi, so re-deriving here
+ * computes a smaller claim set, the digest mismatches, and a faithful record
+ * reads "stale" forever with an untrue diagnosis — archive changed the
+ * environment, not the feature. So verify renders verification.yaml verbatim as
+ * frozen history, and `--record` refuses: it would answer a checklist nobody
+ * can re-derive.
+ *
  * It reports; it does not gate. Archive refuses an incoherent feature because
  * loam COMPUTED the incoherence from the documents in front of it. A verdict
  * here is somebody's word about code loam never read, and making it the last
@@ -16,7 +24,7 @@ import type { Command } from "commander";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
 import { featuresDir, resolveFeature } from "../core/repo.js";
 import { repoPath } from "./list.js";
 import {
@@ -70,16 +78,26 @@ export function registerVerify(program: Command): void {
         return fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir(docsDir)}.`);
       }
 
-      const checklist = await featureChecklist(docsDir, feature.dir, feature.id);
-
-      if (opts.record !== undefined) {
-        if (feature.archived) {
+      // But an archived feature never gets a re-derived checklist — see the
+      // header. Its record is frozen history, and --record refuses: the code is
+      // `invalid-option` rather than `answers-mismatch` because the answers were
+      // never compared to anything — there is no current checklist to answer, so
+      // the wrong thing here is the option, not the answer set.
+      if (feature.archived) {
+        if (opts.record !== undefined) {
           return fail(
             json,
             "invalid-option",
             `${feature.id} is archived — its verification is history now. \`loam unarchive ${feature.id}\` first if the answers really need to change.`,
           );
         }
+        reportFrozen(docsDir, feature.dir, feature.id, await readVerification(feature.dir), json);
+        return;
+      }
+
+      const checklist = await featureChecklist(docsDir, feature.dir, feature.id);
+
+      if (opts.record !== undefined) {
         await record(docsDir, feature.dir, checklist, opts.record, json);
         return;
       }
@@ -179,6 +197,65 @@ function report(
   }
 }
 
+/**
+ * The frozen view: an archived feature's record, verbatim. No checklist is
+ * derived and no staleness is judged — there is nothing current to judge
+ * against, and pretending otherwise is how a true record reads as a lie.
+ * `frozen` is the marker a consumer branches on; `verified` comes from the
+ * record's own summary, because the record is all there is. No record at all is
+ * reported as exactly that — with `summary: null`, not zero claims, which would
+ * falsely say the feature promised nothing.
+ */
+function reportFrozen(
+  docsDir: string,
+  featureDir: string,
+  featureId: string,
+  v: Verification | null,
+  json: boolean,
+): void {
+  if (json) {
+    emitJson({
+      feature: featureId,
+      path: repoPath(docsDir, featureDir),
+      frozen: true,
+      verified: v !== null && v.summary.claims > 0 && v.summary.confirmed === v.summary.claims,
+      summary: v === null ? null : v.summary,
+      recorded:
+        v === null
+          ? null
+          : {
+              path: repoPath(docsDir, verificationPath(featureDir)),
+              recorded: v.recorded,
+              checklist: v.checklist,
+            },
+      claims: v === null ? [] : v.claims,
+    });
+    return;
+  }
+
+  if (v === null) {
+    console.log(
+      `${featureId} is archived and has no verification record — nothing was recorded before it shipped.`,
+    );
+    return;
+  }
+
+  console.log(
+    `${featureId} — verification recorded ${v.recorded}, frozen at archive (${repoPath(docsDir, featureDir)})\n`,
+  );
+  for (const c of v.claims) {
+    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}`);
+    for (const e of c.evidence) console.log(`      ${e}`);
+    if (c.note !== undefined) console.log(`      note: ${c.note}`);
+  }
+  console.log(
+    `\n  Recorded ${v.recorded} — ${v.summary.confirmed} confirmed, ${v.summary.unconfirmed} unconfirmed.`,
+  );
+  console.log(
+    "  This checklist is frozen at record time: the feature is archived and its claims are not re-derived.",
+  );
+}
+
 const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "✗", unanswered: "?" };
 
 /* ------------------------------------------------------------------ */
@@ -245,14 +322,6 @@ function today(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-function fail(json: boolean, code: ErrorCode, message: string): void {
-  if (json) {
-    emitJsonError(code, message);
-    return;
-  }
-  console.error(message);
-  process.exitCode = 1;
-}
 
 function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;

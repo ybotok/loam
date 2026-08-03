@@ -49,8 +49,9 @@
  *    living spec. Real case in the corpus: 6 of 8 requirements in the cli-archive
  *    fixture. The merge is unchanged on purpose — treating `## Behavior` as ADDED
  *    would be archive guessing at intent — but `Requirement.section` now records the
- *    enclosing H2 and `delta.requirement-not-merged` (a warning, which stops archive
- *    without failing validate) names every stranded requirement and its heading.
+ *    enclosing H2 and `delta.requirement-not-merged` (a warning that GATES archive —
+ *    legal document, unsafe merge; `--approve` overrides) names every stranded
+ *    requirement and its heading.
  *    `## Requirements` is exempt: quoting the living state inside a delta is legal.
  *
  * 5. UTF-8 BOM — FIXED. It used to drop the whole delta: OpenSpec strips a leading
@@ -98,6 +99,11 @@ import {
   sectionHeadings,
   type DeltaKind,
 } from "../src/core/spec.js";
+// For the RENAMED-section shape check only: the parse gap it closes is pinned in
+// this file, so the check that makes the gap loud is pinned beside it.
+import { join } from "node:path";
+import { deltaShapeIssues } from "../src/core/delta.js";
+import { makeProject } from "./helpers/harness.js";
 
 const FIXTURES = fileURLToPath(new URL("./fixtures/openspec/", import.meta.url));
 
@@ -418,6 +424,38 @@ describe("gap: `## RENAMED Requirements` is unrecognized and the rename is lost"
     ].join("\n");
     expect(parseRequirements(md)).toEqual([]);
     expect(applyRequirementDelta([], parseRequirements(md))).toEqual([]);
+  });
+
+  it("the delta-shape check refuses the section loudly, telling the author to write REMOVED+ADDED", async () => {
+    // The parse facts above are why this must be an error: the section yields zero
+    // requirements, so no per-requirement check — not even the whole-file
+    // merges-nothing check, which counts requirements — will ever see the rename.
+    // The heading is the only evidence it existed, and losing it silently is the
+    // BOM failure class again. Rename semantics stay unimplemented (the corpus
+    // never uses them); the error names the supported spelling of the same intent.
+    const p = await makeProject({
+      "features/FEAT-1-x/specs/payment-service/spec.md": [
+        "# payment-service — delta",
+        "",
+        "## RENAMED Requirements",
+        "- FROM: `### Requirement: Old Name`",
+        "- TO: `### Requirement: New Name`",
+        "",
+      ].join("\n"),
+    });
+    try {
+      const issues = await deltaShapeIssues(
+        p.docsDir,
+        join(p.docsDir, "features", "FEAT-1-x"),
+        "FEAT-1",
+      );
+      const issue = issues.find((i) => i.code === "delta.unknown-section")!;
+      expect(issue.severity).toBe("error");
+      expect(issue.message).toContain("RENAMED");
+      expect(issue.message).toContain("REMOVED requirement plus an ADDED one");
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

@@ -3,10 +3,13 @@
  *
  * Families:
  *  - service mode: C4 model, requirement coverage, API coverage (warn-only)
+ *  - service mode: graded absences (unknown dir errors; missing spec/openapi warn)
+ *  - service mode: api.ops-unlinked (migration debt — API and requirements never linked)
  *  - service mode: landscape spine (C4 edge op ↔ OpenAPI contract)
  *  - feature mode: delta parse, per-service coverage, cross-axis coherence
  *  - feature mode: arch-edge coverage heuristic (warn-only)
  *  - feature dir resolution (exact / prefix / non-prefix / ambiguity)
+ *  - option conflicts (--service with --feature)
  *  - exit-code discipline (warnings never gate, any error gates)
  */
 import { describe, expect, it } from "vitest";
@@ -18,6 +21,7 @@ import {
   LANDSCAPE,
   LIVING_OPENAPI,
   LIVING_SPEC,
+  SERVICE_MODEL,
   FEATURE_DELTA,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
@@ -49,6 +53,22 @@ model {
   api = bogusKind 'api'
 }
 `;
+
+/** Minimal living spec for one service (requirement + scenario, no Operations link). */
+function goodLivingSpec(svc: string): string {
+  return `# ${svc}
+
+## Requirements
+
+### Requirement: Do the thing
+The service SHALL do the thing.
+
+#### Scenario: Thing done
+- **Given** a thing
+- **When** it runs
+- **Then** it is done
+`;
+}
 
 /** Minimal valid delta spec for one service (requirement + scenario, no Operations). */
 function goodDeltaSpec(svc: string): string {
@@ -114,6 +134,9 @@ describe("service mode: model + requirement + API coverage", () => {
       expect(res.code).toBe(1);
       expect(res.out).toContain("No C4 model at");
       expect(res.out).toContain("model.likec4");
+      // the directory is real, so adopt is the right hint here — the contrast
+      // with service.unknown, where that hint would document a typo
+      expect(res.out).toContain("loam adopt");
     });
   });
 
@@ -188,6 +211,156 @@ The service SHALL no longer capture without authorization.
       expect(res.code).toBe(0);
       expect(res.out).toContain("not governed by any requirement");
       expect(res.out).toContain("authorizePayment");
+    });
+  });
+});
+
+describe("service mode: graded absences", () => {
+  it("a typo'd --service is service.unknown offering real ids, never an adopt hint", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "paymnt-service");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("No service directory");
+      // shares the 'pay' prefix with the real id, so it is offered
+      expect(res.out).toContain("Did you mean: payment-service");
+      // adopting the misspelling would faithfully document it
+      expect(res.out).not.toContain("adopt");
+    });
+  });
+
+  it("an unknown service with nothing close points at `loam list services`", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "zzz");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("loam list services");
+      expect(res.out).not.toContain("Did you mean");
+      expect(res.out).not.toContain("adopt");
+    });
+  });
+
+  it("a missing spec.md warns (service.no-spec) without gating", async () => {
+    const files = coherentFixture();
+    delete files[`services/${SVC}/spec.md`];
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      const line = res.out.split("\n").find((l) => l.includes("No living spec at"));
+      expect(line).toBeDefined();
+      expect(line).toContain("⚠");
+    });
+  });
+
+  it("a missing openapi.yaml warns when the landscape shows an inbound op call", async () => {
+    const files = coherentFixture();
+    delete files[`services/${SVC}/openapi.yaml`];
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      // the spine error for the now-dangling edge co-fires; the warn names the cause
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("No OpenAPI contract at");
+      expect(res.out).toContain(`not defined in ${SVC}'s OpenAPI`);
+    });
+  });
+
+  it("a missing openapi.yaml warns when there is no landscape to say nobody calls it", async () => {
+    const files = coherentFixture();
+    delete files[`services/${SVC}/openapi.yaml`];
+    delete files["architecture/landscape.likec4"];
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("No OpenAPI contract at");
+    });
+  });
+
+  it("stays silent about a missing openapi.yaml when the landscape proves nobody calls an op on it", async () => {
+    // checkout-web is drawn, but no edge targets it with an op — a worker/UI
+    // with no API is not missing one.
+    const files = coherentFixture();
+    files["services/checkout-web/model.likec4"] = SERVICE_MODEL;
+    files["services/checkout-web/spec.md"] = goodLivingSpec("checkout-web");
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "checkout-web");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("No OpenAPI contract");
+    });
+  });
+});
+
+describe("service mode: api.ops-unlinked (migration debt)", () => {
+  /** The living spec with its `Operations:` line dropped — requirements and API never meet. */
+  const UNLINKED_SPEC = LIVING_SPEC.replace("Operations: authorizePayment\n\n", "");
+
+  it("warns once when the API and the requirements never name each other", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = UNLINKED_SPEC;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("defines 1 operation(s) but no requirement links any");
+      expect(res.out).toContain("the API axis is unchecked");
+      // the per-op orphan warn still fires alongside — it lists WHICH ops
+      expect(res.out).toContain("not governed by any requirement");
+    });
+  });
+
+  it("does not fire when at least one requirement links an operation", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/openapi.yaml`] =
+      LIVING_OPENAPI +
+      `  /payments/refund:
+    post:
+      operationId: refundPayment
+      summary: Refund a payment
+      responses:
+        "200":
+          description: Refunded
+`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      // the orphan op is still named individually, but the axis IS linked
+      expect(res.out).toContain("refundPayment");
+      expect(res.out).not.toContain("the API axis is unchecked");
+    });
+  });
+
+  it("does not fire when the OpenAPI defines no operations", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = UNLINKED_SPEC;
+    files[`services/${SVC}/openapi.yaml`] =
+      `openapi: 3.1.0\ninfo:\n  title: ${SVC}\n  version: "1.0"\npaths: {}\n`;
+    // no landscape, or its op edge would (correctly) break the spine
+    delete files["architecture/landscape.likec4"];
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("the API axis is unchecked");
+    });
+  });
+
+  it("does not fire with zero requirements — the absent spec is its own finding", async () => {
+    const files = coherentFixture();
+    delete files[`services/${SVC}/spec.md`];
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("No living spec at");
+      expect(res.out).not.toContain("the API axis is unchecked");
+    });
+  });
+});
+
+describe("option conflicts", () => {
+  it("--service with --feature is refused, not silently resolved to the feature", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--feature", "FEAT-1");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("--service");
+      expect(res.out).toContain("--feature");
+      // neither target was validated
+      expect(res.out).not.toContain("C4 model valid");
+      expect(res.out).not.toContain("delta.likec4");
     });
   });
 });

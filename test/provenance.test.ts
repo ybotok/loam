@@ -13,6 +13,7 @@
  *  - required fields, and the difference between absent and contradictory
  *  - `sources` resolution against the repo loam is running in
  *  - the digest recipe, and the staleness findings it makes possible
+ *  - the --all blind spot: sources only a service's own repo can check, counted once
  *  - the draft/verified inventory in list and show
  */
 import { describe, expect, it } from "vitest";
@@ -519,6 +520,80 @@ describe("staleness — has the code moved since anyone vouched?", () => {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+describe("the --all blind spot — sources only their own repos can check", () => {
+  /**
+   * Two documented services. From the central docs repo neither's `sources`
+   * resolve — the paths describe other repositories — and before the count
+   * existed, `validate --all` silently checked none of them.
+   */
+  function fleet(withSources: boolean): Record<string, string> {
+    const src = withSources ? "\nsources:\n  - src/payment.ts" : "";
+    const files = fixtureWith(`service: ${SVC}\nstatus: verified\nowner: payments-team${src}`);
+    files["services/checkout-web/model.likec4"] = SERVICE_MODEL;
+    files["services/checkout-web/spec.md"] = `---
+service: checkout-web
+status: draft
+owner: web-team${withSources ? "\nsources:\n  - web/src" : ""}
+---
+
+# checkout-web
+`;
+    return files;
+  }
+
+  it("--all reports the blind spot once — one count, one line, never one per service", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.sourcesUnverifiableFromHere).toBe(2);
+      // and no per-service sources finding leaks in — the count IS the report
+      for (const t of json.targets) {
+        for (const f of t.findings as Array<{ code: string }>) {
+          expect(f.code.startsWith("sources.")).toBe(false);
+        }
+      }
+      const text = await runLoam(p.workDir, "validate", "--all");
+      const lines = text.out.split("\n").filter((l) => l.includes("unverifiable-from-here"));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("⚠");
+      expect(lines[0]).toContain("2 services' sources can only be checked from their own repos");
+    });
+  });
+
+  it("the service loam stands in is checked here, so it is not counted", async () => {
+    const p = await makeProject(fleet(true), { service: SVC });
+    await writeFiles(p.workDir, { "src/payment.ts": "// code\n" });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.sourcesUnverifiableFromHere).toBe(1); // checkout-web only
+      const mine = json.targets.find((t: { id: string }) => t.id === SVC);
+      expect(mine.findings.map((f: { code: string }) => f.code)).toContain("sources.resolved");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("counts nothing when nothing names sources, and the line stays silent", async () => {
+    await withProject(fleet(false), {}, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      // 0, not absent: under --all the field is stable so consumers can branch on it
+      expect(json.sourcesUnverifiableFromHere).toBe(0);
+      const text = await runLoam(p.workDir, "validate", "--all");
+      expect(text.out).not.toContain("unverifiable-from-here");
+    });
+  });
+
+  it("single-target runs never carry the field — nothing was counted", async () => {
+    await withProject(fleet(true), {}, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--service", SVC, "--json")).stdout);
+      expect(json.sourcesUnverifiableFromHere).toBeUndefined();
+    });
   });
 });
 

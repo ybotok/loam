@@ -3,8 +3,11 @@ import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir, rename, rm, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
+import { fail, emitJson, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { gatesArchive, type Issue } from "../core/issue.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
 import {
   featurePaths,
@@ -28,6 +31,22 @@ import {
 interface ArchiveOptions {
   approve?: boolean;
   dryRun?: boolean;
+  json?: boolean;
+}
+
+/**
+ * A refusal or failure with its stable `--json` code attached. Thrown from the
+ * plan phase (nothing written yet) and from the commit's rollback path (whose
+ * message says whether the rollback held). Anything ELSE that escapes runArchive
+ * is a bug, and the action handler reports it as `internal`.
+ */
+class ArchiveFailure extends Error {
+  constructor(
+    readonly code: ErrorCode,
+    msg: string,
+  ) {
+    super(msg);
+  }
 }
 
 export function registerArchive(program: Command): void {
@@ -35,52 +54,138 @@ export function registerArchive(program: Command): void {
     .command("archive")
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Merge a shipped feature's deltas into the living specs + model, then archive it")
-    .option("--approve", "archive even if the feature is not coherent (may corrupt the living docs)")
+    .option("--approve", "archive despite GATING coherence issues (may corrupt the living docs); advisory warnings never block")
     .option("--dry-run", "print the whole merge plan and write nothing")
+    .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: ArchiveOptions) => {
+      const json = opts.json === true;
       try {
         await runArchive(featureId, opts);
       } catch (err) {
         // Plan-phase failures happen before any write; commit-phase failures are
         // rolled back by runArchive, which says so in the message it throws.
-        console.error(`archive ${featureId} failed: ${message(err)}`);
-        process.exitCode = 1;
+        const code = err instanceof ArchiveFailure ? err.code : "internal";
+        fail(json, code, `archive ${featureId} failed: ${message(err)}`);
       }
     });
 }
 
+/**
+ * An Issue as the `--json` envelope spells it — the Finding shape, minus details.
+ * `gates` is always present and already resolved: a consumer must not have to
+ * re-implement the severity default to know what blocks archive.
+ */
+function issueJson(i: Issue): Record<string, unknown> {
+  return {
+    severity: i.severity,
+    code: i.code,
+    gates: gatesArchive(i),
+    ...(i.subject === undefined ? {} : { subject: i.subject }),
+    message: i.message,
+  };
+}
+
+/** The failure envelope plus the issues that caused it, so a caller need not re-run validate. */
+function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void {
+  console.log(JSON.stringify({ ok: false, error: { code, message: msg }, issues: issues.map(issueJson) }, null, 2));
+  process.exitCode = 1;
+}
+
 async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {
   const dryRun = opts.dryRun === true;
+  const json = opts.json === true;
+  // All prose goes through here so `--json` keeps stdout a single JSON document.
+  const say = (line = ""): void => {
+    if (!json) console.log(line);
+  };
   const config = await loadConfig();
   if (!config) {
-    console.error("No loam.json found. Run `loam init --docs <dir>` first.");
-    process.exitCode = 1;
+    reportNoConfig(json);
     return;
   }
   const featuresDir = featuresRoot(config.docsDir);
   const feature = await resolveFeature(config.docsDir, featureId);
   if (!feature) {
-    console.error(`No feature '${featureId}' under ${featuresDir}.`);
-    process.exitCode = 1;
+    fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir}.`);
     return;
   }
-  const { dirName, dir: featureDir } = feature;
+  const { id, dirName, dir: featureDir } = feature;
 
-  // Gate: never archive an incoherent feature without explicit approval — the merge would corrupt the living docs.
-  // A dry run is gated too: a plan for a merge that would be refused describes nothing that will happen.
+  // Gate: GATING issues block the archive. Severity and gating are two
+  // different questions (issue.ts): errors gate because the merge would write
+  // something wrong, and the rare warning marked `gates` blocks too — the
+  // document is legal but the merge would drop authored content. Advisory
+  // warnings are printed (and carried into --json) but never block, matching
+  // validate's own doctrine (report.ts: "warnings never gate"). --approve
+  // overrides the gating issues ONLY, and must say exactly which ones it is
+  // walking past. A dry run is gated too: a plan for a merge that would be
+  // refused describes nothing that will happen.
   const issues = await featureCoherence(config.docsDir, featureDir, featureId);
-  if (issues.length > 0 && !opts.approve) {
-    const errs = issues.filter((i) => i.severity === "error").length;
-    console.error(`archive ${featureId} — BLOCKED: not coherent (${errs} error(s), ${issues.length - errs} warning(s)):`);
+  const gating = issues.filter(gatesArchive);
+  const advisory = issues.filter((i) => !gatesArchive(i));
+  if (gating.length > 0 && !opts.approve) {
+    const msg = `archive ${featureId} — BLOCKED: not coherent (${gating.length} gating issue(s), ${advisory.length} advisory warning(s))`;
+    if (json) {
+      refuseJson("not-coherent", msg, issues);
+      return;
+    }
+    console.error(`${msg}:`);
     for (const i of issues) console.error(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
-    console.error(`\nFix these, or re-run with --approve to archive anyway (may corrupt the living docs).`);
+    console.error(`\nFix the gating issues (advisory warnings never block), or re-run with --approve to override them (may corrupt the living docs).`);
     process.exitCode = 1;
     return;
   }
-  if (issues.length > 0) {
-    console.log(`⚠ archiving despite ${issues.length} coherence issue(s) (--approve):`);
-    for (const i of issues) console.log(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
-    console.log("");
+  if (gating.length > 0) {
+    say(`⚠ archiving despite ${gating.length} gating issue(s) (--approve):`);
+    for (const i of gating) say(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+    say();
+  }
+  if (advisory.length > 0) {
+    say(`⚠ ${advisory.length} warning(s) (non-blocking):`);
+    for (const i of advisory) say(`  ⚠ ${i.message}`);
+    say();
+  }
+
+  const deltaServices = await featureSpecServices(featureDir);
+
+  // A LIVING requirement outside `## Requirements` is a merge loam cannot do
+  // correctly: splitSpec cuts the intro at the first `\n## Requirements` (or
+  // keeps the WHOLE text as intro when absent) while parseRequirements collects
+  // from every section, and the merged file is intro + `## Requirements` + every
+  // requirement — so the strayed requirement lands in the file TWICE, and the
+  // next archive's MODIFIED replaces only the first copy. Refused rather than
+  // repaired: excising blocks from the intro programmatically would be archive
+  // editing prose it does not understand. --approve does not apply — it
+  // overrides judgments about the FEATURE, and this is neither.
+  const strayed: Issue[] = [];
+  for (const svc of deltaServices) {
+    if (!existsSync(featureSpecPaths(featureDir, svc).spec)) continue;
+    const livingPath = servicePaths(config.docsDir, svc).spec;
+    if (!existsSync(livingPath)) continue;
+    for (const r of parseRequirements(await readFile(livingPath, "utf8"))) {
+      // Exact match on purpose: `section` is the trimmed heading line, and
+      // `## Requirements` is exactly the cut point splitSpec searches for.
+      if (r.section === "## Requirements") continue;
+      const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
+      strayed.push({
+        severity: "error",
+        code: "living.requirement-outside-requirements",
+        subject: svc,
+        message: `${svc}: living requirement '${r.name}' sits ${where} in ${repoPath(config.docsDir, livingPath)} — the merge rewrites only '## Requirements', so it would land in the file twice. Re-home it under '## Requirements' first, then re-run.`,
+      });
+    }
+  }
+  if (strayed.length > 0) {
+    const msg = `archive ${featureId} — BLOCKED: ${strayed.length} living requirement(s) outside '## Requirements'`;
+    if (json) {
+      refuseJson("living-outside-requirements", msg, strayed);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const i of strayed) console.error(`  ✗ ${i.message}`);
+    console.error(`\n--approve does not override this — the duplication is mechanical, not a judgment call.`);
+    process.exitCode = 1;
+    return;
   }
 
   // Pre-flight: the archive destination must be free, or the final move would fail
@@ -88,18 +193,18 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   const archiveDir = join(featuresDir, "archive");
   const archiveDest = join(archiveDir, dirName);
   if (existsSync(archiveDest)) {
-    console.error(`archive ${featureId} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
-    process.exitCode = 1;
+    fail(json, "archive-exists", `archive ${featureId} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
     return;
   }
 
-  console.log(`archive ${featureId}${dryRun ? "  (dry run)" : ""}\n`);
+  say(`archive ${featureId}${dryRun ? "  (dry run)" : ""}\n`);
 
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
   const writes: PlannedWrite[] = [];
-
-  const deltaServices = await featureSpecServices(featureDir);
+  // Warnings born in the plan itself (openapi.op-modified) — printed with the
+  // plan and carried into the --json envelope beside the coherence warnings.
+  const planWarns: Issue[] = [];
 
   // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.
   for (const svc of deltaServices) {
@@ -112,12 +217,12 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
       // New service — create its living spec from the ADDED/MODIFIED requirements.
       const created = applyRequirementDelta([], deltaReqs);
       if (created.length === 0) {
-        console.log(`  requirements: ${svc} — nothing to merge (delta leaves no requirements), no living spec created`);
+        say(`  requirements: ${svc} — nothing to merge (delta leaves no requirements), no living spec created`);
         continue;
       }
       const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${svc}\n\n`;
       writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
-      console.log(`  requirements: ${svc} — created living spec (${created.length} requirement(s))`);
+      say(`  requirements: ${svc} — created living spec (${created.length} requirement(s))`);
       continue;
     }
     const livingText = await readFile(livingPath, "utf8");
@@ -126,7 +231,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     writes.push({ path: livingPath, content: `${intro.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}` });
 
     const c = summarize(deltaReqs);
-    console.log(`  requirements: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+    say(`  requirements: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
   }
 
   // 1b. OpenAPI merge — fold the feature's openapi deltas into the living service APIs.
@@ -138,12 +243,21 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     const ops = await operationIds(featOpenapi);
     if (!existsSync(livingOpenapi)) {
       writes.push({ path: livingOpenapi, content: featText });
-      console.log(`  openapi: ${svc} — created (${ops.join(", ")})`);
+      say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
-      const merged = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
-      if (merged !== null) {
-        writes.push({ path: livingOpenapi, content: merged });
-        console.log(`  openapi: ${svc} — merged (${ops.join(", ")})`);
+      const { text, modified } = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
+      if (text !== null) {
+        writes.push({ path: livingOpenapi, content: text });
+        say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
+      }
+      for (const label of modified) {
+        planWarns.push({
+          severity: "warn",
+          code: "openapi.op-modified",
+          subject: svc,
+          message: `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale`,
+        });
+        say(`      ⚠ overwrites ${label} — the living definition differs`);
       }
     }
   }
@@ -152,28 +266,54 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   const deltaLikec4 = featurePaths(featureDir).delta;
   const landscapePath = landscapeFile(config.docsDir);
   if (existsSync(deltaLikec4)) {
-    const { errors, elements, relationships } = await loadFile(deltaLikec4);
-    if (errors.length > 0) {
-      console.log("\n  architecture: delta.likec4 has errors — skipped (run `loam validate --feature`).");
-    } else {
-      const newEls = elements.filter((e) => e.tags.includes(featureId));
-      const newRels = relationships.filter((r) => r.tags.includes(featureId));
-      if (existsSync(landscapePath)) {
-        const plan = await planLandscapeMerge(landscapePath, elements, newEls, newRels);
-        writes.push(...plan.writes);
-        console.log(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
-        for (const e of plan.addedEls) console.log(`      + ${e.title} (${e.kind})`);
-        for (const r of plan.addedRels) {
-          console.log(`      + ${titleOf(elements, r.source)} -> ${titleOf(elements, r.target)}  "${r.title ?? ""}"`);
-        }
-      } else {
-        console.log(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);
+    const delta = await loadFile(deltaLikec4);
+    if (delta.errors.length > 0) {
+      // --approve overrides loam's JUDGMENT about coherence, never its ability to
+      // read an axis. Skipping here would silently drop one merge axis in the one
+      // command engineered against quiet partial merges — same rule as an
+      // unparseable landscape or openapi: the plan stops before anything is written.
+      throw new ArchiveFailure(
+        "merge-failed",
+        `delta.likec4 has ${delta.errors.length} parse error(s) — the architecture axis cannot be merged; fix it (\`loam validate --feature ${featureId}\`) or delete the file`,
+      );
+    }
+    const newEls = delta.elements.filter((e) => e.tags.includes(featureId));
+    const newRels = delta.relationships.filter((r) => r.tags.includes(featureId));
+    if (existsSync(landscapePath)) {
+      const plan = await planLandscapeMerge(landscapePath, delta.elements, newEls, newRels);
+      writes.push(...plan.writes);
+      say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
+      for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
+      for (const r of plan.addedRels) {
+        say(`      + ${titleOf(delta.elements, r.source)} -> ${titleOf(delta.elements, r.target)}  "${r.title ?? ""}"`);
       }
+    } else {
+      say(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);
     }
   }
 
+  // The plan as data, verb decided now — after the commit everything would read
+  // as an update. The `--json` payload is identical for a dry run and the real
+  // thing except for `archived`; what WOULD happen is what DOES happen.
+  const warnings = [...advisory, ...planWarns];
+  const overridden = opts.approve === true ? gating : [];
+  const plan: Array<Record<string, unknown>> = writes.map((w) => ({
+    path: repoPath(config.docsDir, w.path),
+    action: existsSync(w.path) ? "update" : "create",
+  }));
+  plan.push({ path: `features/${dirName}`, action: "move", to: `features/archive/${dirName}` });
+  const payload = (archived: boolean): Record<string, unknown> => ({
+    feature: id,
+    archived,
+    path: repoPath(config.docsDir, archiveDest),
+    plan,
+    warnings: warnings.map(issueJson),
+    overridden: overridden.map(issueJson),
+  });
+
   if (dryRun) {
-    printPlan(config.docsDir, writes, dirName);
+    if (json) emitJson(payload(false));
+    else printPlan(config.docsDir, writes, dirName);
     return;
   }
 
@@ -195,9 +335,16 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     const failures = await rollbackStaged(staged);
     if (snapshot) await quietRm(snapshotDir(featureDir));
     if (createdArchiveDir !== undefined) await quietRm(createdArchiveDir);
-    throw rollbackError(err, failures);
+    // The code is a caller's answer to "can I trust the repo?": merge-failed
+    // means yes (rolled back), rollback-incomplete means look at it by hand.
+    const wrapped = rollbackError(err, failures);
+    throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message);
   }
 
+  if (json) {
+    emitJson(payload(true));
+    return;
+  }
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
   console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${featureId}\` puts it back`);
   console.log("  living spec + landscape are now complete + current.");
@@ -434,38 +581,65 @@ async function writeSnapshot(
 /* Merging                                                             */
 /* ------------------------------------------------------------------ */
 
+/** The keys of a path item that ARE operations — vendor extensions and `parameters` are not. */
+const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+
 /**
  * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
  * text splicing): a new path is inserted whole; an existing path gains/overwrites
  * the feature's methods. Never produces duplicate keys or mixed indentation; the
  * living document's comments and formatting are preserved. Returns the merged
- * text, or null when the feature document has no paths to merge.
+ * text (null when the feature document has no paths to merge), plus a label for
+ * every EXISTING operation the merge overwrites with different content — the
+ * feature file restates the full API, so only the operationId set-difference is
+ * ever examined elsewhere, and a changed schema/params/response would otherwise
+ * land with zero signal. Set membership + deep-equal only; no schema-diff semantics.
  */
-function mergeOpenapiPaths(livingText: string, featureText: string, service: string): string | null {
+function mergeOpenapiPaths(
+  livingText: string,
+  featureText: string,
+  service: string,
+): { text: string | null; modified: string[] } {
   const feature = parseDocument(featureText);
   if (feature.errors.length > 0) {
-    throw new Error(`feature openapi for ${service} is not valid YAML: ${feature.errors[0]!.message}`);
+    throw new ArchiveFailure("merge-failed", `feature openapi for ${service} is not valid YAML: ${feature.errors[0]!.message}`);
   }
   const featPaths = feature.get("paths");
-  if (!isMap(featPaths) || featPaths.items.length === 0) return null;
+  if (!isMap(featPaths) || featPaths.items.length === 0) return { text: null, modified: [] };
 
   const living = parseDocument(livingText);
   if (living.errors.length > 0) {
-    throw new Error(`living openapi for ${service} is not valid YAML: ${living.errors[0]!.message}`);
+    throw new ArchiveFailure("merge-failed", `living openapi for ${service} is not valid YAML: ${living.errors[0]!.message}`);
   }
+  const modified: string[] = [];
   for (const item of featPaths.items) {
     const path = scalarKey(item.key);
     const featItem = item.value;
     const existing = living.getIn(["paths", path]);
     if (existing !== undefined && isMap(existing) && isMap(featItem)) {
       for (const method of featItem.items) {
-        living.setIn(["paths", path, scalarKey(method.key)], toPlain(method.value));
+        const m = scalarKey(method.key);
+        const before = living.getIn(["paths", path, m]);
+        if (HTTP_METHODS.has(m) && before !== undefined && !isDeepStrictEqual(toPlain(before), toPlain(method.value))) {
+          modified.push(opLabel(before, method.value, m, path));
+        }
+        living.setIn(["paths", path, m], toPlain(method.value));
       }
     } else {
       living.setIn(["paths", path], toPlain(featItem));
     }
   }
-  return living.toString();
+  return { text: living.toString(), modified };
+}
+
+/** Name an overwritten operation by its operationId (feature's, else living's), or by path+method. */
+function opLabel(before: unknown, after: unknown, method: string, path: string): string {
+  const idOf = (n: unknown): string | undefined => {
+    const v = isMap(n) ? n.get("operationId") : undefined;
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+  const op = idOf(after) ?? idOf(before);
+  return op !== undefined ? `'${op}' (${method} ${path})` : `${method} ${path}`;
 }
 
 function scalarKey(key: unknown): string {
@@ -502,7 +676,7 @@ async function planLandscapeMerge(
   const text = await readFile(landscapePath, "utf8");
   const land = await loadFile(landscapePath);
   if (land.errors.length > 0) {
-    throw new Error(`landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
+    throw new ArchiveFailure("merge-failed", `landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
   }
   const haveIds = new Set(land.elements.map((e) => e.id));
   const haveTitles = new Set(land.elements.map((e) => e.title));
@@ -594,7 +768,7 @@ function relLine(r: Rel): string {
  */
 function insertIntoModelBlock(text: string, lines: string[]): string {
   const m = /\bmodel\s*\{/.exec(text);
-  if (!m) throw new Error("landscape.likec4 has no model block");
+  if (!m) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
   let depth = 0;
   let close = -1;
   type State = "code" | "squote" | "dquote" | "lineComment" | "blockComment";
@@ -630,11 +804,19 @@ function insertIntoModelBlock(text: string, lines: string[]): string {
         break;
     }
   }
-  if (close === -1) throw new Error("landscape.likec4 has an unbalanced model block");
+  if (close === -1) throw new ArchiveFailure("merge-failed", "landscape.likec4 has an unbalanced model block");
   const block = `\n  // merged by loam archive\n${lines.map((l) => `  ${l}`).join("\n")}\n`;
   return text.slice(0, close) + block + text.slice(close);
 }
 
+/**
+ * Split a living spec into its intro (everything above `## Requirements`) and
+ * its requirements — which parseRequirements collects from EVERY section. The
+ * two rules only agree when every living requirement is under `## Requirements`;
+ * anywhere else it would sit in the intro AND be re-serialized below it, so
+ * runArchive refuses such a spec (living.requirement-outside-requirements)
+ * before this function's output is ever written.
+ */
 function splitSpec(text: string): { intro: string; reqs: Requirement[] } {
   const i = text.indexOf("\n## Requirements");
   const intro = i >= 0 ? text.slice(0, i) : text;

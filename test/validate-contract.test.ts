@@ -9,7 +9,9 @@
  *
  * Families:
  *  - --all: coverage of every target, summary, exit discipline
+ *  - --all: the landscape is parsed once and findings stay identical to per-target runs
  *  - --json: envelope, ok-vs-valid, finding shape, stable codes
+ *  - --json: graded absences (service.unknown / service.no-spec / service.no-openapi)
  *  - option conflicts
  */
 import { describe, expect, it } from "vitest";
@@ -134,6 +136,33 @@ describe("--all", () => {
       expect(withService.code).toBe(1);
       const withFeature = await runLoam(p.workDir, "validate", "--all", "--feature", "FEAT-1");
       expect(withFeature.code).toBe(1);
+    });
+  });
+
+  it("refuses --service with --feature as invalid-option, instead of silently dropping --service", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("invalid-option");
+    });
+  });
+
+  it("parses the landscape once, and the findings stay identical to per-target runs", async () => {
+    // The preloaded-landscape path must be a behavioral no-op: every service
+    // target under --all reports byte-for-byte what its single-target run does.
+    const files = coherentFixture();
+    files["services/checkout-web/model.likec4"] = SERVICE_MODEL;
+    await withProject(files, {}, async (p) => {
+      const all = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      for (const svc of ["checkout-web", SVC]) {
+        const single = JSON.parse(
+          (await runLoam(p.workDir, "validate", "--service", svc, "--json")).stdout,
+        );
+        const fromAll = (all.targets as Target[]).find((t) => t.id === svc)!;
+        expect(fromAll.findings).toEqual(single.targets[0].findings);
+      }
     });
   });
 });
@@ -307,9 +336,73 @@ describe("--json findings", () => {
         SVC,
         "FEAT-1",
       ]);
-      // three provenance warnings: the payment-service spec names no owner and no
-      // sources, and the feature's intent names no owner either
-      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 3 });
+      // four warnings: the payment-service spec names no owner and no sources,
+      // the feature's intent names no owner, and checkout-web has no spec.md at
+      // all (its missing openapi stays quiet — no landscape edge calls an op on it)
+      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 4 });
+    });
+  });
+
+  it("codes an unknown service as its own error — a typo is not an unadopted service", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "paymnt-service", "--json");
+      expect(res.code).toBe(1);
+      const t: Target = JSON.parse(res.stdout).targets[0];
+      expect(t.kind).toBe("service");
+      expect(t.valid).toBe(false);
+      expect(codes(t)).toEqual(["service.unknown"]);
+      const f = t.findings[0]!;
+      expect(f.severity).toBe("error");
+      expect(f.message).toContain("payment-service"); // the real id, offered
+      expect(f.message).not.toContain("adopt");
+    });
+  });
+
+  it("codes missing spec.md and openapi.yaml as warnings that do not invalidate the target", async () => {
+    // model only, no landscape: partial adoption is a supported state, so both
+    // absences warn (with no landscape nothing proves the API is unexpected)
+    await withProject(
+      { [`services/${SVC}/model.likec4`]: SERVICE_MODEL },
+      { service: SVC },
+      async (p) => {
+        const res = await runLoam(p.workDir, "validate", "--json");
+        expect(res.code).toBe(0);
+        const t: Target = JSON.parse(res.stdout).targets[0];
+        expect(t.valid).toBe(true);
+        expect(codes(t)).toEqual(["c4.valid", "service.no-spec", "service.no-openapi"]);
+        for (const code of ["service.no-spec", "service.no-openapi"]) {
+          expect(t.findings.find((f) => f.code === code)!.severity).toBe("warn");
+        }
+      },
+    );
+  });
+
+  it("codes migration debt once per service, not once per operation", async () => {
+    const files = coherentFixture();
+    // two operations, and a spec whose requirement links neither
+    files[`services/${SVC}/spec.md`] = files[`services/${SVC}/spec.md`]!.replace(
+      "Operations: authorizePayment\n\n",
+      "",
+    );
+    files[`services/${SVC}/openapi.yaml`] =
+      LIVING_OPENAPI +
+      `  /payments/refund:
+    post:
+      operationId: refundPayment
+      responses:
+        "200":
+          description: Refunded
+`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const t: Target = JSON.parse(res.stdout).targets[0];
+      const unlinked = t.findings.filter((f) => f.code === "api.ops-unlinked");
+      expect(unlinked).toHaveLength(1);
+      expect(unlinked[0]!.severity).toBe("warn");
+      expect(unlinked[0]!.message).toContain("2 operation(s)");
+      // the per-op warn still lists the orphans alongside
+      expect(codes(t)).toContain("api.ungoverned");
     });
   });
 

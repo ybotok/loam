@@ -5,7 +5,7 @@ import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
 import { elementService, loadFile, serviceOf, type Rel } from "../core/likec4.js";
 import { repoPath } from "./list.js";
-import { featurePaths, featureSpecPaths, resolveFeature } from "../core/repo.js";
+import { featurePaths, featureSpecPaths, featuresDir, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
 
 interface DeltaOptions {
@@ -54,7 +54,7 @@ export function registerDelta(program: Command): void {
 
       const feature = await resolveFeature(config.docsDir, featureId);
       if (!feature) {
-        const msg = `No feature '${featureId}' under ${config.docsDir}/features/.`;
+        const msg = `No feature '${featureId}' under ${featuresDir(config.docsDir)}.`;
         if (json) emitJsonError("unknown-target", msg);
         else {
           console.error(msg);

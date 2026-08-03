@@ -314,6 +314,59 @@ paths:
     expect(await extract(doc)).toEqual(["listUsers"]);
   });
 
+  it("does not extract an operationId from a path-item vendor extension (x-legacy)", async () => {
+    // A path ITEM (not operation) may carry object-valued x-* extensions; an
+    // operationId inside one is not an operation. The phantom id would make a
+    // broken contract look "available" to coherence's op-exists checks — the
+    // masking direction, worse than a false negative.
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    x-legacy:
+      operationId: ghost
+      migratedFrom: monolith
+    get:
+      operationId: listUsers
+      responses:
+        "200":
+          description: OK
+`;
+    expect(yamlGroundTruth(doc)).toEqual(["listUsers"]); // the YAML defines exactly one op
+    expect(await extract(doc)).toEqual(["listUsers"]);
+  });
+
+  it("ignores non-method path-item keys (summary, parameters) while keeping every method's id", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users/{id}:
+    summary: User by id
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getUser
+      responses:
+        "200":
+          description: OK
+    delete:
+      operationId: deleteUser
+      responses:
+        "204":
+          description: Deleted
+`;
+    expect(await extract(doc)).toEqual(yamlGroundTruth(doc));
+    expect(await extract(doc)).toEqual(["getUser", "deleteUser"]);
+  });
+
   it("does not extract a mid-line 'operationId:' mention in a summary", async () => {
     const doc = `openapi: 3.1.0
 info:

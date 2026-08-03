@@ -4,10 +4,20 @@ import { parse } from "yaml";
 import { featureSpecPaths, servicePaths } from "./repo.js";
 
 /**
+ * The path-item keys that hold operations. A path item also carries `summary`,
+ * `parameters`, `servers` and vendor `x-*` extensions — an object-valued one with
+ * an `operationId` inside (x-legacy and friends) is not an operation, and a
+ * phantom id from it would make a broken contract look "available" to the
+ * op-exists checks.
+ */
+const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+
+/**
  * Extract operationIds from an OpenAPI document by walking the parsed YAML
- * structure (paths.<path>.<method>.operationId). Structure-aware on purpose:
- * a regex scan both drops legal ids (kebab-case, dotted) and picks up phantom
- * ids from description text. Returns the defined set (deduped, document order).
+ * structure (paths.<path>.<method>.operationId, method filtered to the HTTP
+ * set). Structure-aware on purpose: a regex scan both drops legal ids
+ * (kebab-case, dotted) and picks up phantom ids from description text.
+ * Returns the defined set (deduped, document order).
  * An unreadable document yields [] — its contract can prove nothing.
  */
 export async function operationIds(openapiPath: string): Promise<string[]> {
@@ -24,7 +34,8 @@ export async function operationIds(openapiPath: string): Promise<string[]> {
   const ids = new Set<string>();
   for (const item of Object.values(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
-    for (const op of Object.values(item as Record<string, unknown>)) {
+    for (const [method, op] of Object.entries(item as Record<string, unknown>)) {
+      if (!HTTP_METHODS.has(method)) continue;
       if (!op || typeof op !== "object") continue;
       const id = (op as Record<string, unknown>)["operationId"];
       if (typeof id === "string" && id.length > 0) ids.add(id);

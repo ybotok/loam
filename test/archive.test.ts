@@ -26,6 +26,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/likec4.js";
 import { parseRequirements } from "../src/core/spec.js";
@@ -1158,16 +1159,22 @@ describe("coherence gate", () => {
     expect(p.exists("features/archive")).toBe(false);
   });
 
-  it("--approve overrides the gate and archives the incoherent feature", async () => {
+  it("--approve overrides the gate, names each gating issue it is overriding, and archives", async () => {
     const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve");
     expect(res.code).toBe(0);
-    expect(res.out).toContain("archiving despite");
+    // Gating issues only, and by name: overriding is a decision, and the output
+    // must say exactly what was decided against.
+    expect(res.out).toContain("archiving despite 2 gating issue(s) (--approve)");
+    expect(res.out).toContain("createSplit");
     expect(p.exists("features/FEAT-1-split")).toBe(false);
     expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
     expect(p.exists("services/payment-split-service/spec.md")).toBe(true);
   });
 
-  it("warn-only coherence issues block archive while validate --feature passes them (pinned current behavior)", async () => {
+  it("advisory warnings never block: archive prints them and proceeds", async () => {
+    // Severity and gating are two axes (issue.ts): the gate refuses on gating
+    // issues — errors, plus the rare warning marked `gates` — and advisory
+    // warnings only inform. This fixture's warns are all advisory.
     const wp = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
       "features/FEAT-9-split/delta.likec4": WARN_ONLY_DELTA,
@@ -1180,10 +1187,12 @@ describe("coherence gate", () => {
       const v = await runLoam(wp.workDir, "validate", "--feature", "FEAT-9");
       expect(v.code).toBe(0);
       const a = await runLoam(wp.workDir, "archive", "FEAT-9");
-      expect(a.code).toBe(1);
-      expect(a.out).toContain("BLOCKED");
-      expect(a.out).toContain("0 error(s)");
-      expect(wp.exists("features/FEAT-9-split/delta.likec4")).toBe(true);
+      expect(a.code).toBe(0);
+      expect(a.out).toContain("warning(s) (non-blocking)");
+      expect(a.out).toContain("createSplit");
+      expect(a.out).not.toContain("BLOCKED");
+      expect(wp.exists("features/FEAT-9-split")).toBe(false);
+      expect(wp.exists("features/archive/FEAT-9-split/delta.likec4")).toBe(true);
     } finally {
       await wp.destroy();
     }
@@ -1272,18 +1281,381 @@ describe("missing pieces", () => {
     }
   });
 
-  it("a broken delta.likec4 with --approve skips the arch merge with a notice, merges the rest, and archives", async () => {
+  it("a broken delta.likec4 is refused even with --approve — an unreadable axis cannot be merged", async () => {
+    // --approve overrides loam's judgment about coherence, never its ability to
+    // read an axis. The old behaviour ("skipped, merged the rest") silently
+    // dropped one merge axis in the one command engineered against quiet
+    // partial merges.
     const files = coherentFixture();
     files["features/FEAT-1-split/delta.likec4"] = "model { this is not likec4\n";
     const p = await makeProject(files);
     try {
-      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve");
+      const before = await treeHashes(p.docsDir);
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", "FEAT-1", "--approve");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      expect(res!.out).toContain("architecture axis cannot be merged");
+      // The refusal is plan-phase: nothing was written, nothing was moved.
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      expect(p.exists("features/archive/FEAT-1-split")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("living requirements outside '## Requirements' (the duplication guard)", () => {
+  /*
+   * The reproduced corruption: splitSpec cuts the intro at the first
+   * `\n## Requirements` — or keeps the WHOLE text as intro when absent — while
+   * parseRequirements collects requirements from every section. The merged file
+   * is intro + `## Requirements` + every requirement, so a living requirement
+   * under a prose heading lands in the file TWICE, and the next archive's
+   * MODIFIED replaces only the first copy. The fix is a plan-time refusal, not
+   * a programmatic excision of intro blocks.
+   */
+
+  /** A living spec whose second requirement strayed under a prose heading. */
+  const LIVING_SPEC_STRAYED = `---
+service: payment-service
+status: verified
+---
+
+# payment-service
+
+## Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment before capture.
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+
+## Behavior
+
+### Requirement: Capture a payment
+The service SHALL capture an authorized payment.
+
+#### Scenario: Capture happens
+- **Given** an authorized payment
+- **When** capture is requested
+- **Then** the payment is captured
+`;
+
+  /** A perfectly well-formed delta — the breach is in the LIVING file, not the feature. */
+  const CLEAN_DELTA = `# payment-service — delta for FEAT-15
+
+## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment within 2 seconds.
+
+#### Scenario: Fast authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** it completes within 2 seconds
+`;
+
+  function strayedFixture(): Record<string, string> {
+    return {
+      "services/payment-service/spec.md": LIVING_SPEC_STRAYED,
+      "features/FEAT-15-faster/specs/payment-service/spec.md": CLEAN_DELTA,
+    };
+  }
+
+  it("refuses the merge that would duplicate the strayed requirement, and touches nothing", async () => {
+    const p = await makeProject(strayedFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-15");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("outside '## Requirements'");
+      expect(res.out).toContain("Capture a payment");
+      expect(res.out).toContain("twice");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve does not override it — the duplication is mechanical, not a judgment call", async () => {
+    const p = await makeProject(strayedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-15", "--approve");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("outside '## Requirements'");
+      expect(p.exists("features/archive/FEAT-15-faster")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a living spec with NO '## Requirements' heading at all is the same refusal", async () => {
+    // splitSpec keeps the whole text as intro here, so EVERY requirement would double.
+    const files = strayedFixture();
+    files["services/payment-service/spec.md"] = LIVING_SPEC_STRAYED.replace("## Requirements\n\n", "");
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-15");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("outside '## Requirements'");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--json names the refusal: living-outside-requirements, with the issue attached", async () => {
+    const p = await makeProject(strayedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-15", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("living-outside-requirements");
+      expect(json.issues).toHaveLength(1);
+      expect(json.issues[0]).toMatchObject({
+        severity: "error",
+        code: "living.requirement-outside-requirements",
+        subject: "payment-service",
+      });
+      expect(json.issues[0].message).toContain("Capture a payment");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("overwriting an existing living operation (openapi.op-modified)", () => {
+  /*
+   * A feature's openapi.yaml restates the full API, and only the operationId
+   * set-difference is examined elsewhere — so a changed schema/params/response
+   * on an EXISTING operation merges with zero signal while mergeOpenapiPaths
+   * overwrites the living method wholesale. The warn is set membership +
+   * deep-equal only: no schema-diff semantics.
+   */
+  function redeclareFixture(featureOpenapi: string): Record<string, string> {
+    return {
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "features/FEAT-4-idem/delta.likec4": REDECLARE_DELTA,
+      "features/FEAT-4-idem/specs/payment-service/spec.md": REDECLARE_SPEC,
+      "features/FEAT-4-idem/specs/payment-service/openapi.yaml": featureOpenapi,
+    };
+  }
+
+  it("a changed existing operation warns by operationId, does not block, and still merges", async () => {
+    // REDECLARE_OPENAPI redefines authorizePayment with a different summary.
+    const p = await makeProject(redeclareFixture(REDECLARE_OPENAPI));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-4");
       expect(res.code).toBe(0);
-      expect(res.out).toContain("delta.likec4 has errors — skipped");
-      expect(await p.read(LANDSCAPE_REL)).toBe(LANDSCAPE);
-      expect(p.exists("services/payment-split-service/spec.md")).toBe(true);
-      expect(p.exists("services/payment-split-service/openapi.yaml")).toBe(true);
-      expect(p.exists("features/archive/FEAT-1-split")).toBe(true);
+      expect(res.out).toContain("overwrites 'authorizePayment' (post /payments/authorize)");
+      const text = await p.read("services/payment-service/openapi.yaml");
+      expect(text).toContain("idempotency key");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("an identical restatement of the living operation is silent", async () => {
+    const p = await makeProject(redeclareFixture(LIVING_OPENAPI));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-4");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("overwrites");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the warning is in the --json envelope, dry run included", async () => {
+    const p = await makeProject(redeclareFixture(REDECLARE_OPENAPI));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-4", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(true);
+      expect(json.archived).toBe(false);
+      const warn = json.warnings.find((w: { code: string }) => w.code === "openapi.op-modified");
+      expect(warn).toMatchObject({ severity: "warn", subject: "payment-service" });
+      expect(warn.message).toContain("authorizePayment");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("the machine contract (--json)", () => {
+  it("success emits one valid JSON document: feature, archived, plan, warnings", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(0);
+      // res.out interleaves stdout and stderr — parsing it whole proves one
+      // stream carries nothing but the envelope.
+      const json = JSON.parse(res.out);
+      expect(json).toMatchObject({ ok: true, feature: "FEAT-1", archived: true, path: "features/archive/FEAT-1-split" });
+      expect(json.plan).toEqual(
+        expect.arrayContaining([
+          { path: "services/payment-split-service/spec.md", action: "create" },
+          { path: "services/payment-split-service/openapi.yaml", action: "create" },
+          { path: "architecture/landscape.likec4", action: "update" },
+        ]),
+      );
+      expect(json.plan.find((e: { action: string }) => e.action === "move")).toMatchObject({
+        path: "features/FEAT-1-split",
+        to: "features/archive/FEAT-1-split",
+      });
+      expect(json.warnings).toEqual([]);
+      expect(json.overridden).toEqual([]);
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--dry-run emits the same plan with archived:false, and writes nothing", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(true);
+      expect(json.archived).toBe(false);
+      expect(json.plan.length).toBeGreaterThan(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the coherence refusal is not-coherent, with every issue attached", async () => {
+    const files = coherentFixture();
+    delete files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"];
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("not-coherent");
+      const codes = json.issues.map((i: { code: string }) => i.code);
+      expect(codes).toContain("spec-api.op-undefined");
+      expect(codes).toContain("c4-api.op-undefined");
+      // `gates` is resolved on every issue — a consumer must not have to
+      // re-implement the severity default to know what blocked.
+      for (const i of json.issues) expect(typeof i.gates).toBe("boolean");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a gating WARNING blocks alone — severity and gating are separate axes", async () => {
+    // delta.requirement-not-merged: the document is legal (warn — validate
+    // passes), the merge would drop authored content (gates — archive refuses).
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] += `
+## Behavior
+
+### Requirement: Stranded here
+The service SHALL do the stranded thing.
+
+#### Scenario: It happens
+- **Then** it happens
+`;
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.out);
+      expect(json.error.code).toBe("not-coherent");
+      const stranded = json.issues.find(
+        (i: { code: string }) => i.code === "delta.requirement-not-merged",
+      );
+      expect(stranded).toMatchObject({ severity: "warn", gates: true });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve success carries the overridden errors by code", async () => {
+    const files = coherentFixture();
+    delete files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"];
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(true);
+      expect(json.archived).toBe(true);
+      const codes = json.overridden.map((i: { code: string }) => i.code);
+      expect(codes).toContain("spec-api.op-undefined");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a taken destination is archive-exists", async () => {
+    const files = coherentFixture();
+    files["features/archive/FEAT-1-split/stale.md"] = "# leftover from a previous run\n";
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.out)).toMatchObject({ ok: false, error: { code: "archive-exists" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("an unknown feature is unknown-target, and a missing config is no-config", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const missing = await runLoam(p.workDir, "archive", "FEAT-77", "--json");
+      expect(JSON.parse(missing.out)).toMatchObject({ ok: false, error: { code: "unknown-target" } });
+      await rm(join(p.workDir, "loam.json"));
+      const noConfig = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(JSON.parse(noConfig.out)).toMatchObject({ ok: false, error: { code: "no-config" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a thrown plan error (unparseable delta.likec4 under --approve) still speaks JSON: merge-failed", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/delta.likec4"] = "model { this is not likec4\n";
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(res.code).toBe(1);
+      // stdout, not the interleaved capture: LikeC4's own logger warns on
+      // stderr about the broken document, which is exactly why the envelope's
+      // invariant is scoped to stdout.
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain("architecture axis cannot be merged");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a commit-phase failure rolls back and still speaks JSON: merge-failed, saying so", async () => {
+    const p = await makeProject(coherentFixture());
+    await p.write("features/archive", "not a directory\n");
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.out);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message.toLowerCase()).toContain("rolled back");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
     } finally {
       await p.destroy();
     }

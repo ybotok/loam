@@ -4,7 +4,7 @@
  * featureCoherence(docsDir, featureDir, featureId) checks that a feature's three
  * axes agree: C4 delta (architecture) ↔ requirement deltas (behaviour) ↔ OpenAPI
  * (contract), joined by the operationId spine. Errors gate `loam archive`
- * (archive.ts blocks on ANY issue, warns included, without --approve).
+ * (--approve overrides them); warnings are printed but never block.
  *
  * Tests assert DESIRED semantics per SCHEMA.md and the module's own docstring —
  * failures that survive re-derivation from source are recorded as suspected bugs.
@@ -299,6 +299,79 @@ describe("E2 C4→API: every tagged edge's op must be defined by the TARGET serv
 });
 
 /* ------------------------------------------------------------------ */
+/* Pending ops: defined by another feature in flight                   */
+/* ------------------------------------------------------------------ */
+
+describe("pending ops: op missing here but defined by another ACTIVE feature's openapi delta", () => {
+  const OTHER_REL = "features/FEAT-2-other";
+
+  it("E2 downgrades to c4-api.op-pending naming the in-flight feature", async () => {
+    // Feature A calling an op that in-flight feature B introduces is the normal
+    // shape of cross-service work — an ordering dependency, not a broken contract
+    // (cf. delta.modified-pending on the requirements axis).
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'caller-svc'
+  b = softwareSystem 'provider-svc'
+  a -> b 'Calls sharedOp' {
+    #FEAT-1
+    metadata { op 'sharedOp' }
+  }`),
+      [`${OTHER_REL}/specs/provider-svc/openapi.yaml`]: openapiWith("sharedOp"),
+    });
+    expect(errors(issues)).toEqual([]);
+    const pending = warns(issues).filter((i) => i.code === "c4-api.op-pending");
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.message).toContain("sharedOp");
+    expect(pending[0]!.message).toContain("FEAT-2");
+    expect(pending[0]!.message).toContain("archive");
+  });
+
+  it("E1 downgrades to spec-api.op-pending naming the in-flight feature", async () => {
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/specs/provider-svc/spec.md`]: specDelta("sharedOp"),
+      [`${OTHER_REL}/specs/provider-svc/openapi.yaml`]: openapiWith("sharedOp"),
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.severity).toBe("warn");
+    expect(issues[0]!.code).toBe("spec-api.op-pending");
+    expect(issues[0]!.message).toContain("sharedOp");
+    expect(issues[0]!.message).toContain("FEAT-2");
+  });
+
+  it("another feature's delta for a DIFFERENT service does not downgrade — the contract is per-provider", async () => {
+    // FEAT-2 defining sharedOp on unrelated-svc will never put it into
+    // provider-svc's OpenAPI, so provider-svc's contract stays broken.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/specs/provider-svc/spec.md`]: specDelta("sharedOp"),
+      [`${OTHER_REL}/specs/unrelated-svc/openapi.yaml`]: openapiWith("sharedOp"),
+    });
+    expect(errors(issues)).toHaveLength(1);
+    expect(errors(issues)[0]!.code).toBe("spec-api.op-undefined");
+  });
+
+  it("an ARCHIVED feature's delta does not downgrade — its ops are living or gone, not pending", async () => {
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/specs/provider-svc/spec.md`]: specDelta("sharedOp"),
+      [`features/archive/FEAT-2-other/specs/provider-svc/openapi.yaml`]: openapiWith("sharedOp"),
+    });
+    expect(errors(issues)).toHaveLength(1);
+    expect(errors(issues)[0]!.code).toBe("spec-api.op-undefined");
+  });
+
+  it("this feature's OWN delta for another service never counts as 'in flight'", async () => {
+    // Same fixture as the E1 cross-service pin above: the op lives in FEAT-1's
+    // delta for provider-svc, but consumer-svc's requirement still hard-fails —
+    // the downgrade applies only ACROSS features.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/specs/consumer-svc/spec.md`]: specDelta("sharedOp"),
+      [`${FEATURE_REL}/specs/provider-svc/openapi.yaml`]: openapiWith("sharedOp"),
+    });
+    expect(errors(issues)).toHaveLength(1);
+    expect(errors(issues)[0]!.code).toBe("spec-api.op-undefined");
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* W1: call-shaped edges without an op link                            */
 /* ------------------------------------------------------------------ */
 
@@ -365,8 +438,8 @@ describe("W-ungoverned: edge op defined in the API but governed by no requiremen
   it("edge op governed by the target's LIVING spec is not ungoverned", async () => {
     // A feature edge calling a pre-existing endpoint whose living requirement already
     // governs it is coherent: SCHEMA.md's coverage rule is "every operation is governed
-    // by a requirement" — not "by a requirement restated inside this feature". Warning
-    // here (and thereby blocking archive, which gates on ANY issue) is a false positive.
+    // by a requirement" — not "by a requirement restated inside this feature". A warning
+    // here would be a false positive, noise in every validate run.
     const issues = await coherenceOf({
       "services/payment-service/spec.md": LIVING_SPEC,
       "services/payment-service/openapi.yaml": LIVING_OPENAPI,
@@ -408,7 +481,7 @@ describe("W2 API→C4: feature-added operations should be consumed by a tagged e
     // Real authors restate the service's FULL API in the feature delta (the file is a
     // complete OpenAPI doc, not a patch). Ops that already exist in the living
     // openapi.yaml were not added by this feature, so they must not warn — otherwise
-    // every restating feature is blocked at archive (which gates on ANY issue).
+    // every restating feature drowns validate in noise for correct authoring.
     const files = coherentFixture();
     files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = LIVING_OPENAPI; // restates authorizePayment
     const issues = await coherenceOf(files);
@@ -494,9 +567,11 @@ describe("broken or missing inputs", () => {
 /* ------------------------------------------------------------------ */
 
 describe("tag scoping: only #<featureId>-tagged model parts are checked", () => {
-  it("untagged edge with a bogus op is invisible to every rule (pinned usability trap)", async () => {
-    // Pinned per SCHEMA.md ("loam can project the delta by tag"): untagged parts are
-    // context, not delta. NOTE the trap: forget the tag and every check silently passes.
+  it("delta with content but ZERO feature tags errors: untagged changes are invisible to loam", async () => {
+    // Formerly pinned as [] per SCHEMA.md ("untagged parts are context, not delta") —
+    // but a delta whose author forgot EVERY tag passes each per-part rule and archives
+    // while merging nothing, the single most likely LLM authoring slip. The per-part
+    // rules still skip untagged content; the whole-file check names the trap instead.
     const issues = await coherenceOf({
       [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'svc-a'
   b = softwareSystem 'svc-b'
@@ -504,10 +579,13 @@ describe("tag scoping: only #<featureId>-tagged model parts are checked", () => 
     metadata { op 'ghostOp' }
   }`),
     });
-    expect(issues).toEqual([]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.severity).toBe("error");
+    expect(issues[0]!.code).toBe("delta.nothing-tagged");
+    expect(issues[0]!.message).toContain("#FEAT-1");
   });
 
-  it("elements and edges tagged with a DIFFERENT feature id are invisible to this feature", async () => {
+  it("delta tagged ONLY with a different feature id has nothing for THIS feature — same error", async () => {
     const issues = await coherenceOf({
       [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'svc-a'
   other = softwareSystem 'other-new-svc' {
@@ -517,6 +595,35 @@ describe("tag scoping: only #<featureId>-tagged model parts are checked", () => 
     #FEAT-2
     metadata { op 'ghostOp' }
   }`),
+    });
+    // The FEAT-2 parts stay invisible to every per-part rule (no op errors) —
+    // the only finding is the whole-file one.
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe("delta.nothing-tagged");
+    expect(issues[0]!.message).not.toContain("ghostOp");
+  });
+
+  it("once at least one part is tagged, untagged parts stay invisible and nothing-tagged stays silent", async () => {
+    // Partial tagging is out of scope by decision: flagging "this untagged edge
+    // looks intended" would be guessing. The tagged container keeps W3 out
+    // (not a softwareSystem); the untagged bogus edge is invisible to E2.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  sys = softwareSystem 'host-svc' {
+    comp = container 'new-comp' {
+      #FEAT-1
+    }
+  }
+  a = softwareSystem 'svc-a'
+  sys -> a 'Calls ghostOp' {
+    metadata { op 'ghostOp' }
+  }`),
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("a delta declaring no elements and no relationships does not fire nothing-tagged", async () => {
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(""),
     });
     expect(issues).toEqual([]);
   });

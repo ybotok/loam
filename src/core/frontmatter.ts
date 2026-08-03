@@ -30,15 +30,6 @@ interface Bounds {
 }
 
 /**
- * Locate the frontmatter block. The block must open on the very first line and
- * is closed by the FIRST `\n---` — a later horizontal rule is body, not a second
- * fence. An unterminated opener is not frontmatter at all.
- *
- * The reader and the writer both go through this, so they can never disagree
- * about which bytes are the header — the writer's promise to leave the body
- * untouched depends on that being one decision, not two.
- */
-/**
  * Drop a leading byte-order mark.
  *
  * With one in front, the opening `---` is no longer at position 0, so the whole
@@ -54,15 +45,40 @@ function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
+/**
+ * A fence is a LINE of exactly three dashes. Trailing whitespace is tolerated
+ * (`\s` also swallows the CR of a CRLF file), trailing text is not: `--- title`
+ * is prose, `----` is a horizontal rule. Matching the substring `---` instead —
+ * as this used to — made both of those fences, so a stray rule closed the
+ * header early and a `--- note` closer silently ate its own trailing text.
+ */
+const FENCE_RE = /^---\s*$/;
+
+/**
+ * Locate the frontmatter block. The opener is the very first line, the closer
+ * the first subsequent fence line — a later horizontal rule is body, not a
+ * second fence. No closer means an unterminated opener: not frontmatter at all.
+ *
+ * The reader and the writer both go through this, so they can never disagree
+ * about which bytes are the header — the writer's promise to leave the body
+ * untouched depends on that being one decision, not two.
+ */
 function bounds(md: string): Bounds | null {
-  if (!md.startsWith("---")) return null;
-  const close = md.indexOf("\n---", 3);
-  if (close === -1) return null;
   const firstNl = md.indexOf("\n");
-  // An empty block (`---\n---`) has no text between the fences: start === end.
-  const start = firstNl !== -1 && firstNl < close ? firstNl + 1 : close + 1;
-  const afterFence = md.indexOf("\n", close + 1);
-  return { start, end: close + 1, bodyStart: afterFence === -1 ? md.length : afterFence + 1 };
+  if (!FENCE_RE.test(firstNl === -1 ? md : md.slice(0, firstNl))) return null;
+  // A lone `---` with nothing after it is an unterminated opener.
+  if (firstNl === -1) return null;
+  const start = firstNl + 1;
+  for (let lineStart = start; ; ) {
+    const nl = md.indexOf("\n", lineStart);
+    const line = nl === -1 ? md.slice(lineStart) : md.slice(lineStart, nl);
+    if (FENCE_RE.test(line)) {
+      // An empty block (`---\n---`) has no text between the fences: start === end.
+      return { start, end: lineStart, bodyStart: nl === -1 ? md.length : nl + 1 };
+    }
+    if (nl === -1) return null;
+    lineStart = nl + 1;
+  }
 }
 
 /**

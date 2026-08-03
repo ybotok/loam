@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { elementService, loadFile, serviceOf, type Elem, type Rel } from "./likec4.js";
 import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
-import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
+import { featurePaths, featureSpecPaths, featureSpecServices, listFeatures, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 import { operationIds, serviceOperationIds } from "./openapi.js";
 
@@ -41,6 +41,21 @@ export async function featureCoherence(
       elements = res.elements;
       taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
+      // Every rule below filters by the feature tag, so a delta whose author
+      // forgot the tags entirely passes every check and archives while merging
+      // nothing. Whole-file only: once ANYTHING is tagged, deciding that an
+      // untagged edge "looks intended" would be guessing.
+      if (
+        (res.elements.length > 0 || res.relationships.length > 0) &&
+        taggedEls.length === 0 &&
+        taggedRels.length === 0
+      ) {
+        issues.push({
+          severity: "error",
+          code: "delta.nothing-tagged",
+          message: `delta.likec4 declares elements/relationships but none are tagged #${featureId}; loam cannot see untagged changes`,
+        });
+      }
     }
   }
   // Every axis below joins on the service id, so endpoints resolve through the
@@ -84,13 +99,29 @@ export async function featureCoherence(
     return ops.has(op);
   };
 
+  // What OTHER features in flight define, per (service, op). Cross-service work
+  // normally lands as feature A calling an op that in-flight feature B introduces;
+  // that is an ordering dependency, not a broken contract, and the requirements
+  // axis already grades the same shape as a warn (delta.modified-pending). Lazy
+  // like delta.ts's activeAdditions — the common case (op resolves) never pays
+  // for the fleet scan.
+  let inFlightOps: Map<string, string> | null = null;
+  const definedElsewhere = async (service: string, op: string): Promise<string | undefined> => {
+    inFlightOps ??= await activeOpAdditions(docsDir, featureId);
+    return inFlightOps.get(`${service} ${op}`);
+  };
+
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {
     const available = await serviceOperationIds(docsDir, svc, featureDir);
     for (const op of ops) {
-      if (!available.includes(op)) {
-        issues.push({ severity: "error", code: "spec-api.op-undefined", message: `requirement in ${svc} governs '${op}', not defined in ${svc}'s OpenAPI` });
+      if (available.includes(op)) continue;
+      const other = await definedElsewhere(svc, op);
+      if (other !== undefined) {
+        issues.push({ severity: "warn", code: "spec-api.op-pending", message: `requirement in ${svc} governs '${op}', defined by in-flight ${other} — archive it first` });
+        continue;
       }
+      issues.push({ severity: "error", code: "spec-api.op-undefined", message: `requirement in ${svc} governs '${op}', not defined in ${svc}'s OpenAPI` });
     }
   }
 
@@ -105,7 +136,12 @@ export async function featureCoherence(
     const target = svcOf(r.target);
     const available = await serviceOperationIds(docsDir, target, featureDir);
     if (!available.includes(r.op)) {
-      issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
+      const other = await definedElsewhere(target, r.op);
+      if (other !== undefined) {
+        issues.push({ severity: "warn", code: "c4-api.op-pending", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, defined by in-flight ${other} — archive it first` });
+      } else {
+        issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
+      }
     }
     if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
       issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
@@ -129,4 +165,25 @@ export async function featureCoherence(
   }
 
   return issues;
+}
+
+/**
+ * (service, operationId) pairs other ACTIVE features' openapi deltas define,
+ * mapped to the feature id — the openapi mirror of delta.ts's activeAdditions.
+ * Archived features are excluded: their ops are in the living openapi already or
+ * gone for good, and neither is "pending". First feature wins a clash — one name
+ * to archive first is enough to make progress.
+ */
+async function activeOpAdditions(docsDir: string, exclude: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  for (const feature of await listFeatures(docsDir)) {
+    if (feature.id === exclude) continue;
+    for (const service of feature.services) {
+      for (const op of await operationIds(featureSpecPaths(feature.dir, service).openapi)) {
+        const k = `${service} ${op}`;
+        if (!map.has(k)) map.set(k, feature.id);
+      }
+    }
+  }
+  return map;
 }

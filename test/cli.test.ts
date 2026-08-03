@@ -7,9 +7,12 @@
  *   - init: scaffolds the docs-repo skeleton, writes loam.json with an ABSOLUTE
  *     docsDir, is idempotent (never clobbers user files), and preserves
  *     previously configured `service` on re-init (config spread).
+ *   - init --json: {ok, docsDir, created, skipped} — skipped is the other half
+ *     of the never-overwrite contract — and a clean refusal when --docs names
+ *     a file.
  *   - config: missing loam.json is a clean exit-1 error on every command that
- *     needs it; malformed loam.json currently crashes the whole process
- *     (pinned + flagged — desired is a clean 'invalid loam.json' + exit 1).
+ *     needs it; malformed loam.json fails cleanly with a diagnostic naming the
+ *     config, and `loam init` can rewrite it.
  *   - delta: per-service projection of a feature — intent body (frontmatter
  *     stripped), requirement delta lines, and the C4 architecture slice
  *     (NEW service / outbound / inbound / no-change), with graceful handling
@@ -163,6 +166,79 @@ describe("init: idempotency and config preservation", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* init — --json contract                                              */
+/* ------------------------------------------------------------------ */
+
+describe("init: --json contract", () => {
+  it("emits one ok-enveloped object with docsDir, created and skipped — no prose", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./docs-x", "--json");
+    expect(res.code).toBe(0);
+    // JSON.parse over the whole stream is the no-prose assertion
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(true);
+    expect(isAbsolute(json.docsDir)).toBe(true);
+    expect(await realpath(json.docsDir)).toBe(await realpath(join(dir, "docs-x")));
+    // the docs skeleton, AGENTS.md and the slash commands were all created fresh
+    const created: string[] = json.created;
+    for (const tail of ["architecture", "services", "features", "AGENTS.md"]) {
+      expect(created.some((c) => c.endsWith(tail))).toBe(true);
+    }
+    expect(created.some((c) => c.includes(join(".claude", "commands")))).toBe(true);
+    expect(json.skipped).toEqual([]);
+  });
+
+  it("a second init reports everything as skipped, nothing created — init never overwrites", async () => {
+    const dir = await throwawayDir();
+    const first = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
+    const second = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
+    expect(second.ok).toBe(true);
+    expect(second.created).toEqual([]);
+    // same paths, same order: skipped is the other half of created
+    expect(second.skipped).toEqual(first.created);
+  });
+
+  it("splits a partially scaffolded repo between created and skipped", async () => {
+    const dir = await throwawayDir();
+    await writeFiles(dir, { "d/services/.keep": "" });
+    const json = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
+    expect(json.skipped.some((p: string) => p.endsWith("services"))).toBe(true);
+    expect(json.created.some((p: string) => p.endsWith("services"))).toBe(false);
+    expect(json.created.some((p: string) => p.endsWith("architecture"))).toBe(true);
+  });
+
+  it("--no-commands keeps the slash commands out of both lists", async () => {
+    const dir = await throwawayDir();
+    const json = JSON.parse(
+      (await runLoam(dir, "init", "--docs", "./d", "--no-commands", "--json")).stdout,
+    );
+    expect(json.ok).toBe(true);
+    const all: string[] = [...json.created, ...json.skipped];
+    expect(all.some((p) => p.includes(".claude"))).toBe(false);
+  });
+
+  it("refuses --docs naming a file, inside the envelope", async () => {
+    const dir = await throwawayDir();
+    await writeFile(join(dir, "not-a-dir"), "just a file\n", "utf8");
+    const res = await runLoam(dir, "init", "--docs", "./not-a-dir", "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("invalid-option");
+    expect(json.error.message).toContain("not-a-dir");
+  });
+
+  it("refuses --docs naming a file cleanly in text mode too — no mkdir stack trace", async () => {
+    const dir = await throwawayDir();
+    await writeFile(join(dir, "not-a-dir"), "just a file\n", "utf8");
+    const res = await runLoam(dir, "init", "--docs", "./not-a-dir");
+    expect(res.code).toBe(1);
+    expect(res.out).toContain("not a directory");
+    expect(existsSync(join(dir, "loam.json"))).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* config handling                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -276,12 +352,14 @@ describe("delta: projection onto services (coherent fixture)", () => {
 /* ------------------------------------------------------------------ */
 
 describe("delta: degraded inputs", () => {
-  it("unknown feature id exits 1 with a message naming the feature", async () => {
+  it("unknown feature id exits 1 with a message naming the feature and the features dir", async () => {
     const p = await project(coherentFixture(), { service: "payment-service" });
     const res = await runLoam(p.workDir, "delta", "FEAT-99", "--service", "payment-service");
     expect(res.code).toBe(1);
     expect(res.out).toContain("FEAT-99");
     expect(res.out).toContain("No feature");
+    // the path is spelled by featuresDir(), the same as validate/verify
+    expect(res.out).toContain(join(p.docsDir, "features"));
   });
 
   it("exits 1 with a clean message when no service is given and none is configured", async () => {

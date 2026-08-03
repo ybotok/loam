@@ -2,13 +2,15 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { listField, readFrontmatter } from "../core/frontmatter.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
 import {
   elementService,
   loadFile,
   serviceOf,
   type Elem,
   type LikeC4Error,
+  type LoadedDoc,
   type Rel,
 } from "../core/likec4.js";
 import {
@@ -35,6 +37,7 @@ import {
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
 import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
+import { gatesArchive } from "../core/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance.js";
 
 interface ValidateOptions {
@@ -56,7 +59,14 @@ export function registerValidate(program: Command): void {
       const json = opts.json === true;
 
       if (opts.all && (opts.service || opts.feature)) {
-        return fail(json, "invalid-option", "--all validates everything; drop --service/--feature.");
+        fail(json, "invalid-option", "--all validates everything; drop --service/--feature.");
+        return;
+      }
+      // Two targets is no target: silently validating only the feature taught
+      // callers that --service had been honoured when it had been dropped.
+      if (opts.service && opts.feature) {
+        fail(json, "invalid-option", "--service and --feature name different targets; pass one or the other.");
+        return;
       }
 
       const config = await loadConfig();
@@ -73,13 +83,24 @@ export function registerValidate(program: Command): void {
         config.service === service ? process.cwd() : undefined;
 
       const targets: TargetReport[] = [];
+      // Services whose `sources` only their own repos can resolve — counted
+      // under --all and reported ONCE (`sources.unverifiable-from-here`): from
+      // the central docs repo the fleet gate checks zero of them, and without
+      // this line that silence reads as "verified".
+      let unverifiable = 0;
       if (opts.all) {
+        // Parse the living landscape ONCE for the whole run: loadFile spins up
+        // a fresh LikeC4 workspace per call, and paying that per service makes
+        // the fleet's main CI command O(services) re-parses of the same file.
+        const lp = landscapeFile(docsDir);
+        const land = existsSync(lp) ? await loadFile(lp) : null;
         // The fleet-level cross-check first: it frames everything below it, and a
         // service nobody drew is worth knowing before its own findings scroll past.
-        const landscape = await validateLandscape(docsDir);
+        const landscape = await validateLandscape(docsDir, land);
         if (landscape) targets.push(landscape);
         for (const svc of await listServices(docsDir)) {
-          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id)));
+          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land));
+          if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
         }
         for (const feat of await listFeatures(docsDir)) {
           targets.push(await validateFeature(docsDir, feat));
@@ -87,13 +108,15 @@ export function registerValidate(program: Command): void {
       } else if (opts.feature) {
         const feature = await resolveFeature(docsDir, opts.feature);
         if (!feature) {
-          return fail(json, "unknown-target", `No feature '${opts.feature}' under ${featuresDir(docsDir)}.`);
+          fail(json, "unknown-target", `No feature '${opts.feature}' under ${featuresDir(docsDir)}.`);
+          return;
         }
         targets.push(await validateFeature(docsDir, feature));
       } else {
         const service = opts.service ?? config.service;
         if (!service) {
-          return fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+          fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+          return;
         }
         targets.push(await validateService(docsDir, service, repoOf(service)));
       }
@@ -103,22 +126,16 @@ export function registerValidate(program: Command): void {
         emitJson({
           valid,
           summary: summary(targets),
+          // --all only: single-target runs never counted, so a stable 0 there
+          // would claim a check that did not happen.
+          ...(opts.all ? { sourcesUnverifiableFromHere: unverifiable } : {}),
           targets: targets.map(targetJson),
         });
       } else {
-        renderText(targets, opts.all === true);
+        renderText(targets, opts.all === true, unverifiable);
       }
       if (!valid) process.exitCode = 1;
     });
-}
-
-function fail(json: boolean, code: "invalid-option" | "unknown-target", message: string): void {
-  if (json) {
-    emitJsonError(code, message);
-    return;
-  }
-  console.error(message);
-  process.exitCode = 1;
 }
 
 function summary(targets: TargetReport[]): Record<string, number> {
@@ -153,16 +170,20 @@ const EXTERNAL_TAG = "external";
  * `metadata { service '<id>' }` naming nothing is an error either way: a binding
  * is a claim about this repo, not a guess at one.
  *
- * Returns null when there is no landscape to check against.
+ * Returns null when there is no landscape to check against. `preloaded` is the
+ * already-parsed landscape under --all — the same doc every service check gets.
  */
-async function validateLandscape(docsDir: string): Promise<TargetReport | null> {
+async function validateLandscape(
+  docsDir: string,
+  preloaded?: LoadedDoc | null,
+): Promise<TargetReport | null> {
   const path = landscapeFile(docsDir);
   if (!existsSync(path)) return null;
 
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "landscape", id: "landscape", findings };
 
-  const land = await loadFile(path);
+  const land = preloaded ?? (await loadFile(path));
   if (land.errors.length > 0) {
     // Nothing may be concluded from a document that did not parse — in particular
     // not that every service is unmodelled.
@@ -223,14 +244,49 @@ async function validateLandscape(docsDir: string): Promise<TargetReport | null> 
   return report;
 }
 
+/**
+ * A service's absences are graded by what each one proves.
+ *
+ * `service.unknown` (error): the directory itself does not exist — the id is a
+ * typo until proven otherwise, so the hint names ids that DO exist and never
+ * `loam adopt`, which would faithfully document the misspelling.
+ * `service.no-model` (error): the directory is real but the C4 center is not —
+ * nothing else has anywhere to hang, and adopt is the right hint.
+ * `service.no-spec` / `service.no-openapi` (warn): the adopt brief marks both
+ * required, but a fleet mid-rollout legitimately has part-adopted services —
+ * the absence must stay visible without gating CI for months. The openapi warn
+ * keeps quiet when the landscape proves nobody calls an operation on this
+ * service: a worker with no API is not missing one.
+ * `api.ops-unlinked` (warn): an OpenAPI and requirements that never name each
+ * other pass every cross-axis check vacuously — a repo migrated from OpenSpec
+ * does exactly that by default, and vacuous is not the same as checked.
+ */
 async function validateService(
   docsDir: string,
   service: string,
   repoDir?: string,
+  preloaded?: LoadedDoc | null,
 ): Promise<TargetReport> {
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
   const paths = servicePaths(docsDir, service);
+
+  // A directory that does not exist is a different fact from a directory with
+  // everything missing: validating a typo must say "typo", not "unadopted".
+  if (!existsSync(paths.dir)) {
+    const close = closeIds(service, (await listServices(docsDir)).map((s) => s.id));
+    findings.push({
+      severity: "error",
+      code: "service.unknown",
+      message:
+        `No service directory at ${paths.dir}.` +
+        (close.length > 0
+          ? ` Did you mean: ${close.join(", ")}?`
+          : " `loam list services` shows what exists."),
+      text: { marker: false },
+    });
+    return report;
+  }
 
   // C4 model. Without one there is nothing to validate — this is where `adopt` comes in.
   if (!existsSync(paths.model)) {
@@ -258,16 +314,43 @@ async function validateService(
     });
   }
 
+  // The living landscape, parsed at most once per run: under --all the caller
+  // hands in the doc it already loaded, single-service runs load on demand. It
+  // serves two checks below — the no-openapi grace and the spine.
+  const land =
+    preloaded ?? (existsSync(landscapeFile(docsDir)) ? await loadFile(landscapeFile(docsDir)) : null);
+
   // Requirement coverage.
   let reqs: Requirement[] = [];
   if (existsSync(paths.spec)) {
     reqs = parseRequirements(await readFile(paths.spec, "utf8"));
     findings.push(coverageFinding(`${service}: requirements`, reqs));
+  } else {
+    findings.push({
+      severity: "warn",
+      code: "service.no-spec",
+      message: `No living spec at ${paths.spec} — requirement coverage and API governance are unchecked`,
+    });
   }
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
   const ops = await operationIds(paths.openapi);
-  if (ops.length > 0) {
+  if (!existsSync(paths.openapi)) {
+    // Quiet only on positive evidence — the landscape parsed and no edge calls
+    // an operation on this service. A missing or broken landscape proves
+    // nothing, so there the absence stays visible.
+    const expected =
+      land === null ||
+      land.errors.length > 0 ||
+      land.relationships.some((r) => r.op !== undefined && serviceOf(land.elements, r.target) === service);
+    if (expected) {
+      findings.push({
+        severity: "warn",
+        code: "service.no-openapi",
+        message: `No OpenAPI contract at ${paths.openapi} — API coverage and the landscape spine are unchecked`,
+      });
+    }
+  } else if (ops.length > 0) {
     const governed = new Set(reqs.flatMap((r) => r.operations));
     const orphans = ops.filter((op) => !governed.has(op));
     if (orphans.length === 0) {
@@ -283,14 +366,23 @@ async function validateService(
         message: `${service}: ${orphans.length} operation(s) not governed by any requirement — ${orphans.join(", ")}`,
       });
     }
+    // The migration-debt case: requirements exist, the API exists, and no
+    // `Operations:` line ties them — every cross-axis check above and in
+    // feature mode is vacuously green. Once per service, not per operation;
+    // with zero requirements the spec (or its absence) is the finding instead.
+    if (reqs.length > 0 && reqs.every((r) => r.operations.length === 0)) {
+      findings.push({
+        severity: "warn",
+        code: "api.ops-unlinked",
+        message: `${service}: openapi.yaml defines ${ops.length} operation(s) but no requirement links any — the API axis is unchecked for this service`,
+      });
+    }
   }
 
   // Landscape spine: cross-system edges calling THIS service must resolve to a real
   // operation in its OpenAPI — the C4↔API contract, checked in the living landscape,
   // not only in feature mode. Catches dangling / de-linked op edges.
-  const landscapePath = landscapeFile(docsDir);
-  if (existsSync(landscapePath)) {
-    const land = await loadFile(landscapePath);
+  if (land !== null) {
     if (land.errors.length > 0) {
       // A living landscape that does not parse disables the C4↔API spine check —
       // that is a broken source of truth, not a skippable detail.
@@ -412,6 +504,7 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
       findings.push({
         severity: i.severity,
         code: i.code,
+        gates: gatesArchive(i),
         ...(i.subject === undefined ? {} : { subject: i.subject }),
         message: i.message,
         text: { indent: 4, header: "coherence:" },
@@ -446,7 +539,7 @@ function coverageFinding(label: string, reqs: Requirement[]): Finding {
 
 const MARKER: Record<Severity, string> = { ok: "✓", warn: "⚠", error: "✗" };
 
-function renderText(targets: TargetReport[], all: boolean): void {
+function renderText(targets: TargetReport[], all: boolean, unverifiable: number): void {
   for (const t of targets) {
     // A feature announces itself; a service's findings already carry its name.
     if (t.kind === "feature") console.log(t.id);
@@ -471,9 +564,39 @@ function renderText(targets: TargetReport[], all: boolean): void {
     `\n${plural(s.services!, "service")}, ${plural(s.features!, "feature")} — ` +
       `${plural(s.errors!, "error")}, ${plural(s.warnings!, "warning")}`,
   );
+  // One line for the whole fleet, never one per service: honest about the blind
+  // spot without drowning the report in a hundred copies of it.
+  if (unverifiable > 0) {
+    const whose = unverifiable === 1 ? "1 service's" : `${unverifiable} services'`;
+    console.log(
+      `⚠ sources.unverifiable-from-here: ${whose} sources can only be checked from their own repos`,
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Existing ids near a misspelling — substring containment either way, else a
+ * shared 3-character prefix. Deliberately dumb: no fuzzy library for one hint,
+ * and every id offered is real, so the hint can never point at the typo itself.
+ */
+function closeIds(typo: string, ids: string[]): string[] {
+  const t = typo.toLowerCase();
+  return ids
+    .filter((id) => {
+      const i = id.toLowerCase();
+      return i.includes(t) || t.includes(i) || (t.length >= 3 && i.startsWith(t.slice(0, 3)));
+    })
+    .slice(0, 5);
+}
+
+/** Does this service's living spec name any `sources`? The unverifiable-from-here count. */
+async function namesSources(docsDir: string, service: string): Promise<boolean> {
+  const spec = servicePaths(docsDir, service).spec;
+  if (!existsSync(spec)) return false;
+  return listField(await readFrontmatter(spec), "sources").length > 0;
+}
 
 /** Heuristic: an edge is "covered" if a scenario names the target or a keyword from the edge title. */
 function edgeCovered(target: string, title: string | undefined, scenarioText: string): boolean {

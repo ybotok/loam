@@ -291,8 +291,9 @@ async function showFeature(docsDir: string, feature: FeatureEntry, json: boolean
 
 /* ------------------------------------------------------------------ */
 
+/** "-" for absent, matching `list`: ✗ is the error glyph here, and a missing runbook is not an error. */
 function mark(present: boolean): string {
-  return present ? "✓" : "✗";
+  return present ? "✓" : "-";
 }
 
 function count(n: number, noun: string): string {
