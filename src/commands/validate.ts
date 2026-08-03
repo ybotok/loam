@@ -492,12 +492,16 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
   const featureDir = feature.dir;
   const featureId = feature.id;
 
-  // delta.likec4 parse + collect tagged edges
+  // delta.likec4 parse + collect tagged edges. The loaded doc is kept and
+  // handed to featureCoherence below — loading it is a Langium workspace spin,
+  // and paying it twice per feature was the dominant cost of `validate --all`.
   let taggedRels: Rel[] = [];
   let elements: Elem[] = [];
+  let deltaDoc: LoadedDoc | undefined;
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
     const res = await loadFile(deltaPath);
+    deltaDoc = res;
     if (res.errors.length > 0) {
       findings.push({
         severity: "error",
@@ -542,7 +546,7 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
   }
 
   // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
-  const issues = await featureCoherence(docsDir, featureDir, featureId);
+  const issues = await featureCoherence(docsDir, featureDir, featureId, deltaDoc);
   if (issues.length === 0) {
     findings.push({
       severity: "ok",

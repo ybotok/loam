@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { elementService, loadFile, serviceOf, type Elem, type Rel } from "./likec4.js";
+import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "./likec4.js";
 import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, listFeatures, servicePaths } from "./repo.js";
@@ -13,11 +13,18 @@ export type { Issue, IssueCode } from "./issue.js";
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
  * and OpenAPI (contract) agree? Errors are hard (would corrupt the living docs on archive);
  * warnings surface softer misalignments.
+ *
+ * `preloadedDelta` is the feature's already-parsed delta.likec4, when the caller
+ * has it — loading a LikeC4 document spins up a fresh Langium workspace, the
+ * dominant per-feature cost, and validate/archive have both parsed the same file
+ * moments earlier. Standalone calls omit it and nothing changes: the file is
+ * loaded here, exactly as before.
  */
 export async function featureCoherence(
   docsDir: string,
   featureDir: string,
   featureId: string,
+  preloadedDelta?: LoadedDoc,
 ): Promise<Issue[]> {
   // Delta shape first: a diff that does not apply to the living spec explains
   // everything downstream, and it is the one breach that is silent without a check.
@@ -29,7 +36,7 @@ export async function featureCoherence(
   let taggedRels: Rel[] = [];
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = await loadFile(deltaPath);
+    const res = preloadedDelta ?? (await loadFile(deltaPath));
     if (res.errors.length > 0) {
       // An unreadable architecture axis can prove nothing — it must never count as coherent.
       issues.push({

@@ -139,6 +139,12 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // on `id`, and `archive FEAT-5-slug` must plan exactly like `archive FEAT-5`.
   const { id, dirName, dir: featureDir } = feature;
 
+  // Parse delta.likec4 ONCE for the whole run: the coherence gate and the
+  // architecture merge below read the same file, and loading it spins up a
+  // fresh Langium workspace each time. Nothing writes it in between.
+  const deltaLikec4 = featurePaths(featureDir).delta;
+  const deltaDoc = existsSync(deltaLikec4) ? await loadFile(deltaLikec4) : undefined;
+
   // Gate: GATING issues block the archive. Severity and gating are two
   // different questions (issue.ts): errors gate because the merge would write
   // something wrong, and the rare warning marked `gates` blocks too — the
@@ -148,7 +154,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // overrides the gating issues ONLY, and must say exactly which ones it is
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
-  const issues = await featureCoherence(config.docsDir, featureDir, id);
+  const issues = await featureCoherence(config.docsDir, featureDir, id, deltaDoc);
   const gating = issues.filter(gatesArchive);
   const advisory = issues.filter((i) => !gatesArchive(i));
   if (gating.length > 0 && !opts.approve) {
@@ -328,10 +334,9 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   }
 
   // 2. Architecture merge — fold the feature's tagged elements/relationships into the living landscape.
-  const deltaLikec4 = featurePaths(featureDir).delta;
   const landscapePath = landscapeFile(config.docsDir);
-  if (existsSync(deltaLikec4)) {
-    const delta = await loadFile(deltaLikec4);
+  if (deltaDoc !== undefined) {
+    const delta = deltaDoc;
     if (delta.errors.length > 0) {
       // --approve overrides loam's JUDGMENT about coherence, never its ability to
       // read an axis. Skipping here would silently drop one merge axis in the one
