@@ -94,6 +94,16 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`); `loam archive` **refuses an incoherent feature unless `--approve`** — the merge would otherwise corrupt the living docs.
 - **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the feature.
 
+### Where a capability lives (and why there is no capability layer)
+
+A business capability — "payment splitting" — is spread across the living specs of every service that carries part of it. The obvious fix is a `capabilities/` layer holding the whole story in one place. **There is none, and there should not be one.**
+
+The story is already whole and already derivable. Every requirement in a living spec arrived through exactly one feature, and that feature is still on disk under `features/archive/` with its intent, its C4 delta and its requirement deltas intact. "Which feature introduced this requirement" is a search, not a record — so a capabilities layer would be a second copy of text that already exists, which is a second thing that can disagree with the first. That is the same reason there is no service manifest.
+
+A hand-written `capability:` label on a feature was considered and rejected for a sharper reason: **nothing could check it.** `sources` is hand-written too, but it is checkable — the paths exist or they do not, the digest matches or it does not. There is no ground truth for what counts as a capability, so the field would end up on some features and not others, in three spellings of the same theme, never revisited — while creating the impression that an index exists.
+
+For a theme that genuinely crosses services and matches no structural unit, the mechanism already exists and is checkable: **a LikeC4 tag**. Tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift; `validate` already reads them, `archive` already handles them, and they show up in the diagram.
+
 ### How archive writes, and how unarchive undoes it
 
 The merge is computed in full before anything is written, and then committed file by file: each new version is staged as a temp file **in the target's own directory** and renamed into place, so a reader sees either the old bytes or the new ones and never a half-written document. If any file fails — including the final move into `features/archive/` — the files already swapped are put back from the bytes read before the swap, and the command says so. There is no journal: a process killed between two renames leaves a half-merged repo that nothing will roll back.
