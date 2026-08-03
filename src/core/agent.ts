@@ -107,9 +107,10 @@ outside it, and loam never touches a byte outside \`loam/\`.
 One file per requirement (\`Feature:\` is the requirement name). Bullet lines
 opening with Given/When/Then/And/But — the \`- **WHEN** ...\` convention
 included — become steps; every other body line is kept as scenario
-description. Each scenario carries \`# loam:digest <16hex>\`: the same body
-hash \`loam verify\` folds into its claim ids, so the stamp, the claim and the
-spec cannot quietly disagree about what a scenario says. \`loam validate
+description. Each scenario is tagged \`@loam-digest-<16hex>\`: the same body
+hash \`loam verify\` folds into its claim ids, riding into cucumber's JSON
+report as a tag, so the suite, the claim and the report cannot quietly
+disagree about what a scenario says. \`loam validate
 --service <id>\`, run in the service repo, grades the suite by those digests
 (\`gherkin.missing\` / \`gherkin.stale\` / \`gherkin.orphaned\`, all warn) — the
 fix is always regeneration, never editing a generated file.

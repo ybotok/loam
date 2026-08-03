@@ -193,7 +193,7 @@ describe("feature mode", () => {
     expect(business).toContain("    Given a payment of 100.00");
     expect(business).toContain("    When it is split 60/40");
     expect(business).toContain("    Then two shares are recorded");
-    expect(business).toMatch(/ {2}# loam:digest [0-9a-f]{16}\n {2}Scenario: Split across two payees/);
+    expect(business).toMatch(/ {2}@loam-digest-[0-9a-f]{16}\n {2}Scenario: Split across two payees/);
 
     const arch = await readWork(p, "features/loam/arch--retries-stay-idempotent.feature");
     expect(arch).toContain("@FEAT-1 @architecture");
@@ -214,7 +214,9 @@ describe("feature mode", () => {
     expect(scenarioDigest(req!.scenarios[0]!.lines)).toBe(expected);
     expect(payload.files[0].digests).toEqual([expected]);
     const onDisk = await readWork(p, "features/loam/split-a-payment.feature");
-    expect(onDisk).toContain(`# loam:digest ${expected}`);
+    // as a TAG on the line above the Scenario keyword — cucumber's JSON report
+    // carries tags per scenario, so the stamp survives the runner
+    expect(onDisk).toMatch(new RegExp(` {2}@loam-digest-${expected}\\n {2}Scenario:`));
   });
 
   it("a feature with nothing for this service emits nothing and does not opt the repo in", async () => {
@@ -251,7 +253,10 @@ describe("living mode", () => {
     ]);
 
     const business = await readWork(p, "features/loam/authorize-a-payment.feature");
-    expect(business).not.toContain("@");
+    // no feature tag and no @architecture — the digest tags are the only @ lines
+    expect(business).not.toContain("@FEAT");
+    expect(business).not.toContain("@architecture");
+    expect(business.split("\n")[1]).toBe("Feature: Authorize a payment");
     const arch = await readWork(p, "features/loam/arch--events-leave-through-the-outbox.feature");
     expect(arch).toContain("@architecture\n");
     expect(arch).not.toContain("@FEAT");

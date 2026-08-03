@@ -229,8 +229,8 @@ function scenarioBody(s: Scenario): string {
  * exactly as `serializeRequirements` frames them. ONE recipe with two
  * consumers, deliberately in one place: `scenario.tested` claim ids fold in
  * its first {@link ID_LENGTH} hex characters, and `loam gherkin` stamps its
- * first 16 into every generated scenario (`# loam:digest`) — so a claim and a
- * stamp can never disagree about what a scenario says.
+ * first 16 onto every generated scenario as the `@loam-digest-<16hex>` tag —
+ * so a claim and a stamp can never disagree about what a scenario says.
  */
 export function scenarioBodyHash(lines: string[]): string {
   return createHash("sha256").update(lines.join("\n").trim()).digest("hex");
