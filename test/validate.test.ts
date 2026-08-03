@@ -562,6 +562,116 @@ describe("service mode: landscape spine", () => {
   });
 });
 
+describe("service mode: the deprecation bridge (spine.op-deprecated / api.requirement-deprecated)", () => {
+  /*
+   * Real fleets migrate: legacy ops coexist with their replacements, and the
+   * standard OpenAPI per-operation `deprecated: true` is how a contract says
+   * so. loam turns the flag into lifecycle warnings — visibility only, never
+   * removal, never a gate; `--strict` is the escalation.
+   */
+
+  /** LIVING_OPENAPI with its one operation marked deprecated. */
+  const DEPRECATED_OPENAPI = LIVING_OPENAPI.replace(
+    "      operationId: authorizePayment\n",
+    "      operationId: authorizePayment\n      deprecated: true\n",
+  );
+
+  /** findings[].code of the single validated target, via --json. */
+  async function serviceCodes(files: Record<string, string>): Promise<{ code: number; codes: string[] }> {
+    const p = await makeProject(files, { service: SVC });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const payload = JSON.parse(res.stdout);
+      return { code: res.code, codes: payload.targets[0].findings.map((f: { code: string }) => f.code) };
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("an inbound landscape edge calling a deprecated op warns the consumer off it, and does not gate (exit 0)", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = DEPRECATED_OPENAPI;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain(`calls 'authorizePayment', which ${SVC}'s OpenAPI marks deprecated`);
+      expect(res.out).toContain("migrate");
+      // --strict is the escalation: same report, exit 1.
+      expect((await runLoam(p.workDir, "validate", "--strict")).code).toBe(1);
+    });
+  });
+
+  it("the clean fixture raises neither deprecation warning — a live op is just a live op", async () => {
+    const { code, codes } = await serviceCodes(coherentFixture());
+    expect(code).toBe(0);
+    expect(codes).not.toContain("spine.op-deprecated");
+    expect(codes).not.toContain("api.requirement-deprecated");
+  });
+
+  it("a deprecated op with no consumers raises no spine warning — only the requirement-level one", async () => {
+    // The landscape still parses and the spine still runs; there is simply no
+    // inbound edge calling the op. The living requirement pinned to it is the
+    // one thing left to say.
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = DEPRECATED_OPENAPI;
+    files["architecture/landscape.likec4"] = LANDSCAPE.replace(
+      `checkoutWeb -> paymentService 'Calls authorizePayment' {
+    metadata { op 'authorizePayment' }
+  }`,
+      `checkoutWeb -> paymentService 'Sends telemetry to'`,
+    );
+    const { code, codes } = await serviceCodes(files);
+    expect(code).toBe(0);
+    expect(codes).not.toContain("spine.op-deprecated");
+    expect(codes).toContain("api.requirement-deprecated");
+  });
+
+  it("a requirement whose every resolved op is deprecated is flagged as migrating out, by name", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = DEPRECATED_OPENAPI;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain(
+        `${SVC}: requirement 'Authorize a payment' governs only deprecated operation(s) (authorizePayment)`,
+      );
+    });
+  });
+
+  it("one live op keeps the requirement quiet — it still governs living behaviour", async () => {
+    const twoOps = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/authorize:
+    post:
+      operationId: authorizePayment
+      deprecated: true
+      responses:
+        "200":
+          description: Authorized
+  /payments/v2/authorize:
+    post:
+      operationId: authorizePaymentV2
+      responses:
+        "200":
+          description: Authorized
+`;
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = twoOps;
+    files["services/payment-service/spec.md"] = LIVING_SPEC.replace(
+      "Operations: authorizePayment\n",
+      "Operations: authorizePayment, authorizePaymentV2\n",
+    );
+    const { code, codes } = await serviceCodes(files);
+    expect(code).toBe(0);
+    expect(codes).not.toContain("api.requirement-deprecated");
+    // The edge into the deprecated op still warns — that is the consumer's problem, not the requirement's.
+    expect(codes).toContain("spine.op-deprecated");
+  });
+});
+
 describe("feature mode: delta + coverage + coherence", () => {
   it("coherent fixture validates: delta valid, requirements covered, coherence agrees, exit 0", async () => {
     await withProject(coherentFixture(), { service: SVC }, async (p) => {

@@ -5,7 +5,7 @@ import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, listFeatures, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
-import { operationIds, serviceOperationIds } from "./openapi.js";
+import { operationIds, operations, serviceOperationIds } from "./openapi.js";
 
 export type { Issue, IssueCode } from "./issue.js";
 
@@ -132,6 +132,21 @@ export async function featureCoherence(
     }
   }
 
+  // What the LIVING provider contracts mark `deprecated: true`, read lazily
+  // per service. Living only, on purpose: the feature's own openapi delta
+  // restates the full API, and the question here is whether the fleet as
+  // shipped is already retiring the op this feature starts leaning on.
+  const livingDeprecated = new Map<string, Set<string>>();
+  const deprecatedInLiving = async (service: string, op: string): Promise<boolean> => {
+    let set = livingDeprecated.get(service);
+    if (!set) {
+      const list = await operations(servicePaths(docsDir, service).openapi);
+      set = new Set(list.filter((o) => o.deprecated).map((o) => o.id));
+      livingDeprecated.set(service, set);
+    }
+    return set.has(op);
+  };
+
   // E2 / W1 / W4: C4 edges vs API + requirements.
   for (const r of taggedRels) {
     if (r.op === undefined) {
@@ -152,6 +167,13 @@ export async function featureCoherence(
     }
     if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
       issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
+    }
+    // Lifecycle: this NEW tagged edge builds consumption on an operation the
+    // living provider contract already marks deprecated. Advisory, never an
+    // archive gate — the edge is legal and the contract holds — but new
+    // consumption of a dying op deserves an eye before it ships.
+    if (await deprecatedInLiving(target, r.op)) {
+      issues.push({ severity: "warn", code: "c4-api.op-deprecated", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which ${target}'s living OpenAPI marks deprecated — prefer the replacement operation` });
     }
   }
 

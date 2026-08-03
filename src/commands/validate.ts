@@ -37,7 +37,7 @@ import {
   type TargetReport,
 } from "../core/report.js";
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
-import { operationIds } from "../core/openapi.js";
+import { operations } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance.js";
@@ -414,7 +414,9 @@ async function validateService(
   }
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
-  const ops = await operationIds(paths.openapi);
+  const apiOps = await operations(paths.openapi);
+  const ops = apiOps.map((o) => o.id);
+  const deprecatedOps = new Set(apiOps.filter((o) => o.deprecated).map((o) => o.id));
   if (!existsSync(paths.openapi)) {
     // Quiet only on positive evidence — the landscape parsed and no edge calls
     // an operation on this service. A missing or broken landscape proves
@@ -457,6 +459,23 @@ async function validateService(
         message: `${service}: openapi.yaml defines ${ops.length} operation(s) but no requirement links any — the API axis is unchecked for this service`,
       });
     }
+    // Lifecycle: a requirement whose `Operations:` list resolves ONLY to
+    // deprecated operations governs behaviour the contract is retiring.
+    // Deprecation is the documented first step of removing an op (loam has no
+    // removal semantics — the op stays until a human deletes it), so the fix
+    // is migrating the requirement to the replacement operation, or retiring
+    // it with the ops it governs. Ops the contract does not define at all
+    // prove nothing here and are left to the coherence checks.
+    const defined = new Set(ops);
+    for (const r of reqs) {
+      const resolved = r.operations.filter((op) => defined.has(op));
+      if (resolved.length === 0 || !resolved.every((op) => deprecatedOps.has(op))) continue;
+      findings.push({
+        severity: "warn",
+        code: "api.requirement-deprecated",
+        message: `${service}: requirement '${r.name}' governs only deprecated operation(s) (${resolved.join(", ")}) — the behaviour it describes is on its way out; migrate it to the replacement operation, or retire it`,
+      });
+    }
   }
 
   // Landscape spine: cross-system edges calling THIS service must resolve to a real
@@ -490,6 +509,16 @@ async function validateService(
               severity: "error",
               code: "spine.op-undefined",
               message: `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI`,
+            });
+          } else if (deprecatedOps.has(r.op)) {
+            // The contract holds — the op is defined — but it is marked
+            // `deprecated: true`: the consumer is standing on a contract being
+            // retired, and should be migrating off it. Warn per inbound edge;
+            // a deprecated op nobody calls raises no spine finding at all.
+            findings.push({
+              severity: "warn",
+              code: "spine.op-deprecated",
+              message: `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', which ${service}'s OpenAPI marks deprecated — the consumer should migrate off it`,
             });
           }
         } else if ((r.title ?? "").toLowerCase().startsWith("call")) {

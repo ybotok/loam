@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { operationIds, serviceOperationIds } from "../src/core/openapi.js";
+import { operationIds, operations, serviceOperationIds } from "../src/core/openapi.js";
 import {
   FEATURE_DELTA,
   FEATURE_OPENAPI,
@@ -597,5 +597,101 @@ describe("cascade — extraction feeds the coherence gate", () => {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* operations — the deprecated flag rides beside each id               */
+/* ------------------------------------------------------------------ */
+
+describe("operations — the deprecated flag rides beside each id", () => {
+  /** operations() of a single inline OpenAPI document. */
+  async function extractOps(content: string) {
+    return withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
+  }
+
+  it("returns deprecated: true exactly where the contract says so, false everywhere else", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/authorize:
+    post:
+      operationId: authorizePayment
+      deprecated: true
+      responses:
+        "200":
+          description: OK
+  /payments/v2/authorize:
+    post:
+      operationId: authorizePaymentV2
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extractOps(doc)).toEqual([
+      { id: "authorizePayment", deprecated: true },
+      { id: "authorizePaymentV2", deprecated: false },
+    ]);
+  });
+
+  it("only the boolean true counts — a string 'true' is not a deprecation", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /p:
+    post:
+      operationId: quotedFlag
+      deprecated: "true"
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extractOps(doc)).toEqual([{ id: "quotedFlag", deprecated: false }]);
+  });
+
+  it("the flag rides the same 8-HTTP-method discipline — a vendor extension's deprecated op stays invisible", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /p:
+    post:
+      operationId: realOp
+      responses:
+        "200":
+          description: OK
+    x-legacy:
+      operationId: ghostOp
+      deprecated: true
+`;
+    expect(await extractOps(doc)).toEqual([{ id: "realOp", deprecated: false }]);
+  });
+
+  it("operationIds stays the same set, in the same order — it is operations() minus the flag", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /a:
+    get:
+      operationId: opA
+      deprecated: true
+      responses:
+        "200":
+          description: OK
+  /b:
+    get:
+      operationId: opB
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extract(doc)).toEqual(["opA", "opB"]);
   });
 });

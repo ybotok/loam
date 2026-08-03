@@ -40,6 +40,8 @@ export type IssueCode =
   | "c4-api.op-undefined"
   /** E2, softened — the operation is defined by another feature still in flight; archive that one first */
   | "c4-api.op-pending"
+  /** E2's lifecycle shadow — a NEW tagged edge consumes an operation the living provider contract marks `deprecated: true`; advisory, never a gate */
+  | "c4-api.op-deprecated"
   /** W1 — an operation is called but no requirement governs it */
   | "c4.op-ungoverned"
   /** W2 — the feature adds an operation no architecture edge consumes */

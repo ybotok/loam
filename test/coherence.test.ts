@@ -12,9 +12,11 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { featureCoherence, type Issue } from "../src/core/coherence.js";
+import { gatesArchive } from "../src/core/issue.js";
 import {
   coherentFixture,
   makeProject,
+  runLoam,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
   LIVING_OPENAPI,
@@ -652,5 +654,63 @@ describe("severity domain", () => {
     for (const i of issues) expect(["error", "warn"]).toContain(i.severity);
     expect(errors(issues)).toHaveLength(1);
     expect(warns(issues)).toHaveLength(3);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Lifecycle: new consumption of a deprecated living operation         */
+/* ------------------------------------------------------------------ */
+
+describe("c4-api.op-deprecated: a NEW tagged edge on an op the living provider marks deprecated", () => {
+  /** The living contract, its one operation marked `deprecated: true`. */
+  const DEPRECATED_LIVING = LIVING_OPENAPI.replace(
+    "      operationId: authorizePayment\n",
+    "      operationId: authorizePayment\n      deprecated: true\n",
+  );
+
+  /** A delta whose one tagged edge consumes authorizePayment. */
+  const CONSUMING_DELTA = delta(`  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  checkoutWeb -> paymentService 'Calls authorizePayment' {
+    #FEAT-1
+    metadata { op 'authorizePayment' }
+  }`);
+
+  function consumingFixture(livingOpenapi: string): Record<string, string> {
+    return {
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": livingOpenapi,
+      [`${FEATURE_REL}/delta.likec4`]: CONSUMING_DELTA,
+    };
+  }
+
+  it("warns, advisory: severity warn, gates false — building new consumption on a dying op deserves an eye", async () => {
+    const issues = await coherenceOf(consumingFixture(DEPRECATED_LIVING));
+    expect(issues).toHaveLength(1);
+    const dep = issues[0]!;
+    expect(dep.code).toBe("c4-api.op-deprecated");
+    expect(dep.severity).toBe("warn");
+    expect(gatesArchive(dep)).toBe(false);
+    expect(dep.message).toContain("authorizePayment");
+    expect(dep.message).toContain("deprecated");
+  });
+
+  it("control: the same edge on a live op raises nothing", async () => {
+    expect(await coherenceOf(consumingFixture(LIVING_OPENAPI))).toEqual([]);
+  });
+
+  it("never gates archive: the merge proceeds with the warning printed as non-blocking", async () => {
+    const p = await makeProject(consumingFixture(DEPRECATED_LIVING));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("warning(s) (non-blocking)");
+      expect(res.out).toContain("deprecated");
+      expect(res.out).not.toContain("BLOCKED");
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
   });
 });

@@ -296,6 +296,17 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_SERVICE,
     what: "openapi.yaml defines operations and spec.md has requirements, but no `Operations:` line joins them — every cross-axis check is vacuously green",
   },
+  // The deprecation pair fires on a fresh baseline too — a legacy service is
+  // exactly where ops marked `deprecated: true` coexist with their
+  // replacements, and documenting that lifecycle honestly is part of the
+  // adoption. Mark the flag where the code retires an op; loam reads it, and
+  // has no removal semantics beyond it.
+  {
+    code: "api.requirement-deprecated",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a requirement whose `Operations:` list resolves only to operations openapi.yaml marks `deprecated: true` — the behaviour it governs is being retired",
+  },
   {
     code: "spine.op-undefined",
     severity: "error",
@@ -307,6 +318,12 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     severity: "warn",
     via: VIA_SERVICE,
     what: 'a landscape "Calls" edge into this service with no `metadata { op }`',
+  },
+  {
+    code: "spine.op-deprecated",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a landscape edge into this service calls an operation openapi.yaml marks `deprecated: true` — the consumer should be migrating off it",
   },
   {
     code: "covers.unknown",
