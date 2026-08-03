@@ -27,3 +27,26 @@ OpenSpec's unit is the capability (`openspec/specs/<capability>/spec.md`); loam'
 - **`model.likec4` and a landscape element** — the C4 center OpenSpec never had. `loam adopt --service <id>` emits the brief for an agent to write the baseline model, spec and OpenAPI from the code.
 
 Two smaller deltas in strictness, both pinned: heading matching is case-sensitive (`### requirement:` parses to nothing — no upstream file relies on lowercase), and RFC-2119 keywords are opaque body text (coverage is keyed off scenarios, which every upstream living requirement has anyway).
+
+## Where every file goes
+
+A real OpenSpec repo is more than spec files. The full layout — pinned by OpenSpec's own meta-spec, vendored at [`test/fixtures/openspec/living/openspec-conventions.spec.md`](test/fixtures/openspec/living/openspec-conventions.spec.md) — is `openspec/project.md`, `openspec/AGENTS.md`, `openspec/specs/<capability>/spec.md` (plus an optional `design.md`), `openspec/changes/<change-id>/{proposal.md, tasks.md, design.md (optional), specs/<capability>/spec.md}`, and `openspec/changes/archive/<date>-<id>/`; newer OpenSpec additionally manages an `<openspec-instructions>` block in the repo root's `AGENTS.md` and per-tool slash commands. Every artifact has a disposition, and none of them is converted by tooling — migration is judgment work, so building a converter would only automate the judgment away:
+
+| OpenSpec artifact | Disposition |
+|---|---|
+| `specs/<capability>/spec.md` | Requirements move into the owning services' `services/<svc>/spec.md` under `## Requirements`. Which service owns which capability is the human decision covered above. |
+| `specs/<capability>/design.md` | Service-level ADR under `services/<svc>/adrs/` — it records established patterns, which is decision material, not requirement material. |
+| `changes/<id>/` in flight | Finish it under OpenSpec first, or convert it into a `features/<FEAT>/` (rows below). Never run both tools over one change. |
+| `changes/<id>/proposal.md` | `features/<FEAT>/intent.md` — the same job under a different name: why, what, impact. |
+| `changes/<id>/specs/<capability>/spec.md` | `features/<FEAT>/specs/<svc>/spec.md`. Modern delta-sectioned files carry over verbatim; legacy "complete future state" files hit the checks in "What is lost" above and need re-homing before they archive. |
+| `changes/<id>/tasks.md` | **Discard.** loam derives the task list (`loam delta`, `loam verify`), so it cannot drift from the delta it came from; an authored copy could — SCHEMA.md's "Considered and rejected" records the decision. What a stale checklist knew that the delta does not is nothing. |
+| `changes/<id>/design.md` | Feature-level ADR under `features/<FEAT>/adrs/`, not an appendix to `intent.md`: intent answers *why* and design answers *how*, and folding the two together would blur the one document a reviewer reads first. |
+| `changes/archive/` | **Do not convert.** Keep it read-only where it is, as history. loam's `features/archive/` starts empty on purpose: an entry there means `loam archive` computed the merge and snapshotted the bytes it overwrote, and a converted OpenSpec archive would be an unverifiable reconstruction wearing that uniform. The frozen tree stays greppable, which is all history owes anyone. |
+| `project.md` | Its content becomes the preamble and conventions of the docs repo's `AGENTS.md` — project context is process contract, and that file travels with the docs. |
+| `openspec/AGENTS.md`, the `<openspec-instructions>` block, per-tool slash commands | **Remove after migration.** `loam init` writes its own `AGENTS.md` into the docs repo and the `/loam-*` commands into `.claude/commands/`; two live instruction sets means an agent obeying whichever it read last. |
+
+**Feature ids.** `loam new` requires `<word>-<number>` (`ID_RE` in `src/commands/new.ts`), and the id must survive being read back off the directory name (`featureIdFromDirName` in `src/core/repo.ts`). OpenSpec change names are kebab prose (`add-two-factor-auth`), which is not a valid id — so assign sequential ids and keep the old name as the slug: `loam new FEAT-12 --title "Add two factor auth"` scaffolds `features/FEAT-12-add-two-factor-auth/`, which reads back as exactly `FEAT-12`. The round-trip holds even for slugs that open with a digit (`FEAT-12-2fa-rollout` → `FEAT-12`), so no old change name can corrupt the id it is filed under.
+
+**Adoption order.** Adopt provider services before their consumers. A service's `loam adopt` brief includes what the landscape already says about it — its inbound edges, and the `expects` list: the operationIds the fleet already calls, which its new `openapi.yaml` must define or `spine.op-undefined` fires the moment it lands. Providers first means each consumer is later adopted against contracts that exist; consumers first means edges into services whose contracts are still unwritten, and every such edge is a check deferred.
+
+**Renames flatten.** Rename history is intentionally lost in the flattening — a rename becomes `REMOVED` + `ADDED` with no link between them — and the provenance of a renamed requirement is still recoverable by searching `features/archive/` for both names, which turns up the feature that retired the old one and the feature that introduced the new one.
