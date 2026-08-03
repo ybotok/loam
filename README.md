@@ -35,17 +35,20 @@ The reverse extractor is reused twice: to create the baseline, and at done-time 
 
 | Command | What it does |
 |---|---|
-| `loam init --docs <dir>` | Point at (and scaffold) the single shared docs repo; write local `loam.json`. |
+| `loam init --docs <dir>` | Point at (and scaffold) the single shared docs repo; write local `loam.json`, `AGENTS.md` and the `/loam-*` slash commands. |
 | `loam list [services\|features]` | What is in the docs repo, and what is missing from it. |
+| `loam new <FEAT> --title <t>` | Scaffold a feature: intent, C4 delta, a requirement delta per service. Validates clean out of the box. |
 | `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
 | `loam adopt --service <id>` | Reverse-engineer this repo's C4 + spec into the docs repo as `draft` for review. |
 | `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here + generated Gherkin. Output doubles as a coding-agent task. |
 | `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
 | `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence. |
 
-Every read command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope separates `ok` (the command ran) from `valid` (the docs pass).
+Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope separates `ok` (the command ran) from `valid` (the docs pass).
 
-Status: `init`, `list`, `show`, `delta`, `validate` and `archive` are implemented. **`adopt` is the remaining stub** — and the one everything else is waiting on.
+`init` also writes `AGENTS.md` into the docs repo — the process contract, travelling with the thing it describes — and `/loam-feature`, `/loam-implement`, `/loam-check`, `/loam-ship` into `.claude/commands/`. Neither is ever overwritten; `--no-commands` skips the latter.
+
+Status: `init`, `list`, `show`, `new`, `delta`, `validate` and `archive` are implemented. **`adopt` is the remaining stub** — and the one everything else is waiting on.
 
 ## Prerequisites
 

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { AGENTS_MD } from "./agent.js";
 
 /** Manifest at the root of the shared docs repo. */
 export const DOCS_MANIFEST = "loam.docs.json";
@@ -39,6 +40,15 @@ export async function scaffoldDocs(docsDir: string): Promise<ScaffoldResult> {
     const manifest: DocsManifest = { version: "0", services: [] };
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
     created.push(manifestPath);
+  }
+
+  // The process contract lives with the docs it describes, so an agent handed
+  // only the docs repo still knows the cycle. Never overwritten — a team's own
+  // house rules outrank the template.
+  const agentsPath = join(root, "AGENTS.md");
+  if (!existsSync(agentsPath)) {
+    await writeFile(agentsPath, AGENTS_MD, "utf8");
+    created.push(agentsPath);
   }
 
   return { root, created };

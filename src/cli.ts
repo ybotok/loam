@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { registerInit } from "./commands/init.js";
 import { registerAdopt } from "./commands/adopt.js";
 import { registerList } from "./commands/list.js";
+import { registerNew } from "./commands/new.js";
 import { registerShow } from "./commands/show.js";
 import { registerDelta } from "./commands/delta.js";
 import { registerArchive } from "./commands/archive.js";
@@ -18,6 +19,7 @@ program
 registerInit(program);
 registerAdopt(program);
 registerList(program);
+registerNew(program);
 registerShow(program);
 registerDelta(program);
 registerArchive(program);

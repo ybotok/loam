@@ -16,6 +16,7 @@ import { Command } from "commander";
 import { registerInit } from "../../src/commands/init.js";
 import { registerAdopt } from "../../src/commands/adopt.js";
 import { registerList } from "../../src/commands/list.js";
+import { registerNew } from "../../src/commands/new.js";
 import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
 import { registerArchive } from "../../src/commands/archive.js";
@@ -120,6 +121,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerInit(program);
     registerAdopt(program);
     registerList(program);
+    registerNew(program);
     registerShow(program);
     registerDelta(program);
     registerArchive(program);
