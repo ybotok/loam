@@ -729,6 +729,11 @@ describe("features in flight", () => {
     const issue = issues.find((i) => i.code === "delta.added-conflict")!;
     expect(issue.severity).toBe("warn");
     expect(issue.message).toContain("FEAT-2");
+    // The fate of the loser, stated truthfully: the second archive is REFUSED
+    // (delta.added-duplicate gates it) — it does not silently overwrite the first.
+    expect(issue.message).toContain("refused");
+    expect(issue.message).toContain("delta.added-duplicate");
+    expect(issue.message).not.toContain("overwrites");
   });
 
   it("another feature adding it for a DIFFERENT service rescues nothing", async () => {

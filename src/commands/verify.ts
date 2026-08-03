@@ -287,11 +287,20 @@ async function record(
   const path = await writeVerification(featureDir, verification);
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
 
+  // The same judgment read mode makes (see report): the record just written IS
+  // the current checklist's answer, so `stale` is false by construction and the
+  // remaining question is whether every claim was confirmed. Without this field
+  // an agent that recorded all-confirmed answers would have to re-run verify
+  // just to learn the state it created.
+  const verified =
+    verification.summary.claims > 0 && verification.summary.confirmed === verification.summary.claims;
+
   if (json) {
     emitJson({
       feature: verification.feature,
       path: repoPath(docsDir, path),
       digest: verification.checklist,
+      verified,
       recorded: verification.recorded,
       summary: verification.summary,
       unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),

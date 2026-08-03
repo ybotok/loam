@@ -18,7 +18,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import { repoPath } from "./list.js";
 import {
@@ -42,6 +42,24 @@ interface UnarchiveOptions {
   force?: boolean;
 }
 
+/**
+ * A commit-phase failure with its stable `--json` code attached — the mirror of
+ * archive's discipline. `restore-failed` answers "can I trust the repo?" with
+ * yes: nothing was restored, or everything was rolled back, and re-running can
+ * work. `rollback-incomplete` is the code that demands a human: the restore
+ * failed AND some files could not be put back — the message lists them.
+ * Anything ELSE that escapes runUnarchive never touched the commit phase, so
+ * the action handler reports it as `restore-failed`.
+ */
+class RestoreFailure extends Error {
+  constructor(
+    readonly code: ErrorCode,
+    msg: string,
+  ) {
+    super(msg);
+  }
+}
+
 export function registerUnarchive(program: Command): void {
   program
     .command("unarchive")
@@ -54,7 +72,8 @@ export function registerUnarchive(program: Command): void {
       try {
         await runUnarchive(featureId, json, opts.force === true);
       } catch (err) {
-        fail(json, "restore-failed", `unarchive ${featureId} failed: ${message(err)}`);
+        const code = err instanceof RestoreFailure ? err.code : "restore-failed";
+        fail(json, code, `unarchive ${featureId} failed: ${message(err)}`);
       }
     });
 }
@@ -141,8 +160,12 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
     await swapStaged(staged);
     await rename(feature.dir, dest);
   } catch (err) {
+    // The code is a caller's answer to "can I trust the repo?": restore-failed
+    // means yes (rolled back), rollback-incomplete means look at it by hand —
+    // rollbackError's message lists the files that need one.
     const failures = await rollbackStaged(staged);
-    throw rollbackError(err, failures);
+    const wrapped = rollbackError(err, failures);
+    throw new RestoreFailure(failures.length > 0 ? "rollback-incomplete" : "restore-failed", wrapped.message);
   }
 
   // The snapshot describes an archive that no longer exists; the empty directories

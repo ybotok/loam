@@ -6,6 +6,12 @@
  * prose. Errors go to stdout too: a consumer reads one stream and always gets
  * valid JSON, whether the command succeeded or not. The exit code still tells
  * the shell what happened.
+ *
+ * Key casing: camelCase, with one deliberate exception — a key that mirrors a
+ * frontmatter field verbatim keeps that field's snake_case spelling
+ * (`last_verified`, `sources_digest` in vouch's payload), so the envelope and
+ * the document it describes spell the same fact the same way. snake_case only
+ * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
 import { existsSync } from "node:fs";
 import { configPath } from "./config.js";
@@ -19,7 +25,11 @@ import { configPath } from "./config.js";
  *
  * The `feature-active` / `snapshot-*` group is `unarchive` refusing to guess:
  * each names a different reason the undo is not one, and a caller has to tell
- * them apart to know whether re-running could ever work.
+ * them apart to know whether re-running could ever work. Its commit failures
+ * split the same way archive's do: `restore-failed` means nothing was restored
+ * or everything was rolled back — the living docs are unchanged and re-running
+ * can work; `rollback-incomplete` (shared with archive, same meaning) means
+ * some files could not be put back, and the message lists them.
  *
  * The `answers-*` group is `loam verify --record` refusing an answer set that
  * does not answer the current checklist. They are separated for the same reason:
@@ -51,7 +61,6 @@ export type ErrorCode =
   | "no-config"
   | "config-invalid"
   | "unknown-target"
-  | "unknown-section"
   | "invalid-option"
   | "already-exists"
   | "sources-absent"

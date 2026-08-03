@@ -18,7 +18,7 @@
  * restoring over changes made after the archive — each with its own stable code,
  * because a caller has to know which of them re-running could ever fix.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import { parseRequirements } from "../src/core/spec.js";
@@ -31,6 +31,28 @@ import {
   LIVING_OPENAPI,
   type Project,
 } from "./helpers/harness.js";
+
+/**
+ * Fault injection for the commit phase. The harness runs commands in-process,
+ * so the swap and the final move go through this module graph's own
+ * node:fs/promises — wrapping `rename` lets a test fail exactly one step of
+ * the commit and watch which stable code comes back. Everything passes through
+ * untouched while `onRename` is unset, so the rest of this file never notices.
+ */
+const fsFault = vi.hoisted(() => ({
+  onRename: undefined as undefined | ((from: string, to: string) => void),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rename: async (from: Parameters<typeof actual.rename>[0], to: Parameters<typeof actual.rename>[1]) => {
+      fsFault.onRename?.(String(from), String(to));
+      return actual.rename(from, to);
+    },
+  };
+});
 
 /** Living spec with a requirement whose text the feature will MODIFY. */
 const LIVING_SPEC_TO_MODIFY = `---
@@ -283,6 +305,82 @@ describe("refusals", () => {
       await rm(join(p.workDir, "loam.json"));
       const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
       expect(JSON.parse(res.stdout)).toMatchObject({ ok: false, error: { code: "no-config" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("the commit phase", () => {
+  /**
+   * The two commit-failure codes answer one question — "can I trust the repo
+   * now?" — the way archive's `merge-failed` / `rollback-incomplete` pair does.
+   * The faults land on the reopening move (the last step, after every file is
+   * already swapped in), because that is the spot where the two outcomes
+   * genuinely diverge: the rollback either puts every file back, or it cannot.
+   */
+  it("a failure the rollback fully undid is `restore-failed`, and the docs are untouched", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const before = await treeHashes(p.docsDir);
+      fsFault.onRename = (_from, to) => {
+        if (to.endsWith(join("features", "FEAT-1-split"))) {
+          throw new Error("injected: the reopening move failed");
+        }
+      };
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("restore-failed");
+      expect(json.error.message.toLowerCase()).toContain("rolled back");
+      fsFault.onRename = undefined;
+      expect(await treeHashes(p.docsDir), "a clean rollback means byte-identical docs").toEqual(before);
+    } finally {
+      fsFault.onRename = undefined;
+      await p.destroy();
+    }
+  });
+
+  it("a failure whose rollback ALSO failed is `rollback-incomplete`, naming the files", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      // First the reopening move fails; from then on every rename fails, so the
+      // rollback's own atomic writes cannot land either.
+      let armed = false;
+      fsFault.onRename = (_from, to) => {
+        if (armed) throw new Error("injected: rollback blocked");
+        if (to.endsWith(join("features", "FEAT-1-split"))) {
+          armed = true;
+          throw new Error("injected: the reopening move failed");
+        }
+      };
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("rollback-incomplete");
+      // The payload matches archive's discipline: the message says the rollback
+      // did not hold and lists the files that need a hand.
+      expect(json.error.message).toContain("ROLLBACK INCOMPLETE");
+      expect(json.error.message).toContain("landscape.likec4");
+    } finally {
+      fsFault.onRename = undefined;
+      await p.destroy();
+    }
+  });
+
+  it("a refusal that never reached the commit stays `restore-failed`-free — codes do not leak", async () => {
+    // Guard the boundary from the other side: plan-phase refusals keep their own
+    // codes, so a consumer can rely on `rollback-incomplete` meaning the commit ran.
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      await rm(join(p.docsDir, "features/archive/FEAT-1-split/.loam-before"), { recursive: true });
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
     } finally {
       await p.destroy();
     }

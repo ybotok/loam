@@ -11,7 +11,7 @@
  *  - directory naming and id round-tripping
  *  - refusal to clobber an existing (or archived) feature
  *  - what each template contains, and that the delta parses
- *  - --service vs --new-service
+ *  - --touches vs --new-service
  *  - the clean-validate criterion
  *  - --json contract and failure modes
  */
@@ -113,7 +113,7 @@ describe("templates", () => {
       "FEAT-101",
       "--title",
       "Payment splitting",
-      "--service",
+      "--touches",
       "payment-service",
       "--new-service",
       "payment-split-service",
@@ -240,7 +240,7 @@ describe("a fresh scaffold validates clean", () => {
         "FEAT-101",
         "--title",
         "Payment splitting",
-        "--service",
+        "--touches",
         "payment-service",
         "--new-service",
         "payment-split-service",
@@ -341,7 +341,7 @@ describe("--json contract and failures", () => {
         p.workDir,
         "new",
         "FEAT-1",
-        "--service",
+        "--touches",
         "svc-a",
         "--new-service",
         "svc-a",

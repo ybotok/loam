@@ -30,7 +30,8 @@ export function registerList(program: Command): void {
       const wanted = section ? SECTIONS.filter((s) => s === section) : SECTIONS;
       if (section && wanted.length === 0) {
         const msg = `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`;
-        if (opts.json) emitJsonError("unknown-section", msg);
+        // `invalid-option`, same as show's bad --type: one mistake class, one code.
+        if (opts.json) emitJsonError("invalid-option", msg);
         else {
           console.error(msg);
           process.exitCode = 1;

@@ -15,7 +15,7 @@ const ID_RE = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 
 interface NewOptions {
   title?: string;
-  service: string[];
+  touches: string[];
   newService: string[];
   json?: boolean;
 }
@@ -26,7 +26,11 @@ export function registerNew(program: Command): void {
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Scaffold a feature: intent, C4 delta, and a requirement delta per service")
     .option("--title <text>", "human title; also becomes the directory slug")
-    .option("--service <id>", "a service this feature touches (repeatable)", collect, [])
+    // `--touches`, not `--service`: everywhere else `--service` selects the ONE
+    // operating target (defaulting to config.service), while this is a repeatable
+    // list of services the feature touches — a different arity and a different
+    // meaning deserve a different name.
+    .option("--touches <id>", "a service this feature touches (repeatable)", collect, [])
     .option("--new-service <id>", "a service this feature introduces (repeatable)", collect, [])
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: NewOptions) => {
@@ -59,7 +63,7 @@ export function registerNew(program: Command): void {
 
       // A service named both ways is new — that is the more specific claim.
       const created = new Set(opts.newService);
-      const touched = opts.service.filter((s) => !created.has(s));
+      const touched = opts.touches.filter((s) => !created.has(s));
       const dir = join(featuresDir(docsDir), dirName);
 
       const files: Record<string, string> = {

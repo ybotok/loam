@@ -144,6 +144,14 @@ describe("text output", () => {
       expect(res.out).toContain("widgets");
     });
   });
+
+  it("reports the unknown section as `invalid-option` — same code as every bad value", async () => {
+    await withProject(fleetFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "list", "widgets", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout)).toMatchObject({ ok: false, error: { code: "invalid-option" } });
+    });
+  });
 });
 
 describe("verification column", () => {

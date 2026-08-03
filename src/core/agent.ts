@@ -115,7 +115,7 @@ says so once and stops the warning for good.
    See "Adopting a service" below. Once per service, not once per feature.
 1. **Understand** — \`loam list --json\`, \`loam show <service> --json\`.
    Never propose a change to a service you have not read.
-2. **Scaffold** — \`loam new FEAT-101 --title "..." --service <existing> --new-service <new>\`.
+2. **Scaffold** — \`loam new FEAT-101 --title "..." --touches <existing> --new-service <new>\`.
 3. **Author** the four files the scaffold left as TODO: intent, delta.likec4,
    a spec.md per service, an openapi.yaml per new service.
 4. **Check** — \`loam validate --feature FEAT-101 --json\`. Fix every error before writing code.
@@ -259,14 +259,15 @@ Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
 command ran) from \`valid\` (the docs pass). A refusal is \`ok: false\` with a stable
 \`error.code\`: \`no-config\` / \`config-invalid\` (no loam.json / a corrupt one),
-\`unknown-target\` (no such service or feature), \`unknown-section\` (\`loam list\` of a
-section that is not services or features), \`invalid-option\` (flags that contradict
-each other, or a value that cannot be right), \`already-exists\` (\`loam new\` refusing
+\`unknown-target\` (no such service or feature), \`invalid-option\` (flags that contradict
+each other, or a value that cannot be right — a \`loam list\` section that is not
+services or features included), \`already-exists\` (\`loam new\` refusing
 to scaffold over an existing feature), \`sources-absent\` / \`sources-path-missing\`
 (\`loam vouch\` refusing to stamp), \`not-coherent\` / \`living-outside-requirements\` /
 \`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` (\`loam archive\` — see the
 archive gate below), \`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` /
-\`restore-failed\` (\`loam unarchive\`), \`answers-unreadable\` / \`answers-mismatch\` /
+\`restore-failed\` / \`rollback-incomplete\` (\`loam unarchive\` — the last pair splits
+exactly as archive's does; see "Taking an archive back"), \`answers-unreadable\` / \`answers-mismatch\` /
 \`answers-unevidenced\` (\`loam verify --record\`), and \`internal\` — an unexpected
 throw, the one code with no stable meaning.
 
@@ -316,6 +317,12 @@ feature of that id is in flight again), \`snapshot-missing\` (archived before lo
 recorded this — the docs have to come back from version control), \`snapshot-stale\`
 (a merged file changed after the archive, so restoring would revert someone else's
 work). \`--force\` overrides the last one, and like \`--approve\` it is a human's call.
+
+A restore that fails outright splits the same way archive's does: \`restore-failed\`
+means nothing was restored or everything was rolled back — the living docs are
+unchanged, fix the reported cause and re-run; \`rollback-incomplete\` means the
+restore failed AND some files could not be put back — stop and hand it to a human,
+the message lists the files to check.
 
 ## Dropping a feature
 
@@ -376,7 +383,7 @@ Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.jso
 2. Understand the current state before proposing a change:
    - \`loam list --json\` — what services exist, and what documentation they are missing
    - \`loam show <service> --json\` — what a service owns, exposes, and who already calls it
-3. Scaffold it: \`loam new $1 --title "$2"\`, adding \`--service <id>\` for every service the
+3. Scaffold it: \`loam new $1 --title "$2"\`, adding \`--touches <id>\` for every service the
    feature touches and \`--new-service <id>\` for every one it introduces.
 4. Author what the templates left as TODO:
    - \`intent.md\` — the problem in business terms

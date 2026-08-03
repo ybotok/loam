@@ -621,4 +621,24 @@ describe("the machine contract", () => {
     const doc = parse(await readFile(join(p.docsDir, RECORD), "utf8")) as Record<string, any>;
     expect(doc.checklist).toBe(json.digest);
   });
+
+  it("record mode reports `verified` itself — recording all-confirmed answers must not require a re-run", async () => {
+    const p = await project();
+    const cs = await claims(p);
+    const partial = await writeAnswers(p, [
+      ...cs.slice(0, 3).map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["a.ts:1"] })),
+      { id: cs[3]!.id, verdict: "unconfirmed", note: "not yet" },
+    ]);
+    const short = JSON.parse(
+      (await runLoam(p.workDir, "verify", FEAT, "--record", partial, "--json")).stdout,
+    );
+    expect(short.verified).toBe(false);
+
+    const full = JSON.parse(
+      (await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p), "--json")).stdout,
+    );
+    expect(full.verified).toBe(true);
+    // and it agrees with what a read-mode re-run would have said
+    expect((await checklist(p)).verified).toBe(true);
+  });
 });
