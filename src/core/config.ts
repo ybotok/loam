@@ -10,6 +10,14 @@ export interface LoamConfig {
   docsDir: string;
   /** Canonical id of the service in the current repo, if this is a service repo. */
   service?: string;
+  /**
+   * Where Gherkin lives in this service repo, relative to the repo root
+   * (default "features" — the cucumber convention). `loam gherkin` writes only
+   * inside `<gherkinDir>/loam/`; the rest of the directory stays the team's.
+   * Left unresolved on purpose: commands resolve it against the repo they run
+   * in, which is where the config file lives.
+   */
+  gherkinDir?: string;
 }
 
 export function configPath(cwd: string = process.cwd()): string {
@@ -24,6 +32,12 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfi
     const parsed = JSON.parse(raw) as LoamConfig;
     if (typeof parsed.docsDir !== "string" || parsed.docsDir === "") {
       throw new Error(`"docsDir" must be a non-empty string`);
+    }
+    // Same discipline as docsDir: a malformed fact refuses the whole config
+    // rather than being silently defaulted over — `5` or `""` here is a typo,
+    // and defaulting would send generated files somewhere nobody chose.
+    if (parsed.gherkinDir !== undefined && (typeof parsed.gherkinDir !== "string" || parsed.gherkinDir === "")) {
+      throw new Error(`"gherkinDir" must be a non-empty string when present`);
     }
     // Resolve here, against the file's own directory, so the doc comment on
     // `docsDir` is true no matter where a caller later resolves the path from.

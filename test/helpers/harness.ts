@@ -20,6 +20,7 @@ import { registerList } from "../../src/commands/list.js";
 import { registerNew } from "../../src/commands/new.js";
 import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
+import { registerGherkin } from "../../src/commands/gherkin.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerUnarchive } from "../../src/commands/unarchive.js";
 import { registerValidate } from "../../src/commands/validate.js";
@@ -72,7 +73,7 @@ export async function writeFiles(root: string, files: Record<string, string>): P
  */
 export async function makeProject(
   files: Record<string, string>,
-  opts: { service?: string } = {},
+  opts: { service?: string; gherkinDir?: string } = {},
 ): Promise<Project> {
   const root = await makeTmpDir();
   const workDir = join(root, "work");
@@ -80,7 +81,11 @@ export async function makeProject(
   await mkdir(workDir, { recursive: true });
   await mkdir(docsDir, { recursive: true });
   await writeFiles(docsDir, files);
-  const config = { docsDir, ...(opts.service ? { service: opts.service } : {}) };
+  const config = {
+    docsDir,
+    ...(opts.service ? { service: opts.service } : {}),
+    ...(opts.gherkinDir ? { gherkinDir: opts.gherkinDir } : {}),
+  };
   await writeFile(join(workDir, "loam.json"), JSON.stringify(config, null, 2) + "\n", "utf8");
   return {
     workDir,
@@ -153,6 +158,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerNew(program);
     registerShow(program);
     registerDelta(program);
+    registerGherkin(program);
     registerArchive(program);
     registerUnarchive(program);
     registerValidate(program);

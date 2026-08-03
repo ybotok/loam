@@ -221,7 +221,19 @@ function claimId(
  * ID_LENGTH: it is one part of the id tuple, not a fingerprint anybody reads.
  */
 function scenarioBody(s: Scenario): string {
-  return createHash("sha256").update(s.lines.join("\n").trim()).digest("hex").slice(0, ID_LENGTH);
+  return scenarioBodyHash(s.lines).slice(0, ID_LENGTH);
+}
+
+/**
+ * The full sha256 of a scenario's body — its lines joined and edge-trimmed,
+ * exactly as `serializeRequirements` frames them. ONE recipe with two
+ * consumers, deliberately in one place: `scenario.tested` claim ids fold in
+ * its first {@link ID_LENGTH} hex characters, and `loam gherkin` stamps its
+ * first 16 into every generated scenario (`# loam:digest`) — so a claim and a
+ * stamp can never disagree about what a scenario says.
+ */
+export function scenarioBodyHash(lines: string[]): string {
+  return createHash("sha256").update(lines.join("\n").trim()).digest("hex");
 }
 
 /**
