@@ -149,7 +149,7 @@ Two scopes, one emitter, run inside the service's repo (anywhere else refuses �
 
 A digest is content identity, deliberately: two identically-worded scenarios share one, and one stamped copy covers both. A file tagged with a feature still **in flight** is exempt from stale/orphan grading — it answers to its feature's delta (`loam gherkin <FEAT>` is its regeneration) until the feature archives, at which point its requirements ARE living requirements, digests unchanged, and the same bytes grade current with no rewrite. An abandoned feature's tag names nothing active, so its files fall to `gherkin.orphaned` and regeneration removes them. Mid-flight, a MODIFIED requirement's reworded living scenarios do report `gherkin.missing` — the suite tests the delta's words while the living spec still promises the old ones; that is true, and archiving the feature clears it.
 
-The loop this leaves open is deliberate: generate → write step definitions → run cucumber → implement until green. Feeding the runner's report back into the done-check — `loam verify --results` — is the next phase; until it lands, `loam verify --record` stays the way answers are recorded.
+The loop is closed end to end: generate → write step definitions (outside `loam/`) → run the suite with a JSON report — `cucumber-js --format json:report.json`, the CI recipe; cucumber-jvm, behave and SpecFlow emit the same format — → implement until green → `loam verify <FEAT> --results report.json [--record rest.json]`. The digest tags ride through the runner into the report, so the done-check's `scenario.tested` claims are answered by the green run itself; see "The verification record".
 
 ### The smallest legal feature
 
@@ -228,7 +228,13 @@ Each claim's **id** is `<kind>-<8 hex>`, hashed from the feature id and what the
 
 `loam verify <FEAT> --record <answers.json>` takes the answers back and refuses anything that does not answer the *current* checklist, each under its own `--json` `error.code`: `answers-unreadable` (not JSON, or a verdict outside `confirmed` / `unconfirmed`), `answers-mismatch` (an id nobody asked about, a claim with no answer, or one answered twice), `answers-unevidenced` (a `confirmed` with no `file:line` behind it). An unchecked claim must never be able to masquerade as checked.
 
-The record is YAML, like the other data artifacts, and holds the claim text next to each verdict so it reads without loam:
+**`--results <report.json>` answers the `scenario.tested` claims mechanically, from a cucumber JSON test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave and SpecFlow speak too. The contract is exactly this and nothing more: a top-level array of features, each `elements[]` (scenarios) with `name`, `tags[] {name}` and `steps[] {result {status}}`; every other field is ignored, tagless elements (backgrounds, hand-written scenarios) are invisible, and a file that is not that array at all refuses under `answers-unreadable` rather than quietly answering every claim "not found".
+
+Matching is by digest and nothing else: a claim is answered by the report scenarios carrying its `@loam-digest-<16hex>` tag — the tag `loam gherkin` stamped, the same 16 hex of the same body hash the claim id folds in. Names never match anything: a reworded spec scenario matches nothing until the suite is regenerated and re-run — an agent must not be able to SAY a scenario is tested; only a green run may. The verdicts: every matching occurrence (a digest the report holds twice is a re-run, and all occurrences count) ran at least one step and every step `passed` → `confirmed`, with evidence `<report-path>: <feature uri or name> › <scenario name>` per occurrence; a failed / undefined / pending / ambiguous step (`failed at step N`), a skipped-only run (`skipped`), or no match at all (`not found in report`) → `unconfirmed` with the reason as the note.
+
+`--results` OWNS every `scenario.tested` claim: an answers-file entry for one is refused (`answers-mismatch` — the runner owns it), `--record` alongside must answer exactly the non-scenario claims, and `--results` alone is legal only when the checklist is all scenarios (otherwise the refusal lists the unanswered ids). On an archived feature `--results` refuses exactly as `--record` does — frozen history.
+
+The record is YAML, like the other data artifacts, and holds the claim text next to each verdict so it reads without loam. Every verdict names who answered it — `answered_by: runner` (a report's green run, mechanical) or `answered_by: agent` (somebody's word about the code) — so a reviewer can tell the two apart at a glance:
 
 ```yaml
 feature: FEAT-101
@@ -240,12 +246,14 @@ claims:
     kind: api.exposes
     claim: payment-split-service exposes operationId 'createSplit'
     verdict: confirmed
+    answered_by: agent
     evidence: [src/split/Api.ts:42]
   - id: scenario.tested-daed1f53
     kind: scenario.tested
     claim: scenario 'Split across two payees' … is covered by a test
     verdict: unconfirmed
-    note: no test asserts the 60/40 split
+    answered_by: runner
+    note: "failed at step 3 (report.json: features/loam/split-a-payment.feature › Split across two payees)"
 ```
 
 It lives inside the feature, so `archive` carries it into `features/archive/<FEAT>/` with everything else. `loam verify` re-run later compares `checklist` against the current digest and reports the record as **stale** if the feature moved under it — while the feature is active. Once archived there is no current checklist to be stale against (the merge itself moved the feature's operations into the living OpenAPI, so a re-derived checklist could only disagree): `loam verify` on an archived feature renders the record verbatim as **frozen history** (`frozen: true` under `--json`, no staleness judgment), and `--record` refuses (`invalid-option` — there is no current checklist for the answers to answer): the record is about the words that shipped, and it stays that way.
@@ -306,4 +314,4 @@ There is no code extractor on either side, by decision. Nothing deterministic re
 
 ## Status
 
-`init`, `list` / `show` (navigation), `adopt` (the baseline brief), `new` (feature scaffolding), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `gherkin` (the generated `.feature` suite in the service repo), `verify` (the done-check checklist + its record), `archive` (three-axis merge, gated on gating coherence issues) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation, and `verify --results` (the cucumber report feeding the done-check — next phase).
+`init`, `list` / `show` (navigation), `adopt` (the baseline brief), `new` (feature scaffolding), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `gherkin` (the generated `.feature` suite in the service repo), `verify` (the done-check checklist + its record — scenario claims answered by the cucumber report via `--results`, the rest by an agent via `--record`), `archive` (three-axis merge, gated on gating coherence issues) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.

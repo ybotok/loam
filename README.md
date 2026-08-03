@@ -26,7 +26,7 @@ FORWARD (per feature, generative):
 
 **There is no extractor, and there will not be one.** Nothing deterministic reads a legacy service and says what its architecture *means*, and a model that was guessed is worse than none — everyone downstream has to re-derive it to know whether to believe it. So loam takes the half of the job that is mechanical: it **states the work** and it **checks the result**. An agent does the reading.
 
-The same split runs the done-check. `verify` cannot compare a generated model to the delta (two generated models of the same code disagree every run, so the diff would flap and get switched off), but it *can* derive the question set deterministically: every operation the feature adds, every call it draws, every scenario it wrote. The agent answers each with a `file:line`, and the answers are recorded next to the feature.
+The same split runs the done-check. `verify` cannot compare a generated model to the delta (two generated models of the same code disagree every run, so the diff would flap and get switched off), but it *can* derive the question set deterministically: every operation the feature adds, every call it draws, every scenario it wrote. The scenario claims do not even take an agent's word — the generated suite's digest tags ride into the cucumber JSON report, and `verify --results` confirms a scenario only from a green run. The agent answers the rest with a `file:line`, and every answer is recorded next to the feature, marked with who gave it.
 
 ## Principles
 
@@ -47,7 +47,7 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here, scenarios verbatim. Output doubles as a coding-agent task. |
 | `loam gherkin [<FEAT>] [--service <id>]` | Emit spec scenarios as Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` — a feature's changed requirements, or (without a feature) the full living suite. Deterministic, digest-stamped, regeneration-owned; run in the service's own repo. |
 | `loam validate [<id>] [--all]` | Validate one service or feature — positional id, feature reading first; `--service`/`--feature` force it — or the whole fleet in one run (CI gate). `--strict` exits 1 on warnings too: exit code only, the report and `valid` are unchanged. |
-| `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--record <answers.json>` takes the answers back and writes `verification.yaml`. |
+| `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--results <report.json>` answers the scenario claims from a cucumber JSON run — digest-matched, so only a green run confirms one; `--record <answers.json>` takes the agent's answers for the rest. Together they write `verification.yaml`, each verdict marked `answered_by: runner \| agent`. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
 | `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on gating coherence issues. `--dry-run` prints the plan and writes nothing. |
 | `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
@@ -62,7 +62,7 @@ The archive gate blocks on **gating issues**. Severity and gating answer two dif
 
 `archive` is the one command that rewrites the source of truth, so it computes the whole merge before touching disk, commits each file through a temp-file rename, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature, which is what makes `unarchive` an undo rather than a guess — the previous text of a `MODIFIED` requirement exists nowhere else.
 
-Status: every command in the table is implemented. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation — and `loam verify --results`, which will feed the generated suite's cucumber report back into the done-check and close the TDD loop (next phase; today `verify --record` takes an agent's answers).
+Status: every command in the table is implemented, `verify --results` included — the generated suite's cucumber report feeds the done-check, closing the TDD loop mechanically. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
 
 ## Try it
 

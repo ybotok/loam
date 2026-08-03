@@ -115,11 +115,13 @@ disagree about what a scenario says. \`loam validate
 (\`gherkin.missing\` / \`gherkin.stale\` / \`gherkin.orphaned\`, all warn) — the
 fix is always regeneration, never editing a generated file.
 
-The flow: \`loam gherkin FEAT-101\` → write step definitions (outside \`loam/\`)
-→ run cucumber → implement until green. Feeding the runner's report back into
-the done-check — \`loam verify --results\` — is the coming close of this loop;
-it is not implemented yet, so today the answers are recorded with
-\`loam verify --record\` as described below.
+The flow, closed end to end: \`loam gherkin FEAT-101\` → write step definitions
+(outside \`loam/\`) → run the suite with a JSON report
+(\`cucumber-js --format json:report.json\`) → implement until green →
+\`loam verify FEAT-101 --results report.json [--record rest.json]\`. The digest
+tags ride through the runner into the report, so the \`scenario.tested\` claims
+are answered by the green run itself — mechanically, never by anybody's word.
+See "The done-check" for what \`--record\` still covers.
 
 ## Frontmatter — who vouched for this, and from what
 
@@ -220,7 +222,9 @@ says so once and stops the warning for good.
    ran) but the exit code is 1: the C4 slice is empty because delta.likec4 did not
    parse, not because the feature changes no architecture — do not build on it.
 6. **Verify** — \`loam verify FEAT-101 --json\` turns the feature's own promises into a
-   checklist; answer each claim with evidence and record it. See "The done-check".
+   checklist. The scenario claims are answered by the cucumber report
+   (\`--results report.json\`); answer the rest with evidence and record them
+   (\`--record\`). See "The done-check".
 7. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows
    every file the merge would write, and writes none of them.
 
@@ -253,9 +257,25 @@ deltas included (those claims name their file, and the test they ask for is an
 integration/ops test, not an acceptance test). Each claim has a stable id, so
 two runs are diffable and an answer cannot drift onto a different question.
 
-You answer them. \`loam verify <FEAT> --record answers.json\` takes the answers
-back and writes \`features/<FEAT>/verification.yaml\`, which travels into the
-archive with the feature and reads without loam.
+Two answer channels, and they never overlap. The \`scenario.tested\` claims are
+the TEST RUNNER's to answer: run the generated suite with a cucumber JSON
+report (\`cucumber-js --format json:report.json\`) and pass it back —
+\`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
+report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
+and every step passed — every occurrence, when the report holds a re-run. A
+failed, undefined, pending or skipped step, or no matching scenario at all, is
+\`unconfirmed\` with the reason. The digest is the only identity: a reworded
+spec scenario matches nothing until the suite is regenerated and re-run, and
+no agent can SAY a scenario is tested — only a green run may.
+
+Everything else you answer from the code, and \`--record answers.json\` takes
+those back, writing \`features/<FEAT>/verification.yaml\` — it travels into the
+archive with the feature and reads without loam. With \`--results\`, the answers
+file must answer exactly the non-scenario claims: an entry for a scenario
+claim is refused (\`answers-mismatch\` — the runner owns it), and \`--results\`
+alone is refused while non-scenario claims are outstanding. Every recorded
+verdict says who answered it (\`answered_by: runner | agent\`), so a reviewer
+can tell a green run from somebody's word.
 
 It refuses an answer set that does not answer the current checklist: an id that
 is not on it (\`answers-mismatch\`), a claim with no answer (same), or a
@@ -402,8 +422,9 @@ to scaffold over an existing feature), \`sources-absent\` / \`sources-path-missi
 archive gate below), \`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` /
 \`restore-failed\` / \`rollback-incomplete\` (\`loam unarchive\` — the last pair splits
 exactly as archive's does; see "Taking an archive back"), \`answers-unreadable\` / \`answers-mismatch\` /
-\`answers-unevidenced\` (\`loam verify --record\`), and \`internal\` — an unexpected
-throw, the one code with no stable meaning.
+\`answers-unevidenced\` (\`loam verify --record\` / \`--results\` — an unreadable or
+unrecognizable cucumber report refuses under \`answers-unreadable\` too), and
+\`internal\` — an unexpected throw, the one code with no stable meaning.
 
 \`--all\` reports a target per service, a target per feature in flight, and one target
 of kind \`landscape\` for the fleet-level checks that belong to no single service.
@@ -572,7 +593,9 @@ Implement one service's part of a feature.
 3. Write step definitions for the generated scenarios FIRST — outside \`loam/\`.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance
    criterion someone else reviews against.
-4. Implement until the suite passes.
+4. Implement until the suite passes — run it with a JSON report
+   (\`cucumber-js --format json:report.json\`): \`loam verify $1 --results report.json\`
+   consumes that report as the done-check's answer sheet.
 5. Honour the contract: every operation in \`architecture.inbound\` must exist under
    exactly that operationId, and every one in \`architecture.outbound\` must be called.
 6. \`loam validate --feature $1 --json\` before handing back.
@@ -697,8 +720,8 @@ argument-hint: <FEAT-id>
 
 Check that the code somebody just built is the feature that was designed.
 
-loam derives the questions; you answer them from the code. It never reads the
-service, so a verdict is worth exactly what its evidence is worth.
+loam derives the questions; the test runner and you answer them. loam never
+reads the service, so a verdict is worth exactly what its evidence is worth.
 
 1. \`loam verify $1 --json\`. \`claims[]\` is the checklist, derived from the feature's
    own artifacts — one claim per new service, per operation its openapi delta adds,
@@ -706,29 +729,38 @@ service, so a verdict is worth exactly what its evidence is worth.
    requirement, arch.spec.md deltas included. Each has a stable \`id\` and a
    \`subject\` (the service whose code answers it); a claim that says arch.spec.md
    wants an integration/ops test, not an acceptance test. An ARCHIVED feature returns its record as frozen history instead
-   (\`frozen: true\`) and \`--record\` refuses it — \`loam unarchive\` first if the
-   answers really must change.
-2. Answer every claim by finding it in the code. Not by reasoning that it must be
-   there — by opening the file:
+   (\`frozen: true\`) and \`--record\` / \`--results\` refuse it — \`loam unarchive\`
+   first if the answers really must change.
+2. The \`scenario.tested\` claims are the runner's to answer, not yours. In the
+   service's repo, run the generated suite with a JSON report —
+   \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave and
+   SpecFlow emit the same format). The generated scenarios carry
+   \`@loam-digest-…\` tags that ride into the report; that digest is the match,
+   so never retitle or hand-edit a generated scenario to make one pass.
+3. Answer every OTHER claim by finding it in the code. Not by reasoning that it
+   must be there — by opening the file:
    - \`service.exists\` — the service is deployable: its build, its entry point.
    - \`api.exposes\` — the route handler serving that operationId, not the spec that
      declares it.
    - \`c4.calls\` — the call site in the CALLER.
-   - \`scenario.tested\` — the test, and it must assert what the Given/When/Then says.
-     A test named after the scenario that asserts something else is not coverage.
-3. Write the answers as JSON — evidence is \`file:line\`, one entry per place it can
+4. Write those answers as JSON — evidence is \`file:line\`, one entry per place it can
    be seen:
    \`\`\`json
    { "answers": [
      { "id": "<claim id>", "verdict": "confirmed", "evidence": ["src/split/Api.ts:42"] },
-     { "id": "<claim id>", "verdict": "unconfirmed", "note": "no test asserts the 60/40 split" }
+     { "id": "<claim id>", "verdict": "unconfirmed", "note": "the split service has no entry point yet" }
    ] }
    \`\`\`
-4. \`loam verify $1 --record answers.json --json\`. It refuses an answer set that does
-   not answer the current checklist: \`answers-mismatch\` (an id nobody asked about, or
-   a claim you left out — re-run step 1, the feature moved), \`answers-unevidenced\`
-   (a \`confirmed\` with nothing behind it).
-5. Report every \`unconfirmed\` claim and what it would take to close it.
+5. \`loam verify $1 --results report.json --record answers.json --json\` — or
+   \`--results report.json\` alone when the checklist is all scenarios. It refuses
+   whatever does not answer the current checklist: \`answers-mismatch\` (an id
+   nobody asked about, a claim you left out — re-run step 1, the feature moved —
+   or an answers entry for a \`scenario.tested\` claim: the runner owns those),
+   \`answers-unevidenced\` (a \`confirmed\` with nothing behind it),
+   \`answers-unreadable\` (a report or answers file it cannot read).
+6. Report every \`unconfirmed\` claim and what it would take to close it. A
+   scenario claim the report failed or missed closes by fixing the code and
+   re-running the suite — never by editing the generated .feature.
 
 Anything you cannot show is \`unconfirmed\` with a note. That is a successful record,
 and it is the useful one: nothing gates on this file, so the only thing it is for is

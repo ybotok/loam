@@ -35,12 +35,16 @@ import { describe, expect, it, afterEach } from "vitest";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { scenarioDigest } from "../src/core/gherkin.js";
+import { parseRequirements } from "../src/core/spec.js";
 import {
   coherentFixture,
   makeProject,
   makeTmpDir,
   runLoam,
   treeHashes,
+  FEATURE_SPEC,
+  LIVING_SPEC,
   type Project,
 } from "./helpers/harness.js";
 
@@ -96,6 +100,84 @@ async function confirmAll(p: Project, feature = FEAT): Promise<string> {
     p,
     cs.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["src/split/Service.ts:12"] })),
   );
+}
+
+/* --- the runner's side: cucumber reports ---------------------------- */
+
+/** The digest the emitter stamps for scenario `sc` of requirement `req` in a spec source. */
+function digestOf(spec: string, req = 0, sc = 0): string {
+  return scenarioDigest(parseRequirements(spec)[req]!.scenarios[sc]!.lines);
+}
+
+interface Run {
+  digest?: string;
+  name?: string;
+  steps?: string[];
+}
+
+/** A standard cucumber JSON report: one feature, one element per run — extra fields included on purpose. */
+function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.feature"): unknown {
+  return [
+    {
+      uri,
+      name: "Split a payment",
+      keyword: "Feature",
+      elements: runs.map((r) => ({
+        name: r.name ?? "Split across two payees",
+        type: "scenario",
+        tags: [
+          { name: "@FEAT-1", line: 2 },
+          ...(r.digest === undefined ? [] : [{ name: `@loam-digest-${r.digest}` }]),
+        ],
+        steps: (r.steps ?? ["passed", "passed", "passed"]).map((status) => ({
+          keyword: "Then ",
+          result: { status, duration: 1 },
+        })),
+      })),
+    },
+  ];
+}
+
+async function writeReport(p: Project, runs: Run[], name = "report.json"): Promise<string> {
+  await writeFile(join(p.workDir, name), JSON.stringify(cucumberReport(runs)), "utf8");
+  return name;
+}
+
+/** A feature whose checklist is ALL scenario claims: one spec delta, two scenarios, nothing else. */
+const SCENARIOS_ONLY = `# payment-split-service — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Split a payment
+The service SHALL split a payment across payees summing to the total.
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+
+#### Scenario: Reject a split that does not sum
+- **When** shares do not sum to the total
+- **Then** the split is rejected
+`;
+
+const ARCH_ONLY = `# payment-split-service — arch delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Retries stay idempotent
+The service SHALL apply createSplit idempotently under retry.
+
+#### Scenario: Duplicate delivery
+- **WHEN** the same split arrives twice
+- **THEN** exactly one split is recorded
+`;
+
+function scenarioOnlyFixture(): Record<string, string> {
+  return {
+    "features/FEAT-1-split/specs/payment-split-service/spec.md": SCENARIOS_ONLY,
+    "features/FEAT-1-split/intent.md": "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Split payments\n",
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -447,6 +529,227 @@ describe("what --record refuses", () => {
   });
 });
 
+describe("answering from the runner (--results)", () => {
+  // The digests the emitter stamps for SCENARIOS_ONLY's two scenarios.
+  const d1 = digestOf(SCENARIOS_ONLY, 0, 0);
+  const d2 = digestOf(SCENARIOS_ONLY, 0, 1);
+
+  it("confirms a claim only from a green run, and the record says the runner answered", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [{ digest: d1 }, { digest: d2, name: "Reject a split that does not sum" }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.verified).toBe(true);
+    expect(payload.summary).toEqual({ claims: 2, confirmed: 2, unconfirmed: 0 });
+
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    for (const c of doc.claims) {
+      expect(c.verdict).toBe("confirmed");
+      expect(c.answered_by).toBe("runner");
+    }
+    // the evidence names the report and the scenario, so a reviewer can find the run
+    expect(doc.claims[0].evidence[0]).toBe(
+      "report.json: features/loam/split-a-payment.feature › Split across two payees",
+    );
+
+    // and read mode carries answered_by back out
+    for (const c of (await checklist(p)).claims) {
+      expect(c.verdict).toBe("confirmed");
+      expect((c as Record<string, unknown>).answered_by).toBe("runner");
+    }
+  });
+
+  it("a failed step is an unconfirmed claim, the note naming the step", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: d1, steps: ["passed", "failed", "skipped"] },
+      { digest: d2 },
+    ]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.verified).toBe(false);
+    expect(payload.summary).toEqual({ claims: 2, confirmed: 1, unconfirmed: 1 });
+
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const failed = doc.claims.find((c: { verdict: string }) => c.verdict === "unconfirmed");
+    expect(failed.note).toContain("failed at step 2");
+    expect(failed.answered_by).toBe("runner");
+  });
+
+  it("a scenario absent from the report is unconfirmed — not found", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [{ digest: d1 }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const missing = doc.claims.find((c: { verdict: string }) => c.verdict === "unconfirmed");
+    expect(missing.claim).toContain("Reject a split that does not sum");
+    expect(missing.note).toContain("not found in report");
+  });
+
+  it("a reworded spec matches nothing — the digest is the identity, never the name", async () => {
+    const files = scenarioOnlyFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = SCENARIOS_ONLY.replace(
+      "two shares are recorded",
+      "three shares are recorded",
+    );
+    const p = await project(files);
+    // the report was generated before the rewording: same scenario NAME, old digest
+    const report = await writeReport(p, [{ digest: d1 }, { digest: d2, name: "Reject a split that does not sum" }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const drifted = doc.claims.find((c: { claim: string }) => c.claim.includes("Split across two payees"));
+    expect(drifted.verdict).toBe("unconfirmed");
+    expect(drifted.note).toContain("not found in report");
+    // the untouched scenario still confirms — exactly the drift fails
+    expect(doc.summary).toEqual({ claims: 2, confirmed: 1, unconfirmed: 1 });
+  });
+
+  it("a duplicate digest confirms only if every occurrence passed", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: d1 },
+      { digest: d1, steps: ["failed"] },
+      { digest: d2 },
+    ]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const rerun = doc.claims.find((c: { claim: string }) => c.claim.includes("Split across two payees"));
+    expect(rerun.verdict).toBe("unconfirmed");
+    expect(rerun.note).toContain("failed at step 1");
+    expect(rerun.note).toContain("1 of 2 matching runs failed");
+  });
+
+  it("skipped-only runs are not green", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: d1, steps: ["skipped", "skipped"] },
+      { digest: d2 },
+    ]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const skipped = doc.claims.find((c: { verdict: string }) => c.verdict === "unconfirmed");
+    expect(skipped.note).toContain("skipped");
+  });
+
+  it("refuses a report it cannot read or recognize, naming it", async () => {
+    const p = await project(scenarioOnlyFixture());
+    await writeFile(join(p.workDir, "junk.json"), "not json at all", "utf8");
+    const junk = await runLoam(p.workDir, "verify", FEAT, "--results", "junk.json", "--json");
+    expect(junk.code).toBe(1);
+    const j = JSON.parse(junk.stdout);
+    expect(j.error.code).toBe("answers-unreadable");
+    expect(j.error.message).toContain("junk.json");
+
+    // valid JSON, recognizably not a cucumber report: refuse, never "all not found"
+    await writeFile(join(p.workDir, "notcuke.json"), JSON.stringify({ features: [] }), "utf8");
+    const shape = await runLoam(p.workDir, "verify", FEAT, "--results", "notcuke.json", "--json");
+    expect(shape.code).toBe(1);
+    const s = JSON.parse(shape.stdout);
+    expect(s.error.code).toBe("answers-unreadable");
+    expect(s.error.message).toContain("not a cucumber JSON report");
+  });
+
+  it("another feature's report confirms nothing — no false confirms, but an honest record", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [{ digest: digestOf(LIVING_SPEC) }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.verified).toBe(false);
+    expect(payload.summary.confirmed).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    for (const c of doc.claims) expect(c.verdict).toBe("unconfirmed");
+  });
+
+  it("arch scenarios match through the same digest — the claims and the emitter share the hash", async () => {
+    const files = scenarioOnlyFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = ARCH_ONLY;
+    const p = await project(files);
+    const report = await writeReport(p, [
+      { digest: d1 },
+      { digest: d2, name: "Reject a split that does not sum" },
+      { digest: digestOf(ARCH_ONLY), name: "Duplicate delivery" },
+    ]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(JSON.parse(res.stdout).verified).toBe(true);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const arch = doc.claims.find((c: { claim: string }) => c.claim.includes("arch.spec.md"));
+    expect(arch.verdict).toBe("confirmed");
+    expect(arch.answered_by).toBe("runner");
+  });
+});
+
+describe("composing --results with --record", () => {
+  const scenarioDigest1 = digestOf(FEATURE_SPEC);
+
+  it("the runner's half and the agent's half make one complete record, mixed answered_by", async () => {
+    const p = await project();
+    const cs = await claims(p);
+    const answers = await writeAnswers(
+      p,
+      cs
+        .filter((c) => c.kind !== "scenario.tested")
+        .map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["src/split/Service.ts:12"] })),
+    );
+    const report = await writeReport(p, [{ digest: scenarioDigest1 }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--record", answers, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.verified).toBe(true);
+    expect(payload.summary).toEqual({ claims: 4, confirmed: 4, unconfirmed: 0 });
+
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    for (const c of doc.claims) {
+      expect(c.answered_by).toBe(c.kind === "scenario.tested" ? "runner" : "agent");
+    }
+  });
+
+  it("an answers entry for a scenario claim is refused — the runner owns it", async () => {
+    const p = await project();
+    const answers = await confirmAll(p); // all four claims, the scenario one included
+    const report = await writeReport(p, [{ digest: scenarioDigest1 }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--record", answers, "--results", report, "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.error.code).toBe("answers-mismatch");
+    expect(json.error.message).toContain("runner owns");
+    const scenarioId = (await claims(p)).find((c) => c.kind === "scenario.tested")!.id;
+    expect(json.error.message).toContain(scenarioId);
+  });
+
+  it("--results alone refuses while non-scenario claims are outstanding, listing them", async () => {
+    const p = await project();
+    const report = await writeReport(p, [{ digest: scenarioDigest1 }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.error.code).toBe("answers-mismatch");
+    expect(json.error.message).toContain("--record");
+    for (const c of (await claims(p)).filter((c) => c.kind !== "scenario.tested")) {
+      expect(json.error.message).toContain(c.id);
+    }
+    // and nothing was recorded
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it("an archived feature's record is frozen against --results too", async () => {
+    const p = await project();
+    const report = await writeReport(p, [{ digest: scenarioDigest1 }]);
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
+  });
+});
+
 describe("reading the verification back", () => {
   it("says verified only when every claim is confirmed against the current checklist", async () => {
     const p = await project();
@@ -589,6 +892,9 @@ describe("the slash command that drives it", () => {
     const body = await readFile(join(dir, ".claude", "commands", "loam-verify.md"), "utf8");
     expect(body).toContain("loam verify $1 --json");
     expect(body).toContain("--record");
+    // the runner's half of the loop: generate the report, feed it back
+    expect(body).toContain("--results report.json");
+    expect(body).toContain("--format json:report.json");
     expect(body).toContain("file:line");
     // the refusals it will hit, and the honest way out of them
     expect(body).toContain("answers-unevidenced");

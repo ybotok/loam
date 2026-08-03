@@ -1,10 +1,16 @@
 /**
  * `loam verify <FEAT>` — the done-check.
  *
- * Two modes, one subject. Without `--record` it derives the checklist from the
- * feature's own artifacts and reports it, together with whatever has already
- * been answered. With `--record <answers.json>` it takes the answers back, and
- * refuses everything that does not correspond to the current checklist.
+ * Two modes, one subject. Without `--record`/`--results` it derives the
+ * checklist from the feature's own artifacts and reports it, together with
+ * whatever has already been answered. With answers it records them, refusing
+ * everything that does not correspond to the current checklist — and the
+ * answers come from two places that never overlap: `--results
+ * <cucumber-report.json>` answers every `scenario.tested` claim mechanically
+ * (digest-matched against the report's `@loam-digest-…` tags — only a green
+ * run confirms one), `--record <answers.json>` takes an agent's answers for
+ * exactly the rest. Either alone is legal only when it covers the whole
+ * checklist; the complete-record invariant survives the split.
  *
  * An ARCHIVED feature is the one place the checklist is NOT derived. Archive
  * merged the feature's operations into the living openapi, so re-deriving here
@@ -26,6 +32,7 @@ import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { featuresDir, resolveFeature } from "../core/repo.js";
+import { readCucumberReport, runnerAnswers } from "../core/results.js";
 import {
   buildVerification,
   checkAnswers,
@@ -33,12 +40,15 @@ import {
   readVerification,
   verificationPath,
   writeVerification,
+  type Answer,
+  type AnsweredBy,
   type Checklist,
   type Verification,
 } from "../core/verify.js";
 
 interface VerifyOptions {
   record?: string;
+  results?: string;
   json?: boolean;
 }
 
@@ -49,6 +59,7 @@ interface ClaimStatus {
   subject: string;
   claim: string;
   verdict: "confirmed" | "unconfirmed" | "unanswered";
+  answered_by?: AnsweredBy;
   evidence: string[];
   note?: string;
 }
@@ -59,6 +70,10 @@ export function registerVerify(program: Command): void {
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Check a shipped feature against its own promises: derive the claims, record the answers")
     .option("--record <file>", "record a JSON answer set against the current checklist")
+    .option(
+      "--results <file>",
+      "answer the scenario.tested claims mechanically from a cucumber JSON test report",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: VerifyOptions) => {
       const json = opts.json === true;
@@ -78,12 +93,13 @@ export function registerVerify(program: Command): void {
       }
 
       // But an archived feature never gets a re-derived checklist — see the
-      // header. Its record is frozen history, and --record refuses: the code is
-      // `invalid-option` rather than `answers-mismatch` because the answers were
-      // never compared to anything — there is no current checklist to answer, so
-      // the wrong thing here is the option, not the answer set.
+      // header. Its record is frozen history, and --record / --results refuse
+      // alike: the code is `invalid-option` rather than `answers-mismatch`
+      // because the answers were never compared to anything — there is no
+      // current checklist to answer, so the wrong thing here is the option,
+      // not the answer set.
       if (feature.archived) {
-        if (opts.record !== undefined) {
+        if (opts.record !== undefined || opts.results !== undefined) {
           return fail(
             json,
             "invalid-option",
@@ -96,8 +112,8 @@ export function registerVerify(program: Command): void {
 
       const checklist = await featureChecklist(docsDir, feature.dir, feature.id);
 
-      if (opts.record !== undefined) {
-        await record(docsDir, feature.dir, checklist, opts.record, json);
+      if (opts.record !== undefined || opts.results !== undefined) {
+        await record(docsDir, feature.dir, checklist, opts, json);
         return;
       }
 
@@ -119,6 +135,7 @@ function statuses(checklist: Checklist, recorded: Verification | null): ClaimSta
       subject: c.subject,
       claim: c.claim,
       verdict: answer?.verdict ?? "unanswered",
+      ...(answer?.answered_by === undefined ? {} : { answered_by: answer.answered_by }),
       evidence: answer?.evidence ?? [],
       ...(answer?.note === undefined ? {} : { note: answer.note }),
     };
@@ -172,7 +189,7 @@ function report(
     return;
   }
   for (const c of claims) {
-    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}`);
+    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}${byRunner(c.answered_by)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
@@ -243,7 +260,7 @@ function reportFrozen(
     `${featureId} — verification recorded ${v.recorded}, frozen at archive (${repoPath(docsDir, featureDir)})\n`,
   );
   for (const c of v.claims) {
-    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}`);
+    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}${byRunner(c.answered_by)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
@@ -257,6 +274,11 @@ function reportFrozen(
 
 const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "✗", unanswered: "?" };
 
+/** The runner's verdicts are marked in prose; the agent's are the unmarked default. */
+function byRunner(who: AnsweredBy | undefined): string {
+  return who === "runner" ? "  [runner]" : "";
+}
+
 /* ------------------------------------------------------------------ */
 /* Recording                                                           */
 /* ------------------------------------------------------------------ */
@@ -265,24 +287,64 @@ async function record(
   docsDir: string,
   featureDir: string,
   checklist: Checklist,
-  answersFile: string,
+  opts: VerifyOptions,
   json: boolean,
 ): Promise<void> {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(await readFile(resolve(process.cwd(), answersFile), "utf8"));
-  } catch (err) {
+  // The runner's half: with --results, every scenario.tested claim is the
+  // report's to answer — matched by digest, confirmed only by a green run.
+  const runnerClaims =
+    opts.results === undefined ? [] : checklist.claims.filter((c) => c.kind === "scenario.tested");
+  const agentClaims =
+    opts.results === undefined ? checklist.claims : checklist.claims.filter((c) => c.kind !== "scenario.tested");
+
+  let fromRunner: Answer[] = [];
+  if (opts.results !== undefined) {
+    let doc: unknown;
+    try {
+      doc = JSON.parse(await readFile(resolve(process.cwd(), opts.results), "utf8"));
+    } catch (err) {
+      return fail(
+        json,
+        "answers-unreadable",
+        `Cannot read ${opts.results} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const report = readCucumberReport(doc, opts.results);
+    if (!report.ok) return fail(json, "answers-unreadable", report.message);
+    fromRunner = runnerAnswers(runnerClaims, report.scenarios, opts.results);
+  }
+
+  // The agent's half — exactly what the runner does not own. --results alone
+  // is legal only when the runner owns the whole checklist: anything left over
+  // refuses with the ids, the same discipline as a claim with no answer.
+  let raw: unknown = [];
+  if (opts.record !== undefined) {
+    try {
+      raw = JSON.parse(await readFile(resolve(process.cwd(), opts.record), "utf8"));
+    } catch (err) {
+      return fail(
+        json,
+        "answers-unreadable",
+        `Cannot read ${opts.record}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  } else if (agentClaims.length > 0 && opts.results !== undefined) {
     return fail(
       json,
-      "answers-unreadable",
-      `Cannot read ${answersFile}: ${err instanceof Error ? err.message : String(err)}`,
+      "answers-mismatch",
+      `--results answers only the scenario.tested claims; ${agentClaims.length} claim(s) have no answer: ` +
+        `${agentClaims.map((c) => c.id).join(", ")}. Record them with --record <answers.json> alongside --results.`,
     );
   }
 
-  const checked = checkAnswers(checklist.claims, raw);
+  const checked = checkAnswers(
+    agentClaims,
+    raw,
+    opts.results === undefined ? undefined : new Set(runnerClaims.map((c) => c.id)),
+  );
   if (!checked.ok) return fail(json, checked.code, checked.message);
 
-  const verification = buildVerification(checklist, checked.answers, today(new Date()));
+  const verification = buildVerification(checklist, [...fromRunner, ...checked.answers], today(new Date()));
   const path = await writeVerification(featureDir, verification);
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
 
@@ -311,6 +373,12 @@ async function record(
   console.log(
     `  ${verification.summary.confirmed} of ${plural(verification.summary.claims, "claim")} confirmed with evidence.`,
   );
+  if (opts.results !== undefined) {
+    console.log(
+      `  ${plural(fromRunner.length, "scenario claim")} answered by the test runner (${opts.results})` +
+        `${opts.record === undefined ? "" : `, ${checked.answers.length} by ${opts.record}`}.`,
+    );
+  }
   for (const c of unconfirmed) {
     console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
   }

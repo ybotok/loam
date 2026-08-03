@@ -13,7 +13,10 @@
  * service will exist, it will expose this operation, that service will call it,
  * this scenario will have a test. loam derives that list mechanically from the
  * same files `validate` already reads, an agent answers each claim with
- * evidence, and `--record` writes the answers down beside the feature.
+ * evidence, and `--record` writes the answers down beside the feature. The
+ * scenario claims do not even take the agent's word: `--results` answers them
+ * from a cucumber JSON report, matched by the digest tag `loam gherkin`
+ * stamped — only a green run may say a scenario is tested (results.ts).
  *
  * Two properties make the record worth keeping. The claim ids are a function of
  * the claim and of nothing else — so two runs are diffable, reordering the delta
@@ -34,7 +37,7 @@ import { parse, stringify } from "yaml";
 import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
 import { operationIds } from "./openapi.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
-import { parseRequirements, type Scenario } from "./spec.js";
+import { parseRequirements } from "./spec.js";
 
 /**
  * What a claim is about. The order is the order the checklist comes back in,
@@ -52,6 +55,13 @@ export interface Claim {
   subject: string;
   /** The claim in one line, answerable without reading the feature's files. */
   claim: string;
+  /**
+   * `scenario.tested` only: the first {@link DIGEST_LENGTH} hex of the
+   * scenario's body hash — the exact digest `loam gherkin` stamps as
+   * `@loam-digest-…`, which is what a cucumber report scenario carries and
+   * what `--results` matches on. Absent on every other kind.
+   */
+  digest?: string;
 }
 
 export interface Checklist {
@@ -61,7 +71,12 @@ export interface Checklist {
   digest: string;
 }
 
-/** How much of the sha256 goes into an id, and into the checklist digest. */
+/**
+ * How much of the sha256 goes into an id, and into a digest — the checklist's,
+ * and a scenario claim's runner-matching one, which is deliberately the same
+ * 16 hex `loam gherkin` stamps (its GHERKIN_DIGEST_LENGTH): the tag in a
+ * cucumber report and the digest on a claim must be the same string.
+ */
 const ID_LENGTH = 8;
 const DIGEST_LENGTH = 16;
 
@@ -144,14 +159,16 @@ export async function featureChecklist(
       for (const r of parseRequirements(await readFile(paths.spec, "utf8"))) {
         if (r.kind === "BASE" || r.kind === "REMOVED") continue;
         for (const s of r.scenarios) {
-          scenarios.push(
-            claim(
+          const body = scenarioBodyHash(s.lines);
+          scenarios.push({
+            ...claim(
               "scenario.tested",
               svc,
-              [svc, r.name, s.name, scenarioBody(s)],
+              [svc, r.name, s.name, body.slice(0, ID_LENGTH)],
               `scenario '${s.name}' of requirement '${r.name}' (${svc}) is covered by a test`,
             ),
-          );
+            digest: body.slice(0, DIGEST_LENGTH),
+          });
         }
       }
     }
@@ -166,14 +183,16 @@ export async function featureChecklist(
       for (const r of parseRequirements(await readFile(paths.archSpec, "utf8"))) {
         if (r.kind === "BASE" || r.kind === "REMOVED") continue;
         for (const s of r.scenarios) {
-          scenarios.push(
-            claim(
+          const body = scenarioBodyHash(s.lines);
+          scenarios.push({
+            ...claim(
               "scenario.tested",
               svc,
-              [svc, "arch.spec.md", r.name, s.name, scenarioBody(s)],
+              [svc, "arch.spec.md", r.name, s.name, body.slice(0, ID_LENGTH)],
               `scenario '${s.name}' of arch requirement '${r.name}' (${svc}, arch.spec.md) is covered by a test`,
             ),
-          );
+            digest: body.slice(0, DIGEST_LENGTH),
+          });
         }
       }
     }
@@ -212,25 +231,18 @@ function claimId(
 }
 
 /**
- * The scenario's BODY, folded into its claim id. The title alone is not the
- * claim: rewriting the Given/When/Then under an unchanged heading is new text
- * nobody answered for, and the promise in the header — rewording a scenario
- * renames its claim — has to hold for the words that actually specify the
- * behaviour. Edge-trimmed like `serializeRequirements`, so moving a scenario
- * down the page changes its framing blank lines without renaming it. Hashed to
- * ID_LENGTH: it is one part of the id tuple, not a fingerprint anybody reads.
- */
-function scenarioBody(s: Scenario): string {
-  return scenarioBodyHash(s.lines).slice(0, ID_LENGTH);
-}
-
-/**
  * The full sha256 of a scenario's body — its lines joined and edge-trimmed,
- * exactly as `serializeRequirements` frames them. ONE recipe with two
- * consumers, deliberately in one place: `scenario.tested` claim ids fold in
- * its first {@link ID_LENGTH} hex characters, and `loam gherkin` stamps its
- * first 16 onto every generated scenario as the `@loam-digest-<16hex>` tag —
- * so a claim and a stamp can never disagree about what a scenario says.
+ * exactly as `serializeRequirements` frames them. The BODY, not the title,
+ * because rewriting the Given/When/Then under an unchanged heading is new text
+ * nobody answered for, and the promise — rewording a scenario renames its
+ * claim — has to hold for the words that actually specify the behaviour.
+ *
+ * ONE recipe with three consumers, deliberately in one place:
+ * `scenario.tested` claim ids fold in its first {@link ID_LENGTH} hex
+ * characters, a claim's `digest` and the `@loam-digest-<16hex>` tag `loam
+ * gherkin` stamps both take its first {@link DIGEST_LENGTH} — so the claim,
+ * the stamp and the report `--results` reads can never disagree about what a
+ * scenario says.
  */
 export function scenarioBodyHash(lines: string[]): string {
   return createHash("sha256").update(lines.join("\n").trim()).digest("hex");
@@ -258,12 +270,22 @@ export function checklistDigest(claims: Claim[]): string {
 export const VERDICTS = ["confirmed", "unconfirmed"] as const;
 export type Verdict = (typeof VERDICTS)[number];
 
+/**
+ * Who answered a claim: the `runner` (a cucumber report's digest-tagged
+ * scenarios, matched mechanically by `--results`) or an `agent` (somebody's
+ * word about the code, taken back by `--record`). On the record so a reviewer
+ * can tell a green run from an assertion.
+ */
+export const ANSWERED_BY = ["runner", "agent"] as const;
+export type AnsweredBy = (typeof ANSWERED_BY)[number];
+
 export interface Answer {
   id: string;
   verdict: Verdict;
-  /** Where it can be seen — `file:line`. Required for `confirmed`. */
+  /** Where it can be seen — `file:line`, or a report scenario for the runner. Required for `confirmed`. */
   evidence: string[];
   note?: string;
+  answered_by: AnsweredBy;
 }
 
 /** Why an answer set was refused. Each names a different way it fails to answer. */
@@ -282,8 +304,18 @@ export type AnswerCheck =
  * could be recorded, `verification.yaml` would say a claim was checked when
  * nobody ever asked it — and a record that can lie is worse than no record,
  * because it looks like evidence.
+ *
+ * `runnerOwned` is the composition rule under `--results`: ids the test runner
+ * answers, which an answers file must therefore not touch. An entry naming one
+ * refuses with its own diagnosis — the id IS on the feature's checklist, so
+ * calling it unknown would send the caller hunting a staleness that is not
+ * there.
  */
-export function checkAnswers(claims: Claim[], raw: unknown): AnswerCheck {
+export function checkAnswers(
+  claims: Claim[],
+  raw: unknown,
+  runnerOwned?: ReadonlySet<string>,
+): AnswerCheck {
   const refuse = (code: AnswerRefusal, message: string): AnswerCheck => ({ ok: false, code, message });
 
   const list = Array.isArray(raw)
@@ -320,6 +352,7 @@ export function checkAnswers(claims: Claim[], raw: unknown): AnswerCheck {
       verdict: verdict as Verdict,
       evidence: stringList(entry["evidence"]),
       ...(note.length > 0 ? { note } : {}),
+      answered_by: "agent",
     });
   }
 
@@ -330,10 +363,15 @@ export function checkAnswers(claims: Claim[], raw: unknown): AnswerCheck {
     else byId.set(a.id, a);
   }
   const known = new Set(claims.map((c) => c.id));
-  const unknown = [...new Set(answers.map((a) => a.id).filter((id) => !known.has(id)))];
+  const strayIds = [...new Set(answers.map((a) => a.id).filter((id) => !known.has(id)))];
+  const runnerHit = strayIds.filter((id) => runnerOwned?.has(id) === true);
+  const unknown = strayIds.filter((id) => runnerOwned?.has(id) !== true);
   const missing = claims.filter((c) => !byId.has(c.id)).map((c) => c.id);
-  if (unknown.length + missing.length + twice.length > 0) {
+  if (runnerHit.length + unknown.length + missing.length + twice.length > 0) {
     const parts = [
+      runnerHit.length > 0
+        ? `${runnerHit.length} answer(s) name scenario claim(s) the test runner owns under --results: ${runnerHit.join(", ")} — the report answers those; take them out of the answers file`
+        : "",
       unknown.length > 0 ? `${unknown.length} answer(s) name a claim that is not on the checklist: ${unknown.join(", ")}` : "",
       missing.length > 0 ? `${missing.length} claim(s) have no answer: ${missing.join(", ")}` : "",
       twice.length > 0 ? `${twice.length} claim(s) answered more than once: ${[...new Set(twice)].join(", ")}` : "",
@@ -379,6 +417,8 @@ export interface RecordedClaim {
   kind: ClaimKind;
   claim: string;
   verdict: Verdict;
+  /** Who answered — absent only in records written before `--results` existed. */
+  answered_by?: AnsweredBy;
   evidence: string[];
   note?: string;
 }
@@ -416,6 +456,7 @@ export function buildVerification(
       kind: c.kind,
       claim: c.claim,
       verdict: a.verdict,
+      answered_by: a.answered_by,
       evidence: a.evidence,
       ...(a.note === undefined ? {} : { note: a.note }),
     };
@@ -437,12 +478,14 @@ export function buildVerification(
  */
 export function renderVerification(v: Verification): string {
   const header = [
-    `# Verification record for ${v.feature} — written by \`loam verify ${v.feature} --record\`.`,
+    `# Verification record for ${v.feature} — written by \`loam verify ${v.feature}\` (--results / --record).`,
     "#",
     "# Every claim below was derived mechanically from this feature's own artifacts:",
     "# delta.likec4, specs/<svc>/spec.md, specs/<svc>/arch.spec.md and specs/<svc>/",
-    "# openapi.yaml. The verdicts and the evidence are somebody's answers about the",
-    "# code — loam did not check them, and nothing gates on them.",
+    "# openapi.yaml. Each verdict names who answered it: `answered_by: runner` means a",
+    "# cucumber JSON report's digest-tagged scenarios answered it mechanically;",
+    "# `answered_by: agent` means somebody's word about the code, which loam did not",
+    "# check. Nothing gates on either.",
     "#",
     "# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same",
     "# one, the feature changed after this was recorded and these answers are stale.",
