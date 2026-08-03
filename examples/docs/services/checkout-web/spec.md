@@ -1,8 +1,7 @@
 ---
 service: checkout-web
-status: verified
+status: draft
 owner: checkout-team
-last_verified: 2026-07-31
 ---
 
 # checkout-web
@@ -22,4 +21,4 @@ The UI SHALL take a customer from cart to payment to confirmation.
 ## UI
 
 Pages live under `ui/pages/`. Each page-spec links the endpoints it consumes and the
-scenarios that govern it; `loam render` generates an HTML prototype.
+scenarios that govern it; planned: `loam render` generates an HTML prototype.

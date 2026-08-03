@@ -242,6 +242,45 @@ describe("what happens next, and what will never happen", () => {
     expect(checks.some((c: { severity: string }) => c.severity === "warn")).toBe(true);
   });
 
+  it("attributes every check to the invocation that surfaces it — --service does not run the fleet cross-check", async () => {
+    // landscape.service-unmodelled only fires under --all; a brief crediting it
+    // to `--service <id>` sent agents chasing a finding that run never reports.
+    const p = await project({}, { service: SVC });
+    const checks = (await brief(p)).checks;
+    for (const c of checks) {
+      expect(["loam validate --service <id>", "loam validate --all"], c.code).toContain(c.via);
+    }
+    const byCode = (code: string): Record<string, any> =>
+      checks.find((c: { code: string }) => c.code === code);
+    expect(byCode("landscape.service-unmodelled").via).toBe("loam validate --all");
+    expect(byCode("c4.invalid").via).toBe("loam validate --service <id>");
+  });
+
+  it("splits the prose the same way — the --all-only check is not promised to --service", async () => {
+    const p = await project({}, { service: SVC });
+    const res = await runLoam(p.workDir, "adopt");
+    expect(res.code).toBe(0);
+    expect(res.out).toContain(`what \`loam validate --service ${SVC}\` then checks`);
+    const allHeader = res.out.indexOf("and what only \`loam validate --all\` surfaces");
+    expect(allHeader).toBeGreaterThan(-1);
+    // the fleet check sits under the --all header, after every --service check
+    expect(res.out.indexOf("landscape.service-unmodelled", allHeader)).toBeGreaterThan(allHeader);
+    expect(res.out.slice(0, allHeader)).not.toContain("landscape.service-unmodelled");
+  });
+
+  it("meters partial adoption honestly: a missing spec or openapi is a warn in the brief, as in validate", async () => {
+    // The brief marks spec.md/openapi.yaml required (for a COMPLETE baseline);
+    // validate grades their absence a warn. Both statements have to be made, or
+    // the brief and the checker disagree about what "required" means.
+    const p = await project({}, { service: SVC });
+    const checks = (await brief(p)).checks;
+    for (const code of ["service.no-spec", "service.no-openapi", "api.ops-unlinked"]) {
+      const c = checks.find((x: { code: string }) => x.code === code);
+      expect(c, `no check for ${code}`).toBeDefined();
+      expect(c.severity, code).toBe("warn");
+    }
+  });
+
   it("lists what loam cannot check — the part where honesty is on the agent", async () => {
     const p = await project({}, { service: SVC });
     const unchecked = (await brief(p)).unchecked.join("\n").toLowerCase();

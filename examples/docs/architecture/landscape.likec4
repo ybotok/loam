@@ -1,6 +1,7 @@
 // Global C4 fleet landscape — the LIVING current state (before FEAT-101 is archived).
 // `loam archive` folds a feature's #FEAT-tagged elements/relationships in here.
-// Cross-file merge (fromWorkspace) is how loam will aggregate this from per-service files later.
+// One landscape file, by decision: conflicts resolve through PRs. See SCHEMA.md,
+// "Operating at fleet scale", for the trigger that would change this.
 //
 // `loam validate --all` cross-checks this file against services/: every service
 // directory needs an element here (error), and every element that looks like a

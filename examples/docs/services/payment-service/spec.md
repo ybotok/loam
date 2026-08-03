@@ -1,8 +1,7 @@
 ---
 service: payment-service
-status: verified
+status: draft
 owner: payments-team
-last_verified: 2026-07-31
 sources:
   - src/main/java/**
 ---

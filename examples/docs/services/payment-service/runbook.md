@@ -1,6 +1,6 @@
 ---
 service: payment-service
-status: verified
+status: draft
 owner: payments-team
 ---
 

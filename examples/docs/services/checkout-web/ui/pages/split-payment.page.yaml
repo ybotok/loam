@@ -1,5 +1,6 @@
-# Page-spec (source of truth). `loam render` generates an HTML prototype from this (model A).
+# Page-spec (source of truth). planned: `loam render` generates an HTML prototype from this (model A).
 # Links the architecture (consumes endpoints) and behavior (governing scenarios).
+# No command reads page-specs yet — the format is illustrative, not contract.
 page: split-payment
 title: Split payment
 service: checkout-web

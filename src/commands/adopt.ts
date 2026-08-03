@@ -12,7 +12,7 @@
 import type { Command } from "commander";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
-import { serviceBrief, type Brief, type BriefTarget } from "../core/brief.js";
+import { serviceBrief, VIA_ALL, type Brief, type BriefCheck, type BriefTarget } from "../core/brief.js";
 
 interface AdoptOptions {
   service?: string;
@@ -81,10 +81,16 @@ function render(b: Brief): void {
   console.log(`\n    never write by hand: ${b.frontmatter.never.join(", ")}`);
   console.log(`\n${wrap(b.frontmatter.why, "    ")}`);
 
+  // Attribution matters here: the fleet cross-check runs under `--all`, and a
+  // header promising it to `--service` sent agents chasing a finding that
+  // invocation never reports.
   console.log(`\n  what \`loam validate --service ${b.service}\` then checks\n`);
   for (const c of b.checks) {
-    console.log(`    ${c.severity === "error" ? "✗" : "⚠"} ${c.code}`);
-    console.log(wrap(c.what, "        "));
+    if (c.via !== VIA_ALL) printCheck(c);
+  }
+  console.log(`\n  and what only \`loam validate --all\` surfaces\n`);
+  for (const c of b.checks) {
+    if (c.via === VIA_ALL) printCheck(c);
   }
 
   console.log("\n  what nothing checks\n");
@@ -100,6 +106,11 @@ function render(b: Brief): void {
       "    ",
     ),
   );
+}
+
+function printCheck(c: BriefCheck): void {
+  console.log(`    ${c.severity === "error" ? "✗" : "⚠"} ${c.code}`);
+  console.log(wrap(c.what, "        "));
 }
 
 function printShape(t: BriefTarget): void {

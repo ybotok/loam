@@ -48,18 +48,39 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam validate [--all]` | Validate one service/feature, or the whole fleet in one run (CI gate). |
 | `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--record <answers.json>` takes the answers back and writes `verification.yaml`. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
-| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence. `--dry-run` prints the plan and writes nothing. |
+| `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on coherence errors. `--dry-run` prints the plan and writes nothing. |
 | `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
 
-Every command except `archive` takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope keeps three different questions apart — `ok` (the command ran), `valid` (the docs pass), `verified` (somebody says the code was built, and showed evidence). `archive` still speaks only prose — use `--dry-run` to see its plan.
+Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope keeps three different questions apart — `ok` (the command ran), `valid` (the docs pass), `verified` (somebody says the code was built, and showed evidence). `archive --json` carries the whole merge plan, the warnings it is not blocking on, and — on refusal — a stable `error.code`; with `--dry-run` it is the same payload without the writes.
 
-`init` also writes `AGENTS.md` into the docs repo — the process contract, travelling with the thing it describes — and `/loam-adopt`, `/loam-feature`, `/loam-implement`, `/loam-check`, `/loam-verify`, `/loam-ship` into `.claude/commands/`. Neither is ever overwritten; `--no-commands` skips the latter.
+`init` also writes `AGENTS.md` into the docs repo — the process contract, travelling with the thing it describes — and `/loam-adopt`, `/loam-feature`, `/loam-implement`, `/loam-check`, `/loam-verify`, `/loam-ship` into `.claude/commands/`. Neither is ever overwritten; `--no-commands` skips the latter. Running an agent that is not Claude? Point it at `AGENTS.md` in the docs repo — the slash commands are thin wrappers over the CLI, so any runner that can read a file and exec `loam` has everything.
 
 **`verify` does not gate `archive`.** Coherence gates because loam *computed* it from the documents in front of it; a verdict is somebody's word about code loam never read. Putting that in front of shipping would only teach everyone that the cheapest way past a gate is to say yes. `verification.yaml` is written for the reviewer who comes later — it travels into `features/archive/` with the feature, and an `unconfirmed` claim with a note is worth more there than a yes nobody can back up.
+
+The archive gate blocks on **gating issues**. Severity and gating answer two different questions: severity says whether the *document* is valid (`loam validate` fails on errors), gating says whether the *merge* is safe — and they diverge exactly once today: `delta.requirement-not-merged` is a warning (the shape is legal OpenSpec, validate stays green) that gates (the merge would silently drop the requirement). Every `--json` coherence finding carries the resolved `gates` flag. Advisory warnings are printed with the plan and never block, and `--approve` overrides the gating issues alone, naming each one it overrode. Two refusals sit past the gate, at plan time, because only the computed merge can see them: a living requirement outside `## Requirements` (the merge would duplicate it, so not even `--approve` clears that) and an unparseable `delta.likec4` (archiving anyway would silently drop the architecture axis).
 
 `archive` is the one command that rewrites the source of truth, so it computes the whole merge before touching disk, commits each file through a temp-file rename, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature, which is what makes `unarchive` an undo rather than a guess — the previous text of a `MODIFIED` requirement exists nowhere else.
 
 Status: every command in the table is implemented. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
+
+## Try it
+
+The repo ships a small example fleet under [`examples/docs/`](examples/docs) — two services, one feature in flight. Point a throwaway `loam.json` at it and run the real commands (the file is untracked; delete it when done):
+
+```bash
+npm install
+echo '{ "docsDir": "examples/docs" }' > loam.json
+npm run dev -- list                          # what the fleet looks like
+npm run dev -- validate --all                # the CI gate: 0 errors, 2 deliberate warnings
+npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
+```
+
+`test/examples.test.ts` pins these exact outcomes, so the example cannot drift from the code.
+
+## Docs
+
+- [SCHEMA.md](SCHEMA.md) — the docs-repo layout, each artifact's grammar, and the decisions behind them: the coherence rules, how `archive` writes and `unarchive` undoes, operating at fleet scale.
+- [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) — moving an OpenSpec repo onto loam: what maps, what is lost, what must be added.
 
 ## Prerequisites
 

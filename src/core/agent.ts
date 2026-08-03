@@ -210,19 +210,65 @@ Write the delta section heading on its own line exactly as \`## ADDED Requiremen
 The heading is the only thing that gives a requirement its kind: without a matching
 one, archive merges the requirement as nothing.
 
-Errors gate. Warnings do not, but leave one only deliberately.
+Severity and gating are two different questions. An ERROR means the document is
+invalid — \`loam validate\` fails. A finding with \`gates: true\` means \`loam archive\`
+will refuse — the merge is unsafe. They usually agree (errors gate, warnings do
+not), and where they diverge the \`--json\` output says so: \`delta.requirement-not-merged\`
+is a warning (the shape is legal OpenSpec) that gates (the merge would drop the
+requirement). Leave a warning standing only deliberately.
 
 ## Reading loam's output
 
-Every command takes \`--json\`. Branch on \`findings[].code\` (\`c4.invalid\`,
-\`requirements.missing-scenarios\`, \`spec-api.op-undefined\`, \`c4-api.op-undefined\`,
-\`c4.op-ungoverned\`, \`api.op-unconsumed\`, \`spine.op-link-missing\`,
-\`delta.unknown-section\`, \`delta.requirement-not-merged\`, \`delta.modified-unknown\`,
-\`delta.removed-unknown\`, \`delta.added-duplicate\`, \`sources.stale\`, \`sources.unvouched\`,
-\`landscape.service-unmodelled\`, \`landscape.service-undocumented\`,
-\`landscape.binding-unknown\`), never on the prose — the wording changes, the codes do not.
+Every command takes \`--json\`. The one carve-out: an unknown flag or a missing
+argument is refused by the option parser before loam runs, as plain text — so
+unparseable output with exit 1 means the INVOCATION was wrong, not the docs.
+
+Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
+not. The code-by-code fix table lives in the \`/loam-check\` command \`loam init\` lays
+down; the map of which invocation surfaces what:
+
+- \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
+  \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
+  \`requirements.missing-scenarios\`, \`api.ungoverned\`, \`api.ops-unlinked\`,
+  \`spine.landscape-invalid\`, \`spine.op-undefined\`, \`spine.op-link-missing\`.
+- \`loam validate --feature <id>\` grades a change's three axes against each other and
+  against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
+  \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
+  \`c4-api.op-pending\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
+  \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`, and
+  the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
+  \`delta.requirement-not-merged\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
+  \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,
+  \`delta.removed-pending\`, \`delta.added-conflict\`.
+- \`loam validate --all\` runs both of those for everything and adds the fleet
+  cross-check: \`landscape.invalid\`, \`landscape.service-unmodelled\`,
+  \`landscape.service-undocumented\`, \`landscape.binding-unknown\`, plus one summary
+  line — \`sources.unverifiable-from-here\` — counting services whose \`sources\` only
+  their own repos can check.
+- Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.field-mismatch\`,
+  \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md
+  additionally carries the sources chain (\`sources.absent\`, \`sources.path-missing\`,
+  \`sources.unvouched\`, \`sources.stale\`).
+- \`loam archive\` alone reports the two breaches only the merge computation can see:
+  \`living.requirement-outside-requirements\` (error) and \`openapi.op-modified\` (warn).
+
+Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
+\`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
+\`landscape.matched\`, \`archedge.covered\`, \`sources.resolved\`, \`sources.current\`.
+
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
-command ran) from \`valid\` (the docs pass).
+command ran) from \`valid\` (the docs pass). A refusal is \`ok: false\` with a stable
+\`error.code\`: \`no-config\` / \`config-invalid\` (no loam.json / a corrupt one),
+\`unknown-target\` (no such service or feature), \`unknown-section\` (\`loam list\` of a
+section that is not services or features), \`invalid-option\` (flags that contradict
+each other, or a value that cannot be right), \`already-exists\` (\`loam new\` refusing
+to scaffold over an existing feature), \`sources-absent\` / \`sources-path-missing\`
+(\`loam vouch\` refusing to stamp), \`not-coherent\` / \`living-outside-requirements\` /
+\`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` (\`loam archive\` — see the
+archive gate below), \`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` /
+\`restore-failed\` (\`loam unarchive\`), \`answers-unreadable\` / \`answers-mismatch\` /
+\`answers-unevidenced\` (\`loam verify --record\`), and \`internal\` — an unexpected
+throw, the one code with no stable meaning.
 
 \`--all\` reports a target per service, a target per feature in flight, and one target
 of kind \`landscape\` for the fleet-level checks that belong to no single service.
@@ -236,11 +282,24 @@ valid and unverified, or verified and incoherent. Read the one you meant.
 
 The three axes agreeing is called **coherence**, and \`loam validate --feature\` reports
 it as such. \`loam archive\` runs the same coherence check first and refuses a feature
-that fails it, because the merge would carry the disagreement into the living docs,
-where every later reader inherits it.
+with GATING issues — every error, plus the rare warning marked \`gates: true\` because
+the merge would silently drop authored content even though the document is legal.
+Advisory warnings never block: archive prints them and proceeds. Each one still names
+something real — usually something the merge will drop or overwrite — so read them
+before the merge runs, not after.
 
-\`--approve\` overrides the gate. It is a human decision, not an agent's: if archive
-refuses, fix the breach or hand it back.
+\`--approve\` overrides the gating issues — only those, and archive prints exactly which
+ones it overrode. It is a human decision, not an agent's: if archive refuses, fix the
+breach or hand it back.
+
+Two breaches only the merge computation itself can see are reported at plan time,
+after the gate. \`living.requirement-outside-requirements\` (error): the LIVING spec
+holds a requirement outside \`## Requirements\`, and the merge rewrites only that
+section, so the requirement would land in the file twice — \`--approve\` does not
+override it, because the duplication is mechanical, not a judgment call; re-home the
+requirement first. \`openapi.op-modified\` (warn): the feature redefines an operation
+the living OpenAPI already has, and the merge overwrites the living definition
+wholesale.
 
 ## Taking an archive back
 
@@ -257,6 +316,15 @@ feature of that id is in flight again), \`snapshot-missing\` (archived before lo
 recorded this — the docs have to come back from version control), \`snapshot-stale\`
 (a merged file changed after the archive, so restoring would revert someone else's
 work). \`--force\` overrides the last one, and like \`--approve\` it is a human's call.
+
+## Dropping a feature
+
+A feature that was never archived is one directory and nothing else: no living doc
+references it until \`loam archive\` merges it. To abandon it, delete the directory —
+\`git rm -r features/<FEAT-dir>\` — and version control keeps the record of the
+attempt. An ARCHIVED feature is the opposite, its content folded into the living
+docs: run \`loam unarchive <FEAT>\` first, then delete. There is no \`loam abandon\`,
+deliberately — a removal that computes nothing is what version control is for.
 `;
 
 /** Claude Code slash commands: `.claude/commands/<name>.md` -> `/<name>`. */
@@ -358,39 +426,85 @@ Run loam's checks and fix what they find.
 - one feature: \`loam validate --feature <FEAT-id> --json\`
 - one service: \`loam validate --service <id> --json\`
 
-Branch on \`findings[].code\`, not the prose:
+Branch on \`findings[].code\`, not the prose. Errors fail validate; a coherence finding
+with \`gates: true\` will stop \`loam archive\` even when it is a warning. Fix every
+error and every gating finding. Leave an advisory warning only if you can say why,
+and say it.
+
+\`--service <id>\` — one service's own axes (\`--all\` runs these for every service):
 
 | code | what it means | what to do |
 |---|---|---|
-| \`c4.invalid\` / \`delta.invalid\` | the LikeC4 file does not parse | fix this first — an unreadable axis makes every other check meaningless |
+| \`service.unknown\` | no \`services/<id>/\` at all — the id is a typo until proven otherwise | use one of the ids the message offers, or \`loam list services\`; never \`loam adopt\` a misspelling |
+| \`service.no-model\` | the directory is real but there is no model.likec4 | run \`loam adopt\` for it — without the C4 center nothing else has anywhere to hang |
+| \`c4.invalid\` | model.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
 | \`requirements.missing-scenarios\` | a requirement with no scenario | add the acceptance criteria; do not delete the requirement |
-| \`spec-api.op-undefined\` | a requirement governs an operation its OpenAPI does not define | define the endpoint, or correct the \`Operations:\` line |
+| \`service.no-spec\` (warn) | no living spec.md — a part-adopted service, legal but unchecked | write it; until it exists, requirement coverage and API governance are vacuous |
+| \`service.no-openapi\` (warn) | no openapi.yaml, and the landscape cannot prove nobody calls this service | write the contract, or model the service so the fleet map shows no one expects an API |
+| \`api.ungoverned\` (warn) | operation(s) no requirement's \`Operations:\` line names | write the requirement, or link an existing one |
+| \`api.ops-unlinked\` (warn) | operations AND requirements exist but zero \`Operations:\` lines join them — the API axis is vacuously green | link each requirement to the operations it governs |
+| \`spine.landscape-invalid\` | the living landscape does not parse, so the C4↔API spine cannot be checked | fix architecture/landscape.likec4 first |
+| \`spine.op-undefined\` | a landscape edge calls an operation this service's OpenAPI does not define | a broken contract between services — fix the edge or add the endpoint |
+| \`spine.op-link-missing\` (warn) | a landscape "Calls" edge into this service with no \`metadata { op }\` | link it to the operationId |
+
+\`--feature <FEAT-id>\` — a change's three axes against each other. The SAME checks
+gate \`loam archive\` (errors block it; warnings never do), so a clean run here is
+what lets a feature ship:
+
+| code | what it means | what to do |
+|---|---|---|
+| \`delta.invalid\` | delta.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
+| \`delta.nothing-tagged\` | the delta declares elements/relationships but none carry \`#<FEAT>\` | tag what IS the change — untagged parts are context, and archive merges only tags |
+| \`spec-api.op-undefined\` | a requirement governs an operation its provider's OpenAPI does not define | define the endpoint, or correct the \`Operations:\` line |
+| \`spec-api.op-pending\` (warn) | the governed operation is defined by another feature in flight | archive that feature first |
 | \`c4-api.op-undefined\` | an edge calls an operation the target does not expose | a broken contract between services — fix the caller or add the endpoint |
+| \`c4-api.op-pending\` (warn) | the called operation is defined by another feature in flight | archive that feature first |
 | \`c4.op-ungoverned\` (warn) | an operation is called but no requirement governs it | write the requirement |
+| \`c4.op-link-missing\` (warn) | a "Calls" edge in the delta with no \`metadata { op }\` | link it to the operationId |
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
-| \`spine.op-link-missing\` (warn) | a "Calls" edge with no \`metadata { op }\` | link it to the operationId |
 | \`service.no-requirement-delta\` (warn) | a new service with no spec delta | write \`specs/<svc>/spec.md\` |
+| \`archedge.uncovered\` (warn) | no scenario names a tagged edge (a heuristic) | write the scenario, or say why the edge needs none |
+| \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
+| \`delta.no-delta-sections\` | requirements, but no \`## ADDED/MODIFIED/REMOVED Requirements\` section anywhere — the whole delta would merge nothing | put every changed requirement under its delta section |
+| \`delta.requirement-not-merged\` (warn, gates archive) | a requirement under a prose heading (\`## Behavior\`) instead of a delta section | move it under \`## ADDED\`/\`## MODIFIED\`/\`## REMOVED Requirements\` — as written, archive drops it. If it really is documentation, quote it under \`## Requirements\`, which is exempt |
+| \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
+| \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
+| \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |
+| \`delta.added-near-duplicate\` (warn) | ADDED a name that differs only in case from a living requirement — the merge matches exactly, so both would coexist | match the living spelling and use MODIFIED, or pick a distinct name |
+| \`delta.modified-pending\` (warn) | the requirement is introduced by another feature in flight | archive that feature first |
+| \`delta.removed-pending\` (warn) | REMOVED something another feature in flight introduces | archive that feature first |
+| \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives second overwrites the first |
+
+\`--all\` — everything above for every target, plus the fleet cross-check:
+
+| code | what it means | what to do |
+|---|---|---|
 | \`landscape.invalid\` | the living landscape does not parse | fix it first — the fleet cross-check cannot run against a document nobody can read |
 | \`landscape.service-unmodelled\` | a \`services/<svc>/\` no element in the landscape resolves to | draw it, or bind an existing element with \`metadata { service '<svc>' }\` — the fleet map is incomplete until you do |
 | \`landscape.service-undocumented\` (warn) | a landscape element with no \`services/<id>/\` | document the service, bind the element to the directory it means, or tag it \`#external\` if it is not ours |
 | \`landscape.binding-unknown\` | an element's \`metadata { service }\` names a directory that does not exist | fix the id or create the service — a binding is a claim, and this one is false |
-| \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
-| \`delta.requirement-not-merged\` (warn) | a requirement under a prose heading (\`## Behavior\`) instead of a delta section | move it under \`## ADDED\`/\`## MODIFIED\`/\`## REMOVED Requirements\` — as written, archive drops it. Leave it only if it really is documentation; \`## Requirements\` quoting the living state is exempt |
-| \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
-| \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
-| \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |
-| \`delta.modified-pending\` (warn) | the requirement is introduced by another feature in flight | archive that feature first |
-| \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives second overwrites the first |
+| \`sources.unverifiable-from-here\` | one fleet-level summary line, not per-service findings: N services' \`sources\` can only be checked from their own repos | run \`loam validate --service <id>\` from inside those repos |
+
+frontmatter and provenance — services' spec.md and features' intent.md, both modes:
+
+| code | what it means | what to do |
+|---|---|---|
+| \`frontmatter.missing\` (warn) | no frontmatter at all | add owner, status and sources |
 | \`frontmatter.field-mismatch\` | the doc names a different service/feature than the one it lives under | fix the frontmatter, or move the file |
 | \`frontmatter.status-unknown\` | a status nobody defined (\`verifed\`) | use the documented vocabulary — a typo here reads as unverified forever |
-| \`frontmatter.missing\` (warn) | no frontmatter at all | add owner, status and sources |
-| \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
+| \`frontmatter.field-missing\` (warn) | owner, status or the identity field is absent | fill them in |
 | \`sources.absent\` (warn) | the doc names no sources | nothing ties it to the code, so nothing can tell you when it goes stale |
+| \`sources.path-missing\` | a listed source no longer exists | the code moved — re-read it and update the doc, do not just fix the path |
 | \`sources.stale\` (warn) | the source files changed since the doc was vouched for | re-read the code, correct the doc, then ask a human to \`loam vouch --service <id>\` |
 | \`sources.unvouched\` (warn) | \`sources\` with no \`sources_digest\` — nobody ever stamped it | leave it: vouching is a human's reading, not yours |
 
-Errors gate; warnings do not. Fix every error. Leave a warning only if you can say
-why, and say it.
+\`loam archive\` alone — breaches only the merge computation can see, reported at
+plan time (they never appear in \`validate\`):
+
+| code | what it means | what to do |
+|---|---|---|
+| \`living.requirement-outside-requirements\` | the LIVING spec holds a requirement outside \`## Requirements\`, and the merge rewrites only that section — it would land in the file twice | re-home the requirement under \`## Requirements\`, then re-run; \`--approve\` does not override this |
+| \`openapi.op-modified\` (warn) | the feature redefines an operation the living OpenAPI already has — the merge overwrites the living definition wholesale | make sure the redefinition is intended; if not, align the feature's openapi.yaml with the living one |
 
 \`sources.stale\` is the one warning you cannot close by yourself. Fix what the code
 now says, then hand it back — the stamp is a person's claim to have read it.
@@ -410,7 +524,9 @@ service, so a verdict is worth exactly what its evidence is worth.
    own artifacts — one claim per new service, per operation its openapi delta adds,
    per tagged edge that names an operation, and per scenario of every changed
    requirement. Each has a stable \`id\` and a \`subject\` (the service whose code
-   answers it).
+   answers it). An ARCHIVED feature returns its record as frozen history instead
+   (\`frozen: true\`) and \`--record\` refuses it — \`loam unarchive\` first if the
+   answers really must change.
 2. Answer every claim by finding it in the code. Not by reasoning that it must be
    there — by opening the file:
    - \`service.exists\` — the service is deployable: its build, its entry point.
@@ -450,20 +566,32 @@ Archive a shipped feature.
 1. Confirm the code is actually built and merged. Archiving folds the delta into the
    living docs; doing it early makes the docs claim something that does not exist.
 2. \`loam validate --feature $1 --json\` — must come back \`valid: true\`.
-3. \`loam archive $1 --dry-run\` first. It prints every file the merge would write and
-   writes none of them — read that list before letting it touch the source of truth,
-   and stop if a file you did not expect is on it.
-4. \`loam archive $1\`. It merges three axes into the living state — requirements into
-   \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`, elements and
-   edges into \`architecture/landscape.likec4\` — then moves the feature under
-   \`features/archive/\`.
-5. If it refuses, the feature is not coherent. Fix the reported breaches.
-   \`--approve\` overrides the gate and may corrupt the living docs — that is a human's
-   call to make, not yours. Report the breach and stop.
-
-If the merge itself fails partway, it rolls the living docs back and says so; the
-feature stays active, so fix the cause and re-run. If it reports ROLLBACK INCOMPLETE,
-stop and hand it to a human — some files are half-merged.
+3. \`loam archive $1 --dry-run --json\` first. \`plan[]\` is every file the merge would
+   write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`), and
+   none of them are written — read it before letting the merge touch the source of
+   truth, and stop if a file you did not expect is on it. \`warnings[]\` is what the
+   merge will do that is legal but lossy — advisory warnings never block, which is
+   exactly why you read them now: \`openapi.op-modified\` means an operation the living
+   contract already defines gets overwritten wholesale, and \`delta.added-conflict\`
+   means whichever feature archives second overwrites the other's requirement.
+4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
+   into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
+   elements and edges into \`architecture/landscape.likec4\` — then moves the feature
+   under \`features/archive/\`. Success is \`ok: true\`; on \`ok: false\`, branch on
+   \`error.code\`:
+   - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,
+     each with \`gates\` resolved (advisory warnings do not block). Fix the breaches.
+     \`--approve\` overrides the gating issues and is a human's call to make, not
+     yours: report the breach and stop.
+   - \`living-outside-requirements\` — the LIVING spec holds a requirement outside
+     \`## Requirements\`, and the merge would duplicate it. Re-home it, then re-run.
+     \`--approve\` does not move this one.
+   - \`archive-exists\` — \`features/archive/\` already has that directory; a human
+     decides what it is.
+   - \`merge-failed\` — the merge could not be computed, or failed and was rolled
+     back. Either way the living docs are unchanged; fix the reported cause, re-run.
+   - \`rollback-incomplete\` — the merge failed AND some files could not be restored.
+     Stop and hand it to a human; the message lists the files to check.
 
 Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
 archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not

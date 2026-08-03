@@ -1,7 +1,7 @@
 # Service health model. Targets are authored; dependency graph comes from C4 (landscape).
-# `loam health` composes these across the fleet -> cascade / blast-radius.
+# planned: `loam health` composes these across the fleet -> cascade / blast-radius.
 service: payment-service
-status: verified
+status: draft
 slis:
   - name: availability
     query: "sum(rate(http_requests_total{code!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"

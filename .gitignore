@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.log
 .DS_Store
+# local pointer at a docs repo (the README "Try it" block writes one here)
+loam.json

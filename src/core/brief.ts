@@ -37,7 +37,13 @@ export interface BriefTarget {
   exists: boolean;
   /** `create` a missing artifact; `diff` an existing one — never overwrite it. */
   action: "create" | "diff";
-  /** False for artifacts a baseline can legitimately ship without. */
+  /**
+   * False for artifacts a baseline can legitimately ship without. True means
+   * required for a COMPLETE baseline — validate grades a missing spec.md or
+   * openapi.yaml as a warn (`service.no-spec` / `service.no-openapi`), not an
+   * error: partial adoption is a supported state, and the warns are the
+   * progress meter.
+   */
   required: boolean;
   /** What the artifact is for, in one line. */
   purpose: string;
@@ -198,62 +204,105 @@ export const FRONTMATTER_BRIEF: FrontmatterBrief = {
 /* The checks — and the ones that do not exist                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The two invocations a baseline meets. `<id>` is a placeholder for the service
+ * id — the JSON contract keeps it symbolic, the text renderer substitutes it.
+ */
+export const VIA_SERVICE = "loam validate --service <id>";
+export const VIA_ALL = "loam validate --all";
+
 export interface BriefCheck {
   code: string;
   severity: "error" | "warn";
+  /**
+   * The invocation that surfaces this check. Most run under `--service`, but
+   * the fleet cross-check does not — attributing it there taught agents to
+   * expect a finding that run never reports.
+   */
+  via: typeof VIA_SERVICE | typeof VIA_ALL;
   what: string;
 }
 
-/** What `loam validate --service <id>` will run against the result. */
+/** What `loam validate` will run against the result — each check names the invocation that surfaces it. */
 export const VALIDATE_CHECKS: BriefCheck[] = [
-  { code: "service.no-model", severity: "error", what: "there is no model.likec4 — every other check stops here" },
-  { code: "c4.invalid", severity: "error", what: "model.likec4 does not parse as LikeC4" },
+  { code: "service.no-model", severity: "error", via: VIA_SERVICE, what: "there is no model.likec4 — every other check stops here" },
+  { code: "c4.invalid", severity: "error", via: VIA_SERVICE, what: "model.likec4 does not parse as LikeC4" },
   {
     code: "requirements.missing-scenarios",
     severity: "error",
+    via: VIA_SERVICE,
     what: "a requirement in spec.md has no `#### Scenario:`",
+  },
+  // The graded absences: the brief marks spec.md and openapi.yaml required, and
+  // validate agrees they belong — as warns, because partial adoption is a
+  // supported state and these are its honest progress meter, not a gate.
+  {
+    code: "service.no-spec",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "spec.md does not exist yet — legal mid-adoption, but requirement coverage and API governance are unchecked until it does",
+  },
+  {
+    code: "service.no-openapi",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "openapi.yaml does not exist yet — quiet only when the landscape proves no other service calls an operation on this one",
   },
   {
     code: "api.ungoverned",
     severity: "warn",
+    via: VIA_SERVICE,
     what: "an operationId in openapi.yaml that no requirement's `Operations:` line names",
+  },
+  {
+    code: "api.ops-unlinked",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "openapi.yaml defines operations and spec.md has requirements, but no `Operations:` line joins them — every cross-axis check is vacuously green",
   },
   {
     code: "spine.op-undefined",
     severity: "error",
+    via: VIA_SERVICE,
     what: "a landscape edge into this service calls an operation its openapi.yaml does not define — a broken contract between services",
   },
   {
     code: "spine.op-link-missing",
     severity: "warn",
+    via: VIA_SERVICE,
     what: 'a landscape "Calls" edge into this service with no `metadata { op }`',
   },
   {
     code: "frontmatter.field-mismatch",
     severity: "error",
+    via: VIA_SERVICE,
     what: "spec.md declares a different `service:` than the directory it lives under",
   },
   {
     code: "frontmatter.status-unknown",
     severity: "error",
+    via: VIA_SERVICE,
     what: "a status outside `draft` / `verified` — a typo here reads as unverified forever",
   },
-  { code: "frontmatter.field-missing", severity: "warn", what: "no `owner`, `status` or `service`" },
-  { code: "sources.absent", severity: "warn", what: "spec.md names no `sources`" },
+  { code: "frontmatter.field-missing", severity: "warn", via: VIA_SERVICE, what: "no `owner`, `status` or `service`" },
+  { code: "sources.absent", severity: "warn", via: VIA_SERVICE, what: "spec.md names no `sources`" },
   {
     code: "sources.path-missing",
     severity: "error",
+    via: VIA_SERVICE,
     what: "a listed source does not exist (checked when loam runs inside the service's repo)",
   },
   {
     code: "sources.unvouched",
     severity: "warn",
+    via: VIA_SERVICE,
     what: "`sources` with no digest — nobody has vouched for the document yet. Expected on a fresh baseline; only a human closes it",
   },
   {
     code: "landscape.service-unmodelled",
     severity: "error",
-    what: "`loam validate --all`: nothing in architecture/landscape.likec4 resolves to services/<id>/ — the fleet map is incomplete until an element exists or an existing one is bound with `metadata { service '<id>' }`",
+    via: VIA_ALL,
+    what: "nothing in architecture/landscape.likec4 resolves to services/<id>/ — the fleet map is incomplete until an element exists or an existing one is bound with `metadata { service '<id>' }`",
   },
 ];
 

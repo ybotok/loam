@@ -12,10 +12,11 @@
  * are spelled out.
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { makeTmpDir, runLoam } from "./helpers/harness.js";
+import { AGENTS_MD, SLASH_COMMANDS as COMMAND_BODIES } from "../src/core/agent.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -141,6 +142,93 @@ describe("slash commands in the working repo", () => {
     await runLoam(dir, "init", "--docs", "./d");
     const second = await runLoam(dir, "init", "--docs", "./d");
     expect(second.out).not.toContain("scaffolded");
+  });
+});
+
+describe("the contract's claims are checked against the CLI, not asserted", () => {
+  it("'every command takes --json' is true of every registration in src/commands/", async () => {
+    // The sentence was written when it was aspiration; archive and init closed
+    // the gap. This keeps it a fact: a new command without --json fails here.
+    expect(AGENTS_MD).toContain("Every command takes `--json`");
+    const commandsDir = new URL("../src/commands/", import.meta.url);
+    const files = (await readdir(commandsDir)).filter((f) => f.endsWith(".ts"));
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) {
+      const src = await readFile(new URL(f, commandsDir), "utf8");
+      expect(src, `${f} registers no --json flag — the AGENTS.md claim is now false`).toContain(
+        '.option("--json"',
+      );
+    }
+  });
+
+  it("names the one carve-out honestly: the option parser's own errors stay text", () => {
+    expect(AGENTS_MD).toMatch(/option parser/);
+    expect(AGENTS_MD).toMatch(/before loam runs/);
+  });
+});
+
+describe("the gate model reaches the docs", () => {
+  it("AGENTS.md explains the two axes: severity for validate, gating for archive", () => {
+    expect(AGENTS_MD).toContain("Severity and gating are two different questions");
+    expect(AGENTS_MD).toMatch(/Advisory warnings never block/);
+    expect(AGENTS_MD).toContain("overrides the gating issues — only those");
+    // the one diverging code is named where the axes are explained
+    expect(AGENTS_MD).toMatch(/delta\.requirement-not-merged[\s\S]{0,200}gates/);
+    // the two plan-time codes live where the gate is explained
+    expect(AGENTS_MD).toContain("living.requirement-outside-requirements");
+    expect(AGENTS_MD).toContain("openapi.op-modified");
+  });
+
+  it("/loam-ship drives archive --json and branches on the stable codes", () => {
+    const ship = COMMAND_BODIES["loam-ship"]!;
+    expect(ship).toContain("loam archive $1 --json");
+    expect(ship).toContain("--dry-run");
+    for (const code of [
+      "not-coherent",
+      "living-outside-requirements",
+      "archive-exists",
+      "merge-failed",
+      "rollback-incomplete",
+    ]) {
+      expect(ship, `loam-ship does not branch on ${code}`).toContain(`\`${code}\``);
+    }
+    // the split, stated where the agent reads it mid-flow
+    expect(ship).toMatch(/warnings never block/i);
+  });
+});
+
+describe("the /loam-check vocabulary", () => {
+  it("carries the service-mode and phase-1/2 codes agents actually hit, organized by invocation", () => {
+    const check = COMMAND_BODIES["loam-check"]!;
+    for (const code of [
+      // service-mode codes the table used to omit
+      "service.no-model",
+      "spine.op-undefined",
+      "api.ungoverned",
+      "frontmatter.field-missing",
+      "spine.landscape-invalid",
+      // phase-1/2 codes that were nowhere
+      "service.unknown",
+      "delta.no-delta-sections",
+      "delta.nothing-tagged",
+      "delta.added-near-duplicate",
+      "sources.unverifiable-from-here",
+      "living.requirement-outside-requirements",
+    ]) {
+      expect(check, `loam-check table is missing ${code}`).toContain(`\`${code}\``);
+    }
+    // organized by mode: each invocation gets its own table
+    for (const header of ["--service <id>", "--feature <FEAT-id>", "--all", "loam archive"]) {
+      expect(check).toContain(header);
+    }
+  });
+});
+
+describe("the abandonment path", () => {
+  it("AGENTS.md says how to drop a feature, and that archived ones go through unarchive first", () => {
+    expect(AGENTS_MD).toContain("git rm -r features/");
+    expect(AGENTS_MD).toMatch(/never archived/);
+    expect(AGENTS_MD).toContain("loam unarchive");
   });
 });
 
