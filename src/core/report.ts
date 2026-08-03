@@ -34,6 +34,12 @@ export interface Finding {
    */
   subject?: string;
   details?: string[];
+  /**
+   * Coherence findings only: whether `loam archive` refuses on this issue
+   * without `--approve` (issue.ts explains why severity alone cannot say).
+   * Absent on findings that never face the archive gate.
+   */
+  gates?: boolean;
   text?: TextHint;
 }
 
@@ -66,6 +72,7 @@ export function findingJson(f: Finding): Record<string, unknown> {
     severity: f.severity,
     code: f.code,
     ...(f.subject === undefined ? {} : { subject: f.subject }),
+    ...(f.gates === undefined ? {} : { gates: f.gates }),
     message: f.message,
     details: f.details ?? [],
   };
