@@ -16,8 +16,11 @@
  *  - it never stamps something it cannot verify (no sources, a missing path, a
  *    glob matching nothing, a repo that is not this service's);
  *  - a refusal writes nothing at all;
- *  - and both round trips close: unvouched -> current -> stale for the code,
- *    vouched -> edited -> re-vouched for the document.
+ *  - both round trips close: unvouched -> current -> stale for the code,
+ *    vouched -> edited -> re-vouched for the document;
+ *  - and the stamp covers every spec-axis file the service has: arch.spec.md
+ *    rides the same vouch when present, verified per file and stamped
+ *    all-or-nothing, so `verified` never means "half-stamped".
  */
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
@@ -314,6 +317,151 @@ describe("the loop it closes", () => {
         (f: { code: string }) => f.code === "sources.stale",
       );
       expect(finding.severity).toBe("warn");
+    });
+  });
+});
+
+describe("the architecture axis rides the same vouch", () => {
+  const ARCH_SPEC = `services/${SVC}/arch.spec.md`;
+
+  /** The arch body, verbatim like BODY — Covers: resolves against SERVICE_MODEL's api container. */
+  const ARCH_BODY = `
+# payment-service — architecture
+
+## Requirements
+
+### Requirement: Publish through the outbox
+The service SHALL publish events through the transactional outbox.
+
+Covers: paymentService.api
+
+#### Scenario: Broker outage
+- **Given** the broker is down
+- **When** an event is written
+- **Then** the event is delivered after recovery
+`;
+
+  const ARCH_SOURCED = `service: ${SVC}\nstatus: draft\nowner: payments-team\nsources:\n  - src/outbox.ts`;
+  const PAIR_CODE = { ...CODE, "src/outbox.ts": "export const relay = () => true;\n" };
+
+  /** repoProject, plus an arch.spec.md with the given frontmatter beside the spec. */
+  async function withPair(
+    archFrontmatter: string,
+    repoFiles: Record<string, string>,
+    fn: (p: Project) => Promise<void>,
+  ): Promise<void> {
+    const files = coherentFixture();
+    files[SPEC] = `---\n${ONE_SOURCE}\n---\n${BODY}`;
+    files[ARCH_SPEC] = `---\n${archFrontmatter}\n---\n${ARCH_BODY}`;
+    const p = await makeProject(files, { service: SVC });
+    await writeFiles(p.workDir, repoFiles);
+    try {
+      await fn(p);
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  const codesOf = async (p: Project): Promise<string[]> => {
+    const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+    return json.targets[0].findings.map((f: { code: string }) => f.code);
+  };
+
+  it("stamps both files in one run, each against its own sources, bodies byte-identical", async () => {
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      const res = await runLoam(p.workDir, "vouch");
+      expect(res.code).toBe(0);
+      for (const rel of [SPEC, ARCH_SPEC]) {
+        const fm = parseFrontmatter(await p.read(rel));
+        expect(stringField(fm, "status"), rel).toBe("verified");
+        expect(stringField(fm, "last_verified"), rel).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(stringField(fm, "sources_digest"), rel).toMatch(/^[0-9a-f]{16}$/);
+        expect(stringField(fm, "content_digest"), rel).toMatch(/^[0-9a-f]{16}$/);
+      }
+      expect((await p.read(ARCH_SPEC)).endsWith(ARCH_BODY)).toBe(true);
+      // Two files, two source lists, two stamps — not one digest copied around.
+      expect(stringField(parseFrontmatter(await p.read(ARCH_SPEC)), "sources_digest")).not.toBe(
+        stringField(parseFrontmatter(await p.read(SPEC)), "sources_digest"),
+      );
+      // The human view names each stamped file.
+      expect(res.out).toContain(`services/${SVC}/spec.md`);
+      expect(res.out).toContain(`services/${SVC}/arch.spec.md`);
+    });
+  });
+
+  it("turns both files' `sources.unvouched` into `sources.current` — the documented fix now closes the arch axis too", async () => {
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      const before = await codesOf(p);
+      expect(before.filter((c) => c === "sources.unvouched")).toHaveLength(2);
+      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      const after = await codesOf(p);
+      expect(after.filter((c) => c === "sources.current")).toHaveLength(2);
+      expect(after).not.toContain("sources.unvouched");
+    });
+  });
+
+  it("a re-vouch clears content.stale for both files at once", async () => {
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      await runLoam(p.workDir, "vouch");
+      await p.write(SPEC, (await p.read(SPEC)) + "\nAn edit the vouch never saw.\n");
+      await p.write(ARCH_SPEC, (await p.read(ARCH_SPEC)) + "\nAn arch edit the vouch never saw.\n");
+      expect((await codesOf(p)).filter((c) => c === "content.stale")).toHaveLength(2);
+      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect(await codesOf(p)).not.toContain("content.stale");
+    });
+  });
+
+  it("an arch.spec.md that names no sources refuses the whole vouch, naming the file", async () => {
+    await withPair(`service: ${SVC}\nstatus: draft\nowner: payments-team`, PAIR_CODE, async (p) => {
+      const specBefore = await p.read(SPEC);
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("sources-absent");
+      expect(json.error.message).toContain("arch.spec.md");
+      // All-or-nothing: spec.md verified fine, and still must not be stamped.
+      expect(await p.read(SPEC)).toBe(specBefore);
+    });
+  });
+
+  it("a dead source path in arch.spec.md refuses the same way, spec.md untouched", async () => {
+    const fm = `service: ${SVC}\nstatus: draft\nowner: payments-team\nsources:\n  - src/gone.ts`;
+    await withPair(fm, PAIR_CODE, async (p) => {
+      const specBefore = await p.read(SPEC);
+      const archBefore = await p.read(ARCH_SPEC);
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("sources-path-missing");
+      expect(json.error.message).toContain("arch.spec.md");
+      expect(json.error.message).toContain("src/gone.ts");
+      expect(await p.read(SPEC)).toBe(specBefore);
+      expect(await p.read(ARCH_SPEC)).toBe(archBefore);
+    });
+  });
+
+  it("the payload reports the second axis under archSpec, digests as written", async () => {
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout);
+      expect(json.ok).toBe(true);
+      // spec.md keeps the shape it always had...
+      expect(json.path).toBe(`services/${SVC}/spec.md`);
+      expect(json.sources).toEqual(["src/payment.ts"]);
+      // ...and the arch axis mirrors it, one level down.
+      expect(json.archSpec.path).toBe(`services/${SVC}/arch.spec.md`);
+      expect(json.archSpec.sources).toEqual(["src/outbox.ts"]);
+      expect(json.archSpec.files).toBe(1);
+      const fm = parseFrontmatter(await p.read(ARCH_SPEC));
+      expect(stringField(fm, "sources_digest")).toBe(json.archSpec.sources_digest);
+      expect(stringField(fm, "content_digest")).toBe(json.archSpec.content_digest);
+    });
+  });
+
+  it("archSpec is null when the service has no arch.spec.md — absent, not forgotten", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout);
+      expect(json.ok).toBe(true);
+      expect(json.archSpec).toBeNull();
     });
   });
 });
