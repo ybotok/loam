@@ -73,6 +73,7 @@ describe("the work it hands over", () => {
     expect(b.targets.map((t: { artifact: string }) => t.artifact)).toEqual([
       "model.likec4",
       "spec.md",
+      "arch.spec.md",
       "openapi.yaml",
       "adrs/",
       "runbook.md",

@@ -8,7 +8,7 @@ Architecture-first spec framework for microservice fleets.
 
 ## Why
 
-OpenSpec-style specs are business-analyst-level and single-service; there is no architecture layer, and a business-simple feature can span many services (e.g. 7 new + 4 changed). C4, Gherkin, and specs end up as disconnected documents. `loam` ties them with one feature-ID spine and makes C4 the center.
+OpenSpec-style specs are business-analyst-level and single-service; there is no architecture layer, and a business-simple feature can span many services (e.g. 7 new + 4 changed). C4, Gherkin, and specs end up as disconnected documents. `loam` ties them with one feature-ID spine and makes C4 the center. And because a business spec will never mention the transactional outbox, architecture gets its own requirement axis — `arch.spec.md`, whose `Covers:` lines tie outbox/retry/alert obligations to the C4 elements and health signals they exercise, with coverage derived mechanically rather than trusted.
 
 ## Two flows
 

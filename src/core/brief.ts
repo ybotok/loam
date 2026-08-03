@@ -54,7 +54,7 @@ export interface BriefTarget {
 }
 
 /** Where an artifact lives — `repo.ts` spells the filenames, this only points at them. */
-type PathKey = "model" | "spec" | "openapi" | "adrsDir" | "runbook" | "health";
+type PathKey = "model" | "spec" | "archSpec" | "openapi" | "adrsDir" | "runbook" | "health";
 
 /** The artifacts, in the order a baseline is best written in. */
 const ARTIFACTS: Array<Omit<BriefTarget, "path" | "exists" | "action"> & { key: PathKey }> = [
@@ -126,6 +126,42 @@ Operations: authorizePayment
 - **Given** a valid card and an amount within its limit
 - **When** authorization is requested
 - **Then** the payment is authorized and an authorization id is returned
+`,
+  },
+  {
+    artifact: "arch.spec.md",
+    key: "archSpec",
+    required: false,
+    purpose:
+      "the living architecture requirements — the obligations the business spec never carries: outbox, retries, idempotency, metrics, alerts",
+    shape: [
+      "Same grammar and frontmatter as spec.md: `## Requirements`, `### Requirement:` + `#### Scenario:` with Given/When/Then. The same checks read it.",
+      "A `Covers:` line per requirement names what its scenarios exercise: a C4 element id (`paymentService.db`), an edge (`paymentService -> kafka`), or a health signal from health.yaml (`alert:<id>` / `sli:<id>`). Every entry must resolve, or `covers.unknown` (warn) flags the typo.",
+      "Optional, but expected for a service with real architecture: every alert/SLI health.yaml declares wants a covering requirement here (`health.uncovered`, warn) — a signal nothing tests is dashboard decoration.",
+      "Write the obligations no business requirement states — the transactional outbox, what a caller's retry may assume, what pages whom. An arch scenario becomes an integration/ops test, not an acceptance test.",
+    ],
+    example: `---
+service: payment-service
+status: draft
+owner: payments-team
+sources:
+  - src/main/java/com/shop/payment/
+---
+
+# payment-service — architecture
+
+## Requirements
+
+### Requirement: Events leave through the transactional outbox
+The service SHALL write a domain event and its state change in one transaction,
+published by an outbox relay — never a dual write.
+
+Covers: paymentService.db, paymentService -> kafka
+
+#### Scenario: Broker down at commit time
+- **Given** an event in the outbox
+- **When** the broker is unavailable
+- **Then** the state stays committed and the event is published once it returns
 `,
   },
   {
@@ -231,7 +267,7 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     code: "requirements.missing-scenarios",
     severity: "error",
     via: VIA_SERVICE,
-    what: "a requirement in spec.md has no `#### Scenario:`",
+    what: "a requirement in spec.md or arch.spec.md has no `#### Scenario:`",
   },
   // The graded absences: the brief marks spec.md and openapi.yaml required, and
   // validate agrees they belong — as warns, because partial adoption is a
@@ -328,6 +364,7 @@ export const UNCHECKED: string[] = [
   "Whether the scenarios are acceptance criteria somebody could test, or the requirement restated in Given/When/Then.",
   "Whether an operationId is the one the code serves, and whether the request and response schemas resemble what the endpoint really accepts and returns. Only the operationId is read.",
   "Whether the runbook's steps work, or the health.yaml SLOs are numbers anyone agreed to.",
+  "Whether an arch scenario really exercises what its `Covers:` line names. The entries are resolved against the model and health.yaml — never against code, tests, dashboards or alert rules.",
   "Whether an ADR records a decision that was made, or one reconstructed afterwards to justify the code.",
   "COMPLETENESS. Forty behaviours documented as one requirement passes every check loam has. So does a service with one endpoint documented out of thirty.",
   "Whether `sources` names the files you read. loam checks those paths exist — not that they are the ones the document came from.",

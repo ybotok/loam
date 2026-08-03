@@ -11,6 +11,7 @@ C4 is the center. Each artifact is a **source** (authored), a **hybrid** (agent-
 ```
 presentation │ UI page-prototypes ─(consume)─► endpoints     spec = source · proto = derived  [later]
 behavior     │ gherkin scenarios ──(govern)──► pages         source
+arch behavior│ arch.spec.md ──(covers)──► C4 · health        source
 contract     │ OpenAPI  ◄──(detail of C4 "exposes/calls")    hybrid
 structure    │ C4 model — services, relationships            source (adopt-seeded)
 ops / why    │ ADR · runbook · health                        source
@@ -30,6 +31,7 @@ docs/
   services/<svc>/
     model.likec4                        service C4 (containers/components)  [adopt]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
+    arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
     openapi.yaml                     API contract                        [adopt / authored]
     adrs/NNNN-*.md                   MADR decisions                      [adopt-seed / authored]
     runbook.md                       operational runbook                 [adopt-draft / authored]
@@ -40,6 +42,7 @@ docs/
     intent.md                        business intent / proposal (why)     [authored]
     delta.likec4                     C4 delta (architecture)             [authored]
     specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
+    specs/<svc>/arch.spec.md         architectural requirement delta, same algebra  [authored]
     specs/<svc>/openapi.yaml         the endpoints this feature adds     [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
     verification.yaml                the done-check: claims + verdicts + evidence  [loam verify --record]

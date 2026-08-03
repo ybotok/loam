@@ -32,12 +32,14 @@ architecture/landscape.likec4     the living C4 model of the whole fleet
 services/<svc>/
   model.likec4                    this service's C4
   spec.md                         its living requirements (current state)
+  arch.spec.md                    its living ARCHITECTURE requirements (outbox, retries, alerts)
   openapi.yaml                    its API contract
   adrs/  runbook.md  health.yaml  why it is like this, how to run it
 features/<FEAT>/                  a change in flight
   intent.md                       why, in business terms
   delta.likec4                    the architecture change, tagged #<FEAT>
   specs/<svc>/spec.md             the requirement change for one service
+  specs/<svc>/arch.spec.md        the architectural requirement change, same delta grammar
   specs/<svc>/openapi.yaml        the endpoints this feature adds
   verification.yaml               what was checked once the code was built
 features/archive/<FEAT>/          shipped changes — the evolution history
@@ -47,6 +49,41 @@ features/archive/<FEAT>/          shipped changes — the evolution history
 \`features/<FEAT>/specs/<svc>/spec.md\` is a diff against it, reviewed as a diff, with
 requirements grouped under \`## ADDED\`, \`## MODIFIED\` or \`## REMOVED Requirements\`.
 \`loam archive\` folds the delta into the living state.
+
+## The architecture spec axis
+
+The business spec will never mention the transactional outbox — that is
+architecture. Retries, idempotency, metrics, alerts: real obligations no business
+scenario states, and exactly where generated code cuts corners unless the
+obligations are derived mechanically. They live in \`arch.spec.md\` — living and
+delta, same grammar, same delta algebra, merged by \`loam archive\` through the
+same code path (the two files are separate requirement namespaces).
+
+Where a business requirement carries \`Operations:\`, an arch requirement carries
+\`Covers:\` — the model objects its scenarios exercise, comma-separated:
+
+\`\`\`
+Covers: paymentService.db, paymentService -> kafka, alert:payment_5xx, sli:availability
+\`\`\`
+
+a C4 element (id, or the service a bound element stands for), an edge
+(\`source -> target\`), or a health signal the service's health.yaml declares.
+Every entry must resolve — \`covers.unknown\` (warn) is the typo guard, because a
+mistyped entry silently costs the coverage it was written for.
+
+Coverage is then derived, never trusted, as two warnings: a feature's NEW tagged
+elements and edges want a covering requirement in its arch.spec.md deltas
+(\`c4.uncovered\`), and every alert/SLI health.yaml declares wants one in the
+living arch spec (\`health.uncovered\`). None of this gates \`loam archive\`;
+\`--strict\` is the CI escalation. An absent arch.spec.md is not a finding —
+partial adoption is supported — but write one for any service with real
+architecture, or its obligations ship unchecked.
+
+**Test levels, mapped once.** A business scenario is an acceptance test. An arch
+scenario is an integration/ops test — the outbox relay under a dead broker, the
+retry that stays idempotent, the alert rule that actually fires. \`api.exposes\`
+is a contract test. Unit tests sit below spec granularity and are your TDD
+concern, not the specs'.
 
 ## Frontmatter — who vouched for this, and from what
 
@@ -195,10 +232,10 @@ record is for the reviewer who comes later, so leave it true.
 ## What you author, what loam derives
 
 Authored by hand: \`intent.md\`, \`delta.likec4\`, \`specs/<svc>/spec.md\`,
-\`specs/<svc>/openapi.yaml\`, ADRs, runbooks, health.
+\`specs/<svc>/arch.spec.md\`, \`specs/<svc>/openapi.yaml\`, ADRs, runbooks, health.
 
-Written by loam: the merge into \`services/<svc>/spec.md\`, \`services/<svc>/openapi.yaml\`
-and \`architecture/landscape.likec4\` at archive time.
+Written by loam: the merge into \`services/<svc>/spec.md\`, \`services/<svc>/arch.spec.md\`,
+\`services/<svc>/openapi.yaml\` and \`architecture/landscape.likec4\` at archive time.
 
 **Do not hand-edit the living landscape to add a feature's changes.** Put them in a
 delta and archive it — otherwise the change has no intent, no requirement and no
@@ -451,6 +488,9 @@ Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.jso
      \`metadata { op '<operationId>' }\`
    - \`specs/<svc>/spec.md\` — one behaviour per requirement, SHALL, at least one
      Given/When/Then scenario; uncomment \`Operations:\` once the operation exists
+   - \`specs/<svc>/arch.spec.md\` — the architectural obligations (outbox, retries,
+     idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
+     tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
    - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference
 5. \`loam validate --feature $1 --json\`. Do not stop while \`valid\` is false.
 
