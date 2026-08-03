@@ -199,6 +199,22 @@ Operations: authorizePayment
     // and archiving a REMOVED requirement deletes it. Cf. spec.ts which exempts
     // REMOVED from the scenario rule for the same reason.
     const issues = await coherenceOf({
+      // the requirement being removed has to exist to be removable — otherwise the
+      // delta-shape check fires first and this rule is never reached
+      "services/payment-split-service/spec.md": `# payment-split-service
+
+## Requirements
+
+### Requirement: Legacy split behaviour
+The service SHALL do the legacy thing.
+
+Operations: legacyOp
+
+#### Scenario: It happens
+- **Given** a legacy split
+- **When** it runs
+- **Then** it completes
+`,
       [`${FEATURE_REL}/specs/payment-split-service/spec.md`]: `# delta for FEAT-1
 
 ## REMOVED Requirements

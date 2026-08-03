@@ -426,8 +426,13 @@ describe("second feature re-declaring the same element and edge", () => {
     run1 = await runLoam(p.workDir, "archive", "FEAT-1");
     // FEAT-2 re-declares the same element + edge (no openapi delta: the living
     // openapi created by FEAT-1 already provides createSplit, so it is coherent).
+    // Its requirement is MODIFIED, not ADDED: FEAT-1 already merged that name into
+    // the living spec, and re-ADDING it would replace it rather than add.
     await p.write("features/FEAT-2-redo/delta.likec4", FEATURE_DELTA.replaceAll("FEAT-1", "FEAT-2"));
-    await p.write("features/FEAT-2-redo/specs/payment-split-service/spec.md", FEATURE_SPEC);
+    await p.write(
+      "features/FEAT-2-redo/specs/payment-split-service/spec.md",
+      FEATURE_SPEC.replace("## ADDED Requirements", "## MODIFIED Requirements"),
+    );
     run2 = await runLoam(p.workDir, "archive", "FEAT-2");
     land = await loadFile(landscapePath(p));
   });
@@ -497,16 +502,24 @@ describe("requirements merge into an existing living spec", () => {
     expect(mergedText).not.toMatch(/^## (ADDED|MODIFIED|REMOVED) Requirements/m);
   });
 
-  it("archiving an identical delta again leaves the living spec byte-identical (content idempotence)", async () => {
+  it("re-applying an already-merged delta is refused: its ADDED now exists and its REMOVED is gone", async () => {
     await p.write("features/FEAT-8-rework/specs/payment-service/spec.md", REQ_DELTA_ALL_KINDS);
     const again = await runLoam(p.workDir, "archive", "FEAT-8");
+    expect(again.code).toBe(1);
+    expect(again.out).toContain("BLOCKED");
+    expect(again.out).toContain("already exists in the living spec");
+    expect(await p.read("services/payment-service/spec.md")).toBe(mergedText);
+  });
+
+  it("forced through, an identical delta leaves the living spec byte-identical (content idempotence)", async () => {
+    const again = await runLoam(p.workDir, "archive", "FEAT-8", "--approve");
     expect(again.code).toBe(0);
     expect(await p.read("services/payment-service/spec.md")).toBe(mergedText);
   });
 });
 
 describe("new-service living spec creation semantics", () => {
-  it("a MODIFIED-only delta against a missing living spec creates it (pinned: MODIFIED-against-nothing behaves as ADDED)", async () => {
+  it("a MODIFIED-only delta against a missing living spec is REFUSED — it would create what it claims to change", async () => {
     const p = await makeProject({
       "features/FEAT-10-ghost/specs/ghost-service/spec.md": `# ghost-service delta
 
@@ -523,6 +536,31 @@ The service SHALL do the phantom thing.
     });
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-10");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("Did you mean ADDED?");
+      expect(p.exists("services/ghost-service/spec.md")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("forced through with --approve, MODIFIED-against-nothing still behaves as ADDED (merge semantics pinned)", async () => {
+    const p = await makeProject({
+      "features/FEAT-10-ghost/specs/ghost-service/spec.md": `# ghost-service delta
+
+## MODIFIED Requirements
+
+### Requirement: Phantom behaviour
+The service SHALL do the phantom thing.
+
+#### Scenario: Phantom happens
+- **Given** a trigger
+- **When** it fires
+- **Then** the phantom thing happens
+`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-10", "--approve");
       expect(res.code).toBe(0);
       expect(p.exists("services/ghost-service/spec.md")).toBe(true);
       const reqs = parseRequirements(await p.read("services/ghost-service/spec.md"));
@@ -534,7 +572,7 @@ The service SHALL do the phantom thing.
     }
   });
 
-  it("a REMOVED-only delta for a service with no living spec does not create an empty living spec", async () => {
+  it("a REMOVED-only delta for a service with no living spec is REFUSED — there is nothing to remove", async () => {
     const p = await makeProject({
       "features/FEAT-11-void/specs/void-service/spec.md": `# void-service delta
 
@@ -545,6 +583,25 @@ The service SHALL do the phantom thing.
     });
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-11");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("nothing to remove");
+      expect(p.exists("services/void-service/spec.md")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("forced through with --approve, it still does not fabricate an empty living spec", async () => {
+    const p = await makeProject({
+      "features/FEAT-11-void/specs/void-service/spec.md": `# void-service delta
+
+## REMOVED Requirements
+
+### Requirement: Old thing
+`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-11", "--approve");
       expect(res.code).toBe(0);
       expect(
         p.exists("services/void-service/spec.md"),

@@ -1,33 +1,13 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadFile, type Elem, type Rel } from "./likec4.js";
+import { deltaShapeIssues } from "./delta.js";
+import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 import { operationIds, serviceOperationIds } from "./openapi.js";
 
-export interface Issue {
-  severity: "error" | "warn";
-  /** Stable machine identifier for the breach — see the E/W labels below. */
-  code: IssueCode;
-  message: string;
-}
-
-/** The coherence breaches, as codes a caller can branch on. */
-export type IssueCode =
-  /** the architecture axis could not be read at all */
-  | "delta.invalid"
-  /** E1 — a requirement governs an operation its service's OpenAPI does not define */
-  | "spec-api.op-undefined"
-  /** E2 — a C4 edge calls an operation the target's OpenAPI does not define */
-  | "c4-api.op-undefined"
-  /** W1 — an operation is called but no requirement governs it */
-  | "c4.op-ungoverned"
-  /** W2 — the feature adds an operation no architecture edge consumes */
-  | "api.op-unconsumed"
-  /** W3 — a new service arrives with no requirement delta */
-  | "service.no-requirement-delta"
-  /** W4 — a "Calls" edge carries no operation link */
-  | "c4.op-link-missing";
+export type { Issue, IssueCode } from "./issue.js";
 
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
@@ -39,7 +19,9 @@ export async function featureCoherence(
   featureDir: string,
   featureId: string,
 ): Promise<Issue[]> {
-  const issues: Issue[] = [];
+  // Delta shape first: a diff that does not apply to the living spec explains
+  // everything downstream, and it is the one breach that is silent without a check.
+  const issues: Issue[] = await deltaShapeIssues(docsDir, featureDir, featureId);
 
   // --- C4 delta ---
   let elements: Elem[] = [];

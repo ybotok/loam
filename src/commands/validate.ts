@@ -293,6 +293,7 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
       findings.push({
         severity: i.severity,
         code: i.code,
+        ...(i.subject === undefined ? {} : { subject: i.subject }),
         message: i.message,
         text: { indent: 4, header: "coherence:" },
       });

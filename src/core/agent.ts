@@ -91,7 +91,14 @@ history behind it.
 - every operationId a requirement governs exists in that service's OpenAPI;
 - every C4 edge's \`op\` resolves to an operation the target actually exposes;
 - every operation is governed by some requirement (warning);
-- a "Calls" edge with no \`metadata { op }\` is unlinked (warning).
+- a "Calls" edge with no \`metadata { op }\` is unlinked (warning);
+- **the diff applies**: a \`MODIFIED\` or \`REMOVED\` requirement exists in the living
+  spec, an \`ADDED\` one does not, and a section heading matches the grammar exactly.
+
+That last rule exists because each of its failures used to be silent. \`MODIFIED\` of a
+requirement that does not exist merged as a creation; \`ADDED\` of one that does exist
+REPLACED it, scenarios and all; and a near-miss heading like \`## ADDED Requirement\`
+(singular) parses as plain prose, so archive merged nothing and said nothing.
 
 Errors gate. Warnings do not, but leave one only deliberately.
 
@@ -99,9 +106,11 @@ Errors gate. Warnings do not, but leave one only deliberately.
 
 Every command takes \`--json\`. Branch on \`findings[].code\` (\`c4.invalid\`,
 \`requirements.missing-scenarios\`, \`spec-api.op-undefined\`, \`c4-api.op-undefined\`,
-\`c4.op-ungoverned\`, \`api.op-unconsumed\`, \`spine.op-link-missing\`), never on the prose —
-the wording changes, the codes do not. The envelope separates \`ok\` (the command
-ran) from \`valid\` (the docs pass).
+\`c4.op-ungoverned\`, \`api.op-unconsumed\`, \`spine.op-link-missing\`,
+\`delta.unknown-section\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
+\`delta.added-duplicate\`), never on the prose — the wording changes, the codes do not.
+A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
+command ran) from \`valid\` (the docs pass).
 
 ## The archive gate
 
@@ -190,6 +199,12 @@ Branch on \`findings[].code\`, not the prose:
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
 | \`spine.op-link-missing\` (warn) | a "Calls" edge with no \`metadata { op }\` | link it to the operationId |
 | \`service.no-requirement-delta\` (warn) | a new service with no spec delta | write \`specs/<svc>/spec.md\` |
+| \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
+| \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
+| \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
+| \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |
+| \`delta.modified-pending\` (warn) | the requirement is introduced by another feature in flight | archive that feature first |
+| \`delta.added-conflict\` (warn) | two features in flight add the same requirement | whichever archives second overwrites the first |
 
 Errors gate; warnings do not. Fix every error. Leave a warning only if you can say
 why, and say it.

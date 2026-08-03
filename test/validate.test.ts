@@ -319,6 +319,19 @@ describe("feature mode: delta + coverage + coherence", () => {
 
   it("REMOVED requirements in a delta spec are never counted as missing scenarios", async () => {
     const files = coherentFixture();
+    // the requirement being removed has to exist in the living spec to be removable
+    files["services/payment-split-service/spec.md"] = `# payment-split-service
+
+## Requirements
+
+### Requirement: Manual reconciliation
+Splits are reconciled by hand.
+
+#### Scenario: Someone reconciles
+- **Given** a split
+- **When** an operator reconciles it
+- **Then** it is marked settled
+`;
     files["features/FEAT-1-split/specs/payment-split-service/spec.md"] =
       FEATURE_SPEC +
       `

@@ -23,9 +23,38 @@ export interface Requirement {
   scenarios: Scenario[];
 }
 
-const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
+export const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
 const REQ_RE = /^###\s+Requirement:\s*(.+?)\s*$/;
 const SCN_RE = /^####\s+Scenario:\s*(.+?)\s*$/;
+
+/**
+ * Track ``` / ~~~ fences line by line. Returns true while the line is fenced
+ * content — including the fence marker itself — so heading-like lines inside a
+ * code block are never mistaken for structure.
+ */
+function fenceTracker(): (line: string) => boolean {
+  let fence: string | null = null;
+  return (line) => {
+    const m = /^\s*(```|~~~)/.exec(line);
+    if (m) {
+      if (fence === null) fence = m[1]!;
+      else if (fence === m[1]!) fence = null;
+      return true;
+    }
+    return fence !== null;
+  };
+}
+
+/** Every H2 heading outside a fenced block, with its 1-based line number. */
+export function sectionHeadings(md: string): Array<{ text: string; line: number }> {
+  const fenced = fenceTracker();
+  const out: Array<{ text: string; line: number }> = [];
+  md.split(/\r?\n/).forEach((line, i) => {
+    if (fenced(line)) return;
+    if (/^##\s+/.test(line) && !/^###/.test(line)) out.push({ text: line.trim(), line: i + 1 });
+  });
+  return out;
+}
 
 /** Parse all requirements (with their scenarios and delta kind) from a markdown doc. */
 export function parseRequirements(md: string): Requirement[] {
@@ -33,16 +62,11 @@ export function parseRequirements(md: string): Requirement[] {
   let kind: DeltaKind = "BASE";
   let req: Requirement | null = null;
   let scn: Scenario | null = null;
-  /** Open fence marker (``` or ~~~) — heading-like lines inside a fence are body, not structure. */
-  let fence: string | null = null;
+  const fenced = fenceTracker();
 
   for (const line of md.split(/\r?\n/)) {
-    const mf = /^\s*(```|~~~)/.exec(line);
-    if (mf) {
-      if (fence === null) fence = mf[1]!;
-      else if (fence === mf[1]!) fence = null;
-    }
-    if (fence !== null || mf) {
+    if (fenced(line)) {
+      // Fenced content, marker included: body of whatever is open, never structure.
       if (scn) scn.lines.push(line);
       else if (req) req.text.push(line);
       continue;
