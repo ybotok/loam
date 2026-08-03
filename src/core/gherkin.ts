@@ -27,7 +27,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { parseRequirements, type Requirement } from "./spec.js";
 import { listFeatures, servicePaths, SPEC_AXES, type SpecAxis } from "./repo.js";
 import type { Finding } from "./report.js";
-import { scenarioBodyHash } from "./verify.js";
+import { scenarioBodyHash, type ScenarioAxis } from "./verify.js";
 
 /** Where Gherkin lives in a service repo when loam.json does not say. */
 export const DEFAULT_GHERKIN_DIR = "features";
@@ -45,12 +45,15 @@ export function gherkinRoot(repoDir: string, gherkinDir?: string): string {
 
 /**
  * The digest stamped onto every generated scenario: verify's scenario body
- * hash, at the sources-digest length. Content identity, not provenance — two
- * identically-worded scenarios share a digest, and that is the point: the stamp
- * answers "does the suite still contain a test for THESE words".
+ * hash, at the sources-digest length. Content identity WITHIN an axis, not
+ * provenance — two identically-worded scenarios of one axis share a digest,
+ * and that is the point: the stamp answers "does the suite still contain a
+ * test for THESE words". The axis rides in the hash (the arch recipe salts
+ * the body), so the two spec files stay two namespaces all the way into a
+ * cucumber report — a business run can never answer for an arch scenario.
  */
-export function scenarioDigest(lines: string[]): string {
-  return scenarioBodyHash(lines).slice(0, GHERKIN_DIGEST_LENGTH);
+export function scenarioDigest(lines: string[], axis: ScenarioAxis = "business"): string {
+  return scenarioBodyHash(lines, axis).slice(0, GHERKIN_DIGEST_LENGTH);
 }
 
 /** The digest as the tag on the line above each `Scenario:`. */
@@ -169,6 +172,14 @@ export interface PlannedFeature {
   requirement: Requirement;
   /** One digest per scenario, in scenario order — what the stamps say. */
   digests: string[];
+  /**
+   * Names of scenarios that yielded ZERO steps — numbered-step or prose-only
+   * legacy bodies. Their `Scenario:` blocks are description-only: cucumber
+   * runs them vacuously green, while `--results` (which requires at least one
+   * passed step) can never confirm them — so the emission must say so out
+   * loud, and the fix is rewording the spec bullets, never editing the file.
+   */
+  stepless: string[];
   content: string;
 }
 
@@ -203,8 +214,8 @@ export function planEmission(
         ...(opts.featureTag === undefined ? [] : [`@${opts.featureTag}`]),
         ...(axis.key === "archSpec" ? ["@architecture"] : []),
       ];
-      const { content, digests } = renderFeature(r, tags, opts.version);
-      out.push({ fileName, axis, requirement: r, digests, content });
+      const { content, digests, stepless } = renderFeature(r, tags, opts.version, axisLabel(axis));
+      out.push({ fileName, axis, requirement: r, digests, stepless, content });
     }
   }
   return out;
@@ -223,7 +234,8 @@ export function renderFeature(
   r: Requirement,
   tags: string[],
   version: string,
-): { content: string; digests: string[] } {
+  axis: ScenarioAxis = "business",
+): { content: string; digests: string[]; stepless: string[] } {
   const lines: string[] = [gherkinStampLine(version)];
   if (tags.length > 0) lines.push(tags.join(" "));
   lines.push(`Feature: ${r.name}`);
@@ -233,15 +245,17 @@ export function renderFeature(
     for (const l of text.split("\n")) lines.push(l.length > 0 ? `  ${l}` : "");
   }
   const digests: string[] = [];
+  const stepless: string[] = [];
   for (const s of r.scenarios) {
-    const digest = scenarioDigest(s.lines);
+    const digest = scenarioDigest(s.lines, axis);
     digests.push(digest);
     lines.push("", `  ${scenarioDigestTag(digest)}`, `  Scenario: ${s.name}`);
     const { description, steps } = scenarioGherkin(s.lines);
+    if (steps.length === 0) stepless.push(s.name);
     for (const d of description) lines.push(`    ${d}`);
     for (const st of steps) lines.push(`    ${st}`);
   }
-  return { content: lines.join("\n") + "\n", digests };
+  return { content: lines.join("\n") + "\n", digests, stepless };
 }
 
 /* ------------------------------------------------------------------ */
@@ -342,11 +356,13 @@ export function parseStampedFeature(text: string): StampedFeature | null {
  *   its axis's living spec; reported once per file, because every scenario in
  *   it is moot together.
  *
- * Digests are content identity, deliberately: two identically-worded
- * scenarios share one digest, so one stamped copy covers both — the same
- * doctrine as the axes being separate namespaces, which is why every
- * comparison here is axis-scoped (an arch scenario's integration test is not
- * answered by a business .feature that happens to spell the same words).
+ * Digests are content identity within an axis, deliberately: two
+ * identically-worded scenarios of one axis share one digest, so one stamped
+ * copy covers both — while the axes stay separate namespaces twice over:
+ * every comparison here is axis-scoped, and the digest recipe itself salts
+ * the arch axis (an arch scenario's integration test is not answered by a
+ * business .feature that happens to spell the same words — not here, and not
+ * in a cucumber report either).
  *
  * All warnings — `--strict` is the CI escalation — plus one `ok` confirmation
  * (`gherkin.current`, the `sources.current` pattern) when a generated suite
@@ -373,6 +389,7 @@ export async function gherkinFindings(ctx: {
   const paths = servicePaths(ctx.docsDir, ctx.service);
   const axes = new Map<"business" | "arch", AxisState>();
   for (const axis of SPEC_AXES) {
+    const label = axisLabel(axis);
     const state: AxisState = { file: axis.file, reqNames: new Set(), digests: new Set(), scenarios: [] };
     const path = paths[axis.key];
     if (existsSync(path)) {
@@ -380,13 +397,13 @@ export async function gherkinFindings(ctx: {
         if (r.kind === "REMOVED") continue;
         state.reqNames.add(r.name);
         for (const s of r.scenarios) {
-          const digest = scenarioDigest(s.lines);
+          const digest = scenarioDigest(s.lines, label);
           state.digests.add(digest);
           state.scenarios.push({ req: r.name, name: s.name, digest });
         }
       }
     }
-    axes.set(axisLabel(axis), state);
+    axes.set(label, state);
   }
 
   // The stamped side. Every stamped digest counts toward coverage — an

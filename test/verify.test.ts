@@ -105,14 +105,20 @@ async function confirmAll(p: Project, feature = FEAT): Promise<string> {
 /* --- the runner's side: cucumber reports ---------------------------- */
 
 /** The digest the emitter stamps for scenario `sc` of requirement `req` in a spec source. */
-function digestOf(spec: string, req = 0, sc = 0): string {
-  return scenarioDigest(parseRequirements(spec)[req]!.scenarios[sc]!.lines);
+function digestOf(spec: string, req = 0, sc = 0, axis: "business" | "arch" = "business"): string {
+  return scenarioDigest(parseRequirements(spec)[req]!.scenarios[sc]!.lines, axis);
 }
 
 interface Run {
   digest?: string;
   name?: string;
   steps?: string[];
+  /** cucumber-jvm hook results: statuses for the element's `before[]` array. */
+  before?: string[];
+  /** cucumber-jvm hook results: statuses for the element's `after[]` array. */
+  after?: string[];
+  /** behave's element-level status. */
+  status?: string;
 }
 
 /** A standard cucumber JSON report: one feature, one element per run — extra fields included on purpose. */
@@ -125,10 +131,17 @@ function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.featur
       elements: runs.map((r) => ({
         name: r.name ?? "Split across two payees",
         type: "scenario",
+        ...(r.status === undefined ? {} : { status: r.status }),
         tags: [
           { name: "@FEAT-1", line: 2 },
           ...(r.digest === undefined ? [] : [{ name: `@loam-digest-${r.digest}` }]),
         ],
+        ...(r.before === undefined
+          ? {}
+          : { before: r.before.map((status) => ({ result: { status, duration: 1 } })) }),
+        ...(r.after === undefined
+          ? {}
+          : { after: r.after.map((status) => ({ result: { status, error_message: "hook failed" } })) }),
         steps: (r.steps ?? ["passed", "passed", "passed"]).map((status) => ({
           keyword: "Then ",
           result: { status, duration: 1 },
@@ -668,14 +681,14 @@ describe("answering from the runner (--results)", () => {
     for (const c of doc.claims) expect(c.verdict).toBe("unconfirmed");
   });
 
-  it("arch scenarios match through the same digest — the claims and the emitter share the hash", async () => {
+  it("arch scenarios match through the same digest — the claims and the emitter share the axis-salted hash", async () => {
     const files = scenarioOnlyFixture();
     files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = ARCH_ONLY;
     const p = await project(files);
     const report = await writeReport(p, [
       { digest: d1 },
       { digest: d2, name: "Reject a split that does not sum" },
-      { digest: digestOf(ARCH_ONLY), name: "Duplicate delivery" },
+      { digest: digestOf(ARCH_ONLY, 0, 0, "arch"), name: "Duplicate delivery" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code, res.out).toBe(0);
@@ -684,6 +697,101 @@ describe("answering from the runner (--results)", () => {
     const arch = doc.claims.find((c: { claim: string }) => c.claim.includes("arch.spec.md"));
     expect(arch.verdict).toBe("confirmed");
     expect(arch.answered_by).toBe("runner");
+  });
+
+  it("a business run can NEVER answer an arch claim: identical wording in both axes stays two digests, two verdicts", async () => {
+    // The axes are two namespaces ("two questions" — verify.ts, SCHEMA.md). A
+    // digest that were pure content identity collapsed them: one green run of
+    // the business acceptance test confirmed the arch integration-test claim
+    // even though the arch .feature never existed. The axis is salted into the
+    // hash, so the collapse is impossible by construction.
+    const archTwin = `# payment-split-service — arch delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Split lands atomically
+The split SHALL be recorded transactionally.
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+`;
+    const businessDigest = digestOf(SCENARIOS_ONLY);
+    const archDigest = digestOf(archTwin, 0, 0, "arch");
+    expect(archDigest, "identical bodies across axes must yield distinct digests").not.toBe(businessDigest);
+
+    const files = scenarioOnlyFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = archTwin;
+    const p = await project(files);
+    // The report holds ONLY the business run — the shape a `--tags "not
+    // @architecture"` cucumber invocation produces.
+    const report = await writeReport(p, [{ digest: businessDigest }, { digest: d2, name: "Reject a split that does not sum" }]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(JSON.parse(res.stdout).verified).toBe(false);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const arch = doc.claims.find((c: { claim: string }) => c.claim.includes("arch.spec.md"));
+    expect(arch.verdict, "the arch integration test never ran — a business run must not vouch for it").toBe(
+      "unconfirmed",
+    );
+    expect(arch.note).toContain("not found in report");
+    // and the identically-worded business claim IS confirmed — content
+    // identity still holds within the axis
+    const business = doc.claims.find(
+      (c: { claim: string }) => c.claim.includes("Split across two payees") && !c.claim.includes("arch.spec.md"),
+    );
+    expect(business.verdict).toBe("confirmed");
+  });
+
+  it("a cucumber-jvm after-hook failure is a FAILED run — all-passed steps must not read as confirmed", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: d1, after: ["failed"] },
+      { digest: d2, name: "Reject a split that does not sum" },
+    ]);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    expect(res.code, res.out).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const failed = doc.claims.find((c: { claim: string }) => c.claim.includes("Split across two payees"));
+    expect(failed.verdict, "the runner reported this run failed — the record must not say confirmed").toBe(
+      "unconfirmed",
+    );
+    expect(failed.note).toContain("failed in a before/after hook");
+    // the sibling with no hook failure stays green
+    const ok = doc.claims.find((c: { claim: string }) => c.claim.includes("Reject a split"));
+    expect(ok.verdict).toBe("confirmed");
+  });
+
+  it("a cucumber-jvm before-hook failure is caught by the hook status itself, not only via skipped steps", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      // Adversarial shape: a before-hook failure while the steps somehow still
+      // read passed — the hook status alone must sink it.
+      { digest: d1, before: ["failed"] },
+      { digest: d2, name: "Reject a split that does not sum" },
+    ]);
+    await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const failed = doc.claims.find((c: { claim: string }) => c.claim.includes("Split across two payees"));
+    expect(failed.verdict).toBe("unconfirmed");
+    expect(failed.note).toContain("hook");
+  });
+
+  it("a behave element-level failed status is a FAILED run, whatever the steps say", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: d1, status: "failed" },
+      { digest: d2, name: "Reject a split that does not sum", status: "passed" },
+    ]);
+    await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    const failed = doc.claims.find((c: { claim: string }) => c.claim.includes("Split across two payees"));
+    expect(failed.verdict).toBe("unconfirmed");
+    expect(failed.note).toContain("scenario status 'failed'");
+    // an element-level "passed" changes nothing — green stays green
+    const ok = doc.claims.find((c: { claim: string }) => c.claim.includes("Reject a split"));
+    expect(ok.verdict).toBe("confirmed");
   });
 });
 

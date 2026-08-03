@@ -277,6 +277,41 @@ describe("service mode: graded absences", () => {
     });
   });
 
+  it("service.no-model does NOT silence the rest of the gate stack — archive creates exactly that state", async () => {
+    // A new service that arrived through `loam archive` has spec.md / openapi /
+    // health but no model.likec4. The early return on service.no-model used to
+    // suspend every later check for it: an edited vouched spec, an uncovered
+    // alert and a stale generated suite all went quiet behind the one error.
+    const files: Record<string, string> = {
+      [`services/${SVC}/spec.md`]: LIVING_SPEC.replace(
+        "status: verified",
+        'status: verified\ncontent_digest: "0000000000000000"',
+      ),
+      [`services/${SVC}/openapi.yaml`]: LIVING_OPENAPI,
+      [`services/${SVC}/health.yaml`]: "alerts:\n  - name: auth_error_rate\n",
+    };
+    await withProject(files, { service: SVC }, async (p) => {
+      // opt into the gherkin chain, then grow the spec so the suite lags it
+      expect((await runLoam(p.workDir, "gherkin")).code).toBe(0);
+      await p.write(
+        `services/${SVC}/spec.md`,
+        files[`services/${SVC}/spec.md`]! +
+          "\n#### Scenario: Declined authorization\n- **Given** an invalid card\n- **When** authorization is requested\n- **Then** the payment is declined\n",
+      );
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1); // service.no-model is still an error
+      const payload = JSON.parse(res.stdout) as {
+        targets: Array<{ findings: Array<{ code: string }> }>;
+      };
+      const codes = payload.targets.flatMap((t) => t.findings.map((f) => f.code));
+      expect(codes).toContain("service.no-model");
+      // and every model-free signal still fires alongside it
+      expect(codes, "the vouched-then-edited spec must still report").toContain("content.stale");
+      expect(codes, "the uncovered alert must still report").toContain("health.uncovered");
+      expect(codes, "the lagging generated suite must still report").toContain("gherkin.missing");
+    });
+  });
+
   it("stays silent about a missing openapi.yaml when the landscape proves nobody calls an op on it", async () => {
     // checkout-web is drawn, but no edge targets it with an op — a worker/UI
     // with no API is not missing one.

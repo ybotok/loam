@@ -10,7 +10,10 @@
  * spec.md + arch.spec.md: the regression skeleton a legacy service gets at
  * adoption. Either way the output is `<gherkinDir>/loam/` inside this repo,
  * a directory loam owns outright: the scope's files are rewritten, the scope's
- * orphans are deleted (and reported), and nothing outside `loam/` is touched.
+ * orphans are deleted (and reported), and nothing outside `loam/` is touched —
+ * except that a living run neither deletes NOR overwrites a file tagged with a
+ * feature still in flight: it answers to that feature's delta until it
+ * archives, and is reported as kept.
  *
  * It refuses to run anywhere but the service's own repo — vouch's discipline,
  * for vouch's reason: the output lands in the repo loam is standing in, and
@@ -38,6 +41,8 @@ import {
   gherkinRoot,
   parseStampedFeature,
   planEmission,
+  type PlannedFeature,
+  type StampedFeature,
 } from "../core/gherkin.js";
 import { LOAM_VERSION } from "../core/version.js";
 
@@ -138,10 +143,10 @@ export function registerGherkin(program: Command): void {
       // their feature's delta until it archives, and `loam gherkin <FEAT>` is
       // their regeneration.
       const planned = new Set(plan.map((f) => f.fileName));
+      const activeIds =
+        mode === "living" ? new Set((await listFeatures(config.docsDir)).map((f) => f.id)) : null;
       const orphans: string[] = [];
       if (existsSync(root)) {
-        const activeIds =
-          mode === "living" ? new Set((await listFeatures(config.docsDir)).map((f) => f.id)) : null;
         for (const abs of await featureFilesUnder(root)) {
           if (planned.has(relative(root, abs).split(/[\\/]/).join("/"))) continue;
           const stamped = parseStampedFeature(await readFile(abs, "utf8"));
@@ -154,17 +159,41 @@ export function registerGherkin(program: Command): void {
         }
       }
 
-      const actions = plan.map((f) => {
+      // The in-flight exemption guards the OVERWRITE path too, not only the
+      // orphan scan above: files are named by requirement slug in both modes,
+      // so a MODIFIED requirement's living emission always collides with the
+      // active feature's file — and replacing it reverted the delta's wording
+      // mid-flight, feature tag and new digest stamps destroyed, invisibly
+      // (the reverted file grades current against the living spec). A planned
+      // path whose existing content is stamped and tagged with a feature still
+      // in flight is KEPT and reported as such; it answers to its feature's
+      // delta until the feature archives, and then living regeneration
+      // replaces it normally.
+      type Action = "written" | "replaced" | "kept";
+      const actions: Array<PlannedFeature & { path: string; action: Action; kept?: StampedFeature }> = [];
+      for (const f of plan) {
         const path = join(root, f.fileName);
-        return { ...f, path, action: existsSync(path) ? ("replaced" as const) : ("written" as const) };
-      });
+        if (!existsSync(path)) {
+          actions.push({ ...f, path, action: "written" });
+          continue;
+        }
+        if (mode === "living") {
+          const existing = parseStampedFeature(await readFile(path, "utf8"));
+          if (existing !== null && existing.tags.some((t) => activeIds!.has(t))) {
+            actions.push({ ...f, path, action: "kept", kept: existing });
+            continue;
+          }
+        }
+        actions.push({ ...f, path, action: "replaced" });
+      }
+      const writes = actions.filter((a) => a.action !== "kept");
 
       if (!dryRun) {
         // The root is created only when something lands in it: an emission with
         // nothing to emit must not flip the repo into "opted in" — an empty
         // loam/ tells `loam validate` the whole living suite is missing.
-        if (actions.length > 0) await mkdir(root, { recursive: true });
-        for (const a of actions) await writeFile(a.path, a.content, "utf8");
+        if (writes.length > 0) await mkdir(root, { recursive: true });
+        for (const a of writes) await writeFile(a.path, a.content, "utf8");
         for (const o of orphans) await unlink(o);
       }
 
@@ -180,8 +209,13 @@ export function registerGherkin(program: Command): void {
             action: a.action,
             axis: axisLabel(a.axis),
             requirement: a.requirement.name,
-            scenarios: a.digests.length,
-            digests: a.digests,
+            // A kept file's numbers describe what STAYS on disk (the in-flight
+            // emission), not the emission that was withheld.
+            scenarios: a.action === "kept" ? a.kept!.scenarios.length : a.digests.length,
+            digests: a.action === "kept" ? a.kept!.scenarios.map((s) => s.digest) : a.digests,
+            ...(a.action === "kept"
+              ? { inFlight: a.kept!.tags.filter((t) => activeIds!.has(t)) }
+              : { stepless: a.stepless }),
           })),
           deleted: orphans.map(rel),
         });
@@ -197,20 +231,34 @@ export function registerGherkin(program: Command): void {
             : `  the living specs hold no requirements for ${service} — nothing to emit.`,
         );
       }
+      const VERB: Record<Action, string> = { written: "write  ", replaced: "replace", kept: "keep   " };
       for (const a of actions) {
+        if (a.action === "kept") {
+          const owners = a.kept!.tags.filter((t) => activeIds!.has(t));
+          console.log(
+            `  keep     ${a.fileName}  —  ${a.requirement.name}  (in flight: @${owners.join(" @")} — \`loam gherkin ${owners[0]}\` regenerates it)`,
+          );
+          continue;
+        }
         const n = a.digests.length;
         const arch = a.axis.key === "archSpec" ? ", arch" : "";
         console.log(
-          `  ${a.action === "written" ? "write  " : "replace"}  ${a.fileName}  —  ${a.requirement.name}  (${n} scenario${n === 1 ? "" : "s"}${arch})`,
+          `  ${VERB[a.action]}  ${a.fileName}  —  ${a.requirement.name}  (${n} scenario${n === 1 ? "" : "s"}${arch})`,
         );
+        for (const name of a.stepless) {
+          console.log(
+            `      ⚠ scenario '${name}' has NO recognizable steps — cucumber runs it vacuously green and \`verify --results\` can never confirm it; reword its body as \`- **Given/When/Then**\` bullets`,
+          );
+        }
       }
       for (const o of orphans) console.log(`  delete   ${relative(root, o).split(/[\\/]/).join("/")}  —  no longer in this scope`);
-      const wrote = `${actions.length} file(s)`;
+      const wrote = `${writes.length} file(s)`;
+      const keptNote = actions.length > writes.length ? `, ${actions.length - writes.length} kept in flight` : "";
       const dropped = orphans.length > 0 ? `, ${orphans.length} deletion(s)` : "";
       console.log(
         dryRun
-          ? `\n  ${wrote}${dropped} — dry run, nothing was written.`
-          : `\n  ${wrote} written${dropped}. Write step definitions OUTSIDE ${rel(root)}/ — regeneration rewrites it.`,
+          ? `\n  ${wrote}${keptNote}${dropped} — dry run, nothing was written.`
+          : `\n  ${wrote} written${keptNote}${dropped}. Write step definitions OUTSIDE ${rel(root)}/ — regeneration rewrites it.`,
       );
     });
 }

@@ -13,12 +13,16 @@
  * Parsing is deliberately tolerant of everything except the shape it matches
  * on. The format is what cucumber-js `--format json`, cucumber-jvm, behave and
  * SpecFlow emit — an array of features, each `elements[]` (scenarios) with
- * `name`, `tags[] {name}` and `steps[] {result {status}}` — and only those
- * fields are contract: unknown fields, tagless elements (backgrounds,
- * hand-written scenarios) and stray entries are skipped without comment. What
- * is NOT tolerated is a file that is not that array at all: a report loam
- * cannot recognize must refuse rather than quietly answer every claim
- * "not found".
+ * `name`, `tags[] {name}` and `steps[] {result {status}}`, plus the two
+ * places those dialects put a failure the steps never see: cucumber-jvm
+ * reports @Before/@After hook results in per-element `before[]`/`after[]`
+ * arrays (a teardown assertion fails there while every step stays `passed`),
+ * and behave carries an element-level `status` that a hook failure flips.
+ * Only those fields are contract: unknown fields, tagless elements
+ * (backgrounds, hand-written scenarios) and stray entries are skipped without
+ * comment. What is NOT tolerated is a file that is not that array at all: a
+ * report loam cannot recognize must refuse rather than quietly answer every
+ * claim "not found".
  */
 import { DIGEST_TAG_RE, scenarioDigestTag } from "./gherkin.js";
 import type { Answer, Claim } from "./verify.js";
@@ -31,6 +35,10 @@ export interface ReportScenario {
   digests: string[];
   /** Step statuses, lowercased, in order. */
   steps: string[];
+  /** Hook statuses from cucumber-jvm's `before[]`/`after[]`, lowercased, in order. */
+  hooks: string[];
+  /** behave's element-level status, lowercased — absent in the other dialects. */
+  status?: string;
 }
 
 export type ReportRead =
@@ -70,18 +78,25 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
       // No digest tag, nothing to match: a background, a hand-written
       // scenario, another tool's output. Invisible here, deliberately.
       if (digests.length === 0) continue;
-      const steps: string[] = [];
-      const rawSteps = el["steps"];
-      if (Array.isArray(rawSteps)) {
-        for (const s of rawSteps) {
+      const resultStatuses = (raw: unknown): string[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw.map((s) => {
           const status = isRecord(s) && isRecord(s["result"]) ? str(s["result"]["status"]) : undefined;
-          steps.push((status ?? "unknown").toLowerCase());
-        }
-      }
+          return (status ?? "unknown").toLowerCase();
+        });
+      };
+      const steps = resultStatuses(el["steps"]);
+      // cucumber-jvm's @Before/@After hooks: separate arrays, same result shape.
+      const hooks = [...resultStatuses(el["before"]), ...resultStatuses(el["after"])];
+      // behave's element-level status — a hook failure flips it while the
+      // steps that already ran keep "passed".
+      const status = str(el["status"])?.toLowerCase();
       scenarios.push({
         where: `${featureName} › ${str(el["name"]) ?? "(unnamed scenario)"}`,
         digests,
         steps,
+        hooks,
+        ...(status === undefined ? {} : { status }),
       });
     }
   }
@@ -96,9 +111,10 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
  *
  * Confirmation is strict on purpose: every matching occurrence — a digest the
  * report holds twice is a re-run, and all of them count — ran at least one
- * step and every step `passed`. One failed occurrence wins as failure, a
- * skipped-only run is "skipped" not green, and no match at all is
- * "not found in report".
+ * step, every step `passed`, every before/after hook `passed`, and the
+ * element-level status (when the dialect reports one) is `passed`. One failed
+ * occurrence wins as failure, a skipped-only run is "skipped" not green, and
+ * no match at all is "not found in report".
  */
 export function runnerAnswers(
   claims: Claim[],
@@ -125,17 +141,32 @@ function answer(id: string, verdict: Answer["verdict"], evidence: string[], note
   return { id, verdict, evidence, ...(note === undefined ? {} : { note }), answered_by: "runner" };
 }
 
-/** Green means green: at least one step, and every step `passed`. */
+/**
+ * Green means green: at least one step, every step `passed`, every before/
+ * after hook `passed`, and the element-level status (when the dialect carries
+ * one) `passed` too. The last two exist because a run the runner itself
+ * reports as FAILED — a teardown assertion in an @After hook, exactly the
+ * shape the arch axis's outbox checks take — used to read as confirmed here:
+ * the steps all passed, and the hook failure lived in fields nobody read.
+ */
 function passed(r: ReportScenario): boolean {
-  return r.steps.length > 0 && r.steps.every((s) => s === "passed");
+  return (
+    r.steps.length > 0 &&
+    r.steps.every((s) => s === "passed") &&
+    r.hooks.every((h) => h === "passed") &&
+    (r.status === undefined || r.status === "passed")
+  );
 }
 
-/** Why a run did not pass, naming the first step that says so. */
+/** Why a run did not pass, naming the step, hook or element status that says so. */
 function reason(r: ReportScenario): string {
   if (r.steps.length === 0) return "no steps ran";
   const i = r.steps.findIndex((s) => s !== "passed" && s !== "skipped");
   if (i >= 0) return `${r.steps[i]} at step ${i + 1}`;
-  return "skipped";
+  if (r.steps.some((s) => s === "skipped")) return "skipped";
+  const h = r.hooks.findIndex((s) => s !== "passed");
+  if (h >= 0) return `${r.hooks[h]} in a before/after hook`;
+  return `scenario status '${r.status ?? "unknown"}'`;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

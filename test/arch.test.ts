@@ -309,6 +309,44 @@ Covers: paymentSplitService, paymentService -> paymentSplitService
     });
   });
 
+  it("a BASE requirement quoted in the delta grants NO coverage — only what the archive will merge counts", async () => {
+    // In a delta, plain `## Requirements` is the living state quoted: legal
+    // shape, merges nothing, emits no .feature, yields no scenario.tested
+    // claim. A Covers: line under it used to silence c4.uncovered anyway —
+    // an agent could green the check with an obligation that ships nowhere.
+    const quoted = `# arch delta
+
+## Requirements
+
+### Requirement: Split arrives exactly once
+The service SHALL treat createSplit as idempotent.
+
+Covers: paymentSplitService, paymentService -> paymentSplitService
+
+#### Scenario: Retry is a no-op
+- **Given** a recorded split
+- **When** the call is retried
+- **Then** nothing is recorded twice
+`;
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = quoted;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      const fs = ofCode(findings(res.stdout), "c4.uncovered");
+      expect(fs, "a quoted BASE requirement must not cover the new element and edge").toHaveLength(2);
+    });
+
+    // The SAME requirement under `## ADDED Requirements` — text unchanged —
+    // is work the archive merges, and it silences the warning.
+    const added = quoted.replace("## Requirements", "## ADDED Requirements");
+    const filesAdded = coherentFixture();
+    filesAdded["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = added;
+    await withProject(filesAdded, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(ofCode(findings(res.stdout), "c4.uncovered")).toEqual([]);
+    });
+  });
+
   it("an edge may be covered by service names instead of element ids — the same join every check uses", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = `# arch delta

@@ -175,15 +175,17 @@ export async function featureChecklist(
 
     // The architecture spec axis, same walk: an arch scenario is a promise like
     // any other — the outbox test nobody was going to write IS the point of the
-    // axis. The source file rides in the id tuple (two axes are two namespaces:
-    // identically-worded scenarios must stay two questions) and in the claim
-    // text, so the answering agent knows it is being asked for an integration/
-    // ops test, not an acceptance test.
+    // axis. The source file rides in the id tuple AND in the body hash itself
+    // (two axes are two namespaces: identically-worded scenarios must stay two
+    // questions, and the axis-salted digest is what keeps a business-only test
+    // run from answering the arch claim) and in the claim text, so the
+    // answering agent knows it is being asked for an integration/ops test, not
+    // an acceptance test.
     if (existsSync(paths.archSpec)) {
       for (const r of parseRequirements(await readFile(paths.archSpec, "utf8"))) {
         if (r.kind === "BASE" || r.kind === "REMOVED") continue;
         for (const s of r.scenarios) {
-          const body = scenarioBodyHash(s.lines);
+          const body = scenarioBodyHash(s.lines, "arch");
           scenarios.push({
             ...claim(
               "scenario.tested",
@@ -230,6 +232,9 @@ function claimId(
   return `${kind}-${createHash("sha256").update(canonical).digest("hex").slice(0, ID_LENGTH)}`;
 }
 
+/** The axis a scenario's words live on: `spec.md` or `arch.spec.md`. */
+export type ScenarioAxis = "business" | "arch";
+
 /**
  * The full sha256 of a scenario's body — its lines joined and edge-trimmed,
  * exactly as `serializeRequirements` frames them. The BODY, not the title,
@@ -243,9 +248,21 @@ function claimId(
  * gherkin` stamps both take its first {@link DIGEST_LENGTH} — so the claim,
  * the stamp and the report `--results` reads can never disagree about what a
  * scenario says.
+ *
+ * The AXIS is part of the identity: an arch scenario salts the body with its
+ * file name, so identically-worded scenarios across `spec.md` and
+ * `arch.spec.md` can never share a digest. Without the salt a green BUSINESS
+ * run answered the arch claim too — an integration test nobody wrote read as
+ * run — collapsing the two-questions doctrine exactly where `--results` was
+ * supposed to hold it mechanically.
  */
-export function scenarioBodyHash(lines: string[]): string {
-  return createHash("sha256").update(lines.join("\n").trim()).digest("hex");
+export function scenarioBodyHash(lines: string[], axis: ScenarioAxis = "business"): string {
+  // NUL-separated like claimId's tuples: no business body can spell the arch
+  // salt by starting with the file name, so the namespaces stay disjoint.
+  const body = lines.join("\n").trim();
+  return createHash("sha256")
+    .update(axis === "arch" ? `arch.spec.md\u0000${body}` : body)
+    .digest("hex");
 }
 
 /**

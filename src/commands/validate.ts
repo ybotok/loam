@@ -314,7 +314,10 @@ async function validateLandscape(
  * typo until proven otherwise, so the hint names ids that DO exist and never
  * `loam adopt`, which would faithfully document the misspelling.
  * `service.no-model` (error): the directory is real but the C4 center is not —
- * nothing else has anywhere to hang, and adopt is the right hint.
+ * adopt is the right hint. Every check that does not read the model still runs
+ * (spec coverage, the arch axis, provenance, gherkin staleness): archive
+ * creates exactly this state for a new service, and those signals must not go
+ * quiet there.
  * `service.no-spec` / `service.no-openapi` (warn): the adopt brief marks both
  * required, but a fleet mid-rollout legitimately has part-adopted services —
  * the absence must stay visible without gating CI for months. The openapi warn
@@ -352,30 +355,42 @@ async function validateService(
     return report;
   }
 
-  // C4 model. Without one there is nothing to validate — this is where `adopt` comes in.
-  if (!existsSync(paths.model)) {
+  // C4 model. Its absence is an error — this is where `adopt` comes in — but it
+  // must NOT silence the rest of the gate stack: `loam archive` of a feature
+  // introducing a new service creates exactly this state (spec.md, arch.spec.md,
+  // openapi.yaml, no model.likec4), and an early return here suspended arch
+  // coverage, health.uncovered, provenance (content_digest included) and the
+  // gherkin staleness chain for the very services vouch had just promised them
+  // to. So the finding is emitted and the walk CONTINUES; only the checks that
+  // read the model itself are guarded.
+  const hasModel = existsSync(paths.model);
+  let elements: Elem[] = [];
+  let relationships: Rel[] = [];
+  if (!hasModel) {
     findings.push({
       severity: "error",
       code: "service.no-model",
       message: `No C4 model at ${paths.model}. Run \`loam adopt\` for '${service}' first.`,
       text: { marker: false },
     });
-    return report;
-  }
-  const { errors, elements, relationships } = await loadFile(paths.model);
-  if (errors.length > 0) {
-    findings.push({
-      severity: "error",
-      code: "c4.invalid",
-      message: `${service}: C4 model has ${errors.length} error(s)`,
-      details: errors.map(errorText),
-    });
   } else {
-    findings.push({
-      severity: "ok",
-      code: "c4.valid",
-      message: `${service}: C4 model valid (${elements.length} elements · ${relationships.length} relationships)`,
-    });
+    const model = await loadFile(paths.model);
+    elements = model.elements;
+    relationships = model.relationships;
+    if (model.errors.length > 0) {
+      findings.push({
+        severity: "error",
+        code: "c4.invalid",
+        message: `${service}: C4 model has ${model.errors.length} error(s)`,
+        details: model.errors.map(errorText),
+      });
+    } else {
+      findings.push({
+        severity: "ok",
+        code: "c4.valid",
+        message: `${service}: C4 model valid (${elements.length} elements · ${relationships.length} relationships)`,
+      });
+    }
   }
 
   // The living landscape, parsed at most once per run: under --all the caller
@@ -665,7 +680,16 @@ async function validateFeature(
   // the alerts — because no business scenario was ever going to mention them.
   // Grouping-only elements follow the landscape checks' exemptions (person
   // kinds, #external). Warnings, never archive gates; `--strict` escalates.
-  const activeCovers = archDeltas.flatMap(({ reqs }) => coversEntries(reqs));
+  //
+  // Only requirements the archive will MERGE grant coverage here. In a delta,
+  // BASE means "the living state, quoted": it merges nothing, emits no
+  // .feature, and yields no scenario.tested claim — so a Covers: line under a
+  // plain `## Requirements` quote is an obligation that ships nowhere, and
+  // counting it silenced c4.uncovered for free. (The service-scope pass keeps
+  // the unfiltered call: a LIVING spec is legitimately all BASE.)
+  const activeCovers = archDeltas.flatMap(({ reqs }) =>
+    coversEntries(reqs.filter((r) => r.kind === "ADDED" || r.kind === "MODIFIED")),
+  );
   for (const e of taggedEls) {
     if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
     if (activeCovers.some((c) => coversElement(c, e))) continue;

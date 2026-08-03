@@ -290,6 +290,46 @@ describe("living mode", () => {
     expect(await treeHashes(join(p.workDir, "features"))).toEqual(first);
   });
 
+  it("a scenario with no recognizable step bullets is reported step-less — vacuously green is not silently green", async () => {
+    // Numbered-step and prose-only legacy scenarios yield zero Given/When/Then:
+    // cucumber runs the emitted Scenario (description only) vacuously green,
+    // while `verify --results` requires at least one passed step — permanently
+    // unconfirmable. The emitter must say so; the fix is rewording the spec.
+    const spec = `---
+service: payment-service
+---
+
+# payment-service
+
+## Requirements
+
+### Requirement: Legacy prose
+The service SHALL do the legacy thing.
+
+#### Scenario: Numbered steps
+1. **Given** a thing
+2. **When** it runs
+3. **Then** it is done
+
+### Requirement: Real steps
+The service SHALL do the modern thing.
+
+#### Scenario: Bulleted steps
+- **Given** a thing
+- **Then** it is done
+`;
+    const p = await project({ "services/payment-service/spec.md": spec }, { service: "payment-service" });
+    const res = await runLoam(p.workDir, "gherkin", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.files[0].stepless).toEqual(["Numbered steps"]);
+    expect(payload.files[1].stepless).toEqual([]);
+    // the human view flags it too, prominently, next to the file it rode in on
+    const text = await runLoam(p.workDir, "gherkin");
+    expect(text.out).toContain("'Numbered steps' has NO recognizable steps");
+    expect(text.out).toContain("vacuously green");
+  });
+
   it("disambiguates slug collisions deterministically, in document order", async () => {
     const spec = `---
 service: payment-service
@@ -534,6 +574,78 @@ describe("the feature lifecycle: in flight, archived, abandoned", () => {
     expect((await gherkinValidate(p, "payment-split-service")).map((f) => f.code)).toEqual([
       "gherkin.current",
     ]);
+  });
+
+  it("a living-mode run KEEPS an in-flight file whose filename collides — never reverts the delta mid-flight", async () => {
+    // A MODIFIED requirement's living emission always takes the same filename
+    // as the active feature's emission (files are named by requirement slug in
+    // both modes). The overwrite path used to ignore the in-flight exemption:
+    // a routine `loam gherkin --service` reverted the delta's wording — the
+    // feature tag and the new scenario's digest stamp silently destroyed.
+    const modDelta = `# payment-service — delta for FEAT-2
+
+## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment before capture.
+
+Operations: authorizePayment
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+
+#### Scenario: Declined authorization
+- **Given** an invalid card
+- **When** authorization is requested
+- **Then** the payment is declined
+`;
+    const p = await project(
+      {
+        "architecture/landscape.likec4": LANDSCAPE,
+        "services/payment-service/spec.md": LIVING_SPEC,
+        "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+        "features/FEAT-2-decline/specs/payment-service/spec.md": modDelta,
+      },
+      { service: "payment-service" },
+    );
+
+    // the feature's emission: tagged, both scenarios stamped
+    expect((await runLoam(p.workDir, "gherkin", "FEAT-2")).code).toBe(0);
+    const inFlight = await readWork(p, "features/loam/authorize-a-payment.feature");
+    expect(inFlight).toContain("@FEAT-2");
+    expect(parseStampedFeature(inFlight)!.scenarios).toHaveLength(2);
+
+    // a living-mode run (e.g. refreshing the suite) must keep it, and say so
+    const living = await runLoam(p.workDir, "gherkin", "--json");
+    expect(living.code).toBe(0);
+    const payload = JSON.parse(living.stdout);
+    const entry = payload.files.find((f: { path: string }) => f.path === "features/loam/authorize-a-payment.feature");
+    expect(entry.action).toBe("kept");
+    expect(entry.inFlight).toEqual(["FEAT-2"]);
+    expect(entry.digests).toEqual(parseStampedFeature(inFlight)!.scenarios.map((s: { digest: string }) => s.digest));
+    expect(payload.deleted).toEqual([]);
+    expect(await readWork(p, "features/loam/authorize-a-payment.feature"), "the in-flight file must be byte-identical").toBe(inFlight);
+    // the human view never says "replace" for it
+    const text = await runLoam(p.workDir, "gherkin");
+    expect(text.out).toContain("keep     authorize-a-payment.feature");
+    expect(text.out).toContain("in flight: @FEAT-2");
+
+    // staleness stays quiet: the kept file covers the living scenario, and its
+    // extra delta scenario is in-flight-exempt
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+
+    // after archive the exemption lapses: living regeneration replaces normally
+    expect((await runLoam(p.workDir, "archive", "FEAT-2")).code).toBe(0);
+    const after = await runLoam(p.workDir, "gherkin", "--json");
+    const replaced = JSON.parse(after.stdout).files.find(
+      (f: { path: string }) => f.path === "features/loam/authorize-a-payment.feature",
+    );
+    expect(replaced.action).toBe("replaced");
+    const final = await readWork(p, "features/loam/authorize-a-payment.feature");
+    expect(final).not.toContain("@FEAT-2");
+    expect(parseStampedFeature(final)!.scenarios).toHaveLength(2);
   });
 
   it("an abandoned feature's files become orphans — the tag names nothing active", async () => {
