@@ -1,20 +1,35 @@
 // Global C4 fleet landscape — the LIVING current state (before FEAT-101 is archived).
 // `loam archive` folds a feature's #FEAT-tagged elements/relationships in here.
 // Cross-file merge (fromWorkspace) is how loam will aggregate this from per-service files later.
+//
+// `loam validate --all` cross-checks this file against services/: every service
+// directory needs an element here (error), and every element that looks like a
+// service needs a directory (warning). An element is tied to its directory by
+// `metadata { service '<id>' }`, or by its title when there is no binding.
+// Systems that are not ours carry #external and are exempt.
 specification {
   element softwareSystem
   element person
+  tag external
 }
 
 model {
   customer = person 'Customer'
   checkoutWeb = softwareSystem 'checkout-web' {
     description 'Customer-facing checkout UI'
+    metadata {
+      service 'checkout-web'
+    }
   }
   paymentService = softwareSystem 'payment-service' {
     description 'Owns payment authorization/capture'
+    metadata {
+      service 'payment-service'
+    }
   }
   kafka = softwareSystem 'kafka' {
+    // Not one of ours: no services/kafka/ is expected, and none is asked for.
+    #external
     description 'Event backbone'
   }
 

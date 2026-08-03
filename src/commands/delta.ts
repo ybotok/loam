@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
-import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import { elementService, loadFile, serviceOf, type Rel } from "../core/likec4.js";
 import { repoPath } from "./list.js";
 import { featurePaths, featureSpecPaths, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
@@ -117,8 +117,8 @@ async function archSlice(deltaPath: string, service: string, featureId: string):
     return { ...empty, errors: errors.map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message)) };
   }
 
-  const byId = new Map(elements.map((e): [string, Elem] => [e.id, e]));
-  const titleOf = (id: string): string => byId.get(id)?.title ?? id;
+  // Which service an element stands for is the binding's call, not the title's.
+  const svcOf = (id: string): string => serviceOf(elements, id);
   const edge = (r: Rel, other: string): Edge => ({
     service: other,
     op: r.op ?? null,
@@ -127,9 +127,9 @@ async function archSlice(deltaPath: string, service: string, featureId: string):
   const featRels = relationships.filter((r) => r.tags.includes(featureId));
 
   return {
-    isNew: elements.some((e) => e.title === service && e.tags.includes(featureId)),
-    inbound: featRels.filter((r) => titleOf(r.target) === service).map((r) => edge(r, titleOf(r.source))),
-    outbound: featRels.filter((r) => titleOf(r.source) === service).map((r) => edge(r, titleOf(r.target))),
+    isNew: elements.some((e) => elementService(e) === service && e.tags.includes(featureId)),
+    inbound: featRels.filter((r) => svcOf(r.target) === service).map((r) => edge(r, svcOf(r.source))),
+    outbound: featRels.filter((r) => svcOf(r.source) === service).map((r) => edge(r, svcOf(r.target))),
     errors: [],
   };
 }

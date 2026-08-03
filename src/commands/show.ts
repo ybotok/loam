@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
 import { listField, readFrontmatter, stringField } from "../core/frontmatter.js";
-import { loadFile, type Elem } from "../core/likec4.js";
+import { loadFile, serviceOf, type Elem } from "../core/likec4.js";
 import { operationIds } from "../core/openapi.js";
 import { repoPath } from "./list.js";
 import {
@@ -200,7 +200,9 @@ async function landscapeEdges(
   if (!existsSync(path)) return { inbound: [], outbound: [] };
   const land = await loadFile(path);
   if (land.errors.length > 0) return { inbound: [], outbound: [] };
-  const titleOf = (id: string): string => land.elements.find((e) => e.id === id)?.title ?? id;
+  // Edges are filed under the service an element is BOUND to, not under what the
+  // box is titled — otherwise renaming a box empties this list without a word.
+  const svcOf = (id: string): string => serviceOf(land.elements, id);
 
   const inbound: Edge[] = [];
   const outbound: Edge[] = [];
@@ -210,8 +212,8 @@ async function landscapeEdges(
       op: r.op ?? null,
       title: r.title ?? null,
     });
-    if (titleOf(r.target) === service) inbound.push(edge(titleOf(r.source)));
-    else if (titleOf(r.source) === service) outbound.push(edge(titleOf(r.target)));
+    if (svcOf(r.target) === service) inbound.push(edge(svcOf(r.source)));
+    else if (svcOf(r.source) === service) outbound.push(edge(svcOf(r.target)));
   }
   return { inbound, outbound };
 }

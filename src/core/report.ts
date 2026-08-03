@@ -38,7 +38,12 @@ export interface Finding {
 }
 
 export interface TargetReport {
-  kind: "service" | "feature";
+  /**
+   * What was validated. `landscape` is the fleet itself — the checks that need
+   * every service and every element in view at once, so they belong to no single
+   * service and only run under `--all`.
+   */
+  kind: "service" | "feature" | "landscape";
   id: string;
   findings: Finding[];
 }

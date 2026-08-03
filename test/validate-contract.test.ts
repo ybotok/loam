@@ -45,7 +45,7 @@ interface Finding {
   details: string[];
 }
 interface Target {
-  kind: "service" | "feature";
+  kind: "service" | "feature" | "landscape";
   id: string;
   valid: boolean;
   findings: Finding[];
@@ -294,12 +294,19 @@ describe("--json findings", () => {
     });
   });
 
-  it("--all emits one target per service and feature, plus a summary", async () => {
+  it("--all emits the fleet landscape, one target per service and feature, plus a summary", async () => {
     const files = coherentFixture();
     files["services/checkout-web/model.likec4"] = SERVICE_MODEL;
     await withProject(files, {}, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
-      expect(json.targets.map((t: Target) => t.id)).toEqual(["checkout-web", SVC, "FEAT-1"]);
+      // the landscape ↔ services/ cross-check belongs to no single service, so it
+      // reports as its own target, and leads: it frames everything under it
+      expect(json.targets.map((t: Target) => t.id)).toEqual([
+        "landscape",
+        "checkout-web",
+        SVC,
+        "FEAT-1",
+      ]);
       // three provenance warnings: the payment-service spec names no owner and no
       // sources, and the feature's intent names no owner either
       expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 3 });

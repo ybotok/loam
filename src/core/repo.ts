@@ -1,10 +1,11 @@
 /**
  * Read model of the docs repo — the single place that knows its layout.
  *
- * Enumeration goes by the filesystem, not by `loam.docs.json`: files are the
- * source of truth, and the manifest is a regenerable convenience. Every command
- * that needs "which services exist", "which features are in flight" or "where
- * does artifact X live" asks here, so the layout is spelled exactly once.
+ * Enumeration goes by the filesystem, and only by the filesystem: files are the
+ * source of truth, so `services/` IS the list of services and there is no
+ * manifest that can disagree with it. Every command that needs "which services
+ * exist", "which features are in flight" or "where does artifact X live" asks
+ * here, so the layout is spelled exactly once.
  */
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";

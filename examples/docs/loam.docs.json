@@ -1,7 +1,0 @@
-{
-  "version": "0",
-  "services": [
-    "payment-service",
-    "checkout-web"
-  ]
-}

@@ -14,7 +14,36 @@ export interface Elem {
   kind: string;
   title: string;
   description?: string;
+  /**
+   * The `services/<id>` directory this element stands for, from the element's
+   * `metadata { service '...' }`. Absent on the elements nobody has bound —
+   * see `elementService` for the fallback.
+   */
+  service?: string;
   tags: string[];
+}
+
+/**
+ * The service directory an element stands for: an explicit
+ * `metadata { service '<id>' }` binding wins, the title is the fallback.
+ *
+ * The fallback is what every docs repo written before the binding existed relies
+ * on, and it is also the trap the binding exists to close: matching on the title
+ * means renaming a box in a diagram silently unlinks it from its service, and
+ * every check that joined the two just stops finding anything.
+ */
+export function elementService(e: Elem): string {
+  return e.service ?? e.title;
+}
+
+/**
+ * The service a relationship endpoint belongs to. An id that names no element
+ * resolves to itself, so a partial document degrades to the id rather than
+ * throwing.
+ */
+export function serviceOf(elements: Elem[], id: string): string {
+  const e = elements.find((x) => x.id === id);
+  return e ? elementService(e) : id;
 }
 
 /** loam-neutral relationship view. */
@@ -47,7 +76,14 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
   }
 
   const model = (await likec4.computedModel()) as {
-    elements: () => Iterable<{ id: string; kind: string; title: string; description?: unknown; tags?: string[] }>;
+    elements: () => Iterable<{
+      id: string;
+      kind: string;
+      title: string;
+      description?: unknown;
+      tags?: string[];
+      metadata?: unknown;
+    }>;
     relationships: () => Iterable<{
       source: { id: string };
       target: { id: string };
@@ -62,6 +98,7 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
     kind: e.kind,
     title: e.title,
     description: descText(e.description),
+    service: metaKey(e.metadata, "service"),
     tags: [...(e.tags ?? [])],
   }));
   const relationships: Rel[] = [...model.relationships()].map((r) => ({
@@ -69,17 +106,23 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
     target: r.target.id,
     // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
     title: r.title ?? undefined,
-    op: metaOp(r.metadata),
+    op: metaKey(r.metadata, "op"),
     tags: [...(r.tags ?? [])],
   }));
 
   return { errors, elements, relationships };
 }
 
-/** Read the `op` key from a relationship's metadata object (the linked OpenAPI operationId). */
-function metaOp(m: unknown): string | undefined {
+/**
+ * Read one string key out of a LikeC4 `metadata { ... }` block. Two keys carry
+ * loam's spines: `op` on a relationship (the OpenAPI operationId it calls) and
+ * `service` on an element (the services/<id> directory it stands for). Elements
+ * with no metadata come back as `{}`, so a missing key is indistinguishable from
+ * a missing block — both mean "not bound".
+ */
+function metaKey(m: unknown, key: string): string | undefined {
   if (m && typeof m === "object") {
-    const v = (m as Record<string, unknown>)["op"];
+    const v = (m as Record<string, unknown>)[key];
     if (typeof v === "string") return v;
   }
   return undefined;

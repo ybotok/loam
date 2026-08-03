@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, type Elem, type Rel } from "./likec4.js";
+import { elementService, loadFile, serviceOf, type Elem, type Rel } from "./likec4.js";
 import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
@@ -43,7 +43,9 @@ export async function featureCoherence(
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
     }
   }
-  const titleOf = (id: string): string => elements.find((e) => e.id === id)?.title ?? id;
+  // Every axis below joins on the service id, so endpoints resolve through the
+  // element's `metadata { service }` binding — never through what the box is called.
+  const svcOf = (id: string): string => serviceOf(elements, id);
 
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir);
@@ -96,17 +98,17 @@ export async function featureCoherence(
   for (const r of taggedRels) {
     if (r.op === undefined) {
       if ((r.title ?? "").toLowerCase().startsWith("call")) {
-        issues.push({ severity: "warn", code: "c4.op-link-missing", message: `edge ${titleOf(r.source)} → ${titleOf(r.target)} ("${r.title}") has no operation link (metadata { op })` });
+        issues.push({ severity: "warn", code: "c4.op-link-missing", message: `edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title}") has no operation link (metadata { op })` });
       }
       continue;
     }
-    const target = titleOf(r.target);
+    const target = svcOf(r.target);
     const available = await serviceOperationIds(docsDir, target, featureDir);
     if (!available.includes(r.op)) {
-      issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${titleOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
+      issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
     }
     if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
-      issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${titleOf(r.source)} but no requirement governs it` });
+      issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
     }
   }
 
@@ -120,8 +122,9 @@ export async function featureCoherence(
 
   // W3: a new service should carry a requirement delta.
   for (const e of taggedEls) {
-    if (e.kind === "softwareSystem" && !svcNames.includes(e.title)) {
-      issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${e.title} has no requirement delta under specs/` });
+    const svc = elementService(e);
+    if (e.kind === "softwareSystem" && !svcNames.includes(svc)) {
+      issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${svc} has no requirement delta under specs/` });
     }
   }
 

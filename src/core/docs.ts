@@ -1,16 +1,17 @@
+/**
+ * Scaffolding for the shared docs repo.
+ *
+ * There is deliberately no manifest. `init` used to write a `loam.docs.json`
+ * listing the repo's services; nothing ever read it — `repo.ts` enumerates from
+ * the filesystem, because files are the source of truth — and nothing ever
+ * updated it, so it named an empty fleet forever. A second list of services is
+ * exactly the drift `loam validate` now cross-checks the landscape for; the
+ * cheapest way to keep it honest is not to have it.
+ */
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AGENTS_MD } from "./agent.js";
-
-/** Manifest at the root of the shared docs repo. */
-export const DOCS_MANIFEST = "loam.docs.json";
-
-export interface DocsManifest {
-  version: string;
-  /** Canonical service ids known to the docs repo. */
-  services: string[];
-}
 
 /** Top-level layout of the shared docs repo. */
 const SUBDIRS = ["architecture", "services", "features"] as const;
@@ -33,13 +34,6 @@ export async function scaffoldDocs(docsDir: string): Promise<ScaffoldResult> {
       await mkdir(p, { recursive: true });
       created.push(p);
     }
-  }
-
-  const manifestPath = join(root, DOCS_MANIFEST);
-  if (!existsSync(manifestPath)) {
-    const manifest: DocsManifest = { version: "0", services: [] };
-    await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-    created.push(manifestPath);
   }
 
   // The process contract lives with the docs it describes, so an agent handed

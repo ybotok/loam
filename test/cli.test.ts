@@ -5,8 +5,8 @@
  *
  * Families:
  *   - init: scaffolds the docs-repo skeleton, writes loam.json with an ABSOLUTE
- *     docsDir, is idempotent (never clobbers user files or a custom manifest),
- *     and preserves previously configured `service` on re-init (config spread).
+ *     docsDir, is idempotent (never clobbers user files), and preserves
+ *     previously configured `service` on re-init (config spread).
  *   - config: missing loam.json is a clean exit-1 error on every command that
  *     needs it; malformed loam.json currently crashes the whole process
  *     (pinned + flagged — desired is a clean 'invalid loam.json' + exit 1).
@@ -68,17 +68,24 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 /* ------------------------------------------------------------------ */
 
 describe("init: scaffolding a fresh docs repo", () => {
-  it("creates architecture/ services/ features/ and a {version, services: []} manifest, and reports what it scaffolded", async () => {
+  it("creates architecture/ services/ features/, and reports what it scaffolded", async () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--docs", "./docs-x");
     expect(res.code).toBe(0);
     for (const sub of ["architecture", "services", "features"]) {
       expect(existsSync(join(dir, "docs-x", sub))).toBe(true);
     }
-    const manifest = await readJson(join(dir, "docs-x", "loam.docs.json"));
-    expect(manifest).toEqual({ version: expect.any(String), services: [] });
     expect(res.out).toContain("loam initialized.");
     expect(res.out).toContain("scaffolded:");
+  });
+
+  it("writes no service manifest — the directories under services/ ARE the list", async () => {
+    // init used to leave a loam.docs.json listing the repo's services. Nothing read
+    // it and nothing kept it current, so it named an empty fleet forever. A second
+    // list of services is the drift `landscape.service-unmodelled` exists to catch.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./docs-x");
+    expect(existsSync(join(dir, "docs-x", "loam.docs.json"))).toBe(false);
   });
 
   it("writes loam.json in the cwd with an ABSOLUTE docsDir — relative --docs resolved against the cwd", async () => {
@@ -110,13 +117,15 @@ describe("init: scaffolding a fresh docs repo", () => {
     expect(res.out).toContain("service:   payment-service");
   });
 
-  it("a pre-existing custom loam.docs.json survives the first init byte-for-byte (scaffoldDocs never overwrites the manifest)", async () => {
+  it("a file already at the docs root survives the first init byte-for-byte", async () => {
+    // init scaffolds AROUND whatever is there: pointing it at an existing repo
+    // must never rewrite that repo's own files.
     const dir = await throwawayDir();
-    const custom = JSON.stringify({ version: "7", services: ["payment-service"] }, null, 2) + "\n";
-    await writeFiles(dir, { "d/loam.docs.json": custom });
+    const custom = "# our docs\n";
+    await writeFiles(dir, { "d/README.md": custom });
     const res = await runLoam(dir, "init", "--docs", "./d");
     expect(res.code).toBe(0);
-    expect(await readFile(join(dir, "d", "loam.docs.json"), "utf8")).toBe(custom);
+    expect(await readFile(join(dir, "d", "README.md"), "utf8")).toBe(custom);
     // the missing subdirs still get created around it
     expect(existsSync(join(dir, "d", "architecture"))).toBe(true);
   });
@@ -127,19 +136,16 @@ describe("init: scaffolding a fresh docs repo", () => {
 /* ------------------------------------------------------------------ */
 
 describe("init: idempotency and config preservation", () => {
-  it("a second init leaves user files and a customized manifest untouched and reports nothing scaffolded", async () => {
+  it("a second init leaves user files untouched and reports nothing scaffolded", async () => {
     const dir = await throwawayDir();
     const first = await runLoam(dir, "init", "--docs", "./d");
     expect(first.code).toBe(0);
     const markerPath = join(dir, "d", "services", "marker.txt");
     await writeFile(markerPath, "keep me\n", "utf8");
-    const custom = JSON.stringify({ version: "42", services: ["a", "b"] }, null, 2) + "\n";
-    await writeFile(join(dir, "d", "loam.docs.json"), custom, "utf8");
 
     const second = await runLoam(dir, "init", "--docs", "./d");
     expect(second.code).toBe(0);
     expect(await readFile(markerPath, "utf8")).toBe("keep me\n");
-    expect(await readFile(join(dir, "d", "loam.docs.json"), "utf8")).toBe(custom);
     expect(second.out).toContain("loam initialized.");
     expect(second.out).not.toContain("scaffolded");
   });

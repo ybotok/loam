@@ -6,12 +6,13 @@
  * the shape of ids (FQN for nested elements — archive writes them verbatim into
  * the landscape), the exact tag strings (WITHOUT '#' — coherence filters with
  * tags.includes('FEAT-1')), the op extraction from `metadata { op '...' }` (the
- * operationId spine), and the all-or-nothing error behavior on broken docs.
+ * operationId spine), the service binding from `metadata { service '...' }` (the
+ * element ↔ services/<id> spine), and the all-or-nothing error behavior on broken docs.
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { loadFile, type LoadedDoc } from "../src/core/likec4.js";
+import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc } from "../src/core/likec4.js";
 import { makeTmpDir, writeFiles, LANDSCAPE, FEATURE_DELTA } from "./helpers/harness.js";
 
 const tmpDirs: string[] = [];
@@ -347,6 +348,120 @@ model {
       expect(r.source).toBe("a");
       expect(r.target).toBe("b");
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* metadata { service } — the element ↔ services/<id> binding          */
+/* ------------------------------------------------------------------ */
+
+describe("element service binding from metadata", () => {
+  it("metadata { service 'payment-service' } surfaces as elem.service", async () => {
+    const doc = await load(`specification { element softwareSystem }
+model {
+  a = softwareSystem 'Payments API' {
+    metadata { service 'payment-service' }
+  }
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(byId(doc, "a")?.service).toBe("payment-service");
+  });
+
+  it("an element without metadata has service undefined (callers fall back to the title)", async () => {
+    const doc = await load(`specification { element softwareSystem }
+model {
+  a = softwareSystem 'payment-service'
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(byId(doc, "a")?.service).toBeUndefined();
+  });
+
+  it("metadata with other keys but no service yields service undefined", async () => {
+    const doc = await load(`specification { element softwareSystem }
+model {
+  a = softwareSystem 'A' {
+    metadata { owner 'payments-team' }
+  }
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(byId(doc, "a")?.service).toBeUndefined();
+  });
+
+  it("the binding is read even when the element carries other metadata and a tag", async () => {
+    const doc = await load(`specification {
+  element softwareSystem
+  tag external
+}
+model {
+  a = softwareSystem 'Payments API' {
+    #external
+    metadata {
+      owner 'payments-team'
+      service 'payment-service'
+    }
+  }
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(byId(doc, "a")).toMatchObject({ service: "payment-service", tags: ["external"] });
+  });
+
+  it("a binding on a nested element survives the FQN flattening", async () => {
+    // Nested elements are flattened to dotted ids; the binding must ride along,
+    // or a container-level model could never name the service it belongs to.
+    const doc = await load(`specification {
+  element softwareSystem
+  element container
+}
+model {
+  s = softwareSystem 'svc' {
+    api = container 'api' {
+      metadata { service 'payment-service' }
+    }
+  }
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(byId(doc, "s.api")?.service).toBe("payment-service");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Service resolution — explicit binding wins, title is the fallback   */
+/* ------------------------------------------------------------------ */
+
+describe("service resolution order", () => {
+  const elem = (over: Partial<Elem>): Elem => ({ id: "x", kind: "softwareSystem", title: "T", tags: [], ...over });
+
+  it("elementService prefers the explicit binding over the title", async () => {
+    expect(elementService(elem({ title: "Payments API", service: "payment-service" }))).toBe("payment-service");
+  });
+
+  it("elementService falls back to the title when nothing is bound (every existing doc relies on this)", async () => {
+    expect(elementService(elem({ title: "payment-service" }))).toBe("payment-service");
+  });
+
+  it("serviceOf resolves a relationship endpoint id through the binding", async () => {
+    const doc = await load(`specification { element softwareSystem }
+model {
+  a = softwareSystem 'checkout-web'
+  b = softwareSystem 'Payments API' {
+    metadata { service 'payment-service' }
+  }
+  a -> b 'Calls'
+}
+`);
+    expect(doc.errors).toEqual([]);
+    const rel = doc.relationships[0]!;
+    expect(serviceOf(doc.elements, rel.source)).toBe("checkout-web");
+    expect(serviceOf(doc.elements, rel.target)).toBe("payment-service");
+  });
+
+  it("serviceOf returns the id itself when no element carries it (same fallback the title lookup had)", async () => {
+    expect(serviceOf([], "ghost")).toBe("ghost");
   });
 });
 

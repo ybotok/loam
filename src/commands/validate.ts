@@ -3,7 +3,14 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
-import { loadFile, type Elem, type LikeC4Error, type Rel } from "../core/likec4.js";
+import {
+  elementService,
+  loadFile,
+  serviceOf,
+  type Elem,
+  type LikeC4Error,
+  type Rel,
+} from "../core/likec4.js";
 import {
   featurePaths,
   featureSpecPaths,
@@ -67,6 +74,10 @@ export function registerValidate(program: Command): void {
 
       const targets: TargetReport[] = [];
       if (opts.all) {
+        // The fleet-level cross-check first: it frames everything below it, and a
+        // service nobody drew is worth knowing before its own findings scroll past.
+        const landscape = await validateLandscape(docsDir);
+        if (landscape) targets.push(landscape);
         for (const svc of await listServices(docsDir)) {
           targets.push(await validateService(docsDir, svc.id, repoOf(svc.id)));
         }
@@ -122,6 +133,95 @@ function summary(targets: TargetReport[]): Record<string, number> {
 /* ------------------------------------------------------------------ */
 /* Checks — every one produces findings, none of them print            */
 /* ------------------------------------------------------------------ */
+
+/** C4 kinds that model people. A person is never a service directory. */
+const ACTOR_KINDS = new Set(["person", "actor", "user"]);
+
+/** Tag marking an element as somebody else's system — undocumented on purpose. */
+const EXTERNAL_TAG = "external";
+
+/**
+ * The fleet cross-check: `services/` and the landscape both claim to name the
+ * fleet, and nothing used to compare them. A directory nobody drew and an element
+ * with nothing behind it were equally invisible.
+ *
+ * The two directions are graded differently because the evidence differs. A
+ * directory that exists is a fact, so a landscape missing it is an error — every
+ * view derived from that landscape is then incomplete. An element with no
+ * directory may legitimately be someone else's system, so it warns, and
+ * `#external` says "deliberately not ours" and silences it. An explicit
+ * `metadata { service '<id>' }` naming nothing is an error either way: a binding
+ * is a claim about this repo, not a guess at one.
+ *
+ * Returns null when there is no landscape to check against.
+ */
+async function validateLandscape(docsDir: string): Promise<TargetReport | null> {
+  const path = landscapeFile(docsDir);
+  if (!existsSync(path)) return null;
+
+  const findings: Finding[] = [];
+  const report: TargetReport = { kind: "landscape", id: "landscape", findings };
+
+  const land = await loadFile(path);
+  if (land.errors.length > 0) {
+    // Nothing may be concluded from a document that did not parse — in particular
+    // not that every service is unmodelled.
+    findings.push({
+      severity: "error",
+      code: "landscape.invalid",
+      message: `landscape: architecture/landscape.likec4 has ${land.errors.length} error(s) — cross-check with services/ impossible`,
+      details: land.errors.map(errorText),
+    });
+    return report;
+  }
+
+  const services = new Set((await listServices(docsDir)).map((s) => s.id));
+  // Services are top-level; a dotted id is a container inside one.
+  const drawn = land.elements.filter((e) => !e.id.includes("."));
+  const modelled = new Set(drawn.map(elementService));
+
+  for (const id of services) {
+    if (modelled.has(id)) continue;
+    findings.push({
+      severity: "error",
+      code: "landscape.service-unmodelled",
+      subject: id,
+      message: `landscape: services/${id}/ exists but nothing in architecture/landscape.likec4 models it — add an element, or bind one with metadata { service '${id}' }`,
+    });
+  }
+
+  for (const e of drawn) {
+    if (e.tags.includes(EXTERNAL_TAG)) continue;
+    if (e.service !== undefined) {
+      if (!services.has(e.service)) {
+        findings.push({
+          severity: "error",
+          code: "landscape.binding-unknown",
+          subject: e.service,
+          message: `landscape: '${e.title}' binds to service '${e.service}', but services/${e.service}/ does not exist`,
+        });
+      }
+      continue;
+    }
+    if (ACTOR_KINDS.has(e.kind.toLowerCase())) continue;
+    if (services.has(e.title)) continue;
+    findings.push({
+      severity: "warn",
+      code: "landscape.service-undocumented",
+      subject: e.title,
+      message: `landscape: '${e.title}' has no services/${e.title}/ — bind it with metadata { service '<id>' }, or tag it #${EXTERNAL_TAG} if it is not ours`,
+    });
+  }
+
+  if (findings.length === 0) {
+    findings.push({
+      severity: "ok",
+      code: "landscape.matched",
+      message: `landscape: ${services.size} service(s) modelled — architecture/landscape.likec4 and services/ agree`,
+    });
+  }
+  return report;
+}
 
 async function validateService(
   docsDir: string,
@@ -201,12 +301,15 @@ async function validateService(
         details: land.errors.map(errorText),
       });
     } else {
-      const titleOf = (id: string): string => land.elements.find((e) => e.id === id)?.title ?? id;
+      // Which element IS this service is the binding's call, with the title as the
+      // fallback — matching on the title alone means a renamed box silently drops
+      // out of the spine, and the check goes on reporting nothing at all.
+      const svcOf = (id: string): string => serviceOf(land.elements, id);
       const opset = new Set(ops);
       let checked = 0;
       let broken = 0;
       for (const r of land.relationships) {
-        if (titleOf(r.target) !== service) continue;
+        if (svcOf(r.target) !== service) continue;
         if (r.op !== undefined) {
           checked += 1;
           if (!opset.has(r.op)) {
@@ -214,14 +317,14 @@ async function validateService(
             findings.push({
               severity: "error",
               code: "spine.op-undefined",
-              message: `${service}: landscape edge ${titleOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI`,
+              message: `${service}: landscape edge ${svcOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI`,
             });
           }
         } else if ((r.title ?? "").toLowerCase().startsWith("call")) {
           findings.push({
             severity: "warn",
             code: "spine.op-link-missing",
-            message: `${service}: landscape edge ${titleOf(r.source)} → ${service} ("${r.title}") has no operation link (metadata { op })`,
+            message: `${service}: landscape edge ${svcOf(r.source)} → ${service} ("${r.title}") has no operation link (metadata { op })`,
           });
         }
       }
@@ -284,13 +387,13 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
   for (const r of taggedRels) {
-    const target = titleOf(elements, r.target);
+    const target = serviceOf(elements, r.target);
     const covered = edgeCovered(target, r.title, scenarioText);
     findings.push({
       severity: covered ? "ok" : "warn",
       code: covered ? "archedge.covered" : "archedge.uncovered",
       subject: target,
-      message: `${titleOf(elements, r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
+      message: `${serviceOf(elements, r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
       text: { indent: 4, header: "arch-edge coverage (heuristic):" },
     });
   }
@@ -379,10 +482,6 @@ function edgeCovered(target: string, title: string | undefined, scenarioText: st
     if (token.length >= 5 && scenarioText.includes(token.toLowerCase())) return true;
   }
   return false;
-}
-
-function titleOf(elements: Elem[], id: string): string {
-  return elements.find((e) => e.id === id)?.title ?? id;
 }
 
 function errorText(e: LikeC4Error): string {
