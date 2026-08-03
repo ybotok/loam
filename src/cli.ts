@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import { registerInit } from "./commands/init.js";
 import { registerAdopt } from "./commands/adopt.js";
+import { registerList } from "./commands/list.js";
+import { registerShow } from "./commands/show.js";
 import { registerDelta } from "./commands/delta.js";
 import { registerArchive } from "./commands/archive.js";
 import { registerValidate } from "./commands/validate.js";
@@ -15,6 +17,8 @@ program
 
 registerInit(program);
 registerAdopt(program);
+registerList(program);
+registerShow(program);
 registerDelta(program);
 registerArchive(program);
 registerValidate(program);

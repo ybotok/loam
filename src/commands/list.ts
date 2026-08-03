@@ -1,0 +1,121 @@
+import type { Command } from "commander";
+import { relative } from "node:path";
+import { loadConfig } from "../core/config.js";
+import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { listFeatures, listServices, type FeatureEntry, type ServiceEntry } from "../core/repo.js";
+
+type Section = "services" | "features";
+const SECTIONS: Section[] = ["services", "features"];
+
+interface ListOptions {
+  json?: boolean;
+  archived?: boolean;
+}
+
+export function registerList(program: Command): void {
+  program
+    .command("list")
+    .argument("[section]", "services | features (default: both)")
+    .description("List the services and features in the docs repo")
+    .option("--json", "emit the machine contract instead of the human view")
+    .option("--archived", "include archived features")
+    .action(async (section: string | undefined, opts: ListOptions) => {
+      const wanted = section ? SECTIONS.filter((s) => s === section) : SECTIONS;
+      if (section && wanted.length === 0) {
+        const msg = `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`;
+        if (opts.json) emitJsonError("unknown-section", msg);
+        else {
+          console.error(msg);
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      const config = await loadConfig();
+      if (!config) {
+        reportNoConfig(opts.json === true);
+        return;
+      }
+      const { docsDir } = config;
+
+      const services = wanted.includes("services") ? await listServices(docsDir) : undefined;
+      const features = wanted.includes("features")
+        ? await listFeatures(docsDir, { includeArchived: opts.archived })
+        : undefined;
+
+      if (opts.json) {
+        emitJson({
+          docsDir,
+          ...(services ? { services: services.map((s) => serviceJson(docsDir, s)) } : {}),
+          ...(features ? { features: features.map((f) => featureJson(docsDir, f)) } : {}),
+        });
+        return;
+      }
+
+      if (services) printServices(services);
+      if (services && features) console.log("");
+      if (features) printFeatures(features);
+    });
+}
+
+/* ------------------------------------------------------------------ */
+/* JSON                                                                */
+/* ------------------------------------------------------------------ */
+
+function serviceJson(docsDir: string, s: ServiceEntry): Record<string, unknown> {
+  return { id: s.id, path: repoPath(docsDir, s.dir), has: s.has, adrs: s.adrs };
+}
+
+function featureJson(docsDir: string, f: FeatureEntry): Record<string, unknown> {
+  return {
+    id: f.id,
+    dirName: f.dirName,
+    path: repoPath(docsDir, f.dir),
+    archived: f.archived,
+    services: f.services,
+    has: f.has,
+  };
+}
+
+/** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
+export function repoPath(docsDir: string, abs: string): string {
+  return relative(docsDir, abs).split(/[\\/]/).join("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* Text                                                                */
+/* ------------------------------------------------------------------ */
+
+/** Fixed-width presence flags: what a service has, and what it is missing. */
+function serviceFlags(s: ServiceEntry): string {
+  return [
+    s.has.model ? "M" : "-",
+    s.has.spec ? "S" : "-",
+    s.has.openapi ? "A" : "-",
+    s.has.runbook ? "R" : "-",
+    s.has.health ? "H" : "-",
+  ].join(" ");
+}
+
+function printServices(services: ServiceEntry[]): void {
+  console.log(`services (${services.length})  [M]odel [S]pec [A]pi [R]unbook [H]ealth`);
+  const width = Math.max(0, ...services.map((s) => s.id.length));
+  for (const s of services) {
+    const adrs = s.adrs > 0 ? `  (${s.adrs} adr${s.adrs === 1 ? "" : "s"})` : "";
+    console.log(`  ${serviceFlags(s)}  ${s.id.padEnd(width)}${adrs}`.trimEnd());
+  }
+}
+
+function printFeatures(features: FeatureEntry[]): void {
+  const active = features.filter((f) => !f.archived).length;
+  const archived = features.length - active;
+  const counts = `${active} active${archived > 0 ? `, ${archived} archived` : ""}`;
+  console.log(`features (${counts})  [I]ntent [D]elta`);
+  const width = Math.max(0, ...features.map((f) => f.id.length));
+  for (const f of features) {
+    const flags = `${f.has.intent ? "I" : "-"} ${f.has.delta ? "D" : "-"}`;
+    const svcs = f.services.length > 0 ? f.services.join(", ") : "—";
+    const tag = f.archived ? "  (archived)" : "";
+    console.log(`  ${flags}  ${f.id.padEnd(width)}  ${svcs}${tag}`);
+  }
+}

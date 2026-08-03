@@ -15,6 +15,8 @@ import { format } from "node:util";
 import { Command } from "commander";
 import { registerInit } from "../../src/commands/init.js";
 import { registerAdopt } from "../../src/commands/adopt.js";
+import { registerList } from "../../src/commands/list.js";
+import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerValidate } from "../../src/commands/validate.js";
@@ -117,6 +119,8 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     program.name("loam").exitOverride();
     registerInit(program);
     registerAdopt(program);
+    registerList(program);
+    registerShow(program);
     registerDelta(program);
     registerArchive(program);
     registerValidate(program);
