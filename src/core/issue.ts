@@ -73,4 +73,7 @@ export type IssueCode =
   /** a LIVING requirement outside `## Requirements` — the merge rewrites only that section, so it would land twice */
   | "living.requirement-outside-requirements"
   /** the delta redefines an operation the living OpenAPI already has — the merge overwrites it wholesale */
-  | "openapi.op-modified";
+  | "openapi.op-modified"
+  /* --- docs-repo contract: --all only, never a merge question --- */
+  /** AGENTS.md carries no version stamp, or one older than the running binary — the agent contract may have drifted */
+  | "agents.stale";

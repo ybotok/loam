@@ -15,8 +15,10 @@ import { describe, expect, it, afterEach } from "vitest";
 import { readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { makeTmpDir, runLoam } from "./helpers/harness.js";
+import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
 import { AGENTS_MD, SLASH_COMMANDS as COMMAND_BODIES } from "../src/core/agent.js";
+import { agentsStaleFinding, agentsStampLine, versionTrails } from "../src/core/agents-stamp.js";
+import { LOAM_VERSION } from "../src/core/version.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -229,6 +231,119 @@ describe("the abandonment path", () => {
     expect(AGENTS_MD).toContain("git rm -r features/");
     expect(AGENTS_MD).toMatch(/never archived/);
     expect(AGENTS_MD).toContain("loam unarchive");
+  });
+});
+
+describe("the version stamp — drift detection, never refresh", () => {
+  interface Finding {
+    severity: string;
+    code: string;
+    message: string;
+  }
+  interface Target {
+    kind: string;
+    id: string;
+    valid: boolean;
+    findings: Finding[];
+  }
+  const staleFindings = (payload: { targets: Target[] }): Finding[] =>
+    payload.targets.flatMap((t) => t.findings.filter((f) => f.code === "agents.stale"));
+
+  it("init writes the stamp, and validate --all on a fresh repo is quiet", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d");
+    const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
+    // line 1, exactly the running binary's version — equal stamp, no finding
+    expect(agents.split("\n")[0]).toBe(agentsStampLine(LOAM_VERSION));
+
+    const res = await runLoam(dir, "validate", "--all", "--json");
+    expect(res.code).toBe(0);
+    expect(staleFindings(JSON.parse(res.stdout))).toEqual([]);
+  });
+
+  it("a removed stamp warns once — as the repo's finding, not any service's — and does not invalidate", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d");
+    const path = join(dir, "d", "AGENTS.md");
+    const withoutStamp = (await readFile(path, "utf8")).split("\n").slice(1).join("\n");
+    await writeFile(path, withoutStamp, "utf8");
+
+    const res = await runLoam(dir, "validate", "--all", "--json");
+    expect(res.code).toBe(0); // a warning, not an error
+    const payload = JSON.parse(res.stdout);
+    expect(payload.valid).toBe(true);
+    const stale = staleFindings(payload);
+    expect(stale).toHaveLength(1);
+    expect(stale[0]!.severity).toBe("warn");
+    expect(stale[0]!.message).toContain("no version stamp");
+    // it belongs to the docs repo as a whole, so it rides the landscape target
+    expect(
+      payload.targets.find((t: Target) => t.findings.some((f) => f.code === "agents.stale")).kind,
+    ).toBe("landscape");
+  });
+
+  it("hand-bumping the stamp silences it — the documented remedy for a curated file", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d");
+    const path = join(dir, "d", "AGENTS.md");
+    await writeFile(path, `${agentsStampLine(LOAM_VERSION)}\n# our own house rules\n`, "utf8");
+
+    const res = await runLoam(dir, "validate", "--all", "--json");
+    expect(staleFindings(JSON.parse(res.stdout))).toEqual([]);
+  });
+
+  it("a stamp NEWER than the binary is quiet: that is an old binary, not a stale file", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d");
+    const path = join(dir, "d", "AGENTS.md");
+    await writeFile(path, `${agentsStampLine("99.99.99")}\n# from the future\n`, "utf8");
+
+    const res = await runLoam(dir, "validate", "--all", "--json");
+    expect(staleFindings(JSON.parse(res.stdout))).toEqual([]);
+  });
+
+  it("rides the real landscape target when one exists, alongside its findings", async () => {
+    const p = await makeProject(coherentFixture());
+    cleanups.push(() => p.destroy());
+    await p.write("AGENTS.md", "# hand-written, no stamp\n");
+
+    const res = await runLoam(p.workDir, "validate", "--all", "--json");
+    const payload = JSON.parse(res.stdout);
+    const landscape = payload.targets.find((t: Target) => t.kind === "landscape");
+    expect(landscape.id).toBe("landscape");
+    const codes = landscape.findings.map((f: Finding) => f.code);
+    // the fixture's own landscape finding (checkout-web has no directory) still leads
+    expect(codes).toContain("landscape.service-undocumented");
+    expect(codes).toContain("agents.stale");
+    // exactly one landscape target: the finding joined it instead of forking a twin
+    expect(payload.targets.filter((t: Target) => t.kind === "landscape")).toHaveLength(1);
+  });
+
+  // The binary sits at the version floor today, so "stamp lower than binary"
+  // cannot be staged through the CLI — the comparison is pinned at the unit
+  // seam validate calls instead.
+  it("a stamp that trails the binary warns, naming both versions", () => {
+    const stamped = `${agentsStampLine("0.0.0")}\n# Working in this docs repo\n`;
+    const f = agentsStaleFinding(stamped, "0.2.0");
+    expect(f).not.toBeNull();
+    expect(f!.severity).toBe("warn");
+    expect(f!.code).toBe("agents.stale");
+    expect(f!.message).toContain("v0.0.0");
+    expect(f!.message).toContain("v0.2.0");
+    expect(f!.message).toContain("--help");
+  });
+
+  it("an equal stamp, a missing file, and an unreadable stamp each resolve the documented way", () => {
+    const at = (v: string): string => `${agentsStampLine(v)}\nbody\n`;
+    // equal: quiet
+    expect(agentsStaleFinding(at("0.2.0"), "0.2.0")).toBeNull();
+    // no AGENTS.md at all: no contract to have drifted — silence, not a second meaning
+    expect(agentsStaleFinding(null, "0.2.0")).toBeNull();
+    // a stamp that does not read as a version is indistinguishable from none
+    expect(agentsStaleFinding(at("yesterday"), "0.2.0")!.message).toContain("no version stamp");
+    // the comparison itself: numeric fields, not string order
+    expect(versionTrails("0.9.0", "0.10.0")).toBe(true);
+    expect(versionTrails("1.0.0", "0.10.0")).toBe(false);
   });
 });
 

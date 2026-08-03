@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createRequire } from "node:module";
 import { Command, CommanderError } from "commander";
 import { registerInit } from "./commands/init.js";
 import { registerAdopt } from "./commands/adopt.js";
@@ -13,17 +12,14 @@ import { registerValidate } from "./commands/validate.js";
 import { registerVerify } from "./commands/verify.js";
 import { registerVouch } from "./commands/vouch.js";
 import { emitJsonError } from "./core/json.js";
-
-// One version string, owned by package.json. `../package.json` resolves from
-// src/ in dev and from dist/ in the published layout alike.
-const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+import { LOAM_VERSION } from "./core/version.js";
 
 const program = new Command();
 
 program
   .name("loam")
   .description("Architecture-first spec framework for microservice fleets")
-  .version(version);
+  .version(LOAM_VERSION);
 
 // Make commander throw a CommanderError instead of process.exit()ing, so a
 // usage error (mistyped flag, unknown command) can still honour the envelope

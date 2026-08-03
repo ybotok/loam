@@ -1,6 +1,8 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { agentsStaleFinding } from "../core/agents-stamp.js";
 import { loadConfig } from "../core/config.js";
 import { listField, readFrontmatter } from "../core/frontmatter.js";
 import { emitJson, fail, reportNoConfig } from "../core/json.js";
@@ -39,6 +41,7 @@ import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance.js";
+import { LOAM_VERSION } from "../core/version.js";
 
 interface ValidateOptions {
   service?: string;
@@ -105,6 +108,21 @@ export function registerValidate(program: Command): void {
         // service nobody drew is worth knowing before its own findings scroll past.
         const landscape = await validateLandscape(docsDir, land);
         if (landscape) targets.push(landscape);
+        // The agent contract check, --all only: AGENTS.md is written once and
+        // never refreshed (the ownership contract), so the one thing the
+        // docs-repo-wide mode owes it is detection — a stamp older than the
+        // binary means agents are branching on tables the binary no longer
+        // honours. It grades the repo, not any service, so it rides on the
+        // landscape target (synthesized when there is no landscape to check).
+        const agentsPath = join(docsDir, "AGENTS.md");
+        const agents = agentsStaleFinding(
+          existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
+          LOAM_VERSION,
+        );
+        if (agents !== null) {
+          if (landscape) landscape.findings.push(agents);
+          else targets.push({ kind: "landscape", id: "landscape", findings: [agents] });
+        }
         for (const svc of await listServices(docsDir)) {
           targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land));
           if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
