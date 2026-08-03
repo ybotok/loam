@@ -197,9 +197,27 @@ paths:
         "200":
           description: OK
 `;
+  // The architecture spec axis at fleet shape: every feature's tagged edge is
+  // covered by an arch requirement, so a CLEAN fleet stays clean — and the
+  // c4.uncovered obligation is exercised ${FEATURES} times without firing.
+  const featArchSpec = `# ${svc(target)} — architecture delta for ${id}
+
+## ADDED Requirements
+
+### Requirement: Feature ${i} call survives retries
+The service SHALL treat featOp_${i} as idempotent under caller retries.
+
+Covers: ${ident(source)} -> ${ident(target)}
+
+#### Scenario: A retried feature ${i} call is a no-op
+- **Given** a feature ${i} request already served
+- **When** ${svc(source)} retries it
+- **Then** ${svc(target)} returns the original result and does nothing twice
+`;
   return {
     [`features/${id}-scale/delta.likec4`]: delta,
     [`features/${id}-scale/specs/${svc(target)}/spec.md`]: featSpec,
+    [`features/${id}-scale/specs/${svc(target)}/arch.spec.md`]: featArchSpec,
     [`features/${id}-scale/specs/${svc(target)}/openapi.yaml`]: featOpenapi,
   };
 }
@@ -253,8 +271,12 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
       expect(count("c4.valid")).toBe(SERVICES);
       // Every service in the call chain except the first is called with an op.
       expect(count("spine.resolved")).toBe(DOCUMENTED + SOURCED + VOUCHED - 1);
-      // One living spec per service plus one requirement delta per feature.
-      expect(count("requirements.covered")).toBe(SERVICES + FEATURES);
+      // One living spec per service, plus one requirement delta and one arch
+      // requirement delta per feature.
+      expect(count("requirements.covered")).toBe(SERVICES + 2 * FEATURES);
+      // Every tagged edge is covered by its feature's arch delta.
+      expect(count("c4.uncovered")).toBe(0);
+      expect(count("covers.unknown")).toBe(0);
       expect(count("sources.absent")).toBe(PARTIAL + DOCUMENTED);
       expect(count("delta.valid")).toBe(FEATURES);
       expect(count("archedge.covered")).toBe(FEATURES);

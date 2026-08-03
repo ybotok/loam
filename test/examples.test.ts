@@ -6,10 +6,11 @@
  * reader following the README. A failure here means the example and the code
  * disagree: make the example exemplary again, do not loosen the assertions.
  *
- * The warning set is pinned EXACTLY, not merely bounded. The two warnings the
+ * The warning set is pinned EXACTLY, not merely bounded. The three warnings the
  * example carries are deliberate demonstrations (checkout-web names no sources;
- * one landscape edge has no op link), and an exact match makes any new code
- * that starts firing on the example loud instead of quietly accumulating.
+ * one landscape edge has no op link; one of FEAT-101's tagged edges has no arch
+ * requirement covering it), and an exact match makes any new code that starts
+ * firing on the example loud instead of quietly accumulating.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -44,13 +45,13 @@ afterAll(async () => {
 });
 
 describe("examples/docs vs loam validate --all", () => {
-  it("is valid: zero errors, and exactly the two demonstration warnings", async () => {
+  it("is valid: zero errors, and exactly the three demonstration warnings", async () => {
     const res = await runLoam(workDir, "validate", "--all", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.valid).toBe(true);
-    expect(payload.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 2 });
+    expect(payload.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 3 });
 
     const bySeverity = (sev: string) =>
       payload.targets
@@ -59,7 +60,10 @@ describe("examples/docs vs loam validate --all", () => {
         .map((f: { code: string }) => f.code)
         .sort();
     expect(bySeverity("error")).toEqual([]);
-    expect(bySeverity("warn")).toEqual(["sources.absent", "spine.op-link-missing"]);
+    // c4.uncovered is the checkout-web → payment-split-service edge: FEAT-101's
+    // arch delta covers the other tagged additions and leaves this one out on
+    // purpose, so the example demonstrates the arch-coverage obligation firing.
+    expect(bySeverity("warn")).toEqual(["c4.uncovered", "sources.absent", "spine.op-link-missing"]);
   });
 
   it("counts payment-service's sources as unverifiable from outside its repo", async () => {

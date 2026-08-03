@@ -398,6 +398,7 @@ describe("path helpers", () => {
       dir: join("/docs", "services", "payment-service"),
       model: join("/docs", "services", "payment-service", "model.likec4"),
       spec: join("/docs", "services", "payment-service", "spec.md"),
+      archSpec: join("/docs", "services", "payment-service", "arch.spec.md"),
       openapi: join("/docs", "services", "payment-service", "openapi.yaml"),
       runbook: join("/docs", "services", "payment-service", "runbook.md"),
       health: join("/docs", "services", "payment-service", "health.yaml"),
@@ -421,6 +422,7 @@ describe("path helpers", () => {
     expect(p).toEqual({
       dir: join("/docs/features/FEAT-1-split", "specs", "payment-service"),
       spec: join("/docs/features/FEAT-1-split", "specs", "payment-service", "spec.md"),
+      archSpec: join("/docs/features/FEAT-1-split", "specs", "payment-service", "arch.spec.md"),
       openapi: join("/docs/features/FEAT-1-split", "specs", "payment-service", "openapi.yaml"),
     });
   });

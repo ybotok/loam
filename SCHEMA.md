@@ -49,7 +49,7 @@ docs/
 
 ## Conventions
 
-**Frontmatter**: `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs), `sources_digest`, `content_digest`. `loam validate` reads it in exactly two files — a service's living `spec.md` and a feature's `intent.md`, the two documents whose identity and status everything else joins on. `adrs/`, `runbook.md` and `health.yaml` are presence-tracked only (`loam list` says whether they exist); their frontmatter is read by nothing today, so a field written there is a note to a future reader, not a claim any check will catch. For the two checked files:
+**Frontmatter**: `status`, `owner`, `service` or `feature`, `last_verified`, `sources` (paths/globs), `sources_digest`, `content_digest`. `loam validate` reads it in exactly three files — a service's living `spec.md`, its living `arch.spec.md` when present (same conventions, same checks, only the label differs), and a feature's `intent.md`: the documents whose identity and status everything else joins on. `adrs/`, `runbook.md` and `health.yaml` are presence-tracked only (`loam list` says whether they exist); their frontmatter is read by nothing today, so a field written there is a note to a future reader, not a claim any check will catch. For the two checked files:
 
 - `status` — services: `draft` -> `verified`; features: `proposed` -> `in_progress` -> `built` -> `done`. An undocumented value is an **error**: a typo (`verifed`) would otherwise read as unverified forever.
 - `service` / `feature` — must match the directory the file lives under. A mismatch is an **error**; absence is a warning.
@@ -94,6 +94,28 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 - **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`). `--dry-run` prints the whole plan and writes nothing.
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`). `loam archive` **blocks on the gating issues**. Severity and gating answer two different questions — severity says whether the *document* is valid (`validate` fails on errors), gating says whether the *merge* is safe — and they usually agree: errors gate, warnings do not. Where they diverge, the finding says so (`gates` in `--json`); today that is exactly `delta.requirement-not-merged`, a warning (the shape is legal OpenSpec, so adopted repos keep a green `validate`) that gates (the merge would silently drop the requirement). Advisory warnings are printed with the plan and never block. `--approve` overrides the gating issues only, and names each one it overrode. An operation that is missing from the provider's OpenAPI but defined by another feature still in flight is graded down to a warning (`spec-api.op-pending` / `c4-api.op-pending`) naming that feature — archive it first — because the fix is ordering, not authoring.
 - **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the feature.
+
+### The architecture spec axis (`arch.spec.md`)
+
+The business spec will never mention the transactional outbox — that is architecture. Retries, idempotency, metrics, alerts: real obligations, invisible to every business scenario, and exactly where agent-generated code cuts corners unless the obligations are derived mechanically. So they get their own spec file, in the same grammar:
+
+- **Living** — `services/<svc>/arch.spec.md`: the architectural requirements as they stand, under `## Requirements`.
+- **Delta** — `features/<FEAT>/specs/<svc>/arch.spec.md`: the change, under the same `## ADDED|MODIFIED|REMOVED Requirements` algebra.
+
+Frontmatter follows `spec.md`'s conventions exactly (`service`, `status`, `sources` — the same provenance pass reads both, only the label differs); `loam vouch` stays `spec.md`-only for now. **Absence is not a finding**: partial adoption is supported, and the obligations below fire only when there is something to cover.
+
+**The `Covers:` line** is the architecture analog of `Operations:` — where a business requirement declares the operations it governs, an architecture requirement declares the model objects its scenarios exercise. Comma-separated, same keep-last-line quirk, three entry forms:
+
+- a **C4 element** — its id (`paymentService.db`), or the service a bound/titled element stands for; resolved against the service's own model plus the landscape (for a feature delta: the feature's `delta.likec4`, the landscape, and the service's model);
+- an **edge** — `paymentService -> kafka`, each side resolved the same way against the declared relationships;
+- a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares.
+
+An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where they exist): the typo guard, because a mistyped entry silently costs exactly the coverage it was written for.
+
+**Coverage obligations** — both warnings, deliberately: they never gate `archive`, and `--strict` is the CI escalation.
+
+- `c4.uncovered` (feature scope): a NEW tagged element or tagged edge in the feature's `delta.likec4` that no requirement across the feature's `arch.spec.md` deltas covers. Grouping-only elements follow the landscape checks' exemptions (`person`-kind elements, `#external` tags).
+- `health.uncovered` (service scope): an alert or SLI declared in `services/<svc>/health.yaml` that no requirement in the LIVING `arch.spec.md` covers. This is the moment `health.yaml` stops being inert — and all loam reads out of it is ids: the recognized keys are top-level `slis:` and `alerts:`, each a sequence whose entries contribute their `name` (or `id` when there is no name; a plain string entry is its own id). A `health.yaml` that does not parse, or declares nothing recognizable, yields no findings — a file loam cannot read must not manufacture obligations.
 
 ### The smallest legal feature
 

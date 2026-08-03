@@ -1,5 +1,9 @@
 # Service health model. Targets are authored; dependency graph comes from C4 (landscape).
 # planned: `loam health` composes these across the fleet -> cascade / blast-radius.
+#
+# `loam validate` reads the `name` of each SLI and alert, and nothing else here:
+# every declared id wants a covering requirement in arch.spec.md (a `Covers:`
+# sli:<name> / alert:<name> entry), or `health.uncovered` says nothing tests it.
 service: payment-service
 status: draft
 slis:
@@ -9,6 +13,10 @@ slis:
   - name: latency_p99_ms
     query: "histogram_quantile(0.99, http_request_duration_seconds_bucket)"
     slo: 300
+alerts:
+  - name: payment_authorization_5xx
+    expr: "rate(http_requests_total{path='/payments',code=~'5..'}[5m]) > 0.01"
+    page: payments-oncall
 checks:
   liveness: GET /actuator/health/liveness
   readiness: GET /actuator/health/readiness

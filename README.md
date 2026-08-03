@@ -71,7 +71,7 @@ The repo ships a small example fleet under [`examples/docs/`](examples/docs) —
 npm install
 echo '{ "docsDir": "examples/docs" }' > loam.json
 npm run dev -- list                          # what the fleet looks like
-npm run dev -- validate --all                # the CI gate: 0 errors, 2 deliberate warnings
+npm run dev -- validate --all                # the CI gate: 0 errors, 3 deliberate warnings
 npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
 ```
 

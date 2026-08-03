@@ -273,6 +273,18 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     what: 'a landscape "Calls" edge into this service with no `metadata { op }`',
   },
   {
+    code: "covers.unknown",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a `Covers:` entry in arch.spec.md that resolves to no element, edge, alert or SLI — a typo silently costs the coverage it was written for",
+  },
+  {
+    code: "health.uncovered",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "an alert or SLI declared in health.yaml that no arch.spec.md requirement covers — expected until the arch spec is written; each one is a signal nothing tests",
+  },
+  {
     code: "frontmatter.field-mismatch",
     severity: "error",
     via: VIA_SERVICE,

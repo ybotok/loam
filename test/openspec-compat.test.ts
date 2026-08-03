@@ -584,14 +584,18 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       "name",
       "text",
       "operations",
+      "covers",
       "scenarios",
       "section",
     ]);
   });
 
-  it("no real OpenSpec file yields operations, because `Operations:` is a loam-only line", () => {
+  it("no real OpenSpec file yields operations or covers — `Operations:` and `Covers:` are loam-only lines", () => {
     for (const file of ALL_FILES) {
-      for (const r of parseRequirements(fixture(file))) expect(r.operations).toEqual([]);
+      for (const r of parseRequirements(fixture(file))) {
+        expect(r.operations).toEqual([]);
+        expect(r.covers).toEqual([]);
+      }
     }
   });
 

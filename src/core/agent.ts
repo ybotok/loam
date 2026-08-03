@@ -250,12 +250,15 @@ down; the map of which invocation surfaces what:
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
   \`requirements.missing-scenarios\`, \`api.ungoverned\`, \`api.ops-unlinked\`,
-  \`spine.landscape-invalid\`, \`spine.op-undefined\`, \`spine.op-link-missing\`.
+  \`spine.landscape-invalid\`, \`spine.op-undefined\`, \`spine.op-link-missing\`, and
+  the architecture spec axis: \`covers.unknown\`, \`health.uncovered\`.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
-  \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`, and
+  \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,
+  the architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
+  feature's arch.spec.md deltas), and
   the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
   \`delta.requirement-not-merged\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
   \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,
@@ -514,6 +517,8 @@ and say it.
 | \`spine.landscape-invalid\` | the living landscape does not parse, so the C4↔API spine cannot be checked | fix architecture/landscape.likec4 first |
 | \`spine.op-undefined\` | a landscape edge calls an operation this service's OpenAPI does not define | a broken contract between services — fix the edge or add the endpoint |
 | \`spine.op-link-missing\` (warn) | a landscape "Calls" edge into this service with no \`metadata { op }\` | link it to the operationId |
+| \`covers.unknown\` (warn) | a \`Covers:\` entry in arch.spec.md resolves to no element, edge, alert or SLI — living and feature deltas alike | fix the id (the message offers close ones); a mistyped entry silently costs the coverage it was written for |
+| \`health.uncovered\` (warn) | health.yaml declares an alert or SLI no arch.spec.md requirement covers | write the arch requirement with \`Covers: alert:<id>\` / \`Covers: sli:<id>\` — a signal nothing tests is dashboard decoration |
 
 \`--feature <FEAT-id>\` — a change's three axes against each other. The SAME checks
 gate \`loam archive\` (errors block it; warnings never do), so a clean run here is
@@ -532,6 +537,7 @@ what lets a feature ship:
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
 | \`service.no-requirement-delta\` (warn) | a new service with no spec delta | write \`specs/<svc>/spec.md\` |
 | \`archedge.uncovered\` (warn) | no scenario names a tagged edge (a heuristic) | write the scenario, or say why the edge needs none |
+| \`c4.uncovered\` (warn) | a NEW tagged element or edge in delta.likec4 that no arch requirement covers via \`Covers:\` — the mechanical check, not the heuristic above | add the requirement to \`specs/<svc>/arch.spec.md\` (outbox? retries? alerts?), or the architectural obligations ship unchecked |
 | \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
 | \`delta.no-delta-sections\` | requirements, but no \`## ADDED/MODIFIED/REMOVED Requirements\` section anywhere — the whole delta would merge nothing | put every changed requirement under its delta section |
 | \`delta.requirement-not-merged\` (warn, gates archive) | a requirement under a prose heading (\`## Behavior\`) instead of a delta section | move it under \`## ADDED\`/\`## MODIFIED\`/\`## REMOVED Requirements\` — as written, archive drops it. If it really is documentation, quote it under \`## Requirements\`, which is exempt |

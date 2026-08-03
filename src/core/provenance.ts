@@ -46,21 +46,33 @@ export async function serviceProvenance(
   service: string,
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
-  const path = servicePaths(docsDir, service).spec;
-  if (!existsSync(path)) return [];
-  const raw = await readFile(path, "utf8");
-  const fm = parseFrontmatter(raw);
-  const findings = identityFindings(fm, {
-    label: `${service}: spec.md`,
-    idField: "service",
-    idValue: service,
-    statuses: [...SERVICE_STATUSES],
-  });
-  // With no frontmatter at all, "it names no sources" says nothing the missing
-  // header did not already say.
-  if (fm.present) {
-    findings.push(...(await sourceFindings(fm, service, opts.repoDir)));
-    findings.push(...contentFindings(fm, raw, service));
+  const paths = servicePaths(docsDir, service);
+  const findings: Finding[] = [];
+  // Both requirement-carrying specs get the same pass: arch.spec.md follows
+  // spec.md's frontmatter conventions exactly, so the checks are one loop —
+  // only the label tells a reader which file moved.
+  for (const { path, file } of [
+    { path: paths.spec, file: "spec.md" },
+    { path: paths.archSpec, file: "arch.spec.md" },
+  ]) {
+    if (!existsSync(path)) continue;
+    const raw = await readFile(path, "utf8");
+    const fm = parseFrontmatter(raw);
+    const label = `${service}: ${file}`;
+    findings.push(
+      ...identityFindings(fm, {
+        label,
+        idField: "service",
+        idValue: service,
+        statuses: [...SERVICE_STATUSES],
+      }),
+    );
+    // With no frontmatter at all, "it names no sources" says nothing the missing
+    // header did not already say.
+    if (fm.present) {
+      findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
+      findings.push(...contentFindings(fm, raw, service, label));
+    }
   }
   return findings;
 }
@@ -141,9 +153,9 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
 async function sourceFindings(
   fm: Frontmatter,
   service: string,
+  label: string,
   repoDir: string | undefined,
 ): Promise<Finding[]> {
-  const label = `${service}: spec.md`;
   const sources = listField(fm, "sources");
   if (sources.length === 0) {
     return [
@@ -224,8 +236,7 @@ async function sourceFindings(
  * `status: verified` standing over words nobody read — forged freshness, in
  * the exact agent-written-prose threat model this layer exists for.
  */
-function contentFindings(fm: Frontmatter, raw: string, service: string): Finding[] {
-  const label = `${service}: spec.md`;
+function contentFindings(fm: Frontmatter, raw: string, service: string, label: string): Finding[] {
   if (stringField(fm, "status") !== "verified") return [];
   const stamped = stringField(fm, "content_digest");
   // A verified doc with no stamp predates the field. Quiet on purpose: the fix

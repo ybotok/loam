@@ -41,6 +41,17 @@ import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance.js";
+import {
+  closeIds,
+  coversCandidates,
+  coversEdge,
+  coversElement,
+  entryResolves,
+  parseCoversEntry,
+  type CoverageScope,
+  type CoversEntry,
+} from "../core/arch.js";
+import { readHealthIds } from "../core/health.js";
 import { LOAM_VERSION } from "../core/version.js";
 
 interface ValidateOptions {
@@ -128,7 +139,7 @@ export function registerValidate(program: Command): void {
           if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
         }
         for (const feat of await listFeatures(docsDir)) {
-          targets.push(await validateFeature(docsDir, feat));
+          targets.push(await validateFeature(docsDir, feat, land));
         }
       } else if (opts.feature) {
         const feature = await resolveFeature(docsDir, opts.feature, "exclude");
@@ -481,13 +492,94 @@ async function validateService(
     }
   }
 
+  // The architecture spec axis — the obligations a business spec never carries
+  // (the transactional outbox, retries, metrics, alerts). arch.spec.md is
+  // optional and its ABSENCE is not a finding (partial adoption is supported);
+  // what exists must hold together: every requirement needs a scenario, every
+  // `Covers:` entry must resolve (covers.unknown), and every alert/SLI that
+  // health.yaml declares wants a covering requirement (health.uncovered) — the
+  // moment health.yaml stops being inert. Warnings, never gates: `--strict` is
+  // the CI escalation.
+  const health = await readHealthIds(paths.health);
+  const archReqs = existsSync(paths.archSpec)
+    ? parseRequirements(await readFile(paths.archSpec, "utf8"))
+    : [];
+  if (existsSync(paths.archSpec)) {
+    findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
+  }
+  const landParses = land !== null && land.errors.length === 0 ? land : null;
+  const scope: CoverageScope = {
+    elements: [...elements, ...(landParses?.elements ?? [])],
+    relationships: [...relationships, ...(landParses?.relationships ?? [])],
+    health,
+  };
+  findings.push(...coversUnknownFindings(archReqs, `${service}: arch.spec.md`, service, scope));
+  const activeCovers = coversEntries(archReqs);
+  for (const { form, ids } of [
+    { form: "alert" as const, ids: health.alerts },
+    { form: "sli" as const, ids: health.slis },
+  ]) {
+    for (const id of ids) {
+      if (activeCovers.some((e) => e.form === form && e.id === id)) continue;
+      findings.push({
+        severity: "warn",
+        code: "health.uncovered",
+        subject: service,
+        message: `${service}: health.yaml declares ${form === "alert" ? "alert" : "SLI"} '${id}' but no arch.spec.md requirement covers it — write one with 'Covers: ${form}:${id}', or the signal ships with nothing testing it`,
+      });
+    }
+  }
+
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));
 
   return report;
 }
 
-async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<TargetReport> {
+/** The parsed Covers entries of every requirement that will live (REMOVED covers nothing). */
+function coversEntries(reqs: Requirement[]): CoversEntry[] {
+  return reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.covers.map(parseCoversEntry));
+}
+
+/**
+ * `covers.unknown` — the typo guard on the Covers: line. Warn, not error: the
+ * axis is advisory end to end, and a wrong id already costs its author the
+ * coverage they wrote the line for. The hint offers only real ids (closeIds's
+ * rule), and says where resolution looked when there is nothing close.
+ */
+function coversUnknownFindings(
+  reqs: Requirement[],
+  where: string,
+  subject: string,
+  scope: CoverageScope,
+): Finding[] {
+  const out: Finding[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const raw of r.covers) {
+      const entry = parseCoversEntry(raw);
+      if (entryResolves(entry, scope)) continue;
+      const close = coversCandidates(entry, scope);
+      out.push({
+        severity: "warn",
+        code: "covers.unknown",
+        subject,
+        message:
+          `${where}: requirement '${r.name}' — Covers: '${raw}' resolves to nothing` +
+          (close.length > 0
+            ? `. Did you mean: ${close.join(", ")}?`
+            : " in the model, the landscape or health.yaml"),
+      });
+    }
+  }
+  return out;
+}
+
+async function validateFeature(
+  docsDir: string,
+  feature: FeatureEntry,
+  preloadedLand?: LoadedDoc | null,
+): Promise<TargetReport> {
   const findings: Finding[] = [];
   const featureDir = feature.dir;
   const featureId = feature.id;
@@ -495,8 +587,10 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
   // delta.likec4 parse + collect tagged edges. The loaded doc is kept and
   // handed to featureCoherence below — loading it is a Langium workspace spin,
   // and paying it twice per feature was the dominant cost of `validate --all`.
+  let taggedEls: Elem[] = [];
   let taggedRels: Rel[] = [];
   let elements: Elem[] = [];
+  let deltaRels: Rel[] = [];
   let deltaDoc: LoadedDoc | undefined;
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
@@ -511,6 +605,8 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
       });
     } else {
       elements = res.elements;
+      deltaRels = res.relationships;
+      taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
       findings.push({
         severity: "ok",
@@ -522,14 +618,24 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
 
   findings.push(...(await featureProvenance(featureDir, featureId)));
 
-  // Requirement coverage across every per-service delta, and collect scenario text
+  // Requirement coverage across every per-service delta — the business spec and
+  // the arch spec through the same check — and collect scenario text.
   let scenarioText = "";
+  const archDeltas: Array<{ service: string; reqs: Requirement[] }> = [];
   for (const svc of await featureSpecServices(featureDir)) {
-    const p = featureSpecPaths(featureDir, svc).spec;
-    if (!existsSync(p)) continue;
-    const raw = await readFile(p, "utf8");
-    scenarioText += "\n" + raw.toLowerCase();
-    findings.push({ ...coverageFinding(`${svc}: requirements`, parseRequirements(raw)), subject: svc });
+    const p = featureSpecPaths(featureDir, svc);
+    if (existsSync(p.spec)) {
+      const raw = await readFile(p.spec, "utf8");
+      scenarioText += "\n" + raw.toLowerCase();
+      findings.push({ ...coverageFinding(`${svc}: requirements`, parseRequirements(raw)), subject: svc });
+    }
+    if (existsSync(p.archSpec)) {
+      const raw = await readFile(p.archSpec, "utf8");
+      scenarioText += "\n" + raw.toLowerCase();
+      const reqs = parseRequirements(raw);
+      archDeltas.push({ service: svc, reqs });
+      findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
+    }
   }
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
@@ -543,6 +649,68 @@ async function validateFeature(docsDir: string, feature: FeatureEntry): Promise<
       message: `${serviceOf(elements, r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
       text: { indent: 4, header: "arch-edge coverage (heuristic):" },
     });
+  }
+
+  // The architecture spec axis, feature scope — the mechanical counterpart of
+  // the heuristic above. Every NEW tagged element and edge in the delta wants a
+  // `Covers:` line in one of the feature's arch.spec.md deltas (c4.uncovered):
+  // this is where agent-built code cuts its corners — the outbox, the retries,
+  // the alerts — because no business scenario was ever going to mention them.
+  // Grouping-only elements follow the landscape checks' exemptions (person
+  // kinds, #external). Warnings, never archive gates; `--strict` escalates.
+  const activeCovers = archDeltas.flatMap(({ reqs }) => coversEntries(reqs));
+  for (const e of taggedEls) {
+    if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
+    if (activeCovers.some((c) => coversElement(c, e))) continue;
+    findings.push({
+      severity: "warn",
+      code: "c4.uncovered",
+      subject: elementService(e),
+      message: `delta adds '${e.title}' (${e.id}) but no arch requirement covers it — add 'Covers: ${e.id}' to a specs/<svc>/arch.spec.md delta, or its architectural obligations ship unchecked`,
+    });
+  }
+  for (const r of taggedRels) {
+    if (activeCovers.some((c) => coversEdge(c, r, elements))) continue;
+    findings.push({
+      severity: "warn",
+      code: "c4.uncovered",
+      subject: serviceOf(elements, r.target),
+      message: `delta adds edge ${serviceOf(elements, r.source)} → ${serviceOf(elements, r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
+    });
+  }
+
+  // covers.unknown, feature scope. Resolution looks at the delta itself, the
+  // living landscape, the service's own model and its health.yaml — a delta's
+  // arch requirement may cover an element it adds, one that already exists, or
+  // an alert the service declares. The landscape and each model are loaded
+  // lazily, and only when an entry fails against what is already in hand: the
+  // clean path never pays for a workspace spin.
+  if (archDeltas.some(({ reqs }) => coversEntries(reqs).length > 0)) {
+    let land = preloadedLand;
+    if (land === undefined) {
+      const lp = landscapeFile(docsDir);
+      land = existsSync(lp) ? await loadFile(lp) : null;
+    }
+    const landParses = land !== null && land !== undefined && land.errors.length === 0 ? land : null;
+    const baseElements = [...elements, ...(landParses?.elements ?? [])];
+    const baseRels = [...deltaRels, ...(landParses?.relationships ?? [])];
+    for (const { service: svc, reqs } of archDeltas) {
+      const health = await readHealthIds(servicePaths(docsDir, svc).health);
+      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health };
+      const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope);
+      if (unresolved.length > 0) {
+        const modelPath = servicePaths(docsDir, svc).model;
+        const model = existsSync(modelPath) ? await loadFile(modelPath) : null;
+        if (model !== null && model.errors.length === 0) {
+          scope = {
+            elements: [...baseElements, ...model.elements],
+            relationships: [...baseRels, ...model.relationships],
+            health,
+          };
+        }
+        findings.push(...coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope));
+      }
+    }
   }
 
   // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
@@ -634,26 +802,14 @@ function renderText(targets: TargetReport[], all: boolean, unverifiable: number)
 
 /* ------------------------------------------------------------------ */
 
-/**
- * Existing ids near a misspelling — substring containment either way, else a
- * shared 3-character prefix. Deliberately dumb: no fuzzy library for one hint,
- * and every id offered is real, so the hint can never point at the typo itself.
- */
-function closeIds(typo: string, ids: string[]): string[] {
-  const t = typo.toLowerCase();
-  return ids
-    .filter((id) => {
-      const i = id.toLowerCase();
-      return i.includes(t) || t.includes(i) || (t.length >= 3 && i.startsWith(t.slice(0, 3)));
-    })
-    .slice(0, 5);
-}
-
-/** Does this service's living spec name any `sources`? The unverifiable-from-here count. */
+/** Does either living spec name any `sources`? The unverifiable-from-here count. */
 async function namesSources(docsDir: string, service: string): Promise<boolean> {
-  const spec = servicePaths(docsDir, service).spec;
-  if (!existsSync(spec)) return false;
-  return listField(await readFrontmatter(spec), "sources").length > 0;
+  const paths = servicePaths(docsDir, service);
+  for (const path of [paths.spec, paths.archSpec]) {
+    if (!existsSync(path)) continue;
+    if (listField(await readFrontmatter(path), "sources").length > 0) return true;
+  }
+  return false;
 }
 
 /** Heuristic: an edge is "covered" if a scenario names the target or a keyword from the edge title. */

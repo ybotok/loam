@@ -100,6 +100,7 @@ export interface ServicePaths {
   dir: string;
   model: string;
   spec: string;
+  archSpec: string;
   openapi: string;
   runbook: string;
   health: string;
@@ -112,12 +113,26 @@ export function servicePaths(docsDir: string, service: string): ServicePaths {
     dir,
     model: join(dir, "model.likec4"),
     spec: join(dir, "spec.md"),
+    archSpec: join(dir, "arch.spec.md"),
     openapi: join(dir, "openapi.yaml"),
     runbook: join(dir, "runbook.md"),
     health: join(dir, "health.yaml"),
     adrsDir: join(dir, "adrs"),
   };
 }
+
+/**
+ * The pair of requirement-carrying spec files, living and delta alike: the
+ * business spec and the architecture spec. Same grammar, same delta algebra,
+ * same merge — everything that walks "the spec files" of a service walks this
+ * list, so the two axes cannot drift apart in what handles them. `key` indexes
+ * ServicePaths/FeatureSpecPaths; `label` is how the axis names itself in prose.
+ */
+export const SPEC_AXES = [
+  { key: "spec", file: "spec.md", label: "requirements" },
+  { key: "archSpec", file: "arch.spec.md", label: "arch requirements" },
+] as const;
+export type SpecAxis = (typeof SPEC_AXES)[number];
 
 export interface FeaturePaths {
   dir: string;
@@ -140,12 +155,18 @@ export function featurePaths(featureDir: string): FeaturePaths {
 export interface FeatureSpecPaths {
   dir: string;
   spec: string;
+  archSpec: string;
   openapi: string;
 }
 
 export function featureSpecPaths(featureDir: string, service: string): FeatureSpecPaths {
   const dir = join(featureDir, "specs", service);
-  return { dir, spec: join(dir, "spec.md"), openapi: join(dir, "openapi.yaml") };
+  return {
+    dir,
+    spec: join(dir, "spec.md"),
+    archSpec: join(dir, "arch.spec.md"),
+    openapi: join(dir, "openapi.yaml"),
+  };
 }
 
 export function landscapePath(docsDir: string): string {

@@ -20,6 +20,14 @@ export interface Requirement {
   text: string[];
   /** OpenAPI operationIds this requirement governs, from an `Operations:` line. */
   operations: string[];
+  /**
+   * What this requirement's scenarios exercise, from a `Covers:` line — the
+   * architecture analog of `Operations:`. Entries are C4 element ids, edges
+   * (`source -> target`), or health signals (`alert:<id>` / `sli:<id>`);
+   * core/arch.ts owns the grammar and the resolution. Parsed everywhere for one
+   * grammar's sake, meaningful in arch.spec.md.
+   */
+  covers: string[];
   scenarios: Scenario[];
   /**
    * The H2 heading of its SOURCE DOCUMENT this requirement was parsed under,
@@ -188,7 +196,7 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const mr = REQ_RE.exec(line);
     if (mr) {
-      req = { kind, name: mr[1]!, text: [], operations: [], scenarios: [], section };
+      req = { kind, name: mr[1]!, text: [], operations: [], covers: [], scenarios: [], section };
       out.push(req);
       scn = null;
       continue;
@@ -205,6 +213,12 @@ export function parseRequirements(md: string): Requirement[] {
       req.text.push(line);
       const mo = /^\s*Operations?:\s*(.+?)\s*$/i.exec(line);
       if (mo) req.operations = mo[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      // The Covers: mirror — same placement (requirement body, not a scenario),
+      // same comma grammar, and deliberately the same quirk: a second line
+      // REPLACES the first (assignment, not append), so the two lists can never
+      // drift apart in how they read a repeated line.
+      const mc = /^\s*Covers?:\s*(.+?)\s*$/i.exec(line);
+      if (mc) req.covers = mc[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }
 

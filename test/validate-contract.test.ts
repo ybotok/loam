@@ -336,10 +336,12 @@ describe("--json findings", () => {
         SVC,
         "FEAT-1",
       ]);
-      // four warnings: the payment-service spec names no owner and no sources,
-      // the feature's intent names no owner, and checkout-web has no spec.md at
-      // all (its missing openapi stays quiet — no landscape edge calls an op on it)
-      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 4 });
+      // six warnings: the payment-service spec names no owner and no sources,
+      // the feature's intent names no owner, checkout-web has no spec.md at all
+      // (its missing openapi stays quiet — no landscape edge calls an op on it),
+      // and the feature's tagged element and edge have no arch.spec.md covering
+      // them (c4.uncovered ×2 — the architecture spec axis's obligation)
+      expect(json.summary).toEqual({ services: 2, features: 1, errors: 0, warnings: 6 });
     });
   });
 
