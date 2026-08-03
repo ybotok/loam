@@ -6,6 +6,23 @@
  * (SCHEMA.md + command docstrings), not whatever the implementation happens to
  * do. Every deliberately-failing test corresponds to a suspected frame bug
  * documented in the workflow report.
+ *
+ * Three families were added after the merge grew teeth:
+ *
+ *  - SPINE PRESERVATION. The merge rewrites a delta's elements and edges as
+ *    living-landscape source, and every field it forgets to write is a link
+ *    silently cut: `metadata { op }` joins an edge to the OpenAPI contract, and
+ *    `metadata { service }` joins an element to its `services/<svc>/` directory.
+ *    Dropping the latter makes a bound element unmodelled the moment it lands.
+ *
+ *  - EDGE IDENTITY. Merging is idempotent because it skips edges the landscape
+ *    already has, so what counts as "already has" decides what gets lost. An
+ *    op-less edge titled `authorizePayment` is not the edge whose op IS
+ *    authorizePayment, and two edges are two edges.
+ *
+ *  - THE COMMIT PHASE. The plan is atomic; the filesystem is not. A failure
+ *    after the first file is written must not leave the living docs half-merged,
+ *    and `--dry-run` must leave them untouched down to the byte.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { join } from "node:path";
@@ -16,6 +33,7 @@ import {
   coherentFixture,
   makeProject,
   runLoam,
+  treeHashes,
   LANDSCAPE,
   LIVING_SPEC,
   LIVING_OPENAPI,
@@ -297,6 +315,69 @@ model {
 
 views {
   view feat_6 {
+    include *
+  }
+}
+`;
+
+/**
+ * FEAT-12: a new element whose TITLE is not its directory name, bound to the
+ * directory with `metadata { service }`. The binding is the only thing tying the
+ * box to `services/payment-split-service/`, which the same archive creates.
+ */
+const BOUND_ELEMENT_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-12
+}
+
+model {
+  paymentService = softwareSystem 'payment-service'
+  splitter = softwareSystem 'Payment Splitter' {
+    #FEAT-12
+    description 'Splits a payment across payees'
+    metadata { service 'payment-split-service' }
+  }
+
+  paymentService -> splitter 'Calls createSplit' {
+    #FEAT-12
+    metadata { op 'createSplit' }
+  }
+}
+
+views {
+  view feat_12 {
+    include *
+  }
+}
+`;
+
+/**
+ * FEAT-13: edges between the same pair that an `op ?? title` key confuses. The
+ * living LANDSCAPE already carries `checkout-web -> payment-service` with
+ * `op 'authorizePayment'`, so the op-less edge merely TITLED `authorizePayment`
+ * keys to the same string and is skipped as already-merged. The two `Retries`
+ * edges are the other half: distinct edges the model cannot tell apart.
+ */
+const EDGE_IDENTITY_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-13
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  checkoutWeb -> paymentService 'Retries' { #FEAT-13 }
+  checkoutWeb -> paymentService 'Retries' { #FEAT-13 }
+  checkoutWeb -> paymentService 'authorizePayment' { #FEAT-13 }
+  checkoutWeb -> paymentService 'Calls it' {
+    #FEAT-13
+    metadata { op 'refundPayment' }
+  }
+}
+
+views {
+  view feat_13 {
     include *
   }
 }
@@ -791,6 +872,254 @@ describe("landscape merge adversarial", () => {
         elementsTitled(land, "authorizePayment"),
         "element-existence check must not be fooled by the substring 'authorizePayment' inside metadata op strings",
       ).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("spine preservation through the merge", () => {
+  it("both spines survive the rewrite: `op` on the edge and `service` on the element", async () => {
+    // The merge re-emits a delta element as living-landscape source. Anything it
+    // forgets to write is not "lost formatting" — it is a link cut: `op` joins the
+    // edge to the OpenAPI contract, `service` joins the element to its directory.
+    const files = coherentFixture();
+    delete files["features/FEAT-1-split/delta.likec4"];
+    delete files["features/FEAT-1-split/specs/payment-split-service/spec.md"];
+    delete files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"];
+    delete files["features/FEAT-1-split/intent.md"];
+    files["features/FEAT-12-split/delta.likec4"] = BOUND_ELEMENT_DELTA;
+    files["features/FEAT-12-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC;
+    files["features/FEAT-12-split/specs/payment-split-service/openapi.yaml"] =
+      coherentFixture()["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"]!;
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-12");
+      expect(res.code).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+
+      const el = land.elements.find((e) => e.title === "Payment Splitter");
+      expect(el, "the merged element must be in the living landscape").toBeDefined();
+      expect(
+        el!.service,
+        "dropping metadata { service } unbinds the element from services/<svc>/ at the moment it lands",
+      ).toBe("payment-split-service");
+
+      const edges = edgesBetween(land, "payment-service", "Payment Splitter", "createSplit");
+      expect(edges, "dropping metadata { op } de-links the merged edge from the OpenAPI contract").toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a bound element stays modelled after the archive — validate --all reports no unmodelled service", async () => {
+    // The directory this element stands for is created by the same archive, so a
+    // lost binding is not a latent risk: the next validate fails immediately.
+    const files = coherentFixture();
+    delete files["features/FEAT-1-split/delta.likec4"];
+    delete files["features/FEAT-1-split/specs/payment-split-service/spec.md"];
+    delete files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"];
+    delete files["features/FEAT-1-split/intent.md"];
+    files["features/FEAT-12-split/delta.likec4"] = BOUND_ELEMENT_DELTA;
+    files["features/FEAT-12-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC;
+    files["features/FEAT-12-split/specs/payment-split-service/openapi.yaml"] =
+      coherentFixture()["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"]!;
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-12")).code).toBe(0);
+      const v = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = JSON.parse(v.stdout).targets.flatMap((t: { findings: { code: string }[] }) =>
+        t.findings.map((f) => f.code),
+      );
+      expect(codes).not.toContain("landscape.service-unmodelled");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("edge identity", () => {
+  /** Every checkout-web → payment-service edge, as (title, op) pairs. */
+  function pairs(land: LoadedDoc): string[] {
+    return edgesBetween(land, "checkout-web", "payment-service")
+      .map((r) => `${r.title ?? ""}|${r.op ?? ""}`)
+      .sort();
+  }
+
+  it("an op-less edge titled like an operationId is not the edge that calls it", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-13-edges/delta.likec4": EDGE_IDENTITY_DELTA,
+    });
+    try {
+      // --approve: createSplit is deliberately undefined here — this is about edge
+      // identity, not about the contract.
+      const res = await runLoam(p.workDir, "archive", "FEAT-13", "--approve");
+      expect(res.code).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(
+        pairs(land),
+        "a title and an operationId are different namespaces — one key over both collapses them",
+      ).toEqual([
+        "Calls authorizePayment|authorizePayment",
+        "Calls it|refundPayment",
+        "Retries|",
+        "Retries|",
+        "authorizePayment|",
+      ]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("two edges that differ in nothing loam models are still two edges", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-13-edges/delta.likec4": EDGE_IDENTITY_DELTA,
+    });
+    try {
+      await runLoam(p.workDir, "archive", "FEAT-13", "--approve");
+      const land = await loadFile(landscapePath(p));
+      expect(land.relationships.filter((r) => r.title === "Retries")).toHaveLength(2);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("re-archiving the same edges adds none of them back", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-13-edges/delta.likec4": EDGE_IDENTITY_DELTA,
+    });
+    try {
+      await runLoam(p.workDir, "archive", "FEAT-13", "--approve");
+      const once = pairs(await loadFile(landscapePath(p)));
+      await p.write(
+        "features/FEAT-14-edges/delta.likec4",
+        EDGE_IDENTITY_DELTA.replaceAll("FEAT-13", "FEAT-14"),
+      );
+      expect((await runLoam(p.workDir, "archive", "FEAT-14", "--approve")).code).toBe(0);
+      expect(
+        pairs(await loadFile(landscapePath(p))),
+        "counting duplicates must not cost idempotence — the landscape already has both",
+      ).toEqual(once);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("the commit phase", () => {
+  /** coherentFixture, but `features/archive` is a FILE — the feature move fails at the very end. */
+  async function archiveBlockedByFile(): Promise<Project> {
+    const p = await makeProject(coherentFixture());
+    await p.write("features/archive", "not a directory\n");
+    return p;
+  }
+
+  it("a failure after the first file is written rolls the living docs back, not half-merged", async () => {
+    const p = await archiveBlockedByFile();
+    try {
+      const before = await treeHashes(p.docsDir);
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", "FEAT-1");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      expect(await treeHashes(p.docsDir), "every merged file must be back to its pre-archive bytes").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("says the docs were rolled back rather than claiming the merge just failed", async () => {
+    const p = await archiveBlockedByFile();
+    try {
+      const { res } = await runLoamSafe(p.workDir, "archive", "FEAT-1");
+      expect(res!.out.toLowerCase()).toContain("rolled back");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves no temp files behind, on success or on failure", async () => {
+    const failed = await archiveBlockedByFile();
+    try {
+      await runLoamSafe(failed.workDir, "archive", "FEAT-1");
+      expect(Object.keys(await treeHashes(failed.docsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
+    } finally {
+      await failed.destroy();
+    }
+    const ok = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(ok.workDir, "archive", "FEAT-1")).code).toBe(0);
+      expect(Object.keys(await treeHashes(ok.docsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
+    } finally {
+      await ok.destroy();
+    }
+  });
+
+  it("the feature stays active after a rollback, so the archive can simply be re-run", async () => {
+    const p = await archiveBlockedByFile();
+    try {
+      await runLoamSafe(p.workDir, "archive", "FEAT-1");
+      expect(p.exists("features/FEAT-1-split/delta.likec4")).toBe(true);
+      expect(p.exists("features/FEAT-1-split/.loam-before")).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("--dry-run", () => {
+  it("prints every file the merge would write, and the move it would make", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("services/payment-split-service/spec.md");
+      expect(res.out).toContain("services/payment-split-service/openapi.yaml");
+      expect(res.out).toContain(LANDSCAPE_REL);
+      expect(res.out).toContain("features/archive/FEAT-1-split");
+      expect(res.out.toLowerCase()).toContain("dry run");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("touches nothing: every file in the docs repo is byte-identical afterwards", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still refuses an incoherent feature — a dry run of a merge that may not happen says nothing useful", async () => {
+    const files = coherentFixture();
+    delete files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"];
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a real archive after a dry run produces exactly what the dry run listed", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const dry = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run");
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const after = await treeHashes(p.docsDir);
+      const changed = Object.keys(after).filter((f) => after[f] !== before[f] && !f.startsWith("features/"));
+      for (const f of changed) expect(dry.out, `${f} was written but not listed`).toContain(f);
     } finally {
       await p.destroy();
     }

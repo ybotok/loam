@@ -14,6 +14,10 @@
  * The `sources-*` pair mirrors the `sources.*` finding codes on purpose: the
  * same breach is recognisable whether it arrives as a refusal from `vouch` or
  * as a finding from `validate`.
+ *
+ * The `feature-active` / `snapshot-*` group is `unarchive` refusing to guess:
+ * each names a different reason the undo is not one, and a caller has to tell
+ * them apart to know whether re-running could ever work.
  */
 export type ErrorCode =
   | "no-config"
@@ -21,7 +25,11 @@ export type ErrorCode =
   | "unknown-section"
   | "invalid-option"
   | "sources-absent"
-  | "sources-path-missing";
+  | "sources-path-missing"
+  | "feature-active"
+  | "snapshot-missing"
+  | "snapshot-stale"
+  | "restore-failed";
 
 export function emitJson(payload: Record<string, unknown>): void {
   console.log(JSON.stringify({ ok: true, ...payload }, null, 2));

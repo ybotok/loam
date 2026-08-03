@@ -7,10 +7,11 @@
  * console output + exit code, restoring everything afterwards. Requires the
  * vitest "forks" pool (worker threads cannot chdir).
  */
-import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { format } from "node:util";
 import { Command } from "commander";
 import { registerInit } from "../../src/commands/init.js";
@@ -20,6 +21,7 @@ import { registerNew } from "../../src/commands/new.js";
 import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
 import { registerArchive } from "../../src/commands/archive.js";
+import { registerUnarchive } from "../../src/commands/unarchive.js";
 import { registerValidate } from "../../src/commands/validate.js";
 import { registerVouch } from "../../src/commands/vouch.js";
 
@@ -93,6 +95,31 @@ export async function makeProject(
 }
 
 /**
+ * A content fingerprint of a whole tree: sha256 per file, keyed by its path
+ * relative to `root` with forward slashes. Directories are keyed with a trailing
+ * slash and a marker value, so a directory left behind empty is as visible as a
+ * changed byte — which is what "the command touched nothing" and "archive then
+ * unarchive is a round trip" actually mean.
+ */
+export async function treeHashes(root: string): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      const rel = relative(root, abs).split(/[\\/]/).join("/");
+      if (entry.isDirectory()) {
+        out[`${rel}/`] = "<dir>";
+        await walk(abs);
+      } else {
+        out[rel] = createHash("sha256").update(await readFile(abs)).digest("hex");
+      }
+    }
+  };
+  await walk(root);
+  return out;
+}
+
+/**
  * Run a loam command in-process from `cwd`.
  * Example: runLoam(p.workDir, "validate", "--feature", "FEAT-1").
  */
@@ -126,6 +153,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerShow(program);
     registerDelta(program);
     registerArchive(program);
+    registerUnarchive(program);
     registerValidate(program);
     registerVouch(program);
     await program.parseAsync(["node", "loam", ...args]);

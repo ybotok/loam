@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile, writeFile, mkdir, rename, rm, unlink } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
@@ -16,6 +17,7 @@ import {
 } from "../core/repo.js";
 import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
+import { repoPath } from "./list.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -23,10 +25,9 @@ import {
   type Requirement,
 } from "../core/spec.js";
 
-/** A planned file write — the merge is computed fully before anything touches disk. */
-interface PlannedWrite {
-  path: string;
-  content: string;
+interface ArchiveOptions {
+  approve?: boolean;
+  dryRun?: boolean;
 }
 
 export function registerArchive(program: Command): void {
@@ -35,18 +36,21 @@ export function registerArchive(program: Command): void {
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Merge a shipped feature's deltas into the living specs + model, then archive it")
     .option("--approve", "archive even if the feature is not coherent (may corrupt the living docs)")
-    .action(async (featureId: string, opts: { approve?: boolean }) => {
+    .option("--dry-run", "print the whole merge plan and write nothing")
+    .action(async (featureId: string, opts: ArchiveOptions) => {
       try {
         await runArchive(featureId, opts);
       } catch (err) {
-        // Plan-phase failures happen before any write — the living docs are untouched.
-        console.error(`archive ${featureId} failed: ${err instanceof Error ? err.message : String(err)}`);
+        // Plan-phase failures happen before any write; commit-phase failures are
+        // rolled back by runArchive, which says so in the message it throws.
+        console.error(`archive ${featureId} failed: ${message(err)}`);
         process.exitCode = 1;
       }
     });
 }
 
-async function runArchive(featureId: string, opts: { approve?: boolean }): Promise<void> {
+async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {
+  const dryRun = opts.dryRun === true;
   const config = await loadConfig();
   if (!config) {
     console.error("No loam.json found. Run `loam init --docs <dir>` first.");
@@ -63,6 +67,7 @@ async function runArchive(featureId: string, opts: { approve?: boolean }): Promi
   const { dirName, dir: featureDir } = feature;
 
   // Gate: never archive an incoherent feature without explicit approval — the merge would corrupt the living docs.
+  // A dry run is gated too: a plan for a merge that would be refused describes nothing that will happen.
   const issues = await featureCoherence(config.docsDir, featureDir, featureId);
   if (issues.length > 0 && !opts.approve) {
     const errs = issues.filter((i) => i.severity === "error").length;
@@ -88,7 +93,7 @@ async function runArchive(featureId: string, opts: { approve?: boolean }): Promi
     return;
   }
 
-  console.log(`archive ${featureId}\n`);
+  console.log(`archive ${featureId}${dryRun ? "  (dry run)" : ""}\n`);
 
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
@@ -167,16 +172,267 @@ async function runArchive(featureId: string, opts: { approve?: boolean }): Promi
     }
   }
 
-  // COMMIT — the whole plan computed cleanly; write it out, then archive the feature.
-  for (const w of writes) {
-    await mkdir(dirname(w.path), { recursive: true });
-    await writeFile(w.path, w.content, "utf8");
+  if (dryRun) {
+    printPlan(config.docsDir, writes, dirName);
+    return;
   }
-  await mkdir(archiveDir, { recursive: true });
-  await rename(featureDir, archiveDest);
+
+  // COMMIT — the whole plan computed cleanly. Stage every new version beside its
+  // target, snapshot what is about to be overwritten, then swap them into place.
+  const staged = await stageWrites(writes);
+  let snapshot = false;
+  let createdArchiveDir: string | undefined;
+  try {
+    await writeSnapshot(featureDir, config.docsDir, featureId, dirName, staged);
+    snapshot = true;
+    await swapStaged(staged);
+    createdArchiveDir = await mkdir(archiveDir, { recursive: true });
+    await rename(featureDir, archiveDest);
+  } catch (err) {
+    // Everything this run made, unmade: the swapped files, the snapshot inside the
+    // feature that is staying put, and features/archive/ if we are the ones who
+    // created it (mkdir reports nothing when it was already there).
+    const failures = await rollbackStaged(staged);
+    if (snapshot) await quietRm(snapshotDir(featureDir));
+    if (createdArchiveDir !== undefined) await quietRm(createdArchiveDir);
+    throw rollbackError(err, failures);
+  }
+
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
+  console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${featureId}\` puts it back`);
   console.log("  living spec + landscape are now complete + current.");
 }
+
+/** The full plan, as files: what a dry run shows instead of doing. */
+function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string): void {
+  console.log(`\n  plan — ${writes.length} file(s):`);
+  for (const w of writes) {
+    const verb = existsSync(w.path) ? "update" : "create";
+    console.log(`    ${verb}  ${repoPath(docsDir, w.path)}`);
+  }
+  console.log(`    move    features/${dirName} → features/archive/${dirName}`);
+  console.log("\n  dry run — nothing was written.");
+}
+
+/* ------------------------------------------------------------------ */
+/* The commit phase                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A planned file write — the merge is computed fully before anything touches
+ * disk. `content: null` means "delete this file"; only `unarchive` plans those,
+ * to take back a file the archive created.
+ */
+export interface PlannedWrite {
+  path: string;
+  content: string | null;
+}
+
+/** A planned write with its new bytes parked next to the target, ready to swap in. */
+export interface StagedWrite {
+  write: PlannedWrite;
+  /** Temp file holding the new bytes, in the target's OWN directory. Null for a delete. */
+  tmp: string | null;
+  /** The target's bytes before the swap; null when it did not exist. */
+  before: string | null;
+  /**
+   * Topmost directory this write had to create, if any — a rollback owes the repo
+   * its directories back too. An empty `services/<svc>/` left standing is the
+   * fleet claiming a service that was never merged.
+   */
+  createdDir: string | null;
+  swapped: boolean;
+}
+
+/**
+ * Write every new version to a temp file beside its target, remembering what the
+ * target said first. Nothing observable changes here: on failure the temp files
+ * are removed and the docs are exactly as they were.
+ *
+ * The pre-image is read eagerly and deliberately: it is what a rollback restores
+ * and what `unarchive` is given, so a file we cannot read is a file we cannot
+ * safely rewrite, and the merge must stop before it starts.
+ */
+export async function stageWrites(writes: PlannedWrite[]): Promise<StagedWrite[]> {
+  const staged: StagedWrite[] = [];
+  try {
+    for (const [i, write] of writes.entries()) {
+      // mkdir(recursive) reports the topmost directory it had to create — the
+      // handle a rollback needs to put the tree back the way it found it.
+      const createdDir = (await mkdir(dirname(write.path), { recursive: true })) ?? null;
+      const before = existsSync(write.path) ? await readFile(write.path, "utf8") : null;
+      let tmp: string | null = null;
+      if (write.content !== null) {
+        tmp = tempPath(write.path, i);
+        await writeFile(tmp, write.content, "utf8");
+      }
+      staged.push({ write, tmp, before, createdDir, swapped: false });
+    }
+  } catch (err) {
+    await discardStaged(staged);
+    throw err;
+  }
+  return staged;
+}
+
+/**
+ * Swap the staged versions in, one file at a time. Each swap is a rename(2)
+ * within a single directory, so a concurrent reader sees either the old bytes or
+ * the new ones — never a half-written file. Across files it is not atomic: the
+ * caller rolls back what has already gone in.
+ */
+export async function swapStaged(staged: StagedWrite[]): Promise<void> {
+  for (const s of staged) {
+    if (s.tmp === null) {
+      if (s.before !== null) await unlink(s.write.path);
+    } else {
+      await rename(s.tmp, s.write.path);
+    }
+    s.swapped = true;
+  }
+}
+
+/**
+ * Put back every file that was already swapped, newest first, from the bytes read
+ * before the swap. Returns the paths it could NOT restore — the caller must say so
+ * out loud rather than report a clean failure over a half-merged repo.
+ */
+export async function rollbackStaged(staged: StagedWrite[]): Promise<string[]> {
+  const failures: string[] = [];
+  for (const s of [...staged].reverse()) {
+    if (!s.swapped) continue;
+    try {
+      if (s.before === null) await rm(s.write.path, { force: true });
+      else await atomicWrite(s.write.path, s.before);
+      s.swapped = false;
+    } catch (err) {
+      failures.push(`${s.write.path} (${message(err)})`);
+    }
+  }
+  await discardStaged(staged);
+  return failures;
+}
+
+/** Write `content` to `path` through a temp file in the same directory. */
+async function atomicWrite(path: string, content: string): Promise<void> {
+  const tmp = tempPath(path, 0);
+  await writeFile(tmp, content, "utf8");
+  await rename(tmp, path);
+}
+
+/** A hidden sibling of `path`: same directory, so the rename never crosses a filesystem. */
+function tempPath(path: string, n: number): string {
+  return join(dirname(path), `.${basename(path)}.loam-${process.pid}-${n}-${Date.now()}.tmp`);
+}
+
+/** Everything staging left on disk: the temp files, and the directories it made for them. */
+async function discardStaged(staged: StagedWrite[]): Promise<void> {
+  for (const s of staged) if (s.tmp !== null) await quietRm(s.tmp);
+  for (const s of [...staged].reverse()) if (s.createdDir !== null) await quietRm(s.createdDir);
+}
+
+export async function quietRm(path: string): Promise<void> {
+  try {
+    await rm(path, { recursive: true, force: true });
+  } catch {
+    // Best effort — a leftover temp file is noise, not corruption.
+  }
+}
+
+/** Say what the failure cost: nothing, or a repo that needs looking at by hand. */
+export function rollbackError(err: unknown, failures: string[]): Error {
+  if (failures.length === 0) {
+    return new Error(`${message(err)} — the living docs were rolled back, nothing was merged`);
+  }
+  return new Error(
+    `${message(err)} — ROLLBACK INCOMPLETE, these files may be half-merged and need checking by hand: ${failures.join(", ")}`,
+  );
+}
+
+export function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/* ------------------------------------------------------------------ */
+/* The undo snapshot                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where archive parks the bytes it is about to overwrite, inside the feature
+ * directory so it travels with it into `features/archive/`.
+ *
+ * It exists because the merge is not invertible: a MODIFIED requirement's
+ * previous text appears nowhere in the delta, and a landscape rewritten by hand
+ * since cannot be un-rewritten by re-reading the delta either. `unarchive` puts
+ * bytes back; it does not recompute them.
+ */
+export const SNAPSHOT_DIR = ".loam-before";
+export const SNAPSHOT_MANIFEST = "manifest.json";
+/** Bumped only when the layout changes in a way `unarchive` must refuse to guess at. */
+export const SNAPSHOT_VERSION = 1;
+
+export interface SnapshotEntry {
+  /** Docs-repo-relative path, forward slashes — the same spelling `--json` uses. */
+  path: string;
+  /** False when archive CREATED the file: restoring it means deleting it again. */
+  existed: boolean;
+  /** sha256 of what archive wrote, so unarchive can tell its own merge from later edits. */
+  after: string;
+}
+
+export interface SnapshotManifest {
+  version: number;
+  feature: string;
+  dirName: string;
+  archivedAt: string;
+  files: SnapshotEntry[];
+}
+
+export function snapshotDir(featureDir: string): string {
+  return join(featureDir, SNAPSHOT_DIR);
+}
+
+export function sha256(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+async function writeSnapshot(
+  featureDir: string,
+  docsDir: string,
+  featureId: string,
+  dirName: string,
+  staged: StagedWrite[],
+): Promise<void> {
+  const dir = snapshotDir(featureDir);
+  // A leftover from a rolled-back run would describe a merge that never happened.
+  await quietRm(dir);
+
+  const files: SnapshotEntry[] = [];
+  for (const s of staged) {
+    const rel = repoPath(docsDir, s.write.path);
+    files.push({ path: rel, existed: s.before !== null, after: sha256(s.write.content ?? "") });
+    if (s.before !== null) {
+      const dest = join(dir, "files", rel);
+      await mkdir(dirname(dest), { recursive: true });
+      await writeFile(dest, s.before, "utf8");
+    }
+  }
+
+  const manifest: SnapshotManifest = {
+    version: SNAPSHOT_VERSION,
+    feature: featureId,
+    dirName,
+    archivedAt: new Date().toISOString(),
+    files,
+  };
+  // Manifest last: its presence is what says the pre-images beside it are complete.
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, SNAPSHOT_MANIFEST), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+}
+
+/* ------------------------------------------------------------------ */
+/* Merging                                                             */
+/* ------------------------------------------------------------------ */
 
 /**
  * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
@@ -232,7 +488,7 @@ interface LandscapePlan {
  * Plan the insertion of the feature's new elements + relationships into the living
  * landscape's `model { ... }` block (preserving the rest of the file). Existence is
  * checked semantically against the parsed landscape (by element id/title and by
- * edge endpoints + op), so re-archiving is idempotent and title strings appearing
+ * edge identity), so re-archiving is idempotent and title strings appearing
  * elsewhere in the source cause no false skips. Feature tags are dropped — the
  * additions are now part of the baseline. Assumes the delta reuses the landscape's
  * element identifiers for existing services.
@@ -258,15 +514,23 @@ async function planLandscapeMerge(
     addedEls.push(e);
   }
 
-  // Edges are compared by endpoint TITLES (stable across id namespaces) + op/title.
-  const relKey = (els: Elem[], r: Rel): string =>
-    [titleOf(els, r.source), titleOf(els, r.target), r.op ?? r.title ?? ""].join("\u0000");
-  const haveRels = new Set(land.relationships.map((r) => relKey(land.elements, r)));
+  // Edges are matched by COUNT, not by membership: two edges the model cannot tell
+  // apart are still two edges, and dropping the second one silently loses a call
+  // the author drew. An edge already in the landscape consumes one delta edge of
+  // the same identity, which is what keeps re-archiving idempotent.
+  const have = new Map<string, number>();
+  for (const r of land.relationships) {
+    const k = relKey(land.elements, r);
+    have.set(k, (have.get(k) ?? 0) + 1);
+  }
   const addedRels: Rel[] = [];
   for (const r of newRels) {
     const k = relKey(deltaElements, r);
-    if (haveRels.has(k)) continue;
-    haveRels.add(k);
+    const n = have.get(k) ?? 0;
+    if (n > 0) {
+      have.set(k, n - 1);
+      continue;
+    }
     addedRels.push(r);
   }
 
@@ -281,16 +545,39 @@ async function planLandscapeMerge(
   };
 }
 
+/**
+ * What makes two edges the same edge. Endpoints are compared by TITLE, which is
+ * stable across the delta's and the landscape's id namespaces.
+ *
+ * An edge that carries an `op` IS that call, whatever it is titled — retitling it
+ * must not merge a second copy. An edge with no `op` has only its title. The two
+ * live in separate namespaces because they are separate things: an op-less edge
+ * titled `authorizePayment` is not the edge whose operationId is authorizePayment,
+ * and keying on `op ?? title` quietly merged only one of them.
+ */
+function relKey(els: Elem[], r: Rel): string {
+  const src = titleOf(els, r.source);
+  const tgt = titleOf(els, r.target);
+  return JSON.stringify(r.op !== undefined ? ["op", src, tgt, r.op] : ["title", src, tgt, r.title ?? ""]);
+}
+
 /** Quote a string as LikeC4 source — single-quoted with backslash/apostrophe escapes. */
 function lq(s: string): string {
   return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+/**
+ * An element as living-landscape source. Both spines survive the rewrite: the
+ * description, and `metadata { service }` — the binding that says which
+ * `services/<svc>/` this box IS. Dropping the binding does not merely lose
+ * decoration, it unmodels the directory the same archive just created.
+ */
 function elementLines(e: Elem): string[] {
-  if (e.description) {
-    return [`${e.id} = ${e.kind} ${lq(e.title)} {`, `  description ${lq(e.description)}`, `}`];
-  }
-  return [`${e.id} = ${e.kind} ${lq(e.title)}`];
+  const body: string[] = [];
+  if (e.description) body.push(`  description ${lq(e.description)}`);
+  if (e.service) body.push(`  metadata { service ${lq(e.service)} }`);
+  const head = `${e.id} = ${e.kind} ${lq(e.title)}`;
+  return body.length === 0 ? [head] : [`${head} {`, ...body, `}`];
 }
 
 function relLine(r: Rel): string {
