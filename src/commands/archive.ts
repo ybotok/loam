@@ -40,6 +40,7 @@ import {
   missingFeatureMessage,
   resolveFeature,
   servicePaths,
+  SPEC_AXES,
 } from "../core/repo.js";
 import { HTTP_METHODS, operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
@@ -193,20 +194,22 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // overrides judgments about the FEATURE, and this is neither.
   const strayed: Issue[] = [];
   for (const svc of deltaServices) {
-    if (!existsSync(featureSpecPaths(featureDir, svc).spec)) continue;
-    const livingPath = servicePaths(config.docsDir, svc).spec;
-    if (!existsSync(livingPath)) continue;
-    for (const r of parseRequirements(await readFile(livingPath, "utf8"))) {
-      // The ONE definition of the heading (spec.ts): the guard and the rewrite
-      // boundary match the same way, so they cannot disagree about "outside".
-      if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
-      const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
-      strayed.push({
-        severity: "error",
-        code: "living.requirement-outside-requirements",
-        subject: svc,
-        message: `${svc}: living requirement '${r.name}' sits ${where} in ${repoPath(config.docsDir, livingPath)} — the merge rewrites only '## Requirements', so it would land in the file twice. Re-home it under '## Requirements' first, then re-run.`,
-      });
+    for (const axis of SPEC_AXES) {
+      if (!existsSync(featureSpecPaths(featureDir, svc)[axis.key])) continue;
+      const livingPath = servicePaths(config.docsDir, svc)[axis.key];
+      if (!existsSync(livingPath)) continue;
+      for (const r of parseRequirements(await readFile(livingPath, "utf8"))) {
+        // The ONE definition of the heading (spec.ts): the guard and the rewrite
+        // boundary match the same way, so they cannot disagree about "outside".
+        if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
+        const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
+        strayed.push({
+          severity: "error",
+          code: "living.requirement-outside-requirements",
+          subject: svc,
+          message: `${svc}: living requirement '${r.name}' sits ${where} in ${repoPath(config.docsDir, livingPath)} — the merge rewrites only '## Requirements', so it would land in the file twice. Re-home it under '## Requirements' first, then re-run.`,
+        });
+      }
     }
   }
   if (strayed.length > 0) {
@@ -245,43 +248,51 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // the same way, and --approve overrides them the same way.
   const planGates: Issue[] = [];
 
-  // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.
+  // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
+  // spec. ONE code path for the pair of requirement-carrying files: the business
+  // spec.md and the architecture arch.spec.md ride the same delta algebra, the
+  // same prose-preserving rewrite and the same guards, parameterized by filename
+  // (SPEC_AXES) — a fork here would be two places the merge could disagree.
   for (const svc of deltaServices) {
-    const deltaPath = featureSpecPaths(featureDir, svc).spec;
-    if (!existsSync(deltaPath)) continue;
-    const deltaReqs = parseRequirements(await readFile(deltaPath, "utf8"));
+    for (const axis of SPEC_AXES) {
+      const deltaPath = featureSpecPaths(featureDir, svc)[axis.key];
+      if (!existsSync(deltaPath)) continue;
+      const deltaReqs = parseRequirements(await readFile(deltaPath, "utf8"));
 
-    const livingPath = servicePaths(config.docsDir, svc).spec;
-    if (!existsSync(livingPath)) {
-      // New service — create its living spec from the ADDED/MODIFIED requirements.
-      const created = applyRequirementDelta([], deltaReqs);
-      if (created.length === 0) {
-        say(`  requirements: ${svc} — nothing to merge (delta leaves no requirements), no living spec created`);
+      const livingPath = servicePaths(config.docsDir, svc)[axis.key];
+      if (!existsSync(livingPath)) {
+        // New service (or first arch spec) — create the living file from the
+        // ADDED/MODIFIED requirements.
+        const created = applyRequirementDelta([], deltaReqs);
+        if (created.length === 0) {
+          say(`  ${axis.label}: ${svc} — nothing to merge (delta leaves no requirements), no living ${axis.file} created`);
+          continue;
+        }
+        const heading = axis.key === "spec" ? svc : `${svc} — architecture`;
+        const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${heading}\n\n`;
+        writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
+        say(`  ${axis.label}: ${svc} — created living ${axis.file} (${created.length} requirement(s))`);
         continue;
       }
-      const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${svc}\n\n`;
-      writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
-      say(`  requirements: ${svc} — created living spec (${created.length} requirement(s))`);
-      continue;
-    }
-    const livingText = await readFile(livingPath, "utf8");
-    // TWO `## Requirements` headings would put the rewrite's one-section
-    // invariant to a choice it must not make: the run of the first would be
-    // rewritten while the second survived verbatim in the tail — and its
-    // requirements, collected by parseRequirements, would land in the run TOO.
-    // Mechanical, like a model-less landscape, so merge-failed, not --approve.
-    const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
-    if (reqHeadings.length > 1) {
-      throw new ArchiveFailure(
-        "merge-failed",
-        `living spec for ${svc} has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
-      );
-    }
-    const merged = applyRequirementDelta(parseRequirements(livingText), deltaReqs);
-    writes.push({ path: livingPath, content: rewriteRequirementsRun(livingText, merged) });
+      const livingText = await readFile(livingPath, "utf8");
+      // TWO `## Requirements` headings would put the rewrite's one-section
+      // invariant to a choice it must not make: the run of the first would be
+      // rewritten while the second survived verbatim in the tail — and its
+      // requirements, collected by parseRequirements, would land in the run TOO.
+      // Mechanical, like a model-less landscape, so merge-failed, not --approve.
+      const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
+      if (reqHeadings.length > 1) {
+        throw new ArchiveFailure(
+          "merge-failed",
+          `living ${axis.file} for ${svc} has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
+        );
+      }
+      const merged = applyRequirementDelta(parseRequirements(livingText), deltaReqs);
+      writes.push({ path: livingPath, content: rewriteRequirementsRun(livingText, merged) });
 
-    const c = summarize(deltaReqs);
-    say(`  requirements: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+      const c = summarize(deltaReqs);
+      say(`  ${axis.label}: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+    }
   }
 
   // 1b. OpenAPI merge — fold the feature's openapi deltas into the living service APIs.

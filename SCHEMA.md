@@ -91,7 +91,7 @@ Behaviour follows OpenSpec conventions: a **requirement** (`### Requirement:`, R
 
 - **Living spec** — `services/<svc>/spec.md` (+ `landscape.likec4`): the complete current state — the "final spec of the whole product".
 - **Delta** — `features/<FEAT>/specs/<svc>/spec.md` (+ `delta.likec4`): a change, reviewed as a diff, tagged to the feature.
-- **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`). `--dry-run` prints the whole plan and writes nothing.
+- **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements** (`spec.md`, and `arch.spec.md` beside it: the two files ride one merge code path, parameterized by filename), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the feature, so the living state stays complete. Archived deltas are the evolution history (like `git log`). `--dry-run` prints the whole plan and writes nothing.
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI `operationId` ↔ requirement `Operations:`). `loam archive` **blocks on the gating issues**. Severity and gating answer two different questions — severity says whether the *document* is valid (`validate` fails on errors), gating says whether the *merge* is safe — and they usually agree: errors gate, warnings do not. Where they diverge, the finding says so (`gates` in `--json`); today that is exactly `delta.requirement-not-merged`, a warning (the shape is legal OpenSpec, so adopted repos keep a green `validate`) that gates (the merge would silently drop the requirement). Advisory warnings are printed with the plan and never block. `--approve` overrides the gating issues only, and names each one it overrode. An operation that is missing from the provider's OpenAPI but defined by another feature still in flight is graded down to a warning (`spec-api.op-pending` / `c4-api.op-pending`) naming that feature — archive it first — because the fix is ordering, not authoring.
 - **`loam unarchive <FEAT>`** takes an archive back: it restores the living docs and re-opens the feature.
 
@@ -116,6 +116,10 @@ An entry that resolves to nothing is `covers.unknown` (**warning**, with close i
 
 - `c4.uncovered` (feature scope): a NEW tagged element or tagged edge in the feature's `delta.likec4` that no requirement across the feature's `arch.spec.md` deltas covers. Grouping-only elements follow the landscape checks' exemptions (`person`-kind elements, `#external` tags).
 - `health.uncovered` (service scope): an alert or SLI declared in `services/<svc>/health.yaml` that no requirement in the LIVING `arch.spec.md` covers. This is the moment `health.yaml` stops being inert — and all loam reads out of it is ids: the recognized keys are top-level `slis:` and `alerts:`, each a sequence whose entries contribute their `name` (or `id` when there is no name; a plain string entry is its own id). A `health.yaml` that does not parse, or declares nothing recognizable, yields no findings — a file loam cannot read must not manufacture obligations.
+
+The rest of the machinery treats the axis as what it is — requirements. `loam archive` merges an `arch.spec.md` delta into the living one through the same code path as `spec.md` (same delta algebra, same prose-preserving rewrite, same guards and delta-shape checks — the two files are separate requirement namespaces, so an arch requirement never collides with a business one of the same name); the snapshot covers it and `unarchive` restores it. `loam verify` derives `scenario.tested` claims from ADDED/MODIFIED arch requirements exactly as from business ones — the claim id and text carry `arch.spec.md`, so an identically-worded scenario in both files stays two questions, and the answering agent knows an integration/ops test is being asked for. `loam delta --json` projects arch requirement deltas as `archRequirements`, the same item shape as `requirements` (each item also carries `covers`).
+
+**Test levels, mapped once:** a business scenario is an acceptance test; an arch scenario is an integration or operational test (the outbox relay, the retry, the alert rule); `api.exposes` is a contract test; unit tests sit below spec granularity and stay the coding agent's TDD concern.
 
 ### The smallest legal feature
 
@@ -188,7 +192,7 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 | `service.exists` | tagged top-level element the delta introduces | `delta.likec4` |
 | `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
 | `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |
-| `scenario.tested` | scenario of every ADDED/MODIFIED requirement | `specs/<svc>/spec.md` |
+| `scenario.tested` | scenario of every ADDED/MODIFIED requirement | `specs/<svc>/spec.md` + `specs/<svc>/arch.spec.md` |
 
 Each claim's **id** is `<kind>-<8 hex>`, hashed from the feature id and what the claim says (with an occurrence counter for genuine duplicates). For `scenario.tested` "what the claim says" includes a hash of the scenario's **body**, not just its title. So the same feature yields the same ids on every run — two runs are diffable — reordering the artifacts renames nothing, and **rewording a scenario renames its claim, even a Given/When/Then rewrite under an unchanged title**, which is the point: an answer about text nobody wrote must not carry over as if it still applied.
 

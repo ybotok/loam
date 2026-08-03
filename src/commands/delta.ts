@@ -61,28 +61,42 @@ export function registerDelta(program: Command): void {
         ? stripFrontmatter(await readFile(paths.intent, "utf8")).trim()
         : null;
 
-      // Requirement delta for this service (OpenSpec style)
-      const reqPath = featureSpecPaths(feature.dir, service).spec;
-      const reqs = existsSync(reqPath) ? parseRequirements(await readFile(reqPath, "utf8")) : [];
+      // Requirement delta for this service (OpenSpec style), business and arch:
+      // the same projection covers both axes, in the same shape, so the payload
+      // stays one task — the arch requirements are the integration/ops half the
+      // business ones never mention.
+      const specPaths = featureSpecPaths(feature.dir, service);
+      const reqs = existsSync(specPaths.spec)
+        ? parseRequirements(await readFile(specPaths.spec, "utf8"))
+        : [];
+      const archReqs = existsSync(specPaths.archSpec)
+        ? parseRequirements(await readFile(specPaths.archSpec, "utf8"))
+        : [];
 
       // C4 architecture slice
       const arch = await archSlice(paths.delta, service, id);
 
       if (json) {
+        const reqJson = (r: Requirement): Record<string, unknown> => ({
+          kind: r.kind,
+          name: r.name,
+          text: r.text.join("\n").trim(),
+          operations: r.operations,
+          covers: r.covers,
+          // Scenarios go out verbatim: they are the acceptance criteria and the
+          // source for the tests whoever picks this up is expected to write.
+          scenarios: r.scenarios.map((s) => ({ name: s.name, lines: s.lines })),
+        });
         emitJson({
           feature: id,
           service,
           path: repoPath(config.docsDir, feature.dir),
           intent,
-          requirements: reqs.map((r) => ({
-            kind: r.kind,
-            name: r.name,
-            text: r.text.join("\n").trim(),
-            operations: r.operations,
-            // Scenarios go out verbatim: they are the acceptance criteria and the
-            // source for the tests whoever picks this up is expected to write.
-            scenarios: r.scenarios.map((s) => ({ name: s.name, lines: s.lines })),
-          })),
+          requirements: reqs.map(reqJson),
+          // Same shape, separate section: an arch requirement's scenarios are
+          // integration/ops tests, and a consumer must not have to parse prose
+          // to tell the two apart.
+          archRequirements: archReqs.map(reqJson),
           architecture: arch,
         });
         // An unparseable delta.likec4 empties the C4 slice, and an agent
@@ -99,8 +113,9 @@ export function registerDelta(program: Command): void {
         console.log(indent(intent, "  "));
         console.log();
       }
-      if (existsSync(reqPath)) printRequirements(reqs);
+      if (existsSync(specPaths.spec)) printRequirements(reqs, "Requirements");
       else console.log("Requirements: (none for this service)\n");
+      if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements");
       if (existsSync(paths.delta)) printArchSlice(arch, service);
     });
 }
@@ -140,12 +155,12 @@ function stripFrontmatter(md: string): string {
   return nl === -1 ? "" : md.slice(nl + 1).trimStart();
 }
 
-function printRequirements(reqs: Requirement[]): void {
+function printRequirements(reqs: Requirement[], label: string): void {
   if (reqs.length === 0) {
-    console.log("Requirements: (none)\n");
+    console.log(`${label}: (none)\n`);
     return;
   }
-  console.log("Requirements:");
+  console.log(`${label}:`);
   for (const r of reqs) {
     const tag = r.kind === "BASE" ? "" : `[${r.kind}] `;
     const n = r.scenarios.length;

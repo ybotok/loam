@@ -473,3 +473,374 @@ Covers: paymentService.api
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Archive merges the axis — one code path, parameterized by filename  */
+/* ------------------------------------------------------------------ */
+
+/** coherentFixture plus a living arch spec and arch deltas on both services. */
+function archMergeFixture(): Record<string, string> {
+  const files = coherentFixture();
+  files["services/payment-service/arch.spec.md"] = `---
+service: payment-service
+status: draft
+owner: payments-team
+---
+
+# payment-service — architecture
+
+Kept prose above the requirements — the rewrite must preserve it.
+
+## Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox.
+
+Covers: paymentService.api
+
+#### Scenario: Broker down
+- **Given** an event in the outbox
+- **When** kafka is down
+- **Then** the event is published later
+`;
+  files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
+
+## MODIFIED Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox, including the new PaymentSplit event.
+
+Covers: paymentService.api
+
+#### Scenario: Broker down
+- **Given** an event in the outbox
+- **When** kafka is down
+- **Then** the event is published later, PaymentSplit included
+`;
+  files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = `# arch delta
+
+## ADDED Requirements
+
+### Requirement: Split arrives exactly once
+The service SHALL treat createSplit as idempotent.
+
+Covers: paymentSplitService, paymentService -> paymentSplitService
+
+#### Scenario: Retry is a no-op
+- **Given** a recorded split
+- **When** the call is retried
+- **Then** nothing is recorded twice
+`;
+  return files;
+}
+
+describe("archive merges arch.spec.md exactly as spec.md", () => {
+  it("the dry-run plan lists the arch axis writes next to the business ones", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const paths = (JSON.parse(res.stdout).plan as Array<{ path: string }>).map((w) => w.path);
+      expect(paths).toContain("services/payment-service/arch.spec.md");
+      expect(paths).toContain("services/payment-split-service/arch.spec.md");
+      expect(paths).toContain("services/payment-split-service/spec.md");
+    });
+  });
+
+  it("MODIFIED replaces in the living arch spec, prose above the run preserved", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code).toBe(0);
+      const living = await p.read("services/payment-service/arch.spec.md");
+      expect(living).toContain("PaymentSplit included");
+      expect(living).not.toContain("## MODIFIED Requirements");
+      expect(living).toContain("Kept prose above the requirements");
+      expect(living).toContain("Covers: paymentService.api");
+    });
+  });
+
+  it("a new service's living arch.spec.md is created with frontmatter and the axis heading", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      await runLoam(p.workDir, "archive", "FEAT-1");
+      const created = await p.read("services/payment-split-service/arch.spec.md");
+      expect(created).toContain("service: payment-split-service");
+      expect(created).toContain("status: draft");
+      expect(created).toContain("# payment-split-service — architecture");
+      expect(created).toContain("## Requirements");
+      expect(created).toContain("### Requirement: Split arrives exactly once");
+      expect(created).toContain("Covers: paymentSplitService, paymentService -> paymentSplitService");
+    });
+  });
+
+  it("archive then unarchive is a byte round-trip — the snapshot covers the arch axis too", async () => {
+    const { treeHashes } = await import("./helpers/harness.js");
+    await withProject(archMergeFixture(), async (p) => {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    });
+  });
+
+  it("post-archive, validate --service is quiet on the merged arch axis (no covers.unknown leftovers)", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      await runLoam(p.workDir, "archive", "FEAT-1");
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(res.code).toBe(0);
+      expect(ofCode(findings(res.stdout), "covers.unknown")).toEqual([]);
+      expect(ofCode(findings(res.stdout), "requirements.missing-scenarios")).toEqual([]);
+    });
+  });
+
+  it("a LIVING arch requirement outside '## Requirements' blocks the archive like a business one", async () => {
+    const files = archMergeFixture();
+    files["services/payment-service/arch.spec.md"] += `
+## Operational notes
+
+### Requirement: Strayed arch duty
+The service SHALL do something nobody re-homed.
+
+#### Scenario: S
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const payload = JSON.parse(res.stdout);
+      expect(payload.error.code).toBe("living-outside-requirements");
+      const messages = (payload.issues as Array<{ message: string }>).map((i) => i.message);
+      expect(messages.some((m) => m.includes("Strayed arch duty") && m.includes("arch.spec.md"))).toBe(true);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Delta-shape checks run on arch deltas the same way                  */
+/* ------------------------------------------------------------------ */
+
+describe("delta-shape checks on arch deltas", () => {
+  it("MODIFIED of an arch requirement with no living arch spec is an error — the axes are separate namespaces", async () => {
+    const files = coherentFixture();
+    // The BUSINESS living spec has 'Authorize a payment'; the arch axis does not.
+    // A same-named arch MODIFIED must not resolve against the business file.
+    files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
+
+## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize through the new path.
+
+#### Scenario: S
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const fs = ofCode(findings(res.stdout), "delta.modified-unknown");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.message).toContain("(arch.spec.md)");
+      expect(fs[0]!.message).toContain("living arch.spec.md");
+    });
+  });
+
+  it("a near-miss heading in an arch delta is delta.unknown-section, named to the arch file", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
+
+## ADDED Requirement
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox.
+
+#### Scenario: S
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const fs = ofCode(findings(res.stdout), "delta.unknown-section");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.message).toContain("(arch.spec.md)");
+    });
+  });
+
+  it("an arch requirement stranded under a prose heading warns AND gates archive, like a business one", async () => {
+    const files = archMergeFixture();
+    files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
+
+## MODIFIED Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox, updated.
+
+#### Scenario: S
+- **Given** g
+- **When** w
+- **Then** t
+
+## Resilience
+
+### Requirement: Stranded arch duty
+The service SHALL retry with backoff.
+
+#### Scenario: S2
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    await withProject(files, async (p) => {
+      const check = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(check.code).toBe(0); // a warning — validate stays green
+      const fs = ofCode(findings(check.stdout), "delta.requirement-not-merged");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.message).toContain("Stranded arch duty");
+
+      const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("not-coherent");
+    });
+  });
+
+  it("ADDED an arch requirement the living arch spec already has is delta.added-duplicate against the right file", async () => {
+    const files = archMergeFixture();
+    files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
+
+## ADDED Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox, again.
+
+#### Scenario: S
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const fs = ofCode(findings(res.stdout), "delta.added-duplicate");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.message).toContain("living arch.spec.md");
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* verify derives claims from arch scenarios                           */
+/* ------------------------------------------------------------------ */
+
+interface Claim {
+  id: string;
+  kind: string;
+  subject: string;
+  claim: string;
+}
+
+function claimsOf(stdout: string): Claim[] {
+  return (JSON.parse(stdout) as { claims: Claim[] }).claims;
+}
+
+describe("verify claims from arch scenarios", () => {
+  it("an arch scenario becomes a scenario.tested claim whose text names the arch origin", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+      expect(res.code).toBe(0);
+      const arch = claimsOf(res.stdout).filter((c) => c.claim.includes("arch.spec.md"));
+      expect(arch).toHaveLength(2); // the MODIFIED outbox scenario + the ADDED idempotency one
+      expect(arch.every((c) => c.kind === "scenario.tested")).toBe(true);
+      expect(arch.some((c) => c.claim.includes("arch requirement 'Outbox discipline'"))).toBe(true);
+      expect(arch.some((c) => c.subject === "payment-split-service")).toBe(true);
+    });
+  });
+
+  it("ids are stable across runs, and the checklist digest moves when an arch scenario body moves", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const first = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+      const second = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+      expect(claimsOf(second.stdout).map((c) => c.id)).toEqual(claimsOf(first.stdout).map((c) => c.id));
+
+      const firstDigest = (JSON.parse(first.stdout) as { digest: string }).digest;
+      await p.write(
+        "features/FEAT-1-split/specs/payment-split-service/arch.spec.md",
+        (await p.read("features/FEAT-1-split/specs/payment-split-service/arch.spec.md")).replace(
+          "nothing is recorded twice",
+          "exactly one split exists afterwards",
+        ),
+      );
+      const third = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+      expect((JSON.parse(third.stdout) as { digest: string }).digest).not.toBe(firstDigest);
+      // Only the reworded arch claim changed identity — a Given/When/Then
+      // rewrite under an unchanged title renames the claim, arch axis included.
+      const before = new Set(claimsOf(first.stdout).map((c) => c.id));
+      const changed = claimsOf(third.stdout).filter((c) => !before.has(c.id));
+      expect(changed).toHaveLength(1);
+      expect(changed[0]!.claim).toContain("arch.spec.md");
+    });
+  });
+
+  it("an identically-worded scenario in spec.md and arch.spec.md stays two distinct claims", async () => {
+    const files = coherentFixture();
+    const body = `## ADDED Requirements
+
+### Requirement: Same words
+The service SHALL do the thing.
+
+#### Scenario: Same scenario
+- **Given** g
+- **When** w
+- **Then** t
+`;
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = `# delta\n\n${body}`;
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = `# arch delta\n\n${body}`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "verify", "FEAT-1", "--json");
+      const same = claimsOf(res.stdout).filter((c) => c.claim.includes("'Same scenario'"));
+      expect(same).toHaveLength(2);
+      expect(new Set(same.map((c) => c.id)).size).toBe(2);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* loam delta projects the arch axis                                   */
+/* ------------------------------------------------------------------ */
+
+describe("loam delta carries arch requirement deltas", () => {
+  it("--json carries archRequirements in the same shape as the business ones, plus covers", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-split-service", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.archRequirements).toHaveLength(1);
+      const r = json.archRequirements[0];
+      expect(r.kind).toBe("ADDED");
+      expect(r.name).toBe("Split arrives exactly once");
+      expect(r.covers).toEqual(["paymentSplitService", "paymentService -> paymentSplitService"]);
+      expect(r.scenarios[0].name).toBe("Retry is a no-op");
+      expect(r.scenarios[0].lines.join("\n")).toContain("**Then** nothing is recorded twice");
+      // The business requirement rides beside it, in the same item shape.
+      expect(json.requirements[0].covers).toEqual([]);
+    });
+  });
+
+  it("a service with no arch delta reports an empty archRequirements, not an absent field", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-split-service", "--json");
+      expect(JSON.parse(res.stdout).archRequirements).toEqual([]);
+    });
+  });
+
+  it("the text briefing prints the arch requirements as their own section", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-split-service");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("Arch requirements:");
+      expect(res.out).toContain("[ADDED] Split arrives exactly once");
+    });
+  });
+});

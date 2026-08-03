@@ -155,6 +155,28 @@ export async function featureChecklist(
         }
       }
     }
+
+    // The architecture spec axis, same walk: an arch scenario is a promise like
+    // any other — the outbox test nobody was going to write IS the point of the
+    // axis. The source file rides in the id tuple (two axes are two namespaces:
+    // identically-worded scenarios must stay two questions) and in the claim
+    // text, so the answering agent knows it is being asked for an integration/
+    // ops test, not an acceptance test.
+    if (existsSync(paths.archSpec)) {
+      for (const r of parseRequirements(await readFile(paths.archSpec, "utf8"))) {
+        if (r.kind === "BASE" || r.kind === "REMOVED") continue;
+        for (const s of r.scenarios) {
+          scenarios.push(
+            claim(
+              "scenario.tested",
+              svc,
+              [svc, "arch.spec.md", r.name, s.name, scenarioBody(s)],
+              `scenario '${s.name}' of arch requirement '${r.name}' (${svc}, arch.spec.md) is covered by a test`,
+            ),
+          );
+        }
+      }
+    }
   }
 
   const claims = [...exists, ...exposes, ...calls, ...scenarios];
@@ -406,9 +428,9 @@ export function renderVerification(v: Verification): string {
     `# Verification record for ${v.feature} — written by \`loam verify ${v.feature} --record\`.`,
     "#",
     "# Every claim below was derived mechanically from this feature's own artifacts:",
-    "# delta.likec4, specs/<svc>/spec.md and specs/<svc>/openapi.yaml. The verdicts and",
-    "# the evidence are somebody's answers about the code — loam did not check them, and",
-    "# nothing gates on them.",
+    "# delta.likec4, specs/<svc>/spec.md, specs/<svc>/arch.spec.md and specs/<svc>/",
+    "# openapi.yaml. The verdicts and the evidence are somebody's answers about the",
+    "# code — loam did not check them, and nothing gates on them.",
     "#",
     "# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same",
     "# one, the feature changed after this was recorded and these answers are stale.",

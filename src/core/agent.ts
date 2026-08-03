@@ -171,9 +171,10 @@ the service's own repository.
 
 \`loam verify <FEAT>\` derives a checklist from the feature's own artifacts —
 one claim per new service, per operation the delta adds, per tagged edge that
-names an operation, and per scenario of every changed requirement. Each claim
-has a stable id, so two runs are diffable and an answer cannot drift onto a
-different question.
+names an operation, and per scenario of every changed requirement, arch.spec.md
+deltas included (those claims name their file, and the test they ask for is an
+integration/ops test, not an acceptance test). Each claim has a stable id, so
+two runs are diffable and an answer cannot drift onto a different question.
 
 You answer them. \`loam verify <FEAT> --record answers.json\` takes the answers
 back and writes \`features/<FEAT>/verification.yaml\`, which travels into the
@@ -468,6 +469,9 @@ Implement one service's part of a feature.
    in ./loam.json). That output IS the task:
    - \`intent\` — why this exists
    - \`requirements[]\` — what to build, with \`scenarios[].lines\` verbatim
+   - \`archRequirements[]\` — the architectural obligations (outbox, retries, alerts),
+     same shape; their scenarios become integration/ops tests, and \`covers\` names
+     the model objects each exercises
    - \`architecture\` — whether this service is new, and the calls in and out of it
    Exit 1 with \`ok: true\` means \`architecture.errors\` is non-empty: delta.likec4 did
    not parse, and the empty C4 slice is a parse failure, not "no architecture change".
@@ -602,8 +606,9 @@ service, so a verdict is worth exactly what its evidence is worth.
 1. \`loam verify $1 --json\`. \`claims[]\` is the checklist, derived from the feature's
    own artifacts — one claim per new service, per operation its openapi delta adds,
    per tagged edge that names an operation, and per scenario of every changed
-   requirement. Each has a stable \`id\` and a \`subject\` (the service whose code
-   answers it). An ARCHIVED feature returns its record as frozen history instead
+   requirement, arch.spec.md deltas included. Each has a stable \`id\` and a
+   \`subject\` (the service whose code answers it); a claim that says arch.spec.md
+   wants an integration/ops test, not an acceptance test. An ARCHIVED feature returns its record as frozen history instead
    (\`frozen: true\`) and \`--record\` refuses it — \`loam unarchive\` first if the
    answers really must change.
 2. Answer every claim by finding it in the code. Not by reasoning that it must be

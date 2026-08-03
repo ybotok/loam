@@ -75,7 +75,7 @@ describe("examples/docs vs loam validate --all", () => {
 });
 
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
-  it("plans a coherent five-file merge plus the move, with nothing to warn or override", async () => {
+  it("plans a coherent six-file merge plus the move, with nothing to warn or override", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
@@ -88,6 +88,7 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
       { path: "services/checkout-web/spec.md", action: "update" },
       { path: "services/payment-service/spec.md", action: "update" },
       { path: "services/payment-split-service/spec.md", action: "create" },
+      { path: "services/payment-split-service/arch.spec.md", action: "create" },
       { path: "services/payment-split-service/openapi.yaml", action: "create" },
       { path: "architecture/landscape.likec4", action: "update" },
       {
