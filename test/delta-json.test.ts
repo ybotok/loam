@@ -129,16 +129,20 @@ describe("--json contract", () => {
     expect(JSON.parse(res.stdout).error.code).toBe("no-config");
   });
 
-  it("surfaces a broken delta as data, keeping the requirement half usable", async () => {
+  it("surfaces a broken delta as data but exits 1 — the projection must not read as vacuously green", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/delta.likec4"] = "model {\n  a = bogusKind 'a'\n}\n";
     await withProject(files, async (p) => {
       const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json");
-      expect(res.code).toBe(0);
+      // exit 1: an agent consuming the empty C4 slice as a task brief would
+      // silently lose the architecture axis. ok stays true — the command ran —
+      // and the payload stays exactly as informative as before.
+      expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(true);
       expect(json.architecture.errors.length).toBeGreaterThan(0);
-      expect(json.requirements).toHaveLength(1);
+      expect(json.architecture.inbound).toEqual([]);
+      expect(json.requirements).toHaveLength(1); // the requirement half stays usable
     });
   });
 });
@@ -153,6 +157,17 @@ describe("text output is unchanged", () => {
       expect(res.out).toContain("[ADDED] Split a payment");
       expect(res.out).toContain("Architecture:");
       expect(res.out).toContain(`NEW service — create ${NEW_SVC}`);
+    });
+  });
+
+  it("text mode keeps exit 0 on a broken delta — it prints the errors and points at validate", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/delta.likec4"] = "model {\n  a = bogusKind 'a'\n}\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC);
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("delta.likec4 has errors");
+      expect(res.out).toContain("loam validate");
     });
   });
 });

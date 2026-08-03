@@ -122,6 +122,9 @@ says so once and stops the warning for good.
 5. **Build** — \`loam delta FEAT-101 --service <svc> --json\` is the task for one service:
    intent, its requirement delta with scenarios verbatim, and the edges around it.
    Write one test per scenario **first**, from the Given/When/Then lines as written.
+   If \`architecture.errors\` is non-empty the payload keeps \`ok: true\` (the command
+   ran) but the exit code is 1: the C4 slice is empty because delta.likec4 did not
+   parse, not because the feature changes no architecture — do not build on it.
 6. **Verify** — \`loam verify FEAT-101 --json\` turns the feature's own promises into a
    checklist; answer each claim with evidence and record it. See "The done-check".
 7. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows
@@ -262,6 +265,11 @@ exists at all — warnings included. It changes the exit code and nothing else:
 \`valid\` still means "no errors", and the \`--json\` payload stays byte-for-byte
 what it was. The stricter grade is a per-invocation lever, visible in the CI
 pipeline that passes the flag — deliberately not a per-repo profile.
+
+\`loam delta <FEAT> --json\` exits 1 when \`architecture.errors\` is non-empty, with
+\`ok: true\` and the full payload intact: the empty C4 slice means the delta did
+not parse, not that the feature changes no architecture. Branch on the exit code
+before consuming the slice as a task brief.
 
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
 \`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
@@ -421,6 +429,9 @@ Implement one service's part of a feature.
    - \`intent\` — why this exists
    - \`requirements[]\` — what to build, with \`scenarios[].lines\` verbatim
    - \`architecture\` — whether this service is new, and the calls in and out of it
+   Exit 1 with \`ok: true\` means \`architecture.errors\` is non-empty: delta.likec4 did
+   not parse, and the empty C4 slice is a parse failure, not "no architecture change".
+   Stop and fix the delta (\`loam validate $1 --json\`) before building anything.
 2. Write the tests FIRST — one per scenario, straight from the Given/When/Then lines.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance
    criterion someone else reviews against.
