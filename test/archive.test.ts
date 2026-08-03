@@ -597,13 +597,31 @@ describe("happy path on coherentFixture", () => {
     expect(edges[0]!.title).toBe("Calls createSplit");
   });
 
-  it("pre-existing landscape content (customer, checkout-web, views block, old edge) is byte-preserved around the insertion", () => {
-    // insertIntoModelBlock inserts just before the model block's closing brace —
-    // everything before and after that point must be untouched.
-    const close = LANDSCAPE.indexOf("\n}\n\nviews") + 1;
-    expect(close).toBeGreaterThan(0);
-    expect(landText.startsWith(LANDSCAPE.slice(0, close))).toBe(true);
-    expect(landText.endsWith(LANDSCAPE.slice(close))).toBe(true);
+  it("pre-existing landscape content (customer, checkout-web, views block, old edge) is byte-preserved around the insertions", () => {
+    // Service-grouped placement: the new element opens a new service, so it
+    // lands in the trailing element region (after the last element, before the
+    // relationships); the new edge's source is payment-service, so it lands
+    // right after the last edge touching payment-service — here the model's
+    // final statement. Every authored byte survives around the two splices.
+    const elAt = LANDSCAPE.indexOf("  customer -> checkoutWeb");
+    const closeAt = LANDSCAPE.indexOf("\n}\n\nviews") + 1;
+    expect(elAt).toBeGreaterThan(0);
+    expect(closeAt).toBeGreaterThan(0);
+    const elementBlock =
+      "  paymentSplitService = softwareSystem 'payment-split-service' {\n" +
+      "    description 'Splits a payment across payees'\n" +
+      "  }\n";
+    const edgeBlock =
+      "  paymentService -> paymentSplitService 'Calls createSplit' {\n" +
+      "    metadata { op 'createSplit' }\n" +
+      "  }\n";
+    expect(landText).toBe(
+      LANDSCAPE.slice(0, elAt) +
+        elementBlock +
+        LANDSCAPE.slice(elAt, closeAt) +
+        edgeBlock +
+        LANDSCAPE.slice(closeAt),
+    );
     expect(edgesBetween(land, "Customer", "checkout-web")).toHaveLength(1);
     expect(edgesBetween(land, "checkout-web", "payment-service", "authorizePayment")).toHaveLength(1);
   });
@@ -1330,6 +1348,163 @@ describe("landscape splice fidelity (the merge copies authored source, it does n
       expect(json.error.message).toContain("would not parse");
       expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
       expect(p.exists("features/FEAT-21-engine/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("service-grouped landscape placement (deterministic, order-independent)", () => {
+  /*
+   * The conflict factory this closes: every archive used to append at the one
+   * point before the model's closing brace, so two concurrent archive PRs
+   * conflicted in git BY CONSTRUCTION — and hand-resolving invalidated the
+   * .loam-before snapshot, forcing a later unarchive through --force. Now
+   * placement is service-grouped and insertion-sorted, so the KEY PROPERTY
+   * holds: archiving A then B (touching different services) yields the
+   * byte-identical landscape to B then A. Same-service archives still land
+   * adjacently and still conflict — expected, documented, and pinned here too.
+   */
+
+  /** FEAT-30: new service split-alpha, called by payment-service. */
+  const ALPHA_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-30
+}
+
+model {
+  paymentService = softwareSystem 'payment-service'
+  splitAlpha = softwareSystem 'split-alpha' {
+    #FEAT-30
+  }
+
+  paymentService -> splitAlpha 'Calls createAlpha' {
+    #FEAT-30
+    metadata { op 'createAlpha' }
+  }
+}
+
+views {
+  view feat_30 {
+    include *
+  }
+}
+`;
+
+  /** FEAT-31: new service split-beta, called by checkout-web. */
+  const BETA_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-31
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  splitBeta = softwareSystem 'split-beta' {
+    #FEAT-31
+  }
+
+  checkoutWeb -> splitBeta 'Calls createBeta' {
+    #FEAT-31
+    metadata { op 'createBeta' }
+  }
+}
+
+views {
+  view feat_31 {
+    include *
+  }
+}
+`;
+
+  /** Archive both features in the given order on a fresh fixture; return the final landscape. */
+  async function archiveBoth(first: string, second: string): Promise<string> {
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-30-alpha/delta.likec4": ALPHA_DELTA,
+      "features/FEAT-31-beta/delta.likec4": BETA_DELTA,
+    });
+    try {
+      // --approve: the ops are deliberately undefined — this is about placement.
+      expect((await runLoam(p.workDir, "archive", first, "--approve")).code).toBe(0);
+      expect((await runLoam(p.workDir, "archive", second, "--approve")).code).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors, "the merged landscape must parse whatever the archive order").toEqual([]);
+      return await p.read(LANDSCAPE_REL);
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("THE KEY PROPERTY: A then B is byte-identical to B then A when the features touch different services", async () => {
+    const ab = await archiveBoth("FEAT-30", "FEAT-31");
+    const ba = await archiveBoth("FEAT-31", "FEAT-30");
+    expect(ba, "concurrent archives touching different services must compose to the same bytes").toBe(ab);
+    // The no-neighborhood elements sit in id order, whichever feature shipped first.
+    expect(ab.indexOf("splitAlpha = ")).toBeGreaterThan(0);
+    expect(ab.indexOf("splitAlpha = ")).toBeLessThan(ab.indexOf("splitBeta = "));
+  });
+
+  it("both edges join their source service's edge neighborhood, ordered by key past the shared anchor", async () => {
+    // The living checkoutWeb -> paymentService edge touches BOTH new edges'
+    // source services, so the two anchor to the SAME statement — the sort key,
+    // never archive order, decides who stands closer (or the property above
+    // could not hold).
+    const text = await archiveBoth("FEAT-30", "FEAT-31");
+    const anchor = text.indexOf("checkoutWeb -> paymentService 'Calls authorizePayment'");
+    const beta = text.indexOf("checkoutWeb -> splitBeta 'Calls createBeta'");
+    const alpha = text.indexOf("paymentService -> splitAlpha 'Calls createAlpha'");
+    expect(anchor).toBeGreaterThan(0);
+    expect(beta).toBeGreaterThan(anchor);
+    expect(alpha).toBeGreaterThan(beta);
+  });
+
+  it("two features touching the SAME service land adjacently after its last element — that concurrency still conflicts, by design", async () => {
+    const retryDelta = `specification {
+  element softwareSystem
+  tag FEAT-40
+}
+
+model {
+  payRetry = softwareSystem 'Payment Retry Worker' {
+    #FEAT-40
+    metadata { service 'payment-service' }
+  }
+}
+
+views {
+  view feat_40 {
+    include *
+  }
+}
+`;
+    const auditDelta = retryDelta
+      .replaceAll("FEAT-40", "FEAT-41")
+      .replaceAll("payRetry", "payAudit")
+      .replaceAll("Payment Retry Worker", "Payment Audit");
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "features/FEAT-40-retry/delta.likec4": retryDelta,
+      "features/FEAT-41-audit/delta.likec4": auditDelta,
+    });
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-40", "--approve")).code).toBe(0);
+      expect((await runLoam(p.workDir, "archive", "FEAT-41", "--approve")).code).toBe(0);
+      const text = await p.read(LANDSCAPE_REL);
+      // Each element binds to payment-service, so each anchors after that
+      // service's last element — the first archive's addition included.
+      expect(text).toContain(
+        "  paymentService = softwareSystem 'payment-service' {\n" +
+          "    description 'Owns payment authorization/capture'\n" +
+          "  }\n" +
+          "  payRetry = softwareSystem 'Payment Retry Worker' {\n" +
+          "    metadata { service 'payment-service' }\n" +
+          "  }\n" +
+          "  payAudit = softwareSystem 'Payment Audit' {\n" +
+          "    metadata { service 'payment-service' }\n" +
+          "  }\n",
+      );
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
     } finally {
       await p.destroy();
     }

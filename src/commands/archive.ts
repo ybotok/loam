@@ -20,11 +20,13 @@ import {
   type PlannedWrite,
 } from "../core/staging.js";
 import {
+  elementService,
   loadFile,
   loadSource,
   maskSource,
   matchBrace,
   scanModel,
+  serviceOf,
   type Elem,
   type Rel,
   type ScannedElement,
@@ -685,12 +687,16 @@ interface LandscapePlan {
  * baseline now (SCHEMA.md documents the drop as why unarchive restores bytes
  * instead of recomputing) — and a construct the strip empties goes with it.
  *
- * Placement: a top-level addition lands in the single "// merged by loam
- * archive" block before the model's closing brace. A NESTED element lands
- * inside its parent's block — inside the living parent when the landscape
- * already has it, riding verbatim inside the spliced parent when the parent
- * is new from the same delta — never as a flat dotted id at top level, which
- * LikeC4 rejects.
+ * Placement is deterministic and SERVICE-GROUPED (the spot* helpers below):
+ * a top-level addition lands beside what already belongs to its service, so
+ * two concurrent archives touching different services usually splice on
+ * different lines and git merges their PRs — the single shared append point
+ * every archive used to hit made two concurrent archives conflict BY
+ * CONSTRUCTION. A NESTED element lands inside its parent's block — inside the
+ * living parent when the landscape already has it, riding verbatim inside the
+ * spliced parent when the parent is new from the same delta — never as a flat
+ * dotted id at top level, which LikeC4 rejects. The additions carry no marker
+ * comment: which archive added what is the git history's to say.
  *
  * Existence is checked semantically against the parsed landscape (by element
  * id/title and by edge identity), so re-archiving is idempotent and title
@@ -762,21 +768,47 @@ async function planLandscapeMerge(
   const rides = (start: number, end: number): boolean =>
     spliced.some((r) => start >= r.start && end <= r.end);
 
-  const topBlocks: Array<{ at: number; text: string }> = [];
-  const nested: Array<{ at: number; insert: string; seq: number }> = [];
+  // The living model, scanned once on MASKED source (scanModel): nested
+  // children need their parents' spans, and top-level placement needs the
+  // statement layout. Masking matters — a `model {` spelled inside a comment
+  // or string above the real block must not capture the match, or every
+  // top-level addition lands inside the comment (legal LikeC4, so the parse
+  // net below would pass a landscape containing none of the architecture).
+  const livingScan = scanModel(text);
+  const stmts = livingScan === null ? [] : topStatements(livingScan, land.elements);
+  const requireModel = (): ScannedModel => {
+    if (livingScan === null) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
+    return livingScan;
+  };
 
-  let livingScanned: ScannedModel | null | undefined;
+  /** Every planned insertion, `at` an offset into the ORIGINAL living text. */
+  const inserts: Array<{ at: number; insert: string; band: number; key: string; seq: number }> = [];
+  let seq = 0;
+  const pushTop = (spot: Spot, block: string, kind: "element" | "rel", key: string): void => {
+    inserts.push({
+      at: spot.at,
+      // A bare spot is the closing brace itself (it shares its line) — the
+      // block brings its own newlines; a line-start spot slots between lines.
+      insert: spot.bare ? `\n${block}\n` : `${block}\n`,
+      // Same-offset order: elements before relationships, anchored inserts
+      // before trailing ones, trailing ones by their sort key — the same
+      // ordering the placement walks read off the merged text next time.
+      band: (kind === "element" ? 0 : 2) + (spot.grouped ? 0 : 1),
+      key: spot.grouped ? "" : key,
+      seq: seq++,
+    });
+  };
+
   const livingParentOf = (parentId: string): ScannedElement | null => {
-    if (livingScanned === undefined) livingScanned = scanModel(text);
-    if (livingScanned === null) return null;
-    const direct = livingScanned.elements.find((e) => e.id === parentId);
+    if (livingScan === null) return null;
+    const direct = livingScan.elements.find((e) => e.id === parentId);
     if (direct !== undefined) return direct;
     // The delta may spell an existing element under its own id; the title is
     // the stable cross-namespace name (the same rule the existence check uses).
     const title = deltaElements.find((e) => e.id === parentId)?.title;
     const livingId = title === undefined ? undefined : land.elements.find((e) => e.title === title)?.id;
     if (livingId === undefined) return null;
-    return livingScanned.elements.find((e) => e.id === livingId) ?? null;
+    return livingScan.elements.find((e) => e.id === livingId) ?? null;
   };
 
   // Ancestors first: a spliced parent covers its children before they are seen.
@@ -795,7 +827,8 @@ async function planLandscapeMerge(
     if (rides(src.start, src.end)) continue;
     const dot = e.id.lastIndexOf(".");
     if (dot === -1) {
-      topBlocks.push({ at: src.start, text: spliceSource(deltaText, src, featureId, "  ") });
+      const spot = elementSpot(text, stmts, requireModel().close, e.id, elementService(e));
+      pushTop(spot, spliceSource(deltaText, src, featureId, "  "), "element", e.id);
       spliced.push({ start: src.start, end: src.end });
       continue;
     }
@@ -807,9 +840,11 @@ async function planLandscapeMerge(
         `'${e.id}' nests under '${parentId}', which is neither in the living landscape nor added by this delta — there is nowhere to insert it`,
       );
     }
-    nested.push({
+    inserts.push({
       ...nestedInsert(text, parent, spliceSource(deltaText, src, featureId, parent.indent + "  ")),
-      seq: nested.length,
+      band: 0,
+      key: "",
+      seq: seq++,
     });
     spliced.push({ start: src.start, end: src.end });
   }
@@ -833,23 +868,20 @@ async function planLandscapeMerge(
       );
     }
     if (rides(s.start, s.end)) continue;
-    topBlocks.push({ at: s.start, text: spliceSource(deltaText, s, featureId, "  ") });
+    const key = relSortKey(deltaElements, r);
+    const spot = relSpot(text, stmts, requireModel().close, serviceOf(deltaElements, r.source), key);
+    pushTop(spot, spliceSource(deltaText, s, featureId, "  "), "rel", key);
   }
 
-  // Compose: the top-level block first (it sits at the model's closing brace,
-  // after every nested position, so the nested offsets — which index the
-  // ORIGINAL text — survive it), then the nested inserts back to front so they
-  // do not shift each other. Same position means same parent: later inserts go
-  // in first, which keeps the children in delta order.
+  // Compose back to front: every offset indexes the ORIGINAL text, so applying
+  // in descending order leaves the earlier offsets valid. Inserts landing on
+  // the same offset keep their (band, key, seq) rank — reversing a sorted list
+  // and splicing at one point puts the first-ranked block first.
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  inserts.sort((a, b) => a.at - b.at || a.band - b.band || cmp(a.key, b.key) || a.seq - b.seq);
   let content = text;
-  if (topBlocks.length > 0) {
-    topBlocks.sort((a, b) => a.at - b.at);
-    content = insertIntoModelBlock(
-      content,
-      topBlocks.map((b) => b.text),
-    );
-  }
-  for (const n of [...nested].sort((a, b) => b.at - a.at || b.seq - a.seq)) {
+  for (let i = inserts.length - 1; i >= 0; i -= 1) {
+    const n = inserts[i]!;
     content = content.slice(0, n.at) + n.insert + content.slice(n.at);
   }
 
@@ -1008,24 +1040,167 @@ function relKey(els: Elem[], r: Rel): string {
   return JSON.stringify(r.op !== undefined ? ["op", src, tgt, r.op] : ["title", src, tgt, r.title ?? ""]);
 }
 
+/* ------------------------------------------------------------------ */
+/* Landscape placement — where a top-level addition lands               */
+/* ------------------------------------------------------------------ */
+
 /**
- * Insert pre-indented source blocks before the closing brace of the top-level
- * `model { ... }` block. The block is LOCATED on masked source — maskSource
- * blanks string interiors and comments while preserving every offset, the same
- * view scanModel reads — because finding it on raw text let a `model {` spelled
- * inside a block comment (or a string) above the real block capture the match:
- * the brace scan then closed inside the comment and every top-level addition
- * was spliced into it — legal LikeC4, so the parse net passed and the archive
- * reported success over a landscape that contained none of the architecture.
+ * The placement scheme, in full. It never moves an authored byte — placement
+ * only chooses where NEW spliced blocks go — and it is deterministic in a
+ * stronger sense: archiving feature A then feature B (touching different
+ * services) yields the SAME final bytes as B then A, which is what lets two
+ * concurrent archive PRs merge in git instead of colliding on one shared
+ * append point.
+ *
+ *  - An ELEMENT whose service already has top-level elements in the model
+ *    (the elementService join — binding first, title as the fallback) lands
+ *    immediately after the last of them: it joins its service's neighborhood.
+ *    Two features touching the SAME service therefore land adjacently, and
+ *    their concurrent PRs still conflict — expected, and documented
+ *    (SCHEMA.md sends that conflict to the PR flow).
+ *  - An element opening a NEW service lands in the trailing region before the
+ *    model's closing brace: skip the trailing relationship run, then walk left
+ *    past trailing elements with a lexicographically greater id — an
+ *    insertion sort by id against whatever is already there, which is what
+ *    makes the region's final order independent of archive order.
+ *  - A RELATIONSHIP lands after the last top-level relationship touching its
+ *    SOURCE's service (either endpoint counts), then past any directly
+ *    following relationships with a smaller sort key — two edges anchored to
+ *    the same statement must order by key, not by which archived first. With
+ *    no such neighborhood it falls to the trailing region, key-sorted the
+ *    same insertion-sort way, after the trailing elements.
+ *
+ * LikeC4 reference resolution is not order-dependent, so a relationship
+ * placed before an element it names still parses; the in-memory parse net in
+ * planLandscapeMerge stays as the backstop regardless.
  */
-function insertIntoModelBlock(text: string, blocks: string[]): string {
-  const { code } = maskSource(text);
-  const m = /\bmodel\s*\{/.exec(code);
-  if (!m) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
-  const close = matchBrace(code, m.index + m[0].length - 1);
-  if (close === -1) throw new ArchiveFailure("merge-failed", "landscape.likec4 has an unbalanced model block");
-  const block = `\n  // merged by loam archive\n${blocks.join("\n")}\n`;
-  return text.slice(0, close) + block + text.slice(close);
+interface Spot {
+  /** Offset into the living text: a line start, or the closing brace itself. */
+  at: number;
+  /** True when `at` is the closing brace sharing its line — the block must bring its own newlines. */
+  bare: boolean;
+  /** True when the insert joins an existing neighborhood (anchored, authoring order). */
+  grouped: boolean;
+}
+
+/** A top-level statement of the living model, with everything placement asks of it. */
+interface TopStmt {
+  kind: "element" | "rel";
+  /** Element: its id. */
+  id: string;
+  /** Relationship: its placement sort key (relSortKey). */
+  key: string;
+  /** The service(s) this statement resolves to — one for an element, both endpoints for a rel. */
+  services: string[];
+  start: number;
+  end: number;
+}
+
+/** The model's top-level statements in document order, joined to the parsed elements for services. */
+function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
+  const topEls = scan.elements.filter((e) => !e.id.includes("."));
+  const bound = new Map(els.map((e) => [e.id, elementService(e)]));
+  const stmts: TopStmt[] = topEls.map((e) => ({
+    kind: "element" as const,
+    id: e.id,
+    key: "",
+    services: [bound.get(e.id) ?? e.id],
+    start: e.start,
+    end: e.end,
+  }));
+  for (const r of scan.rels) {
+    // A rel declared inside an element's body is not a top-level statement —
+    // anchoring after it would splice into the parent's block.
+    if (topEls.some((e) => r.start > e.start && r.start < e.end)) continue;
+    stmts.push({
+      kind: "rel",
+      id: "",
+      key: relSortKey(els, r),
+      services: [serviceOf(els, r.source), serviceOf(els, r.target)],
+      start: r.start,
+      end: r.end,
+    });
+  }
+  return stmts.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The order of loam-inserted relationships that share a landing region:
+ * (source title, target title, op, title) as one comparable string. Titles,
+ * not ids — the delta's and the landscape's id namespaces differ, and the
+ * same edge must sort identically as today's addition and as an existing
+ * statement in the next archive's scan.
+ */
+function relSortKey(
+  els: Elem[],
+  r: { source: string; target: string; title?: string; op?: string },
+): string {
+  return JSON.stringify([titleOf(els, r.source), titleOf(els, r.target), r.op ?? "", r.title ?? ""]);
+}
+
+function elementSpot(text: string, stmts: TopStmt[], close: number, id: string, service: string): Spot {
+  let anchor: TopStmt | undefined;
+  for (const s of stmts) {
+    if (s.kind === "element" && s.services.includes(service)) anchor = s;
+  }
+  if (anchor !== undefined) return spotAfter(text, close, anchor.end, true);
+  let i = stmts.length - 1;
+  let before: TopStmt | undefined;
+  while (i >= 0 && stmts[i]!.kind === "rel") {
+    before = stmts[i];
+    i -= 1;
+  }
+  while (i >= 0 && stmts[i]!.kind === "element" && stmts[i]!.id > id) {
+    before = stmts[i];
+    i -= 1;
+  }
+  return before !== undefined
+    ? { at: lineStartAt(text, before.start), bare: false, grouped: false }
+    : closeSpot(text, close, false);
+}
+
+function relSpot(text: string, stmts: TopStmt[], close: number, sourceService: string, key: string): Spot {
+  let anchorAt = -1;
+  for (let i = 0; i < stmts.length; i += 1) {
+    const s = stmts[i]!;
+    if (s.kind === "rel" && s.services.includes(sourceService)) anchorAt = i;
+  }
+  if (anchorAt !== -1) {
+    let last = stmts[anchorAt]!;
+    for (let j = anchorAt + 1; j < stmts.length; j += 1) {
+      const s = stmts[j]!;
+      if (s.kind !== "rel" || s.key >= key) break;
+      last = s;
+    }
+    return spotAfter(text, close, last.end, true);
+  }
+  let i = stmts.length - 1;
+  let before: TopStmt | undefined;
+  while (i >= 0 && stmts[i]!.kind === "rel" && stmts[i]!.key > key) {
+    before = stmts[i];
+    i -= 1;
+  }
+  return before !== undefined
+    ? { at: lineStartAt(text, before.start), bare: false, grouped: false }
+    : closeSpot(text, close, false);
+}
+
+/** The line following the statement that ends at `end` — clamped to the closing brace's own spot. */
+function spotAfter(text: string, close: number, end: number, grouped: boolean): Spot {
+  const nl = text.indexOf("\n", end);
+  const at = nl === -1 ? text.length : nl + 1;
+  return at > close ? closeSpot(text, close, grouped) : { at, bare: false, grouped };
+}
+
+/** The last resort: directly before the model's closing brace. */
+function closeSpot(text: string, close: number, grouped: boolean): Spot {
+  const ls = lineStartAt(text, close);
+  if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: ls, bare: false, grouped };
+  return { at: close, bare: true, grouped };
+}
+
+function lineStartAt(text: string, at: number): number {
+  return text.lastIndexOf("\n", at - 1) + 1;
 }
 
 /**
