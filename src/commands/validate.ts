@@ -1,9 +1,17 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import {
+  featurePaths,
+  featureSpecPaths,
+  featureSpecServices,
+  featuresDir,
+  landscapePath as landscapeFile,
+  resolveFeature,
+  servicePaths,
+} from "../core/repo.js";
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
 import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
@@ -39,9 +47,10 @@ async function validateService(docsDir: string, service: string | undefined): Pr
     return false;
   }
   let ok = true;
+  const paths = servicePaths(docsDir, service);
 
   // C4 model
-  const modelPath = join(docsDir, "services", service, "model.likec4");
+  const modelPath = paths.model;
   if (!existsSync(modelPath)) {
     console.error(`No C4 model at ${modelPath}. Run \`loam adopt\` for '${service}' first.`);
     return false;
@@ -56,15 +65,14 @@ async function validateService(docsDir: string, service: string | undefined): Pr
   }
 
   // Requirement coverage
-  const specPath = join(docsDir, "services", service, "spec.md");
   let reqs: Requirement[] = [];
-  if (existsSync(specPath)) {
-    reqs = parseRequirements(await readFile(specPath, "utf8"));
+  if (existsSync(paths.spec)) {
+    reqs = parseRequirements(await readFile(paths.spec, "utf8"));
     ok = reportCoverage(`${service}: requirements`, reqs) && ok;
   }
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
-  const ops = await operationIds(join(docsDir, "services", service, "openapi.yaml"));
+  const ops = await operationIds(paths.openapi);
   if (ops.length > 0) {
     const governed = new Set(reqs.flatMap((r) => r.operations));
     const orphans = ops.filter((op) => !governed.has(op));
@@ -78,7 +86,7 @@ async function validateService(docsDir: string, service: string | undefined): Pr
   // Landscape spine: cross-system edges calling THIS service must resolve to a real
   // operation in its OpenAPI — the C4↔API contract, checked in the living landscape,
   // not only in feature mode. Catches dangling / de-linked op edges.
-  const landscapePath = join(docsDir, "architecture", "landscape.likec4");
+  const landscapePath = landscapeFile(docsDir);
   if (existsSync(landscapePath)) {
     const land = await loadFile(landscapePath);
     if (land.errors.length > 0) {
@@ -114,13 +122,12 @@ async function validateService(docsDir: string, service: string | undefined): Pr
 }
 
 async function validateFeature(docsDir: string, featureId: string): Promise<boolean> {
-  const featuresDir = join(docsDir, "features");
-  const dirName = await findFeatureDirName(featuresDir, featureId);
-  if (!dirName) {
-    console.error(`No feature '${featureId}' under ${featuresDir}.`);
+  const feature = await resolveFeature(docsDir, featureId);
+  if (!feature) {
+    console.error(`No feature '${featureId}' under ${featuresDir(docsDir)}.`);
     return false;
   }
-  const featureDir = join(featuresDir, dirName);
+  const featureDir = feature.dir;
   let ok = true;
 
   console.log(`${featureId}`);
@@ -128,7 +135,7 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
   // delta.likec4 parse + collect tagged edges
   let taggedRels: Rel[] = [];
   let elements: Elem[] = [];
-  const deltaPath = join(featureDir, "delta.likec4");
+  const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
     const res = await loadFile(deltaPath);
     if (res.errors.length > 0) {
@@ -143,18 +150,14 @@ async function validateFeature(docsDir: string, featureId: string): Promise<bool
   }
 
   // Requirement coverage across every per-service delta, and collect scenario text
-  const specsDir = join(featureDir, "specs");
   let scenarioText = "";
-  if (existsSync(specsDir)) {
-    const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
-    for (const svc of svcs) {
-      const p = join(specsDir, svc.name, "spec.md");
-      if (!existsSync(p)) continue;
-      const raw = await readFile(p, "utf8");
-      scenarioText += "\n" + raw.toLowerCase();
-      const reqs = parseRequirements(raw);
-      ok = reportCoverage(`${svc.name}: requirements`, reqs) && ok;
-    }
+  for (const svc of await featureSpecServices(featureDir)) {
+    const p = featureSpecPaths(featureDir, svc).spec;
+    if (!existsSync(p)) continue;
+    const raw = await readFile(p, "utf8");
+    scenarioText += "\n" + raw.toLowerCase();
+    const reqs = parseRequirements(raw);
+    ok = reportCoverage(`${svc}: requirements`, reqs) && ok;
   }
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
@@ -202,15 +205,6 @@ function edgeCovered(target: string, title: string | undefined, scenarioText: st
     if (token.length >= 5 && scenarioText.includes(token.toLowerCase())) return true;
   }
   return false;
-}
-
-async function findFeatureDirName(featuresDir: string, featureId: string): Promise<string | null> {
-  if (!existsSync(featuresDir)) return null;
-  const entries = await readdir(featuresDir, { withFileTypes: true });
-  const match = entries.find(
-    (e) => e.isDirectory() && (e.name === featureId || e.name.startsWith(featureId + "-")),
-  );
-  return match ? match.name : null;
 }
 
 function titleOf(elements: Elem[], id: string): string {

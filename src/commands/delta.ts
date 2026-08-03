@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import { featurePaths, featureSpecPaths, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
 
 interface DeltaOptions {
@@ -30,24 +30,24 @@ export function registerDelta(program: Command): void {
         return;
       }
 
-      const featureDir = await resolveFeatureDir(join(config.docsDir, "features"), featureId);
-      if (!featureDir) {
+      const feature = await resolveFeature(config.docsDir, featureId);
+      if (!feature) {
         console.error(`No feature '${featureId}' under ${config.docsDir}/features/.`);
         process.exitCode = 1;
         return;
       }
+      const paths = featurePaths(feature.dir);
 
       console.log(`${featureId} · ${service}\n`);
 
       // 1. Why — business intent
-      const intentPath = join(featureDir, "intent.md");
-      if (existsSync(intentPath)) {
-        console.log(indent(stripFrontmatter(await readFile(intentPath, "utf8")).trim(), "  "));
+      if (existsSync(paths.intent)) {
+        console.log(indent(stripFrontmatter(await readFile(paths.intent, "utf8")).trim(), "  "));
         console.log();
       }
 
       // 2. Requirement delta for this service (OpenSpec style)
-      const reqPath = join(featureDir, "specs", service, "spec.md");
+      const reqPath = featureSpecPaths(feature.dir, service).spec;
       if (existsSync(reqPath)) {
         printRequirements(parseRequirements(await readFile(reqPath, "utf8")));
       } else {
@@ -55,7 +55,7 @@ export function registerDelta(program: Command): void {
       }
 
       // 3. C4 architecture slice
-      const deltaPath = join(featureDir, "delta.likec4");
+      const deltaPath = paths.delta;
       if (existsSync(deltaPath)) {
         const { errors, elements, relationships } = await loadFile(deltaPath);
         if (errors.length > 0) {
@@ -65,15 +65,6 @@ export function registerDelta(program: Command): void {
         }
       }
     });
-}
-
-async function resolveFeatureDir(featuresDir: string, featureId: string): Promise<string | null> {
-  if (!existsSync(featuresDir)) return null;
-  const entries = await readdir(featuresDir, { withFileTypes: true });
-  const match = entries.find(
-    (e) => e.isDirectory() && (e.name === featureId || e.name.startsWith(featureId + "-")),
-  );
-  return match ? join(featuresDir, match.name) : null;
 }
 
 function stripFrontmatter(md: string): string {

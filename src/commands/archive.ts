@@ -1,10 +1,19 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import {
+  featurePaths,
+  featureSpecPaths,
+  featureSpecServices,
+  featuresDir as featuresRoot,
+  landscapePath as landscapeFile,
+  resolveFeature,
+  servicePaths,
+} from "../core/repo.js";
 import { operationIds } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import {
@@ -44,14 +53,14 @@ async function runArchive(featureId: string, opts: { approve?: boolean }): Promi
     process.exitCode = 1;
     return;
   }
-  const featuresDir = join(config.docsDir, "features");
-  const dirName = await findFeatureDirName(featuresDir, featureId);
-  if (!dirName) {
+  const featuresDir = featuresRoot(config.docsDir);
+  const feature = await resolveFeature(config.docsDir, featureId);
+  if (!feature) {
     console.error(`No feature '${featureId}' under ${featuresDir}.`);
     process.exitCode = 1;
     return;
   }
-  const featureDir = join(featuresDir, dirName);
+  const { dirName, dir: featureDir } = feature;
 
   // Gate: never archive an incoherent feature without explicit approval — the merge would corrupt the living docs.
   const issues = await featureCoherence(config.docsDir, featureDir, featureId);
@@ -85,63 +94,58 @@ async function runArchive(featureId: string, opts: { approve?: boolean }): Promi
   // succeeds, so a failure on any axis leaves the living docs untouched.
   const writes: PlannedWrite[] = [];
 
-  // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.
-  const specsDir = join(featureDir, "specs");
-  if (existsSync(specsDir)) {
-    const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
-    for (const svc of svcs) {
-      const deltaPath = join(specsDir, svc.name, "spec.md");
-      if (!existsSync(deltaPath)) continue;
-      const deltaReqs = parseRequirements(await readFile(deltaPath, "utf8"));
+  const deltaServices = await featureSpecServices(featureDir);
 
-      const livingPath = join(config.docsDir, "services", svc.name, "spec.md");
-      if (!existsSync(livingPath)) {
-        // New service — create its living spec from the ADDED/MODIFIED requirements.
-        const created = applyRequirementDelta([], deltaReqs);
-        if (created.length === 0) {
-          console.log(`  requirements: ${svc.name} — nothing to merge (delta leaves no requirements), no living spec created`);
-          continue;
-        }
-        const frontmatter = `---\nservice: ${svc.name}\nstatus: draft\n---\n\n# ${svc.name}\n\n`;
-        writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
-        console.log(`  requirements: ${svc.name} — created living spec (${created.length} requirement(s))`);
+  // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service spec.
+  for (const svc of deltaServices) {
+    const deltaPath = featureSpecPaths(featureDir, svc).spec;
+    if (!existsSync(deltaPath)) continue;
+    const deltaReqs = parseRequirements(await readFile(deltaPath, "utf8"));
+
+    const livingPath = servicePaths(config.docsDir, svc).spec;
+    if (!existsSync(livingPath)) {
+      // New service — create its living spec from the ADDED/MODIFIED requirements.
+      const created = applyRequirementDelta([], deltaReqs);
+      if (created.length === 0) {
+        console.log(`  requirements: ${svc} — nothing to merge (delta leaves no requirements), no living spec created`);
         continue;
       }
-      const livingText = await readFile(livingPath, "utf8");
-      const { intro, reqs: livingReqs } = splitSpec(livingText);
-      const merged = applyRequirementDelta(livingReqs, deltaReqs);
-      writes.push({ path: livingPath, content: `${intro.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}` });
-
-      const c = summarize(deltaReqs);
-      console.log(`  requirements: ${svc.name} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+      const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${svc}\n\n`;
+      writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
+      console.log(`  requirements: ${svc} — created living spec (${created.length} requirement(s))`);
+      continue;
     }
+    const livingText = await readFile(livingPath, "utf8");
+    const { intro, reqs: livingReqs } = splitSpec(livingText);
+    const merged = applyRequirementDelta(livingReqs, deltaReqs);
+    writes.push({ path: livingPath, content: `${intro.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}` });
+
+    const c = summarize(deltaReqs);
+    console.log(`  requirements: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
   }
 
   // 1b. OpenAPI merge — fold the feature's openapi deltas into the living service APIs.
-  if (existsSync(specsDir)) {
-    const svcs = (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory());
-    for (const svc of svcs) {
-      const featOpenapi = join(specsDir, svc.name, "openapi.yaml");
-      if (!existsSync(featOpenapi)) continue;
-      const featText = await readFile(featOpenapi, "utf8");
-      const livingOpenapi = join(config.docsDir, "services", svc.name, "openapi.yaml");
-      const ops = await operationIds(featOpenapi);
-      if (!existsSync(livingOpenapi)) {
-        writes.push({ path: livingOpenapi, content: featText });
-        console.log(`  openapi: ${svc.name} — created (${ops.join(", ")})`);
-      } else {
-        const merged = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc.name);
-        if (merged !== null) {
-          writes.push({ path: livingOpenapi, content: merged });
-          console.log(`  openapi: ${svc.name} — merged (${ops.join(", ")})`);
-        }
+  for (const svc of deltaServices) {
+    const featOpenapi = featureSpecPaths(featureDir, svc).openapi;
+    if (!existsSync(featOpenapi)) continue;
+    const featText = await readFile(featOpenapi, "utf8");
+    const livingOpenapi = servicePaths(config.docsDir, svc).openapi;
+    const ops = await operationIds(featOpenapi);
+    if (!existsSync(livingOpenapi)) {
+      writes.push({ path: livingOpenapi, content: featText });
+      console.log(`  openapi: ${svc} — created (${ops.join(", ")})`);
+    } else {
+      const merged = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
+      if (merged !== null) {
+        writes.push({ path: livingOpenapi, content: merged });
+        console.log(`  openapi: ${svc} — merged (${ops.join(", ")})`);
       }
     }
   }
 
   // 2. Architecture merge — fold the feature's tagged elements/relationships into the living landscape.
-  const deltaLikec4 = join(featureDir, "delta.likec4");
-  const landscapePath = join(config.docsDir, "architecture", "landscape.likec4");
+  const deltaLikec4 = featurePaths(featureDir).delta;
+  const landscapePath = landscapeFile(config.docsDir);
   if (existsSync(deltaLikec4)) {
     const { errors, elements, relationships } = await loadFile(deltaLikec4);
     if (errors.length > 0) {
@@ -256,7 +260,7 @@ async function planLandscapeMerge(
 
   // Edges are compared by endpoint TITLES (stable across id namespaces) + op/title.
   const relKey = (els: Elem[], r: Rel): string =>
-    [titleOf(els, r.source), titleOf(els, r.target), r.op ?? r.title ?? ""].join(" ");
+    [titleOf(els, r.source), titleOf(els, r.target), r.op ?? r.title ?? ""].join("\u0000");
   const haveRels = new Set(land.relationships.map((r) => relKey(land.elements, r)));
   const addedRels: Rel[] = [];
   for (const r of newRels) {
@@ -342,15 +346,6 @@ function insertIntoModelBlock(text: string, lines: string[]): string {
   if (close === -1) throw new Error("landscape.likec4 has an unbalanced model block");
   const block = `\n  // merged by loam archive\n${lines.map((l) => `  ${l}`).join("\n")}\n`;
   return text.slice(0, close) + block + text.slice(close);
-}
-
-async function findFeatureDirName(featuresDir: string, featureId: string): Promise<string | null> {
-  if (!existsSync(featuresDir)) return null;
-  const entries = await readdir(featuresDir, { withFileTypes: true });
-  const match = entries.find(
-    (e) => e.isDirectory() && (e.name === featureId || e.name.startsWith(featureId + "-")),
-  );
-  return match ? match.name : null;
 }
 
 function splitSpec(text: string): { intro: string; reqs: Requirement[] } {

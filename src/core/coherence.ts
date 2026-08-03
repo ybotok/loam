@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { loadFile, type Elem, type Rel } from "./likec4.js";
+import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 import { operationIds, serviceOperationIds } from "./openapi.js";
 
@@ -26,7 +26,7 @@ export async function featureCoherence(
   let elements: Elem[] = [];
   let taggedEls: Elem[] = [];
   let taggedRels: Rel[] = [];
-  const deltaPath = join(featureDir, "delta.likec4");
+  const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
     const res = await loadFile(deltaPath);
     if (res.errors.length > 0) {
@@ -44,27 +44,23 @@ export async function featureCoherence(
   const titleOf = (id: string): string => elements.find((e) => e.id === id)?.title ?? id;
 
   // --- per-service specs (requirement operations) + openapi deltas ---
-  const specsDir = join(featureDir, "specs");
-  const svcNames: string[] = [];
+  const svcNames = await featureSpecServices(featureDir);
   const reqOps = new Map<string, string[]>();
   const featureApiOps = new Set<string>();
-  if (existsSync(specsDir)) {
-    for (const d of (await readdir(specsDir, { withFileTypes: true })).filter((e) => e.isDirectory())) {
-      svcNames.push(d.name);
-      const specPath = join(specsDir, d.name, "spec.md");
-      if (existsSync(specPath)) {
-        const reqs = parseRequirements(await readFile(specPath, "utf8"));
-        // REMOVED requirements are being retired along with their operations — their
-        // ops neither claim the contract (E1) nor govern anything after the merge.
-        reqOps.set(d.name, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
-      }
-      // Only operations genuinely NEW to this service count as feature-added: authors
-      // restate the full living API in the delta file (it is a complete document, not a patch).
-      const featOps = await operationIds(join(specsDir, d.name, "openapi.yaml"));
-      if (featOps.length > 0) {
-        const living = new Set(await operationIds(join(docsDir, "services", d.name, "openapi.yaml")));
-        for (const op of featOps) if (!living.has(op)) featureApiOps.add(op);
-      }
+  for (const svc of svcNames) {
+    const paths = featureSpecPaths(featureDir, svc);
+    if (existsSync(paths.spec)) {
+      const reqs = parseRequirements(await readFile(paths.spec, "utf8"));
+      // REMOVED requirements are being retired along with their operations — their
+      // ops neither claim the contract (E1) nor govern anything after the merge.
+      reqOps.set(svc, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
+    }
+    // Only operations genuinely NEW to this service count as feature-added: authors
+    // restate the full living API in the delta file (it is a complete document, not a patch).
+    const featOps = await operationIds(paths.openapi);
+    if (featOps.length > 0) {
+      const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi));
+      for (const op of featOps) if (!living.has(op)) featureApiOps.add(op);
     }
   }
   const declaredOps = new Set([...reqOps.values()].flat());
@@ -75,7 +71,7 @@ export async function featureCoherence(
   const governedByLivingSpec = async (service: string, op: string): Promise<boolean> => {
     let ops = livingGoverned.get(service);
     if (!ops) {
-      const p = join(docsDir, "services", service, "spec.md");
+      const p = servicePaths(docsDir, service).spec;
       ops = new Set(
         existsSync(p) ? parseRequirements(await readFile(p, "utf8")).flatMap((r) => r.operations) : [],
       );

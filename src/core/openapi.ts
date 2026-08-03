@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { parse } from "yaml";
+import { featureSpecPaths, servicePaths } from "./repo.js";
 
 /**
  * Extract operationIds from an OpenAPI document by walking the parsed YAML
@@ -45,8 +45,8 @@ export async function serviceOperationIds(
 ): Promise<string[]> {
   const ids = new Set<string>();
   if (featureDir) {
-    for (const id of await operationIds(join(featureDir, "specs", service, "openapi.yaml"))) ids.add(id);
+    for (const id of await operationIds(featureSpecPaths(featureDir, service).openapi)) ids.add(id);
   }
-  for (const id of await operationIds(join(docsDir, "services", service, "openapi.yaml"))) ids.add(id);
+  for (const id of await operationIds(servicePaths(docsDir, service).openapi)) ids.add(id);
   return [...ids];
 }
