@@ -21,6 +21,17 @@ export interface Requirement {
   /** OpenAPI operationIds this requirement governs, from an `Operations:` line. */
   operations: string[];
   scenarios: Scenario[];
+  /**
+   * The H2 heading of its SOURCE DOCUMENT this requirement was parsed under,
+   * verbatim (`## Behavior`), or absent if it preceded every heading. Records where
+   * the text came from, so it stays true after a merge re-homes the requirement.
+   *
+   * `kind` alone cannot explain why a requirement is BASE, and the two BASE cases
+   * differ completely: under `## Requirements` a delta is legally quoting the
+   * living state, while under `## Behavior` the author wrote a change that archive
+   * will silently not merge. `delta.requirement-not-merged` tells them apart.
+   */
+  section?: string;
 }
 
 export const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
@@ -45,11 +56,30 @@ function fenceTracker(): (line: string) => boolean {
   };
 }
 
+/**
+ * Strip a leading UTF-8 BOM (U+FEFF), which editors on Windows write unasked.
+ *
+ * It has to happen here, at the two functions that take raw markdown, rather than
+ * at each `readFile` call: those are spread across half the commands, so any one of
+ * them could forget, and the failure is invisible. One byte was enough to void an
+ * entire delta — `KIND_RE` is anchored `^##`, delta files routinely open with
+ * `## MODIFIED Requirements` on line 1, and behind a BOM that line stopped being a
+ * heading, so every requirement in the file fell back to BASE and
+ * `applyRequirementDelta` skips BASE. Archive merged nothing and said nothing.
+ * OpenSpec's own reader strips it for exactly this reason.
+ *
+ * Only at position 0: elsewhere U+FEFF is a zero-width no-break space and belongs
+ * to the author's text.
+ */
+function stripBom(md: string): string {
+  return md.charCodeAt(0) === 0xfeff ? md.slice(1) : md;
+}
+
 /** Every H2 heading outside a fenced block, with its 1-based line number. */
 export function sectionHeadings(md: string): Array<{ text: string; line: number }> {
   const fenced = fenceTracker();
   const out: Array<{ text: string; line: number }> = [];
-  md.split(/\r?\n/).forEach((line, i) => {
+  stripBom(md).split(/\r?\n/).forEach((line, i) => {
     if (fenced(line)) return;
     if (/^##\s+/.test(line) && !/^###/.test(line)) out.push({ text: line.trim(), line: i + 1 });
   });
@@ -60,11 +90,12 @@ export function sectionHeadings(md: string): Array<{ text: string; line: number 
 export function parseRequirements(md: string): Requirement[] {
   const out: Requirement[] = [];
   let kind: DeltaKind = "BASE";
+  let section: string | undefined;
   let req: Requirement | null = null;
   let scn: Scenario | null = null;
   const fenced = fenceTracker();
 
-  for (const line of md.split(/\r?\n/)) {
+  for (const line of stripBom(md).split(/\r?\n/)) {
     if (fenced(line)) {
       // Fenced content, marker included: body of whatever is open, never structure.
       if (scn) scn.lines.push(line);
@@ -76,6 +107,7 @@ export function parseRequirements(md: string): Requirement[] {
     if (/^##\s+/.test(line) && !/^###/.test(line)) {
       req = null;
       scn = null;
+      section = line.trim();
       const mk = KIND_RE.exec(line);
       // A non-delta H2 (## Notes, ## Requirements…) starts an unrelated section:
       // requirements under it are plain BASE, not part of a stale delta section.
@@ -84,7 +116,7 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const mr = REQ_RE.exec(line);
     if (mr) {
-      req = { kind, name: mr[1]!, text: [], operations: [], scenarios: [] };
+      req = { kind, name: mr[1]!, text: [], operations: [], scenarios: [], section };
       out.push(req);
       scn = null;
       continue;

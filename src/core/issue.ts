@@ -31,6 +31,8 @@ export type IssueCode =
   /* --- delta shape: does the diff apply to the living spec it claims to change? --- */
   /** a heading that nearly matches the delta grammar — its requirements merge as nothing */
   | "delta.unknown-section"
+  /** a requirement stranded under a prose heading — archive will not merge it */
+  | "delta.requirement-not-merged"
   /** MODIFIED a requirement the living spec does not have */
   | "delta.modified-unknown"
   /** REMOVED a requirement the living spec does not have */

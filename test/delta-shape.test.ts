@@ -13,10 +13,17 @@
  * (`## ADDED Requirement`, singular) parses as BASE, so archive merges nothing
  * at all and says nothing about it.
  *
+ * A fifth is the same silence reached by a legal route: a requirement under an
+ * ordinary prose heading (`## Behavior`, `## Error Handling`) is BASE too, so it
+ * never merges. Upstream OpenSpec deltas really are written that way, so the
+ * answer is to report the loss, not to start merging prose sections. Only
+ * `## Requirements` is exempt — quoting the living state inside a delta is legal.
+ *
  * These run inside featureCoherence, so `archive` is gated on them.
  *
  * Families:
  *  - section-heading grammar: near misses vs legitimate non-delta sections
+ *  - requirements a prose heading strands, and the gate around them
  *  - MODIFIED / REMOVED / ADDED against the living spec
  *  - features in flight: another active feature supplying the requirement
  *  - the gate: archive refuses, --approve overrides, validate reports the code
@@ -124,6 +131,10 @@ describe("section-heading grammar", () => {
       "features/FEAT-1-x/specs/payment-service/spec.md": section("## Requirements", "Authorize a payment"),
     });
     expect(codes(issues)).not.toContain("delta.unknown-section");
+    // Nor the not-merged warning: `## Requirements` is the one non-delta heading
+    // whose requirements are SUPPOSED not to merge, so flagging it would train
+    // authors to ignore the warning everywhere else.
+    expect(codes(issues)).not.toContain("delta.requirement-not-merged");
   });
 
   it("does not flag prose headings that merely mention requirements", async () => {
@@ -172,6 +183,233 @@ The service SHALL do the thing.
 `,
     });
     expect(codes(issues)).not.toContain("delta.unknown-section");
+  });
+});
+
+describe("requirements a prose heading strands", () => {
+  /* A delta section heading is what gives a requirement its kind. Anything under a
+   * different H2 parses as BASE, and applyRequirementDelta skips BASE — so the
+   * requirement is written, passes every other check, and then never reaches a
+   * living spec. `delta.unknown-section` does not cover this: `## Behavior` is not
+   * a near miss of the grammar, it is simply another heading.
+   *
+   * OpenSpec's own older "complete future state" deltas are written this way (6 of
+   * the 8 requirements in the cli-archive fixture), so this is a real authoring
+   * shape, not a hypothetical typo. The fix is to make the loss visible, not to
+   * merge it — merging prose headings would mean archive guessing which sections
+   * are changes. */
+
+  /** A delta with `name` under a delta section and `stranded` under `heading`. */
+  function stranded(heading: string, ...names: string[]): string {
+    return `# ${SVC} — delta
+
+## ADDED Requirements
+
+### Requirement: Refund a payment
+The service SHALL refund a payment.
+
+#### Scenario: It happens
+- **Then** the refund is recorded
+
+${heading}
+
+${names
+  .map(
+    (n) => `### Requirement: ${n}
+The service SHALL do the thing.
+
+#### Scenario: It happens
+- **Then** the thing happens
+`,
+  )
+  .join("\n")}`;
+  }
+
+  it("names the requirement, quotes the heading, and says archive will not merge it", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": stranded("## Behavior", "Capture a payment"),
+    });
+    const issue = issues.find((i) => i.code === "delta.requirement-not-merged")!;
+    expect(issue.subject).toBe(SVC);
+    expect(issue.message).toContain("Capture a payment");
+    expect(issue.message).toContain("## Behavior");
+    // The author must be able to act on the message without reading our source:
+    // what happens, and what to do instead.
+    expect(issue.message).toMatch(/not merge/i);
+    expect(issue.message).toContain("## ADDED Requirements");
+  });
+
+  it("is a warning, not an error — nothing is corrupted, the change simply does not land", async () => {
+    // Errors mean the merge would write something wrong. Here the merge writes
+    // nothing, and the shape is legal OpenSpec, so an error would fail `loam
+    // validate` on every adopted OpenSpec repo. Archive still stops on it: the
+    // gate refuses ANY issue without --approve.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": stranded("## Behavior", "Capture a payment"),
+    });
+    expect(issues.find((i) => i.code === "delta.requirement-not-merged")!.severity).toBe("warn");
+  });
+
+  it("reports every stranded requirement, not just the first under the heading", async () => {
+    // One warning per casualty: a count is what tells the author how much of their
+    // delta is inert.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": stranded(
+        "## Error Handling",
+        "Reject an expired card",
+        "Reject a duplicate capture",
+      ),
+    });
+    const stray = issues.filter((i) => i.code === "delta.requirement-not-merged");
+    expect(stray).toHaveLength(2);
+    expect(stray.map((i) => i.message.includes("Reject an expired card"))).toContain(true);
+    expect(stray.map((i) => i.message.includes("Reject a duplicate capture"))).toContain(true);
+  });
+
+  it("says nothing about the requirements that DO merge", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": stranded("## Behavior", "Capture a payment"),
+    });
+    expect(
+      issues.filter((i) => i.message.includes("Refund a payment")),
+      "the ADDED requirement is fine and must not be dragged into the warning",
+    ).toEqual([]);
+  });
+
+  it("a delta made entirely of delta sections is silent", async () => {
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section("## ADDED Requirements", "Refund a payment"),
+    });
+    expect(codes(issues)).not.toContain("delta.requirement-not-merged");
+  });
+
+  it("a near-miss heading reports both: the heading is wrong AND these requirements are lost", async () => {
+    // Deliberate overlap. `delta.unknown-section` diagnoses the heading;
+    // `delta.requirement-not-merged` enumerates what it costs. Neither alone tells
+    // the author both what to fix and what they would have lost.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": section("## ADDED Requirement", "New thing"),
+    });
+    expect(codes(issues)).toContain("delta.unknown-section");
+    const issue = issues.find((i) => i.code === "delta.requirement-not-merged")!;
+    expect(issue.message).toContain("New thing");
+  });
+
+  it("a `### Requirement:` quoted inside a fenced block is not a stranded requirement", async () => {
+    // The fence tracker is shared with the rest of the parse, so documentation
+    // that shows the format cannot be reported as lost content.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": `# ${SVC} — delta
+
+## Notes
+
+Authors write requirements like this:
+
+\`\`\`markdown
+### Requirement: Not a real requirement
+\`\`\`
+
+## ADDED Requirements
+
+### Requirement: Refund a payment
+The service SHALL refund a payment.
+
+#### Scenario: It happens
+- **Then** the refund is recorded
+`,
+    });
+    expect(codes(issues)).not.toContain("delta.requirement-not-merged");
+  });
+
+  it("a requirement above every heading is left alone — there is no heading to name", async () => {
+    // The check reports a heading that strands a requirement. With no H2 at all
+    // there is nothing to quote, and the file is not written in the delta grammar
+    // in the first place; `## Requirements`-style quoting is the same judgement.
+    const issues = await shapeIssues({
+      [`services/${SVC}/spec.md`]: LIVING,
+      "features/FEAT-1-x/specs/payment-service/spec.md": `# ${SVC} — delta
+
+### Requirement: Floating thing
+The service SHALL do the thing.
+
+#### Scenario: It happens
+- **Then** the thing happens
+`,
+    });
+    expect(codes(issues)).not.toContain("delta.requirement-not-merged");
+  });
+});
+
+describe("the stranded-requirement gate", () => {
+  /** FEAT-12 adds one requirement properly and strands another under `## Behavior`. */
+  const strandedFixture = (): Record<string, string> => ({
+    [`services/${SVC}/spec.md`]: LIVING,
+    "features/FEAT-12-half/specs/payment-service/spec.md": `# ${SVC} — delta
+
+## ADDED Requirements
+
+### Requirement: Refund a payment
+The service SHALL refund a payment.
+
+#### Scenario: It happens
+- **Then** the refund is recorded
+
+## Behavior
+
+### Requirement: Capture a payment
+The service SHALL capture an authorized payment.
+
+#### Scenario: It happens
+- **Then** the capture is recorded
+`,
+  });
+
+  it("validate --feature reports the code but still passes — a warning never gates validate", async () => {
+    const p = await makeProject(strandedFixture());
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-12", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.valid).toBe(true);
+      const found = json.targets[0].findings.map((f: { code: string }) => f.code);
+      expect(found).toContain("delta.requirement-not-merged");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("archive refuses it — the loss lands at merge, so that is where it must stop", async () => {
+    const p = await makeProject(strandedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-12");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(res.out).toContain("Capture a payment");
+      expect(await p.read(`services/${SVC}/spec.md`)).toBe(LIVING);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve archives, and the warning was telling the truth: the requirement is gone", async () => {
+    // The point of the whole check. Before it, this outcome happened in silence.
+    const p = await makeProject(strandedFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-12", "--approve");
+      expect(res.code).toBe(0);
+      const living = await p.read(`services/${SVC}/spec.md`);
+      expect(living).toContain("Refund a payment");
+      expect(living).not.toContain("Capture a payment");
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

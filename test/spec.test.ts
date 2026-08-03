@@ -13,9 +13,13 @@ import {
   serializeRequirements,
   applyRequirementDelta,
   requirementsMissingScenarios,
+  sectionHeadings,
   type Requirement,
   type DeltaKind,
 } from "../src/core/spec.js";
+
+/** Written escaped: a literal U+FEFF in this source would itself be invisible. */
+const BOM = "\uFEFF";
 
 /** Semantic view of a requirement: content modulo whitespace framing (serialize trims by contract). */
 function sem(r: Requirement) {
@@ -315,6 +319,157 @@ Prose only.
     // A requirement under an unrelated '## ' section must not inherit the stale
     // delta kind — otherwise archive would silently merge documentation prose.
     expect(reqs[1]!.kind).toBe("BASE");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Parsing: a leading byte-order mark                                  */
+/* ------------------------------------------------------------------ */
+
+describe("parsing: a leading UTF-8 BOM", () => {
+  // A BOM is one invisible byte that a Windows editor adds without being asked.
+  // Before the strip it was catastrophic rather than cosmetic: `^##` did not match
+  // line 1, so `## MODIFIED Requirements` at the top of a delta stopped being a
+  // section heading, every requirement in the file fell back to BASE, and
+  // applyRequirementDelta skips BASE — the whole delta merged as nothing, with no
+  // error anywhere. Normalizing in the parser is what makes these hold.
+
+  const DELTA_ON_LINE_1 = `## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment before capture.
+
+#### Scenario: Successful authorization
+- **Then** the payment is authorized
+`;
+
+  it("a delta heading on line 1 keeps its kind behind a BOM", () => {
+    const reqs = parseRequirements(BOM + DELTA_ON_LINE_1);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0]!.kind).toBe("MODIFIED");
+  });
+
+  it("a BOM'd delta merges exactly like the same delta without one", () => {
+    // The invariant that matters: the BOM must not change the OUTCOME, not merely
+    // the parse. This is the assertion that would have caught the data loss.
+    const living = parseRequirements(LIVING_SPEC);
+    const merged = (md: string) => applyRequirementDelta(living, parseRequirements(md));
+    expect(merged(BOM + DELTA_ON_LINE_1)).toEqual(merged(DELTA_ON_LINE_1));
+    expect(merged(BOM + DELTA_ON_LINE_1)).toHaveLength(1);
+  });
+
+  it("a BOM'd document parses identically to the same document without one", () => {
+    for (const md of [LIVING_SPEC, FEATURE_SPEC, DELTA_ON_LINE_1]) {
+      expect(parseRequirements(BOM + md)).toEqual(parseRequirements(md));
+    }
+  });
+
+  it("sectionHeadings sees the first heading through a BOM", () => {
+    // The other raw-markdown entry point. It feeds the near-miss heading check, so
+    // if it disagreed with parseRequirements about line 1 the two checks would
+    // contradict each other on the same file.
+    expect(sectionHeadings(BOM + DELTA_ON_LINE_1)).toEqual([
+      { text: "## MODIFIED Requirements", line: 1 },
+    ]);
+  });
+
+  it("a BOM does not shift the line numbers sectionHeadings reports", () => {
+    // Those numbers are quoted back to the author in `delta.unknown-section`, so an
+    // off-by-one here sends them to the wrong line of their own file.
+    expect(sectionHeadings(BOM + DELTA_ON_LINE_1)).toEqual(sectionHeadings(DELTA_ON_LINE_1));
+  });
+
+  it("U+FEFF anywhere but position 0 is content, not a mark to strip", () => {
+    // Only a LEADING U+FEFF is a byte-order mark; elsewhere it is a zero-width
+    // no-break space and belongs to the author's text. Stripping it everywhere
+    // would silently rewrite requirement names.
+    const md = `### Requirement: Zero${BOM}width
+
+#### Scenario: ok
+- **Then** ok
+`;
+    expect(parseRequirements(md)[0]!.name).toBe(`Zero${BOM}width`);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Parsing: the enclosing H2 section                                   */
+/* ------------------------------------------------------------------ */
+
+describe("parsing: the enclosing H2 section", () => {
+  // `section` exists so a caller can tell WHY a requirement is BASE. Kind alone
+  // cannot: a requirement under `## Requirements` (legally quoting the living
+  // state) and one under `## Behavior` (a change the author expects to merge, and
+  // which silently will not) are both BASE and otherwise indistinguishable.
+
+  const MIXED = `# svc — delta
+
+## ADDED Requirements
+
+### Requirement: Added thing
+
+#### Scenario: ok
+- **Then** ok
+
+## Behavior
+
+### Requirement: Prose thing
+
+#### Scenario: ok
+- **Then** ok
+`;
+
+  it("each requirement records the H2 it sits under", () => {
+    expect(parseRequirements(MIXED).map((r) => [r.name, r.section])).toEqual([
+      ["Added thing", "## ADDED Requirements"],
+      ["Prose thing", "## Behavior"],
+    ]);
+  });
+
+  it("the heading is recorded verbatim so a diagnostic can quote it back", () => {
+    // Trimmed, but not normalized: the author has to recognize the line they wrote.
+    const md = `##   MODIFIED   Requirements${"  "}
+
+### Requirement: X
+
+#### Scenario: ok
+- **Then** ok
+`;
+    expect(parseRequirements(md)[0]!.section).toBe("##   MODIFIED   Requirements");
+  });
+
+  it("a requirement before any H2 has no section rather than a fabricated one", () => {
+    const md = `# svc
+
+### Requirement: Headless
+
+#### Scenario: ok
+- **Then** ok
+`;
+    expect(parseRequirements(md)[0]!.section).toBeUndefined();
+  });
+
+  it("an H2-shaped line inside a fenced block does not become a section", () => {
+    // Same fence tracker as the rest of the parse, so `section` cannot disagree
+    // with `kind` about where a section began.
+    const md = `## ADDED Requirements
+
+### Requirement: Real
+
+\`\`\`markdown
+## Behavior
+\`\`\`
+
+#### Scenario: ok
+- **Then** ok
+`;
+    const [r] = parseRequirements(md);
+    expect(r!.section).toBe("## ADDED Requirements");
+    expect(r!.kind).toBe("ADDED");
+  });
+
+  it("an H3 is not an H2 — `### Requirement:` never opens a section", () => {
+    expect(parseRequirements(MIXED).every((r) => r.section?.startsWith("## "))).toBe(true);
   });
 });
 

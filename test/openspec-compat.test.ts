@@ -42,18 +42,24 @@
  *    requirements and the rename vanishes. Unused in the corpus but documented in
  *    OpenSpec's own conventions spec, so files in the wild may use it.
  *
- * 4. Requirements under prose headings in a delta — SILENTLY DROPPED AT MERGE.
- *    Older "complete future state" deltas put requirements under `## Behavior` /
- *    `## Error Handling` rather than under a delta heading. We parse them as kind
- *    BASE, and applyRequirementDelta skips BASE, so they never reach the living spec.
- *    Real case in the corpus: 6 of 8 requirements in the cli-archive fixture.
+ * 4. Requirements under prose headings in a delta — STILL DROPPED AT MERGE, NO LONGER
+ *    SILENTLY. Older "complete future state" deltas put requirements under
+ *    `## Behavior` / `## Error Handling` rather than under a delta heading. We parse
+ *    them as kind BASE, and applyRequirementDelta skips BASE, so they never reach the
+ *    living spec. Real case in the corpus: 6 of 8 requirements in the cli-archive
+ *    fixture. The merge is unchanged on purpose — treating `## Behavior` as ADDED
+ *    would be archive guessing at intent — but `Requirement.section` now records the
+ *    enclosing H2 and `delta.requirement-not-merged` (a warning, which stops archive
+ *    without failing validate) names every stranded requirement and its heading.
+ *    `## Requirements` is exempt: quoting the living state inside a delta is legal.
  *
- * 5. UTF-8 BOM — SILENTLY DROPS THE WHOLE DELTA. OpenSpec strips a leading BOM
- *    precisely so a header on line 1 still matches. We do not, and delta files
+ * 5. UTF-8 BOM — FIXED. It used to drop the whole delta: OpenSpec strips a leading
+ *    BOM precisely so a header on line 1 still matches, we did not, and delta files
  *    routinely open with `## MODIFIED Requirements` on line 1 — so one invisible byte
- *    turns every requirement in the file into BASE and applyRequirementDelta merges
- *    nothing. No error, no warning, empty result. See the test below; this is a
- *    latent data-loss bug in our parser, not merely an unsupported feature.
+ *    turned every requirement in the file into BASE and applyRequirementDelta merged
+ *    nothing, with no error and no warning. parseRequirements and sectionHeadings now
+ *    strip it, which covers every requirement read in the CLI including `loam
+ *    archive`. The tests below stay, pinning the fix instead of the bug.
  *
  * 6. Heading case — STRICTER THAN OPENSPEC. OpenSpec matches `### Requirement:` with
  *    a case-insensitive regex; ours is case-sensitive, so `### requirement: X` parses
@@ -415,7 +421,14 @@ describe("gap: `## RENAMED Requirements` is unrecognized and the rename is lost"
   });
 });
 
-describe("gap: delta requirements under prose headings never reach the living spec", () => {
+describe("gap: delta requirements under prose headings still never reach the living spec", () => {
+  // Finding 4, half-closed. The MERGE is unchanged and deliberately so: deciding
+  // that `## Behavior` means ADDED would be archive guessing at intent, and the
+  // guess would be wrong for the many prose sections that quote requirements as
+  // documentation. What changed is that the loss is no longer silent —
+  // `delta.requirement-not-merged` names each stranded requirement and its heading
+  // (see test/delta-shape.test.ts). This suite pins the parse facts that check
+  // stands on; the corpus is where the numbers below come from.
   const file = "delta/2025-08-19-add-skip-specs-archive-option__cli-archive.spec.md";
 
   it("the legacy delta really does put requirements under prose headings", () => {
@@ -429,7 +442,7 @@ describe("gap: delta requirements under prose headings never reach the living sp
     ]);
   });
 
-  it("merging it keeps only the 2 requirements under `## ADDED Requirements`, silently discarding 6", () => {
+  it("merging it keeps only the 2 requirements under `## ADDED Requirements`, discarding 6", () => {
     const reqs = parseRequirements(fixture(file));
     expect(reqs).toHaveLength(8);
     expect(applyRequirementDelta([], reqs).map((r) => r.name)).toEqual([
@@ -437,24 +450,71 @@ describe("gap: delta requirements under prose headings never reach the living sp
       "Non-blocking confirmation",
     ]);
   });
+
+  it("each requirement records the heading that strands it, so the warning can name it", () => {
+    // The exact input `delta.requirement-not-merged` reads. Six requirements under
+    // two prose headings, and neither heading is `## Requirements`, so all six are
+    // reportable — the 6-of-8 number quoted in the findings above.
+    expect(parseRequirements(fixture(file)).map((r) => [r.name, r.section])).toEqual([
+      ["Change Selection", "## Behavior"],
+      ["Task Completion Check", "## Behavior"],
+      ["Archive Process", "## Behavior"],
+      ["Spec Update Process", "## Behavior"],
+      ["Confirmation Behavior", "## Behavior"],
+      ["Error Conditions", "## Error Handling"],
+      ["Skip Specs Option", "## ADDED Requirements"],
+      ["Non-blocking confirmation", "## ADDED Requirements"],
+    ]);
+  });
+
+  it("no upstream living spec would be reportable — they all sit under `## Requirements`", () => {
+    // The exemption is not a special case invented for our tests: it is where every
+    // real OpenSpec living requirement lives, so quoting one inside a delta must
+    // stay silent or the check would fire on correct authoring.
+    for (const { file: f } of LIVING) {
+      for (const r of parseRequirements(fixture(f))) expect(r.section).toBe("## Requirements");
+    }
+  });
 });
 
-describe("gap: a UTF-8 BOM silently voids an entire delta", () => {
+describe("closed: a UTF-8 BOM no longer voids an entire delta", () => {
+  // Was finding 5, and the worst of them: one invisible byte turned every
+  // requirement in a real upstream delta into BASE, and applyRequirementDelta skips
+  // BASE, so archive merged nothing and reported nothing. parseRequirements and
+  // sectionHeadings now strip a leading U+FEFF, as OpenSpec's own reader does.
+  // Kept as a test rather than deleted: this fixture is the real-world evidence
+  // that the shape a BOM breaks (a delta heading on line 1) is the shape upstream
+  // actually writes.
   const file = "delta/2026-02-17-merge-init-experimental__cli-init.spec.md";
 
   it("the delta heading is on line 1, where a BOM would sit", () => {
     expect(fixture(file).split("\n")[0]).toBe("## MODIFIED Requirements");
   });
 
-  it("with a BOM prepended, every MODIFIED requirement degrades to BASE and the merge yields nothing", () => {
-    // OpenSpec strips the BOM for exactly this reason. We do not, so a spec authored
-    // on Windows merges as a no-op with no error. Pinned as observed behavior, not
-    // endorsed: fixing it means normalizing input in parseRequirements.
+  it("with a BOM prepended, the file parses exactly as it does without one", () => {
+    expect(parseRequirements(BOM + fixture(file))).toEqual(parseRequirements(fixture(file)));
+  });
+
+  it("every MODIFIED requirement keeps its kind behind a BOM", () => {
     const withBom = parseRequirements(BOM + fixture(file));
     expect(withBom).toHaveLength(12);
-    expect(withBom.filter((r) => r.kind === "MODIFIED")).toEqual([]);
-    expect(withBom.filter((r) => r.kind === "BASE")).toHaveLength(8);
-    expect(applyRequirementDelta([], withBom)).toEqual([]);
+    expect(withBom.filter((r) => r.kind === "MODIFIED")).toHaveLength(8);
+    expect(withBom.filter((r) => r.kind === "BASE")).toEqual([]);
+  });
+
+  it("the merge lands, instead of yielding nothing", () => {
+    // The assertion this file used to make in reverse. `[]` here was the data loss.
+    const merged = applyRequirementDelta([], parseRequirements(BOM + fixture(file)));
+    expect(merged).toHaveLength(8);
+    expect(merged).toEqual(applyRequirementDelta([], parseRequirements(fixture(file))));
+  });
+
+  it("sectionHeadings agrees, so the near-miss check reads the same document", () => {
+    expect(sectionHeadings(BOM + fixture(file))).toEqual(sectionHeadings(fixture(file)));
+    expect(sectionHeadings(BOM + fixture(file))[0]).toEqual({
+      text: "## MODIFIED Requirements",
+      line: 1,
+    });
   });
 });
 
@@ -479,8 +539,16 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
   it("RFC-2119 keywords are opaque body text — coverage is keyed off scenarios only", () => {
     const [first] = parseRequirements(fixture("living/cli-list.spec.md"));
     expect(first!.text.join("\n")).toContain("SHALL");
-    // Nothing on Requirement records the modal verb; `text` is the only place it lives.
-    expect(Object.keys(first!)).toEqual(["kind", "name", "text", "operations", "scenarios"]);
+    // Nothing on Requirement records the modal verb; `text` is the only place it
+    // lives. `section` records the enclosing H2, not anything about the prose.
+    expect(Object.keys(first!)).toEqual([
+      "kind",
+      "name",
+      "text",
+      "operations",
+      "scenarios",
+      "section",
+    ]);
   });
 
   it("no real OpenSpec file yields operations, because `Operations:` is a loam-only line", () => {
