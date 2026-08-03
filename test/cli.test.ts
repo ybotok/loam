@@ -18,7 +18,8 @@
  *     '---' horizontal rule that must NOT extend the frontmatter.
  *   - feature dir resolution: 'FEAT-1' matches 'FEAT-1-slug' and bare 'FEAT-1',
  *     never 'FEAT-10-x'.
- *   - adopt: pin the stub's exact contract so future work notices a change.
+ *   - adopt: only that it needs a loam.json like everything else; the command's
+ *     own contract is pinned in test/adopt.test.ts.
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { readFile, writeFile, realpath, rm } from "node:fs/promises";
@@ -406,33 +407,13 @@ describe("delta: feature directory resolution", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* adopt — stub contract (pinned)                                      */
+/* adopt — see test/adopt.test.ts                                      */
 /* ------------------------------------------------------------------ */
 
-describe("adopt: stub contract (pinned so future work notices a change)", () => {
-  it("announces it is not implemented, prints the planned per-service docs path for the configured service, and exits 0", async () => {
-    const p = await project({}, { service: "payment-service" });
-    const res = await runLoam(p.workDir, "adopt");
-    expect(res.code).toBe(0);
-    expect(res.out).toContain("adopt — not yet implemented.");
-    expect(res.out).toContain("Planned contract:");
-    expect(res.out).toContain(`${p.docsDir}/services/payment-service/`);
-    expect(res.out).toContain("model.likec4 · spec.md · openapi.yaml · adrs/ · runbook.md · health.yaml");
-    expect(res.out).toContain("status: draft");
-  });
-
-  it("--service overrides the configured service in the planned path", async () => {
-    const p = await project({}, { service: "payment-service" });
-    const res = await runLoam(p.workDir, "adopt", "--service", "billing-service");
-    expect(res.code).toBe(0);
-    expect(res.out).toContain(`${p.docsDir}/services/billing-service/`);
-    expect(res.out).not.toContain("/services/payment-service/");
-  });
-
-  it("with no service configured or passed it falls back to a '<service>' placeholder path", async () => {
-    const p = await project({});
-    const res = await runLoam(p.workDir, "adopt");
-    expect(res.code).toBe(0);
-    expect(res.out).toContain(`${p.docsDir}/services/<service>/`);
-  });
-});
+/* The three tests that used to sit here pinned the stub's printed contract
+ * ("adopt — not yet implemented", the planned paths, the `<service>` fallback).
+ * The stub is gone: adopt now emits an agent brief, and the placeholder path is
+ * a refusal, so those assertions could only be deleted, not adapted. The
+ * behaviour they guarded — the configured service, the --service override, a
+ * missing loam.json — is pinned against the real command in test/adopt.test.ts.
+ * The no-config case below is the one that survived unchanged. */

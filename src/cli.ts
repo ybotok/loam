@@ -9,6 +9,7 @@ import { registerDelta } from "./commands/delta.js";
 import { registerArchive } from "./commands/archive.js";
 import { registerUnarchive } from "./commands/unarchive.js";
 import { registerValidate } from "./commands/validate.js";
+import { registerVerify } from "./commands/verify.js";
 import { registerVouch } from "./commands/vouch.js";
 
 const program = new Command();
@@ -27,6 +28,7 @@ registerDelta(program);
 registerArchive(program);
 registerUnarchive(program);
 registerValidate(program);
+registerVerify(program);
 registerVouch(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {

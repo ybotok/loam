@@ -23,6 +23,7 @@ import { registerDelta } from "../../src/commands/delta.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerUnarchive } from "../../src/commands/unarchive.js";
 import { registerValidate } from "../../src/commands/validate.js";
+import { registerVerify } from "../../src/commands/verify.js";
 import { registerVouch } from "../../src/commands/vouch.js";
 
 export interface RunResult {
@@ -155,6 +156,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerArchive(program);
     registerUnarchive(program);
     registerValidate(program);
+    registerVerify(program);
     registerVouch(program);
     await program.parseAsync(["node", "loam", ...args]);
   } finally {

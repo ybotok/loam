@@ -31,6 +31,7 @@ features/<FEAT>/                  a change in flight
   delta.likec4                    the architecture change, tagged #<FEAT>
   specs/<svc>/spec.md             the requirement change for one service
   specs/<svc>/openapi.yaml        the endpoints this feature adds
+  verification.yaml               what was checked once the code was built
 features/archive/<FEAT>/          shipped changes — the evolution history
 \`\`\`
 
@@ -109,6 +110,9 @@ says so once and stops the warning for good.
 
 ## The cycle
 
+0. **Adopt** — a service with no documentation at all starts at
+   \`loam adopt --service <id> --json\`, which briefs you on the baseline to write.
+   See "Adopting a service" below. Once per service, not once per feature.
 1. **Understand** — \`loam list --json\`, \`loam show <service> --json\`.
    Never propose a change to a service you have not read.
 2. **Scaffold** — \`loam new FEAT-101 --title "..." --service <existing> --new-service <new>\`.
@@ -118,8 +122,54 @@ says so once and stops the warning for good.
 5. **Build** — \`loam delta FEAT-101 --service <svc> --json\` is the task for one service:
    intent, its requirement delta with scenarios verbatim, and the edges around it.
    Write one test per scenario **first**, from the Given/When/Then lines as written.
-6. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows
+6. **Verify** — \`loam verify FEAT-101 --json\` turns the feature's own promises into a
+   checklist; answer each claim with evidence and record it. See "The done-check".
+7. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows
    every file the merge would write, and writes none of them.
+
+## Adopting a service
+
+\`loam adopt --service <id>\` does not read code and never will. Nothing
+deterministic can look at a legacy service and say what its architecture MEANS,
+and a guessed model is worse than none: everybody downstream has to re-derive it
+to know whether to believe it. So loam takes the half of the job that is
+mechanical — stating the work, and checking the result — and you do the reading.
+
+The brief names every file to write, the grammar each must be in, what the
+landscape already says about the service (bind to those elements, do not draw a
+parallel fleet), the frontmatter, and the checks that follow. It also lists what
+**no** check will ever catch. Read that list: everything on it is a way to be
+wrong quietly, and \`loam validate\` passing means nothing about any of it.
+
+Two rules the brief repeats and this file will too. An artifact that already
+exists is reported as \`action: "diff"\` — read it and report what disagrees;
+never replace it, because a document somebody wrote is evidence. And everything
+you write is \`status: draft\`: promotion is \`loam vouch\`, run by a person in
+the service's own repository.
+
+## The done-check
+
+\`loam verify <FEAT>\` derives a checklist from the feature's own artifacts —
+one claim per new service, per operation the delta adds, per tagged edge that
+names an operation, and per scenario of every changed requirement. Each claim
+has a stable id, so two runs are diffable and an answer cannot drift onto a
+different question.
+
+You answer them. \`loam verify <FEAT> --record answers.json\` takes the answers
+back and writes \`features/<FEAT>/verification.yaml\`, which travels into the
+archive with the feature and reads without loam.
+
+It refuses an answer set that does not answer the current checklist: an id that
+is not on it (\`answers-mismatch\`), a claim with no answer (same), or a
+\`confirmed\` with no evidence (\`answers-unevidenced\`). Evidence is \`file:line\`.
+A claim you cannot show is \`unconfirmed\` with a note saying why — that is a
+successful record, and it is more useful to the next reader than a yes.
+
+**Nothing gates on it.** \`loam archive\` will ship an unverified feature. That
+is deliberate: coherence is something loam computed from the documents, and a
+verdict is your word about code loam never read. A gate in front of shipping
+would only teach everyone that the cheapest way past it is to say yes. The
+record is for the reviewer who comes later, so leave it true.
 
 ## What you author, what loam derives
 
@@ -177,6 +227,11 @@ command ran) from \`valid\` (the docs pass).
 \`--all\` reports a target per service, a target per feature in flight, and one target
 of kind \`landscape\` for the fleet-level checks that belong to no single service.
 
+Three different words for three different questions, and no command conflates them:
+\`ok\` — the command ran; \`valid\` — the documents pass (\`validate\`); \`verified\` —
+somebody says the code was built and showed evidence (\`verify\`). A feature can be
+valid and unverified, or verified and incoherent. Read the one you meant.
+
 ## The archive gate
 
 The three axes agreeing is called **coherence**, and \`loam validate --feature\` reports
@@ -206,6 +261,41 @@ work). \`--force\` overrides the last one, and like \`--approve\` it is a human'
 
 /** Claude Code slash commands: `.claude/commands/<name>.md` -> `/<name>`. */
 export const SLASH_COMMANDS: Record<string, string> = {
+  "loam-adopt": `---
+description: Adopt a service — write its baseline docs from its code, as draft, then validate
+argument-hint: <service-id>
+---
+
+Write one service's baseline documentation into the loam docs repo (its path is
+\`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
+result. It never reads the service — so anything you cannot show, do not write.
+
+1. \`loam adopt --service $1 --json\`. That output IS the brief:
+   - \`targets[]\` — every file to write. \`action: "diff"\` means the file ALREADY EXISTS:
+     read it, diff your findings against it, report what disagrees. Do not replace it.
+   - \`targets[].shape\` — the grammar of each artifact, and \`example\` where one is
+     shorter than a description. Every rule there is one a later check depends on.
+   - \`landscape\` — the elements and edges the fleet already has for this service.
+     Bind to them; do not draw a second version of the same box. \`landscape.expects\`
+     lists operations other services already call — your openapi.yaml owes them.
+   - \`frontmatter\` — what to put in the header of every markdown artifact.
+   - \`checks[]\` — what \`loam validate\` will run. \`unchecked[]\` — what it will not.
+2. Read \`AGENTS.md\` at the docs repo root, then read the code: entry points, HTTP
+   routes and handlers, published events, config, deploy manifests, tests.
+   **Keep a list of every path you actually open.** That list becomes \`sources\`, and
+   it is the only line tying the document to the repository.
+3. Write the artifacts under \`services/$1/\`, in the order the brief lists them.
+   Everything \`status: draft\`. Never write \`last_verified\` or \`sources_digest\`.
+4. \`loam validate --service $1 --json\`. Fix every error. \`sources.unvouched\` is
+   expected on a fresh baseline — it closes when a person vouches, not when you do.
+5. Hand back, and say three things: what you could not determine from the code, what
+   the existing artifacts disagreed with, and which parts you are least sure of.
+   Then a human runs \`loam vouch --service $1\` in the service's own repo.
+
+Where the code does not say, write that it does not say. A confident sentence about
+behaviour nobody can find is the one failure mode none of loam's checks can catch.
+`,
+
   "loam-feature": `---
 description: Start a new loam feature — scaffold it, then author the C4 delta and requirement deltas
 argument-hint: <FEAT-id> "<title>"
@@ -304,6 +394,50 @@ why, and say it.
 
 \`sources.stale\` is the one warning you cannot close by yourself. Fix what the code
 now says, then hand it back — the stamp is a person's claim to have read it.
+`,
+
+  "loam-verify": `---
+description: Verify a built loam feature against its own promises, claim by claim, with evidence
+argument-hint: <FEAT-id>
+---
+
+Check that the code somebody just built is the feature that was designed.
+
+loam derives the questions; you answer them from the code. It never reads the
+service, so a verdict is worth exactly what its evidence is worth.
+
+1. \`loam verify $1 --json\`. \`claims[]\` is the checklist, derived from the feature's
+   own artifacts — one claim per new service, per operation its openapi delta adds,
+   per tagged edge that names an operation, and per scenario of every changed
+   requirement. Each has a stable \`id\` and a \`subject\` (the service whose code
+   answers it).
+2. Answer every claim by finding it in the code. Not by reasoning that it must be
+   there — by opening the file:
+   - \`service.exists\` — the service is deployable: its build, its entry point.
+   - \`api.exposes\` — the route handler serving that operationId, not the spec that
+     declares it.
+   - \`c4.calls\` — the call site in the CALLER.
+   - \`scenario.tested\` — the test, and it must assert what the Given/When/Then says.
+     A test named after the scenario that asserts something else is not coverage.
+3. Write the answers as JSON — evidence is \`file:line\`, one entry per place it can
+   be seen:
+   \`\`\`json
+   { "answers": [
+     { "id": "<claim id>", "verdict": "confirmed", "evidence": ["src/split/Api.ts:42"] },
+     { "id": "<claim id>", "verdict": "unconfirmed", "note": "no test asserts the 60/40 split" }
+   ] }
+   \`\`\`
+4. \`loam verify $1 --record answers.json --json\`. It refuses an answer set that does
+   not answer the current checklist: \`answers-mismatch\` (an id nobody asked about, or
+   a claim you left out — re-run step 1, the feature moved), \`answers-unevidenced\`
+   (a \`confirmed\` with nothing behind it).
+5. Report every \`unconfirmed\` claim and what it would take to close it.
+
+Anything you cannot show is \`unconfirmed\` with a note. That is a successful record,
+and it is the useful one: nothing gates on this file, so the only thing it is for is
+telling the next reader the truth. \`loam archive\` will ship the feature either way —
+which is exactly why a \`confirmed\` you cannot back up costs nothing now and misleads
+everyone later.
 `,
 
   "loam-ship": `---

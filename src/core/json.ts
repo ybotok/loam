@@ -18,6 +18,12 @@
  * The `feature-active` / `snapshot-*` group is `unarchive` refusing to guess:
  * each names a different reason the undo is not one, and a caller has to tell
  * them apart to know whether re-running could ever work.
+ *
+ * The `answers-*` group is `loam verify --record` refusing an answer set that
+ * does not answer the current checklist. They are separated for the same reason:
+ * an unreadable file is a bug in whatever wrote it, a mismatch means the feature
+ * moved and the claims have to be answered again, and an unevidenced
+ * confirmation is the one an agent can fix on the spot.
  */
 export type ErrorCode =
   | "no-config"
@@ -29,7 +35,10 @@ export type ErrorCode =
   | "feature-active"
   | "snapshot-missing"
   | "snapshot-stale"
-  | "restore-failed";
+  | "restore-failed"
+  | "answers-unreadable"
+  | "answers-mismatch"
+  | "answers-unevidenced";
 
 export function emitJson(payload: Record<string, unknown>): void {
   console.log(JSON.stringify({ ok: true, ...payload }, null, 2));

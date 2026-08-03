@@ -40,7 +40,9 @@ docs/
     intent.md                        business intent / proposal (why)     [authored]
     delta.likec4                     C4 delta (architecture)             [authored]
     specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
+    specs/<svc>/openapi.yaml         the endpoints this feature adds     [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
+    verification.yaml                the done-check: claims + verdicts + evidence  [loam verify --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
     .loam-before/                    the bytes the merge overwrote        [written by loam]
 ```
@@ -110,11 +112,52 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 
 **The section heading is what gives a requirement its kind.** A requirement under any other H2 (`## Behavior`, `## Error Handling` — the shape older OpenSpec "complete future state" deltas use) has no kind, and archive merges nothing for it; `delta.requirement-not-merged` (warning) names each one and the heading that stranded it. `## Requirements` is exempt: quoting the living state inside a delta is legal and merges nothing by design. The heading must be reachable, too — a leading UTF-8 BOM used to hide `## MODIFIED Requirements` on line 1 and void the entire delta, so the parser strips one.
 
+## The verification record
+
+`features/<FEAT>/verification.yaml` is the done-check written down. `loam verify <FEAT>` derives a **checklist** from the feature's own artifacts — the same files `validate` reads, never the code:
+
+| kind | one claim per | reads |
+|---|---|---|
+| `service.exists` | tagged top-level element the delta introduces | `delta.likec4` |
+| `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
+| `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |
+| `scenario.tested` | scenario of every ADDED/MODIFIED requirement | `specs/<svc>/spec.md` |
+
+Each claim's **id** is `<kind>-<8 hex>`, hashed from the feature id and what the claim says (with an occurrence counter for genuine duplicates). So the same feature yields the same ids on every run — two runs are diffable — reordering the artifacts renames nothing, and **rewording a scenario renames its claim**, which is the point: an answer about text nobody wrote must not carry over as if it still applied.
+
+`loam verify <FEAT> --record <answers.json>` takes the answers back and refuses anything that does not answer the *current* checklist, each under its own `--json` `error.code`: `answers-unreadable` (not JSON, or a verdict outside `confirmed` / `unconfirmed`), `answers-mismatch` (an id nobody asked about, a claim with no answer, or one answered twice), `answers-unevidenced` (a `confirmed` with no `file:line` behind it). An unchecked claim must never be able to masquerade as checked.
+
+The record is YAML, like the other data artifacts, and holds the claim text next to each verdict so it reads without loam:
+
+```yaml
+feature: FEAT-101
+recorded: 2026-08-03
+checklist: 4ae5ab9fc17df302        # digest of the claim ids these answer
+summary: { claims: 4, confirmed: 3, unconfirmed: 1 }
+claims:
+  - id: api.exposes-2a8cee76
+    kind: api.exposes
+    claim: payment-split-service exposes operationId 'createSplit'
+    verdict: confirmed
+    evidence: [src/split/Api.ts:42]
+  - id: scenario.tested-daed1f53
+    kind: scenario.tested
+    claim: scenario 'Split across two payees' … is covered by a test
+    verdict: unconfirmed
+    note: no test asserts the 60/40 split
+```
+
+It lives inside the feature, so `archive` carries it into `features/archive/<FEAT>/` with everything else. `loam verify` re-run later compares `checklist` against the current digest and reports the record as **stale** if the feature moved under it.
+
+**Verification does not gate `archive`.** Coherence gates because loam computed it from the documents; a verdict is an agent's word about code loam never read, and a gate in front of shipping teaches everyone that the cheapest way past it is to say yes. The record is for the reviewer who comes later, and an `unconfirmed` claim with a note is worth more there than a `confirmed` nobody can back up. `loam verify` exits 0 either way; branch on `verified` in the `--json` payload.
+
 ## Two flows
 
-- **Bootstrap (reverse):** `loam adopt` reads code -> draft `model.likec4` + `spec.md` + `openapi.yaml` + seeded `adrs/`, `runbook.md`, `health.yaml`. Human promotes `draft` -> `verified`.
-- **Forward (generative):** author `features/<FEAT>/delta.likec4` -> `loam delta <FEAT>` projects it per-service into work + generated gherkin -> tests -> code. `loam validate` checks the built code against the delta.
+- **Bootstrap (reverse):** `loam adopt --service <id>` emits a **brief**, not an extraction — the target paths (and which already exist, to be diffed and never overwritten), the grammar of each artifact, what the living landscape already says about the service, the frontmatter to write, the checks `loam validate --service <id>` will then run, and the ones that do not exist. An agent reads the code and writes draft `model.likec4` + `spec.md` + `openapi.yaml` + `adrs/`, `runbook.md`, `health.yaml`. A human promotes `draft` -> `verified` with `loam vouch`.
+- **Forward (generative):** author `features/<FEAT>/delta.likec4` -> `loam delta <FEAT>` projects it per-service into work + generated gherkin -> tests -> code -> `loam verify <FEAT>` records what was actually built.
+
+There is no code extractor on either side, by decision. Nothing deterministic reads a service and says what its architecture means, and two generated models of the same code disagree in wording every run — a done-check built on diffing them would flap until somebody turned it off. What is deterministic is the **question**: which files, in which grammar, bound to which existing elements; which operations, which edges, which scenarios. loam owns the questions and the checking; an agent owns the reading. `sources` and `verification.yaml` are where the answers are written down.
 
 ## Status
 
-`init`, `list` / `show` (navigation), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `archive` (three-axis merge, gated on coherence) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `adopt` (LLM), `render` (diagrams), `health` compose, UI-prototype generation.
+`init`, `list` / `show` (navigation), `adopt` (the baseline brief), `validate` (C4 + requirement + API coverage + cross-axis coherence + the landscape ↔ `services/` cross-check, single target or `--all`), `delta` (per-service projection), `verify` (the done-check checklist + its record), `archive` (three-axis merge, gated on coherence) / `unarchive` (put it back from the snapshot archive left behind) and `vouch` (stamp a spec verified against the code it describes) are implemented, each with a `--json` contract. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
