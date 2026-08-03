@@ -349,6 +349,9 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
   // sources.stale, sources.current and content.stale are deliberately absent:
   // all three compare against digests `loam vouch` stamps, and a fresh baseline
   // has no stamp to compare — the table lists what a baseline can actually meet.
+  // The gherkin.* staleness chain is absent the same way: it fires only once
+  // `loam gherkin` has generated a suite under <gherkinDir>/loam/ in the
+  // service's own repo, and a fresh baseline has not generated one.
   {
     code: "landscape.service-unmodelled",
     severity: "error",

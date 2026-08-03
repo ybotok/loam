@@ -85,6 +85,41 @@ retry that stays idempotent, the alert rule that actually fires. \`api.exposes\`
 is a contract test. Unit tests sit below spec granularity and are your TDD
 concern, not the specs'.
 
+## The generated Gherkin suite
+
+Scenarios are the acceptance criteria, and \`loam gherkin\` makes them
+executable: real \`.feature\` files, written into the SERVICE'S repo — the one
+loam command that writes there, because tests live with the code they gate.
+Output lands in \`<gherkinDir>/loam/\` (\`gherkinDir\` is an optional loam.json
+fact, default \`features\`), and that \`loam/\` subdirectory is loam's own
+derived space: regeneration rewrites its scope and deletes its orphans, so
+never hand-edit inside it — step definitions and hand-written features belong
+outside it, and loam never touches a byte outside \`loam/\`.
+
+- \`loam gherkin FEAT-101\` — the feature's ADDED/MODIFIED requirements for this
+  service, both spec axes. Files carry \`@FEAT-101\`; arch-axis files add
+  \`@architecture\` and are named \`arch--<slug>.feature\` — their scenarios are
+  integration/ops tests, not acceptance tests.
+- \`loam gherkin --service <id>\` (no feature) — the full living suite from
+  spec.md + arch.spec.md: the regression skeleton a legacy service gets at
+  adoption.
+
+One file per requirement (\`Feature:\` is the requirement name). Bullet lines
+opening with Given/When/Then/And/But — the \`- **WHEN** ...\` convention
+included — become steps; every other body line is kept as scenario
+description. Each scenario carries \`# loam:digest <16hex>\`: the same body
+hash \`loam verify\` folds into its claim ids, so the stamp, the claim and the
+spec cannot quietly disagree about what a scenario says. \`loam validate
+--service <id>\`, run in the service repo, grades the suite by those digests
+(\`gherkin.missing\` / \`gherkin.stale\` / \`gherkin.orphaned\`, all warn) — the
+fix is always regeneration, never editing a generated file.
+
+The flow: \`loam gherkin FEAT-101\` → write step definitions (outside \`loam/\`)
+→ run cucumber → implement until green. Feeding the runner's report back into
+the done-check — \`loam verify --results\` — is the coming close of this loop;
+it is not implemented yet, so today the answers are recorded with
+\`loam verify --record\` as described below.
+
 ## Frontmatter — who vouched for this, and from what
 
 Every markdown artifact opens with a YAML block:
@@ -177,7 +212,9 @@ says so once and stops the warning for good.
 4. **Check** — \`loam validate FEAT-101 --json\`. Fix every error before writing code.
 5. **Build** — \`loam delta FEAT-101 --service <svc> --json\` is the task for one service:
    intent, its requirement delta with scenarios verbatim, and the edges around it.
-   Write one test per scenario **first**, from the Given/When/Then lines as written.
+   In the service's own repo, \`loam gherkin FEAT-101\` then emits those scenarios as
+   \`.feature\` files under \`<gherkinDir>/loam/\` — write step definitions against them
+   **first**, outside \`loam/\`, and implement until they pass.
    If \`architecture.errors\` is non-empty the payload keeps \`ok: true\` (the command
    ran) but the exit code is 1: the C4 slice is empty because delta.likec4 did not
    parse, not because the feature changes no architecture — do not build on it.
@@ -509,7 +546,7 @@ line, and the OpenAPI \`operationId\` — must match exactly.
 `,
 
   "loam-implement": `---
-description: Implement a loam feature's slice for one service — tests from the scenarios first
+description: Implement a loam feature's slice for one service — generated gherkin first, tests from it, then code
 argument-hint: <FEAT-id> [service]
 ---
 
@@ -526,13 +563,18 @@ Implement one service's part of a feature.
    Exit 1 with \`ok: true\` means \`architecture.errors\` is non-empty: delta.likec4 did
    not parse, and the empty C4 slice is a parse failure, not "no architecture change".
    Stop and fix the delta (\`loam validate $1 --json\`) before building anything.
-2. Write the tests FIRST — one per scenario, straight from the Given/When/Then lines.
+2. In the service's repo, \`loam gherkin $1 --json\` — one \`.feature\` file per changed
+   requirement lands under \`<gherkinDir>/loam/\` (default \`features/loam/\`), scenarios
+   digest-stamped, arch requirements tagged \`@architecture\`. Those files ARE the
+   acceptance criteria. Never edit them: regeneration rewrites the directory, and
+   \`loam validate\` reports the suite stale by digest, not by your intentions.
+3. Write step definitions for the generated scenarios FIRST — outside \`loam/\`.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance
    criterion someone else reviews against.
-3. Implement until they pass.
-4. Honour the contract: every operation in \`architecture.inbound\` must exist under
+4. Implement until the suite passes.
+5. Honour the contract: every operation in \`architecture.inbound\` must exist under
    exactly that operationId, and every one in \`architecture.outbound\` must be called.
-5. \`loam validate --feature $1 --json\` before handing back.
+6. \`loam validate --feature $1 --json\` before handing back.
 
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
 leave the spec disagreeing with the code.

@@ -2,7 +2,7 @@
 
 Architecture-first spec framework for microservice fleets.
 
-`loam` gets a service's documentation and C4 architecture written **from its code**, then lets you drive cross-service features top-down: you author a **C4 delta**, and `loam` projects it onto each affected service as concrete work + generated Gherkin (BDD) that drives TDD.
+`loam` gets a service's documentation and C4 architecture written **from its code**, then lets you drive cross-service features top-down: you author a **C4 delta**, `loam` projects it onto each affected service as concrete work, and `loam gherkin` turns the spec's scenarios into real, digest-stamped Gherkin `.feature` files — the acceptance skeleton that drives TDD, kept honest by `loam validate` reporting when the spec moves under it.
 
 > Working name: the tool was sketched in design notes as `featspec`; it lives here as `loam`. Easy to rename.
 
@@ -44,7 +44,8 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam new <FEAT> --title <t>` | Scaffold a feature: intent, C4 delta, a requirement delta per service. Validates clean out of the box. |
 | `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
 | `loam adopt --service <id>` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, the checks that follow — and the ones that do not exist. Writes nothing. |
-| `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here + generated Gherkin. Output doubles as a coding-agent task. |
+| `loam delta <FEAT> [--service <id>]` | Project a feature's C4 delta onto a service: what to build here, scenarios verbatim. Output doubles as a coding-agent task. |
+| `loam gherkin [<FEAT>] [--service <id>]` | Emit spec scenarios as Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` — a feature's changed requirements, or (without a feature) the full living suite. Deterministic, digest-stamped, regeneration-owned; run in the service's own repo. |
 | `loam validate [<id>] [--all]` | Validate one service or feature — positional id, feature reading first; `--service`/`--feature` force it — or the whole fleet in one run (CI gate). `--strict` exits 1 on warnings too: exit code only, the report and `valid` are unchanged. |
 | `loam verify <FEAT>` | The done-check: derive a checklist of the feature's own promises, one stable id each. `--record <answers.json>` takes the answers back and writes `verification.yaml`. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
@@ -61,7 +62,7 @@ The archive gate blocks on **gating issues**. Severity and gating answer two dif
 
 `archive` is the one command that rewrites the source of truth, so it computes the whole merge before touching disk, commits each file through a temp-file rename, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature, which is what makes `unarchive` an undo rather than a guess — the previous text of a `MODIFIED` requirement exists nowhere else.
 
-Status: every command in the table is implemented. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
+Status: every command in the table is implemented. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation — and `loam verify --results`, which will feed the generated suite's cucumber report back into the done-check and close the TDD loop (next phase; today `verify --record` takes an agent's answers).
 
 ## Try it
 
