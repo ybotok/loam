@@ -7,6 +7,8 @@
  * valid JSON, whether the command succeeded or not. The exit code still tells
  * the shell what happened.
  */
+import { existsSync } from "node:fs";
+import { configPath } from "./config.js";
 
 /**
  * Stable failure codes. Prose may change; these may not.
@@ -24,21 +26,49 @@
  * an unreadable file is a bug in whatever wrote it, a mismatch means the feature
  * moved and the claims have to be answered again, and an unevidenced
  * confirmation is the one an agent can fix on the spot.
+ *
+ * The archive group is `loam archive` refusing or failing, and each code is a
+ * different answer to "what do I fix, and can I trust the repo?": `not-coherent`
+ * is the gate — errors in the FEATURE, fix them or override with `--approve`;
+ * `living-outside-requirements` is the one refusal `--approve` does not move —
+ * the LIVING spec holds requirements outside `## Requirements`, and the merge
+ * would duplicate them, so the fix is in the living docs; `archive-exists` is a
+ * destination collision under `features/archive/`; `merge-failed` is a merge
+ * that could not be computed or was rolled back — either way the living docs
+ * are unchanged; `rollback-incomplete` is the one that demands a human: the
+ * merge failed AND some files could not be restored.
+ *
+ * `config-invalid` is distinct from `no-config` because the fixes point in
+ * opposite directions: a missing config wants `loam init`, a corrupt one wants
+ * repair — and an agent that ran `init` on a corrupt file would silently
+ * rewrite it.
+ *
+ * `internal` is the one code with no stable meaning: an unexpected throw. It
+ * exists so a `--json` consumer still receives an envelope instead of a stack
+ * trace on stdout's sibling stream.
  */
 export type ErrorCode =
   | "no-config"
+  | "config-invalid"
   | "unknown-target"
   | "unknown-section"
   | "invalid-option"
+  | "already-exists"
   | "sources-absent"
   | "sources-path-missing"
+  | "not-coherent"
+  | "living-outside-requirements"
+  | "archive-exists"
+  | "merge-failed"
+  | "rollback-incomplete"
   | "feature-active"
   | "snapshot-missing"
   | "snapshot-stale"
   | "restore-failed"
   | "answers-unreadable"
   | "answers-mismatch"
-  | "answers-unevidenced";
+  | "answers-unevidenced"
+  | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {
   console.log(JSON.stringify({ ok: true, ...payload }, null, 2));
@@ -51,18 +81,38 @@ export function emitJsonError(code: ErrorCode, message: string): false {
   return false;
 }
 
+/**
+ * Report a failure in whichever mode the caller is in. Text mode goes to
+ * stderr as it always has; JSON mode goes into the envelope.
+ */
+export function fail(json: boolean, code: ErrorCode, message: string): void {
+  if (json) {
+    emitJsonError(code, message);
+    return;
+  }
+  console.error(message);
+  process.exitCode = 1;
+}
+
 /** The message every command prints when there is no loam.json. */
 export const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` first.";
 
 /**
- * Report "no config" in whichever mode the caller is in. Text mode goes to
- * stderr as it always has; JSON mode goes into the envelope.
+ * Report "no config" in whichever mode the caller is in — distinguishing a
+ * config that is absent from one that exists but would not load, because the
+ * two point at opposite fixes: a missing config wants `loam init`, a corrupt
+ * one wants repair, and `init` would silently rewrite the corrupt file.
+ * Callers reach here only after `loadConfig()` returned null, so the file
+ * existing is proof it failed to load.
  */
 export function reportNoConfig(json: boolean): void {
-  if (json) {
-    emitJsonError("no-config", NO_CONFIG_MESSAGE);
+  if (existsSync(configPath())) {
+    fail(
+      json,
+      "config-invalid",
+      "loam.json exists but could not be loaded. Fix it (or delete it and re-run `loam init`).",
+    );
     return;
   }
-  console.error(NO_CONFIG_MESSAGE);
-  process.exitCode = 1;
+  fail(json, "no-config", NO_CONFIG_MESSAGE);
 }

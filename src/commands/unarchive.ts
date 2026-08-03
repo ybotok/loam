@@ -18,7 +18,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
 import { compareIds, featuresDir as featuresRoot, listFeatures, type FeatureEntry } from "../core/repo.js";
 import { repoPath } from "./list.js";
 import {
@@ -215,11 +215,3 @@ async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
   }
 }
 
-function fail(json: boolean, code: ErrorCode, msg: string): void {
-  if (json) {
-    emitJsonError(code, msg);
-    return;
-  }
-  console.error(msg);
-  process.exitCode = 1;
-}

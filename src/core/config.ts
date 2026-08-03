@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 /** Local config, committed at the root of a service repo (or the docs repo itself). */
 export const CONFIG_FILENAME = "loam.json";
@@ -21,7 +21,13 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfi
   if (!existsSync(p)) return null;
   const raw = await readFile(p, "utf8");
   try {
-    return JSON.parse(raw) as LoamConfig;
+    const parsed = JSON.parse(raw) as LoamConfig;
+    if (typeof parsed.docsDir !== "string" || parsed.docsDir === "") {
+      throw new Error(`"docsDir" must be a non-empty string`);
+    }
+    // Resolve here, against the file's own directory, so the doc comment on
+    // `docsDir` is true no matter where a caller later resolves the path from.
+    return { ...parsed, docsDir: resolve(dirname(p), parsed.docsDir) };
   } catch (err) {
     // An unreadable config must not crash the CLI with a stack trace: report it and
     // treat it as absent — commands fail with their normal hint, and `loam init`

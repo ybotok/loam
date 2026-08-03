@@ -18,7 +18,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
 import { missingSources, sourcesDigest } from "../core/provenance.js";
 import { servicePaths } from "../core/repo.js";
@@ -193,14 +193,6 @@ function today(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-function fail(json: boolean, code: ErrorCode, message: string): void {
-  if (json) {
-    emitJsonError(code, message);
-    return;
-  }
-  console.error(message);
-  process.exitCode = 1;
-}
 
 function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;

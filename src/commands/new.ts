@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
 import { repoPath } from "./list.js";
 import { featureIdFromDirName, featuresDir, resolveFeature } from "../core/repo.js";
 
@@ -95,14 +95,6 @@ function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-function fail(json: boolean, code: "invalid-option" | "already-exists", message: string): void {
-  if (json) {
-    emitJsonError(code as "invalid-option", message);
-    return;
-  }
-  console.error(message);
-  process.exitCode = 1;
-}
 
 /* ------------------------------------------------------------------ */
 /* Naming                                                              */
