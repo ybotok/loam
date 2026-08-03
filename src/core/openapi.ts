@@ -1,18 +1,36 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "yaml";
 
 /**
- * Extract operationIds from an OpenAPI document. A light regex read (operationIds are
- * unique tokens under paths.*.*), avoiding a YAML dependency for the MVP.
+ * Extract operationIds from an OpenAPI document by walking the parsed YAML
+ * structure (paths.<path>.<method>.operationId). Structure-aware on purpose:
+ * a regex scan both drops legal ids (kebab-case, dotted) and picks up phantom
+ * ids from description text. Returns the defined set (deduped, document order).
+ * An unreadable document yields [] — its contract can prove nothing.
  */
 export async function operationIds(openapiPath: string): Promise<string[]> {
   if (!existsSync(openapiPath)) return [];
   const text = await readFile(openapiPath, "utf8");
-  const ids: string[] = [];
-  const re = /^\s*operationId:\s*['"]?([A-Za-z0-9_]+)['"]?\s*$/gm;
-  for (const m of text.matchAll(re)) ids.push(m[1]!);
-  return ids;
+  let doc: unknown;
+  try {
+    doc = parse(text);
+  } catch {
+    return [];
+  }
+  const paths = (doc as { paths?: unknown } | null)?.paths;
+  if (!paths || typeof paths !== "object") return [];
+  const ids = new Set<string>();
+  for (const item of Object.values(paths as Record<string, unknown>)) {
+    if (!item || typeof item !== "object") continue;
+    for (const op of Object.values(item as Record<string, unknown>)) {
+      if (!op || typeof op !== "object") continue;
+      const id = (op as Record<string, unknown>)["operationId"];
+      if (typeof id === "string" && id.length > 0) ids.add(id);
+    }
+  }
+  return [...ids];
 }
 
 /**

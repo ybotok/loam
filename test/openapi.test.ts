@@ -1,0 +1,548 @@
+/**
+ * Deep invariants for src/core/openapi.ts — operationIds() and serviceOperationIds().
+ *
+ * operationId is the spine joining the three axes (C4 edge `op` ↔ requirement
+ * `Operations:` ↔ OpenAPI `operationId`, SCHEMA.md "API linkage"). Extraction must
+ * therefore mirror YAML semantics exactly:
+ *  - a dropped id fabricates E1/E2 "not defined in OpenAPI" coherence errors that
+ *    gate `loam archive` (src/core/coherence.ts:62,78);
+ *  - a phantom id (false positive) both fabricates "not governed" coverage warnings
+ *    (src/commands/validate.ts:70-74) and MASKS genuine contract breaks, because a
+ *    description merely mentioning an op makes it look "available".
+ *
+ * Decisions documented here (asserted as desired behavior):
+ *  - charset: the OpenAPI spec allows ANY string for operationId; real-world ids use
+ *    hyphens ('get-user') and dots ('users.list'). Extraction must return them.
+ *  - duplicates: operationId MUST be unique per OpenAPI document; every consumer
+ *    treats the result as a set (membership in coherence.ts, a count in
+ *    validate.ts:72 that duplicates would inflate). So operationIds() dedupes —
+ *    "the set of operations the document defines".
+ *  - strictness: only real `paths.*.<method>.operationId` keys count. Text inside
+ *    block scalars / comments is not an operation. The `yaml` package is already a
+ *    devDep, so a structurally correct extractor is cheap.
+ */
+import { describe, expect, it } from "vitest";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
+import { operationIds, serviceOperationIds } from "../src/core/openapi.js";
+import {
+  FEATURE_DELTA,
+  FEATURE_OPENAPI,
+  FEATURE_SPEC,
+  LIVING_OPENAPI,
+  coherentFixture,
+  makeProject,
+  makeTmpDir,
+  runLoam,
+  writeFiles,
+} from "./helpers/harness.js";
+
+/** Run `fn` against a throwaway dir populated with `files`; always clean up. */
+async function withDir<T>(
+  files: Record<string, string>,
+  fn: (root: string) => Promise<T>,
+): Promise<T> {
+  const root = await makeTmpDir();
+  try {
+    await writeFiles(root, files);
+    return await fn(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+/** operationIds() of a single inline OpenAPI document. */
+async function extract(content: string): Promise<string[]> {
+  return withDir({ "openapi.yaml": content }, (root) => operationIds(join(root, "openapi.yaml")));
+}
+
+const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+
+/** Ground truth: what a real YAML parse says the document's operationIds are. */
+function yamlGroundTruth(text: string): string[] {
+  const doc = parse(text) as { paths?: Record<string, unknown> } | null;
+  const ids: string[] = [];
+  for (const item of Object.values(doc?.paths ?? {})) {
+    if (item === null || typeof item !== "object") continue;
+    for (const [method, op] of Object.entries(item as Record<string, unknown>)) {
+      if (!HTTP_METHODS.has(method)) continue;
+      if (op !== null && typeof op === "object") {
+        const id = (op as { operationId?: unknown }).operationId;
+        if (typeof id === "string") ids.push(id);
+      }
+    }
+  }
+  return ids;
+}
+
+/* ------------------------------------------------------------------ */
+/* Basic extraction                                                    */
+/* ------------------------------------------------------------------ */
+
+describe("operationIds — basic extraction", () => {
+  it("extracts the single operationId from the canonical living OpenAPI fixture", async () => {
+    expect(await extract(LIVING_OPENAPI)).toEqual(["authorizePayment"]);
+  });
+
+  it("extracts every operationId across multiple paths and methods, in document order", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: createUser
+      summary: Create a user
+      responses:
+        "201":
+          description: Created
+  /users/{id}:
+    get:
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+    delete:
+      operationId: deleteUser
+      responses:
+        "204":
+          description: Deleted
+`;
+    expect(parse(doc)).toBeTruthy(); // fixture is valid YAML
+    expect(await extract(doc)).toEqual(["listUsers", "createUser", "getUser", "deleteUser"]);
+  });
+
+  it("extracts a single-quoted operationId value", async () => {
+    const doc = LIVING_OPENAPI.replace("operationId: authorizePayment", "operationId: 'authorizePayment'");
+    expect(await extract(doc)).toEqual(["authorizePayment"]);
+  });
+
+  it("extracts a double-quoted operationId value", async () => {
+    const doc = LIVING_OPENAPI.replace("operationId: authorizePayment", 'operationId: "authorizePayment"');
+    expect(await extract(doc)).toEqual(["authorizePayment"]);
+  });
+
+  it("agrees with a real YAML parse on a realistic multi-operation document", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "2.3"
+paths:
+  /payments:
+    post:
+      operationId: authorizePayment
+      summary: Authorize a payment
+      responses:
+        "201":
+          description: Authorized
+  /payments/{id}/capture:
+    post:
+      operationId: capturePayment
+      summary: Capture an authorized payment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Captured
+`;
+    expect(await extract(doc)).toEqual(yamlGroundTruth(doc));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Charset — OpenAPI allows ANY string for operationId                 */
+/* ------------------------------------------------------------------ */
+
+describe("operationId charset — real-world ids must not be silently dropped", () => {
+  const docWithId = (idLine: string): string => `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users/{id}:
+    get:
+      operationId: ${idLine}
+      summary: Fetch a user
+      responses:
+        "200":
+          description: OK
+`;
+
+  it("extracts a kebab-case operationId ('get-user')", async () => {
+    const doc = docWithId("get-user");
+    expect(yamlGroundTruth(doc)).toEqual(["get-user"]); // fixture sanity: YAML agrees
+    expect(await extract(doc)).toEqual(["get-user"]);
+  });
+
+  it("extracts a dotted operationId ('users.list')", async () => {
+    const doc = docWithId("users.list");
+    expect(yamlGroundTruth(doc)).toEqual(["users.list"]);
+    expect(await extract(doc)).toEqual(["users.list"]);
+  });
+
+  it("extracts a quoted kebab-case operationId (\"get-user\")", async () => {
+    const doc = docWithId('"get-user"');
+    expect(yamlGroundTruth(doc)).toEqual(["get-user"]);
+    expect(await extract(doc)).toEqual(["get-user"]);
+  });
+
+  it("extracts camelCase, snake_case and digit-bearing ids", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /a:
+    get:
+      operationId: getUserV2
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: create_user_2
+      responses:
+        "201":
+          description: Created
+`;
+    expect(await extract(doc)).toEqual(["getUserV2", "create_user_2"]);
+  });
+
+  it("a trailing YAML comment after the id does not drop it", async () => {
+    const doc = docWithId("getUser # the primary read path");
+    expect(yamlGroundTruth(doc)).toEqual(["getUser"]); // YAML: ' #' starts a comment
+    expect(await extract(doc)).toEqual(["getUser"]);
+  });
+
+  it("matches YAML ground truth on a document mixing safe and hyphenated ids", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: mixed-service
+  version: "1.0"
+paths:
+  /a:
+    get:
+      operationId: listThings
+      responses:
+        "200":
+          description: OK
+  /b:
+    post:
+      operationId: create-thing
+      responses:
+        "201":
+          description: Created
+`;
+    expect(await extract(doc)).toEqual(yamlGroundTruth(doc));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* False positives                                                     */
+/* ------------------------------------------------------------------ */
+
+describe("operationIds — no false positives from non-operation text", () => {
+  it("does not extract an 'operationId:' line inside a block-scalar description", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      description: |-
+        This endpoint replaces the legacy flow.
+        operationId: notReal
+        Do not reference notReal anywhere.
+      responses:
+        "200":
+          description: OK
+`;
+    expect(yamlGroundTruth(doc)).toEqual(["listUsers"]); // the YAML defines exactly one op
+    expect(await extract(doc)).toEqual(["listUsers"]);
+  });
+
+  it("does not extract a commented-out '# operationId: ghost'", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      # operationId: ghost
+      operationId: listUsers
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extract(doc)).toEqual(["listUsers"]);
+  });
+
+  it("does not extract a vendor-extension 'x-operationId' key", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      x-operationId: vendorThing
+      operationId: listUsers
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extract(doc)).toEqual(["listUsers"]);
+  });
+
+  it("does not extract a mid-line 'operationId:' mention in a summary", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      summary: 'set operationId: fake when regenerating clients'
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extract(doc)).toEqual(["listUsers"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Degenerate inputs                                                   */
+/* ------------------------------------------------------------------ */
+
+describe("operationIds — missing / empty / operation-less files", () => {
+  it("returns [] for a missing file", async () => {
+    const root = await makeTmpDir();
+    try {
+      expect(await operationIds(join(root, "no-such-dir", "openapi.yaml"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns [] for an empty file", async () => {
+    expect(await extract("")).toEqual([]);
+  });
+
+  it("returns [] for a document with paths but no operationIds", async () => {
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /users:
+    get:
+      summary: List users
+      responses:
+        "200":
+          description: OK
+`;
+    expect(await extract(doc)).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Duplicates                                                          */
+/* ------------------------------------------------------------------ */
+
+describe("operationIds — duplicate ids collapse to the defined set", () => {
+  it("reports an operationId once even when the document repeats it", async () => {
+    // operationId MUST be unique per OpenAPI document; consumers membership-check
+    // (coherence.ts) or count ops (validate.ts:72) — multiplicity is never wanted
+    // and would double-count a (already invalid) duplicated id.
+    const doc = `openapi: 3.1.0
+info:
+  title: user-service
+  version: "1.0"
+paths:
+  /payments:
+    post:
+      operationId: authorizePayment
+      responses:
+        "201":
+          description: Authorized
+  /payments/legacy:
+    post:
+      operationId: authorizePayment
+      responses:
+        "201":
+          description: Authorized
+`;
+    expect(await extract(doc)).toEqual(["authorizePayment"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* serviceOperationIds — union of living + feature contract            */
+/* ------------------------------------------------------------------ */
+
+describe("serviceOperationIds — union of living and feature APIs", () => {
+  const openapiWith = (title: string, ops: string[]): string => {
+    const paths = ops
+      .map(
+        (op, i) => `  /p${i}:
+    post:
+      operationId: ${op}
+      responses:
+        "200":
+          description: OK
+`,
+      )
+      .join("");
+    return `openapi: 3.1.0
+info:
+  title: ${title}
+  version: "1.0"
+paths:
+${paths}`;
+  };
+
+  it("unions living and feature openapi ids, deduping the overlap", async () => {
+    await withDir(
+      {
+        "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", [
+          "authorizePayment",
+          "sharedOp",
+        ]),
+        "docs/features/FEAT-9-x/specs/payment-service/openapi.yaml": openapiWith("payment-service", [
+          "createSplit",
+          "sharedOp",
+        ]),
+      },
+      async (root) => {
+        const docsDir = join(root, "docs");
+        const ids = await serviceOperationIds(docsDir, "payment-service", join(docsDir, "features", "FEAT-9-x"));
+        expect([...ids].sort()).toEqual(["authorizePayment", "createSplit", "sharedOp"]);
+      },
+    );
+  });
+
+  it("a feature-only service (brand-new API) yields exactly the feature's ids", async () => {
+    await withDir(
+      {
+        "docs/features/FEAT-9-x/specs/payment-split-service/openapi.yaml": openapiWith(
+          "payment-split-service",
+          ["createSplit"],
+        ),
+      },
+      async (root) => {
+        const docsDir = join(root, "docs");
+        const ids = await serviceOperationIds(
+          docsDir,
+          "payment-split-service",
+          join(docsDir, "features", "FEAT-9-x"),
+        );
+        expect(ids).toEqual(["createSplit"]);
+      },
+    );
+  });
+
+  it("without a featureDir argument, yields exactly the living ids", async () => {
+    await withDir(
+      {
+        "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", [
+          "authorizePayment",
+          "capturePayment",
+        ]),
+      },
+      async (root) => {
+        const ids = await serviceOperationIds(join(root, "docs"), "payment-service");
+        expect([...ids].sort()).toEqual(["authorizePayment", "capturePayment"]);
+      },
+    );
+  });
+
+  it("a featureDir without an openapi delta for the service adds nothing", async () => {
+    await withDir(
+      {
+        "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", ["authorizePayment"]),
+        "docs/features/FEAT-9-x/intent.md": "# intent\n",
+      },
+      async (root) => {
+        const docsDir = join(root, "docs");
+        const ids = await serviceOperationIds(docsDir, "payment-service", join(docsDir, "features", "FEAT-9-x"));
+        expect(ids).toEqual(["authorizePayment"]);
+      },
+    );
+  });
+
+  it("neither living nor feature openapi exists -> []", async () => {
+    await withDir({ "docs/loam.docs.json": "{}\n" }, async (root) => {
+      const docsDir = join(root, "docs");
+      const ids = await serviceOperationIds(docsDir, "ghost-service", join(docsDir, "features", "FEAT-9-x"));
+      expect(ids).toEqual([]);
+    });
+  });
+
+  it("does not leak another service's operations", async () => {
+    await withDir(
+      {
+        "docs/services/svc-a/openapi.yaml": openapiWith("svc-a", ["opA"]),
+        "docs/services/svc-b/openapi.yaml": openapiWith("svc-b", ["opB"]),
+      },
+      async (root) => {
+        expect(await serviceOperationIds(join(root, "docs"), "svc-a")).toEqual(["opA"]);
+      },
+    );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Cascade — a dropped id must not fabricate coherence-gate errors     */
+/* ------------------------------------------------------------------ */
+
+describe("cascade — extraction feeds the coherence gate", () => {
+  it("validate --feature succeeds when the feature's operationId is kebab-case on all three axes", async () => {
+    // Same coherent fixture, with the spine token renamed createSplit -> create-split
+    // consistently in C4 metadata, requirement Operations:, and OpenAPI. All three
+    // axes agree, so the gate must pass; only an extractor that drops hyphenated ids
+    // can produce "not defined in OpenAPI" here.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/delta.likec4"] = FEATURE_DELTA.replaceAll("createSplit", "create-split");
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC.replaceAll(
+      "createSplit",
+      "create-split",
+    );
+    files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"] = FEATURE_OPENAPI.replaceAll(
+      "createSplit",
+      "create-split",
+    );
+    expect(yamlGroundTruth(files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"]!)).toEqual([
+      "create-split",
+    ]);
+    const p = await makeProject(files, { service: "payment-service" });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1");
+      expect(res.out).not.toContain("not defined");
+      expect(res.code).toBe(0);
+    } finally {
+      await p.destroy();
+    }
+  });
+});

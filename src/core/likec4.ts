@@ -67,7 +67,8 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
   const relationships: Rel[] = [...model.relationships()].map((r) => ({
     source: r.source.id,
     target: r.target.id,
-    title: r.title,
+    // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
+    title: r.title ?? undefined,
     op: metaOp(r.metadata),
     tags: [...(r.tags ?? [])],
   }));

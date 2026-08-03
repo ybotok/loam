@@ -74,6 +74,42 @@ async function validateService(docsDir: string, service: string | undefined): Pr
       console.log(`⚠ ${service}: ${orphans.length} operation(s) not governed by any requirement — ${orphans.join(", ")}`);
     }
   }
+
+  // Landscape spine: cross-system edges calling THIS service must resolve to a real
+  // operation in its OpenAPI — the C4↔API contract, checked in the living landscape,
+  // not only in feature mode. Catches dangling / de-linked op edges.
+  const landscapePath = join(docsDir, "architecture", "landscape.likec4");
+  if (existsSync(landscapePath)) {
+    const land = await loadFile(landscapePath);
+    if (land.errors.length > 0) {
+      // A living landscape that does not parse disables the C4↔API spine check —
+      // that is a broken source of truth, not a skippable detail.
+      console.error(`✗ ${service}: landscape.likec4 has ${land.errors.length} error(s) — spine check impossible`);
+      for (const e of land.errors) console.error(`    ${line(e.line)}${e.message}`);
+      ok = false;
+    }
+    if (land.errors.length === 0) {
+      const titleOf = (id: string): string => land.elements.find((e) => e.id === id)?.title ?? id;
+      const opset = new Set(ops);
+      let checked = 0;
+      let broken = 0;
+      for (const r of land.relationships) {
+        if (titleOf(r.target) !== service) continue;
+        if (r.op !== undefined) {
+          checked += 1;
+          if (!opset.has(r.op)) {
+            console.error(`✗ ${service}: landscape edge ${titleOf(r.source)} → ${service} calls '${r.op}', not defined in ${service}'s OpenAPI`);
+            broken += 1;
+          }
+        } else if ((r.title ?? "").toLowerCase().startsWith("call")) {
+          console.log(`⚠ ${service}: landscape edge ${titleOf(r.source)} → ${service} ("${r.title}") has no operation link (metadata { op })`);
+        }
+      }
+      if (broken > 0) ok = false;
+      else if (checked > 0) console.log(`✓ ${service}: landscape spine (${checked} inbound call(s) resolve to OpenAPI)`);
+    }
+  }
+
   return ok;
 }
 

@@ -29,7 +29,13 @@ export async function featureCoherence(
   const deltaPath = join(featureDir, "delta.likec4");
   if (existsSync(deltaPath)) {
     const res = await loadFile(deltaPath);
-    if (res.errors.length === 0) {
+    if (res.errors.length > 0) {
+      // An unreadable architecture axis can prove nothing — it must never count as coherent.
+      issues.push({
+        severity: "error",
+        message: `delta.likec4 has ${res.errors.length} parse error(s) — architecture axis unreadable (run \`loam validate --feature ${featureId}\`)`,
+      });
+    } else {
       elements = res.elements;
       taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
@@ -48,12 +54,35 @@ export async function featureCoherence(
       const specPath = join(specsDir, d.name, "spec.md");
       if (existsSync(specPath)) {
         const reqs = parseRequirements(await readFile(specPath, "utf8"));
-        reqOps.set(d.name, reqs.flatMap((r) => r.operations));
+        // REMOVED requirements are being retired along with their operations — their
+        // ops neither claim the contract (E1) nor govern anything after the merge.
+        reqOps.set(d.name, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
       }
-      for (const op of await operationIds(join(specsDir, d.name, "openapi.yaml"))) featureApiOps.add(op);
+      // Only operations genuinely NEW to this service count as feature-added: authors
+      // restate the full living API in the delta file (it is a complete document, not a patch).
+      const featOps = await operationIds(join(specsDir, d.name, "openapi.yaml"));
+      if (featOps.length > 0) {
+        const living = new Set(await operationIds(join(docsDir, "services", d.name, "openapi.yaml")));
+        for (const op of featOps) if (!living.has(op)) featureApiOps.add(op);
+      }
     }
   }
   const declaredOps = new Set([...reqOps.values()].flat());
+
+  // Living specs also govern: an edge calling a pre-existing endpoint is coherent if the
+  // target's living spec.md declares the op — the feature need not restate the requirement.
+  const livingGoverned = new Map<string, Set<string>>();
+  const governedByLivingSpec = async (service: string, op: string): Promise<boolean> => {
+    let ops = livingGoverned.get(service);
+    if (!ops) {
+      const p = join(docsDir, "services", service, "spec.md");
+      ops = new Set(
+        existsSync(p) ? parseRequirements(await readFile(p, "utf8")).flatMap((r) => r.operations) : [],
+      );
+      livingGoverned.set(service, ops);
+    }
+    return ops.has(op);
+  };
 
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {
@@ -78,7 +107,7 @@ export async function featureCoherence(
     if (!available.includes(r.op)) {
       issues.push({ severity: "error", message: `${titleOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
     }
-    if (!declaredOps.has(r.op)) {
+    if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
       issues.push({ severity: "warn", message: `'${r.op}' is called by ${titleOf(r.source)} but no requirement governs it` });
     }
   }

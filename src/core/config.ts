@@ -20,7 +20,16 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfi
   const p = configPath(cwd);
   if (!existsSync(p)) return null;
   const raw = await readFile(p, "utf8");
-  return JSON.parse(raw) as LoamConfig;
+  try {
+    return JSON.parse(raw) as LoamConfig;
+  } catch (err) {
+    // An unreadable config must not crash the CLI with a stack trace: report it and
+    // treat it as absent — commands fail with their normal hint, and `loam init`
+    // (which spreads the old config) can rewrite a corrupt file instead of dying on it.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Invalid ${CONFIG_FILENAME} at ${p}: ${msg}`);
+    return null;
+  }
 }
 
 export async function saveConfig(config: LoamConfig, cwd: string = process.cwd()): Promise<string> {

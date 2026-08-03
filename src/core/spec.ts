@@ -33,11 +33,29 @@ export function parseRequirements(md: string): Requirement[] {
   let kind: DeltaKind = "BASE";
   let req: Requirement | null = null;
   let scn: Scenario | null = null;
+  /** Open fence marker (``` or ~~~) — heading-like lines inside a fence are body, not structure. */
+  let fence: string | null = null;
 
-  for (const line of md.split("\n")) {
-    const mk = KIND_RE.exec(line);
-    if (mk) {
-      kind = mk[1]!.toUpperCase() as DeltaKind;
+  for (const line of md.split(/\r?\n/)) {
+    const mf = /^\s*(```|~~~)/.exec(line);
+    if (mf) {
+      if (fence === null) fence = mf[1]!;
+      else if (fence === mf[1]!) fence = null;
+    }
+    if (fence !== null || mf) {
+      if (scn) scn.lines.push(line);
+      else if (req) req.text.push(line);
+      continue;
+    }
+    // Any H2 heading ends the current requirement/scenario capture — section prose
+    // must not leak into the previous scenario's body.
+    if (/^##\s+/.test(line) && !/^###/.test(line)) {
+      req = null;
+      scn = null;
+      const mk = KIND_RE.exec(line);
+      // A non-delta H2 (## Notes, ## Requirements…) starts an unrelated section:
+      // requirements under it are plain BASE, not part of a stale delta section.
+      kind = mk ? (mk[1]!.toUpperCase() as DeltaKind) : "BASE";
       continue;
     }
     const mr = REQ_RE.exec(line);
@@ -72,29 +90,35 @@ export function requirementsMissingScenarios(reqs: Requirement[]): Requirement[]
 
 /** Serialize requirements back to OpenSpec markdown (`### Requirement:` + `#### Scenario:`). */
 export function serializeRequirements(reqs: Requirement[]): string {
-  const out: string[] = [];
+  // Framing (blank lines between sections) is normalized here; body content is
+  // only edge-trimmed, never collapsed — blank lines inside a scenario (e.g. in
+  // fenced code blocks) are verbatim content.
+  const chunks: string[] = [];
   for (const r of reqs) {
-    out.push(`### Requirement: ${r.name}`);
+    const chunk: string[] = [`### Requirement: ${r.name}`];
     const text = r.text.join("\n").trim();
-    if (text) out.push("", text);
+    if (text) chunk.push("", text);
     for (const s of r.scenarios) {
-      out.push("", `#### Scenario: ${s.name}`);
+      chunk.push("", `#### Scenario: ${s.name}`);
       const body = s.lines.join("\n").trim();
-      if (body) out.push(body);
+      if (body) chunk.push(body);
     }
-    out.push("");
+    chunks.push(chunk.join("\n"));
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  return chunks.join("\n\n").trim() + "\n";
 }
 
 /** Apply a feature's ADDED/MODIFIED/REMOVED requirements onto a living requirement set. */
 export function applyRequirementDelta(living: Requirement[], delta: Requirement[]): Requirement[] {
-  const result: Requirement[] = living.map((r) => ({ ...r, kind: "BASE" as DeltaKind }));
+  let result: Requirement[] = living.map((r) => ({ ...r, kind: "BASE" as DeltaKind }));
   for (const d of delta) {
-    const i = result.findIndex((r) => r.name === d.name);
+    // BASE is not a delta kind — a requirement outside an ADDED/MODIFIED/REMOVED
+    // section (e.g. quoted under ## Notes) is documentation, not a change.
+    if (d.kind === "BASE") continue;
     if (d.kind === "REMOVED") {
-      if (i >= 0) result.splice(i, 1);
+      result = result.filter((r) => r.name !== d.name);
     } else {
+      const i = result.findIndex((r) => r.name === d.name);
       const merged: Requirement = { ...d, kind: "BASE" };
       if (i >= 0) result[i] = merged;
       else result.push(merged);

@@ -22,7 +22,8 @@
   "license": "MIT",
   "dependencies": {
     "commander": "^15.0.0",
-    "likec4": "^1.59.2"
+    "likec4": "^1.59.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
