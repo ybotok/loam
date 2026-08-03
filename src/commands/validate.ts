@@ -190,8 +190,9 @@ export function registerValidate(program: Command): void {
       } else {
         renderText(targets, opts.all === true, unverifiable);
       }
-      // --strict is a per-invocation CI lever: it fails the run on ANY finding,
-      // warnings included, and changes nothing else — `valid` keeps meaning "no
+      // --strict is a per-invocation CI lever: it fails the run on any error or
+      // warning (ok-severity confirmations never trip it — virtually every
+      // clean target emits some), and changes nothing else — `valid` keeps meaning "no
       // errors" in text and JSON alike, so two pipelines reading the same repo
       // may grade the same report differently and both are telling the truth.
       const strictFailed =

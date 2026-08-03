@@ -262,11 +262,16 @@ the TEST RUNNER's to answer: run the generated suite with a cucumber JSON
 report (\`cucumber-js --format json:report.json\`) and pass it back —
 \`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
 report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
-and every step passed — every occurrence, when the report holds a re-run. A
-failed, undefined, pending or skipped step, or no matching scenario at all, is
-\`unconfirmed\` with the reason. The digest is the only identity: a reworded
-spec scenario matches nothing until the suite is regenerated and re-run, and
-no agent can SAY a scenario is tested — only a green run may.
+and every step passed — every occurrence, when the report holds a re-run, and
+every before/after hook with it. A failed, undefined, pending or skipped step,
+a failed hook, or no matching scenario at all, is \`unconfirmed\` with the
+reason. The digest is the only identity: a reworded spec scenario matches
+nothing until the suite is regenerated and re-run. When a report exists,
+ALWAYS pass \`--results\` — under it the runner owns every scenario claim, and
+an answers-file entry for one is refused. \`--record\` without \`--results\` is
+the fallback for a service with no runnable suite yet: there your word answers
+the scenario claims too, and the record says so (\`answered_by: agent\`) — an
+assertion a reviewer can weigh, never proof a test ran.
 
 Everything else you answer from the code, and \`--record answers.json\` takes
 those back, writing \`features/<FEAT>/verification.yaml\` — it travels into the
@@ -337,9 +342,12 @@ requirement). Leave a warning standing only deliberately.
 
 ## Reading loam's output
 
-Every command takes \`--json\`. The one carve-out: an unknown flag or a missing
-argument is refused by the option parser before loam runs, as plain text — so
-unparseable output with exit 1 means the INVOCATION was wrong, not the docs.
+Every command takes \`--json\`, and the envelope holds even when the INVOCATION
+is wrong: with \`--json\` anywhere in the arguments, an unknown flag, unknown
+command or missing argument still yields \`{ ok: false, error: { code:
+"invalid-option" } }\` on stdout with exit 1 (commander's own diagnostic goes
+to stderr; \`--help\` and \`--version\` output pass through untouched). Without
+\`--json\` the same refusal is plain text on stderr with nothing on stdout.
 
 Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
 not. The code-by-code fix table lives in the \`/loam-check\` command \`loam init\` lays
@@ -394,8 +402,9 @@ or a service id, tried in that order, so the feature wins when one name could be
 both and \`--service\`/\`--feature\` force the reading. The positional together with
 \`--all\`, \`--service\` or \`--feature\` is refused (\`invalid-option\`).
 
-\`--strict\` (every targeting mode, \`--all\` included) exits 1 when any finding
-exists at all — warnings included. It changes the exit code and nothing else:
+\`--strict\` (every targeting mode, \`--all\` included) exits 1 when any error
+or warning exists — \`ok\`-severity findings are confirmations and never trip
+it. It changes the exit code and nothing else:
 \`valid\` still means "no errors", and the \`--json\` payload stays byte-for-byte
 what it was. The stricter grade is a per-invocation lever, visible in the CI
 pipeline that passes the flag — deliberately not a per-repo profile.
