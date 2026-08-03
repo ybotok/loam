@@ -7,8 +7,27 @@ import { operationIds, serviceOperationIds } from "./openapi.js";
 
 export interface Issue {
   severity: "error" | "warn";
+  /** Stable machine identifier for the breach — see the E/W labels below. */
+  code: IssueCode;
   message: string;
 }
+
+/** The coherence breaches, as codes a caller can branch on. */
+export type IssueCode =
+  /** the architecture axis could not be read at all */
+  | "delta.invalid"
+  /** E1 — a requirement governs an operation its service's OpenAPI does not define */
+  | "spec-api.op-undefined"
+  /** E2 — a C4 edge calls an operation the target's OpenAPI does not define */
+  | "c4-api.op-undefined"
+  /** W1 — an operation is called but no requirement governs it */
+  | "c4.op-ungoverned"
+  /** W2 — the feature adds an operation no architecture edge consumes */
+  | "api.op-unconsumed"
+  /** W3 — a new service arrives with no requirement delta */
+  | "service.no-requirement-delta"
+  /** W4 — a "Calls" edge carries no operation link */
+  | "c4.op-link-missing";
 
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
@@ -33,6 +52,7 @@ export async function featureCoherence(
       // An unreadable architecture axis can prove nothing — it must never count as coherent.
       issues.push({
         severity: "error",
+        code: "delta.invalid",
         message: `delta.likec4 has ${res.errors.length} parse error(s) — architecture axis unreadable (run \`loam validate --feature ${featureId}\`)`,
       });
     } else {
@@ -85,7 +105,7 @@ export async function featureCoherence(
     const available = await serviceOperationIds(docsDir, svc, featureDir);
     for (const op of ops) {
       if (!available.includes(op)) {
-        issues.push({ severity: "error", message: `requirement in ${svc} governs '${op}', not defined in ${svc}'s OpenAPI` });
+        issues.push({ severity: "error", code: "spec-api.op-undefined", message: `requirement in ${svc} governs '${op}', not defined in ${svc}'s OpenAPI` });
       }
     }
   }
@@ -94,17 +114,17 @@ export async function featureCoherence(
   for (const r of taggedRels) {
     if (r.op === undefined) {
       if ((r.title ?? "").toLowerCase().startsWith("call")) {
-        issues.push({ severity: "warn", message: `edge ${titleOf(r.source)} → ${titleOf(r.target)} ("${r.title}") has no operation link (metadata { op })` });
+        issues.push({ severity: "warn", code: "c4.op-link-missing", message: `edge ${titleOf(r.source)} → ${titleOf(r.target)} ("${r.title}") has no operation link (metadata { op })` });
       }
       continue;
     }
     const target = titleOf(r.target);
     const available = await serviceOperationIds(docsDir, target, featureDir);
     if (!available.includes(r.op)) {
-      issues.push({ severity: "error", message: `${titleOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
+      issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${titleOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
     }
     if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
-      issues.push({ severity: "warn", message: `'${r.op}' is called by ${titleOf(r.source)} but no requirement governs it` });
+      issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${titleOf(r.source)} but no requirement governs it` });
     }
   }
 
@@ -112,14 +132,14 @@ export async function featureCoherence(
   const consumed = new Set(taggedRels.map((r) => r.op).filter((o): o is string => o !== undefined));
   for (const op of featureApiOps) {
     if (!consumed.has(op)) {
-      issues.push({ severity: "warn", message: `operation '${op}' is added but no architecture edge consumes it (provider-only or unmodeled)` });
+      issues.push({ severity: "warn", code: "api.op-unconsumed", message: `operation '${op}' is added but no architecture edge consumes it (provider-only or unmodeled)` });
     }
   }
 
   // W3: a new service should carry a requirement delta.
   for (const e of taggedEls) {
     if (e.kind === "softwareSystem" && !svcNames.includes(e.title)) {
-      issues.push({ severity: "warn", message: `new service ${e.title} has no requirement delta under specs/` });
+      issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${e.title} has no requirement delta under specs/` });
     }
   }
 

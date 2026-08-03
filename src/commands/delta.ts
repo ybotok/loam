@@ -2,12 +2,29 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
+import { emitJson, emitJsonError, reportNoConfig } from "../core/json.js";
 import { loadFile, type Elem, type Rel } from "../core/likec4.js";
+import { repoPath } from "./list.js";
 import { featurePaths, featureSpecPaths, resolveFeature } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
 
 interface DeltaOptions {
   service?: string;
+  json?: boolean;
+}
+
+/** One end of a feature edge, as seen from the projected service. */
+interface Edge {
+  service: string;
+  op: string | null;
+  title: string | null;
+}
+
+interface ArchSlice {
+  isNew: boolean;
+  inbound: Edge[];
+  outbound: Edge[];
+  errors: string[];
 }
 
 export function registerDelta(program: Command): void {
@@ -16,55 +33,105 @@ export function registerDelta(program: Command): void {
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Project a feature onto a service: why + requirement delta + C4 changes")
     .option("--service <id>", "service to project onto (defaults to the configured service)")
+    .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: DeltaOptions) => {
+      const json = opts.json === true;
       const config = await loadConfig();
       if (!config) {
-        console.error("No loam.json found. Run `loam init --docs <dir>` first.");
-        process.exitCode = 1;
+        reportNoConfig(json);
         return;
       }
       const service = opts.service ?? config.service;
       if (!service) {
-        console.error("No service. Pass --service <id> or set it in loam.json.");
-        process.exitCode = 1;
+        const msg = "No service. Pass --service <id> or set it in loam.json.";
+        if (json) emitJsonError("invalid-option", msg);
+        else {
+          console.error(msg);
+          process.exitCode = 1;
+        }
         return;
       }
 
       const feature = await resolveFeature(config.docsDir, featureId);
       if (!feature) {
-        console.error(`No feature '${featureId}' under ${config.docsDir}/features/.`);
-        process.exitCode = 1;
+        const msg = `No feature '${featureId}' under ${config.docsDir}/features/.`;
+        if (json) emitJsonError("unknown-target", msg);
+        else {
+          console.error(msg);
+          process.exitCode = 1;
+        }
         return;
       }
       const paths = featurePaths(feature.dir);
 
-      console.log(`${featureId} · ${service}\n`);
+      // Why — business intent
+      const intent = existsSync(paths.intent)
+        ? stripFrontmatter(await readFile(paths.intent, "utf8")).trim()
+        : null;
 
-      // 1. Why — business intent
-      if (existsSync(paths.intent)) {
-        console.log(indent(stripFrontmatter(await readFile(paths.intent, "utf8")).trim(), "  "));
+      // Requirement delta for this service (OpenSpec style)
+      const reqPath = featureSpecPaths(feature.dir, service).spec;
+      const reqs = existsSync(reqPath) ? parseRequirements(await readFile(reqPath, "utf8")) : [];
+
+      // C4 architecture slice
+      const arch = await archSlice(paths.delta, service, featureId);
+
+      if (json) {
+        emitJson({
+          feature: featureId,
+          service,
+          path: repoPath(config.docsDir, feature.dir),
+          intent,
+          requirements: reqs.map((r) => ({
+            kind: r.kind,
+            name: r.name,
+            text: r.text.join("\n").trim(),
+            operations: r.operations,
+            // Scenarios go out verbatim: they are the acceptance criteria and the
+            // source for the tests whoever picks this up is expected to write.
+            scenarios: r.scenarios.map((s) => ({ name: s.name, lines: s.lines })),
+          })),
+          architecture: arch,
+        });
+        return;
+      }
+
+      console.log(`${featureId} · ${service}\n`);
+      if (intent) {
+        console.log(indent(intent, "  "));
         console.log();
       }
-
-      // 2. Requirement delta for this service (OpenSpec style)
-      const reqPath = featureSpecPaths(feature.dir, service).spec;
-      if (existsSync(reqPath)) {
-        printRequirements(parseRequirements(await readFile(reqPath, "utf8")));
-      } else {
-        console.log("Requirements: (none for this service)\n");
-      }
-
-      // 3. C4 architecture slice
-      const deltaPath = paths.delta;
-      if (existsSync(deltaPath)) {
-        const { errors, elements, relationships } = await loadFile(deltaPath);
-        if (errors.length > 0) {
-          console.log("Architecture: delta.likec4 has errors — run `loam validate`.");
-        } else {
-          printArchSlice(elements, relationships, service, featureId);
-        }
-      }
+      if (existsSync(reqPath)) printRequirements(reqs);
+      else console.log("Requirements: (none for this service)\n");
+      if (existsSync(paths.delta)) printArchSlice(arch, service);
     });
+}
+
+/** The feature's tagged edges around one service, plus whether the service is new. */
+async function archSlice(deltaPath: string, service: string, featureId: string): Promise<ArchSlice> {
+  const empty: ArchSlice = { isNew: false, inbound: [], outbound: [], errors: [] };
+  if (!existsSync(deltaPath)) return empty;
+
+  const { errors, elements, relationships } = await loadFile(deltaPath);
+  if (errors.length > 0) {
+    return { ...empty, errors: errors.map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message)) };
+  }
+
+  const byId = new Map(elements.map((e): [string, Elem] => [e.id, e]));
+  const titleOf = (id: string): string => byId.get(id)?.title ?? id;
+  const edge = (r: Rel, other: string): Edge => ({
+    service: other,
+    op: r.op ?? null,
+    title: r.title ?? null,
+  });
+  const featRels = relationships.filter((r) => r.tags.includes(featureId));
+
+  return {
+    isNew: elements.some((e) => e.title === service && e.tags.includes(featureId)),
+    inbound: featRels.filter((r) => titleOf(r.target) === service).map((r) => edge(r, titleOf(r.source))),
+    outbound: featRels.filter((r) => titleOf(r.source) === service).map((r) => edge(r, titleOf(r.target))),
+    errors: [],
+  };
 }
 
 function stripFrontmatter(md: string): string {
@@ -90,25 +157,22 @@ function printRequirements(reqs: Requirement[]): void {
   console.log();
 }
 
-function printArchSlice(elements: Elem[], relationships: Rel[], service: string, featureId: string): void {
-  const byId = new Map(elements.map((e): [string, Elem] => [e.id, e]));
-  const titleOf = (id: string): string => byId.get(id)?.title ?? id;
-  const featRels = relationships.filter((r) => r.tags.includes(featureId));
-  const outbound = featRels.filter((r) => byId.get(r.source)?.title === service);
-  const inbound = featRels.filter((r) => byId.get(r.target)?.title === service);
-  const isNew = elements.some((e) => e.title === service && e.tags.includes(featureId));
-
+function printArchSlice(arch: ArchSlice, service: string): void {
+  if (arch.errors.length > 0) {
+    console.log("Architecture: delta.likec4 has errors — run `loam validate`.");
+    return;
+  }
   console.log("Architecture:");
-  if (isNew) console.log(`  NEW service — create ${service}`);
-  if (outbound.length > 0) {
+  if (arch.isNew) console.log(`  NEW service — create ${service}`);
+  if (arch.outbound.length > 0) {
     console.log("  Outbound (new calls from this service):");
-    for (const r of outbound) console.log(`    → ${titleOf(r.target)}  "${r.title ?? ""}"`);
+    for (const e of arch.outbound) console.log(`    → ${e.service}  "${e.title ?? ""}"`);
   }
-  if (inbound.length > 0) {
+  if (arch.inbound.length > 0) {
     console.log("  Inbound (this service is newly called):");
-    for (const r of inbound) console.log(`    ← ${titleOf(r.source)}  "${r.title ?? ""}"`);
+    for (const e of arch.inbound) console.log(`    ← ${e.service}  "${e.title ?? ""}"`);
   }
-  if (!isNew && outbound.length === 0 && inbound.length === 0) {
+  if (!arch.isNew && arch.outbound.length === 0 && arch.inbound.length === 0) {
     console.log("  (no architecture change for this service)");
   }
   console.log();
