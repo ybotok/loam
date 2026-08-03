@@ -26,6 +26,9 @@ import {
   parseRequirements,
   serializeRequirements,
   applyRequirementDelta,
+  isRequirementsHeading,
+  sectionHeadings,
+  splitRequirementsSection,
   type Requirement,
 } from "../core/spec.js";
 
@@ -153,13 +156,13 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   const deltaServices = await featureSpecServices(featureDir);
 
   // A LIVING requirement outside `## Requirements` is a merge loam cannot do
-  // correctly: splitSpec cuts the intro at the first `\n## Requirements` (or
-  // keeps the WHOLE text as intro when absent) while parseRequirements collects
-  // from every section, and the merged file is intro + `## Requirements` + every
-  // requirement — so the strayed requirement lands in the file TWICE, and the
-  // next archive's MODIFIED replaces only the first copy. Refused rather than
-  // repaired: excising blocks from the intro programmatically would be archive
-  // editing prose it does not understand. --approve does not apply — it
+  // correctly: the rewrite replaces only the requirements RUN inside that
+  // section (rewriteRequirementsRun) while parseRequirements collects from
+  // every section — so the strayed requirement keeps its authored copy in the
+  // preserved prose AND lands again in the rewritten run, and the next
+  // archive's MODIFIED replaces only one of them. Refused rather than
+  // repaired: excising blocks from prose programmatically would be archive
+  // editing text it does not understand. --approve does not apply — it
   // overrides judgments about the FEATURE, and this is neither.
   const strayed: Issue[] = [];
   for (const svc of deltaServices) {
@@ -167,9 +170,9 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     const livingPath = servicePaths(config.docsDir, svc).spec;
     if (!existsSync(livingPath)) continue;
     for (const r of parseRequirements(await readFile(livingPath, "utf8"))) {
-      // Exact match on purpose: `section` is the trimmed heading line, and
-      // `## Requirements` is exactly the cut point splitSpec searches for.
-      if (r.section === "## Requirements") continue;
+      // The ONE definition of the heading (spec.ts): the guard and the rewrite
+      // boundary match the same way, so they cannot disagree about "outside".
+      if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
       const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
       strayed.push({
         severity: "error",
@@ -230,9 +233,20 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
       continue;
     }
     const livingText = await readFile(livingPath, "utf8");
-    const { intro, reqs: livingReqs } = splitSpec(livingText);
-    const merged = applyRequirementDelta(livingReqs, deltaReqs);
-    writes.push({ path: livingPath, content: `${intro.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}` });
+    // TWO `## Requirements` headings would put the rewrite's one-section
+    // invariant to a choice it must not make: the run of the first would be
+    // rewritten while the second survived verbatim in the tail — and its
+    // requirements, collected by parseRequirements, would land in the run TOO.
+    // Mechanical, like a model-less landscape, so merge-failed, not --approve.
+    const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
+    if (reqHeadings.length > 1) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `living spec for ${svc} has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
+      );
+    }
+    const merged = applyRequirementDelta(parseRequirements(livingText), deltaReqs);
+    writes.push({ path: livingPath, content: rewriteRequirementsRun(livingText, merged) });
 
     const c = summarize(deltaReqs);
     say(`  requirements: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
@@ -814,17 +828,31 @@ function insertIntoModelBlock(text: string, lines: string[]): string {
 }
 
 /**
- * Split a living spec into its intro (everything above `## Requirements`) and
- * its requirements — which parseRequirements collects from EVERY section. The
- * two rules only agree when every living requirement is under `## Requirements`;
- * anywhere else it would sit in the intro AND be re-serialized below it, so
- * runArchive refuses such a spec (living.requirement-outside-requirements)
- * before this function's output is ever written.
+ * Rewrite ONLY the requirements run of a living spec. Byte-for-byte preserved:
+ * everything before the first requirement inside `## Requirements` (the intro,
+ * the heading line, prose under the heading) and everything from the section's
+ * end onward (the next `## ` heading to EOF) — the old cut was a substring
+ * `indexOf("\n## Requirements")`, a prefix match that also hit
+ * `## Requirements Extra` and silently destroyed every section after the
+ * requirements. Prose BETWEEN requirements is body text of whatever is open
+ * above it (parseRequirements attributes it to the previous requirement's last
+ * scenario, or its text) and survives inside the re-serialized run, framing
+ * normalized. `merged` must contain every living requirement — runArchive's
+ * stray guard refuses any document whose requirements sit outside the section,
+ * using the same heading definition, before this output is ever written.
  */
-function splitSpec(text: string): { intro: string; reqs: Requirement[] } {
-  const i = text.indexOf("\n## Requirements");
-  const intro = i >= 0 ? text.slice(0, i) : text;
-  return { intro, reqs: parseRequirements(text) };
+function rewriteRequirementsRun(text: string, merged: Requirement[]): string {
+  const s = splitRequirementsSection(text);
+  // No `## Requirements` at all: the stray guard has already refused any doc
+  // whose requirements live elsewhere, so this one has none — open the section.
+  if (s === null) return `${text.trimEnd()}\n\n## Requirements\n\n${serializeRequirements(merged)}`;
+  const body = serializeRequirements(merged);
+  // head/tail are raw slices; only the run's own framing is normalized. When
+  // the section held no requirements yet, the glue supplies the blank line the
+  // author never had reason to write.
+  const headGlue = s.run !== "" || s.head.endsWith("\n\n") ? "" : s.head.endsWith("\n") ? "\n" : "\n\n";
+  const tailGlue = s.tail === "" ? "" : "\n";
+  return s.head + headGlue + body + tailGlue + s.tail;
 }
 
 function summarize(reqs: Requirement[]): { ADDED: number; MODIFIED: number; REMOVED: number } {

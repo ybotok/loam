@@ -1476,6 +1476,221 @@ The service SHALL authorize a payment within 2 seconds.
   });
 });
 
+describe("the living-spec rewrite touches only the requirements run", () => {
+  /*
+   * The reproduced loss: the old cut kept intro + re-serialized requirements
+   * and nothing else, so any prose the guard had no requirement to hang a
+   * refusal on — a trailing `## Notes` section, prose under the
+   * `## Requirements` heading itself — was silently destroyed by a green
+   * archive. And the cut was a substring `indexOf("\n## Requirements")`: a
+   * PREFIX match that also hit `## Requirements Extra`. The fix rewrites only
+   * the requirements run, with head and tail preserved byte-for-byte, and one
+   * exported heading definition (spec.ts isRequirementsHeading) shared by the
+   * cut, the stray guard, and delta-shape's quoting exemption.
+   */
+
+  const NOTES_SECTION = `## Notes
+
+Settlement timing was agreed with finance in 2019.
+
+- reconciliation depends on T+2
+- see ADR-7 before touching it
+`;
+
+  const PROSE_UNDER_HEADING = "Ordered by risk, highest first.\n\n";
+
+  /** LIVING_SPEC_TWO_REQS with prose under the heading and a trailing prose section. */
+  const LIVING_SPEC_WITH_PROSE =
+    LIVING_SPEC_TWO_REQS.replace("## Requirements\n\n", `## Requirements\n\n${PROSE_UNDER_HEADING}`) +
+    "\n" +
+    NOTES_SECTION;
+
+  function proseFixture(living: string): Record<string, string> {
+    return {
+      "services/payment-service/spec.md": living,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "features/FEAT-7-rework/specs/payment-service/spec.md": REQ_DELTA_ALL_KINDS,
+    };
+  }
+
+  it("a trailing '## Notes' section survives a real archive byte-identically", async () => {
+    const p = await makeProject(proseFixture(LIVING_SPEC_WITH_PROSE));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      expect(
+        merged.endsWith(NOTES_SECTION),
+        "everything from the section's end to EOF must be a byte-for-byte slice of the input",
+      ).toBe(true);
+      expect(merged.split("## Notes")).toHaveLength(2);
+      // The merge itself still happened inside the section.
+      const reqs = parseRequirements(merged);
+      expect(reqs.map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+      expect(merged).not.toContain("Legacy settlement quirk");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("prose between the '## Requirements' heading and the first requirement survives byte-identically", async () => {
+    const p = await makeProject(proseFixture(LIVING_SPEC_WITH_PROSE));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      const head = LIVING_SPEC_WITH_PROSE.slice(0, LIVING_SPEC_WITH_PROSE.indexOf("### Requirement:"));
+      expect(head).toContain(PROSE_UNDER_HEADING);
+      expect(
+        merged.startsWith(head),
+        "everything before the first requirement — intro, heading, prose under it — must be a byte-for-byte slice of the input",
+      ).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("'## Requirements Extra' is NOT the requirements section: as prose before the real one, it survives", async () => {
+    // The old prefix match cut the intro at `\n## Requirements Extra`,
+    // destroying that whole section AND the real heading below it.
+    const extra = `## Requirements Extra
+
+Free-form guidance that is not the requirements section.
+
+`;
+    const living = LIVING_SPEC_TWO_REQS.replace("## Requirements\n", `${extra}## Requirements\n`);
+    const p = await makeProject(proseFixture(living));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      expect(merged).toContain(extra);
+      const head = living.slice(0, living.indexOf("### Requirement:"));
+      expect(merged.startsWith(head)).toBe(true);
+      expect(parseRequirements(merged).map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("'## Requirements Extra' is NOT the requirements section: requirements under it are strayed, and refused", async () => {
+    const living = LIVING_SPEC_TWO_REQS.replace("## Requirements\n", "## Requirements Extra\n");
+    const p = await makeProject(proseFixture(living));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-7");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("outside '## Requirements'");
+      expect(res.out).toContain("## Requirements Extra");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a case-variant '## requirements' heading IS the requirements section, preserved in its own casing", async () => {
+    // One definition means one tolerance: delta-shape has always exempted the
+    // heading case-insensitively (a delta quoting the living state), so the
+    // guard and the rewrite now read it the same way instead of refusing.
+    const living = LIVING_SPEC_TWO_REQS.replace("## Requirements\n", "## requirements\n");
+    const p = await makeProject(proseFixture(living));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      expect(merged).toContain("\n## requirements\n");
+      expect(merged).not.toContain("\n## Requirements\n");
+      expect(parseRequirements(merged).map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("prose between requirements rides the previous requirement's last scenario and survives the rewrite", async () => {
+    // Pinned attribution, not aspiration: parseRequirements pushes body lines
+    // onto whatever is open, so prose between requirement A and requirement B
+    // is A's last scenario's body and survives re-serialization there. A
+    // MODIFIED of A would replace it along with the rest of A — that is the
+    // documented wholesale-replace semantics, not a new loss.
+    const note = "Interleaved operator note: settlement and authorization share a ledger row.";
+    const living = LIVING_SPEC_TWO_REQS.replace(
+      "\n### Requirement: Legacy settlement quirk",
+      `\n${note}\n\n### Requirement: Legacy settlement quirk`,
+    );
+    const addOnly = `# payment-service — delta for FEAT-7
+
+## ADDED Requirements
+
+### Requirement: Refund a payment
+The service SHALL refund an authorized payment on request.
+
+#### Scenario: Refund succeeds
+- **Given** a captured payment
+- **When** a refund is requested
+- **Then** the amount is returned to the customer
+`;
+    const p = await makeProject({
+      "services/payment-service/spec.md": living,
+      "features/FEAT-7-rework/specs/payment-service/spec.md": addOnly,
+    });
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      expect(merged.split(note), "the interleaved prose must survive exactly once").toHaveLength(2);
+      const reqs = parseRequirements(merged);
+      expect(reqs.map((r) => r.name)).toEqual([
+        "Authorize a payment",
+        "Legacy settlement quirk",
+        "Refund a payment",
+      ]);
+      const auth = reqs[0]!;
+      expect(auth.scenarios.at(-1)!.lines.join("\n")).toContain(note);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("TWO '## Requirements' headings are refused at plan time — the rewrite cannot choose a section", async () => {
+    const living = `${LIVING_SPEC_TWO_REQS}\n## Requirements\n\n### Requirement: Duplicate section dweller\nThe service SHALL not lose this text.\n\n#### Scenario: It stays\n- **Then** it stays\n`;
+    const p = await makeProject(proseFixture(living));
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-7", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain("2 '## Requirements' headings");
+      expect(await treeHashes(p.docsDir), "the refusal is plan-phase: nothing written").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a BOM'd living spec merges without regressing the parser, and keeps its BOM", async () => {
+    const p = await makeProject(proseFixture(`\uFEFF${LIVING_SPEC_WITH_PROSE}`));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      expect(merged.charCodeAt(0), "head is a raw slice — the BOM byte is the author's").toBe(0xfeff);
+      expect(merged.endsWith(NOTES_SECTION)).toBe(true);
+      expect(parseRequirements(merged).map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a CRLF living spec keeps CRLF head and tail byte-for-byte; only the rewritten run is LF-normalized", async () => {
+    const living = LIVING_SPEC_WITH_PROSE.replaceAll("\n", "\r\n");
+    const p = await makeProject(proseFixture(living));
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
+      const merged = await p.read("services/payment-service/spec.md");
+      const head = living.slice(0, living.indexOf("### Requirement:"));
+      expect(head).toContain("\r\n");
+      expect(merged.startsWith(head)).toBe(true);
+      expect(merged.endsWith(NOTES_SECTION.replaceAll("\n", "\r\n"))).toBe(true);
+      expect(parseRequirements(merged).map((r) => r.name)).toEqual(["Authorize a payment", "Refund a payment"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("overwriting an existing living operation (openapi.op-modified)", () => {
   /*
    * A feature's openapi.yaml restates the full API, and only the operationId

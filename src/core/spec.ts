@@ -39,6 +39,23 @@ const REQ_RE = /^###\s+Requirement:\s*(.+?)\s*$/;
 const SCN_RE = /^####\s+Scenario:\s*(.+?)\s*$/;
 
 /**
+ * THE requirements section: the one H2 a living spec keeps its requirements
+ * under, the one section `loam archive` rewrites, and the one heading a delta
+ * may legally quote the living state beneath. One definition on purpose — the
+ * archive cut point, archive's stray-requirement guard, and the delta-shape
+ * exemption (core/delta.ts) used to spell this invariant three different ways,
+ * and the cut point's substring `indexOf("\n## Requirements")` was a PREFIX
+ * match that also hit `## Requirements Extra`. Full-line match on a trimmed
+ * heading, with KIND_RE's case and interior-whitespace tolerance.
+ */
+export const REQUIREMENTS_SECTION_RE = /^##\s+Requirements\s*$/i;
+
+/** Is this H2 heading line (as sectionHeadings/`Requirement.section` spell it) the `## Requirements` heading? */
+export function isRequirementsHeading(heading: string): boolean {
+  return REQUIREMENTS_SECTION_RE.test(heading.trim());
+}
+
+/**
  * Track ``` / ~~~ fences line by line. Returns true while the line is fenced
  * content — including the fence marker itself — so heading-like lines inside a
  * code block are never mistaken for structure.
@@ -84,6 +101,61 @@ export function sectionHeadings(md: string): Array<{ text: string; line: number 
     if (/^##\s+/.test(line) && !/^###/.test(line)) out.push({ text: line.trim(), line: i + 1 });
   });
   return out;
+}
+
+/**
+ * Split a living spec around its requirements RUN — the stretch of
+ * `### Requirement:` blocks inside the `## Requirements` section — so a merge
+ * can rewrite exactly that and nothing else. All three slices reassemble the
+ * input byte-for-byte (`head + run + tail === text`):
+ *
+ * - `head` — everything before the first requirement in the section: the
+ *   intro, the heading line itself, any prose under the heading.
+ * - `run`  — from the first `### Requirement:` line to the section's end (the
+ *   next `## ` heading, or EOF). Empty when the section holds no requirements.
+ * - `tail` — everything from the section's end onward.
+ *
+ * Returns null when the document has no `## Requirements` heading at all.
+ * Only the FIRST matching heading opens the section; a caller that must not
+ * lose content behind a duplicate (archive) counts matches via
+ * sectionHeadings() and refuses. Heading detection matches parseRequirements:
+ * fenced lines are never structure, and a leading BOM hides no heading — but
+ * the slices themselves are raw bytes, BOM and CRLF included.
+ */
+export function splitRequirementsSection(
+  text: string,
+): { head: string; run: string; tail: string } | null {
+  const fenced = fenceTracker();
+  let inSection = false;
+  let sectionStart = -1;
+  let runStart = -1;
+  let sectionEnd = text.length;
+  let offset = 0;
+  while (offset < text.length) {
+    const nl = text.indexOf("\n", offset);
+    const lineEnd = nl === -1 ? text.length : nl + 1;
+    let line = text.slice(offset, nl === -1 ? text.length : nl);
+    if (line.endsWith("\r")) line = line.slice(0, -1);
+    // Position 0 only, mirroring stripBom: elsewhere U+FEFF is content.
+    if (offset === 0 && line.charCodeAt(0) === 0xfeff) line = line.slice(1);
+    if (!fenced(line)) {
+      if (/^##\s+/.test(line) && !/^###/.test(line)) {
+        if (inSection) {
+          sectionEnd = offset;
+          inSection = false;
+        } else if (sectionStart === -1 && isRequirementsHeading(line)) {
+          sectionStart = offset;
+          inSection = true;
+        }
+      } else if (inSection && runStart === -1 && REQ_RE.test(line)) {
+        runStart = offset;
+      }
+    }
+    offset = lineEnd;
+  }
+  if (sectionStart === -1) return null;
+  const cut = runStart === -1 ? sectionEnd : runStart;
+  return { head: text.slice(0, cut), run: text.slice(cut, sectionEnd), tail: text.slice(sectionEnd) };
 }
 
 /** Parse all requirements (with their scenarios and delta kind) from a markdown doc. */
