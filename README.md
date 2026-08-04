@@ -15,14 +15,14 @@ Spec-driven development tools treat specs as business-analyst-level documents in
 
 ## loam vs OpenSpec
 
-loam reads [OpenSpec](https://github.com/Fission-AI/OpenSpec)'s requirement format verbatim — the whole vendored upstream corpus parses losslessly — and answers the two pains OpenSpec's own community documents: spec drift and the missing system model.
+loam reads the core of [OpenSpec](https://github.com/Fission-AI/OpenSpec)'s requirement format: requirement/scenario headings and the `ADDED | MODIFIED | REMOVED` delta sections. Routine CI exercises seven representative upstream fixtures; an opt-in sweep reproduces the broader compatibility result against all 157 Markdown files in the living and archived spec trees at the pinned OpenSpec v1.7.0 commit. The boundary is explicit: OpenSpec `Purpose`, wrapper, and `RENAMED` semantics are not round-trippable.
 
 | | OpenSpec | loam |
 |---|---|---|
-| System model | flat capability specs, no relations | C4 landscape + one ID spine across spec / arch / API |
-| Executability | markdown scenarios no runner reads | digest-stamped Gherkin; a scenario is "tested" only on a green run |
-| Drift control | none — validation is structural | `sources` + digests + human vouch; `sources.stale` / `content.stale` fleet-wide |
-| Change merge | textual, warn-and-continue | transactional 3-axis merge behind a coherence gate, byte-level undo |
+| System model | capability specs; beta Stores can share planning across repos, but do not model service topology | C4 landscape + one ID spine across spec / arch / API |
+| Executability | `/opsx:verify` asks an agent to inspect implementation and tests; advisory | digest-stamped Gherkin; a scenario is "tested" only on a green run |
+| Drift control | structural CLI validation plus agent-led verification on demand | persisted source/content digests + human vouch; `sources.stale` / `content.stale` fleet-wide |
+| Change merge | validates prepared requirement updates, supports `RENAMED`, then writes specs sequentially | transactional 3-axis merge behind a coherence gate, byte-level undo |
 | Entry curve | minutes | you learn LikeC4 + frontmatter + the operationId spine first |
 
 Honest boundary: for a single repo without cross-service contracts, OpenSpec is simpler *and sufficient*. The full comparison — including what loam deliberately refuses to borrow — is in [COMPARISON.md](COMPARISON.md); migration is covered by [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md).
@@ -118,11 +118,16 @@ npm run setup              # or: npm ci && npm run build
 npm run dev -- --help      # run the CLI from source
 npm run typecheck
 npm test                   # vitest, ~1000 tests
+npm run test:package       # clean, pack, install the tarball, run its loam binary
+# optional, against the exact upstream checkout documented below:
+npm run test:openspec-corpus -- /path/to/OpenSpec
 ```
 
 ## Status
 
 Every command in the table is implemented, `verify --results` included — the generated suite's cucumber report feeds the done-check, closing the TDD loop mechanically. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
+
+The release-candidate manifest is `@spentsov/loam@0.1.0-beta.1`: the unscoped `loam` name is already an unrelated GDAL wrapper, while `spentsov` is the author identity in this repository's git history. The registry currently has no package at that scoped name, but absence does **not** prove scope ownership; publishing still requires an npm account that controls `@spentsov`. Until that is confirmed, use the repository setup above rather than treating the package as published.
 
 ## License
 

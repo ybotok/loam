@@ -2,9 +2,11 @@
  * Format-compatibility tests for src/core/spec.ts against REAL OpenSpec markdown.
  *
  * src/core/spec.ts reimplements OpenSpec's requirement format from the outside. This
- * file is the evidence for that claim: it runs our parser over verbatim spec files
- * vendored from Fission-AI/OpenSpec (see test/fixtures/openspec/README.md for
- * provenance) and pins what we actually do with them — including what we get wrong.
+ * file is the routine-CI evidence for that claim: it runs our parser over seven
+ * representative verbatim spec files vendored from Fission-AI/OpenSpec (see
+ * test/fixtures/openspec/README.md for provenance) and pins what we actually do with
+ * them — including what we get wrong. scripts/check-openspec-corpus.ts reproduces
+ * the separate 157-file sweep against a clean checkout at the pinned commit.
  *
  * Unlike test/spec.test.ts, which asserts DESIRED behavior and treats a failure as a
  * suspected bug, this file pins OBSERVED behavior. A failure here means either our
@@ -14,8 +16,9 @@
  * FINDINGS — where we diverge from OpenSpec
  * ============================================================================
  *
- * Established by parsing all 157 spec files in OpenSpec commit 45cca5d (614
- * requirements, 1846 scenarios), and by reading OpenSpec's own parsers
+ * Established by parsing all 157 Markdown files in the living and archived spec
+ * trees at OpenSpec commit 45cca5d (614 requirements, 1846 scenarios), and by
+ * reading OpenSpec's own parsers
  * (src/core/parsers/{markdown-parser,change-parser,spec-structure}.ts).
  *
  * WHAT WORKS. Requirement and scenario extraction is compatible on every real file:

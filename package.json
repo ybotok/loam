@@ -1,7 +1,15 @@
 {
-  "name": "loam",
-  "version": "0.0.0",
+  "name": "@spentsov/loam",
+  "version": "0.1.0-beta.1",
   "description": "Architecture-first spec framework for microservice fleets: reverse-engineer service docs from code, drive cross-service features from C4 deltas.",
+  "author": "spentsov",
+  "keywords": [
+    "architecture",
+    "c4",
+    "gherkin",
+    "microservices",
+    "spec-driven-development"
+  ],
   "type": "module",
   "bin": {
     "loam": "dist/cli.js"
@@ -9,16 +17,22 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc",
+    "prepack": "npm run build",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:package": "node scripts/package-smoke.mjs",
+    "test:openspec-corpus": "tsx scripts/check-openspec-corpus.ts",
     "setup": "bash scripts/setup.sh"
   },
   "license": "MIT",

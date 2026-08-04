@@ -45,12 +45,25 @@ reproduces the exact bytes:
 
 ## Corpus these seven were drawn from
 
-The seven were chosen after running `parseRequirements` over **all 157** spec files in
-that commit (36 under `openspec/specs/**`, 121 under `openspec/changes/archive/**`):
+The seven were chosen after running `parseRequirements` over **all 157 Markdown files**
+in the living and archived spec trees at that commit (36 under `openspec/specs/**`,
+121 under `openspec/changes/archive/**/specs/**`; two of the latter are supporting
+Markdown rather than `spec.md` files):
 614 requirements and 1846 scenarios in total. They cover every structural shape the
 full corpus exhibits. Findings that only the full sweep can establish — e.g. that no
 OpenSpec file anywhere uses a BOM, a lowercase `### requirement:` heading, a live
 `## RENAMED Requirements` section, or a line our `Operations:` regex would capture —
 are recorded in the header comment of `test/openspec-compat.test.ts`.
+
+The seven-file suite is what routine offline CI enforces. To reproduce the full sweep,
+use a clean checkout at the exact pinned commit and run:
+
+    git clone https://github.com/Fission-AI/OpenSpec.git /tmp/OpenSpec
+    git -C /tmp/OpenSpec checkout 45cca5db6137ed209117cc70510eb3e057fb981b
+    npm run test:openspec-corpus -- /tmp/OpenSpec
+
+The script refuses another commit or locally modified corpus paths and checks the
+157/614/1846 totals, so a future upstream checkout cannot silently masquerade as the
+result recorded here.
 
 [Fission-AI/OpenSpec]: https://github.com/Fission-AI/OpenSpec
