@@ -76,48 +76,57 @@ export async function loadFile(path: string): Promise<LoadedDoc> {
  * to prove a computed landscape parses BEFORE anything is written.
  */
 export async function loadSource(src: string): Promise<LoadedDoc> {
-  const likec4 = await LikeC4.fromSource(src);
-  const errors = (likec4.getErrors() as LikeC4Error[]) ?? [];
-  if (errors.length > 0) {
-    return { errors, elements: [], relationships: [] };
+  // LikeC4 owns a Langium workspace and registers a process-exit listener for
+  // it. Validation creates many short-lived instances, so every acquired
+  // instance must be disposed even on an invalid document or a failed model
+  // computation. Its logger is disabled because diagnostics are returned in
+  // LoadedDoc instead of being written out-of-band to stderr.
+  const likec4 = await LikeC4.fromSource(src, { logger: false });
+  try {
+    const errors = (likec4.getErrors() as LikeC4Error[]) ?? [];
+    if (errors.length > 0) {
+      return { errors, elements: [], relationships: [] };
+    }
+
+    const model = (await likec4.computedModel()) as {
+      elements: () => Iterable<{
+        id: string;
+        kind: string;
+        title: string;
+        description?: unknown;
+        tags?: string[];
+        metadata?: unknown;
+      }>;
+      relationships: () => Iterable<{
+        source: { id: string };
+        target: { id: string };
+        title?: string;
+        tags?: string[];
+        metadata?: unknown;
+      }>;
+    };
+
+    const elements: Elem[] = [...model.elements()].map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      title: e.title,
+      description: descText(e.description),
+      service: metaKey(e.metadata, "service"),
+      tags: [...(e.tags ?? [])],
+    }));
+    const relationships: Rel[] = [...model.relationships()].map((r) => ({
+      source: r.source.id,
+      target: r.target.id,
+      // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
+      title: r.title ?? undefined,
+      op: metaKey(r.metadata, "op"),
+      tags: [...(r.tags ?? [])],
+    }));
+
+    return { errors, elements, relationships };
+  } finally {
+    await likec4.dispose();
   }
-
-  const model = (await likec4.computedModel()) as {
-    elements: () => Iterable<{
-      id: string;
-      kind: string;
-      title: string;
-      description?: unknown;
-      tags?: string[];
-      metadata?: unknown;
-    }>;
-    relationships: () => Iterable<{
-      source: { id: string };
-      target: { id: string };
-      title?: string;
-      tags?: string[];
-      metadata?: unknown;
-    }>;
-  };
-
-  const elements: Elem[] = [...model.elements()].map((e) => ({
-    id: e.id,
-    kind: e.kind,
-    title: e.title,
-    description: descText(e.description),
-    service: metaKey(e.metadata, "service"),
-    tags: [...(e.tags ?? [])],
-  }));
-  const relationships: Rel[] = [...model.relationships()].map((r) => ({
-    source: r.source.id,
-    target: r.target.id,
-    // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
-    title: r.title ?? undefined,
-    op: metaKey(r.metadata, "op"),
-    tags: [...(r.tags ?? [])],
-  }));
-
-  return { errors, elements, relationships };
 }
 
 /**

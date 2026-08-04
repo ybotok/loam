@@ -3190,9 +3190,9 @@ The service SHALL do the stranded thing.
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
       expect(res.code).toBe(1);
-      // stdout, not the interleaved capture: LikeC4's own logger warns on
-      // stderr about the broken document, which is exactly why the envelope's
-      // invariant is scoped to stdout.
+      // LikeC4 diagnostics are returned to loam, not logged out-of-band: JSON
+      // mode therefore keeps stderr clean as well as stdout parseable.
+      expect(res.stderr).toBe("");
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(false);
       expect(json.error.code).toBe("merge-failed");
