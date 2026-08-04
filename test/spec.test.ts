@@ -535,6 +535,32 @@ Operations: bogusOp
     expect(r!.operations).toEqual([]);
     expect(r!.scenarios[0]!.lines.join("\n")).toContain("Operations: bogusOp");
   });
+
+  // The keep-last quirk, pinned: validate now WARNS on the repeated line
+  // (spec.repeated-operations / spec.repeated-covers), but the parser's
+  // semantics deliberately do not move — a change here would silently re-read
+  // every two-line spec in the fleet.
+  it("a second Operations: line REPLACES the first — assignment, not append", () => {
+    const md = `### Requirement: R
+Operations: firstOp, secondOp
+Operations: lastOp
+
+#### Scenario: ok
+- **Then** ok
+`;
+    expect(parseRequirements(md)[0]!.operations).toEqual(["lastOp"]);
+  });
+
+  it("a second Covers: line REPLACES the first — the same rule, the same file of record", () => {
+    const md = `### Requirement: R
+Covers: a.first, a.second
+Covers: b.last
+
+#### Scenario: ok
+- **Then** ok
+`;
+    expect(parseRequirements(md)[0]!.covers).toEqual(["b.last"]);
+  });
 });
 
 /* ------------------------------------------------------------------ */

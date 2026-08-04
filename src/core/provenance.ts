@@ -68,8 +68,10 @@ export async function serviceProvenance(
       }),
     );
     // With no frontmatter at all, "it names no sources" says nothing the missing
-    // header did not already say.
-    if (fm.present) {
+    // header did not already say — and a malformed one proves nothing either:
+    // `sources.absent` against a header nobody can read is the same false
+    // advice as the field cascade, so frontmatter.malformed stands alone.
+    if (fm.present && !fm.malformed) {
       findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
       findings.push(...contentFindings(fm, raw, service, label));
     }
@@ -108,6 +110,21 @@ function identityFindings(fm: Frontmatter, spec: IdentitySpec): Finding[] {
         code: "frontmatter.missing",
         subject: spec.idValue,
         message: `${spec.label} has no frontmatter — no owner, no status, no link to the code it describes`,
+      },
+    ];
+  }
+
+  // One honest error instead of the cascade: with an unreadable header the
+  // field checks below would grade owner/status/service "missing" and send the
+  // author adding fields to a block YAML refuses to parse. Nothing can be
+  // concluded from a header nobody can read — including that it lacks fields.
+  if (fm.malformed) {
+    return [
+      {
+        severity: "error",
+        code: "frontmatter.malformed",
+        subject: spec.idValue,
+        message: `${spec.label} has frontmatter that does not parse as YAML — owner, status and sources are unreadable until the header is fixed`,
       },
     ];
   }

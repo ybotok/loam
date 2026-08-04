@@ -513,9 +513,13 @@ export function renderVerification(v: Verification): string {
 }
 
 /**
- * Read the record beside a feature. Missing is null, and so is unreadable: a
- * file nobody can parse is not a record of anything, and `--record` overwrites
- * it wholesale anyway.
+ * Read the record beside a feature. Missing is null, and so is unreadable —
+ * at every level: a file nobody can parse is not a record of anything, and
+ * neither is one whose SHAPE is not a record's. The file is deliberately plain
+ * YAML that "has to survive without loam", so human edits are expected — a
+ * `summary` deleted by hand must read as "no record", not hand the commands a
+ * cast that lies and a TypeError three calls later. `--record` overwrites it
+ * wholesale anyway, so disqualifying the whole file loses nothing.
  */
 export async function readVerification(featureDir: string): Promise<Verification | null> {
   const path = verificationPath(featureDir);
@@ -526,8 +530,48 @@ export async function readVerification(featureDir: string): Promise<Verification
   } catch {
     return null;
   }
-  if (!isRecord(doc) || !Array.isArray(doc["claims"])) return null;
+  return asVerification(doc);
+}
+
+/**
+ * The shape check `readVerification` stands behind: everything its readers
+ * dereference (verify's report/frozen views, list's verification column) must
+ * be present and typed, or the cast would manufacture a Verification that
+ * crashes them. Deliberately no tighter than the readers need: extra keys pass
+ * (a human may annotate), `answered_by` stays optional (absent in records that
+ * predate `--results`) and is any string, like `kind` — the readers only ever
+ * compare them, and a record written by a newer loam must not read as absent.
+ */
+function asVerification(doc: unknown): Verification | null {
+  if (!isRecord(doc)) return null;
+  const summary = doc["summary"];
+  if (
+    typeof doc["feature"] !== "string" ||
+    typeof doc["recorded"] !== "string" ||
+    typeof doc["checklist"] !== "string" ||
+    !isRecord(summary) ||
+    !isCount(summary["claims"]) ||
+    !isCount(summary["confirmed"]) ||
+    !isCount(summary["unconfirmed"]) ||
+    !Array.isArray(doc["claims"])
+  ) {
+    return null;
+  }
+  for (const c of doc["claims"]) {
+    if (!isRecord(c)) return null;
+    if (typeof c["id"] !== "string" || typeof c["kind"] !== "string" || typeof c["claim"] !== "string") return null;
+    if (typeof c["verdict"] !== "string" || !(VERDICTS as readonly string[]).includes(c["verdict"])) return null;
+    // The frozen view iterates evidence per claim — a scalar here would crash it.
+    if (!Array.isArray(c["evidence"]) || c["evidence"].some((e) => typeof e !== "string")) return null;
+    if (c["note"] !== undefined && typeof c["note"] !== "string") return null;
+    if (c["answered_by"] !== undefined && typeof c["answered_by"] !== "string") return null;
+  }
   return doc as unknown as Verification;
+}
+
+/** A summary count: a finite number. YAML hands back strings for anything quoted. */
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
 }
 
 export async function writeVerification(featureDir: string, v: Verification): Promise<string> {

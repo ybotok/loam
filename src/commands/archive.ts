@@ -701,7 +701,9 @@ interface LandscapePlan {
  * Existence is checked semantically against the parsed landscape (by element
  * id/title and by edge identity), so re-archiving is idempotent and title
  * strings appearing elsewhere in the source cause no false skips. Assumes the
- * delta reuses the landscape's element identifiers for existing services.
+ * delta reuses the landscape's element identifiers for existing services. A
+ * title match whose two sides are BOTH bound to different services is not an
+ * existence hit but a collision, and refuses the archive (see the guard).
  *
  * Splicing is text surgery, so the computed result is PARSED before it is
  * returned: a merged landscape LikeC4 rejects refuses the archive at plan time
@@ -722,18 +724,42 @@ async function planLandscapeMerge(
     throw new ArchiveFailure("merge-failed", `landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
   }
   const haveIds = new Set(land.elements.map((e) => e.id));
-  const haveTitles = new Set(land.elements.map((e) => e.title));
+  // The title join needs the matched element back, not just membership: the
+  // cross-service guard below compares service BINDINGS across the join.
+  const byTitle = new Map<string, Elem[]>();
+  const seeTitle = (el: Elem): void => {
+    byTitle.set(el.title, [...(byTitle.get(el.title) ?? []), el]);
+  };
+  for (const el of land.elements) seeTitle(el);
   const addedEls: Elem[] = [];
   for (const e of newEls) {
-    // KNOWN: the title half of this check is cross-service — a delta adding a
-    // DIFFERENT service's element under a box title the landscape already uses
-    // (two services can legitimately both title a box 'API') is silently
-    // skipped here, and any delta edge referencing it then refuses the whole
-    // archive at the parse net below. Pre-existing behaviour, older than
-    // service-grouped placement; scoping titles per service is backlog work.
-    if (haveIds.has(e.id) || haveTitles.has(e.title)) continue;
+    if (haveIds.has(e.id)) continue;
+    const sameTitle = byTitle.get(e.title);
+    if (sameTitle !== undefined) {
+      // A title match is the id-less fallback join, and skipping on it is only
+      // safe when the two sides could be the same box. When both sides carry an
+      // explicit `metadata { service }` binding and every binding disagrees,
+      // they are provably DIFFERENT services' boxes sharing a title ('API',
+      // 'Database') — the skip would silently drop the addition, and any delta
+      // edge into it would then refuse the whole archive at the parse net
+      // below with a message about nothing. Refuse here instead, at plan time,
+      // naming both sides.
+      if (e.service !== undefined && sameTitle.every((m) => m.service !== undefined && m.service !== e.service)) {
+        const m = sameTitle[0]!;
+        throw new ArchiveFailure(
+          "merge-failed",
+          `the delta's '${e.id}' (bound to service '${e.service}') shares the title '${e.title}' with '${m.id}' (bound to service '${m.service}') — a title join across services would silently drop the addition; ` +
+            `retitle one of them, or reuse the id '${m.id}' if they really are the same element`,
+        );
+      }
+      // KNOWN (narrowed by the guard above): with EITHER side unbound the title
+      // join stays trusting — the unbound title-fallback is the legal legacy
+      // pattern — so a cross-service collision hiding behind an unbound element
+      // is still silently skipped here. Scoping titles per service is backlog.
+      continue;
+    }
     haveIds.add(e.id);
-    haveTitles.add(e.title);
+    seeTitle(e);
     addedEls.push(e);
   }
 

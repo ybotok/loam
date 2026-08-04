@@ -4,8 +4,10 @@
  *
  * AGENTS.md goes into the docs repo — it travels with the thing it describes.
  * The slash commands go into the repo `init` runs in, because that is where the
- * agent is invoked. Neither is ever overwritten: they are starting points, and
- * a team's edits to them outrank ours.
+ * agent is invoked — Claude Code by default, other tools via `init --tools`
+ * (the AGENT_TOOLS registry below: one shared body, a per-tool path and
+ * wrapper). Neither is ever overwritten: they are starting points, and a
+ * team's edits to them outrank ours.
  *
  * The stamp on the first line is the one concession to that never-refresh
  * contract: it records which loam wrote the file, so `loam validate --all` can
@@ -14,7 +16,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "./version.js";
 
@@ -355,14 +357,18 @@ to stderr; \`--help\` and \`--version\` output pass through untouched). Without
 
 Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
 not. The code-by-code fix table lives in the \`/loam-check\` command \`loam init\` lays
-down; the map of which invocation surfaces what:
+down — for Claude Code by default; \`loam init --tools <ids|all>\` emits the same
+commands, same bodies, into other agent tools' own command directories. The map of
+which invocation surfaces what:
 
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
-  \`requirements.missing-scenarios\`, \`api.ungoverned\`, \`api.ops-unlinked\`,
+  \`requirements.missing-scenarios\`, \`spec.duplicate-requirement\`,
+  \`spec.repeated-operations\`, \`spec.repeated-covers\`, \`openapi.invalid\`,
+  \`api.ungoverned\`, \`api.ops-unlinked\`,
   \`api.requirement-deprecated\`, \`spine.landscape-invalid\`, \`spine.op-undefined\`,
   \`spine.op-link-missing\`, \`spine.op-deprecated\`, and
-  the architecture spec axis: \`covers.unknown\`, \`health.uncovered\`. Run inside
+  the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`. Run inside
   the service's own repo, once a generated suite exists under
   \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
   \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\` (all warn — the fix is
@@ -374,6 +380,8 @@ down; the map of which invocation surfaces what:
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
   \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,
+  \`spec.repeated-operations\` / \`spec.repeated-covers\` (on the feature's own
+  spec deltas — same silent-line-loss check as service scope),
   the architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
   feature's arch.spec.md deltas), and
   the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
@@ -391,7 +399,8 @@ down; the map of which invocation surfaces what:
   and update the stamp line. A hand-curated file silences it the same way, by
   keeping the stamp current. The file is never refreshed automatically — your
   edits outrank the template, so detection is all loam does.
-- Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.field-mismatch\`,
+- Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.malformed\`,
+  \`frontmatter.field-mismatch\`,
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md —
   and its arch.spec.md, same conventions — additionally carries the sources chain
   (\`sources.absent\`, \`sources.path-missing\`,
@@ -513,14 +522,32 @@ docs: run \`loam unarchive <FEAT>\` first, then delete. There is no \`loam aband
 deliberately — a removal that computes nothing is what version control is for.
 `;
 
-/** Claude Code slash commands: `.claude/commands/<name>.md` -> `/<name>`. */
-export const SLASH_COMMANDS: Record<string, string> = {
-  "loam-adopt": `---
-description: Adopt a service — write its baseline docs from its code, as draft, then validate
-argument-hint: <service-id>
----
+/**
+ * One slash command, format-free. `body` is the whole protocol — the per-tool
+ * emitters in AGENT_TOOLS add only a path and a wrapper (frontmatter fields, a
+ * TOML shell), never their own prose: one source of truth, thin spellings.
+ * Bodies keep Claude's positional `$1`/`$2` placeholder convention across
+ * every tool — dialects differ (Gemini's {{args}}, Copilot's ${input}) and rewriting the
+ * text per tool would be a second copy of the protocol in all but name; an
+ * agent reading the file still sees which argument goes where.
+ */
+export interface CommandContent {
+  /** Stable command name (`loam-check`) — also the flat file name everywhere. */
+  name: string;
+  description: string;
+  /** What the user passes, in Claude's `argument-hint` spelling. */
+  argumentHint: string;
+  /** The protocol itself: markdown, ends with a newline. */
+  body: string;
+}
 
-Write one service's baseline documentation into the loam docs repo (its path is
+const COMMANDS: CommandContent[] = [
+  {
+    name: "loam-adopt",
+    description:
+      "Adopt a service — write its baseline docs from its code, as draft, then validate",
+    argumentHint: "<service-id>",
+    body: `Write one service's baseline documentation into the loam docs repo (its path is
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
 result. It never reads the service — so anything you cannot show, do not write.
 
@@ -551,13 +578,13 @@ result. It never reads the service — so anything you cannot show, do not write
 Where the code does not say, write that it does not say. A confident sentence about
 behaviour nobody can find is the one failure mode none of loam's checks can catch.
 `,
-
-  "loam-feature": `---
-description: Start a new loam feature — scaffold it, then author the C4 delta and requirement deltas
-argument-hint: <FEAT-id> "<title>"
----
-
-Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.json).
+  },
+  {
+    name: "loam-feature",
+    description:
+      "Start a new loam feature — scaffold it, then author the C4 delta and requirement deltas",
+    argumentHint: `<FEAT-id> "<title>"`,
+    body: `Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.json).
 
 1. Read \`AGENTS.md\` at the root of the docs repo first — it defines the ID spine
    everything here depends on.
@@ -581,13 +608,13 @@ Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.jso
 The operation's three spellings — the edge's \`op\`, the requirement's \`Operations:\`
 line, and the OpenAPI \`operationId\` — must match exactly.
 `,
-
-  "loam-implement": `---
-description: Implement a loam feature's slice for one service — generated gherkin first, tests from it, then code
-argument-hint: <FEAT-id> [service]
----
-
-Implement one service's part of a feature.
+  },
+  {
+    name: "loam-implement",
+    description:
+      "Implement a loam feature's slice for one service — generated gherkin first, tests from it, then code",
+    argumentHint: "<FEAT-id> [service]",
+    body: `Implement one service's part of a feature.
 
 1. \`loam delta $1 --service $2 --json\` (drop \`--service\` to use the service configured
    in ./loam.json). That output IS the task:
@@ -618,13 +645,12 @@ Implement one service's part of a feature.
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
 leave the spec disagreeing with the code.
 `,
-
-  "loam-check": `---
-description: Validate the loam docs repo and fix what it reports
-argument-hint: [--all | <FEAT-id> | <service>]
----
-
-Run loam's checks and fix what they find.
+  },
+  {
+    name: "loam-check",
+    description: "Validate the loam docs repo and fix what it reports",
+    argumentHint: "[--all | <FEAT-id> | <service>]",
+    body: `Run loam's checks and fix what they find.
 
 - whole fleet: \`loam validate --all --json\`
 - one target: \`loam validate <FEAT-id | service-id> --json\` — the feature reading is
@@ -645,8 +671,12 @@ and say it.
 | \`service.no-model\` | the directory is real but there is no model.likec4 | run \`loam adopt\` for it — without the C4 center nothing else has anywhere to hang |
 | \`c4.invalid\` | model.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
 | \`requirements.missing-scenarios\` | a requirement with no scenario | add the acceptance criteria; do not delete the requirement |
+| \`spec.duplicate-requirement\` | one \`### Requirement:\` name defined twice in one living spec.md or arch.spec.md — a merge edits only the first, the rest live on as stale copies | keep exactly one block per name (merge the bodies); the two files are separate namespaces, so a name in both is fine |
+| \`spec.repeated-operations\` (warn) | a second \`Operations:\` line in one requirement body — the last line REPLACES the earlier ones, whose list is silently lost (living specs and feature deltas alike) | merge them into one comma-separated \`Operations:\` line |
+| \`spec.repeated-covers\` (warn) | same for \`Covers:\` — the last line wins, the earlier list is silently lost | merge them into one comma-separated \`Covers:\` line |
 | \`service.no-spec\` (warn) | no living spec.md — a part-adopted service, legal but unchecked | write it; until it exists, requirement coverage and API governance are vacuous |
 | \`service.no-openapi\` (warn) | no openapi.yaml, and the landscape cannot prove nobody calls this service | write the contract, or model the service so the fleet map shows no one expects an API |
+| \`openapi.invalid\` | openapi.yaml exists but does not parse — an unreadable contract proves nothing, so no \`api.*\` or spine finding is graded against it (before this code, the empty parse graded every inbound edge \`spine.op-undefined\`) | fix the YAML first — the API axis is unchecked until it reads |
 | \`api.ungoverned\` (warn) | operation(s) no requirement's \`Operations:\` line names | write the requirement, or link an existing one |
 | \`api.ops-unlinked\` (warn) | operations AND requirements exist but zero \`Operations:\` lines join them — the API axis is vacuously green | link each requirement to the operations it governs |
 | \`api.requirement-deprecated\` (warn) | a requirement's \`Operations:\` list resolves only to operations the OpenAPI marks \`deprecated: true\` — the behaviour it governs is on its way out | migrate the requirement to the replacement operation, or retire it with the ops it governs |
@@ -655,6 +685,7 @@ and say it.
 | \`spine.op-link-missing\` (warn) | a landscape "Calls" edge into this service with no \`metadata { op }\` | link it to the operationId |
 | \`spine.op-deprecated\` (warn) | a landscape edge calls an operation this service's OpenAPI marks \`deprecated: true\` — the consumer is standing on a contract being retired | migrate the consumer to the replacement operation; deprecation is the first step of retiring an op, and the op stays defined until a human removes it |
 | \`covers.unknown\` (warn) | a \`Covers:\` entry in arch.spec.md resolves to no element, edge, alert or SLI — living and feature deltas alike | fix the id (the message offers close ones); a mistyped entry silently costs the coverage it was written for |
+| \`health.invalid\` (warn) | health.yaml exists but does not parse — alert/SLI ids are unreadable, so \`Covers: alert:/sli:\` entries and health coverage are unchecked (a missing health.yaml is legal and silent; an unreadable one used to masquerade as \`covers.unknown\` typos) | fix the YAML — the health axis resumes once it reads |
 | \`health.uncovered\` (warn) | health.yaml declares an alert or SLI no arch.spec.md requirement covers | write the arch requirement with \`Covers: alert:<id>\` / \`Covers: sli:<id>\` — a signal nothing tests is dashboard decoration |
 | \`gherkin.missing\` (warn) | a living scenario no generated .feature scenario carries a digest for — the suite has no test for these words. Fires only in the service's repo, once \`<gherkinDir>/loam/\` exists | \`loam gherkin --service <id>\` regenerates the suite |
 | \`gherkin.stale\` (warn) | a generated scenario's digest matches no living scenario while its requirement still exists — the spec moved under the file (a reworded scenario reports stale + missing together) | regenerate; never edit a generated file to catch it up |
@@ -707,6 +738,7 @@ intent.md, both modes:
 | code | what it means | what to do |
 |---|---|---|
 | \`frontmatter.missing\` (warn) | no frontmatter at all | add owner, status and sources |
+| \`frontmatter.malformed\` | the frontmatter block does not parse as YAML — owner, status and sources are unreadable, which is not the same fact as absent | fix the header; the field checks and the sources chain resume once it parses — never add fields to a block YAML refuses |
 | \`frontmatter.field-mismatch\` | the doc names a different service/feature than the one it lives under | fix the frontmatter, or move the file |
 | \`frontmatter.status-unknown\` | a status nobody defined (\`verifed\`) | use the documented vocabulary — a typo here reads as unverified forever |
 | \`frontmatter.field-missing\` (warn) | owner, status or the identity field is absent | fill them in |
@@ -730,13 +762,13 @@ plan time (they never appear in \`validate\`):
 Fix what the code now says, then hand it back — the stamp is a person's claim to
 have read it.
 `,
-
-  "loam-verify": `---
-description: Verify a built loam feature against its own promises, claim by claim, with evidence
-argument-hint: <FEAT-id>
----
-
-Check that the code somebody just built is the feature that was designed.
+  },
+  {
+    name: "loam-verify",
+    description:
+      "Verify a built loam feature against its own promises, claim by claim, with evidence",
+    argumentHint: "<FEAT-id>",
+    body: `Check that the code somebody just built is the feature that was designed.
 
 loam derives the questions; the test runner and you answer them. loam never
 reads the service, so a verdict is worth exactly what its evidence is worth.
@@ -786,13 +818,12 @@ telling the next reader the truth. \`loam archive\` will ship the feature either
 which is exactly why a \`confirmed\` you cannot back up costs nothing now and misleads
 everyone later.
 `,
-
-  "loam-ship": `---
-description: Archive a finished loam feature — merge its deltas into the living docs
-argument-hint: <FEAT-id>
----
-
-Archive a shipped feature.
+  },
+  {
+    name: "loam-ship",
+    description: "Archive a finished loam feature — merge its deltas into the living docs",
+    argumentHint: "<FEAT-id>",
+    body: `Archive a shipped feature.
 
 1. Confirm the code is actually built and merged. Archiving folds the delta into the
    living docs; doing it early makes the docs claim something that does not exist.
@@ -833,20 +864,116 @@ archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature.
 hand-edit the living docs back instead: the previous text of a \`MODIFIED\` requirement
 is in that snapshot and nowhere else, so anything you write by hand is a guess.
 `,
+  },
+];
+
+/**
+ * A tool the commands can be emitted for — the registry key is the `--tools`
+ * id (OpenSpec's ids where the tool has one there). A path and a wrapper are
+ * the WHOLE adapter: OpenSpec's per-tool command layer, minus everything loam
+ * refuses on principle — no version stamps in command files, no
+ * overwrite-on-update, no managed marker blocks in anyone else's file. Paths
+ * and wrappers follow each tool's own documented convention, pinned in
+ * test/agents.test.ts.
+ */
+export interface AgentTool {
+  /** Repo-relative path segments of one command's file. */
+  path(name: string): string[];
+  /** The full file: this tool's wrapper around the shared body. */
+  format(cmd: CommandContent): string;
+}
+
+/**
+ * TOML basic-string escapes for the one non-markdown format. Today's bodies
+ * carry neither backslashes nor `"""`, but the escape is what keeps a future
+ * body edit from silently corrupting the generated TOML.
+ */
+const tomlLine = (s: string): string => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const tomlBlock = (s: string): string => s.replace(/\\/g, "\\\\").replace(/"""/g, '""\\"');
+
+export const AGENT_TOOLS: Record<string, AgentTool> = {
+  // The original target and the default. This wrapper must stay byte-identical
+  // to what loam has always written: SLASH_COMMANDS below derives through it,
+  // and an already-initialized repo must read as fully scaffolded (`skipped`),
+  // never as drifted.
+  claude: {
+    path: (name) => [".claude", "commands", `${name}.md`],
+    format: (c) =>
+      `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+  },
+  // Cursor invokes by flat file name (`/loam-check`); its frontmatter `name`
+  // field spells that invocation form.
+  cursor: {
+    path: (name) => [".cursor", "commands", `${name}.md`],
+    format: (c) => `---\nname: /${c.name}\n---\n\n${c.body}`,
+  },
+  // Copilot prompt files: `.prompt.md` extension, description-only frontmatter.
+  "github-copilot": {
+    path: (name) => [".github", "prompts", `${name}.prompt.md`],
+    format: (c) => `---\ndescription: ${c.description}\n---\n\n${c.body}`,
+  },
+  // Gemini: TOML, and a namespace DIRECTORY — `.gemini/commands/loam/check.toml`
+  // is invoked as `/loam:check`, so the file name drops the `loam-` prefix the
+  // flat-named tools carry.
+  gemini: {
+    path: (name) => [".gemini", "commands", "loam", `${name.replace(/^loam-/, "")}.toml`],
+    format: (c) =>
+      `description = "${tomlLine(c.description)}"\nprompt = """\n${tomlBlock(c.body)}"""`,
+  },
+  opencode: {
+    path: (name) => [".opencode", "commands", `${name}.md`],
+    format: (c) => `---\ndescription: ${c.description}\n---\n\n${c.body}`,
+  },
+  // Cline reads workflows from `.clinerules/` — plain markdown, no frontmatter.
+  cline: {
+    path: (name) => [".clinerules", "workflows", `${name}.md`],
+    format: (c) => `# ${c.name}\n\n${c.body}`,
+  },
 };
 
 /**
- * Write the slash commands into `.claude/commands/` of `cwd`. Existing files are
- * left alone. Returns the paths created.
+ * The Claude-format files, keyed by command name. Kept as the exported shape
+ * because it IS the on-disk contract of every repo initialized before
+ * `--tools` existed — and derived through the same adapter that writes the
+ * files, so the export and the disk can never disagree.
  */
-export async function scaffoldAgentCommands(cwd: string): Promise<string[]> {
-  const dir = join(cwd, ".claude", "commands");
+export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
+  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format(c)]),
+);
+
+/**
+ * Every command file the selected tools would lay down, in creation order —
+ * the same list `init` probes for `skipped` BEFORE the scaffold runs, so
+ * created + skipped is the same list on every repo.
+ */
+export function plannedCommandFiles(
+  cwd: string,
+  toolIds: string[],
+): Array<{ path: string; content: string }> {
+  return toolIds.flatMap((id) => {
+    const tool = AGENT_TOOLS[id];
+    if (tool === undefined) throw new Error(`unknown agent tool: ${id}`);
+    return COMMANDS.map((c) => ({
+      path: join(cwd, ...tool.path(c.name)),
+      content: tool.format(c),
+    }));
+  });
+}
+
+/**
+ * Write the slash commands for the selected tools into `cwd`. Existing files
+ * are left alone — the never-overwrite contract covers every tool, not just
+ * the default. Returns the paths created.
+ */
+export async function scaffoldAgentCommands(
+  cwd: string,
+  toolIds: string[] = ["claude"],
+): Promise<string[]> {
   const created: string[] = [];
-  for (const [name, body] of Object.entries(SLASH_COMMANDS)) {
-    const path = join(dir, `${name}.md`);
+  for (const { path, content } of plannedCommandFiles(cwd, toolIds)) {
     if (existsSync(path)) continue;
-    await mkdir(dir, { recursive: true });
-    await writeFile(path, body, "utf8");
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
     created.push(path);
   }
   return created;

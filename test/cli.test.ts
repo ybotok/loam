@@ -7,9 +7,10 @@
  *   - init: scaffolds the docs-repo skeleton, writes loam.json with an ABSOLUTE
  *     docsDir, is idempotent (never clobbers user files), and preserves
  *     previously configured `service` on re-init (config spread).
- *   - init --json: {ok, docsDir, created, skipped} — skipped is the other half
- *     of the never-overwrite contract — and a clean refusal when --docs names
- *     a file.
+ *   - init --json: {ok, docsDir, created, skipped, tools} — skipped is the
+ *     other half of the never-overwrite contract, tools names the agent tools
+ *     the command files were generated for — and a clean refusal when --docs
+ *     names a file. The per-tool matrix itself is pinned in test/agents.test.ts.
  *   - config: missing loam.json is a clean exit-1 error on every command that
  *     needs it; malformed loam.json fails cleanly with a diagnostic naming the
  *     config, and `loam init` can rewrite it.
@@ -186,6 +187,8 @@ describe("init: --json contract", () => {
     }
     expect(created.some((c) => c.includes(join(".claude", "commands")))).toBe(true);
     expect(json.skipped).toEqual([]);
+    // no --tools means the one historical target
+    expect(json.tools).toEqual(["claude"]);
   });
 
   it("a second init reports everything as skipped, nothing created — init never overwrites", async () => {
@@ -215,6 +218,8 @@ describe("init: --json contract", () => {
     expect(json.ok).toBe(true);
     const all: string[] = [...json.created, ...json.skipped];
     expect(all.some((p) => p.includes(".claude"))).toBe(false);
+    // and no tool is claimed to have been generated for
+    expect(json.tools).toEqual([]);
   });
 
   it("refuses --docs naming a file, inside the envelope", async () => {
@@ -377,7 +382,10 @@ describe("delta: degraded inputs", () => {
     // the sections before architecture still render…
     expect(res.out).toContain("FEAT-1 · payment-service");
     expect(res.out).toContain("Requirements: (none for this service)");
-    // …and the arch section degrades to a diagnostic
+    // …and the arch section degrades to a diagnostic — but the exit code still
+    // says 1, exactly like --json: an empty C4 slice from a parse failure must
+    // not read as "no architecture change" in either format.
+    expect(res.code).toBe(1);
     expect(res.out).toContain("delta.likec4 has errors");
   });
 

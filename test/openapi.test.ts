@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { operationIds, operations, serviceOperationIds } from "../src/core/openapi.js";
+import { operationIds, operations, readOpenapi, serviceOperationIds } from "../src/core/openapi.js";
 import {
   FEATURE_DELTA,
   FEATURE_OPENAPI,
@@ -693,5 +693,57 @@ paths:
           description: OK
 `;
     expect(await extract(doc)).toEqual(["opA", "opB"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* readOpenapi — the unreadable flag                                   */
+/* ------------------------------------------------------------------ */
+
+describe("readOpenapi — a broken contract is flagged, not read as empty", () => {
+  /** readOpenapi() of a single inline document. */
+  async function readOf(content: string) {
+    return withDir({ "openapi.yaml": content }, (root) => readOpenapi(join(root, "openapi.yaml")));
+  }
+
+  it("broken YAML yields zero ops PLUS the unreadable flag and the parser's message", async () => {
+    const res = await readOf("paths: [unclosed\n  bar: ::::\n");
+    expect(res.ops).toEqual([]);
+    expect(res.unreadable).toBe(true);
+    expect(res.error).toBeTruthy();
+  });
+
+  it("a scalar document is as unreadable as broken YAML — there is no mapping to walk", async () => {
+    const res = await readOf("just some prose, not a contract\n");
+    expect(res.unreadable).toBe(true);
+    expect(res.ops).toEqual([]);
+  });
+
+  it("a missing file is NOT unreadable — absence is service.no-openapi's question", async () => {
+    const root = await makeTmpDir();
+    try {
+      const res = await readOpenapi(join(root, "no-such-dir", "openapi.yaml"));
+      expect(res).toEqual({ ops: [], unreadable: false });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("an empty file is NOT unreadable — it honestly defines nothing", async () => {
+    const res = await readOf("");
+    expect(res.unreadable).toBe(false);
+    expect(res.ops).toEqual([]);
+  });
+
+  it("a valid contract reads exactly as before, flag down", async () => {
+    const res = await readOf(LIVING_OPENAPI);
+    expect(res.unreadable).toBe(false);
+    expect(res.ops).toEqual([{ id: "authorizePayment", deprecated: false }]);
+  });
+
+  it("operations() is readOpenapi() minus the flag — broken input still degrades to []", async () => {
+    await withDir({ "openapi.yaml": "paths: [unclosed\n" }, async (root) => {
+      expect(await operations(join(root, "openapi.yaml"))).toEqual([]);
+    });
   });
 });

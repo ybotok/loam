@@ -269,6 +269,28 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_SERVICE,
     what: "a requirement in spec.md or arch.spec.md has no `#### Scenario:`",
   },
+  {
+    code: "spec.duplicate-requirement",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "one `### Requirement:` name defined twice in one living spec.md or arch.spec.md — a later merge edits only the first, the rest live on as stale copies",
+  },
+  // The keep-last pair: a second `Operations:` / `Covers:` line in one
+  // requirement body REPLACES the first — assignment, not append — so the
+  // author's two-line list silently loses its first line. The semantics stay;
+  // the loss no longer happens in silence.
+  {
+    code: "spec.repeated-operations",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a second `Operations:` line in one requirement body — the last replaces the earlier ones, whose list is silently dropped; merge into one comma-separated line",
+  },
+  {
+    code: "spec.repeated-covers",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a second `Covers:` line in one requirement body — same keep-last rule, same silent loss; merge into one comma-separated line",
+  },
   // The graded absences: the brief marks spec.md and openapi.yaml required, and
   // validate agrees they belong — as warns, because partial adoption is a
   // supported state and these are its honest progress meter, not a gate.
@@ -283,6 +305,12 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     severity: "warn",
     via: VIA_SERVICE,
     what: "openapi.yaml does not exist yet — quiet only when the landscape proves no other service calls an operation on this one",
+  },
+  {
+    code: "openapi.invalid",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "openapi.yaml exists but does not parse — an unreadable contract proves nothing, so the `api.*` checks and the spine's op resolution are suspended until it reads",
   },
   {
     code: "api.ungoverned",
@@ -332,10 +360,22 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     what: "a `Covers:` entry in arch.spec.md that resolves to no element, edge, alert or SLI — a typo silently costs the coverage it was written for",
   },
   {
+    code: "health.invalid",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "health.yaml exists but does not parse — its alert/SLI ids are unreadable, so `Covers: alert:/sli:` entries and health coverage go unchecked until it reads (a missing health.yaml stays silent)",
+  },
+  {
     code: "health.uncovered",
     severity: "warn",
     via: VIA_SERVICE,
     what: "an alert or SLI declared in health.yaml that no arch.spec.md requirement covers — expected until the arch spec is written; each one is a signal nothing tests",
+  },
+  {
+    code: "frontmatter.malformed",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "the frontmatter block does not parse as YAML — owner, status and sources are unreadable, and the field checks are suspended until the header is fixed",
   },
   {
     code: "frontmatter.field-mismatch",

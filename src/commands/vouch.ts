@@ -12,9 +12,11 @@
  * prose changed after the stamp.
  *
  * The stamp is only worth what it claims, so vouch refuses everything it cannot
- * actually verify — a spec with no sources, a glob pattern (no longer
- * supported), a source that is gone, a directory holding no files, or a repo
- * that is not this service's — and refuses without writing anything.
+ * actually verify — a frontmatter block that will not parse (whose fields
+ * nobody can read, and whose rewrite would lose the author's lines), a spec
+ * with no sources, a glob pattern (no longer supported), a source that is
+ * gone, a directory holding no files, or a repo that is not this service's —
+ * and refuses without writing anything.
  *
  * "The document" is every spec-axis file the service has: spec.md always, and
  * arch.spec.md beside it when present — same frontmatter conventions, same
@@ -24,12 +26,13 @@
  */
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
 import { contentDigest, missingSources, patternSources, sourcesDigest } from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
+import { message, rollbackStaged, stageWrites, swapStaged, type PlannedWrite } from "../core/staging.js";
 
 interface VouchOptions {
   service?: string;
@@ -69,7 +72,17 @@ export type VouchOutcome =
       /** Every spec-axis file stamped, in SPEC_AXES order: spec.md first, arch.spec.md behind it when present. */
       stamped: StampedSpec[];
     }
-  | { ok: false; code: Extract<ErrorCode, "unknown-target" | "sources-absent" | "sources-path-missing">; message: string };
+  | {
+      ok: false;
+      // The last two are the commit phase failing: `merge-failed` says the
+      // rollback held (nothing was stamped, re-running can work),
+      // `rollback-incomplete` says it did not and the message lists the files.
+      code: Extract<
+        ErrorCode,
+        "unknown-target" | "sources-absent" | "sources-path-missing" | "merge-failed" | "rollback-incomplete"
+      >;
+      message: string;
+    };
 
 export function registerVouch(program: Command): void {
   program
@@ -165,9 +178,11 @@ export function registerVouch(program: Command): void {
  * Nothing is written unless all four can be stamped truthfully for EVERY file —
  * a half-stamp (verified, but with no digest behind it; or one file stamped and
  * its sibling not) is exactly the claim this command exists to stop being
- * possible, so every present file is verified before any is written. The two
- * digests are the two halves of one promise: `sources_digest` pins the code
- * that was read, `content_digest` pins the words it was read against, so
+ * possible, so every present file is verified before any is written — and the
+ * writing itself is staged and swapped in like archive's merge, so a failure
+ * between the pair's two writes rolls the first back instead of leaving it.
+ * The two digests are the two halves of one promise: `sources_digest` pins the
+ * code that was read, `content_digest` pins the words it was read against, so
  * `loam validate` can see either side move.
  */
 export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
@@ -193,6 +208,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   }
 
   const stamped: StampedSpec[] = [];
+  const writes: PlannedWrite[] = [];
   for (const v of verified) {
     // Two passes on purpose: `content_digest` hashes the body BELOW the
     // frontmatter, and withFrontmatterFields promises that body byte-identical —
@@ -205,7 +221,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       sources_digest: v.digest,
     });
     const bodyDigest = contentDigest(restamped);
-    await writeFile(v.path, withFrontmatterFields(restamped, { content_digest: bodyDigest }), "utf8");
+    writes.push({ path: v.path, content: withFrontmatterFields(restamped, { content_digest: bodyDigest }) });
     stamped.push({
       path: v.path,
       file: v.file,
@@ -214,6 +230,35 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       sources: v.sources,
       files: v.files,
     });
+  }
+
+  // Commit through archive's stage-and-swap machinery (core/staging.ts) rather
+  // than a writeFile per file: every stamp is computed above in memory, so a
+  // plain sequential write could only die BETWEEN the pair's writes — spec.md
+  // verified, arch.spec.md still carrying the old stamp — the exact half-stamped
+  // state the all-or-nothing verification exists to rule out, lost at the last
+  // step to a full disk. Staging parks each file's new bytes beside it, swaps by
+  // rename(2), and on failure restores what already swapped from its pre-image.
+  const staged = await stageWrites(writes);
+  try {
+    await swapStaged(staged);
+  } catch (err) {
+    const failures = await rollbackStaged(staged);
+    // Archive's two answers to "can I trust the repo?", reused rather than
+    // minting vouch-only codes — a caller branches on the same fact either way:
+    // rolled back → nothing changed, re-running can work; incomplete → the
+    // files listed need a human. Only the prose is vouch's own.
+    return failures.length > 0
+      ? {
+          ok: false,
+          code: "rollback-incomplete",
+          message: `${message(err)} — ROLLBACK INCOMPLETE, these files may be half-stamped and need checking by hand: ${failures.join(", ")}`,
+        }
+      : {
+          ok: false,
+          code: "merge-failed",
+          message: `${message(err)} — the vouch was rolled back, no spec was stamped`,
+        };
   }
   return { ok: true, status: "verified", lastVerified: req.today, stamped };
 }
@@ -240,7 +285,27 @@ async function verifySpec(
   file: string,
 ): Promise<VerifiedSpec | Extract<VouchOutcome, { ok: false }>> {
   const raw = await readFile(path, "utf8");
-  const sources = listField(parseFrontmatter(raw), "sources");
+  const fm = parseFrontmatter(raw);
+  // Before any sources reasoning: a header that does not parse hides whatever
+  // fields the author wrote, so "names no sources" would be a false diagnosis —
+  // and if the file ever reached the stamp, withFrontmatterFields' rule for
+  // unreadable headers is replace-don't-merge, which would silently discard the
+  // author's owner/service/sources lines. Refuse before the write path can see
+  // the file. The code stays `sources-absent` — for vouch's purposes the
+  // sources ARE unreadable-hence-absent, and the message carries the real
+  // diagnosis — rather than minting a new ErrorCode for one refusal.
+  if (fm.malformed) {
+    return {
+      ok: false,
+      code: "sources-absent",
+      message:
+        `${req.service}: ${file} has a frontmatter block that cannot be read as YAML — ` +
+        `its fields (\`sources\` included) are unreadable, and stamping would rewrite the header wholesale, ` +
+        `losing what the author wrote. Fix the YAML between the \`---\` fences ` +
+        `(\`loam validate\` reports it as \`frontmatter.malformed\`), then re-run.`,
+    };
+  }
+  const sources = listField(fm, "sources");
   if (sources.length === 0) {
     return {
       ok: false,

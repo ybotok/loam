@@ -98,3 +98,40 @@ describe("the writer round-trips", () => {
     expect(withFrontmatterFields(BOM + DOC, {})).toBe(DOC);
   });
 });
+
+describe("the malformed flag — unreadable is not the same fact as empty", () => {
+  it("broken YAML in the header sets malformed, keeps data {} and the body intact", () => {
+    const fm = parseFrontmatter("---\nstatus: [unclosed\n---\n\n# Title\n");
+    expect(fm.present).toBe(true);
+    expect(fm.malformed).toBe(true);
+    expect(fm.data).toEqual({});
+    expect(fm.body).toContain("# Title");
+  });
+
+  it("a scalar header is malformed too — there are no fields to read in it", () => {
+    const fm = parseFrontmatter("---\njust some prose\n---\n\nBody\n");
+    expect(fm.present).toBe(true);
+    expect(fm.malformed).toBe(true);
+  });
+
+  it("a sequence header is malformed — a list holds no owner/status either", () => {
+    const fm = parseFrontmatter("---\n- a\n- b\n---\n\nBody\n");
+    expect(fm.malformed).toBe(true);
+    expect(fm.data).toEqual({});
+  });
+
+  it("an EMPTY block is legal and NOT malformed — absence of fields, not unreadability", () => {
+    const fm = parseFrontmatter("---\n---\n\n# Title\n");
+    expect(fm.present).toBe(true);
+    expect(fm.malformed).toBe(false);
+  });
+
+  it("a valid header is not malformed, and a missing one is neither present nor malformed", () => {
+    const ok = parseFrontmatter("---\nstatus: draft\n---\n\nBody\n");
+    expect(ok.malformed).toBe(false);
+    expect(stringField(ok, "status")).toBe("draft");
+    const none = parseFrontmatter("# Just a doc\n");
+    expect(none.present).toBe(false);
+    expect(none.malformed).toBe(false);
+  });
+});

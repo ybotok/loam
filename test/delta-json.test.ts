@@ -147,7 +147,7 @@ describe("--json contract", () => {
   });
 });
 
-describe("text output is unchanged", () => {
+describe("text output", () => {
   it("still prints the human briefing", async () => {
     await withProject(coherentFixture(), async (p) => {
       const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC);
@@ -160,12 +160,15 @@ describe("text output is unchanged", () => {
     });
   });
 
-  it("text mode keeps exit 0 on a broken delta — it prints the errors and points at validate", async () => {
+  it("text mode exits 1 on a broken delta too — the guard is about the delta, not the format", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/delta.likec4"] = "model {\n  a = bogusKind 'a'\n}\n";
     await withProject(files, async (p) => {
       const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC);
-      expect(res.code).toBe(0);
+      // Same vacuously-green trap as --json: a pipeline shelling out to the
+      // text view would otherwise read "delta ran fine" off exit 0 while the
+      // architecture axis was silently empty.
+      expect(res.code).toBe(1);
       expect(res.out).toContain("delta.likec4 has errors");
       expect(res.out).toContain("loam validate");
     });

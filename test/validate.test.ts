@@ -1084,3 +1084,362 @@ describe("the report is one stream", () => {
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Broken input is its own diagnosis — never somebody else's           */
+/* ------------------------------------------------------------------ */
+
+interface JsonFinding {
+  severity: string;
+  code: string;
+  subject?: string;
+  message: string;
+  details: string[];
+}
+
+/** Every finding across every target of a --json run. */
+function jsonFindings(stdout: string): JsonFinding[] {
+  const payload = JSON.parse(stdout) as { targets: Array<{ findings: JsonFinding[] }> };
+  return payload.targets.flatMap((t) => t.findings);
+}
+
+function byCode(all: JsonFinding[], code: string): JsonFinding[] {
+  return all.filter((f) => f.code === code);
+}
+
+describe("service mode: openapi.invalid — a broken contract is the error, not the spine", () => {
+  it("broken YAML reports openapi.invalid and NO false spine.op-undefined on inbound edges", async () => {
+    const files = coherentFixture();
+    // The landscape's checkoutWeb → paymentService edge calls authorizePayment;
+    // the old empty-parse graded it spine.op-undefined against a zero opset.
+    files[`services/${SVC}/openapi.yaml`] = "paths: [unclosed\n  bar: ::::\n";
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1); // an unreadable source of truth is an error
+      const all = jsonFindings(res.stdout);
+      const [invalid] = byCode(all, "openapi.invalid");
+      expect(invalid).toBeDefined();
+      expect(invalid!.severity).toBe("error");
+      expect(invalid!.details.length).toBeGreaterThan(0); // the parser's own message rides along
+      expect(byCode(all, "spine.op-undefined")).toEqual([]);
+      expect(byCode(all, "spine.resolved")).toEqual([]); // no false all-clear either
+      // Nothing api.* may be graded against a contract nobody can read.
+      for (const code of ["api.covered", "api.ungoverned", "api.ops-unlinked", "service.no-openapi"]) {
+        expect(byCode(all, code)).toEqual([]);
+      }
+    });
+  });
+
+  it("spine.op-link-missing stays live — it never reads the contract", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/openapi.yaml`] = "paths: [unclosed\n";
+    // Same fleet, but the inbound edge has a "Calls" title and no metadata op:
+    // that defect is the landscape's, not the contract's, so it must survive.
+    files["architecture/landscape.likec4"] = `specification {
+  element softwareSystem
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  checkoutWeb -> paymentService 'Calls authorizePayment'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "openapi.invalid")).toHaveLength(1);
+      expect(byCode(all, "spine.op-link-missing")).toHaveLength(1);
+    });
+  });
+
+  it("a valid contract is unchanged: no openapi.invalid, api and spine still graded", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "openapi.invalid")).toEqual([]);
+      expect(byCode(all, "api.covered")).toHaveLength(1);
+      expect(byCode(all, "spine.resolved")).toHaveLength(1);
+    });
+  });
+});
+
+describe("service mode: health.invalid — an unreadable health.yaml is the finding, not a typo hunt", () => {
+  /** A living arch spec whose one requirement covers `entries`. */
+  const archSpec = (covers: string): string => `---
+service: payment-service
+status: draft
+owner: x
+---
+
+# arch
+
+## Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox.
+
+Covers: ${covers}
+
+#### Scenario: Broker down
+- **Given** an event in the outbox
+- **When** kafka is down
+- **Then** the event is published later
+`;
+
+  it("broken health.yaml warns health.invalid and mutes covers.unknown for alert:/sli: entries", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/health.yaml`] = "alerts: [unclosed\n  bar: ::::\n";
+    files[`services/${SVC}/arch.spec.md`] = archSpec("alert:err_rate, sli:availability");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0); // warn, like the whole advisory axis
+      const all = jsonFindings(res.stdout);
+      const [invalid] = byCode(all, "health.invalid");
+      expect(invalid).toBeDefined();
+      expect(invalid!.severity).toBe("warn");
+      // Neither direction may be graded against ids nobody could read.
+      expect(byCode(all, "covers.unknown")).toEqual([]);
+      expect(byCode(all, "health.uncovered")).toEqual([]);
+    });
+  });
+
+  it("the muting is surgical: a non-health Covers entry still gets its covers.unknown", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/health.yaml`] = "alerts: [unclosed\n";
+    files[`services/${SVC}/arch.spec.md`] = archSpec("alert:err_rate, no.such.element");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const unknown = byCode(jsonFindings(res.stdout), "covers.unknown");
+      expect(unknown).toHaveLength(1);
+      expect(unknown[0]!.message).toContain("no.such.element");
+    });
+  });
+
+  it("a broken health.yaml is reported even with no arch.spec.md — the file itself is the finding", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/health.yaml`] = "alerts: [unclosed\n";
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(byCode(jsonFindings(res.stdout), "health.invalid")).toHaveLength(1);
+    });
+  });
+
+  it("a valid health.yaml is unchanged: no health.invalid, health.uncovered still fires", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/health.yaml`] = "alerts:\n  - name: err_rate\n";
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "health.invalid")).toEqual([]);
+      expect(byCode(all, "health.uncovered")).toHaveLength(1);
+    });
+  });
+});
+
+describe("frontmatter.malformed — one honest error instead of the field cascade", () => {
+  const GOOD_HEADER = "---\nservice: payment-service\nstatus: verified\n---";
+
+  it("a spec.md whose header does not parse gets frontmatter.malformed, not 'fields missing'", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = LIVING_SPEC.replace(GOOD_HEADER, "---\nservice: [unclosed\n---");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1);
+      const all = jsonFindings(res.stdout);
+      const [malformed] = byCode(all, "frontmatter.malformed");
+      expect(malformed).toBeDefined();
+      expect(malformed!.severity).toBe("error");
+      expect(malformed!.message).toContain("spec.md");
+      // The false cascade the silent {} used to produce:
+      for (const code of ["frontmatter.field-missing", "frontmatter.missing", "sources.absent"]) {
+        expect(byCode(all, code)).toEqual([]);
+      }
+      // The BODY is still read — a bad header must not unread the requirements.
+      expect(byCode(all, "requirements.covered")).toHaveLength(1);
+    });
+  });
+
+  it("a malformed intent.md reports the same way on the feature target", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/intent.md"] = "---\nfeature: [unclosed\n---\n\n# Split payments\n";
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "frontmatter.malformed")).toHaveLength(1);
+      expect(byCode(all, "frontmatter.field-missing")).toEqual([]);
+    });
+  });
+
+  it("a valid header is unchanged — no frontmatter.malformed on the clean fixture", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(byCode(jsonFindings(res.stdout), "frontmatter.malformed")).toEqual([]);
+    });
+  });
+});
+
+describe("spec.duplicate-requirement — one name, one living block", () => {
+  const DUP_SPEC = `---
+service: payment-service
+status: verified
+---
+
+# payment-service
+
+## Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment before capture.
+
+Operations: authorizePayment
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+
+### Requirement: Authorize a payment
+An older copy of the same requirement, left behind by hand-merging.
+
+#### Scenario: Stale copy
+- **Given** a card
+- **When** anything
+- **Then** something
+`;
+
+  it("two blocks with one name in the living spec error, naming the requirement and the count", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = DUP_SPEC;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1);
+      const dup = byCode(jsonFindings(res.stdout), "spec.duplicate-requirement");
+      expect(dup).toHaveLength(1);
+      expect(dup[0]!.severity).toBe("error");
+      expect(dup[0]!.message).toContain("'Authorize a payment'");
+      expect(dup[0]!.message).toContain("2 times");
+    });
+  });
+
+  it("spec.md and arch.spec.md are separate namespaces — one name in both is legal", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/arch.spec.md`] = `---
+service: payment-service
+status: draft
+owner: x
+---
+
+# arch
+
+## Requirements
+
+### Requirement: Authorize a payment
+The ARCH duty behind the same name — a different namespace, not a duplicate.
+
+#### Scenario: Outbox holds
+- **Given** an event
+- **When** kafka is down
+- **Then** it is delivered later
+`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(byCode(jsonFindings(res.stdout), "spec.duplicate-requirement")).toEqual([]);
+    });
+  });
+});
+
+describe("spec.repeated-operations / spec.repeated-covers — the keep-last quirk stops being silent", () => {
+  it("a second Operations: line warns, and the keep-last semantics stand untouched", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = LIVING_SPEC.replace(
+      "Operations: authorizePayment",
+      "Operations: legacyOp\nOperations: authorizePayment",
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0); // warn-only
+      const all = jsonFindings(res.stdout);
+      const [rep] = byCode(all, "spec.repeated-operations");
+      expect(rep).toBeDefined();
+      expect(rep!.severity).toBe("warn");
+      expect(rep!.message).toContain("2 'Operations:' lines");
+      // Keep-last intact: only the LAST line governs, and it names the one
+      // defined op — so the API still grades covered, not ungoverned.
+      expect(byCode(all, "api.covered")).toHaveLength(1);
+      expect(byCode(all, "spec.repeated-covers")).toEqual([]);
+    });
+  });
+
+  it("a second Covers: line in arch.spec.md warns spec.repeated-covers", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/arch.spec.md`] = `---
+service: payment-service
+status: draft
+owner: x
+---
+
+# arch
+
+## Requirements
+
+### Requirement: Outbox discipline
+The service SHALL publish through the outbox.
+
+Covers: checkoutWeb -> paymentService
+Covers: paymentService.api
+
+#### Scenario: Broker down
+- **Given** an event in the outbox
+- **When** kafka is down
+- **Then** the event is published later
+`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "spec.repeated-covers")).toHaveLength(1);
+      // Keep-last intact here too: only paymentService.api was parsed, and it
+      // resolves — no covers.unknown for the lost first line either.
+      expect(byCode(all, "covers.unknown")).toEqual([]);
+    });
+  });
+
+  it("fires on a feature's spec delta too — a lost line there merges into the living spec", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC.replace(
+      "Operations: createSplit",
+      "Operations: legacyOp\nOperations: createSplit",
+    );
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(0);
+      const rep = byCode(jsonFindings(res.stdout), "spec.repeated-operations");
+      expect(rep).toHaveLength(1);
+      expect(rep[0]!.subject).toBe("payment-split-service");
+    });
+  });
+
+  it("one line raises nothing, and an Operations: inside a scenario body never counts", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = LIVING_SPEC.replace(
+      "- **Then** the payment is authorized",
+      '- **Then** the payment is authorized\n- **And** the doc says "Operations: bogusOp"\nOperations: bogusOp',
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const all = jsonFindings(res.stdout);
+      expect(byCode(all, "spec.repeated-operations")).toEqual([]);
+      expect(byCode(all, "spec.repeated-covers")).toEqual([]);
+    });
+  });
+});

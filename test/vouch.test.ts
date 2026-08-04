@@ -23,13 +23,39 @@
  *    rides the same vouch when present, verified per file and stamped
  *    all-or-nothing, so `verified` never means "half-stamped".
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { coherentFixture, makeProject, runLoam, writeFiles, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, runLoam, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
 import { parseFrontmatter, stringField, listField } from "../src/core/frontmatter.js";
 import { vouch } from "../src/commands/vouch.js";
+
+/**
+ * Fault injection for the commit phase (the passthrough-wrapper pattern from
+ * archive-rollback.test.ts). The harness runs commands in-process, so every
+ * stamp swap and rollback rename goes through this module graph's own
+ * node:fs/promises — wrapping `rename` lets a test fail exactly one swap and
+ * watch what vouch leaves on disk. Passthrough while `onRename` is unset.
+ */
+const fsFault = vi.hoisted(() => ({
+  onRename: undefined as undefined | ((from: string, to: string) => void),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rename: async (from: Parameters<typeof actual.rename>[0], to: Parameters<typeof actual.rename>[1]) => {
+      fsFault.onRename?.(String(from), String(to));
+      return actual.rename(from, to);
+    },
+  };
+});
+
+afterEach(() => {
+  fsFault.onRename = undefined;
+});
 
 const SVC = "payment-service";
 const SPEC = `services/${SVC}/spec.md`;
@@ -236,6 +262,26 @@ describe("what vouch refuses", () => {
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/gone.ts`, CODE, async (p) => {
       const before = await p.read(SPEC);
       await runLoam(p.workDir, "vouch");
+      expect(await p.read(SPEC)).toBe(before);
+    });
+  });
+
+  it("refuses a frontmatter block that does not parse, naming the file — a stamp would lose the author's header", async () => {
+    // The header names sources, but its YAML is broken: the fields are
+    // unreadable, not absent, and the refusal must say so instead of "names no
+    // sources". It must also refuse BEFORE the write path — for an unreadable
+    // header withFrontmatterFields' rule is replace-don't-merge, so a stamp
+    // that got through would silently discard every line the author wrote.
+    await withRepo(`service: [unclosed\nsources:\n  - src/payment.ts`, CODE, async (p) => {
+      const before = await p.read(SPEC);
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("sources-absent");
+      expect(json.error.message).toContain("spec.md");
+      expect(json.error.message).toContain("cannot be read as YAML");
+      // Nothing was written — the broken header (and the body) survive verbatim.
       expect(await p.read(SPEC)).toBe(before);
     });
   });
@@ -460,6 +506,82 @@ Covers: paymentService.api
       expect(json.error.message).toContain("src/gone.ts");
       expect(await p.read(SPEC)).toBe(specBefore);
       expect(await p.read(ARCH_SPEC)).toBe(archBefore);
+    });
+  });
+
+  it("a malformed arch.spec.md header refuses the whole vouch — spec.md verified fine and still must not be stamped", async () => {
+    await withPair(`service: [unclosed\nsources:\n  - src/outbox.ts`, PAIR_CODE, async (p) => {
+      const specBefore = await p.read(SPEC);
+      const archBefore = await p.read(ARCH_SPEC);
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("sources-absent");
+      expect(json.error.message).toContain("arch.spec.md");
+      expect(json.error.message).toContain("cannot be read as YAML");
+      expect(await p.read(SPEC)).toBe(specBefore);
+      expect(await p.read(ARCH_SPEC)).toBe(archBefore);
+    });
+  });
+
+  it("a failure on the second file's swap rolls the first back — the pair commits atomically (merge-failed)", async () => {
+    // The docstring's promise put to a real mid-write failure: spec.md has
+    // already swapped to `verified` when arch.spec.md's rename dies. A
+    // sequential writeFile pair would leave exactly the half-stamped state the
+    // all-or-nothing verification exists to rule out.
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      const before = await treeHashes(p.docsDir);
+      fsFault.onRename = (_from, to) => {
+        if (to.endsWith(join("services", SVC, "arch.spec.md"))) {
+          throw new Error("injected: the second swap failed");
+        }
+      };
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      fsFault.onRename = undefined;
+
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain("rolled back");
+      // The whole tree, byte-identical: spec.md restored from its pre-image,
+      // arch.spec.md never stamped, no temp files left behind.
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      // And after the rolled-back failure a plain re-run simply works.
+      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect(stringField(parseFrontmatter(await p.read(ARCH_SPEC)), "status")).toBe("verified");
+    });
+  });
+
+  it("a swap failure whose rollback is ALSO blocked says rollback-incomplete and names the half-stamped file", async () => {
+    await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
+      // The second swap fails; from then on restoring spec.md (the one file
+      // already swapped) is blocked too — its rollback goes through an atomic
+      // write whose final step is itself a rename.
+      let swapFailed = false;
+      fsFault.onRename = (_from, to) => {
+        if (to.endsWith(join("services", SVC, "arch.spec.md"))) {
+          swapFailed = true;
+          throw new Error("injected: the second swap failed");
+        }
+        if (swapFailed && to.endsWith(join("services", SVC, "spec.md"))) {
+          throw new Error("injected: rollback blocked");
+        }
+      };
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      fsFault.onRename = undefined;
+
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("rollback-incomplete");
+      // The message is the to-do list of the human who now looks by hand.
+      expect(json.error.message).toContain("half-stamped");
+      expect(json.error.message).toContain(join("services", SVC, "spec.md"));
+      expect(json.error.message).not.toContain("arch.spec.md");
+      // The repo genuinely is half-stamped: spec.md carries the stamp the
+      // rollback could not take back, arch.spec.md never swapped.
+      expect(stringField(parseFrontmatter(await p.read(SPEC)), "status")).toBe("verified");
+      expect(stringField(parseFrontmatter(await p.read(ARCH_SPEC)), "status")).toBe("draft");
     });
   });
 

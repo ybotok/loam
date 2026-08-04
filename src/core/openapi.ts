@@ -25,27 +25,53 @@ export interface Operation {
   deprecated: boolean;
 }
 
+/** The parse of one OpenAPI document: its operations, and whether the file could be read at all. */
+export interface OpenapiDoc {
+  ops: Operation[];
+  /**
+   * True when the file EXISTS but cannot be read as an OpenAPI document —
+   * broken YAML, or a document that is not a mapping. A missing file is not
+   * unreadable (absence is `service.no-openapi`'s question), and an empty one
+   * parses to null and honestly defines nothing.
+   */
+  unreadable: boolean;
+  /** The parser's own message, when there is one to quote back. */
+  error?: string;
+}
+
 /**
  * Extract operations from an OpenAPI document by walking the parsed YAML
  * structure (paths.<path>.<method>, method filtered to the HTTP set).
  * Structure-aware on purpose: a regex scan both drops legal ids (kebab-case,
  * dotted) and picks up phantom ids from description text. Each operation
  * carries its id and its `deprecated: true` flag (exactly `true` counts —
- * strings and truthy noise do not). Returns the defined set (deduped by id,
+ * strings and truthy noise do not). `ops` is the defined set (deduped by id,
  * document order, first occurrence wins).
- * An unreadable document yields [] — its contract can prove nothing.
+ *
+ * An unreadable document yields [] ops PLUS the `unreadable` flag. Parsers
+ * never diagnose — the policy of every reader here — so the failure travels as
+ * a flag for validate to grade (`openapi.invalid`). Swallowing it into a bare
+ * [] made a broken contract indistinguishable from an EMPTY one, and the spine
+ * check then reported every inbound edge broken (`spine.op-undefined`) — a
+ * false diagnosis pointing at the landscape when the truth was this file.
  */
-export async function operations(openapiPath: string): Promise<Operation[]> {
-  if (!existsSync(openapiPath)) return [];
+export async function readOpenapi(openapiPath: string): Promise<OpenapiDoc> {
+  if (!existsSync(openapiPath)) return { ops: [], unreadable: false };
   const text = await readFile(openapiPath, "utf8");
   let doc: unknown;
   try {
     doc = parse(text);
-  } catch {
-    return [];
+  } catch (e) {
+    return { ops: [], unreadable: true, error: e instanceof Error ? e.message : String(e) };
+  }
+  // A scalar or sequence document is as unreadable as broken YAML: there is no
+  // mapping to look `paths` up in, so nothing can be concluded from it. null
+  // (an empty file) stays readable — it defines nothing, and says so honestly.
+  if (doc !== null && (typeof doc !== "object" || Array.isArray(doc))) {
+    return { ops: [], unreadable: true, error: "document is not a YAML mapping" };
   }
   const paths = (doc as { paths?: unknown } | null)?.paths;
-  if (!paths || typeof paths !== "object") return [];
+  if (!paths || typeof paths !== "object") return { ops: [], unreadable: false };
   const ops = new Map<string, Operation>();
   for (const item of Object.values(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
@@ -58,7 +84,12 @@ export async function operations(openapiPath: string): Promise<Operation[]> {
       }
     }
   }
-  return [...ops.values()];
+  return { ops: [...ops.values()], unreadable: false };
+}
+
+/** The operations alone — for every caller whose own finding already covers the unreadable case. */
+export async function operations(openapiPath: string): Promise<Operation[]> {
+  return (await readOpenapi(openapiPath)).ops;
 }
 
 /** The operationIds alone — `operations` for every caller that asks only "does it exist". */

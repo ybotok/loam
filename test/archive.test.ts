@@ -1087,6 +1087,143 @@ describe("landscape merge adversarial", () => {
   });
 });
 
+describe("cross-service title collision in the landscape join", () => {
+  /*
+   * The existence check joins delta elements to living ones by id, then by
+   * TITLE. The title join is the id-less fallback, and it is only safe when
+   * the two sides could be the same box: when BOTH carry an explicit
+   * `metadata { service }` binding and the bindings differ, they are provably
+   * different services' boxes sharing a title ('API', 'Database') — the old
+   * silent skip dropped the addition, and the delta's edges into it then
+   * refused the whole archive at the parse net with a message about nothing.
+   * Now that case refuses loudly at plan time; every join with an unbound
+   * side (the legal legacy pattern) behaves exactly as before.
+   */
+
+  /** A landscape whose 'API' box is BOUND to payment-service. */
+  const BOUND_API_LANDSCAPE = `specification {
+  element softwareSystem
+  element person
+}
+
+model {
+  customer = person 'Customer'
+  paymentApi = softwareSystem 'API' {
+    description 'payment facade'
+    metadata { service 'payment-service' }
+  }
+
+  customer -> paymentApi 'Uses'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+  /** A one-element delta claiming the title 'API', bound (or not) to a service. */
+  const apiTitleDelta = (feat: string, id: string, boundTo?: string): string => `specification {
+  element softwareSystem
+  tag ${feat}
+}
+
+model {
+  ${id} = softwareSystem 'API' {
+    #${feat}${boundTo === undefined ? "" : `\n    metadata { service '${boundTo}' }`}
+  }
+}
+
+views {
+  view v_${feat.toLowerCase().replace(/-/g, "_")} {
+    include *
+  }
+}
+`;
+
+  it("both sides bound to DIFFERENT services: refused at plan time (merge-failed), nothing written, --approve does not force it", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": BOUND_API_LANDSCAPE,
+      "features/FEAT-40-ledger/delta.likec4": apiTitleDelta("FEAT-40", "ledgerApi", "ledger-service"),
+    });
+    try {
+      const before = await treeHashes(p.docsDir);
+      // --approve on purpose: the refusal is mechanical (the merge cannot be
+      // done correctly), not a judgment call, so --approve must not override it.
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", "FEAT-40", "--approve", "--json");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      const json = JSON.parse(res!.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      // The message names both elements and both services — the reader must not
+      // have to re-derive which two boxes collided.
+      expect(json.error.message).toContain("ledgerApi");
+      expect(json.error.message).toContain("ledger-service");
+      expect(json.error.message).toContain("paymentApi");
+      expect(json.error.message).toContain("payment-service");
+      expect(json.error.message).toContain("'API'");
+      expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
+      expect(p.exists("features/FEAT-40-ledger/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("both sides bound to the SAME service: a legitimate title match still merges as before (skip, no duplicate)", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": BOUND_API_LANDSCAPE,
+      "features/FEAT-41-redo/delta.likec4": apiTitleDelta("FEAT-41", "paymentFacade", "payment-service"),
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-41", "--approve");
+      expect(res.code, res.out).toBe(0);
+      expect(p.exists("features/archive/FEAT-41-redo/delta.likec4")).toBe(true);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      const els = elementsTitled(land, "API");
+      expect(els, "the same service's re-declared box must be skipped, not duplicated").toHaveLength(1);
+      expect(els[0]!.id).toBe("paymentApi");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("either side unbound: the legacy title-fallback join still silently skips, in both directions", async () => {
+    // Direction 1: the DELTA's element is unbound — it may well be the living
+    // 'API' box re-declared without its binding.
+    const p1 = await makeProject({
+      "architecture/landscape.likec4": BOUND_API_LANDSCAPE,
+      "features/FEAT-42-legacy/delta.likec4": apiTitleDelta("FEAT-42", "someApi"),
+    });
+    try {
+      const res = await runLoam(p1.workDir, "archive", "FEAT-42", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const land = await loadFile(landscapePath(p1));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "API")).toHaveLength(1);
+    } finally {
+      await p1.destroy();
+    }
+    // Direction 2: the LIVING element is unbound (the pre-binding legacy
+    // landscape) while the delta's is bound — still the trusting skip.
+    const p2 = await makeProject({
+      "architecture/landscape.likec4": BOUND_API_LANDSCAPE.replace("    metadata { service 'payment-service' }\n", ""),
+      "features/FEAT-43-legacy/delta.likec4": apiTitleDelta("FEAT-43", "ledgerApi", "ledger-service"),
+    });
+    try {
+      const res = await runLoam(p2.workDir, "archive", "FEAT-43", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const land = await loadFile(landscapePath(p2));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "API")).toHaveLength(1);
+    } finally {
+      await p2.destroy();
+    }
+  });
+});
+
 describe("spine preservation through the merge", () => {
   it("both spines survive the rewrite: `op` on the edge and `service` on the element", async () => {
     // The merge re-emits a delta element as living-landscape source. Anything it

@@ -76,6 +76,15 @@ export function registerDelta(program: Command): void {
       // C4 architecture slice
       const arch = await archSlice(paths.delta, service, id);
 
+      // An unparseable delta.likec4 empties the C4 slice, and a consumer
+      // reading this projection as a task brief — the JSON payload and the
+      // printed view alike — would take that as "no architecture change": the
+      // vacuously-green pattern. The output stays as informative as ever (and
+      // `ok` stays true under --json: the command ran); the exit code is what
+      // stops a pipeline from building on it, so it is set BEFORE the format
+      // fork — the guard is about the delta, not about how it is rendered.
+      if (arch.errors.length > 0) process.exitCode = 1;
+
       if (json) {
         const reqJson = (r: Requirement): Record<string, unknown> => ({
           kind: r.kind,
@@ -99,12 +108,6 @@ export function registerDelta(program: Command): void {
           archRequirements: archReqs.map(reqJson),
           architecture: arch,
         });
-        // An unparseable delta.likec4 empties the C4 slice, and an agent
-        // consuming this payload as a task brief would read that as "no
-        // architecture change" — the vacuously-green pattern. `ok` stays true
-        // (the command ran) and the payload stays as informative as ever; the
-        // exit code is what stops a pipeline from building on it.
-        if (arch.errors.length > 0) process.exitCode = 1;
         return;
       }
 

@@ -11,9 +11,14 @@
  *   slis:      a YAML sequence; each entry contributes its `name` (or `id`
  *   alerts:    when there is no name), and a plain string entry is its own id.
  *
- * Tolerant end to end: a health.yaml that is missing, does not parse, or has
- * no recognizable ids yields an empty set — and an empty set produces no
- * findings, because a file loam cannot read must not manufacture obligations.
+ * Tolerant about absence, honest about breakage: a health.yaml that is missing
+ * or declares nothing recognizable yields an empty set — and an empty set
+ * produces no findings, because an absent file must not manufacture
+ * obligations. A file that EXISTS but cannot be read is different evidence:
+ * its ids are unknown, not empty, so the `unreadable` flag travels alongside
+ * (parsers never diagnose — validate grades it as `health.invalid`). The old
+ * silent empty set turned every `Covers: alert:/sli:` entry of that service
+ * into a false `covers.unknown` "typo", when the truth was this file.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -26,17 +31,36 @@ export interface HealthIds {
 
 export const NO_HEALTH_IDS: HealthIds = { slis: [], alerts: [] };
 
-export async function readHealthIds(healthPath: string): Promise<HealthIds> {
-  if (!existsSync(healthPath)) return NO_HEALTH_IDS;
+/** The read of one health.yaml: its declared ids, and whether the file could be read at all. */
+export interface HealthFile {
+  ids: HealthIds;
+  /** True when the file exists but is not a readable YAML mapping. Missing and empty files read as empty, not broken. */
+  unreadable: boolean;
+  /** The parser's own message, when there is one to quote back. */
+  error?: string;
+}
+
+export async function readHealth(healthPath: string): Promise<HealthFile> {
+  if (!existsSync(healthPath)) return { ids: NO_HEALTH_IDS, unreadable: false };
   let doc: unknown;
   try {
     doc = parse(await readFile(healthPath, "utf8"));
-  } catch {
-    return NO_HEALTH_IDS;
+  } catch (e) {
+    return { ids: NO_HEALTH_IDS, unreadable: true, error: e instanceof Error ? e.message : String(e) };
   }
-  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) return NO_HEALTH_IDS;
+  // An empty file parses to null: it declares nothing, and says so honestly.
+  // A scalar or sequence document declares nothing READABLE — flag it.
+  if (doc === null) return { ids: NO_HEALTH_IDS, unreadable: false };
+  if (typeof doc !== "object" || Array.isArray(doc)) {
+    return { ids: NO_HEALTH_IDS, unreadable: true, error: "document is not a YAML mapping" };
+  }
   const top = doc as Record<string, unknown>;
-  return { slis: idsOf(top["slis"]), alerts: idsOf(top["alerts"]) };
+  return { ids: { slis: idsOf(top["slis"]), alerts: idsOf(top["alerts"]) }, unreadable: false };
+}
+
+/** The ids alone — for callers whose question is coverage, not readability. */
+export async function readHealthIds(healthPath: string): Promise<HealthIds> {
+  return (await readHealth(healthPath)).ids;
 }
 
 /** The ids a `slis:` / `alerts:` sequence declares — deduped, document order. */

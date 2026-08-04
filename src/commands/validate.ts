@@ -37,7 +37,7 @@ import {
   type TargetReport,
 } from "../core/report.js";
 import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
-import { operations } from "../core/openapi.js";
+import { readOpenapi } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance.js";
@@ -52,7 +52,7 @@ import {
   type CoversEntry,
 } from "../core/arch.js";
 import { gherkinFindings } from "../core/gherkin.js";
-import { readHealthIds } from "../core/health.js";
+import { readHealth } from "../core/health.js";
 import { LOAM_VERSION } from "../core/version.js";
 
 interface ValidateOptions {
@@ -405,6 +405,8 @@ async function validateService(
   if (existsSync(paths.spec)) {
     reqs = parseRequirements(await readFile(paths.spec, "utf8"));
     findings.push(coverageFinding(`${service}: requirements`, reqs));
+    findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
+    findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
   } else {
     findings.push({
       severity: "warn",
@@ -414,9 +416,9 @@ async function validateService(
   }
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
-  const apiOps = await operations(paths.openapi);
-  const ops = apiOps.map((o) => o.id);
-  const deprecatedOps = new Set(apiOps.filter((o) => o.deprecated).map((o) => o.id));
+  const api = await readOpenapi(paths.openapi);
+  const ops = api.ops.map((o) => o.id);
+  const deprecatedOps = new Set(api.ops.filter((o) => o.deprecated).map((o) => o.id));
   if (!existsSync(paths.openapi)) {
     // Quiet only on positive evidence — the landscape parsed and no edge calls
     // an operation on this service. A missing or broken landscape proves
@@ -432,6 +434,19 @@ async function validateService(
         message: `No OpenAPI contract at ${paths.openapi} — API coverage and the landscape spine are unchecked`,
       });
     }
+  } else if (api.unreadable) {
+    // A contract that EXISTS but does not read is a broken source of truth, not
+    // an empty one: swallowing it into zero operations used to grade every
+    // inbound landscape edge `spine.op-undefined` — a false diagnosis pointing
+    // at the landscape when the truth was this file. So the file is the error,
+    // and every check that reads the contract (api.*, the spine's op
+    // resolution) is suspended below, the landscape.invalid discipline.
+    findings.push({
+      severity: "error",
+      code: "openapi.invalid",
+      message: `${service}: openapi.yaml does not parse — API coverage and the landscape spine are unchecked`,
+      ...(api.error === undefined ? {} : { details: [api.error] }),
+    });
   } else if (ops.length > 0) {
     const governed = new Set(reqs.flatMap((r) => r.operations));
     const orphans = ops.filter((op) => !governed.has(op));
@@ -502,6 +517,11 @@ async function validateService(
       for (const r of land.relationships) {
         if (svcOf(r.target) !== service) continue;
         if (r.op !== undefined) {
+          // An unreadable contract proves nothing about this edge — neither
+          // broken nor resolved. openapi.invalid already named the file; only
+          // op-link-missing (which never reads the contract) stays live, and
+          // `checked` stays 0 so no false spine.resolved is claimed either.
+          if (api.unreadable) continue;
           checked += 1;
           if (!opset.has(r.op)) {
             broken += 1;
@@ -547,24 +567,43 @@ async function validateService(
   // health.yaml declares wants a covering requirement (health.uncovered) — the
   // moment health.yaml stops being inert. Warnings, never gates: `--strict` is
   // the CI escalation.
-  const health = await readHealthIds(paths.health);
+  const health = await readHealth(paths.health);
   const archReqs = existsSync(paths.archSpec)
     ? parseRequirements(await readFile(paths.archSpec, "utf8"))
     : [];
   if (existsSync(paths.archSpec)) {
     findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
+    findings.push(...duplicateRequirementFindings(archReqs, `${service}: arch.spec.md`, service));
+    findings.push(...repeatedListLineFindings(archReqs, `${service}: arch.spec.md`, service));
+  }
+  // A health.yaml that exists but does not read is reported once, and the
+  // checks that read it go quiet BOTH ways: its ids are unknown, so no
+  // health.uncovered obligation exists (the empty id set below is already
+  // silent), and no `Covers: alert:/sli:` entry may be graded a typo against
+  // ids nobody could read (coversUnknownFindings mutes on the flag). A warn,
+  // not an error: the axis it feeds is advisory end to end.
+  if (health.unreadable) {
+    findings.push({
+      severity: "warn",
+      code: "health.invalid",
+      subject: service,
+      message: `${service}: health.yaml does not parse — alert/SLI ids are unreadable, so Covers: alert:/sli: entries and health coverage are unchecked`,
+      ...(health.error === undefined ? {} : { details: [health.error] }),
+    });
   }
   const landParses = land !== null && land.errors.length === 0 ? land : null;
   const scope: CoverageScope = {
     elements: [...elements, ...(landParses?.elements ?? [])],
     relationships: [...relationships, ...(landParses?.relationships ?? [])],
-    health,
+    health: health.ids,
   };
-  findings.push(...coversUnknownFindings(archReqs, `${service}: arch.spec.md`, service, scope));
+  findings.push(
+    ...coversUnknownFindings(archReqs, `${service}: arch.spec.md`, service, scope, health.unreadable),
+  );
   const activeCovers = coversEntries(archReqs);
   for (const { form, ids } of [
-    { form: "alert" as const, ids: health.alerts },
-    { form: "sli" as const, ids: health.slis },
+    { form: "alert" as const, ids: health.ids.alerts },
+    { form: "sli" as const, ids: health.ids.slis },
   ]) {
     for (const id of ids) {
       if (activeCovers.some((e) => e.form === form && e.id === id)) continue;
@@ -594,22 +633,89 @@ function coversEntries(reqs: Requirement[]): CoversEntry[] {
 }
 
 /**
+ * `spec.duplicate-requirement` — two `### Requirement:` blocks with one name in
+ * one LIVING document. Nothing else catches it, and the merge algebra
+ * (applyRequirementDelta) matches by name and edits only the FIRST match: a
+ * later archive rewrites one copy and the other survives as a stale snapshot
+ * of whatever the requirement used to say. Per file on purpose — spec.md and
+ * arch.spec.md are separate requirement namespaces (their merges never cross
+ * files), so one name appearing in both is legal and unflagged.
+ */
+function duplicateRequirementFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
+  const counts = new Map<string, number>();
+  for (const r of reqs) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
+  return [...counts]
+    .filter(([, n]) => n > 1)
+    .map(([name, n]) => ({
+      severity: "error" as const,
+      code: "spec.duplicate-requirement",
+      subject,
+      message: `${where}: requirement '${name}' is defined ${n} times — a merge edits only the first, every other copy lives on stale; keep exactly one`,
+    }));
+}
+
+/**
+ * The two list lines of the requirement grammar, exactly as core/spec.ts spells
+ * them (mirrored here, not exported from there, because the parser's grammar is
+ * its own; a drift shows up as this check counting differently than the parser
+ * assigns). A SECOND matching line in one requirement body REPLACES the first —
+ * assignment, not append, the documented keep-last quirk — so the author's
+ * "long list in two lines" pattern silently loses its first line.
+ */
+const OPERATIONS_LINE_RE = /^\s*Operations?:\s*(.+?)\s*$/i;
+const COVERS_LINE_RE = /^\s*Covers?:\s*(.+?)\s*$/i;
+
+/**
+ * `spec.repeated-operations` / `spec.repeated-covers` — warn on the silent
+ * loss, keep the keep-last semantics (changing them would re-read every spec
+ * in the fleet). Scenario bodies never count: the parser only assigns from the
+ * requirement's own body lines, and `Requirement.text` is exactly those.
+ * REMOVED requirements are exempt the way coversEntries exempts them — content
+ * on its way out obliges nothing.
+ */
+function repeatedListLineFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
+  const out: Finding[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const { re, label, code } of [
+      { re: OPERATIONS_LINE_RE, label: "Operations:", code: "spec.repeated-operations" },
+      { re: COVERS_LINE_RE, label: "Covers:", code: "spec.repeated-covers" },
+    ]) {
+      const n = r.text.filter((line) => re.test(line)).length;
+      if (n < 2) continue;
+      out.push({
+        severity: "warn",
+        code,
+        subject,
+        message: `${where}: requirement '${r.name}' has ${n} '${label}' lines — the last REPLACES the others (assignment, not append), the earlier list is silently lost; merge them into one comma-separated line`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * `covers.unknown` — the typo guard on the Covers: line. Warn, not error: the
  * axis is advisory end to end, and a wrong id already costs its author the
  * coverage they wrote the line for. The hint offers only real ids (closeIds's
  * rule), and says where resolution looked when there is nothing close.
+ * `healthUnreadable` mutes the alert:/sli: forms only: against a health.yaml
+ * nobody could read, "did you mean" is a false diagnosis of a typo —
+ * health.invalid (emitted by the service target) is the honest one.
  */
 function coversUnknownFindings(
   reqs: Requirement[],
   where: string,
   subject: string,
   scope: CoverageScope,
+  healthUnreadable = false,
 ): Finding[] {
   const out: Finding[] = [];
   for (const r of reqs) {
     if (r.kind === "REMOVED") continue;
     for (const raw of r.covers) {
       const entry = parseCoversEntry(raw);
+      if (healthUnreadable && (entry.form === "alert" || entry.form === "sli")) continue;
       if (entryResolves(entry, scope)) continue;
       const close = coversCandidates(entry, scope);
       out.push({
@@ -679,7 +785,11 @@ async function validateFeature(
     if (existsSync(p.spec)) {
       const raw = await readFile(p.spec, "utf8");
       scenarioText += "\n" + raw.toLowerCase();
-      findings.push({ ...coverageFinding(`${svc}: requirements`, parseRequirements(raw)), subject: svc });
+      const reqs = parseRequirements(raw);
+      findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
+      // The keep-last quirk loses lines in a delta exactly as in a living spec
+      // — and a delta's lost Operations: line then merges into the living one.
+      findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
     }
     if (existsSync(p.archSpec)) {
       const raw = await readFile(p.archSpec, "utf8");
@@ -687,6 +797,7 @@ async function validateFeature(
       const reqs = parseRequirements(raw);
       archDeltas.push({ service: svc, reqs });
       findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
+      findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
     }
   }
 
@@ -756,9 +867,12 @@ async function validateFeature(
     const baseElements = [...elements, ...(landParses?.elements ?? [])];
     const baseRels = [...deltaRels, ...(landParses?.relationships ?? [])];
     for (const { service: svc, reqs } of archDeltas) {
-      const health = await readHealthIds(servicePaths(docsDir, svc).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health };
-      const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope);
+      // An unreadable living health.yaml mutes the alert:/sli: entries here
+      // exactly as in service scope — the health.invalid finding itself
+      // belongs to the service target, which owns the file's diagnosis.
+      const health = await readHealth(servicePaths(docsDir, svc).health);
+      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids };
+      const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = servicePaths(docsDir, svc).model;
         const model = existsSync(modelPath) ? await loadFile(modelPath) : null;
@@ -766,10 +880,10 @@ async function validateFeature(
           scope = {
             elements: [...baseElements, ...model.elements],
             relationships: [...baseRels, ...model.relationships],
-            health,
+            health: health.ids,
           };
         }
-        findings.push(...coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope));
+        findings.push(...coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable));
       }
     }
   }

@@ -13,6 +13,16 @@ import { isMap, parse, parseDocument } from "yaml";
 export interface Frontmatter {
   /** True when a terminated `---` block was found, even if it was empty. */
   present: boolean;
+  /**
+   * True when the block was found but its YAML cannot be read as a mapping —
+   * a parse error, or a scalar/sequence document. `data` is then {}, which is
+   * NOT the same fact as an empty header: the fields are unreadable, not
+   * absent, and a checker that grades them "missing" sends the author adding
+   * lines to a block YAML refuses to parse. Validate turns this flag into
+   * `frontmatter.malformed`; the writer (withFrontmatterFields) has its own
+   * replace-don't-merge rule for the same state.
+   */
+  malformed: boolean;
   /** The parsed mapping, or {} when absent or malformed. */
   data: Record<string, unknown>;
   /** The document with the frontmatter removed. */
@@ -88,22 +98,30 @@ function bounds(md: string): Bounds | null {
 export function parseFrontmatter(source: string): Frontmatter {
   const md = stripBom(source);
   const at = bounds(md);
-  if (at === null) return { present: false, data: {}, body: md };
+  if (at === null) return { present: false, malformed: false, data: {}, body: md };
 
   const yamlText = md.slice(at.start, at.end);
   const body = md.slice(at.bodyStart).trimStart();
 
   let data: Record<string, unknown> = {};
+  let malformed = false;
   try {
     const parsed: unknown = parse(yamlText);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       data = parsed as Record<string, unknown>;
+    } else if (parsed !== null) {
+      // A scalar or sequence header holds no fields to read — as unreadable as
+      // broken YAML. null is the empty block (`---\n---`): legal, and empty.
+      malformed = true;
     }
   } catch {
-    // Malformed frontmatter is reported by the caller as missing fields, not by
-    // crashing the command — a bad header must not make the document unreadable.
+    // A bad header must not make the document unreadable (the body is still the
+    // body, and never crashes a command) — but the failure travels as a flag,
+    // so the caller can say `frontmatter.malformed` instead of the false
+    // cascade "owner/status missing" the silent {} used to produce.
+    malformed = true;
   }
-  return { present: true, data, body };
+  return { present: true, malformed, data, body };
 }
 
 /** A field as text. Non-string scalars (a bare date, a number) are stringified. */
@@ -174,7 +192,7 @@ export function rawBody(source: string): string {
 
 /** Read a markdown file's frontmatter; a missing file reads as absent. */
 export async function readFrontmatter(path: string): Promise<Frontmatter> {
-  if (!existsSync(path)) return { present: false, data: {}, body: "" };
+  if (!existsSync(path)) return { present: false, malformed: false, data: {}, body: "" };
   return parseFrontmatter(await readFile(path, "utf8"));
 }
 

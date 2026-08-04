@@ -907,6 +907,86 @@ describe("reading the verification back", () => {
   });
 });
 
+describe("a hand-edited record that lost its shape reads as no record", () => {
+  // verification.yaml is deliberately plain YAML that "has to survive without
+  // loam", so human edits are expected. A record whose shape no longer holds
+  // what the readers dereference (`summary` with its numbers, `recorded`,
+  // `checklist`, claims with id/verdict) must read as "no record" — the
+  // documented unreadable-is-null semantics — never surface as a TypeError
+  // from inside the command.
+  it("read mode: yaml without summary → the honest no-record branch, not a crash", async () => {
+    const p = await project();
+    await p.write(
+      RECORD,
+      ["feature: FEAT-1", "recorded: 2026-08-04", "checklist: deadbeefdeadbeef", "claims: []"].join("\n") + "\n",
+    );
+    const res = await runLoam(p.workDir, "verify", FEAT, "--json");
+    expect(res.code, res.out).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.recorded).toBe(null);
+    expect(json.verified).toBe(false);
+    // prose mode says "Not verified", not STALE — a staleness verdict about a
+    // file that is not a record would send the agent re-answering for nothing
+    const prose = await runLoam(p.workDir, "verify", FEAT);
+    expect(prose.code).toBe(0);
+    expect(prose.out).toContain("Not verified");
+    expect(prose.out).not.toContain("STALE");
+  });
+
+  it("an archived feature's summary-less record: 'no record', where v.summary.claims used to TypeError", async () => {
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+    // A faithful-looking hand-written record, minus the summary the frozen
+    // view leads with — the exact shape that crashed reportFrozen.
+    const archived = "features/archive/FEAT-1-split/verification.yaml";
+    await p.write(
+      archived,
+      [
+        "feature: FEAT-1",
+        "recorded: 2026-08-04",
+        "checklist: deadbeefdeadbeef",
+        "claims:",
+        "  - id: api.exposes-2a8cee76",
+        "    kind: api.exposes",
+        "    claim: still here",
+        "    verdict: confirmed",
+        "    evidence: [src/x.ts:1]",
+      ].join("\n") + "\n",
+    );
+    const res = await runLoam(p.workDir, "verify", FEAT, "--json");
+    expect(res.code, res.out).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.frozen).toBe(true);
+    expect(json.recorded).toBe(null);
+    expect(json.summary).toBe(null);
+    expect(json.verified).toBe(false);
+    const prose = await runLoam(p.workDir, "verify", FEAT);
+    expect(prose.code).toBe(0);
+    expect(prose.out).toContain("no verification record");
+  });
+
+  it("a claims entry whose verdict nobody defined disqualifies the whole record", async () => {
+    // Same doctrine as --record's refusals: a verdict outside the vocabulary is
+    // not an answer, and a record that half-answers must not half-read.
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    await p.write(RECORD, (await p.read(RECORD)).replace(/verdict: confirmed/g, "verdict: yes"));
+    const json = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout);
+    expect(json.recorded).toBe(null);
+    expect(json.summary.unanswered).toBe(4);
+  });
+
+  it("a well-formed record a human merely annotated still reads — extra keys are not damage", async () => {
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    await p.write(RECORD, (await p.read(RECORD)) + "reviewed_by: a human, in a PR\n");
+    const json = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout);
+    expect(json.recorded).not.toBe(null);
+    expect(json.verified).toBe(true);
+  });
+});
+
 describe("archived features — the record is frozen history", () => {
   // Archive merges the feature's ops into the living openapi. Re-deriving the
   // checklist afterwards computes a SMALLER claim set — the api.exposes claims

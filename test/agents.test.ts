@@ -16,7 +16,7 @@ import { readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
-import { AGENTS_MD, SLASH_COMMANDS as COMMAND_BODIES } from "../src/core/agent.js";
+import { AGENT_TOOLS, AGENTS_MD, SLASH_COMMANDS as COMMAND_BODIES } from "../src/core/agent.js";
 import {
   agentsStaleFinding,
   agentsStampLine,
@@ -149,6 +149,165 @@ describe("slash commands in the working repo", () => {
     await runLoam(dir, "init", "--docs", "./d");
     const second = await runLoam(dir, "init", "--docs", "./d");
     expect(second.out).not.toContain("scaffolded");
+  });
+});
+
+describe("multi-tool command generation (init --tools)", () => {
+  // Path expectations pinned as literals, per tool, for one probe command: a
+  // moved path must fail HERE, not in some user's repo — and the registry
+  // growing a tool must extend this table (the exactness test below).
+  const CHECK_FILE: Record<string, string[]> = {
+    claude: [".claude", "commands", "loam-check.md"],
+    cursor: [".cursor", "commands", "loam-check.md"],
+    "github-copilot": [".github", "prompts", "loam-check.prompt.md"],
+    gemini: [".gemini", "commands", "loam", "check.toml"],
+    opencode: [".opencode", "commands", "loam-check.md"],
+    cline: [".clinerules", "workflows", "loam-check.md"],
+  };
+
+  it("the pinned path table covers exactly the registry — a new tool must be pinned here", () => {
+    expect(Object.keys(CHECK_FILE).sort()).toEqual(Object.keys(AGENT_TOOLS).sort());
+  });
+
+  it("the claude wrapper is the historical byte format — description + argument-hint frontmatter", () => {
+    // SLASH_COMMANDS derives through the claude adapter, so a reworded wrapper
+    // would silently re-spell every already-initialized repo as unscaffolded.
+    // The literal prefix pins the on-disk contract, not the derivation.
+    expect(
+      COMMAND_BODIES["loam-adopt"]!.startsWith(
+        "---\n" +
+          "description: Adopt a service — write its baseline docs from its code, as draft, then validate\n" +
+          "argument-hint: <service-id>\n" +
+          "---\n\n",
+      ),
+    ).toBe(true);
+  });
+
+  it("--tools all lays down every tool's files, each in its own dialect, all driving real loam commands", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json");
+    expect(res.code).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.tools).toEqual(Object.keys(AGENT_TOOLS));
+    const read = (segs: string[]): Promise<string> => readFile(join(dir, ...segs), "utf8");
+    for (const segs of Object.values(CHECK_FILE)) {
+      expect(
+        json.created.some((c: string) => c.endsWith(join(...segs))),
+        `created is missing ${segs.join("/")}`,
+      ).toBe(true);
+      expect(await read(segs)).toContain("loam validate");
+    }
+    // the wrapper is the tool's own dialect, not claude's everywhere
+    const claude = await read(CHECK_FILE["claude"]!);
+    expect(claude).toMatch(/^---\ndescription: /);
+    expect(claude).toContain("argument-hint:");
+    expect(await read(CHECK_FILE["cursor"]!)).toMatch(/^---\nname: \/loam-check\n---\n\n/);
+    const copilot = await read(CHECK_FILE["github-copilot"]!);
+    expect(copilot).toMatch(/^---\ndescription: /);
+    expect(copilot).not.toContain("argument-hint:");
+    const gemini = await read(CHECK_FILE["gemini"]!);
+    expect(gemini).toMatch(/^description = "/);
+    expect(gemini).toContain('prompt = """');
+    expect(gemini.endsWith('"""')).toBe(true);
+    expect(await read(CHECK_FILE["opencode"]!)).toMatch(/^---\ndescription: /);
+    // cline: a title line, no frontmatter block at the top (the body's own
+    // markdown tables still carry `---` rows, so only the head is asserted)
+    expect(await read(CHECK_FILE["cline"]!)).toMatch(/^# loam-check\n\n/);
+  });
+
+  it("--tools cursor,gemini replaces the default — no .claude/ appears", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,gemini");
+    expect(res.code).toBe(0);
+    expect(existsSync(join(dir, ".cursor", "commands", "loam-feature.md"))).toBe(true);
+    expect(existsSync(join(dir, ".gemini", "commands", "loam", "feature.toml"))).toBe(true);
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    // the human output names what was generated for whom
+    expect(res.out).toContain("commands:  cursor, gemini");
+  });
+
+  it("no --tools is the old behavior byte-for-byte: claude only, the exported bodies exactly", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d");
+    for (const [name, content] of Object.entries(COMMAND_BODIES)) {
+      expect(await readFile(join(dir, ".claude", "commands", `${name}.md`), "utf8")).toBe(content);
+    }
+    for (const other of [".cursor", ".gemini", ".github", ".opencode", ".clinerules"]) {
+      expect(existsSync(join(dir, other)), `${other} appeared without --tools`).toBe(false);
+    }
+  });
+
+  it("never overwrites another tool's edited command either", async () => {
+    const dir = await throwawayDir();
+    await mkdir(join(dir, ".cursor", "commands"), { recursive: true });
+    const mine = "my own cursor /loam-check\n";
+    await writeFile(join(dir, ".cursor", "commands", "loam-check.md"), mine, "utf8");
+
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor", "--json");
+    expect(res.code).toBe(0);
+    expect(await readFile(join(dir, ".cursor", "commands", "loam-check.md"), "utf8")).toBe(mine);
+    const json = JSON.parse(res.stdout);
+    expect(
+      json.skipped.some((p: string) => p.endsWith(join(".cursor", "commands", "loam-check.md"))),
+    ).toBe(true);
+    // the untouched siblings are still laid down
+    expect(existsSync(join(dir, ".cursor", "commands", "loam-feature.md"))).toBe(true);
+  });
+
+  it("a second init --tools all skips exactly what the first created, same paths, same order", async () => {
+    const dir = await throwawayDir();
+    const first = JSON.parse(
+      (await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json")).stdout,
+    );
+    const second = JSON.parse(
+      (await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json")).stdout,
+    );
+    expect(second.created).toEqual([]);
+    expect(second.skipped).toEqual(first.created);
+  });
+
+  it("an unknown tool id is refused — invalid-option naming it and the supported list, nothing scaffolded", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,roomba", "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("invalid-option");
+    expect(json.error.message).toContain("roomba");
+    expect(json.error.message).toContain("claude");
+    // refused before anything was written — a typo must not half-initialize
+    expect(existsSync(join(dir, ".cursor"))).toBe(false);
+    expect(existsSync(join(dir, "d"))).toBe(false);
+    expect(existsSync(join(dir, "loam.json"))).toBe(false);
+  });
+
+  it("--tools with an empty value is refused, not silently claude", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", ",", "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
+  });
+
+  it("duplicate ids collapse: --tools cursor,cursor writes each file once and reports cursor once", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,cursor", "--json");
+    expect(res.code).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.tools).toEqual(["cursor"]);
+    const cursorFiles = json.created.filter((p: string) => p.includes(".cursor"));
+    expect(cursorFiles).toEqual([...new Set(cursorFiles)]);
+  });
+
+  it("--tools with --no-commands is a contradiction, refused", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--docs", "./d", "--no-commands", "--tools", "cursor", "--json",
+    );
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.error.code).toBe("invalid-option");
+    expect(json.error.message).toContain("--no-commands");
+    expect(existsSync(join(dir, ".cursor"))).toBe(false);
   });
 });
 
