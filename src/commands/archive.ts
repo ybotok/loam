@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
-import { fail, emitJson, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { gatesArchive, type Issue } from "../core/issue.js";
 import {
   message,
@@ -115,8 +115,7 @@ function issueJson(i: Issue): Record<string, unknown> {
 
 /** The failure envelope plus the issues that caused it, so a caller need not re-run validate. */
 function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void {
-  console.log(JSON.stringify({ ok: false, error: { code, message: msg }, issues: issues.map(issueJson) }, null, 2));
-  process.exitCode = 1;
+  emitJsonError(code, msg, { issues: issues.map(issueJson) });
 }
 
 async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {

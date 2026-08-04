@@ -18,6 +18,13 @@ import { relative } from "node:path";
 import { configPath } from "./config.js";
 
 /**
+ * Version of the top-level JSON envelope, independent of the CLI/package
+ * version. Additive payload fields do not require a bump; incompatible changes
+ * to `ok`, `error`, or their semantics do.
+ */
+export const JSON_CONTRACT_VERSION = "1.0";
+
+/**
  * Stable failure codes. Prose may change; these may not.
  *
  * The `sources-*` pair mirrors the `sources.*` finding codes on purpose: the
@@ -81,7 +88,7 @@ export type ErrorCode =
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ ok: true, ...payload }, null, 2));
+  console.log(JSON.stringify({ contractVersion: JSON_CONTRACT_VERSION, ok: true, ...payload }, null, 2));
 }
 
 /** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
@@ -90,8 +97,18 @@ export function repoPath(docsDir: string, abs: string): string {
 }
 
 /** Emit a failure envelope and set the exit code. Returns false, to `return` from a caller. */
-export function emitJsonError(code: ErrorCode, message: string): false {
-  console.log(JSON.stringify({ ok: false, error: { code, message } }, null, 2));
+export function emitJsonError(
+  code: ErrorCode,
+  message: string,
+  details: Record<string, unknown> = {},
+): false {
+  console.log(
+    JSON.stringify(
+      { contractVersion: JSON_CONTRACT_VERSION, ok: false, error: { code, message }, ...details },
+      null,
+      2,
+    ),
+  );
   process.exitCode = 1;
   return false;
 }

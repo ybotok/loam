@@ -168,6 +168,17 @@ describe("--all", () => {
 });
 
 describe("--json envelope", () => {
+  it("versions both success and failure envelopes independently of the CLI", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const success = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      expect(success.contractVersion).toBe("1.0");
+    });
+
+    const bare = await makeTmpDir();
+    const failure = JSON.parse((await runLoam(bare, "validate", "--json")).stdout);
+    expect(failure.contractVersion).toBe("1.0");
+  });
+
   it("separates 'the command ran' from 'the docs are valid'", async () => {
     await withProject(coherentFixture(), { service: SVC }, async (p) => {
       const clean = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);

@@ -430,6 +430,7 @@ describe("--json contract", () => {
     await withProject({}, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
       expect(json).toEqual({
+        contractVersion: "1.0",
         ok: true,
         docsDir: p.docsDir,
         services: [],
