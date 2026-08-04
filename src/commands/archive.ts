@@ -2,8 +2,6 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { gatesArchive, type Issue } from "../core/issue.js";
@@ -44,7 +42,8 @@ import {
   servicePaths,
   SPEC_AXES,
 } from "../core/repo.js";
-import { HTTP_METHODS, operationIds } from "../core/openapi.js";
+import { operationIds } from "../core/openapi.js";
+import { mergeOpenapiPaths, OpenapiMergeError, type OpenapiMergeResult } from "../core/openapi-merge.js";
 import { featureCoherence } from "../core/coherence.js";
 import {
   parseRequirements,
@@ -307,11 +306,14 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
       writes.push({ path: livingOpenapi, content: featText });
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
-      const { text, modified, componentsModified, unresolved } = mergeOpenapiPaths(
-        await readFile(livingOpenapi, "utf8"),
-        featText,
-        svc,
-      );
+      let merge: OpenapiMergeResult;
+      try {
+        merge = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
+      } catch (err) {
+        if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
+        throw err;
+      }
+      const { text, modified, componentsModified, unresolved } = merge;
       if (text !== null) {
         writes.push({ path: livingOpenapi, content: text });
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
@@ -477,196 +479,6 @@ function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string): vo
 /* ------------------------------------------------------------------ */
 /* Merging                                                             */
 /* ------------------------------------------------------------------ */
-
-/** What mergeOpenapiPaths computed: the merged text, and everything the plan owes an eye. */
-interface OpenapiMerge {
-  /** The merged living document, or null when the feature document has no paths to merge. */
-  text: string | null;
-  /** Labels of EXISTING operations the merge overwrites with different content. */
-  modified: string[];
-  /** `<kind>/<name>` of living components the closure copy overwrites with different content. */
-  componentsModified: string[];
-  /** Local $refs reachable from the merged content that resolve in NEITHER document. */
-  unresolved: Array<{ ref: string; from: string }>;
-}
-
-/**
- * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
- * text splicing): a new path is inserted whole; an existing path gains/overwrites
- * the feature's methods. Never produces duplicate keys or mixed indentation; the
- * living document's comments and formatting are preserved. Returns the merged
- * text (null when the feature document has no paths to merge), plus a label for
- * every EXISTING operation the merge overwrites with different content — the
- * feature file restates the full API, so only the operationId set-difference is
- * ever examined elsewhere, and a changed schema/params/response would otherwise
- * land with zero signal. Set membership + deep-equal only; no schema-diff semantics.
- *
- * The merged operations' `$ref` closure rides along: every
- * `#/components/<kind>/<name>` reachable from the merged path items — recursively
- * through the FEATURE's own components, a component referencing another pulls it
- * in — is copied into the living document, so an operation never lands pointing
- * at a schema that stayed behind. A needed component the living document already
- * has identically is left alone; one it has differently is overwritten wholesale
- * and reported (`componentsModified`, the op-modified discipline). A local ref
- * that resolves in NEITHER document is reported as `unresolved` — the caller
- * gates on it. External refs (URLs, file paths — anything not starting `#/`)
- * are out of scope: left untouched, never gated.
- */
-function mergeOpenapiPaths(
-  livingText: string,
-  featureText: string,
-  service: string,
-): OpenapiMerge {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new ArchiveFailure("merge-failed", `feature openapi for ${service} is not valid YAML: ${feature.errors[0]!.message}`);
-  }
-  const featPaths = feature.get("paths");
-  if (!isMap(featPaths) || featPaths.items.length === 0) {
-    return { text: null, modified: [], componentsModified: [], unresolved: [] };
-  }
-
-  const living = parseDocument(livingText);
-  if (living.errors.length > 0) {
-    throw new ArchiveFailure("merge-failed", `living openapi for ${service} is not valid YAML: ${living.errors[0]!.message}`);
-  }
-  const modified: string[] = [];
-  for (const item of featPaths.items) {
-    const path = scalarKey(item.key);
-    const featItem = item.value;
-    const existing = living.getIn(["paths", path]);
-    if (existing !== undefined && isMap(existing) && isMap(featItem)) {
-      for (const method of featItem.items) {
-        const m = scalarKey(method.key);
-        const before = living.getIn(["paths", path, m]);
-        if (HTTP_METHODS.has(m) && before !== undefined && !isDeepStrictEqual(toPlain(before), toPlain(method.value))) {
-          modified.push(opLabel(before, method.value, m, path));
-        }
-        living.setIn(["paths", path, m], toPlain(method.value));
-      }
-    } else {
-      living.setIn(["paths", path], toPlain(featItem));
-    }
-  }
-
-  // The $ref closure of what was just merged. Resolution is checked against
-  // plain snapshots (components untouched so far); the copies land afterwards,
-  // in discovery order, so the walk never chases its own writes.
-  const featPlain = (feature.toJS() ?? {}) as unknown;
-  const livingPlain = (living.toJS() ?? {}) as unknown;
-  const componentsModified: string[] = [];
-  const unresolved: OpenapiMerge["unresolved"] = [];
-  const visited = new Set<string>();
-  const copies: Array<{ kind: string; name: string; value: unknown }> = [];
-
-  const visitRef = (ref: string, from: string): void => {
-    if (!ref.startsWith("#/")) return; // external — out of scope, untouched, never gated
-    const m = /^#\/components\/([^/]+)\/([^/]+)(?:\/|$)/.exec(ref);
-    if (!m) {
-      // A local ref outside components (rare). Nothing to copy, but it must
-      // point at something in one of the two documents being merged.
-      if (!resolvePointer(featPlain, ref).found && !resolvePointer(livingPlain, ref).found) {
-        unresolved.push({ ref, from });
-      }
-      return;
-    }
-    const kind = m[1]!;
-    const name = m[2]!;
-    const key = `${kind}/${name}`;
-    if (visited.has(key)) return;
-    visited.add(key);
-    const inFeature = resolvePointer(featPlain, `#/components/${kind}/${name}`);
-    if (inFeature.found) {
-      copies.push({ kind, name, value: inFeature.value });
-      walk(inFeature.value, `components/${key}`);
-      return;
-    }
-    // Not the feature's to provide — fine if the living document has it.
-    if (!resolvePointer(livingPlain, `#/components/${kind}/${name}`).found) {
-      unresolved.push({ ref, from });
-    }
-  };
-
-  const walk = (node: unknown, from: string): void => {
-    for (const ref of collectRefs(node)) visitRef(ref, from);
-  };
-
-  for (const item of featPaths.items) {
-    walk(toPlain(item.value), `paths ${scalarKey(item.key)}`);
-  }
-
-  for (const { kind, name, value } of copies) {
-    const existing = living.getIn(["components", kind, name]);
-    if (existing !== undefined) {
-      if (isDeepStrictEqual(toPlain(existing), value)) continue;
-      componentsModified.push(`${kind}/${name}`);
-    }
-    living.setIn(["components", kind, name], value);
-  }
-
-  return { text: living.toString(), modified, componentsModified, unresolved };
-}
-
-/** Every `$ref` string value anywhere in a plain JS tree, in document order. */
-function collectRefs(node: unknown): string[] {
-  const out: string[] = [];
-  const walk = (n: unknown): void => {
-    if (Array.isArray(n)) {
-      for (const v of n) walk(v);
-      return;
-    }
-    if (n !== null && typeof n === "object") {
-      for (const [k, v] of Object.entries(n)) {
-        if (k === "$ref" && typeof v === "string") out.push(v);
-        else walk(v);
-      }
-    }
-  };
-  walk(node);
-  return out;
-}
-
-/**
- * Resolve a local JSON pointer (`#/a/b~1c`) against a plain JS tree. `found`
- * distinguishes "resolves to null/undefined-shaped content" from "no such
- * spot": a component whose body is legitimately null still resolves.
- */
-function resolvePointer(root: unknown, ref: string): { found: boolean; value: unknown } {
-  let cur: unknown = root;
-  for (const raw of ref.slice(2).split("/")) {
-    const seg = raw.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (Array.isArray(cur)) {
-      const i = Number(seg);
-      if (!Number.isInteger(i) || i < 0 || i >= cur.length) return { found: false, value: undefined };
-      cur = cur[i];
-    } else if (cur !== null && typeof cur === "object" && seg in (cur as Record<string, unknown>)) {
-      cur = (cur as Record<string, unknown>)[seg];
-    } else {
-      return { found: false, value: undefined };
-    }
-  }
-  return { found: true, value: cur };
-}
-
-/** Name an overwritten operation by its operationId (feature's, else living's), or by path+method. */
-function opLabel(before: unknown, after: unknown, method: string, path: string): string {
-  const idOf = (n: unknown): string | undefined => {
-    const v = isMap(n) ? n.get("operationId") : undefined;
-    return typeof v === "string" && v.length > 0 ? v : undefined;
-  };
-  const op = idOf(after) ?? idOf(before);
-  return op !== undefined ? `'${op}' (${method} ${path})` : `${method} ${path}`;
-}
-
-function scalarKey(key: unknown): string {
-  if (key && typeof key === "object" && "value" in key) return String((key as { value: unknown }).value);
-  return String(key);
-}
-
-function toPlain(node: unknown): unknown {
-  if (node && typeof node === "object" && "toJSON" in node) return (node as { toJSON: () => unknown }).toJSON();
-  return node;
-}
 
 interface LandscapePlan {
   writes: PlannedWrite[];
