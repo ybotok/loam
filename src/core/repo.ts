@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "./frontmatter.js";
+import type { FleetContext } from "./fleet-context.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";
@@ -198,12 +199,17 @@ async function countMarkdown(dir: string): Promise<number> {
 }
 
 /** Services a feature carries a delta for, ordered — the subdirs of its specs/. */
-export async function featureSpecServices(featureDir: string): Promise<string[]> {
+export async function featureSpecServices(
+  featureDir: string,
+  context?: FleetContext,
+): Promise<string[]> {
+  if (context !== undefined) return context.featureSpecServices(featureDir);
   return subdirs(featurePaths(featureDir).specsDir);
 }
 
 /** Every service in the docs repo, ordered by id. */
-export async function listServices(docsDir: string): Promise<ServiceEntry[]> {
+export async function listServices(docsDir: string, context?: FleetContext): Promise<ServiceEntry[]> {
+  if (context !== undefined) return context.listServices(docsDir);
   const names = await subdirs(join(docsDir, "services"));
   return Promise.all(
     names.map(async (id): Promise<ServiceEntry> => {
@@ -249,7 +255,9 @@ async function readFeature(dir: string, dirName: string, archived: boolean): Pro
 export async function listFeatures(
   docsDir: string,
   opts: { includeArchived?: boolean } = {},
+  context?: FleetContext,
 ): Promise<FeatureEntry[]> {
+  if (context !== undefined) return context.listFeatures(docsDir, opts);
   const root = featuresDir(docsDir);
   const active = (await subdirs(root)).filter((n) => n !== ARCHIVE_DIR);
   const out = await Promise.all(active.map((n) => readFeature(join(root, n), n, false)));
@@ -289,8 +297,9 @@ export async function resolveFeature(
   docsDir: string,
   arg: string,
   archived: ArchivedPolicy,
+  context?: FleetContext,
 ): Promise<FeatureEntry | null> {
-  const all = await listFeatures(docsDir, { includeArchived: archived !== "exclude" });
+  const all = await listFeatures(docsDir, { includeArchived: archived !== "exclude" }, context);
   const candidates = all
     .filter((f) => archived === "include" || f.archived === (archived === "only"))
     .filter((f) => f.dirName === arg || f.dirName.startsWith(arg + "-"))
@@ -310,8 +319,12 @@ export async function resolveFeature(
  * code stays `unknown-target` either way: the target is unknown to the command
  * that asked, and the prose carries the diagnosis.
  */
-export async function missingFeatureMessage(docsDir: string, arg: string): Promise<string> {
-  const shipped = await resolveFeature(docsDir, arg, "only");
+export async function missingFeatureMessage(
+  docsDir: string,
+  arg: string,
+  context?: FleetContext,
+): Promise<string> {
+  const shipped = await resolveFeature(docsDir, arg, "only", context);
   if (shipped !== null) {
     return (
       `Feature '${shipped.id}' is already archived (features/archive/${shipped.dirName}) — ` +

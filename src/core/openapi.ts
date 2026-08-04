@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
+import type { FleetContext } from "./fleet-context.js";
 import { featureSpecPaths, servicePaths } from "./repo.js";
 
 /**
@@ -55,7 +56,8 @@ export interface OpenapiDoc {
  * check then reported every inbound edge broken (`spine.op-undefined`) — a
  * false diagnosis pointing at the landscape when the truth was this file.
  */
-export async function readOpenapi(openapiPath: string): Promise<OpenapiDoc> {
+export async function readOpenapi(openapiPath: string, context?: FleetContext): Promise<OpenapiDoc> {
+  if (context !== undefined) return context.readOpenapi(openapiPath);
   if (!existsSync(openapiPath)) return { ops: [], unreadable: false };
   const text = await readFile(openapiPath, "utf8");
   let doc: unknown;
@@ -88,13 +90,13 @@ export async function readOpenapi(openapiPath: string): Promise<OpenapiDoc> {
 }
 
 /** The operations alone — for every caller whose own finding already covers the unreadable case. */
-export async function operations(openapiPath: string): Promise<Operation[]> {
-  return (await readOpenapi(openapiPath)).ops;
+export async function operations(openapiPath: string, context?: FleetContext): Promise<Operation[]> {
+  return (await readOpenapi(openapiPath, context)).ops;
 }
 
 /** The operationIds alone — `operations` for every caller that asks only "does it exist". */
-export async function operationIds(openapiPath: string): Promise<string[]> {
-  return (await operations(openapiPath)).map((o) => o.id);
+export async function operationIds(openapiPath: string, context?: FleetContext): Promise<string[]> {
+  return (await operations(openapiPath, context)).map((o) => o.id);
 }
 
 /**
@@ -106,7 +108,9 @@ export async function serviceOperationIds(
   docsDir: string,
   service: string,
   featureDir?: string,
+  context?: FleetContext,
 ): Promise<string[]> {
+  if (context !== undefined) return context.serviceOperationIds(docsDir, service, featureDir);
   const ids = new Set<string>();
   if (featureDir) {
     for (const id of await operationIds(featureSpecPaths(featureDir, service).openapi)) ids.add(id);

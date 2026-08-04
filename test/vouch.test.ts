@@ -198,6 +198,19 @@ describe("what vouch refuses", () => {
     });
   });
 
+  it("refuses an existing source outside the service repo and leaves the spec untouched", async () => {
+    await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - ../outside.ts`, CODE, async (p) => {
+      await writeFile(join(p.workDir, "..", "outside.ts"), "// external\n", "utf8");
+      const before = await p.read(SPEC);
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("sources-path-missing");
+      expect(json.error.message).toContain("escape the service repo");
+      expect(await p.read(SPEC)).toBe(before);
+    });
+  });
+
   it("refuses a glob pattern outright, naming it — patterns are no longer supported", async () => {
     // Under the removed engine this pattern had a real anchor and would have
     // been matched (by a dialect of loam's own). Now the entry itself refuses

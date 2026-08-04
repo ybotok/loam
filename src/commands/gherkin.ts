@@ -45,6 +45,7 @@ import {
   type StampedFeature,
 } from "../core/gherkin.js";
 import { LOAM_VERSION } from "../core/version.js";
+import { resolveInside, UnsafePathError } from "../core/path-safety.js";
 
 interface GherkinOptions {
   service?: string;
@@ -88,7 +89,17 @@ export function registerGherkin(program: Command): void {
       }
 
       const repoDir = process.cwd();
-      const root = gherkinRoot(repoDir, config.gherkinDir);
+      let root: string;
+      try {
+        root = gherkinRoot(repoDir, config.gherkinDir);
+      } catch (err) {
+        if (!(err instanceof UnsafePathError)) throw err;
+        return fail(
+          json,
+          "invalid-option",
+          `Cannot emit Gherkin: ${err.message}. The output directory must stay inside the service repo.`,
+        );
+      }
       const rel = (abs: string): string => relative(repoDir, abs).split(/[\\/]/).join("/");
 
       // The requirement set, by scope. Feature mode takes ADDED and MODIFIED —
@@ -172,7 +183,20 @@ export function registerGherkin(program: Command): void {
       type Action = "written" | "replaced" | "kept";
       const actions: Array<PlannedFeature & { path: string; action: Action; kept?: StampedFeature }> = [];
       for (const f of plan) {
-        const path = join(root, f.fileName);
+        let path: string;
+        try {
+          // Check the final file as well as the owned root: a pre-planted
+          // `<slug>.feature` symlink must not turn writeFile into an overwrite
+          // outside the repository.
+          path = resolveInside(
+            repoDir,
+            relative(repoDir, join(root, f.fileName)),
+            `gherkin file '${f.fileName}'`,
+          );
+        } catch (err) {
+          if (!(err instanceof UnsafePathError)) throw err;
+          return fail(json, "invalid-option", `Cannot emit Gherkin: ${err.message}.`);
+        }
         if (!existsSync(path)) {
           actions.push({ ...f, path, action: "written" });
           continue;

@@ -14,11 +14,12 @@
  * before it existed fails with a clear message rather than a crash.
  */
 import type { Command } from "commander";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { resolveInside, resolvePortableFileInside } from "../core/path-safety.js";
 import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import {
   message,
@@ -109,7 +110,7 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
     return;
   }
 
-  const manifest = await readManifest(feature.dir);
+  const manifest = await readManifest(feature.dir, docsDir, feature.id, feature.dirName);
   if (manifest === null) {
     fail(
       json,
@@ -127,13 +128,10 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
   const writes: PlannedWrite[] = [];
   const drifted: string[] = [];
   for (const entry of manifest.files) {
-    const abs = join(docsDir, ...entry.path.split("/"));
-    const current = existsSync(abs) ? await readFile(abs, "utf8") : null;
+    const current = existsSync(entry.target) ? await readFile(entry.target, "utf8") : null;
     if (current === null || sha256(current) !== entry.after) drifted.push(entry.path);
-    const before = entry.existed
-      ? await readFile(join(snapshotDir(feature.dir), "files", ...entry.path.split("/")), "utf8")
-      : null;
-    writes.push({ path: abs, content: before });
+    const before = entry.snapshot === null ? null : await readFile(entry.snapshot, "utf8");
+    writes.push({ path: entry.target, content: before });
   }
   if (drifted.length > 0 && !force) {
     fail(
@@ -198,16 +196,88 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
  * absent, unreadable, or a layout version it would have to guess at. All three are
  * the same answer to the caller: this feature cannot be unarchived automatically.
  */
-async function readManifest(featureDir: string): Promise<SnapshotManifest | null> {
-  const path = join(snapshotDir(featureDir), SNAPSHOT_MANIFEST);
-  if (!existsSync(path)) return null;
+interface ValidatedSnapshotEntry {
+  path: string;
+  existed: boolean;
+  after: string;
+  /** Contained destination under the docs repo. */
+  target: string;
+  /** Contained pre-image, or null when archive created the destination. */
+  snapshot: string | null;
+}
+
+interface ValidatedSnapshotManifest extends Omit<SnapshotManifest, "files"> {
+  files: ValidatedSnapshotEntry[];
+}
+
+async function readManifest(
+  featureDir: string,
+  docsDir: string,
+  featureId: string,
+  dirName: string,
+): Promise<ValidatedSnapshotManifest | null> {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as SnapshotManifest;
-    if (parsed.version !== SNAPSHOT_VERSION || !Array.isArray(parsed.files)) return null;
-    return parsed;
+    const path = resolveInside(
+      featureDir,
+      join(SNAPSHOT_DIR, SNAPSHOT_MANIFEST),
+      "snapshot manifest path",
+    );
+    if (!existsSync(path)) return null;
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+    if (!isRecord(parsed)) return null;
+    if (parsed.version !== SNAPSHOT_VERSION) return null;
+    if (parsed.feature !== featureId || parsed.dirName !== dirName) return null;
+    if (typeof parsed.archivedAt !== "string" || !isCanonicalIsoDate(parsed.archivedAt)) return null;
+    if (!Array.isArray(parsed.files)) return null;
+
+    const seen = new Set<string>();
+    const files: ValidatedSnapshotEntry[] = [];
+    for (const raw of parsed.files) {
+      if (!isRecord(raw)) return null;
+      if (typeof raw.path !== "string" || typeof raw.existed !== "boolean") return null;
+      if (typeof raw.after !== "string" || !/^[0-9a-f]{64}$/.test(raw.after)) return null;
+      if (seen.has(raw.path)) return null;
+      seen.add(raw.path);
+
+      const target = resolvePortableFileInside(docsDir, raw.path, `snapshot path '${raw.path}'`);
+      let snapshot: string | null = null;
+      const snapshotRel = `${SNAPSHOT_DIR}/files/${raw.path}`;
+      if (raw.existed) {
+        // Resolve from the feature directory, which always exists. The `files/`
+        // directory legitimately does not exist when every archive write was a
+        // creation; anchoring here permits that case while still inspecting an
+        // existing `files` component for symlink escape.
+        snapshot = resolvePortableFileInside(featureDir, snapshotRel, `snapshot pre-image '${raw.path}'`);
+        // Archive writes plain files. A missing pre-image or a symlink (even an
+        // internally-contained one) is not the byte snapshot this manifest
+        // claims, so refuse before any destination is staged.
+        if (!existsSync(snapshot) || !lstatSync(snapshot).isFile()) return null;
+      } else {
+        const unexpected = resolvePortableFileInside(featureDir, snapshotRel, `snapshot pre-image '${raw.path}'`);
+        if (existsSync(unexpected)) return null;
+      }
+      files.push({ path: raw.path, existed: raw.existed, after: raw.after, target, snapshot });
+    }
+
+    return {
+      version: SNAPSHOT_VERSION,
+      feature: featureId,
+      dirName,
+      archivedAt: parsed.archivedAt,
+      files,
+    };
   } catch {
     return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCanonicalIsoDate(value: string): boolean {
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && new Date(millis).toISOString() === value;
 }
 
 /** Remove `dir` and each empty ancestor, stopping short of `stopAt`. Best effort. */
@@ -225,4 +295,3 @@ async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
     cur = dirname(cur);
   }
 }
-

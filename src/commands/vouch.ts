@@ -30,7 +30,13 @@ import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
-import { contentDigest, missingSources, patternSources, sourcesDigest } from "../core/provenance.js";
+import {
+  contentDigest,
+  missingSources,
+  patternSources,
+  sourcesDigest,
+  unsafeSources,
+} from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
 import { message, rollbackStaged, stageWrites, swapStaged, type PlannedWrite } from "../core/staging.js";
 
@@ -326,6 +332,15 @@ async function verifySpec(
       ok: false,
       code: "sources-path-missing",
       message: `${label}: ${patterns.length} source(s) are glob patterns — ${patterns.join(", ")}. Patterns are no longer supported: name files or directories (a directory already covers everything beneath it). A stamp over a pattern would vouch for a file set nobody can be sure of.`,
+    };
+  }
+
+  const unsafe = unsafeSources(req.repoDir, sources);
+  if (unsafe.length > 0) {
+    return {
+      ok: false,
+      code: "sources-path-missing",
+      message: `${label}: ${unsafe.length} source(s) escape the service repo — ${unsafe.join(", ")}. Sources must be relative paths contained by this repository, including through symlinks; vouch will not hash files outside it.`,
     };
   }
 

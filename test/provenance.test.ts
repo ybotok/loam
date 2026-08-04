@@ -17,7 +17,7 @@
  *  - the draft/verified inventory in list and show
  */
 import { describe, expect, it } from "vitest";
-import { mkdir, utimes, writeFile } from "node:fs/promises";
+import { mkdir, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   coherentFixture,
@@ -315,6 +315,45 @@ describe("sources — the tie to the code", () => {
       );
       expect(finding.severity).toBe("error");
       expect(finding.message).toContain("src/gone.ts");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("rejects parent traversal and absolute source paths even when the external file exists", async () => {
+    for (const spelling of ["../outside.ts", "absolute"] as const) {
+      const p = await repoProject("sources:\n  - placeholder", []);
+      try {
+        const outside = join(p.workDir, "..", "outside.ts");
+        await writeFile(outside, "// not part of the service repo\n", "utf8");
+        const source = spelling === "absolute" ? outside : spelling;
+        await p.write(`services/${SVC}/spec.md`, spec(`service: ${SVC}\nstatus: verified\nowner: team\nsources:\n  - ${source}`));
+
+        const res = await runLoam(p.workDir, "validate", "--json");
+        expect(res.code).toBe(1);
+        const finding = JSON.parse(res.stdout).targets[0].findings.find(
+          (f: { code: string }) => f.code === "sources.path-outside",
+        );
+        expect(finding.severity).toBe("error");
+        expect(finding.message).toContain(source);
+      } finally {
+        await p.destroy();
+      }
+    }
+  });
+
+  it("rejects a source symlink whose target is outside the service repo", async () => {
+    const p = await repoProject("sources:\n  - src/external.ts", []);
+    try {
+      const outside = join(p.workDir, "..", "outside.ts");
+      await writeFile(outside, "// external\n", "utf8");
+      await mkdir(join(p.workDir, "src"), { recursive: true });
+      await symlink(outside, join(p.workDir, "src", "external.ts"));
+
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1);
+      expect(codesOf(JSON.parse(res.stdout))).toContain("sources.path-outside");
+      await expect(sourcesDigest(p.workDir, ["src/external.ts"])).rejects.toThrow(/outside/i);
     } finally {
       await p.destroy();
     }

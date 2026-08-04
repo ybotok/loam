@@ -54,6 +54,7 @@ import {
 import { gherkinFindings } from "../core/gherkin.js";
 import { readHealth } from "../core/health.js";
 import { LOAM_VERSION } from "../core/version.js";
+import { FleetContext } from "../core/fleet-context.js";
 
 interface ValidateOptions {
   service?: string;
@@ -97,6 +98,9 @@ export function registerValidate(program: Command): void {
         return;
       }
       const { docsDir } = config;
+      // One invocation, one filesystem snapshot. Nothing is global: a later
+      // command gets a fresh index and therefore cannot observe stale files.
+      const fleet = new FleetContext();
 
       // `sources` are paths into a service's own repository, so they only mean
       // something when loam is standing in that repository — which is exactly
@@ -115,10 +119,10 @@ export function registerValidate(program: Command): void {
         // a fresh LikeC4 workspace per call, and paying that per service makes
         // the fleet's main CI command O(services) re-parses of the same file.
         const lp = landscapeFile(docsDir);
-        const land = existsSync(lp) ? await loadFile(lp) : null;
+        const land = existsSync(lp) ? await fleet.loadLikeC4(lp) : null;
         // The fleet-level cross-check first: it frames everything below it, and a
         // service nobody drew is worth knowing before its own findings scroll past.
-        const landscape = await validateLandscape(docsDir, land);
+        const landscape = await validateLandscape(docsDir, land, fleet);
         if (landscape) targets.push(landscape);
         // The agent contract check, --all only: AGENTS.md is written once and
         // never refreshed (the ownership contract), so the one thing the
@@ -135,38 +139,38 @@ export function registerValidate(program: Command): void {
           if (landscape) landscape.findings.push(agents);
           else targets.push({ kind: "landscape", id: "landscape", findings: [agents] });
         }
-        for (const svc of await listServices(docsDir)) {
-          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land, config.gherkinDir));
+        for (const svc of await listServices(docsDir, fleet)) {
+          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land, config.gherkinDir, fleet));
           if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
         }
-        for (const feat of await listFeatures(docsDir)) {
-          targets.push(await validateFeature(docsDir, feat, land));
+        for (const feat of await listFeatures(docsDir, {}, fleet)) {
+          targets.push(await validateFeature(docsDir, feat, land, fleet));
         }
       } else if (opts.feature) {
-        const feature = await resolveFeature(docsDir, opts.feature, "exclude");
+        const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);
         if (!feature) {
-          fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature));
+          fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature, fleet));
           return;
         }
-        targets.push(await validateFeature(docsDir, feature));
+        targets.push(await validateFeature(docsDir, feature, undefined, fleet));
       } else if (target !== undefined) {
         // The positional reads the way `show` reads one: try the feature first
         // (ids like FEAT-101 are distinctive, service names are arbitrary), then
         // the service. --service/--feature stay as the explicit spellings for a
         // name that could be both.
-        const feature = await resolveFeature(docsDir, target, "exclude");
+        const feature = await resolveFeature(docsDir, target, "exclude", fleet);
         if (feature) {
-          targets.push(await validateFeature(docsDir, feature));
+          targets.push(await validateFeature(docsDir, feature, undefined, fleet));
         } else {
-          const isService = (await listServices(docsDir)).some((s) => s.id === target);
+          const isService = (await listServices(docsDir, fleet)).some((s) => s.id === target);
           // Neither reading exists. An archived feature is its own diagnosis
           // ("already archived", not "no such thing"); anything else reads as a
           // service, so the did-you-mean hints in service.unknown fire.
-          if (!isService && (await resolveFeature(docsDir, target, "only")) !== null) {
-            fail(json, "unknown-target", await missingFeatureMessage(docsDir, target));
+          if (!isService && (await resolveFeature(docsDir, target, "only", fleet)) !== null) {
+            fail(json, "unknown-target", await missingFeatureMessage(docsDir, target, fleet));
             return;
           }
-          targets.push(await validateService(docsDir, target, repoOf(target), undefined, config.gherkinDir));
+          targets.push(await validateService(docsDir, target, repoOf(target), undefined, config.gherkinDir, fleet));
         }
       } else {
         const service = opts.service ?? config.service;
@@ -174,7 +178,7 @@ export function registerValidate(program: Command): void {
           fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
           return;
         }
-        targets.push(await validateService(docsDir, service, repoOf(service), undefined, config.gherkinDir));
+        targets.push(await validateService(docsDir, service, repoOf(service), undefined, config.gherkinDir, fleet));
       }
 
       const valid = reportValid(targets);
@@ -240,6 +244,7 @@ const EXTERNAL_TAG = "external";
 async function validateLandscape(
   docsDir: string,
   preloaded?: LoadedDoc | null,
+  fleet?: FleetContext,
 ): Promise<TargetReport | null> {
   const path = landscapeFile(docsDir);
   if (!existsSync(path)) return null;
@@ -247,7 +252,7 @@ async function validateLandscape(
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "landscape", id: "landscape", findings };
 
-  const land = preloaded ?? (await loadFile(path));
+  const land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
   if (land.errors.length > 0) {
     // Nothing may be concluded from a document that did not parse — in particular
     // not that every service is unmodelled.
@@ -260,7 +265,7 @@ async function validateLandscape(
     return report;
   }
 
-  const services = new Set((await listServices(docsDir)).map((s) => s.id));
+  const services = new Set((await listServices(docsDir, fleet)).map((s) => s.id));
   // Services are top-level; a dotted id is a container inside one.
   const drawn = land.elements.filter((e) => !e.id.includes("."));
   const modelled = new Set(drawn.map(elementService));
@@ -334,6 +339,7 @@ async function validateService(
   repoDir?: string,
   preloaded?: LoadedDoc | null,
   gherkinDir?: string,
+  fleet?: FleetContext,
 ): Promise<TargetReport> {
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
@@ -342,7 +348,7 @@ async function validateService(
   // A directory that does not exist is a different fact from a directory with
   // everything missing: validating a typo must say "typo", not "unadopted".
   if (!existsSync(paths.dir)) {
-    const close = closeIds(service, (await listServices(docsDir)).map((s) => s.id));
+    const close = closeIds(service, (await listServices(docsDir, fleet)).map((s) => s.id));
     findings.push({
       severity: "error",
       code: "service.unknown",
@@ -375,7 +381,7 @@ async function validateService(
       text: { marker: false },
     });
   } else {
-    const model = await loadFile(paths.model);
+    const model = fleet === undefined ? await loadFile(paths.model) : await fleet.loadLikeC4(paths.model);
     elements = model.elements;
     relationships = model.relationships;
     if (model.errors.length > 0) {
@@ -398,12 +404,19 @@ async function validateService(
   // hands in the doc it already loaded, single-service runs load on demand. It
   // serves two checks below — the no-openapi grace and the spine.
   const land =
-    preloaded ?? (existsSync(landscapeFile(docsDir)) ? await loadFile(landscapeFile(docsDir)) : null);
+    preloaded ??
+    (existsSync(landscapeFile(docsDir))
+      ? fleet === undefined
+        ? await loadFile(landscapeFile(docsDir))
+        : await fleet.loadLikeC4(landscapeFile(docsDir))
+      : null);
 
   // Requirement coverage.
   let reqs: Requirement[] = [];
   if (existsSync(paths.spec)) {
-    reqs = parseRequirements(await readFile(paths.spec, "utf8"));
+    reqs = fleet === undefined
+      ? parseRequirements(await readFile(paths.spec, "utf8"))
+      : await fleet.readRequirements(paths.spec);
     findings.push(coverageFinding(`${service}: requirements`, reqs));
     findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
     findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
@@ -416,7 +429,7 @@ async function validateService(
   }
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
-  const api = await readOpenapi(paths.openapi);
+  const api = await readOpenapi(paths.openapi, fleet);
   const ops = api.ops.map((o) => o.id);
   const deprecatedOps = new Set(api.ops.filter((o) => o.deprecated).map((o) => o.id));
   if (!existsSync(paths.openapi)) {
@@ -569,7 +582,9 @@ async function validateService(
   // the CI escalation.
   const health = await readHealth(paths.health);
   const archReqs = existsSync(paths.archSpec)
-    ? parseRequirements(await readFile(paths.archSpec, "utf8"))
+    ? fleet === undefined
+      ? parseRequirements(await readFile(paths.archSpec, "utf8"))
+      : await fleet.readRequirements(paths.archSpec)
     : [];
   if (existsSync(paths.archSpec)) {
     findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
@@ -622,7 +637,7 @@ async function validateService(
   // The generated-gherkin freshness chain, service-repo-scoped like sources.*:
   // it needs the repo (the suite lives there), and it stays quiet until
   // <gherkinDir>/loam/ exists — a service that never generated has not opted in.
-  findings.push(...(await gherkinFindings({ docsDir, service, repoDir, gherkinDir })));
+  findings.push(...(await gherkinFindings({ docsDir, service, repoDir, gherkinDir, fleet })));
 
   return report;
 }
@@ -737,6 +752,7 @@ async function validateFeature(
   docsDir: string,
   feature: FeatureEntry,
   preloadedLand?: LoadedDoc | null,
+  fleet?: FleetContext,
 ): Promise<TargetReport> {
   const findings: Finding[] = [];
   const featureDir = feature.dir;
@@ -752,7 +768,7 @@ async function validateFeature(
   let deltaDoc: LoadedDoc | undefined;
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = await loadFile(deltaPath);
+    const res = fleet === undefined ? await loadFile(deltaPath) : await fleet.loadLikeC4(deltaPath);
     deltaDoc = res;
     if (res.errors.length > 0) {
       findings.push({
@@ -780,21 +796,21 @@ async function validateFeature(
   // the arch spec through the same check — and collect scenario text.
   let scenarioText = "";
   const archDeltas: Array<{ service: string; reqs: Requirement[] }> = [];
-  for (const svc of await featureSpecServices(featureDir)) {
+  for (const svc of await featureSpecServices(featureDir, fleet)) {
     const p = featureSpecPaths(featureDir, svc);
     if (existsSync(p.spec)) {
-      const raw = await readFile(p.spec, "utf8");
+      const raw = fleet === undefined ? await readFile(p.spec, "utf8") : await fleet.readText(p.spec);
       scenarioText += "\n" + raw.toLowerCase();
-      const reqs = parseRequirements(raw);
+      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.spec);
       findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
       // The keep-last quirk loses lines in a delta exactly as in a living spec
       // — and a delta's lost Operations: line then merges into the living one.
       findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
     }
     if (existsSync(p.archSpec)) {
-      const raw = await readFile(p.archSpec, "utf8");
+      const raw = fleet === undefined ? await readFile(p.archSpec, "utf8") : await fleet.readText(p.archSpec);
       scenarioText += "\n" + raw.toLowerCase();
-      const reqs = parseRequirements(raw);
+      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.archSpec);
       archDeltas.push({ service: svc, reqs });
       findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
       findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
@@ -861,7 +877,11 @@ async function validateFeature(
     let land = preloadedLand;
     if (land === undefined) {
       const lp = landscapeFile(docsDir);
-      land = existsSync(lp) ? await loadFile(lp) : null;
+      land = existsSync(lp)
+        ? fleet === undefined
+          ? await loadFile(lp)
+          : await fleet.loadLikeC4(lp)
+        : null;
     }
     const landParses = land !== null && land !== undefined && land.errors.length === 0 ? land : null;
     const baseElements = [...elements, ...(landParses?.elements ?? [])];
@@ -875,7 +895,11 @@ async function validateFeature(
       const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = servicePaths(docsDir, svc).model;
-        const model = existsSync(modelPath) ? await loadFile(modelPath) : null;
+        const model = existsSync(modelPath)
+          ? fleet === undefined
+            ? await loadFile(modelPath)
+            : await fleet.loadLikeC4(modelPath)
+          : null;
         if (model !== null && model.errors.length === 0) {
           scope = {
             elements: [...baseElements, ...model.elements],
@@ -889,7 +913,7 @@ async function validateFeature(
   }
 
   // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
-  const issues = await featureCoherence(docsDir, featureDir, featureId, deltaDoc);
+  const issues = await featureCoherence(docsDir, featureDir, featureId, deltaDoc, fleet);
   if (issues.length === 0) {
     findings.push({
       severity: "ok",

@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, afterEach } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   coherentFixture,
@@ -701,5 +701,71 @@ describe("gherkinDir", () => {
     const bad = await runLoam(p.workDir, "gherkin", "--json");
     expect(bad.code).toBe(1);
     expect(JSON.parse(bad.stdout).error.code).toBe("config-invalid");
+  });
+
+  it("refuses absolute and parent-traversing output directories before creating anything", async () => {
+    for (const gherkinDir of ["../outside", join(process.cwd(), "absolute-output")]) {
+      const p = await project(
+        { "services/payment-service/spec.md": LIVING_SPEC },
+        { service: "payment-service" },
+      );
+      try {
+        await writeFile(
+          join(p.workDir, "loam.json"),
+          JSON.stringify({ docsDir: p.docsDir, service: "payment-service", gherkinDir }),
+          "utf8",
+        );
+        const res = await runLoam(p.workDir, "gherkin", "--json");
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("config-invalid");
+        expect(existsSync(join(p.workDir, "..", "outside", "loam"))).toBe(false);
+      } finally {
+        await p.destroy();
+      }
+    }
+  });
+
+  it("refuses an output symlink that leaves the service repo for generation and validation", async () => {
+    const p = await project(
+      { "services/payment-service/spec.md": LIVING_SPEC },
+      { service: "payment-service" },
+    );
+    try {
+      const outside = join(p.workDir, "..", "gherkin-output");
+      await mkdir(outside, { recursive: true });
+      await symlink(outside, join(p.workDir, "features"));
+
+      const generated = await runLoam(p.workDir, "gherkin", "--json");
+      expect(generated.code).toBe(1);
+      expect(JSON.parse(generated.stdout).error.code).toBe("invalid-option");
+      expect(existsSync(join(outside, "loam"))).toBe(false);
+
+      const validated = await runLoam(p.workDir, "validate", "--json");
+      expect(validated.code).toBe(1);
+      const codes = JSON.parse(validated.stdout).targets[0].findings.map((f: { code: string }) => f.code);
+      expect(codes).toContain("gherkin.path-outside");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("refuses a generated-file symlink instead of overwriting its external target", async () => {
+    const p = await project(
+      { "services/payment-service/spec.md": LIVING_SPEC },
+      { service: "payment-service" },
+    );
+    try {
+      const outside = join(p.workDir, "..", "external.feature");
+      await writeFile(outside, "must survive\n", "utf8");
+      await mkdir(join(p.workDir, "features", "loam"), { recursive: true });
+      await symlink(outside, join(p.workDir, "features", "loam", "authorize-a-payment.feature"));
+
+      const res = await runLoam(p.workDir, "gherkin", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
+      expect(await readFile(outside, "utf8")).toBe("must survive\n");
+    } finally {
+      await p.destroy();
+    }
   });
 });

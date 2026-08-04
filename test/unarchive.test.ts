@@ -20,7 +20,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { join } from "node:path";
-import { rm } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { parseRequirements } from "../src/core/spec.js";
 import {
   coherentFixture,
@@ -184,6 +184,23 @@ describe("the round trip", () => {
     }
   });
 
+  it("restores a create-only archive whose snapshot has no files directory", async () => {
+    const files = coherentFixture();
+    delete files["architecture/landscape.likec4"];
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      expect(p.exists("features/archive/FEAT-1-split/.loam-before/files")).toBe(false);
+      expect(p.exists("services/payment-split-service/spec.md")).toBe(true);
+
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
+      expect(p.exists("services/payment-split-service")).toBe(false);
+      expect(p.exists("features/FEAT-1-split/specs/payment-split-service/spec.md")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("leaves `loam list` and `loam validate` seeing exactly what they saw before the archive", async () => {
     const p = await makeProject(coherentFixture());
     try {
@@ -200,10 +217,29 @@ describe("the round trip", () => {
 });
 
 describe("refusals", () => {
+  interface MutableManifest {
+    feature: string;
+    files: Array<{ path: string; existed: boolean; after: string }>;
+    [key: string]: unknown;
+  }
+
   async function archived(): Promise<Project> {
     const p = await makeProject(coherentFixture());
     await runLoam(p.workDir, "archive", "FEAT-1");
     return p;
+  }
+
+  const manifestPath = (p: Project): string =>
+    join(p.docsDir, "features/archive/FEAT-1-split/.loam-before/manifest.json");
+
+  async function corruptManifest(
+    p: Project,
+    mutate: (manifest: MutableManifest) => void,
+  ): Promise<void> {
+    const path = manifestPath(p);
+    const manifest = JSON.parse(await readFile(path, "utf8")) as MutableManifest;
+    mutate(manifest);
+    await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
   }
 
   it("refuses to bury an active feature of the same id, and changes nothing", async () => {
@@ -254,6 +290,95 @@ describe("refusals", () => {
       await rm(join(p.docsDir, "features/archive/FEAT-1-split/.loam-before"), { recursive: true });
       const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
       expect(JSON.parse(res.stdout)).toMatchObject({ ok: false, error: { code: "snapshot-missing" } });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("rejects non-canonical, duplicate, mismatched, and invalid-hash manifest data before staging", async () => {
+    const corruptions: Array<(manifest: MutableManifest, p: Project) => void> = [
+      (manifest) => {
+        manifest.files[0]!.path = "../outside.txt";
+      },
+      (manifest, p) => {
+        manifest.files[0]!.path = join(p.docsDir, "outside.txt");
+      },
+      (manifest) => {
+        manifest.files.push({ ...manifest.files[0]! });
+      },
+      (manifest) => {
+        manifest.files[0]!.after = "not-a-sha256";
+      },
+      (manifest) => {
+        manifest.feature = "FEAT-OTHER";
+      },
+    ];
+
+    for (const mutate of corruptions) {
+      const p = await archived();
+      try {
+        await corruptManifest(p, (manifest) => mutate(manifest, p));
+        const before = await treeHashes(p.docsDir);
+        const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
+        expect(await treeHashes(p.docsDir)).toEqual(before);
+      } finally {
+        await p.destroy();
+      }
+    }
+  });
+
+  it("rejects a manifest destination reached through a symlink outside docsDir", async () => {
+    const p = await archived();
+    try {
+      const outside = join(p.docsDir, "..", "outside");
+      await mkdir(outside, { recursive: true });
+      await writeFile(join(outside, "owned.txt"), "must survive\n", "utf8");
+      await symlink(outside, join(p.docsDir, "escape"));
+      await corruptManifest(p, (manifest) => {
+        manifest.files[0] = {
+          ...manifest.files[0],
+          path: "escape/owned.txt",
+          existed: false,
+        };
+      });
+      const mergedSpec = await p.read("services/payment-split-service/spec.md");
+      const manifestBefore = await readFile(manifestPath(p), "utf8");
+
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--force", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
+      expect(await readFile(join(outside, "owned.txt"), "utf8")).toBe("must survive\n");
+      expect(await p.read("services/payment-split-service/spec.md")).toBe(mergedSpec);
+      expect(await readFile(manifestPath(p), "utf8")).toBe(manifestBefore);
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("rejects a snapshot pre-image symlink instead of restoring bytes from outside the archive", async () => {
+    const p = await archived();
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath(p), "utf8")) as MutableManifest;
+      const entry = manifest.files.find((file) => file.existed)!;
+      const preimage = join(
+        p.docsDir,
+        "features/archive/FEAT-1-split/.loam-before/files",
+        ...entry.path.split("/"),
+      );
+      const outside = join(p.docsDir, "..", "forged-preimage.txt");
+      await writeFile(outside, "forged bytes\n", "utf8");
+      await rm(preimage);
+      await symlink(outside, preimage);
+      const living = await p.read(entry.path);
+
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--force", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
+      expect(await p.read(entry.path)).toBe(living);
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
     } finally {
       await p.destroy();
     }

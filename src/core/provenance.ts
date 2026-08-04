@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import {
   listField,
   parseFrontmatter,
@@ -28,6 +28,7 @@ import {
 } from "./frontmatter.js";
 import type { Finding } from "./report.js";
 import { featurePaths, servicePaths } from "./repo.js";
+import { resolveInside } from "./path-safety.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
 const EXPECTED = ["owner"] as const;
@@ -196,6 +197,19 @@ async function sourceFindings(
         code: "sources.path-missing",
         message: `${label}: ${patterns.length} source(s) are glob patterns — ${patterns.join(", ")}. Patterns are no longer supported: name files or directories (a directory already covers everything beneath it).`,
         details: patterns,
+        text: { detailPrefix: "- " },
+      },
+    ];
+  }
+
+  const unsafe = unsafeSources(repoDir, sources);
+  if (unsafe.length > 0) {
+    return [
+      {
+        severity: "error",
+        code: "sources.path-outside",
+        message: `${label}: ${unsafe.length} source(s) escape the service repo — ${unsafe.join(", ")}. Sources must be relative paths contained by this repository, including through symlinks.`,
+        details: unsafe,
         text: { detailPrefix: "- " },
       },
     ];
@@ -373,7 +387,7 @@ async function expandSources(repoDir: string, sources: string[]): Promise<Source
   for (const source of sources) {
     const cleaned = source.trim();
     if (cleaned.length === 0) continue;
-    const root = isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned);
+    const root = resolveInside(repoDir, cleaned, `source '${source}'`);
     for (const abs of await filesUnder(root)) found.set(relOf(abs), abs);
   }
 
@@ -426,9 +440,27 @@ export function missingSources(repoDir: string, sources: string[]): string[] {
   return sources.filter((s) => !sourceExists(repoDir, s));
 }
 
+/** Entries that are absolute, traverse upward, or escape through a symlink. */
+export function unsafeSources(repoDir: string, sources: string[]): string[] {
+  return sources.filter((source) => {
+    const cleaned = source.trim();
+    if (cleaned.length === 0) return false;
+    try {
+      resolveInside(repoDir, cleaned, `source '${source}'`);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
 /** Does a `sources` entry point at something real? Literal paths only, checked exactly. */
 function sourceExists(repoDir: string, source: string): boolean {
   const cleaned = source.trim();
   if (cleaned.length === 0) return false;
-  return existsSync(isAbsolute(cleaned) ? cleaned : resolve(repoDir, cleaned));
+  try {
+    return existsSync(resolveInside(repoDir, cleaned, `source '${source}'`));
+  } catch {
+    return false;
+  }
 }

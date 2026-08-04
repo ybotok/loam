@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { resolveInside } from "./path-safety.js";
 
 /** Local config, committed at the root of a service repo (or the docs repo itself). */
 export const CONFIG_FILENAME = "loam.json";
@@ -38,6 +39,12 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfi
     // and defaulting would send generated files somewhere nobody chose.
     if (parsed.gherkinDir !== undefined && (typeof parsed.gherkinDir !== "string" || parsed.gherkinDir === "")) {
       throw new Error(`"gherkinDir" must be a non-empty string when present`);
+    }
+    if (parsed.gherkinDir !== undefined) {
+      // Validate the owned output directory, not merely its spelling. This also
+      // catches an otherwise-contained path whose existing parent is a symlink
+      // out of the service repo.
+      resolveInside(dirname(p), join(parsed.gherkinDir, "loam"), `"gherkinDir"`);
     }
     // Resolve here, against the file's own directory, so the doc comment on
     // `docsDir` is true no matter where a caller later resolves the path from.

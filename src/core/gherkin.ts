@@ -23,11 +23,13 @@
  */
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parseRequirements, type Requirement } from "./spec.js";
 import { listFeatures, servicePaths, SPEC_AXES, type SpecAxis } from "./repo.js";
+import type { FleetContext } from "./fleet-context.js";
 import type { Finding } from "./report.js";
 import { scenarioBodyHash, type ScenarioAxis } from "./verify.js";
+import { resolveInside, UnsafePathError } from "./path-safety.js";
 
 /** Where Gherkin lives in a service repo when loam.json does not say. */
 export const DEFAULT_GHERKIN_DIR = "features";
@@ -40,7 +42,11 @@ export const GHERKIN_DIGEST_LENGTH = 16;
 
 /** The one directory `loam gherkin` may touch: `<repo>/<gherkinDir>/loam/`. */
 export function gherkinRoot(repoDir: string, gherkinDir?: string): string {
-  return join(resolve(repoDir, gherkinDir ?? DEFAULT_GHERKIN_DIR), GHERKIN_SUBDIR);
+  return resolveInside(
+    repoDir,
+    join(gherkinDir ?? DEFAULT_GHERKIN_DIR, GHERKIN_SUBDIR),
+    "gherkin output directory",
+  );
 }
 
 /**
@@ -374,9 +380,23 @@ export async function gherkinFindings(ctx: {
   /** The service repo, when loam is standing in it. Undefined disables the chain, like sources.*. */
   repoDir?: string;
   gherkinDir?: string;
+  fleet?: FleetContext;
 }): Promise<Finding[]> {
   if (ctx.repoDir === undefined) return [];
-  const root = gherkinRoot(ctx.repoDir, ctx.gherkinDir);
+  let root: string;
+  try {
+    root = gherkinRoot(ctx.repoDir, ctx.gherkinDir);
+  } catch (err) {
+    if (!(err instanceof UnsafePathError)) throw err;
+    return [
+      {
+        severity: "error",
+        code: "gherkin.path-outside",
+        subject: ctx.service,
+        message: `The configured Gherkin output is unsafe: ${err.message}. It must stay inside the service repo.`,
+      },
+    ];
+  }
   if (!existsSync(root)) return [];
 
   // The living reference, per axis: requirement names, and scenario digests.
@@ -393,7 +413,10 @@ export async function gherkinFindings(ctx: {
     const state: AxisState = { file: axis.file, reqNames: new Set(), digests: new Set(), scenarios: [] };
     const path = paths[axis.key];
     if (existsSync(path)) {
-      for (const r of parseRequirements(await readFile(path, "utf8"))) {
+      const reqs = ctx.fleet === undefined
+        ? parseRequirements(await readFile(path, "utf8"))
+        : await ctx.fleet.readRequirements(path);
+      for (const r of reqs) {
         if (r.kind === "REMOVED") continue;
         state.reqNames.add(r.name);
         for (const s of r.scenarios) {
@@ -408,7 +431,7 @@ export async function gherkinFindings(ctx: {
 
   // The stamped side. Every stamped digest counts toward coverage — an
   // in-flight file whose scenario matches the living words IS a test for them.
-  const active = new Set((await listFeatures(ctx.docsDir)).map((f) => f.id));
+  const active = new Set((await listFeatures(ctx.docsDir, {}, ctx.fleet)).map((f) => f.id));
   const stampedDigests = { business: new Set<string>(), arch: new Set<string>() };
   const parsed: Array<{ rel: string; axis: "business" | "arch"; file: StampedFeature }> = [];
   let stampedScenarios = 0;

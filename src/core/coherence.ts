@@ -6,6 +6,7 @@ import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, listFeatures, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 import { operationIds, operations, serviceOperationIds } from "./openapi.js";
+import type { FleetContext } from "./fleet-context.js";
 
 export type { Issue, IssueCode } from "./issue.js";
 
@@ -25,10 +26,11 @@ export async function featureCoherence(
   featureDir: string,
   featureId: string,
   preloadedDelta?: LoadedDoc,
+  context?: FleetContext,
 ): Promise<Issue[]> {
   // Delta shape first: a diff that does not apply to the living spec explains
   // everything downstream, and it is the one breach that is silent without a check.
-  const issues: Issue[] = await deltaShapeIssues(docsDir, featureDir, featureId);
+  const issues: Issue[] = await deltaShapeIssues(docsDir, featureDir, featureId, context);
 
   // --- C4 delta ---
   let elements: Elem[] = [];
@@ -36,7 +38,7 @@ export async function featureCoherence(
   let taggedRels: Rel[] = [];
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = preloadedDelta ?? (await loadFile(deltaPath));
+    const res = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
     if (res.errors.length > 0) {
       // An unreadable architecture axis can prove nothing — it must never count as coherent.
       issues.push({
@@ -70,22 +72,24 @@ export async function featureCoherence(
   const svcOf = (id: string): string => serviceOf(elements, id);
 
   // --- per-service specs (requirement operations) + openapi deltas ---
-  const svcNames = await featureSpecServices(featureDir);
+  const svcNames = await featureSpecServices(featureDir, context);
   const reqOps = new Map<string, string[]>();
   const featureApiOps = new Set<string>();
   for (const svc of svcNames) {
     const paths = featureSpecPaths(featureDir, svc);
     if (existsSync(paths.spec)) {
-      const reqs = parseRequirements(await readFile(paths.spec, "utf8"));
+      const reqs = context === undefined
+        ? parseRequirements(await readFile(paths.spec, "utf8"))
+        : await context.readRequirements(paths.spec);
       // REMOVED requirements are being retired along with their operations — their
       // ops neither claim the contract (E1) nor govern anything after the merge.
       reqOps.set(svc, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
     }
     // Only operations genuinely NEW to this service count as feature-added: authors
     // restate the full living API in the delta file (it is a complete document, not a patch).
-    const featOps = await operationIds(paths.openapi);
+    const featOps = await operationIds(paths.openapi, context);
     if (featOps.length > 0) {
-      const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi));
+      const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi, context));
       for (const op of featOps) if (!living.has(op)) featureApiOps.add(op);
     }
   }
@@ -98,9 +102,12 @@ export async function featureCoherence(
     let ops = livingGoverned.get(service);
     if (!ops) {
       const p = servicePaths(docsDir, service).spec;
-      ops = new Set(
-        existsSync(p) ? parseRequirements(await readFile(p, "utf8")).flatMap((r) => r.operations) : [],
-      );
+      const reqs = existsSync(p)
+        ? context === undefined
+          ? parseRequirements(await readFile(p, "utf8"))
+          : await context.readRequirements(p)
+        : [];
+      ops = new Set(reqs.flatMap((r) => r.operations));
       livingGoverned.set(service, ops);
     }
     return ops.has(op);
@@ -114,13 +121,13 @@ export async function featureCoherence(
   // for the fleet scan.
   let inFlightOps: Map<string, string> | null = null;
   const definedElsewhere = async (service: string, op: string): Promise<string | undefined> => {
-    inFlightOps ??= await activeOpAdditions(docsDir, featureId);
+    inFlightOps ??= await activeOpAdditions(docsDir, featureId, context);
     return inFlightOps.get(`${service} ${op}`);
   };
 
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {
-    const available = await serviceOperationIds(docsDir, svc, featureDir);
+    const available = await serviceOperationIds(docsDir, svc, featureDir, context);
     for (const op of ops) {
       if (available.includes(op)) continue;
       const other = await definedElsewhere(svc, op);
@@ -140,7 +147,7 @@ export async function featureCoherence(
   const deprecatedInLiving = async (service: string, op: string): Promise<boolean> => {
     let set = livingDeprecated.get(service);
     if (!set) {
-      const list = await operations(servicePaths(docsDir, service).openapi);
+      const list = await operations(servicePaths(docsDir, service).openapi, context);
       set = new Set(list.filter((o) => o.deprecated).map((o) => o.id));
       livingDeprecated.set(service, set);
     }
@@ -157,7 +164,7 @@ export async function featureCoherence(
   const undeprecatedByFeature = async (service: string, op: string): Promise<boolean> => {
     let set = featureUndeprecated.get(service);
     if (!set) {
-      const list = await operations(featureSpecPaths(featureDir, service).openapi);
+      const list = await operations(featureSpecPaths(featureDir, service).openapi, context);
       set = new Set(list.filter((o) => !o.deprecated).map((o) => o.id));
       featureUndeprecated.set(service, set);
     }
@@ -173,7 +180,7 @@ export async function featureCoherence(
       continue;
     }
     const target = svcOf(r.target);
-    const available = await serviceOperationIds(docsDir, target, featureDir);
+    const available = await serviceOperationIds(docsDir, target, featureDir, context);
     if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);
       if (other !== undefined) {
@@ -222,12 +229,16 @@ export async function featureCoherence(
  * gone for good, and neither is "pending". First feature wins a clash — one name
  * to archive first is enough to make progress.
  */
-async function activeOpAdditions(docsDir: string, exclude: string): Promise<Map<string, string>> {
+async function activeOpAdditions(
+  docsDir: string,
+  exclude: string,
+  context?: FleetContext,
+): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  for (const feature of await listFeatures(docsDir)) {
+  for (const feature of await listFeatures(docsDir, {}, context)) {
     if (feature.id === exclude) continue;
     for (const service of feature.services) {
-      for (const op of await operationIds(featureSpecPaths(feature.dir, service).openapi)) {
+      for (const op of await operationIds(featureSpecPaths(feature.dir, service).openapi, context)) {
         const k = `${service} ${op}`;
         if (!map.has(k)) map.set(k, feature.id);
       }
