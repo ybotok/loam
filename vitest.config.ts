@@ -9,5 +9,16 @@ export default defineConfig({
     // LikeC4 parses each .likec4 document in-process (langium) — slow on first load.
     testTimeout: 120_000,
     hookTimeout: 120_000,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      reporter: ["text", "json-summary"],
+      thresholds: {
+        statements: 91,
+        branches: 82,
+        functions: 95,
+        lines: 93,
+      },
+    },
   },
 });

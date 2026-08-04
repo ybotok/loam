@@ -121,8 +121,10 @@ One docs repo, a hundred services, many teams: ownership is CODEOWNERS, `vouch` 
 ```bash
 npm run setup              # or: npm ci && npm run build
 npm run dev -- --help      # run the CLI from source
+npm run lint
 npm run typecheck
-npm test                   # vitest, ~1000 tests
+npm test                   # vitest, ~1100 tests
+npm run test:coverage      # full src/**/*.ts coverage with enforced thresholds
 npm run test:package       # clean, pack, install the tarball, run its loam binary
 # optional, against the exact upstream checkout documented below:
 npm run test:openspec-corpus -- /path/to/OpenSpec

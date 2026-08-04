@@ -1,5 +1,6 @@
 node_modules/
 dist/
+coverage/
 *.log
 .DS_Store
 # local pointer at a docs repo (the README "Try it" block writes one here)

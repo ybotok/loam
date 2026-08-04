@@ -261,8 +261,8 @@ describe("what happens next, and what will never happen", () => {
     const p = await project({}, { service: SVC });
     const res = await runLoam(p.workDir, "adopt");
     expect(res.code).toBe(0);
-    expect(res.out).toContain(`what \`loam validate --service ${SVC}\` then checks`);
-    const allHeader = res.out.indexOf("and what only \`loam validate --all\` surfaces");
+    expect(res.out).toContain("what `loam validate --service " + SVC + "` then checks");
+    const allHeader = res.out.indexOf("and what only `loam validate --all` surfaces");
     expect(allHeader).toBeGreaterThan(-1);
     // the fleet check sits under the --all header, after every --service check
     expect(res.out.indexOf("landscape.service-unmodelled", allHeader)).toBeGreaterThan(allHeader);

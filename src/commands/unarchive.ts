@@ -27,7 +27,6 @@ import {
   rollbackError,
   rollbackStaged,
   sha256,
-  snapshotDir,
   stageWrites,
   swapStaged,
   SNAPSHOT_DIR,
