@@ -138,6 +138,8 @@ paths:
       modified: [],
       pathItemModified: [],
       removed: [],
+      quoted: [],
+      baselineStale: [],
       componentsModified: [],
       unresolved: [],
     });

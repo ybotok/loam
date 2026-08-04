@@ -44,6 +44,11 @@ import {
   type PlannedWrite,
 } from "../core/staging.js";
 import { parseRequirements, requirementDigest, type Requirement } from "../core/spec.js";
+import {
+  OpenapiMergeError,
+  pinOpenapiOperations,
+  type OpenapiPinPlan,
+} from "../core/openapi-merge.js";
 
 interface RebaseOptions {
   service?: string;
@@ -51,28 +56,38 @@ interface RebaseOptions {
   dryRun?: boolean;
 }
 
-/** What happened to one MODIFIED/REMOVED requirement's pin. */
+/** What happened to one pin. */
 type PinStatus =
   /** It had none and now has one. */
   | "pinned"
-  /** It had a pin for an older version of the living requirement; it now names the current one. */
+  /** It had a pin for an older living version; it now names the current one. */
   | "repinned"
   /** It already named the current living version — no write. */
   | "unchanged"
   /**
-   * It addresses nothing in the living spec — a MODIFIED of a requirement
-   * another feature in flight still introduces, most often. There is no version
-   * to be based on yet, so inventing a pin would be inventing a baseline;
-   * `loam validate` already reports the ordering (`delta.modified-pending`).
+   * It addresses nothing living — a MODIFIED of a requirement another feature
+   * in flight still introduces, or an operation this feature is adding. There
+   * is no version to be based on, so inventing a pin would be inventing a
+   * baseline; `loam validate` already reports the ordering where there is one
+   * (`delta.modified-pending`).
    */
-  | "unresolved";
+  | "unresolved"
+  /**
+   * The operation is written as a YAML alias. One shared value backs every use
+   * of an anchor, so stamping "through" it would pin every other use too —
+   * the same reason the merge refuses to edit aliases in place. Rare, legal,
+   * and named rather than silently skipped.
+   */
+  | "unwritable";
 
 interface PinOutcome {
   service: string;
-  /** The axis's filename — "spec.md" or "arch.spec.md". */
+  /** The axis's filename — "spec.md", "arch.spec.md" or "openapi.yaml". */
   file: string;
-  kind: Requirement["kind"];
-  requirement: string;
+  /** MODIFIED/REMOVED for a requirement; the upper-case HTTP method for an operation. */
+  kind: string;
+  /** The requirement heading, or `/path ('operationId')`. */
+  target: string;
   status: PinStatus;
   /** The pin as it was, or null when there was none. */
   from: string | null;
@@ -161,6 +176,15 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
       outcomes.push(...planned.outcomes);
       if (planned.content !== null) writes.push({ path: specPath, content: planned.content });
     }
+    // The contract axis. It needs the pin more than the requirement axes do:
+    // a requirement delta spells only the requirements it changes, while an
+    // openapi delta is a COMPLETE document and spells the whole contract.
+    const openapiPath = featureSpecPaths(feature.dir, service).openapi;
+    if (existsSync(openapiPath)) {
+      const planned = await planOpenapi(docsDir, service, openapiPath);
+      outcomes.push(...planned.outcomes);
+      if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
+    }
   }
 
   if (!dryRun && writes.length > 0) {
@@ -191,7 +215,7 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
       feature: id,
       services,
       dryRun,
-      requirements: outcomes,
+      pins: outcomes,
       written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
     });
     return;
@@ -199,31 +223,33 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
 
   if (outcomes.length === 0) {
     console.log(
-      `${id}: no MODIFIED or REMOVED requirements to pin — a baseline only means something for a requirement that already exists.`,
+      `${id}: nothing to pin — a baseline only means something for a requirement or an operation that already exists.`,
     );
     return;
   }
 
   console.log(`${id}${dryRun ? " (dry run)" : ""}\n`);
   for (const o of outcomes) {
-    const where = `${o.service}/${o.file}`;
+    const what = `${o.service}/${o.file}  ${o.kind} ${o.target}`;
     if (o.status === "unresolved") {
-      console.log(`  · ${where}  ${o.kind} ${o.requirement} — not in the living spec yet, nothing to pin`);
+      console.log(`  · ${what} — not in the living docs yet, nothing to pin`);
+    } else if (o.status === "unwritable") {
+      console.log(`  ! ${what} — written as a YAML alias; loam will not stamp through a shared anchor`);
     } else if (o.status === "unchanged") {
-      console.log(`  = ${where}  ${o.kind} ${o.requirement} — already ${o.to}`);
+      console.log(`  = ${what} — already ${o.to}`);
     } else if (o.status === "pinned") {
-      console.log(`  + ${where}  ${o.kind} ${o.requirement} — pinned ${o.to}`);
+      console.log(`  + ${what} — pinned ${o.to}`);
     } else {
-      console.log(`  ~ ${where}  ${o.kind} ${o.requirement} — ${o.from} → ${o.to}`);
+      console.log(`  ~ ${what} — ${o.from} → ${o.to}`);
     }
   }
 
   if (changed.length === 0) {
-    console.log(`\nNothing to write: every pin already names the living text.`);
+    console.log(`\nNothing to write: every pin already names the living version.`);
   } else if (dryRun) {
-    console.log(`\n${plural(changed.length, "requirement")} would be pinned. Nothing was written.`);
+    console.log(`\n${plural(changed.length, "pin")} would be written. Nothing was written.`);
   } else {
-    console.log(`\n${plural(changed.length, "requirement")} pinned across ${plural(writes.length, "file")}.`);
+    console.log(`\n${plural(changed.length, "pin")} written across ${plural(writes.length, "file")}.`);
     // The one sentence that keeps this command honest. A pin is a claim about
     // what its author read, and a `repinned` line means the living text moved
     // under a delta that still says what it said before — restamping does not
@@ -231,15 +257,15 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
     const repinned = changed.filter((o) => o.status === "repinned");
     if (repinned.length > 0) {
       console.log(
-        `\n⚠ ${plural(repinned.length, "requirement")} moved since this delta was written. A pin records what you read — ` +
-          `re-read those living requirements and fold in what you still mean, or the next archive lands your text over theirs with loam's blessing.`,
+        `\n⚠ ${plural(repinned.length, "pin")} moved since this delta was written. A pin records what you read — ` +
+          `re-read those living requirements and operations and fold in what you still mean, or the next archive lands your version over theirs with loam's blessing.`,
       );
     }
   }
   if (unresolved.length > 0) {
     console.log(
-      `\n${plural(unresolved.length, "requirement")} could not be pinned because the living spec does not have them yet — ` +
-        `\`loam dependencies ${id}\` says which feature introduces them first.`,
+      `\n${plural(unresolved.length, "item")} could not be pinned because the living docs do not have them yet — ` +
+        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it.`,
     );
   }
 }
@@ -271,7 +297,7 @@ async function planAxis(
     // there is nothing truthful to report about pinning it.
     const line = r.line;
     if (line === undefined) continue;
-    const base = { service, file: axis.file, kind: r.kind, requirement: r.name };
+    const base = { service, file: axis.file, kind: r.kind, target: r.name };
     const selected = selectLiving(living, r);
     if (selected === undefined) {
       outcomes.push({ ...base, status: "unresolved", from: r.basedOn ?? null, to: null });
@@ -292,6 +318,48 @@ async function planAxis(
   }
 
   return { outcomes, content: edits.length === 0 ? null : applyEdits(raw, edits) };
+}
+
+/**
+ * Pin every operation in one feature contract against the living contract.
+ *
+ * The pin is always `operationDigest` of the LIVING operation, never of the
+ * delta's own. That single rule produces both merge verdicts on its own: an
+ * operation the author only QUOTED is byte-equal to living, so its pin equals
+ * its own content and the merge skips it; one the author EDITED differs from
+ * its pin, so the merge writes it. Nothing here has to guess at intent — the
+ * document already records it, and the pin makes it legible.
+ *
+ * Slot-keyed (path + method), exactly as the merge upserts. An operationId that
+ * moved to another slot is a new slot with nothing living behind it, which is
+ * `unresolved` and correct: there is no living version of an operation at a
+ * path the contract does not serve yet.
+ */
+async function planOpenapi(docsDir: string, service: string, openapiPath: string): Promise<AxisPlan> {
+  const livingPath = servicePaths(docsDir, service).openapi;
+  const living = existsSync(livingPath) ? await readFile(livingPath, "utf8") : "";
+  let plan: OpenapiPinPlan;
+  try {
+    plan = pinOpenapiOperations(await readFile(openapiPath, "utf8"), living, service);
+  } catch (err) {
+    // A document loam cannot read is validate's diagnosis to make
+    // (`openapi.invalid`), not this command's to guess at — and stamping into a
+    // broken parse would write a file nobody asked for.
+    if (!(err instanceof OpenapiMergeError)) throw err;
+    return { outcomes: [], content: null };
+  }
+  return {
+    outcomes: plan.pins.map((pin) => ({
+      service,
+      file: "openapi.yaml",
+      kind: pin.method.toUpperCase(),
+      target: pin.operationId.length === 0 ? pin.path : `${pin.path} ('${pin.operationId}')`,
+      status: pin.status,
+      from: pin.from,
+      to: pin.to,
+    })),
+    content: plan.text,
+  };
 }
 
 /**

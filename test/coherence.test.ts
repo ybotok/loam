@@ -17,6 +17,7 @@ import {
   coherentFixture,
   makeProject,
   pinFor,
+  pinOpenapi,
   runLoam,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
@@ -578,7 +579,10 @@ describe("W2 API→C4: feature-added operations should be consumed by a tagged e
     // openapi.yaml were not added by this feature, so they must not warn — otherwise
     // every restating feature drowns validate in noise for correct authoring.
     const files = coherentFixture();
-    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = LIVING_OPENAPI; // restates authorizePayment
+    // Pinned, as `loam rebase` would leave it: a restatement is a QUOTE, and a
+    // quote is silent. Unpinned it draws `openapi.baseline-missing` instead,
+    // which has its own tests.
+    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = pinOpenapi(LIVING_OPENAPI, LIVING_OPENAPI);
     const issues = await coherenceOf(files);
     expect(issues).toEqual([]);
   });
@@ -799,7 +803,10 @@ describe("c4-api.op-deprecated: a NEW tagged edge on an op the living provider m
     // replacement operation" would point them away from the exact change they
     // are shipping.
     const files = consumingFixture(DEPRECATED_LIVING);
-    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = LIVING_OPENAPI;
+    // Pinned against the DEPRECATED living contract, which is what this delta
+    // was written from — so dropping the flag reads as the edit it is, not as a
+    // quote the merge would skip.
+    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = pinOpenapi(LIVING_OPENAPI, DEPRECATED_LIVING);
     expect(await coherenceOf(files)).toEqual([]);
   });
 

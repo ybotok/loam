@@ -280,6 +280,42 @@ A delta adopted from OpenSpec has no such line and gets a warning
 (\`delta.baseline-missing\`), never a refusal — an entire migrated corpus that
 cannot archive is not a safety property.
 
+### The same pin on the contract axis — and why it matters more there
+
+A feature's \`openapi.yaml\` is a COMPLETE document, not a patch: you restate the
+living contract around the slot you are changing, and the merge upserts every
+operation the document spells. So the collision on this axis needs no overlap at
+all. Two features touching one service, editing DIFFERENT operations, destroy
+each other — the second to archive quietly pushes its authoring-time copy of the
+operation it never meant to touch back over whatever landed in between.
+
+The same marker fixes it, as a vendor extension beside \`x-loam-remove\`:
+
+\`\`\`yaml
+paths:
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      x-loam-based-on: 86feabe621ed887d
+\`\`\`
+
+\`loam rebase\` writes one on EVERY operation in the delta, pinned to the living
+version. That is what lets the merge tell a QUOTE from an EDIT:
+
+- pin equals the operation's own content → you quoted it → **the merge skips it
+  entirely** and the living contract keeps whatever it holds. Archive prints
+  \`· quotes …\` so the plan never silently writes less than your delta spells.
+- pin equals the living operation → you edited it, nobody else did → merged.
+- pin matches neither → you edited it AND somebody landed a change to it →
+  \`openapi.baseline-stale\`, refused.
+
+Not covered, deliberately, and worth knowing: path-level keys (\`parameters\`,
+\`servers\`) and \`components/schemas\` are still upserted wholesale, so a restated
+schema can still revert another feature's change to it —
+\`openapi.path-item-modified\` and \`openapi.component-modified\` are your only
+warning there. Removal markers carry no pin either; \`openapi.remove-target-mismatch\`
+is what guards those.
+
 ## Which element IS which service
 
 An element says which service it is with \`metadata { service 'payment-service' }\`.
@@ -310,9 +346,12 @@ says so once and stops the warning for good.
    a requirements-only feature should DELETE that file rather than ship an empty
    one — and gives every \`--new-service\` a \`specs/<svc>/arch.spec.md\` alongside.
 4. **Author** the four files the scaffold left as TODO: intent, delta.likec4,
-   a spec.md per service, an openapi.yaml per new service. If any requirement is
-   MODIFIED or REMOVED, finish with \`loam rebase FEAT-101\`: it pins each one to
-   the living text you wrote it against. See "The requirement baseline".
+   a spec.md per service, an openapi.yaml per new service. Finish with
+   \`loam rebase FEAT-101\`: it pins every MODIFIED/REMOVED requirement and every
+   operation in the contract delta to the living version you wrote it against.
+   On the contract axis run it even when you changed nothing but one endpoint —
+   that is exactly what marks the REST of the document as quotation the merge
+   must not write. See "The requirement baseline".
 5. **Check** — \`loam validate FEAT-101 --json\`. Fix every error before writing code.
    \`loam dependencies --json\` says whether another feature in flight has to
    archive first.
@@ -970,6 +1009,9 @@ and say it.
 | \`openapi.invalid\` | openapi.yaml exists but does not parse — an unreadable contract proves nothing, so no \`api.*\` or spine finding is graded against it (before this code, the empty parse graded every inbound edge \`spine.op-undefined\`) | fix the YAML first — the API axis is unchecked until it reads |
 | \`openapi.remove-marker-living\` | a living openapi.yaml contains feature-only \`x-loam-remove: true\` | remove the marker from living; retire the operation through a feature delta with a matching REMOVED requirement |
 | \`openapi.duplicate-operationid\` (warn) | one operationId occupies two (path, method) slots in a living contract — every join on the id (a requirement's \`Operations:\` line, an edge's \`metadata { op }\`, a removal marker) then picks one of them arbitrarily | give each slot its own id; the identity of an operation is its path and method, and the id is how the other axes name it |
+| \`openapi.baseline-stale\` | the living operation changed after this delta edited it | somebody landed a change to it in between. Re-read the living operation, fold in what you still mean, then \`loam rebase <FEAT>\` |
+| \`openapi.baseline-missing\` (warn, one per service) | operations in this feature's openapi.yaml carry no \`x-loam-based-on\` | run \`loam rebase <FEAT>\`. Until you do, the merge cannot tell the operations you EDITED from the ones you merely restated, so it upserts all of them — and every restated one reverts whatever landed on it |
+| \`openapi.baseline-invalid\` | an \`x-loam-based-on\` that is not a digest, or one on an operation the living contract has no slot for | \`loam rebase\` writes the value; a new operation has no living version to be based on, so drop the marker there |
 | \`spec-api.op-undefined\` | a LIVING requirement's \`Operations:\` line names an operationId this service's openapi.yaml does not define (the same code fires inside a feature delta) | define the endpoint, or correct the \`Operations:\` line — the two axes disagree about what the service exposes |
 | \`api.ungoverned\` (warn) | operation(s) no requirement's \`Operations:\` line names | write the requirement, or link an existing one |
 | \`api.ops-unlinked\` (warn) | operations AND requirements exist but zero \`Operations:\` lines join them — the API axis is vacuously green | link each requirement to the operations it governs |

@@ -365,7 +365,7 @@ async function archiveLocked(
         if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
         throw err;
       }
-      const { text, modified, pathItemModified, removed, componentsModified, unresolved } = merge;
+      const { text, modified, pathItemModified, removed, quoted, componentsModified, unresolved } = merge;
       if (text !== null) {
         writes.push(planWrite(livingOpenapi, text));
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
@@ -374,6 +374,11 @@ async function archiveLocked(
         openapiRemovals.push({ service: svc, operations: removed });
         for (const label of removed) say(`      - removes ${label}`);
       }
+      // Said out loud, because "the plan wrote less than my delta spells" is
+      // the one thing a reader cannot infer from a merged file. Not a warning:
+      // quoting the contract around your change is correct authoring, and
+      // leaving the quote alone is the correct merge.
+      for (const label of quoted) say(`      · quotes ${label} — unchanged since it was pinned, left as living has it`);
       for (const label of modified) {
         planWarns.push({
           severity: "warn",

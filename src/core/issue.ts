@@ -106,6 +106,12 @@ export type IssueCode =
   | "openapi.remove-marker-anonymous"
   /** the living OpenAPI defines one operationId in two (path, method) slots — every join on the id picks one arbitrarily */
   | "openapi.duplicate-operationid"
+  /** an `x-loam-based-on` that is not a digest, or sits on an operation the living contract does not have */
+  | "openapi.baseline-invalid"
+  /** a feature operation with no `x-loam-based-on` — the merge cannot tell whether the delta EDITS it or merely quotes it */
+  | "openapi.baseline-missing"
+  /** the living operation changed since this delta edited it — merging would discard whoever landed in between */
+  | "openapi.baseline-stale"
   /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
   | "openapi.remove-op-consumed"
   /** two requirements in the LIVING document share one heading — MODIFIED rewrites the first, REMOVED deletes both, so no delta applies predictably */

@@ -31,6 +31,7 @@ import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js";
 import { parseRequirements, requirementDigest } from "../../src/core/spec.js";
+import { pinOpenapiOperations } from "../../src/core/openapi-merge.js";
 
 export interface RunResult {
   /** process.exitCode after the command (0 if it never set one). */
@@ -69,6 +70,17 @@ export function pinFor(livingMarkdown: string, name: string): string {
   const requirement = parseRequirements(livingMarkdown).find((r) => r.name === name);
   if (!requirement) throw new Error(`no living requirement named '${name}' to pin against`);
   return requirementDigest(requirement);
+}
+
+/**
+ * A feature contract with every operation pinned against `living` — byte for
+ * byte what `loam rebase` writes on the OpenAPI axis, because it IS the
+ * function that command calls. A fixture pinning itself by hand would be a
+ * second implementation of the rule, free to agree with the merge right up
+ * until the day it quietly did not.
+ */
+export function pinOpenapi(featureYaml: string, livingYaml: string): string {
+  return pinOpenapiOperations(featureYaml, livingYaml, "fixture").text ?? featureYaml;
 }
 
 /** Create a temp dir (caller owns cleanup unless using makeProject().destroy()). */

@@ -1,6 +1,157 @@
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
-import { HTTP_METHODS } from "./openapi.js";
+import {
+  HTTP_METHODS,
+  OPENAPI_BASELINE_KEY,
+  classifyBaselineDigests,
+  operationBaselineOf,
+  operationDigest,
+  withoutOperationBaseline,
+} from "./openapi.js";
+
+/**
+ * What a feature's operation IS, relative to the living contract — the one
+ * judgement that tells a QUOTE from an EDIT.
+ *
+ * A feature's openapi.yaml is a complete document, so most of what it spells is
+ * quotation: the author restated the living contract around the slot they were
+ * changing. Without a pin the merge cannot tell the two apart and upserts both,
+ * which is how a feature that only meant to touch `cancelOrder` silently
+ * reverted another team's landed change to `refundOrder` — no overlap between
+ * the features required, just two deltas over one service.
+ */
+export type OperationBaselineVerdict = ReturnType<typeof classifyBaselineDigests>;
+
+/**
+ * Classify one feature operation against its living counterpart, from the raw
+ * YAML trees the merge works in. The rule itself lives in core/openapi.ts, so
+ * the gate and the merge cannot drift apart about which operations get written.
+ *
+ * A malformed pin matches no digest and lands in `stale`, which merges rather
+ * than skips. Deliberate: `openapi.baseline-invalid` refuses it at the gate, and
+ * a value nobody can evaluate must never be the reason a merge quietly drops an
+ * operation.
+ */
+export function classifyOperationBaseline(featureOp: unknown, livingOp: unknown): OperationBaselineVerdict {
+  return classifyBaselineDigests(
+    operationBaselineOf(featureOp),
+    operationDigest(featureOp),
+    livingOp === undefined ? undefined : operationDigest(livingOp),
+  );
+}
+
+/** What happened to one operation's `x-loam-based-on`. */
+export interface OperationPin {
+  path: string;
+  method: string;
+  /** Empty when the operation declares none — the slot is still the identity. */
+  operationId: string;
+  status:
+    /** It had no pin and now has one. */
+    | "pinned"
+    /** It named an older living version; it now names the current one. */
+    | "repinned"
+    /** It already named the current living version — no write. */
+    | "unchanged"
+    /** The living contract has no operation at this slot: this feature is adding it. */
+    | "unresolved"
+    /** Written as a YAML alias — one shared value backs every use, so loam will not stamp through it. */
+    | "unwritable";
+  from: string | null;
+  to: string | null;
+}
+
+export interface OpenapiPinPlan {
+  /** The rewritten contract, or null when no pin changes. */
+  text: string | null;
+  pins: OperationPin[];
+}
+
+/**
+ * Pin every operation in a feature contract against the living one — what
+ * `loam rebase` writes on this axis.
+ *
+ * The pin is always `operationDigest` of the LIVING operation, never of the
+ * delta's own, and that single rule produces both merge verdicts by itself: an
+ * operation the author only QUOTED is byte-equal to living, so its pin equals
+ * its own content and `classifyOperationBaseline` calls it a quote; one the
+ * author EDITED differs from its pin, so the merge writes it. Nothing has to
+ * guess at intent — the document already records it, and the pin makes it
+ * legible to the merge.
+ *
+ * Slot-keyed (path + method), exactly as the merge upserts. An operationId that
+ * moved to another slot is a new slot with nothing living behind it, which is
+ * `unresolved` and correct: there is no living version of an operation at a
+ * path the contract does not serve yet.
+ */
+export function pinOpenapiOperations(featureText: string, livingText: string, service: string): OpenapiPinPlan {
+  const doc = parseDocument(featureText);
+  if (doc.errors.length > 0) throw new OpenapiMergeError("feature", service, doc.errors[0]!.message);
+  let featPlain: unknown;
+  let livingPlain: unknown;
+  try {
+    featPlain = doc.toJS() ?? {};
+  } catch (error) {
+    throw new OpenapiMergeError("feature", service, errorMessage(error));
+  }
+  try {
+    const parsed = parseDocument(livingText);
+    if (parsed.errors.length > 0) throw new OpenapiMergeError("living", service, parsed.errors[0]!.message);
+    livingPlain = parsed.toJS() ?? {};
+  } catch (error) {
+    if (error instanceof OpenapiMergeError) throw error;
+    throw new OpenapiMergeError("living", service, errorMessage(error));
+  }
+
+  const featPaths = plainChild(featPlain, "paths");
+  if (!isRecord(featPaths)) return { text: null, pins: [] };
+  const livingPaths = plainChild(livingPlain, "paths");
+
+  const pins: OperationPin[] = [];
+  let edited = false;
+  for (const [path, item] of Object.entries(featPaths)) {
+    if (!isRecord(item)) continue;
+    for (const [method, op] of Object.entries(item)) {
+      if (!HTTP_METHODS.has(method) || !isRecord(op)) continue;
+      // A removal marker asserts a slot rather than restating an operation, so
+      // it has nothing to be based on; `openapi.remove-target-mismatch` is what
+      // guards it against a living slot that moved under it.
+      if (isRemoval(op)) continue;
+
+      const id = typeof op["operationId"] === "string" ? op["operationId"] : "";
+      const at = { path, method, operationId: id };
+      const from = operationBaselineOf(op) ?? null;
+      const livingItem = plainChild(livingPaths, path);
+      const livingOp = isRecord(livingItem) ? livingItem[method] : undefined;
+      if (!isRecord(livingOp)) {
+        pins.push({ ...at, status: "unresolved", from, to: null });
+        continue;
+      }
+      const digest = operationDigest(livingOp);
+      if (from === digest) {
+        pins.push({ ...at, status: "unchanged", from: digest, to: digest });
+        continue;
+      }
+      // One shared value backs every use of an anchor, so `setIn` through an
+      // alias would pin every other use of it too — the same reason
+      // stripOpenapiRemovalMarkers refuses to edit aliases in place.
+      if (!isMap(doc.getIn(["paths", path, method]))) {
+        pins.push({ ...at, status: "unwritable", from, to: null });
+        continue;
+      }
+      pins.push({ ...at, status: from === null ? "pinned" : "repinned", from, to: digest });
+      doc.setIn(["paths", path, method, OPENAPI_BASELINE_KEY], digest);
+      edited = true;
+    }
+  }
+
+  if (!edited) return { text: null, pins };
+  try {
+    return { text: doc.toString(), pins };
+  } catch (error) {
+    throw new OpenapiMergeError("feature", service, errorMessage(error));
+  }
+}
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */
 export interface OpenapiMergeResult {
@@ -18,6 +169,20 @@ export interface OpenapiMergeResult {
   pathItemModified: string[];
   /** Labels of living operations deleted by `x-loam-remove: true` markers. */
   removed: string[];
+  /**
+   * Labels of operations the delta QUOTED — pinned, and equal to their own
+   * baseline — so the merge left the living contract's own copy alone. Reported
+   * rather than silent: "your delta mentions this and I did not write it" is
+   * exactly the sentence whose absence made the revert invisible.
+   */
+  quoted: string[];
+  /**
+   * Labels of operations whose pin matches neither the delta's own content nor
+   * the living one: edited here AND changed by somebody else in between.
+   * `openapi.baseline-stale` refuses these at the gate; the merge still
+   * overwrites, because reaching it at all means `--approve` said to.
+   */
+  baselineStale: string[];
   /** `<kind>/<name>` of living components overwritten with different content. */
   componentsModified: string[];
   /** Local refs reachable from merged content that resolve in neither document. */
@@ -65,7 +230,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   const cleaned: Record<string, unknown> = {};
   let stripped = false;
   for (const [path, item] of Object.entries(paths)) {
-    const kept = withoutRemovalMarkers(item);
+    const kept = withoutFeatureMarkers(item);
     if (!isDeepStrictEqual(kept, item)) stripped = true;
     // A path the strip emptied goes with its last operation: `\/x: {}` is a
     // path the contract advertises and nothing answers.
@@ -87,7 +252,14 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
     for (const [path, item] of Object.entries(paths)) {
       if (!isRecord(item)) continue;
       for (const [m, value] of Object.entries(item)) {
-        if (HTTP_METHODS.has(m) && isRemoval(value)) feature.deleteIn(["paths", path, m]);
+        if (!HTTP_METHODS.has(m)) continue;
+        if (isRemoval(value)) feature.deleteIn(["paths", path, m]);
+        // The surviving operations keep their formatting but lose their pin:
+        // the in-place branch must strip everything the resolved-tree branch
+        // does, or the two disagree about what a living contract may carry.
+        else if (operationBaselineOf(value) !== undefined) {
+          feature.deleteIn(["paths", path, m, OPENAPI_BASELINE_KEY]);
+        }
       }
       const remaining = feature.getIn(["paths", path]);
       if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
@@ -163,6 +335,8 @@ export function mergeOpenapiPaths(
   const modified: string[] = [];
   const pathItemModified: string[] = [];
   const removed: string[] = [];
+  const quoted: string[] = [];
+  const baselineStale: string[] = [];
   for (const [path, featItemPlain] of featPathEntries) {
     const existing = living.getIn(["paths", path]);
     const existingPlain = plainChild(livingPathsPlain, path);
@@ -194,13 +368,29 @@ export function mergeOpenapiPaths(
           }
           continue;
         }
+        if (HTTP_METHODS.has(m)) {
+          const verdict = classifyOperationBaseline(afterPlain, before === undefined ? undefined : beforePlain);
+          // A QUOTE is not a merge input. The author wrote this operation down
+          // because the document is complete, not because they changed it, so
+          // the living contract keeps whatever it holds — including a change
+          // that landed after this delta was written. This is mechanical, not a
+          // judgement, so `--approve` does not turn it back on: overriding a
+          // gate is a decision, reverting an operation nobody edited is a bug.
+          if (verdict === "quote") {
+            quoted.push(opLabel(beforePlain, afterPlain, m, path));
+            continue;
+          }
+          if (verdict === "stale") baselineStale.push(opLabel(beforePlain, afterPlain, m, path));
+        }
         // The difference check covers EVERY key of the path item; only the
         // LABEL depends on whether the key is an HTTP method.
         if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
           if (HTTP_METHODS.has(m)) modified.push(opLabel(beforePlain, afterPlain, m, path));
           else pathItemModified.push(`'${m}' (${path})`);
         }
-        living.setIn(["paths", path, m], afterPlain);
+        // Without the strip the living contract would grow a pin to a version
+        // of itself, and the NEXT feature's baseline would hash it.
+        living.setIn(["paths", path, m], withoutOperationBaseline(afterPlain));
       }
       // Removing the last method leaves `\/x: {}` — a path the contract still
       // advertises and nothing answers. The same cleanup
@@ -212,7 +402,7 @@ export function mergeOpenapiPaths(
     if (!isRecord(featItemPlain)) {
       throw new OpenapiMergeError("feature", service, `path '${path}' is not a mapping`);
     }
-    const clean = withoutRemovalMarkers(featItemPlain);
+    const clean = withoutFeatureMarkers(featItemPlain);
     if (clean !== undefined) living.setIn(["paths", path], clean);
   }
 
@@ -251,7 +441,7 @@ export function mergeOpenapiPaths(
   };
 
   for (const [path, featItemPlain] of featPathEntries) {
-    walk(withoutRemovalMarkers(featItemPlain), `paths ${path}`);
+    walk(withoutFeatureMarkers(featItemPlain), `paths ${path}`);
   }
 
   for (const { kind, name, value } of copies) {
@@ -270,7 +460,7 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
-  return { text, modified, pathItemModified, removed, componentsModified, unresolved };
+  return { text, modified, pathItemModified, removed, quoted, baselineStale, componentsModified, unresolved };
 }
 
 /** The successful "the feature document has nothing to merge" answer. */
@@ -280,6 +470,8 @@ function noop(): OpenapiMergeResult {
     modified: [],
     pathItemModified: [],
     removed: [],
+    quoted: [],
+    baselineStale: [],
     componentsModified: [],
     unresolved: [],
   };
@@ -352,11 +544,18 @@ function operationIdOf(node: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** Copy a path item without feature-only removal operations. */
-function withoutRemovalMarkers(node: unknown): unknown {
+/**
+ * Copy a path item without anything that belongs to the FEATURE rather than to
+ * the contract: removal-marker operations, and the `x-loam-based-on` pins on the
+ * operations that survive. Both are instructions to loam, and a living contract
+ * that carries either is lying to the next reader — and, for the pin, to the
+ * next feature's baseline.
+ */
+function withoutFeatureMarkers(node: unknown): unknown {
   if (node === null || typeof node !== "object" || Array.isArray(node)) return node;
   const entries = Object.entries(node as Record<string, unknown>)
-    .filter(([method, value]) => !(HTTP_METHODS.has(method) && isRemoval(value)));
+    .filter(([method, value]) => !(HTTP_METHODS.has(method) && isRemoval(value)))
+    .map(([key, value]) => [key, HTTP_METHODS.has(key) ? withoutOperationBaseline(value) : value] as const);
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }
 

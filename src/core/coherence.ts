@@ -21,7 +21,15 @@ import {
   servicePaths,
 } from "./repo.js";
 import { parseRequirements, type Requirement } from "./spec.js";
-import { operations, readOpenapi, serviceOperationIds } from "./openapi.js";
+import {
+  OPENAPI_BASELINE_KEY,
+  OPERATION_DIGEST_LENGTH,
+  OPERATION_DIGEST_RE,
+  classifyBaselineDigests,
+  operations,
+  readOpenapi,
+  serviceOperationIds,
+} from "./openapi.js";
 import type { FleetContext } from "./fleet-context.js";
 
 export type { Issue, IssueCode } from "./issue.js";
@@ -154,6 +162,59 @@ export async function featureCoherence(
         message: `${svc}: the living OpenAPI defines operationId '${id}' at ${slots.join(" and ")} — every join on the id (a requirement's Operations: line, an edge's metadata { op }, a removal marker) picks one of those slots arbitrarily`,
       });
     }
+    // The baseline axis: which of the operations this delta SPELLS does it
+    // actually edit? A feature's openapi.yaml is a complete document, so most of
+    // it is quotation — and until the pin existed the merge upserted quotations
+    // too, which reverted whatever had landed on them since. Slot-keyed, exactly
+    // as the merge writes (path + method), never by operationId.
+    const livingBySlot = new Map(livingOps.map((op) => [`${op.method} ${op.path}`, op]));
+    let unpinned = 0;
+    for (const op of featOps) {
+      // A removal marker is not a restatement of anything; its own exactness
+      // check (`openapi.remove-target-mismatch`) already guards the slot.
+      if (op.remove) continue;
+      const where = `${op.method.toUpperCase()} ${op.path}`;
+      const livingOp = livingBySlot.get(`${op.method} ${op.path}`);
+      if (op.basedOn !== undefined && !OPERATION_DIGEST_RE.test(op.basedOn)) {
+        issues.push({
+          severity: "error",
+          code: "openapi.baseline-invalid",
+          subject: svc,
+          message: `${svc}: ${where} has invalid ${OPENAPI_BASELINE_KEY} '${op.basedOn}' — expected ${OPERATION_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
+        });
+        continue;
+      }
+      const verdict = classifyBaselineDigests(op.basedOn, op.digest, livingOp?.digest);
+      if (verdict === "unfounded") {
+        issues.push({
+          severity: "error",
+          code: "openapi.baseline-invalid",
+          subject: svc,
+          message: `${svc}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — a new operation has no living version to be based on; drop the marker`,
+        });
+      } else if (verdict === "stale") {
+        issues.push({
+          severity: "error",
+          code: "openapi.baseline-stale",
+          subject: svc,
+          message: `${svc}: ${where} ('${op.id}') was written against living version ${op.basedOn}, but the living contract now holds ${livingOp!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living operation, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
+        });
+      } else if (verdict === "unpinned" && livingOp !== undefined) {
+        // Counted, not listed. A delta over a thirty-operation service quotes
+        // twenty-nine of them, and twenty-nine identical warnings naming a fix
+        // that is ONE command teaches people to filter the code out.
+        unpinned += 1;
+      }
+    }
+    if (unpinned > 0) {
+      issues.push({
+        severity: "warn",
+        code: "openapi.baseline-missing",
+        subject: svc,
+        message: `${svc}: ${unpinned} operation(s) in this feature's openapi.yaml carry no ${OPENAPI_BASELINE_KEY}, so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`.`,
+      });
+    }
+
     if (featOps.length > 0) {
       const living = new Set(livingOps.filter((op) => !op.remove).map((op) => op.id));
       for (const op of featOps) {

@@ -488,10 +488,10 @@ describe("loam rebase", () => {
       const run = await runLoam(p.workDir, "rebase", "FEAT-2", "--json");
       expect(run.code).toBe(0);
       const payload = JSON.parse(run.stdout) as {
-        requirements: Array<{ status: string; from: string | null; to: string }>;
+        pins: Array<{ status: string; from: string | null; to: string }>;
         written: string[];
       };
-      expect(payload.requirements).toEqual([
+      expect(payload.pins).toEqual([
         expect.objectContaining({ status: "pinned", from: null, to: PIN, kind: "MODIFIED" }),
       ]);
       expect(payload.written).toEqual([DELTA]);
@@ -510,8 +510,8 @@ describe("loam rebase", () => {
     try {
       const before = await p.read(DELTA);
       const run = await runLoam(p.workDir, "rebase", "FEAT-2", "--json");
-      const payload = JSON.parse(run.stdout) as { requirements: Array<{ status: string }>; written: string[] };
-      expect(payload.requirements[0]!.status).toBe("unchanged");
+      const payload = JSON.parse(run.stdout) as { pins: Array<{ status: string }>; written: string[] };
+      expect(payload.pins[0]!.status).toBe("unchanged");
       expect(payload.written).toEqual([]);
       expect(await p.read(DELTA)).toBe(before);
     } finally {
@@ -539,11 +539,11 @@ describe("loam rebase", () => {
       const run = await runLoam(p.workDir, "rebase", "FEAT-2", "--dry-run", "--json");
       const payload = JSON.parse(run.stdout) as {
         dryRun: boolean;
-        requirements: Array<{ status: string }>;
+        pins: Array<{ status: string }>;
         written: string[];
       };
       expect(payload.dryRun).toBe(true);
-      expect(payload.requirements[0]!.status).toBe("pinned");
+      expect(payload.pins[0]!.status).toBe("pinned");
       expect(payload.written).toEqual([]);
       expect(await p.read(DELTA)).toBe(before);
     } finally {
@@ -560,10 +560,10 @@ describe("loam rebase", () => {
       );
       const run = await runLoam(p.workDir, "rebase", "FEAT-2", "--json");
       const payload = JSON.parse(run.stdout) as {
-        requirements: Array<{ status: string; to: string | null }>;
+        pins: Array<{ status: string; to: string | null }>;
         written: string[];
       };
-      expect(payload.requirements[0]).toMatchObject({ status: "unresolved", to: null });
+      expect(payload.pins[0]).toMatchObject({ status: "unresolved", to: null });
       expect(payload.written).toEqual([]);
       expect(await p.read(DELTA)).not.toContain("Based-On");
     } finally {
@@ -579,8 +579,8 @@ describe("loam rebase", () => {
         `# delta\n\n## ADDED Requirements\n\n### Requirement: Refund an order\nThe service SHALL refund.\n\n#### Scenario: It works\n- **Given** x\n`,
       );
       const run = await runLoam(p.workDir, "rebase", "FEAT-2", "--json");
-      const payload = JSON.parse(run.stdout) as { requirements: unknown[]; written: string[] };
-      expect(payload.requirements).toEqual([]);
+      const payload = JSON.parse(run.stdout) as { pins: unknown[]; written: string[] };
+      expect(payload.pins).toEqual([]);
       expect(payload.written).toEqual([]);
       expect(await p.read(DELTA)).not.toContain("Based-On");
     } finally {
@@ -624,8 +624,8 @@ describe("loam rebase", () => {
       await runLoam(p.workDir, "rebase", "FEAT-2");
       const once = await p.read(DELTA);
       const again = await runLoam(p.workDir, "rebase", "FEAT-2", "--json");
-      const payload = JSON.parse(again.stdout) as { requirements: Array<{ status: string }>; written: string[] };
-      expect(payload.requirements[0]!.status).toBe("unchanged");
+      const payload = JSON.parse(again.stdout) as { pins: Array<{ status: string }>; written: string[] };
+      expect(payload.pins[0]!.status).toBe("unchanged");
       expect(payload.written).toEqual([]);
       expect(await p.read(DELTA)).toBe(once);
     } finally {

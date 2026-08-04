@@ -710,9 +710,15 @@ describe("cascade — extraction feeds the coherence gate", () => {
 /* ------------------------------------------------------------------ */
 
 describe("operations — the deprecated flag rides beside each id", () => {
-  /** operations() of a single inline OpenAPI document. */
+  /**
+   * operations() of a single inline OpenAPI document, without the content
+   * digest — this family is about the flags and the slots, and the digest has
+   * its own tests (test/openapi-baseline.test.ts) rather than a literal
+   * repeated in every expectation here.
+   */
   async function extractOps(content: string) {
-    return withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
+    const ops = await withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
+    return ops.map(({ digest: _digest, ...rest }) => rest);
   }
 
   it("returns deprecated: true exactly where the contract says so, false everywhere else", async () => {
@@ -860,7 +866,14 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
     const res = await readOf(LIVING_OPENAPI);
     expect(res.unreadable).toBe(false);
     expect(res.ops).toEqual([
-      { id: "authorizePayment", deprecated: false, remove: false, path: "/payments/authorize", method: "post" },
+      {
+        id: "authorizePayment",
+        deprecated: false,
+        remove: false,
+        path: "/payments/authorize",
+        method: "post",
+        digest: expect.stringMatching(/^[0-9a-f]{16}$/),
+      },
     ]);
   });
 
