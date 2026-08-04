@@ -17,8 +17,10 @@ vendoring these for test purposes is compatible; the copyright is not ours.
 
 ## Provenance
 
-Fetched 2026-08-03 from commit `45cca5db6137ed209117cc70510eb3e057fb981b` (then the
-tip of `main`). Every URL below is a permalink at that commit, so re-fetching
+The released behavior baseline is **OpenSpec v1.7.0**, tag commit `4e16790`. These
+fixtures were fetched 2026-08-03 from the later **main canary** commit
+`45cca5db6137ed209117cc70510eb3e057fb981b`; they must not be described as the
+v1.7.0 tag. Every URL below is a permalink at the canary commit, so re-fetching
 reproduces the exact bytes:
 
     https://raw.githubusercontent.com/Fission-AI/OpenSpec/45cca5db6137ed209117cc70510eb3e057fb981b/<path>
@@ -43,27 +45,26 @@ reproduces the exact bytes:
     9ee2d6cfaa698e95de8743a35b178d93351152d8718885e1ebcaa180c17fcba0  delta/2025-12-28-restructure-schema-directories__artifact-graph.spec.md
     3bf342704d3de056aeb90ed14f1035e46ff979ef04ad338ef29688882891a1a2  delta/2026-02-17-merge-init-experimental__cli-init.spec.md
 
-## Corpus these seven were drawn from
+## Full corpus gate
 
-The seven were chosen after running `parseRequirements` over **all 157 Markdown files**
-in the living and archived spec trees at that commit (36 under `openspec/specs/**`,
-121 under `openspec/changes/archive/**/specs/**`; two of the latter are supporting
-Markdown rather than `spec.md` files):
-614 requirements and 1846 scenarios in total. They cover every structural shape the
-full corpus exhibits. Findings that only the full sweep can establish — e.g. that no
-OpenSpec file anywhere uses a BOM, a lowercase `### requirement:` heading, a live
-`## RENAMED Requirements` section, or a line our `Operations:` regex would capture —
-are recorded in the header comment of `test/openspec-compat.test.ts`.
+The scheduled/manual corpus gate runs `parseRequirements` over every tracked Markdown
+file below living, active, and archived spec trees at two exact commits. OpenSpec v1.7.0
+release `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` has 207 files, 739 requirements,
+and 2273 scenarios. Main canary `45cca5db6137ed209117cc70510eb3e057fb981b`
+has 209 files, 742 requirements, and 2284 scenarios. The seven vendored files remain
+the routine offline regression set; the exact-checkout sweeps detect corpus-wide drift.
 
-The seven-file suite is what routine offline CI enforces. To reproduce the full sweep,
-use a clean checkout at the exact pinned commit and run:
+To reproduce either full sweep, use a clean checkout at the selected exact commit:
 
     git clone https://github.com/Fission-AI/OpenSpec.git /tmp/OpenSpec
     git -C /tmp/OpenSpec checkout 45cca5db6137ed209117cc70510eb3e057fb981b
-    npm run test:openspec-corpus -- /tmp/OpenSpec
+    npm run test:openspec-corpus -- --baseline canary /tmp/OpenSpec
+
+    git -C /tmp/OpenSpec checkout 4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b
+    npm run test:openspec-corpus -- --baseline release /tmp/OpenSpec
 
 The script refuses another commit or locally modified corpus paths and checks the
-157/614/1846 totals, so a future upstream checkout cannot silently masquerade as the
-result recorded here.
+baseline-specific totals, so a future upstream checkout cannot silently masquerade as
+either pinned baseline.
 
 [Fission-AI/OpenSpec]: https://github.com/Fission-AI/OpenSpec

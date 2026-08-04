@@ -5,6 +5,7 @@
  * Feature deltas group requirements under `## ADDED|MODIFIED|REMOVED Requirements`.
  * Scenarios are the acceptance criteria (Given/When/Then) and the source for tests.
  */
+import { createHash } from "node:crypto";
 
 export type DeltaKind = "ADDED" | "MODIFIED" | "REMOVED" | "BASE";
 
@@ -21,6 +22,24 @@ export interface Requirement {
    * OpenSpec-compatible documents continue to use their heading as identity.
    */
   id?: string;
+  /**
+   * The living requirement this delta was WRITTEN AGAINST, from a `Based-On:`
+   * body line — `requirementDigest` of that requirement at authoring time.
+   *
+   * Delta-only, and meaningful on MODIFIED/REMOVED alone: those two address a
+   * requirement that already exists, and a MODIFIED carries its full new text,
+   * so archive does not merge the living wording — it REPLACES it. Two features
+   * rewriting one requirement therefore lose the loser's text outright, and the
+   * in-flight warning (`delta.modified-conflict`) cannot see the case that
+   * actually happens: once the first archives it leaves `changes/`, the second
+   * goes green again, and its stale text lands on top without a word. This is
+   * the pin that closes that window — the same trick as `sources_digest`
+   * (core/provenance.ts), one requirement wide.
+   *
+   * Absent on requirements adopted from OpenSpec, which never had the line;
+   * those keep the older, weaker protection and are told so once (warn).
+   */
+  basedOn?: string;
   name: string;
   text: string[];
   /** OpenAPI operationIds this requirement governs, from an `Operations:` line. */
@@ -45,15 +64,34 @@ export interface Requirement {
    * will silently not merge. `delta.requirement-not-merged` tells them apart.
    */
   section?: string;
+  /**
+   * 1-based line of this requirement's `### Requirement:` heading in its source
+   * document. Body line `text[i]` is therefore at line `line + 1 + i` — the
+   * capture is contiguous from the heading to the first scenario — which is what
+   * lets `loam rebase` rewrite one `Based-On:` line by surgery instead of
+   * reserializing the document and flattening the author's sections and prose.
+   */
+  line?: number;
 }
 
 export const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
 const REQ_RE = /^###\s+Requirement:\s*(.+?)\s*$/;
 const SCN_RE = /^####\s+Scenario:\s*(.+?)\s*$/;
 const REQUIREMENT_ID_LINE_RE = /^\s*Requirement-ID:\s*(.*?)\s*$/i;
+const BASED_ON_LINE_RE = /^\s*Based-On:\s*(.*?)\s*$/i;
 
 /** Portable, review-friendly stable IDs. Case-sensitive by design. */
 export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+
+/**
+ * How much of the sha256 a `Based-On:` line carries — the length
+ * `sources_digest` already uses (core/provenance.ts), for one reason a reader
+ * can hold: every digest loam writes into a document reads the same.
+ */
+export const REQUIREMENT_DIGEST_LENGTH = 16;
+
+/** The value shape of a `Based-On:` line, exactly as `requirementDigest` writes it. */
+export const REQUIREMENT_DIGEST_RE = new RegExp(`^[0-9a-f]{${REQUIREMENT_DIGEST_LENGTH}}$`);
 
 export type RequirementIdProblem =
   | { kind: "invalid"; requirement: string; value: string }
@@ -98,6 +136,53 @@ export function requirementIdProblems(reqs: Requirement[]): RequirementIdProblem
     if (requirements.length > 1) problems.push({ kind: "duplicate", id, requirements });
   }
   return problems;
+}
+
+/** Every authored `Based-On:` value in a requirement body, including blanks. */
+export function basedOnDeclarations(requirement: Requirement): string[] {
+  return requirement.text.flatMap((line) => {
+    const match = BASED_ON_LINE_RE.exec(line);
+    return match === null ? [] : [match[1]!.trim()];
+  });
+}
+
+/**
+ * The requirement without its baseline marker — what a digest is taken over,
+ * and what archive merges into the living document.
+ *
+ * `Based-On:` is a statement ABOUT a delta ("this was written against that"),
+ * never part of the requirement it describes, and both consequences of
+ * forgetting that are bad. Left in the digest input, a requirement's digest
+ * would depend on the pin pointing at it, so no baseline could ever be
+ * self-consistent. Left in the merged text — `applyRequirementDelta` copies the
+ * delta's body into living wholesale — the living document would grow a pin to
+ * a version of itself, and the NEXT feature's baseline would be taken over a
+ * document containing the previous feature's bookkeeping.
+ */
+function withoutBaseline(requirement: Requirement): Requirement {
+  const { basedOn: _dropped, ...rest } = requirement;
+  return { ...rest, text: requirement.text.filter((line) => !BASED_ON_LINE_RE.test(line)) };
+}
+
+/**
+ * The identity of a requirement's CONTENT: sha256 over its canonical
+ * serialization, truncated like every other digest loam stamps.
+ *
+ * Canonical, not raw bytes, and deliberately: a living spec is rewritten by
+ * `serializeRequirements` on every archive, so hashing the file's bytes would
+ * make a baseline go stale over reflowed blank lines — a false alarm on the one
+ * check whose whole value is that it only fires when something real moved.
+ * What the hash therefore covers is exactly what survives a round trip: the
+ * heading, the body (`Requirement-ID:` and `Operations:`/`Covers:` lines
+ * included), and every scenario with its Given/When/Then lines. `kind` and
+ * `section` are not serialized and so are not hashed — a requirement does not
+ * change because the document quoting it moved it under another heading.
+ */
+export function requirementDigest(requirement: Requirement): string {
+  return createHash("sha256")
+    .update(serializeRequirements([withoutBaseline(requirement)]), "utf8")
+    .digest("hex")
+    .slice(0, REQUIREMENT_DIGEST_LENGTH);
 }
 
 /**
@@ -229,7 +314,7 @@ export function parseRequirements(md: string): Requirement[] {
   let scn: Scenario | null = null;
   const fenced = fenceTracker();
 
-  for (const line of stripBom(md).split(/\r?\n/)) {
+  for (const [index, line] of stripBom(md).split(/\r?\n/).entries()) {
     if (fenced(line)) {
       // Fenced content, marker included: body of whatever is open, never structure.
       if (scn) scn.lines.push(line);
@@ -250,7 +335,7 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const mr = REQ_RE.exec(line);
     if (mr) {
-      req = { kind, name: mr[1]!, text: [], operations: [], covers: [], scenarios: [], section };
+      req = { kind, name: mr[1]!, text: [], operations: [], covers: [], scenarios: [], section, line: index + 1 };
       out.push(req);
       scn = null;
       continue;
@@ -267,6 +352,11 @@ export function parseRequirements(md: string): Requirement[] {
       req.text.push(line);
       const mi = REQUIREMENT_ID_LINE_RE.exec(line);
       if (mi) req.id = mi[1]!.trim();
+      // Same keep-last quirk as Operations:/Covers: below — a repeated line is
+      // a document problem, reported as one (`delta.baseline-invalid`), never
+      // resolved differently by whoever happens to be reading.
+      const mb = BASED_ON_LINE_RE.exec(line);
+      if (mb) req.basedOn = mb[1]!.trim();
       const mo = /^\s*Operations?:\s*(.+?)\s*$/i.exec(line);
       if (mo) req.operations = mo[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
       // The Covers: mirror — same placement (requirement body, not a scenario),
@@ -300,6 +390,11 @@ export function serializeRequirements(reqs: Requirement[]): string {
     if (r.id !== undefined && !body.some((line) => REQUIREMENT_ID_LINE_RE.test(line))) {
       body.unshift(`Requirement-ID: ${r.id}`);
     }
+    // Directly under the identity it pins, which is where `loam rebase` writes
+    // it too — the two lines are read together, so they are never apart.
+    if (r.basedOn !== undefined && !body.some((line) => BASED_ON_LINE_RE.test(line))) {
+      body.splice(body.findIndex((line) => REQUIREMENT_ID_LINE_RE.test(line)) + 1, 0, `Based-On: ${r.basedOn}`);
+    }
     const text = body.join("\n").trim();
     if (text) chunk.push("", text);
     for (const s of r.scenarios) {
@@ -310,6 +405,18 @@ export function serializeRequirements(reqs: Requirement[]): string {
     chunks.push(chunk.join("\n"));
   }
   return chunks.join("\n\n").trim() + "\n";
+}
+
+/**
+ * A delta requirement as it lands in the living document, with the bookkeeping
+ * that belongs to the DELTA left behind: the `Based-On:` pin (a claim about
+ * which living version this was written against — meaningless once it IS the
+ * living version, and poison for the next feature's baseline, which would then
+ * hash the previous feature's pin) and the line it was parsed from.
+ */
+function asLiving(d: Requirement): Requirement {
+  const { line: _dropped, ...rest } = withoutBaseline(d);
+  return { ...rest, kind: "BASE" };
 }
 
 /** Apply a feature's ADDED/MODIFIED/REMOVED requirements onto a living requirement set. */
@@ -340,7 +447,7 @@ export function applyRequirementDelta(living: Requirement[], delta: Requirement[
         const selected = new Set(idMatches);
         result = result.filter((_, i) => !selected.has(i));
       } else {
-        const merged: Requirement = { ...d, kind: "BASE" };
+        const merged: Requirement = asLiving(d);
         if (idMatches.length === 1) result[idMatches[0]!] = merged;
         else result.push(merged);
       }
@@ -352,9 +459,8 @@ export function applyRequirementDelta(living: Requirement[], delta: Requirement[
       // its exact heading. Keep the identity while the repository migrates.
       const inheritedId = i >= 0 ? result[i]!.id : undefined;
       const merged: Requirement = {
-        ...d,
+        ...asLiving(d),
         ...(inheritedId === undefined ? {} : { id: inheritedId }),
-        kind: "BASE",
       };
       if (i >= 0) result[i] = merged;
       else result.push(merged);

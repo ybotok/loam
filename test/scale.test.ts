@@ -28,18 +28,25 @@ import { makeProject, runLoam, type Project } from "./helpers/harness.js";
 
 /** Maturity distribution, in rung order. Empty is absent on purpose: a service
  * directory with no artifacts is a validate ERROR, and this fleet is clean. */
-const PARTIAL = 5; //    svc-1  … svc-5   model + spec, no openapi, never called
+/**
+ * svc-1 … svc-5: model + spec, no openapi.yaml, and NOTHING in the landscape
+ * calls an operation on them — the workers, crons and consumers a real fleet is
+ * half made of. They are fully documented, and the maturity ladder used to pin
+ * them at `partial` forever for missing a contract nobody wants; it now asks
+ * for an OpenAPI only where the landscape proves an API is expected.
+ */
+const APILESS = 5;
 const DOCUMENTED = 10; // svc-6  … svc-15  the full triple
 const SOURCED = 10; //   svc-16 … svc-25  triple + sources declared
 const VOUCHED = 5; //    svc-26 … svc-30  triple + sources + digest + verified
-const SERVICES = PARTIAL + DOCUMENTED + SOURCED + VOUCHED;
+const SERVICES = APILESS + DOCUMENTED + SOURCED + VOUCHED;
 
 const FEATURES = 10; // FEAT-1 … FEAT-10, each an edge svc-(15+i) → svc-(5+i)
 
 const svc = (i: number): string => `svc-${i}`;
 /** LikeC4 identifiers take no dashes. */
 const ident = (i: number): string => `svc${i}`;
-const hasOpenapi = (i: number): boolean => i > PARTIAL;
+const hasOpenapi = (i: number): boolean => i > APILESS;
 
 function model(i: number): string {
   return `specification {
@@ -61,8 +68,8 @@ views {
 }
 
 function spec(i: number): string {
-  const sourced = i > PARTIAL + DOCUMENTED;
-  const vouched = i > PARTIAL + DOCUMENTED + SOURCED;
+  const sourced = i > APILESS + DOCUMENTED;
+  const vouched = i > APILESS + DOCUMENTED + SOURCED;
   const fm = [
     `service: ${svc(i)}`,
     `status: ${vouched ? "verified" : "draft"}`,
@@ -120,7 +127,7 @@ function landscape(): string {
   }`;
   });
   const edges: string[] = [];
-  for (let i = PARTIAL + 1; i < SERVICES; i += 1) {
+  for (let i = APILESS + 1; i < SERVICES; i += 1) {
     edges.push(`  ${ident(i)} -> ${ident(i + 1)} 'Calls op_${i + 1}_a' {
     metadata { op 'op_${i + 1}_a' }
   }`);
@@ -257,7 +264,7 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
         errors: 0,
         // The one warning a clean adopted fleet still carries: every service
         // whose frontmatter declares no `sources` (partial + documented).
-        warnings: PARTIAL + DOCUMENTED,
+        warnings: APILESS + DOCUMENTED,
       });
       // Services that DO declare sources can only be checked from their own
       // repos — the fleet gate must say so rather than read as "verified".
@@ -277,7 +284,7 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
       // Every tagged edge is covered by its feature's arch delta.
       expect(count("c4.uncovered")).toBe(0);
       expect(count("covers.unknown")).toBe(0);
-      expect(count("sources.absent")).toBe(PARTIAL + DOCUMENTED);
+      expect(count("sources.absent")).toBe(APILESS + DOCUMENTED);
       expect(count("delta.valid")).toBe(FEATURES);
       expect(count("archedge.covered")).toBe(FEATURES);
       expect(count("coherence.ok")).toBe(FEATURES);
@@ -305,8 +312,12 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
       const json = JSON.parse(res.stdout);
       expect(json.maturity).toEqual({
         empty: 0,
-        partial: PARTIAL,
-        documented: DOCUMENTED,
+        // Nothing is `partial`: every service in this fleet has the artifacts
+        // that are actually expected of it. The five API-less ones sit at
+        // `documented` beside the ten with contracts — the rung means "has what
+        // it needs", not "has an openapi.yaml".
+        partial: 0,
+        documented: APILESS + DOCUMENTED,
         sourced: SOURCED,
         vouched: VOUCHED,
       });
@@ -317,7 +328,7 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
       const byId = new Map(
         (json.services as Array<{ id: string; maturity: string }>).map((s) => [s.id, s.maturity]),
       );
-      expect(byId.get("svc-1")).toBe("partial");
+      expect(byId.get("svc-1")).toBe("documented");
       expect(byId.get("svc-6")).toBe("documented");
       expect(byId.get("svc-16")).toBe("sourced");
       expect(byId.get("svc-30")).toBe("vouched");

@@ -4,9 +4,11 @@
  * src/core/docs.ts).
  *
  * Families:
- *   - init: scaffolds the docs-repo skeleton, writes loam.json with an ABSOLUTE
- *     docsDir, is idempotent (never clobbers user files), and preserves
- *     previously configured `service` on re-init (config spread).
+ *   - init: scaffolds the docs-repo skeleton behind `--create` (joining an
+ *     existing docs repo writes nothing into it), stores docsDir in loam.json
+ *     exactly as the caller spelled it so a committed config survives a clone,
+ *     is idempotent (never clobbers user files), and preserves previously
+ *     configured `service` on re-init (config spread).
  *   - init --json: {ok, docsDir, created, skipped, tools} — skipped is the
  *     other half of the never-overwrite contract, tools names the agent tools
  *     the command files were generated for — and a clean refusal when --docs
@@ -28,7 +30,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { readFile, writeFile, realpath, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, resolve } from "node:path";
 import {
   coherentFixture,
   makeProject,
@@ -75,7 +77,7 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 describe("init: scaffolding a fresh docs repo", () => {
   it("creates architecture/ services/ features/, and reports what it scaffolded", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./docs-x");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./docs-x");
     expect(res.code).toBe(0);
     for (const sub of ["architecture", "services", "features"]) {
       expect(existsSync(join(dir, "docs-x", sub))).toBe(true);
@@ -89,33 +91,56 @@ describe("init: scaffolding a fresh docs repo", () => {
     // it and nothing kept it current, so it named an empty fleet forever. A second
     // list of services is the drift `landscape.service-unmodelled` exists to catch.
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./docs-x");
+    await runLoam(dir, "init", "--create", "--docs", "./docs-x");
     expect(existsSync(join(dir, "docs-x", "loam.docs.json"))).toBe(false);
   });
 
-  it("writes loam.json in the cwd with an ABSOLUTE docsDir — relative --docs resolved against the cwd", async () => {
+  it("writes loam.json in the cwd with the docsDir AS GIVEN — a relative --docs stays relative", async () => {
+    // loam.json is committed, and eleven repositories clone to eleven different
+    // paths. An absolute docsDir resolves only on the machine that ran `init`;
+    // worse, on a machine where the path happens to exist it silently reads and
+    // writes somebody else's checkout. loadConfig resolves the stored string
+    // against the config file's own directory, so relative is the portable form.
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./docs-x");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./docs-x");
     expect(res.code).toBe(0);
     const config = await readJson(join(dir, "loam.json"));
     expect(typeof config.docsDir).toBe("string");
-    expect(isAbsolute(config.docsDir as string)).toBe(true);
+    expect(isAbsolute(config.docsDir as string)).toBe(false);
+    expect(config.docsDir).toBe("./docs-x");
+    // and it still points where it always did — resolved against loam.json's dir.
     // compare realpaths: process.chdir resolves tmpdir symlinks on macOS
-    expect(await realpath(config.docsDir as string)).toBe(await realpath(join(dir, "docs-x")));
+    expect(await realpath(resolve(dir, config.docsDir as string))).toBe(
+      await realpath(join(dir, "docs-x")),
+    );
+  });
+
+  it("keeps an ABSOLUTE --docs absolute — the caller asked for that spelling", async () => {
+    const dir = await throwawayDir();
+    const target = join(dir, "docs-abs");
+    const res = await runLoam(dir, "init", "--create", "--docs", target);
+    expect(res.code).toBe(0);
+    const config = await readJson(join(dir, "loam.json"));
+    expect(isAbsolute(config.docsDir as string)).toBe(true);
+    expect(await realpath(config.docsDir as string)).toBe(await realpath(target));
   });
 
   it("defaults --docs to .loam-docs under the cwd", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init");
+    const res = await runLoam(dir, "init", "--create");
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, ".loam-docs", "architecture"))).toBe(true);
     const config = await readJson(join(dir, "loam.json"));
-    expect(await realpath(config.docsDir as string)).toBe(await realpath(join(dir, ".loam-docs")));
+    // the stored value is the relative default; resolve it against loam.json's
+    // directory, never against the test runner's cwd
+    expect(await realpath(resolve(dir, config.docsDir as string))).toBe(
+      await realpath(join(dir, ".loam-docs")),
+    );
   });
 
   it("persists --service into loam.json and echoes it", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--service", "payment-service");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./d", "--service", "payment-service");
     expect(res.code).toBe(0);
     const config = await readJson(join(dir, "loam.json"));
     expect(config.service).toBe("payment-service");
@@ -128,7 +153,7 @@ describe("init: scaffolding a fresh docs repo", () => {
     const dir = await throwawayDir();
     const custom = "# our docs\n";
     await writeFiles(dir, { "d/README.md": custom });
-    const res = await runLoam(dir, "init", "--docs", "./d");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./d");
     expect(res.code).toBe(0);
     expect(await readFile(join(dir, "d", "README.md"), "utf8")).toBe(custom);
     // the missing subdirs still get created around it
@@ -143,7 +168,7 @@ describe("init: scaffolding a fresh docs repo", () => {
 describe("init: idempotency and config preservation", () => {
   it("a second init leaves user files untouched and reports nothing scaffolded", async () => {
     const dir = await throwawayDir();
-    const first = await runLoam(dir, "init", "--docs", "./d");
+    const first = await runLoam(dir, "init", "--create", "--docs", "./d");
     expect(first.code).toBe(0);
     const markerPath = join(dir, "d", "services", "marker.txt");
     await writeFile(markerPath, "keep me\n", "utf8");
@@ -157,7 +182,7 @@ describe("init: idempotency and config preservation", () => {
 
   it("re-init WITHOUT --service preserves the previously configured service (config spread)", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d", "--service", "svc-a");
+    await runLoam(dir, "init", "--create", "--docs", "./d", "--service", "svc-a");
     const res = await runLoam(dir, "init", "--docs", "./d");
     expect(res.code).toBe(0);
     const config = await readJson(join(dir, "loam.json"));
@@ -173,7 +198,7 @@ describe("init: idempotency and config preservation", () => {
 describe("init: --json contract", () => {
   it("emits one ok-enveloped object with docsDir, created and skipped — no prose", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./docs-x", "--json");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./docs-x", "--json");
     expect(res.code).toBe(0);
     // JSON.parse over the whole stream is the no-prose assertion
     const json = JSON.parse(res.stdout);
@@ -193,7 +218,7 @@ describe("init: --json contract", () => {
 
   it("a second init reports everything as skipped, nothing created — init never overwrites", async () => {
     const dir = await throwawayDir();
-    const first = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
+    const first = JSON.parse((await runLoam(dir, "init", "--create", "--docs", "./d", "--json")).stdout);
     const second = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
     expect(second.ok).toBe(true);
     expect(second.created).toEqual([]);
@@ -204,7 +229,7 @@ describe("init: --json contract", () => {
   it("splits a partially scaffolded repo between created and skipped", async () => {
     const dir = await throwawayDir();
     await writeFiles(dir, { "d/services/.keep": "" });
-    const json = JSON.parse((await runLoam(dir, "init", "--docs", "./d", "--json")).stdout);
+    const json = JSON.parse((await runLoam(dir, "init", "--create", "--docs", "./d", "--json")).stdout);
     expect(json.skipped.some((p: string) => p.endsWith("services"))).toBe(true);
     expect(json.created.some((p: string) => p.endsWith("services"))).toBe(false);
     expect(json.created.some((p: string) => p.endsWith("architecture"))).toBe(true);
@@ -213,7 +238,7 @@ describe("init: --json contract", () => {
   it("--no-commands keeps the slash commands out of both lists", async () => {
     const dir = await throwawayDir();
     const json = JSON.parse(
-      (await runLoam(dir, "init", "--docs", "./d", "--no-commands", "--json")).stdout,
+      (await runLoam(dir, "init", "--create", "--docs", "./d", "--no-commands", "--json")).stdout,
     );
     expect(json.ok).toBe(true);
     const all: string[] = [...json.created, ...json.skipped];
@@ -277,7 +302,7 @@ describe("config handling", () => {
     // init can always rewrite a corrupt loam.json.
     const dir = await throwawayDir();
     await writeFile(join(dir, "loam.json"), "{ definitely not json", "utf8");
-    const res = await runLoam(dir, "init", "--docs", "./d");
+    const res = await runLoam(dir, "init", "--create", "--docs", "./d");
     expect(res.code).toBe(0);
     const repaired = JSON.parse(await readFile(join(dir, "loam.json"), "utf8"));
     expect(typeof repaired.docsDir).toBe("string");
@@ -325,17 +350,28 @@ describe("delta: projection onto services (coherent fixture)", () => {
     expect(res.out).toContain('← payment-service  "Calls createSplit"');
   });
 
-  it("prints '[ADDED] <name>  (1 scenario)' requirement lines with scenario bullets for a service that has a delta", async () => {
+  it("prints '[ADDED] <name>  (1 scenario)' requirement lines with the scenarios VERBATIM", async () => {
+    // The text view used to be a table of contents for a file the reader then
+    // had to open — scenario names only. `delta` is handed to a coding agent as
+    // its task, so it carries the Given/When/Then the acceptance criteria are
+    // written in, the same content --json always had.
     const p = await project(coherentFixture(), { service: "payment-split-service" });
     const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-split-service");
     expect(res.code).toBe(0);
     expect(res.out).toContain("Requirements:");
     expect(res.out).toContain("[ADDED] Split a payment  (1 scenario)");
-    expect(res.out).toContain("· Split across two payees");
+    expect(res.out).toContain("Scenario: Split across two payees");
+    expect(res.out).toContain("- **Given**");
   });
 
-  it("reports '(no architecture change for this service)' for a service the delta does not touch", async () => {
-    const p = await project(coherentFixture(), { service: "payment-service" });
+  it("reports '(no architecture change for this service)' for a LIVING service the delta does not touch", async () => {
+    // checkout-web has to exist under services/ for this to be the honest-empty
+    // case: a service id naming nothing at all is now `unknown-target`, because
+    // a plausible empty report is indistinguishable from a finished service.
+    const files = coherentFixture();
+    files["services/checkout-web/spec.md"] =
+      "---\nservice: checkout-web\n---\n\n# checkout-web\n\n## Requirements\n";
+    const p = await project(files, { service: "payment-service" });
     const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "checkout-web");
     expect(res.code).toBe(0);
     expect(res.out).toContain("FEAT-1 · checkout-web");
@@ -404,10 +440,20 @@ describe("delta: degraded inputs", () => {
 /* delta — intent frontmatter stripping                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * `delta --service <id>` refuses an id that names no `services/<id>/` — a typo
+ * used to render as a plausible empty projection. The fixtures below are about
+ * intent parsing and feature resolution, so they declare the service they
+ * project onto and let the refusal be tested where it belongs.
+ */
+const ANY_SVC = {
+  "services/any-svc/spec.md": "---\nservice: any-svc\n---\n\n# any-svc\n\n## Requirements\n",
+};
+
 describe("delta: intent frontmatter stripping", () => {
   it("an intent.md with NO frontmatter is printed verbatim", async () => {
     const p = await project(
-      { "features/FEAT-9/intent.md": "# Raw intent\n\nBody without frontmatter.\n" },
+      { ...ANY_SVC, "features/FEAT-9/intent.md": "# Raw intent\n\nBody without frontmatter.\n" },
       { service: "any-svc" },
     );
     const res = await runLoam(p.workDir, "delta", "FEAT-9", "--service", "any-svc");
@@ -418,7 +464,7 @@ describe("delta: intent frontmatter stripping", () => {
 
   it("frontmatter whose closing '---' is the last line without a trailing newline never leaks its keys", async () => {
     const p = await project(
-      { "features/FEAT-9/intent.md": "---\nsecret: hidden\n---" },
+      { ...ANY_SVC, "features/FEAT-9/intent.md": "---\nsecret: hidden\n---" },
       { service: "any-svc" },
     );
     const res = await runLoam(p.workDir, "delta", "FEAT-9", "--service", "any-svc");
@@ -431,6 +477,7 @@ describe("delta: intent frontmatter stripping", () => {
   it("a '---' horizontal rule later in the body does not extend the frontmatter — text on both sides of the rule survives", async () => {
     const p = await project(
       {
+        ...ANY_SVC,
         "features/FEAT-9/intent.md":
           "---\nfm_key: fm_value\n---\n\nIntro before rule.\n\n---\n\nAfter the rule.\n",
       },
@@ -445,7 +492,7 @@ describe("delta: intent frontmatter stripping", () => {
 
   it("body text directly after the closing '---' (no blank line) is kept while the frontmatter is stripped", async () => {
     const p = await project(
-      { "features/FEAT-9/intent.md": "---\nowner: team-x\n---\nDirect body line.\n" },
+      { ...ANY_SVC, "features/FEAT-9/intent.md": "---\nowner: team-x\n---\nDirect body line.\n" },
       { service: "any-svc" },
     );
     const res = await runLoam(p.workDir, "delta", "FEAT-9", "--service", "any-svc");
@@ -461,6 +508,7 @@ describe("delta: intent frontmatter stripping", () => {
 
 describe("delta: feature directory resolution", () => {
   const twoFeatures = {
+    ...ANY_SVC,
     "features/FEAT-1-split/intent.md": "# Intent ONE\n",
     "features/FEAT-10-other/intent.md": "# Intent TEN\n",
   };
@@ -483,7 +531,7 @@ describe("delta: feature directory resolution", () => {
 
   it("a bare 'FEAT-2' directory (no slug suffix) resolves by exact name", async () => {
     const p = await project(
-      { "features/FEAT-2/intent.md": "# Intent TWO\n" },
+      { ...ANY_SVC, "features/FEAT-2/intent.md": "# Intent TWO\n" },
       { service: "any-svc" },
     );
     const res = await runLoam(p.workDir, "delta", "FEAT-2", "--service", "any-svc");

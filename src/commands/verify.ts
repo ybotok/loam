@@ -40,12 +40,13 @@ import {
   buildFederatedVerification,
   checkAnswers,
   featureChecklist,
-  readVerification,
+  readVerificationState,
   verificationPath,
   writeVerification,
   type Answer,
   type AnsweredBy,
   type Checklist,
+  type DiscardedAnswer,
   type Verification,
 } from "../core/verify.js";
 
@@ -92,12 +93,32 @@ export function registerVerify(program: Command): void {
         return;
       }
       const { docsDir } = config;
-      if (opts.service !== undefined && config.service !== undefined && config.service !== opts.service) {
-        return fail(
-          json,
-          "service-mismatch",
-          `This repository is configured as service '${config.service}', so it cannot attest claims for '${opts.service}'.`,
-        );
+      const recording = opts.record !== undefined || opts.results !== undefined;
+
+      // WRITING is bound to the repository; READING is not. An attestation
+      // pins claims to this repo's git HEAD and to file:line evidence inside
+      // it, so `--record --service X` may only run where loam.json says this
+      // repo IS X — vouch's and gherkin's refusal, for vouch's reason: from
+      // anywhere else, that repository is somebody else's. Reading takes
+      // `--service` as a pure lens (which claims are checkout-web's, and what
+      // has it said?) and needs no binding at all, because it writes nothing.
+      if (recording && opts.service !== undefined) {
+        if (config.service === undefined) {
+          return fail(
+            json,
+            "repository-unavailable",
+            `Cannot attest for '${opts.service}' from here: this is not a service repo — loam.json declares no \`service\`. ` +
+              `A federated attestation binds the answers to this repository's git HEAD and to evidence inside it, so the repository has to say which service it is. ` +
+              `Add "service": "${opts.service}" to loam.json, or record it from that service's own repo.`,
+          );
+        }
+        if (config.service !== opts.service) {
+          return fail(
+            json,
+            "service-mismatch",
+            `This repository is configured as service '${config.service}', so it cannot attest claims for '${opts.service}'.`,
+          );
+        }
       }
 
       // Archived features resolve too: a shipped feature's verification is worth
@@ -107,6 +128,22 @@ export function registerVerify(program: Command): void {
         return fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir(docsDir)}.`);
       }
 
+      // Before anything else: a verification.yaml that exists but will not read
+      // is a refusal, not an absence. It holds somebody's answers and — in a
+      // fleet — other repositories' attestations; treating it as "not verified"
+      // let the next --record silently overwrite all of it, and made the read
+      // view say "no record" about a file sitting right there.
+      const existing = await readVerificationState(feature.dir);
+      if (existing.state === "unreadable") {
+        return fail(
+          json,
+          "record-unreadable",
+          `${repoPath(docsDir, verificationPath(feature.dir))} exists but cannot be read as a verification record: ${existing.reason}. ` +
+            "It is plain YAML — repair it by hand, or delete it and record again. loam will not overwrite a record it could not read.",
+        );
+      }
+      const recorded = existing.state === "ok" ? existing.verification : null;
+
       // But an archived feature never gets a re-derived checklist — see the
       // header. Its record is frozen history, and --record / --results refuse
       // alike: the code is `invalid-option` rather than `answers-mismatch`
@@ -114,25 +151,31 @@ export function registerVerify(program: Command): void {
       // current checklist to answer, so the wrong thing here is the option,
       // not the answer set.
       if (feature.archived) {
-        if (opts.record !== undefined || opts.results !== undefined) {
+        if (recording) {
           return fail(
             json,
             "invalid-option",
             `${feature.id} is archived — its verification is history now. \`loam unarchive ${feature.id}\` first if the answers really need to change.`,
           );
         }
-        reportFrozen(docsDir, feature.dir, feature.id, await readVerification(feature.dir), json);
+        reportFrozen(docsDir, feature.dir, feature.id, recorded, json);
         return;
       }
 
       const checklist = await featureChecklist(docsDir, feature.dir, feature.id);
 
-      if (opts.record !== undefined || opts.results !== undefined) {
-        await record(docsDir, feature.dir, checklist, opts, json);
+      if (recording) {
+        // Standing in a service repo, `--service` is what the repo already
+        // says: omitting it must not fall back to the legacy all-at-once form,
+        // which claims the whole fleet's checklist on this one repo's word.
+        await record(docsDir, feature.dir, checklist, opts.service ?? config.service, recorded, opts, json);
         return;
       }
 
-      report(docsDir, feature.dir, checklist, await readVerification(feature.dir), json);
+      report(docsDir, feature.dir, checklist, recorded, json, {
+        lens: opts.service,
+        bound: config.service,
+      });
     });
 }
 
@@ -140,7 +183,7 @@ export function registerVerify(program: Command): void {
 /* Reading                                                             */
 /* ------------------------------------------------------------------ */
 
-function statuses(checklist: Checklist, recorded: Verification | null): ClaimStatus[] {
+function statuses(checklist: Checklist, claims: Checklist["claims"], recorded: Verification | null): ClaimStatus[] {
   const subjects = new Map(checklist.claims.map((claim) => [claim.id, claim.subject]));
   const attested =
     recorded?.schema !== 2
@@ -155,7 +198,7 @@ function statuses(checklist: Checklist, recorded: Verification | null): ClaimSta
       .filter((claim) => attested === null || attested.has(claim.id))
       .map((claim) => [claim.id, claim]),
   );
-  return checklist.claims.map((c) => {
+  return claims.map((c) => {
     const answer = byId.get(c.id);
     return {
       id: c.id,
@@ -170,14 +213,32 @@ function statuses(checklist: Checklist, recorded: Verification | null): ClaimSta
   });
 }
 
+/**
+ * The read view.
+ *
+ * `lens` is `--service`: the same checklist, narrowed to the claims that
+ * service's code answers. It exists because in a ten-repo fleet the whole
+ * checklist is never one repository's business, and an agent that cannot ask
+ * "what do I still owe on FEAT-1?" answers the question by guessing. Narrowing
+ * narrows the verdict too — `verified` then means "every claim owned by this
+ * service is confirmed", which is why the payload names the service it applied.
+ *
+ * `bound` is loam.json's `service` — what this repository says it is. It only
+ * shapes the footer, and it is the whole of how federation is discoverable:
+ * the recording form printed here is the one that will actually work from here.
+ */
 function report(
   docsDir: string,
   featureDir: string,
   checklist: Checklist,
   recorded: Verification | null,
   json: boolean,
+  scope: { lens?: string; bound?: string } = {},
 ): void {
-  const claims = statuses(checklist, recorded);
+  const lens = scope.lens;
+  const owners = [...new Set(checklist.claims.map((c) => c.subject))].sort();
+  const scoped = lens === undefined ? checklist.claims : checklist.claims.filter((c) => c.subject === lens);
+  const claims = statuses(checklist, scoped, recorded);
   const count = (v: string): number => claims.filter((c) => c.verdict === v).length;
   const summary = {
     claims: claims.length,
@@ -195,8 +256,12 @@ function report(
       feature: checklist.feature,
       path: repoPath(docsDir, featureDir),
       digest: checklist.digest,
+      // Named only when narrowed, so a consumer can never mistake a service's
+      // verdict for the feature's.
+      ...(lens === undefined ? {} : { service: lens, checklistClaims: checklist.claims.length }),
       verified,
       summary,
+      services: owners,
       recorded:
         recorded === null
           ? null
@@ -212,13 +277,21 @@ function report(
     return;
   }
 
-  console.log(`${checklist.feature} — ${plural(claims.length, "claim")} derived from ${repoPath(docsDir, featureDir)}\n`);
+  const scopeNote =
+    lens === undefined ? "" : ` owned by ${lens} (of ${plural(checklist.claims.length, "claim")} on the checklist)`;
+  console.log(
+    `${checklist.feature} — ${plural(claims.length, "claim")}${scopeNote} derived from ${repoPath(docsDir, featureDir)}\n`,
+  );
   if (claims.length === 0) {
-    console.log("  Nothing to check: this feature's delta, specs and openapi promise nothing yet.");
+    console.log(
+      lens === undefined
+        ? "  Nothing to check: this feature's delta, specs and openapi promise nothing yet."
+        : `  No claim on this checklist is owned by '${lens}'.${owners.length > 0 ? ` The services that own claims here are ${owners.join(", ")}.` : ""}`,
+    );
     return;
   }
   for (const c of claims) {
-    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}${byRunner(c.answered_by)}`);
+    console.log(`  ${MARK[c.verdict]} ${c.id}  [${c.subject}]  ${c.claim}${byRunner(c.answered_by)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
@@ -242,9 +315,42 @@ function report(
   if (!verified) {
     console.log("\n  Answer each claim, then record the answers:\n");
     console.log('    [{ "id": "<claim id>", "verdict": "confirmed", "evidence": ["src/x.ts:42"] }]');
-    console.log(`\n    loam verify ${checklist.feature} --record answers.json`);
+    console.log(`\n    loam verify ${checklist.feature} --record answers.json${recordSuffix(scope, owners)}`);
+    for (const line of federationNote(scope, owners)) console.log(line);
     console.log("\n  A claim you cannot show evidence for is `unconfirmed` — say why in `note`.");
   }
+}
+
+/**
+ * The `--service` the printed form should carry. It comes from loam.json, never
+ * from the checklist: the only attestation this repository can make is its own,
+ * and a hint naming a service that lives somewhere else is a hint that fails.
+ */
+function recordSuffix(scope: { lens?: string; bound?: string }, owners: string[]): string {
+  if (scope.bound !== undefined) return ` --service ${scope.bound}`;
+  return owners.length > 1 || scope.lens !== undefined ? " --service <svc>" : "";
+}
+
+/** Why the form above has a `--service` on it — the one place federation is taught. */
+function federationNote(scope: { lens?: string; bound?: string }, owners: string[]): string[] {
+  if (scope.bound !== undefined) {
+    const others = owners.filter((s) => s !== scope.bound);
+    return [
+      "",
+      `  This repository is ${scope.bound}, so it attests only ${scope.bound}'s claims, bound to its git HEAD.`,
+      ...(others.length === 0
+        ? []
+        : [`  The claims owned by ${others.join(", ")} are recorded the same way from those repositories.`]),
+    ];
+  }
+  if (owners.length > 1 || scope.lens !== undefined) {
+    return [
+      "",
+      `  This checklist spans ${plural(owners.length, "service")} (${owners.join(", ")}) — each attests its own claims`,
+      "  from its own repository, where loam.json names that service.",
+    ];
+  }
+  return [];
 }
 
 /**
@@ -295,7 +401,10 @@ function reportFrozen(
     `${featureId} — verification recorded ${v.recorded}, frozen at archive (${repoPath(docsDir, featureDir)})\n`,
   );
   for (const c of v.claims) {
-    console.log(`  ${MARK[c.verdict]} ${c.id}  ${c.claim}${byRunner(c.answered_by)}`);
+    // `subject` is absent in records written before schema 2 — an old record
+    // must read as itself, not gain a service it never named.
+    const subject = c.subject === undefined ? "" : `  [${c.subject}]`;
+    console.log(`  ${MARK[c.verdict]} ${c.id}${subject}  ${c.claim}${byRunner(c.answered_by)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
@@ -327,10 +436,29 @@ async function record(
   docsDir: string,
   featureDir: string,
   checklist: Checklist,
+  service: string | undefined,
+  previous: Verification | null,
   opts: VerifyOptions,
   json: boolean,
 ): Promise<void> {
-  const service = opts.service;
+  // The legacy all-at-once form answers the WHOLE checklist on one repository's
+  // word and writes a schema-1 record — no attestations, no commits. Run over a
+  // federated record it does not merge and it does not migrate: it erases every
+  // other service's commit-bound attestation, and the erasure is invisible
+  // afterwards because what replaces it is a well-formed, plausible record. So
+  // it refuses, and names the repositories whose word is on the file.
+  const attested = previous?.schema === 2 ? (previous.attestations ?? []) : [];
+  if (service === undefined && attested.length > 0) {
+    const services = [...new Set(attested.map((a) => a.service))].sort();
+    return fail(
+      json,
+      "record-federated",
+      `${repoPath(docsDir, verificationPath(featureDir))} is a federated record: ${plural(services.length, "service")} (${services.join(", ")}) have attested claims against their own git commits. ` +
+        "Recording without --service would replace all of it with one unattested answer set. " +
+        `Record this service's claims from its own repo instead: \`loam verify ${checklist.feature} --record answers.json --service <svc>\`.`,
+    );
+  }
+
   const scopedClaims =
     service === undefined ? checklist.claims : checklist.claims.filter((claim) => claim.subject === service);
   if (service !== undefined && scopedClaims.length === 0) {
@@ -392,6 +520,7 @@ async function record(
     agentClaims,
     raw,
     opts.results === undefined ? undefined : new Set(runnerClaims.map((c) => c.id)),
+    { feature: checklist.feature, ...(service === undefined ? {} : { service }) },
   );
   if (!checked.ok) return fail(json, checked.code, checked.message);
 
@@ -406,17 +535,20 @@ async function record(
 
   const recorded = today(new Date());
   let verification: Verification;
+  let discarded: DiscardedAnswer[] = [];
   if (service === undefined) {
     verification = buildVerification(checklist, [...fromRunner, ...checked.answers], recorded);
   } else {
-    verification = buildFederatedVerification(
+    const built = buildFederatedVerification(
       checklist,
       service,
       [...fromRunner, ...checked.answers],
-      await readVerification(featureDir),
+      previous,
       recorded,
       serviceCommit!,
     );
+    verification = built.verification;
+    discarded = built.discarded;
   }
   const path = await writeVerification(featureDir, verification);
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
@@ -439,6 +571,7 @@ async function record(
       summary: verification.summary,
       ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
       unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
+      ...(discarded.length === 0 ? {} : { discarded }),
     });
     return;
   }
@@ -461,6 +594,30 @@ async function record(
   }
   for (const c of unconfirmed) {
     console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
+  }
+
+  // What the previous record answered and this one does not. A federated write
+  // is a partial write, so the first one over an all-at-once record drops every
+  // answer it cannot attribute to a commit — correct, but silence here reads as
+  // loam having lost the answers, and nobody goes looking for what to re-record.
+  if (discarded.length > 0) {
+    const off = discarded.filter((d) => d.reason === "off-checklist").length;
+    console.log(
+      `\n  ${plural(discarded.length, "earlier answer")} from ${repoPath(docsDir, verificationPath(featureDir))} ${discarded.length === 1 ? "is" : "are"} not carried into this record:`,
+    );
+    for (const d of discarded) {
+      console.log(
+        `    - ${d.id}${d.subject === undefined ? "" : ` [${d.subject}]`}  ${d.claim}` +
+          (d.reason === "off-checklist"
+            ? "  (the feature changed; nothing asks this any more)"
+            : "  (no commit attestation binds it — its service must record it again)"),
+      );
+    }
+    if (discarded.length > off) {
+      console.log(
+        `    Each owning service records its own with \`loam verify ${verification.feature} --record answers.json --service <svc>\` in its repo.`,
+      );
+    }
   }
   const unanswered = verification.summary.unanswered ?? 0;
   console.log(

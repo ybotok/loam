@@ -329,11 +329,20 @@ export type AnswerCheck =
  * refuses with its own diagnosis — the id IS on the feature's checklist, so
  * calling it unknown would send the caller hunting a staleness that is not
  * there.
+ *
+ * `context` is what turns the last line from a circle into an instruction. In a
+ * fleet the commonest way to "miss" a claim is that it is not yours: the
+ * checklist spans ten repositories and this one can only answer its own. Told
+ * only to "answer the claims it lists", an agent in the payment-service repo
+ * re-runs verify, sees the same checkout-web claims it cannot speak for, and
+ * either loops or invents evidence. So when every unanswered claim belongs to
+ * another service, say THAT, and name the command that records them.
  */
 export function checkAnswers(
   claims: Claim[],
   raw: unknown,
   runnerOwned?: ReadonlySet<string>,
+  context?: { feature: string; service?: string },
 ): AnswerCheck {
   const refuse = (code: AnswerRefusal, message: string): AnswerCheck => ({ ok: false, code, message });
 
@@ -385,7 +394,8 @@ export function checkAnswers(
   const strayIds = [...new Set(answers.map((a) => a.id).filter((id) => !known.has(id)))];
   const runnerHit = strayIds.filter((id) => runnerOwned?.has(id) === true);
   const unknown = strayIds.filter((id) => runnerOwned?.has(id) !== true);
-  const missing = claims.filter((c) => !byId.has(c.id)).map((c) => c.id);
+  const missingClaims = claims.filter((c) => !byId.has(c.id));
+  const missing = missingClaims.map((c) => c.id);
   if (runnerHit.length + unknown.length + missing.length + twice.length > 0) {
     const parts = [
       runnerHit.length > 0
@@ -397,7 +407,8 @@ export function checkAnswers(
     ].filter((s) => s.length > 0);
     return refuse(
       "answers-mismatch",
-      `These answers do not match the checklist — ${parts.join("; ")}. Re-run \`loam verify\` and answer the claims it lists.`,
+      `These answers do not match the checklist — ${parts.join("; ")}. ` +
+        missingAdvice(missingClaims, claims.filter((c) => byId.has(c.id)), context),
     );
   }
 
@@ -415,6 +426,38 @@ export function checkAnswers(
   // Checklist order, not the order they were written in: the record reads in the
   // order the questions were asked, whatever the agent did.
   return { ok: true, answers: claims.map((c) => byId.get(c.id)!) };
+}
+
+/**
+ * The last sentence of an `answers-mismatch`. "Re-run and answer the claims it
+ * lists" is sound advice only when the caller CAN answer them. In a fleet the
+ * checklist is federated — a feature's claims are filed under the service whose
+ * code answers them — so the honest diagnosis for a repo that answered
+ * everything it owns is "the rest is not yours", together with the form that
+ * records the rest. Anything else sends the caller round the same loop.
+ */
+function missingAdvice(
+  missing: Claim[],
+  answered: Claim[],
+  context?: { feature: string; service?: string },
+): string {
+  const generic = "Re-run `loam verify` and answer the claims it lists.";
+  if (context === undefined || missing.length === 0 || answered.length === 0) return generic;
+  // The signature of "I answered mine and the rest is not mine": the services
+  // that own the unanswered claims and the services that own the answered ones
+  // do not overlap. A single-service checklist with one claim forgotten fails
+  // this test and keeps the generic advice, which is the right advice there —
+  // that claim really is the caller's to answer.
+  const owners = [...new Set(missing.map((c) => c.subject))].sort();
+  const covered = new Set(answered.map((c) => c.subject));
+  if (owners.some((s) => covered.has(s))) return generic;
+  const form = `\`loam verify ${context.feature} --record answers.json --service <svc>\``;
+  const mine = context.service;
+  return mine === undefined
+    ? `Those claims are owned by ${owners.join(", ")} — each service attests its own from its own repository (${form}); ` +
+        "this all-at-once form has to answer the whole checklist in one file."
+    : `Every unanswered claim belongs to a different service (${owners.join(", ")}) and this repository can only attest '${mine}' — ` +
+        `run ${form} in each of those repositories instead.`;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -505,6 +548,34 @@ export function buildVerification(
 }
 
 /**
+ * An answer the previous record held that the new one does not carry.
+ *
+ * Dropping these is correct — see `buildFederatedVerification` — but doing it
+ * silently is not: a schema-1 record answers the WHOLE checklist, so the first
+ * federated write turns a green record into a partial one, and an operator who
+ * is not told which answers went missing reads the drop as loam losing data.
+ */
+export interface DiscardedAnswer {
+  id: string;
+  claim: string;
+  /** The service the record filed it under, when it said. Absent in schema-1 records. */
+  subject?: string;
+  /**
+   * `off-checklist` — the feature changed and nobody asks this question any
+   * more. `unattested` — the question still stands, but no service attestation
+   * binds the answer to a commit, so it cannot be carried into a federated
+   * record; the owning repository has to record it again.
+   */
+  reason: "off-checklist" | "unattested";
+}
+
+export interface FederatedBuild {
+  verification: Verification;
+  /** In checklist-independent record order — see {@link DiscardedAnswer}. */
+  discarded: DiscardedAnswer[];
+}
+
+/**
  * Replace one service's contribution while retaining current contributions
  * from other repositories. Claim ids removed from the live checklist are
  * pruned from both the answers and their attestations, so a changed feature can
@@ -517,7 +588,7 @@ export function buildFederatedVerification(
   previous: Verification | null,
   recorded: string,
   commit: string,
-): Verification {
+): FederatedBuild {
   const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
   const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
 
@@ -566,14 +637,29 @@ export function buildFederatedVerification(
   const confirmed = claims.filter((claim) => claim.verdict === "confirmed").length;
   const unconfirmed = claims.length - confirmed;
   const unanswered = checklist.claims.length - claims.length;
+
+  // Everything the old record answered that the new one does not. The caller
+  // prints it; nothing here decides it is acceptable.
+  const discarded = (previous?.claims ?? [])
+    .filter((claim) => !byId.has(claim.id))
+    .map((claim): DiscardedAnswer => ({
+      id: claim.id,
+      claim: claim.claim,
+      ...(claim.subject === undefined ? {} : { subject: claim.subject }),
+      reason: currentById.has(claim.id) ? "unattested" : "off-checklist",
+    }));
+
   return {
-    schema: 2,
-    feature: checklist.feature,
-    recorded,
-    checklist: checklist.digest,
-    summary: { claims: checklist.claims.length, confirmed, unconfirmed, unanswered },
-    claims,
-    attestations,
+    verification: {
+      schema: 2,
+      feature: checklist.feature,
+      recorded,
+      checklist: checklist.digest,
+      summary: { claims: checklist.claims.length, confirmed, unconfirmed, unanswered },
+      claims,
+      attestations,
+    },
+    discarded,
   };
 }
 
@@ -610,24 +696,66 @@ export function renderVerification(v: Verification): string {
 }
 
 /**
- * Read the record beside a feature. Missing is null, and so is unreadable —
- * at every level: a file nobody can parse is not a record of anything, and
- * neither is one whose SHAPE is not a record's. The file is deliberately plain
- * YAML that "has to survive without loam", so human edits are expected — a
- * `summary` deleted by hand must read as "no record", not hand the commands a
- * cast that lies and a TypeError three calls later. `--record` overwrites it
- * wholesale anyway, so disqualifying the whole file loses nothing.
+ * What is on disk beside a feature: nothing, something unreadable, or a record.
+ *
+ * The three are kept apart because they call for opposite handling. "Absent" is
+ * a feature nobody has verified — verify starts a fresh record over it without
+ * a second thought. "Unreadable" is a file that IS somebody's record: it parses
+ * as garbage, or its shape is not a record's, and every answer and attestation
+ * it holds is unaccounted for. Collapsing the two (which this function used to
+ * do, returning null for both) meant a hand-edited or half-written
+ * verification.yaml read as "not verified" and the next `--record` overwrote a
+ * whole fleet's attestations without a word.
  */
-export async function readVerification(featureDir: string): Promise<Verification | null> {
+export type VerificationRead =
+  | { state: "absent" }
+  /** `reason` names the YAML line when the parser gave one — the file is the thing to fix. */
+  | { state: "unreadable"; reason: string }
+  | { state: "ok"; verification: Verification };
+
+export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
   const path = verificationPath(featureDir);
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) return { state: "absent" };
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (err) {
+    return { state: "unreadable", reason: err instanceof Error ? err.message : String(err) };
+  }
   let doc: unknown;
   try {
-    doc = parse(await readFile(path, "utf8"));
-  } catch {
-    return null;
+    doc = parse(text);
+  } catch (err) {
+    return { state: "unreadable", reason: yamlReason(err) };
   }
-  return asVerification(doc);
+  const verification = asVerification(doc);
+  return verification === null
+    ? {
+        state: "unreadable",
+        reason:
+          "it parses as YAML but does not have a verification record's shape (feature, recorded, checklist, summary and claims)",
+      }
+    : { state: "ok", verification };
+}
+
+/** A YAML failure with its line, when the parser located one: that line is the fix. */
+function yamlReason(err: unknown): string {
+  const message = err instanceof Error ? err.message.split("\n")[0]!.trim() : String(err);
+  const pos = (err as { linePos?: Array<{ line: number; col: number }> } | null)?.linePos;
+  const line = Array.isArray(pos) ? pos[0]?.line : undefined;
+  return line === undefined ? `YAML error: ${message}` : `YAML error at line ${line}: ${message}`;
+}
+
+/**
+ * The record beside a feature, or null when there is none loam can use. Kept
+ * for readers that have nothing to say about the difference (`loam list`'s
+ * verification column shows one glyph either way); anything that WRITES must
+ * use {@link readVerificationState} instead, or it overwrites what it could not
+ * read.
+ */
+export async function readVerification(featureDir: string): Promise<Verification | null> {
+  const read = await readVerificationState(featureDir);
+  return read.state === "ok" ? read.verification : null;
 }
 
 /**

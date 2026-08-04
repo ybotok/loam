@@ -100,6 +100,26 @@ export type IssueCode =
   | "openapi.component-modified"
   /** a $ref reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — merging would write a dangling reference */
   | "openapi.ref-unresolved"
+  /** the delta redefines a PATH-level key (parameters, servers, summary) the living OpenAPI already has — the overwrite applies to every operation on that path */
+  | "openapi.path-item-modified"
+  /** an `x-loam-remove: true` marker with no operationId — loam cannot tell which operation it retires, and the marker itself would reach the living contract */
+  | "openapi.remove-marker-anonymous"
+  /** the living OpenAPI defines one operationId in two (path, method) slots — every join on the id picks one arbitrarily */
+  | "openapi.duplicate-operationid"
+  /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
+  | "openapi.remove-op-consumed"
+  /** two requirements in the LIVING document share one heading — MODIFIED rewrites the first, REMOVED deletes both, so no delta applies predictably */
+  | "delta.living-duplicate-requirement"
+  /** another feature in flight MODIFIES/REMOVES the same living requirement — whichever archives second replaces the other's text wholesale */
+  | "delta.modified-conflict"
+  /** a `Based-On:` line whose value is not a digest, or declared twice — the pin cannot be compared, so it protects nothing */
+  | "delta.baseline-invalid"
+  /** a MODIFIED/REMOVED requirement with no `Based-On:` — nothing can tell whether the living text moved under it */
+  | "delta.baseline-missing"
+  /** the living requirement changed since this delta was written — merging it would silently discard whoever landed in between */
+  | "delta.baseline-stale"
+  /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete */
+  | "service.no-model"
   /* --- docs-repo contract: --all only, never a merge question --- */
   /** AGENTS.md carries no version stamp, or one older than the running binary — the agent contract may have drifted */
   | "agents.stale";

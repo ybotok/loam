@@ -176,7 +176,11 @@ async function migrate(): Promise<Project> {
 
   // `loam init` scaffolds the docs repo and writes ITS OWN AGENTS.md — the
   // openspec/AGENTS.md row says remove the old instructions, not port them.
-  expect((await runLoam(p.workDir, "init", "--docs", p.docsDir, "--no-commands")).code).toBe(0);
+  // --create because this docs repo does not exist yet: joining and creating
+  // are separate intentions now, so a mistyped --docs cannot split the fleet.
+  expect(
+    (await runLoam(p.workDir, "init", "--create", "--docs", p.docsDir, "--no-commands")).code,
+  ).toBe(0);
 
   // Row: project.md — "its content becomes the preamble and conventions of the
   // docs repo's AGENTS.md". Appended, keeping loam's stamp intact: the stamp

@@ -159,14 +159,35 @@ export function axisLabel(axis: SpecAxis): "business" | "arch" {
 }
 
 /**
- * A requirement name as a file name: lowercase, every non-alphanumeric run one
- * hyphen, edges trimmed. A name this leaves empty (all punctuation, non-Latin)
- * falls back to "requirement" and lets the collision counter number it.
+ * A requirement name as a file name: lowercase, every non-letter/digit run one
+ * hyphen, edges trimmed.
+ *
+ * The keep-set is `\p{L}\p{N}`, not `[a-z0-9]`, because an ASCII-only slug is
+ * not a slug of a non-Latin fleet — it is the empty string. Every requirement
+ * written in Chinese, Japanese, Korean, Greek, Cyrillic or Hebrew slugged to
+ * nothing, fell back to `requirement`, and the whole service's suite came out
+ * as `requirement.feature`, `requirement-2.feature`, … : file names that name
+ * nothing, in the one place the mapping is supposed to be legible. So letters
+ * of every script survive as themselves.
+ *
+ * Accents are folded rather than kept, and that is the reason for NFKD first:
+ * decomposing splits `é` into `e` + a combining acute, and dropping the
+ * combining marks (`\p{M}`) leaves `e`. Without the fold `émojis` and `emojis`
+ * would be two files that look identical in a directory listing — and on a
+ * filesystem that normalises names (APFS, and HFS+ before it) they would be one
+ * file, silently, with the second emission overwriting the first.
+ *
+ * A name this still leaves empty (all punctuation or emoji) falls back to
+ * "requirement" and lets the collision counter number it. Runs collapse to a
+ * SINGLE hyphen, which is what keeps the `arch--` prefix an axis marker no
+ * business slug can spell.
  */
 export function slugOf(name: string): string {
   const s = name
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
   return s.length > 0 ? s : "requirement";
 }

@@ -13,7 +13,10 @@
  * orphans are deleted (and reported), and nothing outside `loam/` is touched —
  * except that a living run neither deletes NOR overwrites a file tagged with a
  * feature still in flight: it answers to that feature's delta until it
- * archives, and is reported as kept.
+ * archives, and is reported as kept. A FEATURE run cannot keep — the file it
+ * wants holds one feature's delta — so when the file it would write belongs to
+ * a different feature still in flight, the whole run refuses (`gherkin-conflict`)
+ * and names the owner rather than reverting it.
  *
  * It refuses to run anywhere but the service's own repo — vouch's discipline,
  * for vouch's reason: the output lands in the repo loam is standing in, and
@@ -24,7 +27,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, emitJsonError, fail, reportNoConfig } from "../core/json.js";
 import {
   featureSpecPaths,
   listFeatures,
@@ -154,8 +157,10 @@ export function registerGherkin(program: Command): void {
       // their feature's delta until it archives, and `loam gherkin <FEAT>` is
       // their regeneration.
       const planned = new Set(plan.map((f) => f.fileName));
-      const activeIds =
-        mode === "living" ? new Set((await listFeatures(config.docsDir)).map((f) => f.id)) : null;
+      // Needed by BOTH modes now: living mode exempts in-flight files from
+      // deletion and replacement, and feature mode has to recognise another
+      // feature's in-flight file to refuse overwriting it.
+      const activeIds = new Set((await listFeatures(config.docsDir)).map((f) => f.id));
       const orphans: string[] = [];
       if (existsSync(root)) {
         for (const abs of await featureFilesUnder(root)) {
@@ -164,7 +169,7 @@ export function registerGherkin(program: Command): void {
           if (mode === "feature") {
             if (stamped !== null && stamped.tags.includes(featureId!)) orphans.push(abs);
           } else {
-            if (stamped !== null && stamped.tags.some((t) => activeIds!.has(t))) continue;
+            if (stamped !== null && stamped.tags.some((t) => activeIds.has(t))) continue;
             orphans.push(abs);
           }
         }
@@ -180,8 +185,19 @@ export function registerGherkin(program: Command): void {
       // in flight is KEPT and reported as such; it answers to its feature's
       // delta until the feature archives, and then living regeneration
       // replaces it normally.
-      type Action = "written" | "replaced" | "kept";
-      const actions: Array<PlannedFeature & { path: string; action: Action; kept?: StampedFeature }> = [];
+      //
+      // FEATURE mode has the same collision and cannot solve it by keeping:
+      // two features in flight against one requirement slug want the same
+      // file, and whichever runs second used to `replace` — silently reverting
+      // the other feature's wording, feature tag and digest stamps, so its
+      // `verify --results` could never confirm a scenario again. Nothing loam
+      // can write is right here (the file holds ONE feature's delta), so the
+      // run refuses and names the owner: the two features have to be sequenced,
+      // or the requirement renamed.
+      type Action = "written" | "replaced" | "kept" | "conflict";
+      const actions: Array<
+        PlannedFeature & { path: string; action: Action; kept?: StampedFeature; owners?: string[] }
+      > = [];
       for (const f of plan) {
         let path: string;
         try {
@@ -201,15 +217,50 @@ export function registerGherkin(program: Command): void {
           actions.push({ ...f, path, action: "written" });
           continue;
         }
+        const existing = parseStampedFeature(await readFile(path, "utf8"));
         if (mode === "living") {
-          const existing = parseStampedFeature(await readFile(path, "utf8"));
-          if (existing !== null && existing.tags.some((t) => activeIds!.has(t))) {
+          if (existing !== null && existing.tags.some((t) => activeIds.has(t))) {
             actions.push({ ...f, path, action: "kept", kept: existing });
+            continue;
+          }
+        } else {
+          const owners =
+            existing === null
+              ? []
+              : existing.tags.filter((t) => t !== featureId && activeIds.has(t));
+          if (owners.length > 0) {
+            actions.push({ ...f, path, action: "conflict", kept: existing!, owners });
             continue;
           }
         }
         actions.push({ ...f, path, action: "replaced" });
       }
+
+      // All or nothing: one conflicting file refuses the whole emission, so a
+      // half-written suite can never be the state an agent has to reason about.
+      const conflicts = actions.filter((a) => a.action === "conflict");
+      if (conflicts.length > 0) {
+        const detail = conflicts
+          .map((c) => `${rel(c.path)} is @${c.owners!.join(" @")} (requirement '${c.requirement.name}')`)
+          .join("; ");
+        const message =
+          `Cannot emit gherkin for ${featureId}: ${conflicts.length} file(s) belong to another feature still in flight — ${detail}. ` +
+          `A .feature file carries one feature's delta; overwriting would revert that feature's wording and destroy the digest stamps \`loam verify --results\` matches on. ` +
+          `Archive (or abandon) the owning feature first, or rename the requirement in ${featureId}'s delta so the two stop sharing a file name.`;
+        if (json) {
+          emitJsonError("gherkin-conflict", message, {
+            conflicts: conflicts.map((c) => ({
+              path: rel(c.path),
+              action: "conflict",
+              requirement: c.requirement.name,
+              inFlight: c.owners,
+            })),
+          });
+          return;
+        }
+        return fail(json, "gherkin-conflict", message);
+      }
+
       const writes = actions.filter((a) => a.action !== "kept");
 
       if (!dryRun) {
@@ -238,7 +289,7 @@ export function registerGherkin(program: Command): void {
             scenarios: a.action === "kept" ? a.kept!.scenarios.length : a.digests.length,
             digests: a.action === "kept" ? a.kept!.scenarios.map((s) => s.digest) : a.digests,
             ...(a.action === "kept"
-              ? { inFlight: a.kept!.tags.filter((t) => activeIds!.has(t)) }
+              ? { inFlight: a.kept!.tags.filter((t) => activeIds.has(t)) }
               : { stepless: a.stepless }),
           })),
           deleted: orphans.map(rel),
@@ -255,10 +306,17 @@ export function registerGherkin(program: Command): void {
             : `  the living specs hold no requirements for ${service} — nothing to emit.`,
         );
       }
-      const VERB: Record<Action, string> = { written: "write  ", replaced: "replace", kept: "keep   " };
+      // `conflict` never reaches here — the run refused above — but the map is
+      // total so a future action cannot silently print `undefined`.
+      const VERB: Record<Action, string> = {
+        written: "write  ",
+        replaced: "replace",
+        kept: "keep   ",
+        conflict: "CONFLICT",
+      };
       for (const a of actions) {
         if (a.action === "kept") {
-          const owners = a.kept!.tags.filter((t) => activeIds!.has(t));
+          const owners = a.kept!.tags.filter((t) => activeIds.has(t));
           console.log(
             `  keep     ${a.fileName}  —  ${a.requirement.name}  (in flight: @${owners.join(" @")} — \`loam gherkin ${owners[0]}\` regenerates it)`,
           );

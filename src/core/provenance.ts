@@ -12,10 +12,11 @@
  * the wrong thing (a spec claiming to be another service, a status nobody
  * defined) is a bug, and gates.
  */
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import {
   listField,
   parseFrontmatter,
@@ -28,7 +29,7 @@ import {
 } from "./frontmatter.js";
 import type { Finding } from "./report.js";
 import { featurePaths, servicePaths } from "./repo.js";
-import { resolveInside } from "./path-safety.js";
+import { isPathInside, resolveInside } from "./path-safety.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
 const EXPECTED = ["owner"] as const;
@@ -233,12 +234,20 @@ async function sourceFindings(
     message: `${label}: ${sources.length} source(s) resolve`,
   };
 
+  // The walk happens here rather than inside the staleness branch below, even
+  // though only staleness needs the hashes: what the walk REFUSED to follow is
+  // a hole in the tie to the code whether or not anybody has vouched yet, and
+  // an unvouched service is exactly where a reader is about to decide the
+  // sources list is honest.
+  const { digest, files, index, skipped } = await sourcesDigest(repoDir, sources);
+  const findings: Finding[] = [resolved, ...skippedFindings(skipped, label)];
+
   // The paths are there; the question staleness answers is whether what is AT
   // them is still what somebody read.
   const stamped = stringField(fm, "sources_digest");
   if (stamped === undefined) {
     return [
-      resolved,
+      ...findings,
       {
         severity: "warn",
         code: "sources.unvouched",
@@ -248,10 +257,9 @@ async function sourceFindings(
   }
 
   const since = stringField(fm, "last_verified") ?? "it was stamped";
-  const { digest, files } = await sourcesDigest(repoDir, sources);
   if (digest === stamped) {
     return [
-      resolved,
+      ...findings,
       {
         severity: "ok",
         code: "sources.current",
@@ -259,15 +267,45 @@ async function sourceFindings(
       },
     ];
   }
+
+  // What MOVED, when the stamp recorded enough to say. Repeating the frontmatter's
+  // own `sources` entries back at a reader — which is all this finding could do
+  // before `sources_files` existed — answers a question nobody asked: they wrote
+  // that list, and "one of these five directories changed somehow" is where the
+  // search starts, not where it ends.
+  const moved = movedSources(decodeSourceIndex(stringField(fm, "sources_files")), index);
   return [
-    resolved,
+    ...findings,
     {
       // A warning, not an error: the doc may still be right, and only a person
       // can say. What loam knows is that nobody has looked since the code moved.
       severity: "warn",
       code: "sources.stale",
-      message: `${label}: sources changed since ${since} — re-read them and \`loam vouch --service ${service}\``,
-      details: sources,
+      message: `${label}: sources changed since ${since}${moved.summary} — re-read them and \`loam vouch --service ${service}\``,
+      details: moved.paths ?? sources,
+      text: { detailPrefix: "- " },
+    },
+  ];
+}
+
+/**
+ * The paths the digest walk would not follow. Never silent: a symlink dropped
+ * on the floor is a file whose content nobody is watching, while the document
+ * beside it says `verified` — the digest cannot go stale over bytes it never
+ * hashed, so the one thing the stamp promises is quietly untrue for them.
+ *
+ * A warning, not an error, and for the same reason staleness is: the doc may be
+ * perfectly right about the code behind that link. What loam can say is that it
+ * is not watching it.
+ */
+function skippedFindings(skipped: SkippedSource[], label: string): Finding[] {
+  if (skipped.length === 0) return [];
+  return [
+    {
+      severity: "warn",
+      code: "sources.skipped",
+      message: `${label}: ${skipped.length} path(s) under the listed sources were not hashed — the digest says nothing about what is behind them`,
+      details: skipped.map((s) => `${s.path} — ${s.reason}`),
       text: { detailPrefix: "- " },
     },
   ];
@@ -310,11 +348,44 @@ function contentFindings(fm: Frontmatter, raw: string, service: string, label: s
 /** How much of the sha256 is written into the document. */
 const DIGEST_LENGTH = 16;
 
-export interface SourcesDigest {
+export interface SourcesDigest extends SourcesExpansion {
   /** The stamp that goes in `sources_digest`. */
   digest: string;
-  /** Repo-relative paths, sorted — exactly what went into it. */
+  /**
+   * Per file, its own short sha — the record `sources_files` carries so a later
+   * `sources.stale` can name what moved instead of guessing. Same order as `files`.
+   */
+  index: SourceIndexEntry[];
+}
+
+/** One file's share of the stamp: what it is called, and what it said. */
+export interface SourceIndexEntry {
+  /** Repo-relative, `/`-separated. */
+  path: string;
+  /** sha256 of its bytes, truncated the way `sources_digest` is. */
+  sha: string;
+}
+
+/** A path the walk found but would not hash, and the reason a reader needs. */
+export interface SkippedSource {
+  /** Repo-relative, `/`-separated. */
+  path: string;
+  /** Why it was left out — the half of the sentence after the path. */
+  reason: string;
+}
+
+/** What a `sources` list covers, and what it does not. */
+export interface SourcesExpansion {
+  /** Repo-relative paths, sorted — exactly what a digest would hash. */
   files: string[];
+  /** Everything the walk refused to follow. Empty in the ordinary case. */
+  skipped: SkippedSource[];
+  /**
+   * Set only when `files` is empty: the one sentence that says the list covers
+   * nothing. `loam vouch` refuses with it, `loam validate` grades it — see
+   * emptySourcesMessage for why they must be the same words.
+   */
+  empty?: string;
 }
 
 /**
@@ -323,7 +394,8 @@ export interface SourcesDigest {
  * be able to reproduce it:
  *
  *   1. expand each entry to repo-relative file paths (`/` separators) — a file
- *      is itself, a directory everything beneath it — sorted and de-duplicated;
+ *      is itself, a directory everything beneath it, minus what the repository
+ *      does not consider its own (see collectSources) — sorted and de-duplicated;
  *   2. per file, `sha256(bytes)`;
  *   3. feed `<path>\0<hex>\n` for each file, in that order, into an outer
  *      sha256;
@@ -338,13 +410,50 @@ export interface SourcesDigest {
  * an adversary who wants a collision can have one.
  */
 export async function sourcesDigest(repoDir: string, sources: string[]): Promise<SourcesDigest> {
-  const files = await expandSources(repoDir, sources);
+  const { found, skipped } = await collectSources(repoDir, sources);
   const outer = createHash("sha256");
-  for (const file of files) {
+  const index: SourceIndexEntry[] = [];
+  for (const file of found) {
     const content = createHash("sha256").update(await readFile(file.abs)).digest("hex");
     outer.update(`${file.rel}\0${content}\n`);
+    index.push({ path: file.rel, sha: content.slice(0, DIGEST_LENGTH) });
   }
-  return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: files.map((f) => f.rel) };
+  // `empty` is deliberately not set here: it is a sentence about a named
+  // document, and a digest has no name to put in it. Callers that need it say
+  // emptySourcesMessage(label, sources) — the same words, from one definition.
+  return { digest: outer.digest("hex").slice(0, DIGEST_LENGTH), files: index.map((e) => e.path), index, skipped };
+}
+
+/**
+ * What a `sources` list actually covers — the digest's file set without the
+ * hashing.
+ *
+ * Exported because two commands must give the SAME answer to "does this list
+ * cover anything?". `loam vouch` refuses to stamp an expansion that covers no
+ * files (a digest over nothing never changes, so the stamp would read as
+ * current forever), and until `loam validate` could say the same thing in the
+ * same words, an author got a green validate followed by a vouch that refused —
+ * two commands contradicting each other about one document, with nothing in the
+ * green run hinting at it.
+ */
+export async function expandSourceFiles(
+  repoDir: string,
+  sources: string[],
+  label: string,
+): Promise<SourcesExpansion> {
+  const { found, skipped } = await collectSources(repoDir, sources);
+  const files = found.map((f) => f.rel);
+  return { files, skipped, ...(files.length === 0 ? { empty: emptySourcesMessage(label, sources) } : {}) };
+}
+
+/**
+ * The one sentence for "these paths exist and cover no file". One definition,
+ * because `vouch`'s refusal and `validate`'s finding are the same diagnosis
+ * about the same document and must not drift into two descriptions of it — the
+ * author fixes it once, in the sources list.
+ */
+export function emptySourcesMessage(label: string, sources: string[]): string {
+  return `${label}: the sources listed match no files — ${sources.join(", ")}. A digest over nothing would read as current forever.`;
 }
 
 /**
@@ -375,44 +484,282 @@ interface SourceFile {
  * set than its author intended. Pattern-looking entries are now refused loudly
  * upstream (see patternSources); this function only ever sees literal paths.
  *
- * Dot-entries are skipped while walking — `.git` is not what the doc was
- * written from — though a path naming one outright is still honoured. Both
- * rules are part of the digest recipe's contract: for literal paths the
- * expansion is byte-identical to what it was when globs existed.
+ * Three exclusions, all part of the digest recipe's contract:
+ *
+ *  - dot-entries are skipped while walking — `.git` is not what the doc was
+ *    written from — though a path naming one outright is still honoured;
+ *  - `node_modules` is skipped the same way, unconditionally: it is the one
+ *    build input every ecosystem agrees is not source, and it is the one that
+ *    makes the walk take minutes;
+ *  - anything the repository's own `.gitignore` covers is dropped, when the
+ *    repo is a git checkout and git is on the PATH (see gitIgnoredPaths).
+ *
+ * The third is the one worth stating a reason for. `sources_digest` answers
+ * "did the code move since a person read it", and BUILD OUTPUT moves on every
+ * CI run without anybody touching the code — a `sources: [src/]` over a repo
+ * that compiles into `src/generated/` went stale on a schedule, so the warning
+ * that means "re-read this" arrived when nothing had been written. A signal
+ * that fires every night is a signal people learn to close. Git's answer is
+ * used rather than a list of our own because it is the answer the repository
+ * already gives every other tool, and it is the author's to change.
+ *
+ * The fallback is deliberate: no git, no checkout, a git that errors — hash
+ * everything. Missing an exclusion costs noise; inventing one costs a file the
+ * stamp silently stops watching, and this walk exists to have nothing in that
+ * category.
  */
-async function expandSources(repoDir: string, sources: string[]): Promise<SourceFile[]> {
+async function collectSources(
+  repoDir: string,
+  sources: string[],
+): Promise<{ found: SourceFile[]; skipped: SkippedSource[] }> {
   const found = new Map<string, string>();
+  const skipped = new Map<string, string>();
   const relOf = (abs: string): string => relative(repoDir, abs).split(sep).join("/");
+
+  // realpath once, up front: every containment question below is asked against
+  // the resolved root, so a repo reached through a symlink (a worktree under
+  // /var -> /private/var on macOS, say) does not make its own files look external.
+  const repoReal = await realpath(repoDir).catch(() => resolve(repoDir));
+  // The realpaths of the directories currently being walked — the cycle guard.
+  // A STACK rather than a set of everything ever entered, because the two rules
+  // answer different questions: a directory reachable by two spellings (a
+  // `current -> versions/3` link beside the real tree) is content under both
+  // names and belongs in the digest twice, while a directory reachable from
+  // INSIDE itself is a loop. A global visited-set conflates them, and then which
+  // spelling survives depends on the order readdir happened to return — a
+  // digest that differs between two machines holding identical bytes.
+  const walking: string[] = [];
+
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    // Sorted, so a tree walks the same way on every filesystem.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const child = join(dir, entry.name);
+      if (entry.isDirectory()) await enterDir(child);
+      else if (entry.isFile()) found.set(relOf(child), child);
+      // readdir reports symlinks by lstat, so isDirectory() and isFile() are
+      // BOTH false for one: before this branch existed a symlinked file, and a
+      // whole subtree behind a symlinked directory, fell between the two arms
+      // and left the digest without a word said. That is the failure this
+      // module is here to prevent, arriving through its own walk.
+      else if (entry.isSymbolicLink()) await follow(child);
+    }
+  };
+
+  const enterDir = async (dir: string): Promise<void> => {
+    const real = await realpath(dir).catch(() => null);
+    if (real === null || walking.includes(real)) return;
+    walking.push(real);
+    try {
+      await walk(dir);
+    } finally {
+      walking.pop();
+    }
+  };
+
+  const follow = async (link: string): Promise<void> => {
+    const real = await realpath(link).catch(() => null);
+    if (real === null) {
+      skipped.set(relOf(link), "a symlink that does not resolve");
+      return;
+    }
+    // Outside the repo the file is not this service's to vouch for, and the
+    // same rule already refuses it as a top-level `sources` entry
+    // (sources.path-outside). Reported rather than dropped: an author who
+    // vendored a sibling repo through a symlink needs to know the stamp stops
+    // at the link.
+    if (!isPathInside(repoReal, real)) {
+      skipped.set(relOf(link), "a symlink whose target is outside this repository");
+      return;
+    }
+    const info = await stat(link).catch(() => null);
+    if (info === null) {
+      skipped.set(relOf(link), "a symlink that does not resolve");
+      return;
+    }
+    // A link's own spelling is what the doc's author wrote, so that is the path
+    // that goes into the digest — the content comes from the target either way.
+    if (info.isFile()) found.set(relOf(link), link);
+    // A link that closes a loop is not reported: everything behind it is already
+    // in the digest under the spelling it was reached by, so nothing has stopped
+    // being watched. Only unhashed CONTENT is worth a warning.
+    else if (info.isDirectory()) await enterDir(link);
+    else skipped.set(relOf(link), "a symlink to neither a file nor a directory");
+  };
 
   for (const source of sources) {
     const cleaned = source.trim();
     if (cleaned.length === 0) continue;
     const root = resolveInside(repoDir, cleaned, `source '${source}'`);
-    for (const abs of await filesUnder(root)) found.set(relOf(abs), abs);
+    const info = await stat(root).catch(() => null);
+    if (info === null) continue;
+    if (info.isFile()) found.set(relOf(root), root);
+    else if (info.isDirectory()) await enterDir(root);
   }
 
-  // Plain codepoint order, not locale order: the digest has to be the same
-  // everywhere it is computed.
-  return [...found.entries()]
-    .map(([rel, abs]) => ({ rel, abs }))
-    .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  // One git invocation for the whole expansion, not one per file: the skipped
+  // list rides along so an ignored symlink does not warn about a path the
+  // repository already says is not its own.
+  const ignored = await gitIgnoredPaths(repoDir, [...found.keys(), ...skipped.keys()]);
+  for (const rel of ignored) {
+    found.delete(rel);
+    skipped.delete(rel);
+  }
+
+  return {
+    // Plain codepoint order, not locale order: the digest has to be the same
+    // everywhere it is computed.
+    found: [...found.entries()]
+      .map(([rel, abs]) => ({ rel, abs }))
+      .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0)),
+    skipped: [...skipped.entries()]
+      .map(([path, reason]) => ({ path, reason }))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+  };
 }
 
-/** Every file at or beneath `path`; nothing, if it does not exist. */
-async function filesUnder(path: string): Promise<string[]> {
-  const info = await stat(path).catch(() => null);
-  if (info === null) return [];
-  if (info.isFile()) return [path];
-  if (!info.isDirectory()) return [];
+/** How long the digest waits on git before deciding it learned nothing. */
+const GIT_TIMEOUT_MS = 10_000;
 
-  const out: string[] = [];
-  for (const entry of await readdir(path, { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
-    const child = join(path, entry.name);
-    if (entry.isDirectory()) out.push(...(await filesUnder(child)));
-    else if (entry.isFile()) out.push(child);
+/**
+ * Which of these repo-relative paths the repository ignores, asked once for the
+ * whole list. `git check-ignore` is the authority on purpose — it reads
+ * `.gitignore` at every level, `.git/info/exclude` and the user's global
+ * excludes, and it already knows that a TRACKED file is not ignored no matter
+ * what a pattern says, which is the distinction a re-implementation always gets
+ * wrong.
+ *
+ * Every failure answers "nothing is ignored": exit 1 is git saying so, exit 128
+ * is "not a git repository", a spawn error is git not being installed, and a
+ * timeout is a repository too strange to wait for. None of them justify
+ * dropping a file from a digest a person is going to sign.
+ */
+async function gitIgnoredPaths(repoDir: string, rels: string[]): Promise<Set<string>> {
+  if (rels.length === 0) return new Set();
+  return new Promise<Set<string>>((done) => {
+    const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
+      cwd: repoDir,
+      stdio: ["pipe", "pipe", "ignore"],
+      timeout: GIT_TIMEOUT_MS,
+    });
+    let out = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      out += chunk;
+    });
+    child.on("error", () => done(new Set()));
+    child.on("close", (code) => {
+      // 0: some paths are ignored and are on stdout. 1: none are — an empty
+      // answer, not a failure. Anything else: we learned nothing.
+      done(code === 0 || code === 1 ? new Set(out.split("\0").filter((s) => s.length > 0)) : new Set());
+    });
+    // A git that died before reading its input hands us EPIPE; the close
+    // handler above is what decides the outcome either way.
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(rels.join("\0") + "\0");
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* The per-file index: what `sources.stale` names                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How many files `sources_files` will list one by one before it gives up and
+ * records only how many there were.
+ *
+ * A readability budget, not a correctness one: the index lives in the header of
+ * a document a person reads, and a `sources: [src/]` over a legacy service can
+ * expand to thousands of files. Past the limit `sources.stale` falls back to
+ * repeating the `sources` entries — worse advice, but a spec.md whose
+ * frontmatter is longer than its requirements is worse still.
+ */
+const SOURCE_INDEX_LIMIT = 100;
+
+/**
+ * The `sources_files` value `loam vouch` stamps beside `sources_digest`: one
+ * `<sha>  <path>` line per file (sha256sum's layout, and its column order, so
+ * the path may contain spaces), or just the file count once the list would run
+ * past SOURCE_INDEX_LIMIT.
+ *
+ * Its whole purpose is the next `sources.stale`. `sources_digest` can say THAT
+ * the code moved and never which part of it; with the index a reader gets the
+ * added, removed and changed paths, which is the difference between re-reading
+ * one file and re-reading a directory. It is also a readable git diff in the
+ * docs repo: the vouch commit shows exactly which source files the stamp now
+ * stands over.
+ */
+export function encodeSourceIndex(index: SourceIndexEntry[]): string {
+  if (index.length > SOURCE_INDEX_LIMIT) return String(index.length);
+  return index.map((e) => `${e.sha}  ${e.path}`).join("\n");
+}
+
+/** What a stamped `sources_files` says: the per-file shas, the count, or nothing. */
+interface StampedIndex {
+  /** path -> sha, or null when the stamp did not record them. */
+  entries: Map<string, string> | null;
+  /** How many files the stamp covered, when that is knowable. */
+  count?: number;
+}
+
+/**
+ * Read back what `encodeSourceIndex` wrote. Anything unrecognised reads as "the
+ * stamp said nothing" rather than as an empty index: a header nobody can parse
+ * must not turn into a `sources.stale` claiming every file was deleted.
+ */
+function decodeSourceIndex(stamped: string | undefined): StampedIndex {
+  if (stamped === undefined) return { entries: null };
+  const text = stamped.trim();
+  if (text.length === 0) return { entries: null };
+  if (/^\d+$/.test(text)) return { entries: null, count: Number(text) };
+
+  const entries = new Map<string, string>();
+  for (const line of text.split("\n")) {
+    const match = /^([0-9a-f]{16})\s+(.+)$/.exec(line.trim());
+    if (match === null) return { entries: null };
+    entries.set(match[2]!, match[1]!);
   }
-  return out;
+  return { entries, count: entries.size };
+}
+
+/** The paths that moved between a stamp and now, with a phrase for the message. */
+interface MovedSources {
+  /** Annotated paths, or undefined when the stamp did not record enough to say. */
+  paths?: string[];
+  /** Appended to the `sources.stale` message; empty when there is nothing to add. */
+  summary: string;
+}
+
+/**
+ * added / removed / changed, from the stamped index against the current one.
+ * The annotation travels IN the detail line rather than in three separate
+ * lists: a reader scanning a stale report wants the paths in one column, and
+ * "which of the three" is one word wide.
+ */
+function movedSources(stamp: StampedIndex, now: SourceIndexEntry[]): MovedSources {
+  if (stamp.entries === null) {
+    // No index, but the count alone still beats silence: "12 files then, 14
+    // now" tells a reader to go looking for two new files.
+    return {
+      summary: stamp.count === undefined ? "" : ` (${stamp.count} file(s) then, ${now.length} now)`,
+    };
+  }
+  const paths: string[] = [];
+  const current = new Map(now.map((e) => [e.path, e.sha]));
+  for (const [path, sha] of current) {
+    const before = stamp.entries.get(path);
+    if (before === undefined) paths.push(`added    ${path}`);
+    else if (before !== sha) paths.push(`changed  ${path}`);
+  }
+  for (const path of stamp.entries.keys()) if (!current.has(path)) paths.push(`removed  ${path}`);
+  paths.sort();
+  // An index that agrees with the current tree while the digest does not is a
+  // contradiction (a truncation collision, or a hand-edited header). Say
+  // nothing rather than print an empty list under a staleness warning.
+  if (paths.length === 0) return { summary: "" };
+  return { paths, summary: ` (${paths.length} path(s) moved)` };
 }
 
 /** The characters that made an entry a pattern under the glob dialect loam no longer ships. */

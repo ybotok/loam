@@ -33,9 +33,28 @@ export interface Operation {
   method: string;
 }
 
+/** A `x-loam-remove: true` marker with no usable operationId — a slot named but no operation named. */
+export interface AnonymousRemoval {
+  path: string;
+  method: string;
+}
+
 /** The parse of one OpenAPI document: its operations, and whether the file could be read at all. */
 export interface OpenapiDoc {
   ops: Operation[];
+  /**
+   * operationIds this document defines in more than one (path, method) slot.
+   * A LIVING contract with two slots claiming one id is ambiguous to every
+   * check that joins on the id — a requirement's `Operations:` line, an edge's
+   * `metadata { op }`, a removal marker — and the join silently picks one.
+   */
+  duplicateIds: string[];
+  /**
+   * Removal markers the operation reader cannot name. They are invisible to
+   * every id-keyed check, so a delta carrying one used to archive cleanly and
+   * write `x-loam-remove: true` straight into a living contract.
+   */
+  anonymousRemovals: AnonymousRemoval[];
   /**
    * True when the file EXISTS but cannot be read as an OpenAPI document —
    * broken YAML, or a document that is not a mapping. A missing file is not
@@ -53,8 +72,17 @@ export interface OpenapiDoc {
  * Structure-aware on purpose: a regex scan both drops legal ids (kebab-case,
  * dotted) and picks up phantom ids from description text. Each operation
  * carries its id and its `deprecated: true` flag (exactly `true` counts —
- * strings and truthy noise do not). `ops` is the defined set (deduped by id,
- * document order, first occurrence wins).
+ * strings and truthy noise do not). `ops` is the defined set, keyed by the
+ * (path, method) SLOT — not by operationId.
+ *
+ * Keying by id used to drop the second slot claiming a name, which made the
+ * single most common contract edit invisible: relocating an endpoint is a
+ * removal marker at the old slot plus an upsert at the new one, the SAME
+ * operationId twice. Whichever came second in document order vanished, so
+ * either the marker addressed a slot loam could not see (`remove-target-missing`
+ * on a perfectly good delta) or the new definition did. Two slots claiming one
+ * id in a LIVING contract is a real ambiguity rather than a merge failure, so
+ * it rides out as `duplicateIds` for the caller to grade.
  *
  * An unreadable document yields [] ops PLUS the `unreadable` flag. Parsers
  * never diagnose — the policy of every reader here — so the failure travels as
@@ -65,41 +93,52 @@ export interface OpenapiDoc {
  */
 export async function readOpenapi(openapiPath: string, context?: FleetContext): Promise<OpenapiDoc> {
   if (context !== undefined) return context.readOpenapi(openapiPath);
-  if (!existsSync(openapiPath)) return { ops: [], unreadable: false };
+  if (!existsSync(openapiPath)) return empty();
   const text = await readFile(openapiPath, "utf8");
   let doc: unknown;
   try {
     doc = parse(text);
   } catch (e) {
-    return { ops: [], unreadable: true, error: e instanceof Error ? e.message : String(e) };
+    return { ...empty(), unreadable: true, error: e instanceof Error ? e.message : String(e) };
   }
   // A scalar or sequence document is as unreadable as broken YAML: there is no
   // mapping to look `paths` up in, so nothing can be concluded from it. null
   // (an empty file) stays readable — it defines nothing, and says so honestly.
   if (doc !== null && (typeof doc !== "object" || Array.isArray(doc))) {
-    return { ops: [], unreadable: true, error: "document is not a YAML mapping" };
+    return { ...empty(), unreadable: true, error: "document is not a YAML mapping" };
   }
   const paths = (doc as { paths?: unknown } | null)?.paths;
-  if (!paths || typeof paths !== "object") return { ops: [], unreadable: false };
-  const ops = new Map<string, Operation>();
+  if (!paths || typeof paths !== "object") return empty();
+  const ops: Operation[] = [];
+  const anonymousRemovals: AnonymousRemoval[] = [];
+  const seen = new Map<string, number>();
   for (const [path, item] of Object.entries(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
     for (const [method, op] of Object.entries(item as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method)) continue;
       if (!op || typeof op !== "object") continue;
       const id = (op as Record<string, unknown>)["operationId"];
-      if (typeof id === "string" && id.length > 0 && !ops.has(id)) {
-        ops.set(id, {
-          id,
-          deprecated: (op as Record<string, unknown>)["deprecated"] === true,
-          remove: (op as Record<string, unknown>)["x-loam-remove"] === true,
-          path,
-          method,
-        });
+      const remove = (op as Record<string, unknown>)["x-loam-remove"] === true;
+      if (typeof id !== "string" || id.length === 0) {
+        if (remove) anonymousRemovals.push({ path, method });
+        continue;
       }
+      seen.set(id, (seen.get(id) ?? 0) + 1);
+      ops.push({
+        id,
+        deprecated: (op as Record<string, unknown>)["deprecated"] === true,
+        remove,
+        path,
+        method,
+      });
     }
   }
-  return { ops: [...ops.values()], unreadable: false };
+  const duplicateIds = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
+  return { ops, duplicateIds, anonymousRemovals, unreadable: false };
+}
+
+function empty(): OpenapiDoc {
+  return { ops: [], duplicateIds: [], anonymousRemovals: [], unreadable: false };
 }
 
 /** The operations alone — for every caller whose own finding already covers the unreadable case. */
@@ -115,6 +154,14 @@ export async function operationIds(openapiPath: string, context?: FleetContext):
 /**
  * The operationIds a service will provide after a feature is applied: living
  * operations, plus feature upserts, minus explicit feature removals.
+ *
+ * Removals are applied BEFORE upserts, which is what makes the answer
+ * independent of the order the feature's document happens to spell them in.
+ * Interleaving them one operation at a time meant a relocation — the same id
+ * removed from `/old` and defined on `/new` — answered "defined" or "gone"
+ * depending on which path sorted first in the YAML, and the requirement
+ * governing it was reported undefined (`spec-api.op-undefined`) on exactly one
+ * of the two spellings of the same change.
  */
 export async function serviceOperationIds(
   docsDir: string,
@@ -127,10 +174,9 @@ export async function serviceOperationIds(
     (await operations(servicePaths(docsDir, service).openapi)).filter((op) => !op.remove).map((op) => op.id),
   );
   if (featureDir) {
-    for (const op of await operations(featureSpecPaths(featureDir, service).openapi)) {
-      if (op.remove) ids.delete(op.id);
-      else ids.add(op.id);
-    }
+    const featOps = await operations(featureSpecPaths(featureDir, service).openapi);
+    for (const op of featOps) if (op.remove) ids.delete(op.id);
+    for (const op of featOps) if (!op.remove) ids.add(op.id);
   }
   return [...ids];
 }

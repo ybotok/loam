@@ -35,8 +35,19 @@ export interface BriefTarget {
   /** Repo-relative path to write. */
   path: string;
   exists: boolean;
-  /** `create` a missing artifact; `diff` an existing one — never overwrite it. */
-  action: "create" | "diff";
+  /**
+   * `create` a missing artifact; `diff` an existing one — never overwrite it.
+   *
+   * `edit` is the third case and belongs to exactly one target: the fleet map.
+   * `architecture/landscape.likec4` is a SHARED document that already holds
+   * every other service, so "diff it and report what disagrees" is the wrong
+   * instruction — the file is not this service's baseline, it is the fleet's,
+   * and what this service owes it is an addition inside the existing
+   * `model { … }` block. Spelling that as `diff` taught agents to leave the
+   * fleet map alone; spelling it as `create` would have taught them to
+   * overwrite ten other services.
+   */
+  action: "create" | "diff" | "edit";
   /**
    * False for artifacts a baseline can legitimately ship without. True means
    * required for a COMPLETE baseline — validate grades a missing spec.md or
@@ -56,6 +67,80 @@ export interface BriefTarget {
 /** Where an artifact lives — `repo.ts` spells the filenames, this only points at them. */
 type PathKey = "model" | "spec" | "archSpec" | "openapi" | "adrsDir" | "runbook" | "health";
 
+/**
+ * The LikeC4 identifier the fleet map's element for a service conventionally
+ * carries: the directory name, camel-cased. It is a suggestion and nothing
+ * more — `metadata { service '<id>' }` is what actually joins the element to
+ * the directory — but a brief that hands over a concrete block gets followed,
+ * and one that describes a block in prose gets improvised on.
+ */
+function elementIdFor(service: string): string {
+  const parts = service.split(/[^A-Za-z0-9]+/).filter((p) => p !== "");
+  if (parts.length === 0) return "service";
+  const head = parts[0]!.toLowerCase();
+  const tail = parts.slice(1).map((p) => p[0]!.toUpperCase() + p.slice(1).toLowerCase());
+  const id = head + tail.join("");
+  // LikeC4 identifiers cannot open with a digit; a service id can.
+  return /^[0-9]/.test(id) ? `svc${id[0]!.toUpperCase()}${id.slice(1)}` : id;
+}
+
+/**
+ * The block this service still owes `architecture/landscape.likec4`.
+ *
+ * `expects` is what the fleet ALREADY calls on the service — those edges exist
+ * in the map today, so the example draws the outbound side as a comment rather
+ * than telling an agent to duplicate an edge that is already there.
+ */
+function landscapeBlock(service: string, expects: string[], present: boolean): string {
+  const id = elementIdFor(service);
+  const calls =
+    expects.length > 0
+      ? expects.map((op) => `//   <caller> -> ${id} 'Calls ${op}' { metadata { op '${op}' } }`)
+      : [`//   <caller> -> ${id} 'Calls <operationId>' { metadata { op '<operationId>' } }`];
+  const model = [
+    "model {",
+    ...(present ? ["  // ... the fleet's other services stay exactly as they are ...", ""] : []),
+    `  ${id} = softwareSystem '${service}' {`,
+    "    description '<one line: what this service is responsible for>'",
+    `    metadata { service '${service}' }`,
+    "  }",
+    "",
+    "  // every call in or out of it, one edge each:",
+    ...calls.map((line) => `  ${line}`),
+    "}",
+  ];
+  // When the file does not exist the example is the WHOLE file, so it carries
+  // the `specification` block a bare `model` would be rejected without: the
+  // brief must never hand over a document `loam validate` refuses. When the file
+  // does exist the example is a fragment to splice, and repeating a
+  // `specification` block there would invite a second one.
+  return present
+    ? model.join("\n")
+    : ["specification {", "  element softwareSystem", "}", "", ...model].join("\n");
+}
+
+/** The fleet map's own brief — assembled per service, because the block it owes names the service. */
+function landscapeArtifact(
+  service: string,
+  expects: string[],
+  present: boolean,
+): Omit<BriefTarget, "path" | "exists" | "action"> {
+  return {
+    artifact: "landscape.likec4",
+    required: true,
+    purpose:
+      "the fleet map — until an element here resolves to this directory, the service is documented and invisible to every cross-service check",
+    shape: [
+      "This file is the WHOLE FLEET's, not this service's. Add to it; never rewrite it. Everything already in `model { ... }` belongs to the other services, and replacing the file destroys their map along with their edges.",
+      `Add one top-level element for the service, bound to its directory: \`metadata { service '${service}' }\`. Until an element resolves to \`services/${service}/\`, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error).`,
+      "Bind rather than rename: a binding whose id names no directory is `landscape.binding-unknown` (error), and two elements binding the SAME directory is `landscape.binding-duplicate` (warn) — every element→service join then picks one of them arbitrarily.",
+      "Draw every cross-service call as an edge carrying the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. The `op` must be an operationId the TARGET's openapi.yaml defines, or `spine.op-undefined` (error) — a broken contract between services.",
+      "If the file does not exist yet, create it with a `specification { ... }` block declaring the kinds you use, then the `model { ... }` block. A landscape that does not parse is `landscape.invalid` (error) and blinds every cross-service check at once.",
+    ],
+    example: landscapeBlock(service, expects, present),
+  };
+}
+
 /** The artifacts, in the order a baseline is best written in. */
 const ARTIFACTS: Array<Omit<BriefTarget, "path" | "exists" | "action"> & { key: PathKey }> = [
   {
@@ -63,13 +148,17 @@ const ARTIFACTS: Array<Omit<BriefTarget, "path" | "exists" | "action"> & { key: 
     key: "model",
     required: true,
     purpose: "the service's C4 — what it is, what is inside it, what it talks to",
+    // Every rule below is one a later check depends on, and the mapping is
+    // pinned in test/agent-contract.test.ts. Rules nobody checks — the `views`
+    // block, "exactly one top-level element" — used to sit here reading exactly
+    // like the enforced ones, which is how a brief teaches an agent that
+    // `loam validate` passing means more than it does. They now live in
+    // UNCHECKED, where their status is the point.
     shape: [
-      "A `specification { ... }` block declaring every element kind you use (`element softwareSystem`, `element container`). LikeC4 rejects an undeclared kind.",
-      "A `model { ... }` block with ONE top-level element for the service; containers and components nest inside it.",
-      "A `views { ... }` block with at least one view. Scope a container view with `view of <element>`.",
-      "The service element binds to this directory: `metadata { service '<id>' }`. Without a binding the element's TITLE has to equal the directory name — and then renaming the box silently unlinks every check that joined the two.",
-      "A call to another service is an edge that names the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. The `op` must be an operationId the TARGET's openapi.yaml defines.",
-      "It has to parse: `loam validate` runs LikeC4 in-process and reports `c4.invalid` with line numbers.",
+      "A `specification { ... }` block declaring every element kind you use (`element softwareSystem`, `element container`). LikeC4 rejects an undeclared kind, and `loam validate --service <id>` reports it as `c4.invalid` with line numbers.",
+      "A `model { ... }` block holding the service's element, with containers and components nested inside it. The whole file has to parse — `loam validate` runs LikeC4 in-process and reports `c4.invalid` with line numbers.",
+      "The service element binds to this directory: `metadata { service '<id>' }`. Without a binding the element's TITLE has to equal the directory name — and then renaming the box silently unlinks every check that joined the two. The same binding is what makes the FLEET map resolve an element to `services/<id>/`; until one does, `loam validate --all` reports `landscape.service-unmodelled`.",
+      "A call to another service is an edge that names the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. Cross-service edges belong in `architecture/landscape.likec4` (a target of its own, below) — this file cannot even resolve the other service's element — and there the `op` must be an operationId the TARGET's openapi.yaml defines, or `spine.op-undefined` fires.",
     ],
     example: `specification {
   element softwareSystem
@@ -102,7 +191,7 @@ views {
       "Frontmatter (below), then a `## Requirements` heading.",
       "`### Requirement: <name>` — ONE observable behaviour, written with SHALL, testable without reading the code. Add `Requirement-ID: <id>` in its body for stable identity across heading renames; legacy requirements without one continue to match by exact name.",
       "At least one `#### Scenario: <name>` per requirement, with Given/When/Then bullets. This is gated (`requirements.missing-scenarios`) — scenarios are the acceptance criteria and the source for tests.",
-      "`Operations: <operationId>[, <operationId>]` in the requirement body names the API operations it governs. Every one must exist in this service's openapi.yaml.",
+      "`Operations: <operationId>[, <operationId>]` in the requirement body names the API operations it governs. Every one must exist in this service's openapi.yaml — a name that does not is `spec-api.op-undefined` (error), reported against the LIVING spec, not only inside a feature delta.",
       "Document what the service DOES today, not what it should do. This is the baseline; changes to it belong in a feature delta.",
     ],
     example: `---
@@ -231,7 +320,7 @@ export const FRONTMATTER_BRIEF: FrontmatterBrief = {
     sources:
       "the paths in THIS SERVICE'S repository you actually read to write the document — files and directories only, a directory covering everything beneath it; glob patterns are refused. Not the paths a reader would expect to have been read.",
   },
-  never: ["last_verified", "sources_digest", "content_digest"],
+  never: ["last_verified", "sources_digest", "content_digest", "sources_files"],
   why:
     "`sources` is the only mechanical tie between this document and the code. Everything else loam checks is internal consistency, and a corpus can agree with itself perfectly while describing nothing that exists. `loam validate`, run inside the service's repo, checks every listed path is still there; `loam vouch` hashes their content so a later `validate` can say the code has moved since anyone read it. Both are worth exactly as much as the list is honest.",
 };
@@ -342,6 +431,22 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_SERVICE,
     what: "openapi.yaml defines operations and spec.md has requirements, but no `Operations:` line joins them — every cross-axis check is vacuously green",
   },
+  // The `Operations:` spine, checked against the LIVING contract. It used to
+  // fire only inside a feature delta, so a baseline could ship a requirement
+  // governing an operation nobody defines and stay green until the first
+  // feature touched it.
+  {
+    code: "spec-api.op-undefined",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "a living requirement's `Operations:` line names an operationId this service's openapi.yaml does not define — the two axes disagree about what the service exposes",
+  },
+  {
+    code: "spec.no-requirements",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "spec.md exists but holds no `### Requirement:` block at all — every requirement-driven check below it is vacuous rather than passing",
+  },
   // The deprecation pair fires on a fresh baseline too — a legacy service is
   // exactly where ops marked `deprecated: true` coexist with their
   // replacements, and documenting that lifecycle honestly is part of the
@@ -433,10 +538,45 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_ALL,
     what: "nothing in architecture/landscape.likec4 resolves to services/<id>/ — the fleet map is incomplete until an element exists or an existing one is bound with `metadata { service '<id>' }`",
   },
+  {
+    code: "landscape.missing",
+    severity: "error",
+    via: VIA_ALL,
+    what: "architecture/landscape.likec4 does not exist at all — an error as soon as services/ holds one service (a warning only in an empty docs repo): with no fleet map, every cross-service check is blind rather than passing",
+  },
+  {
+    code: "landscape.invalid",
+    severity: "error",
+    via: VIA_ALL,
+    what: "architecture/landscape.likec4 exists but does not parse — fix it before anything else; the whole cross-service layer is unchecked until it reads",
+  },
+  {
+    code: "landscape.binding-unknown",
+    severity: "error",
+    via: VIA_ALL,
+    what: "an element's `metadata { service }` names a directory that does not exist — a binding is a claim about this repo, and this one is false",
+  },
+  {
+    code: "landscape.binding-duplicate",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "two landscape elements resolve to the same services/<id>/ — every element→service join picks one of them arbitrarily, so the other's edges are filed under a service that does not own them",
+  },
 ];
 
-/** What no check will ever tell you. Read it as the list of ways to be wrong quietly. */
+/**
+ * What no check will ever tell you. Read it as the list of ways to be wrong
+ * quietly.
+ *
+ * The first two entries are here because they used to be `shape` rules on
+ * model.likec4, phrased exactly like the enforced ones. A brief that states an
+ * unenforced rule beside four enforced ones is not merely useless — it is the
+ * way an agent learns that a green `loam validate` means more than it does.
+ * Anything nothing checks belongs on this list, where its status IS the point.
+ */
 export const UNCHECKED: string[] = [
+  "Whether model.likec4 declares a `views { ... }` block, or any view at all. Views are how a human reads the model — LikeC4 renders them, `loam` reads none of them — so a model with no view passes every check and shows nobody anything. Write one (`view of <element> { include * }`).",
+  "Whether the model has exactly ONE top-level element for the service, with its containers nested inside. Five top-level boxes for one service parse, validate and bind exactly as well as one — and then the fleet map, which joins elements to directories, has five candidates for the same service and no way to say which is wrong.",
   "Whether the model is the architecture the code actually has. loam parses model.likec4; it never reads a line of the service.",
   "Whether a requirement is TRUE of the service. `loam validate` checks that a requirement has a scenario, never that either one describes real behaviour.",
   "Whether the scenarios are acceptance criteria somebody could test, or the requirement restated in Given/When/Then.",
@@ -479,6 +619,18 @@ export interface LandscapeContext {
   outbound: LandscapeEdge[];
   /** Operations other services already call on this one: the contract owes them. */
   expects: string[];
+  /**
+   * The write this service still owes the fleet map, in prose — null once an
+   * element resolves to it.
+   *
+   * It duplicates the `landscape.likec4` target's shape rules on purpose: an
+   * agent driving off `--json` reads `landscape` to learn what the fleet
+   * already says, and every `targets[]` consumer walks the artifact list. Only
+   * one of those two readers used to exist, so `adopt` briefed eight files and
+   * never once said the ninth thing — that a documented service nobody drew is
+   * invisible to the whole cross-service layer.
+   */
+  instruction: string | null;
 }
 
 export interface Brief {
@@ -518,12 +670,28 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
     });
   }
 
+  // The eighth target is the fleet map, and it is conditional: a service the
+  // landscape ALREADY resolves an element to owes it nothing, and briefing an
+  // edit there would invite an agent to draw a second box for a service that
+  // has one. Everything else about the target is unconditional — the file is
+  // shared, so `action` is `edit` whenever it exists and `create` only for the
+  // very first service of a brand-new docs repo.
+  const landscape = await landscapeContext(docsDir, service);
+  if (landscape.modelled !== true) {
+    targets.push({
+      ...landscapeArtifact(service, landscape.expects, landscape.present),
+      path: rel(landscapePath(docsDir)),
+      exists: landscape.present,
+      action: landscape.present ? "edit" : "create",
+    });
+  }
+
   return {
     service,
     docsDir,
     path: rel(paths.dir),
     targets,
-    landscape: await landscapeContext(docsDir, service),
+    landscape,
     frontmatter: FRONTMATTER_BRIEF,
     checks: VALIDATE_CHECKS,
     unchecked: UNCHECKED,
@@ -555,11 +723,14 @@ async function landscapeContext(docsDir: string, service: string): Promise<Lands
     inbound: [],
     outbound: [],
     expects: [],
+    instruction: null,
   };
-  if (!empty.present) return { ...empty, modelled: false };
+  if (!empty.present)
+    return { ...empty, modelled: false, instruction: instructionFor(service, "absent", []) };
 
   const land = await loadFile(path);
-  if (land.errors.length > 0) return empty;
+  if (land.errors.length > 0)
+    return { ...empty, instruction: instructionFor(service, "unparseable", []) };
 
   const mine = (e: Elem): boolean => elementService(e) === service;
   const elements: LandscapeElement[] = land.elements.filter(mine).map((e) => ({
@@ -579,6 +750,7 @@ async function landscapeContext(docsDir: string, service: string): Promise<Lands
     else if (svcOf(r.source) === service) outbound.push({ to: svcOf(r.target), ...edge });
   }
 
+  const expects = [...new Set(inbound.map((e) => e.op).filter((op): op is string => op !== null))];
   return {
     present: true,
     parses: true,
@@ -586,6 +758,60 @@ async function landscapeContext(docsDir: string, service: string): Promise<Lands
     elements,
     inbound,
     outbound,
-    expects: [...new Set(inbound.map((e) => e.op).filter((op): op is string => op !== null))],
+    expects,
+    instruction:
+      elements.length > 0 ? null : instructionFor(service, "unmodelled", expects),
   };
+}
+
+/**
+ * The fleet-map instruction, in the three states a landscape can be in.
+ *
+ * It says the file, the block, and the consequence, in that order. The
+ * consequence is the part agents acted on: "add an element" reads as tidiness,
+ * "until you do, `loam validate --all` fails and no cross-service check can see
+ * this service" reads as work.
+ */
+function instructionFor(
+  service: string,
+  state: "absent" | "unparseable" | "unmodelled",
+  expects: string[],
+): string {
+  const id = elementIdFor(service);
+  const bind = `an element bound with \`metadata { service '${service}' }\``;
+  const consequence =
+    `Until one resolves, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error) for ` +
+    `services/${service}/: the service is documented and invisible — no edge into it can be checked ` +
+    `against its openapi.yaml, and no feature can draw a call to it.`;
+  // `expects` is reachable only through elements that already resolve to this
+  // service, so it is empty in every state that produces an instruction. It is
+  // threaded through anyway rather than dropped: the caller computes it once,
+  // and the day an unmodelled service can inherit an edge (a container-level
+  // binding, say) the sentence is already here instead of being noticed missing.
+  const owed =
+    expects.length > 0
+      ? ` The fleet already calls ${expects.map((o) => `'${o}'`).join(", ")} on this service, so those edges exist; your element is what they will resolve to.`
+      : "";
+
+  if (state === "absent") {
+    return (
+      `architecture/landscape.likec4 does not exist yet. Create it with a \`specification { ... }\` block ` +
+      `declaring the kinds you use and a \`model { ... }\` block containing ${bind} ` +
+      `(conventionally \`${id} = softwareSystem '${service}'\`), plus one edge per cross-service call, each ` +
+      `carrying \`metadata { op '<operationId>' }\`. ${consequence}${owed}`
+    );
+  }
+  if (state === "unparseable") {
+    return (
+      `architecture/landscape.likec4 exists but does not parse (\`landscape.invalid\`), so nothing can be said ` +
+      `about what it already models. Fix the parse errors first — they blind every cross-service check at once — ` +
+      `then make sure it holds ${bind}. ${consequence}`
+    );
+  }
+  return (
+    `Nothing in architecture/landscape.likec4 resolves to services/${service}/. ADD to that file — do not rewrite ` +
+    `it, every other service's map is in there — ${bind}, conventionally ` +
+    `\`${id} = softwareSystem '${service}'\`, inside the existing \`model { ... }\` block, and draw each ` +
+    `cross-service call as an edge carrying \`metadata { op '<operationId>' }\`. ${consequence}${owed}`
+  );
 }

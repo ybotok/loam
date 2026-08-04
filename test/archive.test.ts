@@ -3051,7 +3051,17 @@ describe("the machine contract (--json)", () => {
         path: "features/FEAT-1-split",
         to: "features/archive/FEAT-1-split",
       });
-      expect(json.warnings).toEqual([]);
+      // The one warning this fixture earns: FEAT-1 brings payment-split-service
+      // into existence, and nothing in the merge writes its model.likec4.
+      expect(json.warnings).toEqual([
+        {
+          severity: "warn",
+          code: "service.no-model",
+          gates: false,
+          subject: "payment-split-service",
+          message: expect.stringContaining("services/payment-split-service/model.likec4"),
+        },
+      ]);
       expect(json.overridden).toEqual([]);
       expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
     } finally {

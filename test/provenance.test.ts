@@ -676,12 +676,15 @@ owner: web-team${withSources ? "\nsources:\n  - web/src" : ""}
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);
       expect(json.sourcesUnverifiableFromHere).toBe(2);
-      // and no per-service sources finding leaks in — the count IS the report
-      for (const t of json.targets) {
-        for (const f of t.findings as Array<{ code: string }>) {
-          expect(f.code.startsWith("sources.")).toBe(false);
-        }
-      }
+      // The blind spot IS reported per service now — `validate --service X` run
+      // from the docs repo used to say nothing at all about its own blind spot,
+      // which made "green here" indistinguishable from "checked". The rollup is
+      // derived from those findings and counts SERVICES, so the two can never
+      // disagree; the ok severity keeps it out of --strict.
+      const blind = json.targets.flatMap((t: { findings: Array<{ code: string }> }) =>
+        t.findings.filter((f) => f.code === "sources.unverifiable-from-here"),
+      );
+      expect(blind).toHaveLength(2);
       const text = await runLoam(p.workDir, "validate", "--all");
       const lines = text.out.split("\n").filter((l) => l.includes("unverifiable-from-here"));
       expect(lines).toHaveLength(1);
@@ -715,10 +718,15 @@ owner: web-team${withSources ? "\nsources:\n  - web/src" : ""}
     });
   });
 
-  it("single-target runs never carry the field — nothing was counted", async () => {
+  it("single-target runs carry the field too — a service knows its own blind spot", async () => {
+    // The field used to be --all-only, on the reasoning that a stable 0 would
+    // claim a check that never happened. The check happens now: the blind spot
+    // is graded per service, so a one-service run knows exactly as much about
+    // itself as --all knows about the fleet, and an agent can branch on it
+    // without having to validate the whole fleet to find out.
     await withProject(fleet(true), {}, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "validate", "--service", SVC, "--json")).stdout);
-      expect(json.sourcesUnverifiableFromHere).toBeUndefined();
+      expect(json.sourcesUnverifiableFromHere).toBe(1);
     });
   });
 });

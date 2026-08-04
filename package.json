@@ -15,13 +15,19 @@
     "loam": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md",
+    "COMPARISON.md",
+    "MIGRATING-from-OpenSpec.md",
+    "SCHEMA.md",
+    "SECURITY.md"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.22.3"
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
@@ -34,6 +40,11 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:package": "node scripts/package-smoke.mjs",
+    "release:check": "node scripts/release-check.mjs",
+    "release:check:selftest": "node scripts/release-check.mjs --fixture-ready",
+    "release:pack": "node scripts/pack-release.mjs",
+    "pilot:run": "node scripts/pilot-harness.mjs",
+    "pilot:check": "node scripts/pilot-harness.mjs --check-manifest docs/pilot/manifest.example.json --selftest",
     "test:openspec-corpus": "tsx scripts/check-openspec-corpus.ts",
     "setup": "bash scripts/setup.sh"
   },
@@ -44,7 +55,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
+    "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.10",
     "oxlint": "^1.77.0",
     "tsx": "^4.23.1",

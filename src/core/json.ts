@@ -88,6 +88,20 @@ export type ErrorCode =
   | "service-mismatch"
   | "unknown-service"
   | "repository-unavailable"
+  /** `loam verify --record` without `--service` over a federated (schema 2) record: it would erase other repositories' attestations. */
+  | "record-federated"
+  /** A `verification.yaml` that exists but cannot be read as a record — never overwritten, never reported as absent. */
+  | "record-unreadable"
+  /** `loam gherkin <FEAT>` refusing to overwrite a `.feature` file owned by another feature still in flight. */
+  | "gherkin-conflict"
+  /** `loam vouch` found the spec changed under it between reading and stamping — another vouch or an edit landed first, and nothing was written. */
+  | "vouch-raced"
+  /** `docsDir` in loam.json points at nothing: the docs repo was never cloned, or the path is wrong. A read command refuses rather than reporting an empty fleet. */
+  | "docs-missing"
+  /** `docsDir` is a directory but has no `services/`: it is some other directory, most often the service repo itself after a typo. */
+  | "services-missing"
+  /** Another `loam archive`/`unarchive` holds the docs repo's advisory lock: nothing was read or written, and re-running once it finishes works. */
+  | "docs-busy"
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {

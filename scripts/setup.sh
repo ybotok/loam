@@ -11,16 +11,21 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Node >= 20 — hard requirement (package.json engines). Fail early with a fix
+# Node >= 22.22.3 — hard requirement (package.json engines and LikeC4). Fail early with a fix
 # hint instead of letting npm ci die on an engine warning three minutes in.
 if ! command -v node >/dev/null 2>&1; then
-  echo "error: node not found. Install Node.js >= 20 — e.g. via nvm (nvm install 20) or fnm (fnm install 20)." >&2
+  echo "error: node not found. Install Node.js >= 22.22.3 — e.g. via nvm (nvm install 22.22.3) or fnm (fnm install 22.22.3)." >&2
   exit 1
 fi
-major="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$major" -lt 20 ]; then
-  echo "error: node $(node -v) is too old — loam needs >= 20." >&2
-  echo "hint: nvm install 20 && nvm use 20   (or: fnm install 20 && fnm use 20)" >&2
+if ! node -e '
+  const have = process.versions.node.split(".").map(Number);
+  const need = [22, 22, 3];
+  const ok = have.some((part, index) => part > need[index] && have.slice(0, index).every((value, prior) => value === need[prior]))
+    || have.every((part, index) => part === need[index]);
+  process.exit(ok ? 0 : 1);
+'; then
+  echo "error: node $(node -v) is too old — loam needs >= 22.22.3." >&2
+  echo "hint: nvm install 22.22.3 && nvm use 22.22.3   (or: fnm install 22.22.3 && fnm use 22.22.3)" >&2
   exit 1
 fi
 

@@ -226,6 +226,8 @@ describe("an explicit binding that names nothing", () => {
       "architecture/landscape.likec4": landscape(`  payments = softwareSystem 'Payments API' {
     metadata { service 'no-such-service' }
   }`),
+      // A real (if empty) services/ — an ABSENT one is now a refusal, not a fleet of zero.
+      "services/.keep": "",
     };
     await withProject(files, {}, async (p) => {
       const { code, targets } = await validateAll(p);
@@ -242,6 +244,7 @@ describe("an explicit binding that names nothing", () => {
       "architecture/landscape.likec4": landscape(`  payments = softwareSystem 'Payments API' {
     metadata { service 'no-such-service' }
   }`),
+      "services/.keep": "",
     };
     await withProject(files, {}, async (p) => {
       const { targets } = await validateAll(p);
@@ -300,11 +303,25 @@ describe("scope and preconditions", () => {
     });
   });
 
-  it("has no target at all when there is no landscape file to cross-check against", async () => {
+  it("grades an ABSENT landscape as a finding, not a skipped check", async () => {
+    // The whole point of the cross-check is that the fleet map exists. Returning
+    // no target at all meant a docs repo with NO map validated green — the one
+    // shape of drift that hides every other one.
     await withProject({ [`services/${SVC}/model.likec4`]: serviceModel(SVC) }, {}, async (p) => {
       const { code, targets } = await validateAll(p);
+      expect(code).toBe(1);
+      const f = landscapeTarget(targets)!.findings.find((x) => x.code === "landscape.missing")!;
+      expect(f.severity).toBe("error");
+      expect(f.message).toContain("architecture/landscape.likec4");
+    });
+  });
+
+  it("downgrades the absence to a warning when services/ is empty — nothing to draw yet", async () => {
+    await withProject({ "services/.keep": "" }, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
       expect(code).toBe(0);
-      expect(landscapeTarget(targets)).toBeUndefined();
+      const f = landscapeTarget(targets)!.findings.find((x) => x.code === "landscape.missing")!;
+      expect(f.severity).toBe("warn");
     });
   });
 

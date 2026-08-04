@@ -37,13 +37,90 @@ export function elementService(e: Elem): string {
 }
 
 /**
+ * Every id an endpoint may be filed under, nearest first: `a.b.c`, `a.b`, `a`.
+ *
+ * A landscape does not have to draw a service as one opaque box. The moment
+ * somebody models its containers — `paymentService.api`, `paymentService.worker`
+ * — an edge drawn INTO a container is still an edge into the service, and every
+ * join that groups by service has to know that. Resolving only the exact id is
+ * what made those edges invisible: the spine check silently skipped them, and
+ * the no-openapi grace treated a service with a dozen inbound container calls as
+ * one nobody calls at all.
+ */
+function ancestorIds(id: string): string[] {
+  const out = [id];
+  for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) {
+    out.push(id.slice(0, dot));
+  }
+  return out;
+}
+
+/**
+ * A memoized `id -> service` resolver over one document.
+ *
+ * Resolution order, and why it is this order:
+ *
+ *  1. the nearest ancestor (the id itself first) carrying an explicit
+ *     `metadata { service '<id>' }` — a binding is a claim somebody wrote down,
+ *     so it outranks every guess;
+ *  2. the nearest ancestor whose title names a REAL `services/<id>/` directory —
+ *     positive evidence from the filesystem, available only to callers that
+ *     hand in `known`;
+ *  3. the element's own title, and finally the raw id — today's fallback, kept
+ *     LAST because it is the one that lies: it happily resolves
+ *     `paymentService.api` to "api", a service that has never existed.
+ *
+ * Built once per document and shared, because it is called inside loops over
+ * every relationship and the walk up the ancestor chain is not free.
+ */
+export function serviceResolver(
+  elements: Elem[],
+  known?: ReadonlySet<string>,
+): (id: string) => string {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  const memo = new Map<string, string>();
+  return (id: string): string => {
+    const hit = memo.get(id);
+    if (hit !== undefined) return hit;
+    let answer: string | undefined;
+    for (const candidate of ancestorIds(id)) {
+      const e = byId.get(candidate);
+      if (e?.service !== undefined) {
+        answer = e.service;
+        break;
+      }
+    }
+    if (answer === undefined && known !== undefined) {
+      for (const candidate of ancestorIds(id)) {
+        const e = byId.get(candidate);
+        if (e !== undefined && known.has(e.title)) {
+          answer = e.title;
+          break;
+        }
+      }
+    }
+    if (answer === undefined) {
+      const self = byId.get(id);
+      answer = self ? elementService(self) : id;
+    }
+    memo.set(id, answer);
+    return answer;
+  };
+}
+
+/**
  * The service a relationship endpoint belongs to. An id that names no element
  * resolves to itself, so a partial document degrades to the id rather than
  * throwing.
+ *
+ * `known` is the set of service directories that actually exist; pass it
+ * wherever the caller has enumerated `services/`, so an edge into a modelled
+ * container resolves to the service that owns it instead of to the container's
+ * own title. Callers with a single document and no repository in hand omit it
+ * and keep the pre-existing behaviour.
  */
-export function serviceOf(elements: Elem[], id: string): string {
-  const e = elements.find((x) => x.id === id);
-  return e ? elementService(e) : id;
+export function serviceOf(elements: Elem[], id: string, known?: ReadonlySet<string>): string {
+  return serviceResolver(elements, known)(id);
 }
 
 /** loam-neutral relationship view. */

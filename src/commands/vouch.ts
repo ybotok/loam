@@ -32,10 +32,14 @@ import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../cor
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
 import {
   contentDigest,
+  emptySourcesMessage,
+  encodeSourceIndex,
   missingSources,
   patternSources,
   sourcesDigest,
   unsafeSources,
+  type SkippedSource,
+  type SourceIndexEntry,
 } from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
 import { message, rollbackStaged, stageWrites, swapStaged, type PlannedWrite } from "../core/staging.js";
@@ -68,6 +72,12 @@ export interface StampedSpec {
   sources: string[];
   /** How many files those entries expanded to. */
   files: number;
+  /**
+   * Paths under those entries the digest would not hash. A vouch over a spec
+   * with a skipped path is still a vouch — the person read what they read — but
+   * they are told, because the stamp cannot go stale over bytes it never saw.
+   */
+  skipped: SkippedSource[];
 }
 
 export type VouchOutcome =
@@ -80,12 +90,19 @@ export type VouchOutcome =
     }
   | {
       ok: false;
-      // The last two are the commit phase failing: `merge-failed` says the
-      // rollback held (nothing was stamped, re-running can work),
-      // `rollback-incomplete` says it did not and the message lists the files.
+      // The last three are the commit phase failing: `vouch-raced` says the
+      // document moved under the run and nothing was written at all,
+      // `merge-failed` says the rollback held (nothing was stamped, re-running
+      // can work), `rollback-incomplete` says it did not and the message lists
+      // the files.
       code: Extract<
         ErrorCode,
-        "unknown-target" | "sources-absent" | "sources-path-missing" | "merge-failed" | "rollback-incomplete"
+        | "unknown-target"
+        | "sources-absent"
+        | "sources-path-missing"
+        | "vouch-raced"
+        | "merge-failed"
+        | "rollback-incomplete"
       >;
       message: string;
     };
@@ -144,6 +161,7 @@ export function registerVouch(program: Command): void {
           sources_digest: spec!.digest,
           content_digest: spec!.contentDigest,
           files: spec!.files,
+          skipped: spec!.skipped,
           // The architecture axis, same keys: null when the service has no
           // arch.spec.md, so a consumer can tell "none present" from an older
           // loam that never reported the axis. status/last_verified are not
@@ -157,6 +175,7 @@ export function registerVouch(program: Command): void {
                   sources_digest: arch.digest,
                   content_digest: arch.contentDigest,
                   files: arch.files,
+                  skipped: arch.skipped,
                 },
         });
         return;
@@ -169,6 +188,13 @@ export function registerVouch(program: Command): void {
           `  sources_digest  ${s.digest}  (${plural(s.files, "file")} from ${plural(s.sources.length, "source")})`,
         );
         console.log(`  content_digest  ${s.contentDigest}`);
+        // Said at the moment of stamping, not only later by `loam validate`:
+        // this is the one screen the person who vouched is actually looking at,
+        // and what it lists is the part of the tree their promise does not cover.
+        if (s.skipped.length > 0) {
+          console.log(`\n  ⚠ ${plural(s.skipped.length, "path")} under those sources went unhashed:`);
+          for (const skip of s.skipped) console.log(`      ${skip.path} — ${skip.reason}`);
+        }
       }
       console.log(
         `\n\`loam validate\` will now say when that code moves out from under the spec — or when the spec moves under its own stamp.`,
@@ -225,6 +251,10 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       status: "verified",
       last_verified: req.today,
       sources_digest: v.digest,
+      // Beside the digest, what it was taken over. `sources_digest` alone can
+      // only ever say THAT the code moved; the next `loam validate` reads this
+      // back to say which files did.
+      sources_files: encodeSourceIndex(v.index),
     });
     const bodyDigest = contentDigest(restamped);
     writes.push({ path: v.path, content: withFrontmatterFields(restamped, { content_digest: bodyDigest }) });
@@ -234,7 +264,8 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       digest: v.digest,
       contentDigest: bodyDigest,
       sources: v.sources,
-      files: v.files,
+      files: v.index.length,
+      skipped: v.skipped,
     });
   }
 
@@ -246,6 +277,29 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   // step to a full disk. Staging parks each file's new bytes beside it, swaps by
   // rename(2), and on failure restores what already swapped from its pre-image.
   const staged = await stageWrites(writes);
+
+  // One shared docs repo, ten service repos, and nothing stopping two of them
+  // from vouching at once. Between reading a spec and swapping the stamp in
+  // there is a window in which somebody else's vouch (or an editor, or a merge)
+  // can land in the same file — and because the new bytes were computed from
+  // the OLD ones, swapping them in would take that stamp back out without a
+  // word. `stageWrites` has already read what is on disk right now, so the
+  // check is a comparison, not another read: if the file is not what was
+  // verified, this run is describing a document that no longer exists.
+  const raced = staged.filter((s, i) => s.before !== verified[i]!.raw);
+  if (raced.length > 0) {
+    // Nothing has swapped yet, so the rollback is only the temp files going
+    // away — the other writer's stamp is left exactly as it landed.
+    await rollbackStaged(staged);
+    return {
+      ok: false,
+      code: "vouch-raced",
+      message:
+        `${req.service}: ${raced.map((s) => s.write.path).join(", ")} changed while this vouch was running — ` +
+        `another vouch or an edit landed first. Nothing was stamped: re-read the document and re-run.`,
+    };
+  }
+
   try {
     await swapStaged(staged);
   } catch (err) {
@@ -278,7 +332,9 @@ interface VerifiedSpec {
   raw: string;
   sources: string[];
   digest: string;
-  files: number;
+  /** Per-file shas, in digest order — what `sources_files` is stamped from. */
+  index: SourceIndexEntry[];
+  skipped: SkippedSource[];
 }
 
 /**
@@ -353,18 +409,17 @@ async function verifySpec(
     };
   }
 
-  const { digest, files } = await sourcesDigest(req.repoDir, sources);
-  if (files.length === 0) {
-    // A directory that exists but holds no files (or only dot-entries, which
-    // the walk skips): the paths "resolve", but a digest over nothing never
-    // changes, so the stamp would read as current forever.
-    return {
-      ok: false,
-      code: "sources-absent",
-      message: `${label}: the sources listed match no files — ${sources.join(", ")}. A digest over nothing would read as current forever.`,
-    };
+  const { digest, index, skipped } = await sourcesDigest(req.repoDir, sources);
+  if (index.length === 0) {
+    // A directory that exists but holds no files — or only ones the walk leaves
+    // out: dot-entries, `node_modules`, anything the repository itself ignores.
+    // The paths "resolve", but a digest over nothing never changes, so the stamp
+    // would read as current forever. The sentence comes from provenance.ts so
+    // that `loam validate` can grade the same state in the same words instead of
+    // going green on a document this command refuses.
+    return { ok: false, code: "sources-absent", message: emptySourcesMessage(label, sources) };
   }
-  return { ok: true, path, file, raw, sources, digest, files: files.length };
+  return { ok: true, path, file, raw, sources, digest, index, skipped };
 }
 
 /**

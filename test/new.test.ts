@@ -19,11 +19,18 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 
+/**
+ * The floor of a docs repo: `services/` exists, even when it is empty — that is
+ * what `loam init --create` scaffolds, and the enumeration refuses a directory
+ * without it instead of reporting an empty fleet.
+ */
+const DOCS_REPO = { "services/.gitkeep": "" };
+
 async function withProject(
   files: Record<string, string>,
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
-  const p = await makeProject(files);
+  const p = await makeProject({ ...DOCS_REPO, ...files });
   try {
     await fn(p);
   } finally {

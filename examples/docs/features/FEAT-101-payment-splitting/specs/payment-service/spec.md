@@ -3,6 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Authorize payment
+Based-On: 7b1841806c2986c9
 The service SHALL reserve funds for an order before capture, and MAY delegate splitting to
 `payment-split-service` when the order is flagged for splitting.
 

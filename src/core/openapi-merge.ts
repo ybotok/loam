@@ -8,6 +8,14 @@ export interface OpenapiMergeResult {
   text: string | null;
   /** Labels of existing operations overwritten with different content. */
   modified: string[];
+  /**
+   * Labels of PATH-LEVEL keys (`parameters`, `servers`, `summary`, `x-*`)
+   * overwritten with different content. They are not operations, so they were
+   * excluded from the difference check entirely and overwritten in silence —
+   * a delta restating a path with a shorter `parameters` list dropped shared
+   * parameters from every operation under it, and the plan said nothing.
+   */
+  pathItemModified: string[];
   /** Labels of living operations deleted by `x-loam-remove: true` markers. */
   removed: string[];
   /** `<kind>/<name>` of living components overwritten with different content. */
@@ -42,21 +50,48 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   if (feature.errors.length > 0) {
     throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
   }
-  const paths = feature.get("paths");
-  if (!isMap(paths)) return featureText;
-  for (const item of paths.items) {
-    const path = scalarKey(item.key);
-    if (!isMap(item.value)) continue;
-    const removals: string[] = [];
-    for (const method of item.value.items) {
-      const m = scalarKey(method.key);
-      if (!HTTP_METHODS.has(m)) continue;
-      const plain = feature.getIn(["paths", path, m]);
-      if (isMap(plain) && plain.get("x-loam-remove") === true) removals.push(m);
+  let plain: unknown;
+  try {
+    plain = feature.toJS() ?? {};
+  } catch (error) {
+    throw new OpenapiMergeError("feature", service, errorMessage(error));
+  }
+  // Shape from the RESOLVED tree, for the same reason the merge reads it there:
+  // an aliased `paths` or path item is not a map node, and treating it as
+  // "nothing to strip" is how a feature-only marker reached a living contract.
+  const paths = plainChild(plain, "paths");
+  if (!isRecord(paths)) return featureText;
+
+  const cleaned: Record<string, unknown> = {};
+  let stripped = false;
+  for (const [path, item] of Object.entries(paths)) {
+    const kept = withoutRemovalMarkers(item);
+    if (!isDeepStrictEqual(kept, item)) stripped = true;
+    // A path the strip emptied goes with its last operation: `\/x: {}` is a
+    // path the contract advertises and nothing answers.
+    if (kept !== undefined) cleaned[path] = kept;
+  }
+  if (!stripped) return featureText;
+
+  // Edit the AST in place when every node the strip touches IS a node — the
+  // author's comments, key order and formatting are theirs to keep. An alias
+  // cannot be edited in place (there is one shared value behind it, and
+  // deleting a key through it would change every use), so those documents get
+  // their `paths` rewritten from the resolved tree instead: losing formatting
+  // is a cost, shipping the marker is a corruption.
+  const editable =
+    isMap(feature.get("paths")) && Object.keys(paths).every((p) => isMap(feature.getIn(["paths", p])));
+  if (!editable) {
+    feature.setIn(["paths"], cleaned);
+  } else {
+    for (const [path, item] of Object.entries(paths)) {
+      if (!isRecord(item)) continue;
+      for (const [m, value] of Object.entries(item)) {
+        if (HTTP_METHODS.has(m) && isRemoval(value)) feature.deleteIn(["paths", path, m]);
+      }
+      const remaining = feature.getIn(["paths", path]);
+      if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
     }
-    for (const method of removals) feature.deleteIn(["paths", path, method]);
-    const remaining = feature.getIn(["paths", path]);
-    if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
   }
   try {
     return feature.toString();
@@ -70,6 +105,18 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
  * text splicing). A feature document without paths is a successful no-op.
  * The merged operations' local component-ref closure rides along recursively;
  * external refs are left untouched and never gated.
+ *
+ * Every SHAPE question — is there a `paths` mapping, is this path item a
+ * mapping, which methods does it hold — is answered from the RESOLVED plain
+ * trees, never from the AST node. Asking the AST (`isMap(node)`) answers a
+ * different question: an alias node is not a map even when it resolves to one.
+ * `paths: *alias` therefore read as "no paths to merge" and the whole contract
+ * delta was dropped with a successful exit, and an aliased path ITEM fell into
+ * the wholesale-replace branch and deleted every living operation on that path
+ * that the alias did not restate. Aliases are legal OpenAPI and the natural way
+ * to write a delta that repeats a shape; nothing here may treat them as absent.
+ * An alias that cannot be resolved at all is a document loam cannot read, and
+ * says so — it is never "nothing to merge".
  */
 export function mergeOpenapiPaths(
   livingText: string,
@@ -80,10 +127,6 @@ export function mergeOpenapiPaths(
   if (feature.errors.length > 0) {
     throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
   }
-  const featPaths = feature.get("paths");
-  if (!isMap(featPaths) || featPaths.items.length === 0) {
-    return { text: null, modified: [], removed: [], componentsModified: [], unresolved: [] };
-  }
   let featPlain: unknown;
   try {
     // Resolve aliases once with the document's own anchor context. Calling an
@@ -93,6 +136,15 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("feature", service, errorMessage(error));
   }
+  const featPathsPlain = plainChild(featPlain, "paths");
+  if (featPathsPlain === undefined || featPathsPlain === null) {
+    return noop();
+  }
+  if (!isRecord(featPathsPlain)) {
+    throw new OpenapiMergeError("feature", service, "`paths` is not a mapping");
+  }
+  const featPathEntries = Object.entries(featPathsPlain);
+  if (featPathEntries.length === 0) return noop();
 
   const living = parseDocument(livingText);
   if (living.errors.length > 0) {
@@ -104,19 +156,30 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
+  const livingPathsPlain = plainChild(livingPlain, "paths");
+  if (livingPathsPlain !== undefined && livingPathsPlain !== null && !isRecord(livingPathsPlain)) {
+    throw new OpenapiMergeError("living", service, "`paths` is not a mapping");
+  }
   const modified: string[] = [];
+  const pathItemModified: string[] = [];
   const removed: string[] = [];
-  for (const item of featPaths.items) {
-    const path = scalarKey(item.key);
-    const featItem = item.value;
-    const featItemPlain = plainChild(plainChild(featPlain, "paths"), path);
+  for (const [path, featItemPlain] of featPathEntries) {
     const existing = living.getIn(["paths", path]);
-    if (existing !== undefined && isMap(existing) && isMap(featItem)) {
-      for (const method of featItem.items) {
-        const m = scalarKey(method.key);
+    const existingPlain = plainChild(livingPathsPlain, path);
+    if (existing !== undefined && !isRecord(existingPlain)) {
+      // The living contract holds this path as something other than a path
+      // item. Replacing it wholesale is the one branch that may delete living
+      // operations without naming them, so it is reserved for paths the living
+      // contract does not have at all.
+      throw new OpenapiMergeError("living", service, `path '${path}' is not a mapping`);
+    }
+    if (existing !== undefined) {
+      if (!isRecord(featItemPlain)) {
+        throw new OpenapiMergeError("feature", service, `path '${path}' is not a mapping`);
+      }
+      for (const [m, afterPlain] of Object.entries(featItemPlain)) {
         const before = living.getIn(["paths", path, m]);
-        const beforePlain = plainChild(plainChild(plainChild(livingPlain, "paths"), path), m);
-        const afterPlain = plainChild(featItemPlain, m);
+        const beforePlain = plainChild(existingPlain, m);
         if (HTTP_METHODS.has(m) && isRemoval(afterPlain)) {
           // Coherence validates the marker and gates absent/mismatched targets.
           // The merge remains defensive under --approve: never delete a
@@ -131,15 +194,26 @@ export function mergeOpenapiPaths(
           }
           continue;
         }
-        if (HTTP_METHODS.has(m) && before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
-          modified.push(opLabel(beforePlain, afterPlain, m, path));
+        // The difference check covers EVERY key of the path item; only the
+        // LABEL depends on whether the key is an HTTP method.
+        if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
+          if (HTTP_METHODS.has(m)) modified.push(opLabel(beforePlain, afterPlain, m, path));
+          else pathItemModified.push(`'${m}' (${path})`);
         }
         living.setIn(["paths", path, m], afterPlain);
       }
-    } else {
-      const clean = withoutRemovalMarkers(featItemPlain);
-      if (clean !== undefined) living.setIn(["paths", path], clean);
+      // Removing the last method leaves `\/x: {}` — a path the contract still
+      // advertises and nothing answers. The same cleanup
+      // stripOpenapiRemovalMarkers already does on the feature side.
+      const remaining = living.getIn(["paths", path]);
+      if (isMap(remaining) && remaining.items.length === 0) living.deleteIn(["paths", path]);
+      continue;
     }
+    if (!isRecord(featItemPlain)) {
+      throw new OpenapiMergeError("feature", service, `path '${path}' is not a mapping`);
+    }
+    const clean = withoutRemovalMarkers(featItemPlain);
+    if (clean !== undefined) living.setIn(["paths", path], clean);
   }
 
   const componentsModified: string[] = [];
@@ -176,9 +250,8 @@ export function mergeOpenapiPaths(
     for (const ref of collectRefs(node)) visitRef(ref, from);
   };
 
-  for (const item of featPaths.items) {
-    const path = scalarKey(item.key);
-    walk(withoutRemovalMarkers(plainChild(plainChild(featPlain, "paths"), path)), `paths ${path}`);
+  for (const [path, featItemPlain] of featPathEntries) {
+    walk(withoutRemovalMarkers(featItemPlain), `paths ${path}`);
   }
 
   for (const { kind, name, value } of copies) {
@@ -197,7 +270,24 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
-  return { text, modified, removed, componentsModified, unresolved };
+  return { text, modified, pathItemModified, removed, componentsModified, unresolved };
+}
+
+/** The successful "the feature document has nothing to merge" answer. */
+function noop(): OpenapiMergeResult {
+  return {
+    text: null,
+    modified: [],
+    pathItemModified: [],
+    removed: [],
+    componentsModified: [],
+    unresolved: [],
+  };
+}
+
+/** A resolved plain tree that can hold OpenAPI keys — an object, not an array. */
+function isRecord(node: unknown): node is Record<string, unknown> {
+  return node !== null && typeof node === "object" && !Array.isArray(node);
 }
 
 /** Every `$ref` string value anywhere in a plain JS tree, in document order. */
@@ -268,14 +358,6 @@ function withoutRemovalMarkers(node: unknown): unknown {
   const entries = Object.entries(node as Record<string, unknown>)
     .filter(([method, value]) => !(HTTP_METHODS.has(method) && isRemoval(value)));
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
-}
-
-/** Convert a YAML scalar key into the string used by OpenAPI maps. */
-export function scalarKey(key: unknown): string {
-  if (key && typeof key === "object" && "value" in key) {
-    return String((key as { value: unknown }).value);
-  }
-  return String(key);
 }
 
 function plainChild(parent: unknown, key: string): unknown {

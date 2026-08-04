@@ -7,7 +7,7 @@
  * exist", "which features are in flight" or "where does artifact X live" asks
  * here, so the layout is spelled exactly once.
  */
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "./frontmatter.js";
@@ -179,10 +179,99 @@ export function featuresDir(docsDir: string): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Is there a docs repo there at all?                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What is actually at `docsDir`. Three answers, because they point at three
+ * different fixes and the enumeration below used to give all of them the same
+ * one — an empty list:
+ *
+ *  - `missing`     — nothing there (or not a directory): `docsDir` in loam.json
+ *                    is wrong, or the docs repo was never cloned;
+ *  - `no-services` — a directory, but with no `services/`: it is some other
+ *                    directory, most often the service repo itself after a typo;
+ *  - `ok`          — a docs repo. `services/` may still be EMPTY, and that is a
+ *                    legitimate state: a docs repo before the first `loam adopt`.
+ *
+ * "Empty fleet" and "wrong path" are the same output only if nobody asks this
+ * question, and a green `loam list` over a docsDir that does not exist is worse
+ * than a red one: it says the fleet is fine.
+ */
+export type DocsRepoKind = "missing" | "no-services" | "ok";
+
+export interface DocsRepoState {
+  kind: DocsRepoKind;
+  /** The path examined, so a caller can quote it without re-deriving it. */
+  path: string;
+}
+
+export function docsRepoState(docsDir: string): DocsRepoState {
+  const path = docsDir;
+  let isDir = false;
+  try {
+    isDir = statSync(path).isDirectory();
+  } catch {
+    isDir = false;
+  }
+  if (!isDir) return { kind: "missing", path };
+  return { kind: existsSync(join(path, "services")) ? "ok" : "no-services", path };
+}
+
+/**
+ * The docs repo is not there. Thrown rather than returned because every caller
+ * of the enumeration wants the same thing — to stop — and a `[]` return is the
+ * bug this closes. `message` is written for a human at a terminal: the CLI's
+ * top-level handler prints it verbatim, and commands that catch it report
+ * `repository-unavailable`.
+ */
+export class DocsRepoUnavailableError extends Error {
+  constructor(
+    readonly state: DocsRepoState,
+    message: string,
+  ) {
+    super(message);
+    this.name = "DocsRepoUnavailableError";
+  }
+}
+
+/**
+ * Refuse to enumerate a docs repo that is not one. `allow` names the states the
+ * caller can honestly survive: features/ may be absent from a real docs repo
+ * (nothing is in flight yet), so feature enumeration only insists the docs repo
+ * EXISTS, while service enumeration insists it is shaped like a docs repo — a
+ * `services/` directory is what makes it one.
+ */
+function requireDocsRepo(docsDir: string, allow: DocsRepoKind[]): void {
+  const state = docsRepoState(docsDir);
+  if (allow.includes(state.kind)) return;
+  if (state.kind === "missing") {
+    throw new DocsRepoUnavailableError(
+      state,
+      `The configured docs repo does not exist: ${state.path}. ` +
+        "Fix `docsDir` in loam.json, clone the docs repo there, " +
+        "or run `loam init --docs <dir> --create` to make a new one.",
+    );
+  }
+  throw new DocsRepoUnavailableError(
+    state,
+    `${state.path} is not a docs repo — it has no services/ directory. ` +
+      "Point `docsDir` in loam.json at the shared docs repo, " +
+      "or run `loam init --docs <dir> --create` to make one.",
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Enumeration                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Sorted names of the real subdirectories of `dir` (dot-dirs and files skipped). */
+/**
+ * Sorted names of the real subdirectories of `dir` (dot-dirs and files skipped).
+ * A missing `dir` is an empty list — the swallow is deliberate but narrow: it
+ * only ever runs INSIDE a docs repo that `requireDocsRepo` has already
+ * confirmed, where an absent `features/` or `specs/` means "none yet" and
+ * nothing else.
+ */
 async function subdirs(dir: string): Promise<string[]> {
   if (!existsSync(dir)) return [];
   const entries = await readdir(dir, { withFileTypes: true });
@@ -210,6 +299,7 @@ export async function featureSpecServices(
 /** Every service in the docs repo, ordered by id. */
 export async function listServices(docsDir: string, context?: FleetContext): Promise<ServiceEntry[]> {
   if (context !== undefined) return context.listServices(docsDir);
+  requireDocsRepo(docsDir, ["ok"]);
   const names = await subdirs(join(docsDir, "services"));
   return Promise.all(
     names.map(async (id): Promise<ServiceEntry> => {
@@ -258,6 +348,10 @@ export async function listFeatures(
   context?: FleetContext,
 ): Promise<FeatureEntry[]> {
   if (context !== undefined) return context.listFeatures(docsDir, opts);
+  // "no-services" is tolerated here on purpose: a docs repo whose services/ is
+  // gone is broken, but it is `listServices` (and `loam doctor`) that says so.
+  // Refusing here too would turn one diagnosis into two contradictory ones.
+  requireDocsRepo(docsDir, ["ok", "no-services"]);
   const root = featuresDir(docsDir);
   const active = (await subdirs(root)).filter((n) => n !== ARCHIVE_DIR);
   const out = await Promise.all(active.map((n) => readFeature(join(root, n), n, false)));
@@ -287,11 +381,19 @@ export type ArchivedPolicy = "exclude" | "include" | "only";
  * coherence, and the cross-feature self-exclusion scans all compare against
  * `feature.id`, never against the raw argument.
  *
- * An exact directory name wins over a slugged one (`FEAT-5` over `FEAT-5-slug`),
- * and under "include" an active feature wins over an archived one. Prefix
- * matching respects the id boundary, so `FEAT-1` never resolves to `FEAT-10-x`.
- * Ties among slugged candidates go to the first by name — deterministic, unlike
- * the raw readdir order this replaces.
+ * Matching is EXACT, on one of two spellings: the directory name as it is on
+ * disk, or the canonical id derived from it. It used to also match any dirName
+ * starting with `arg + "-"`, which made the argument a prefix query in
+ * disguise: with FEAT-401 and FEAT-402 in flight, `loam archive FEAT` archived
+ * whichever sorted first, and `loam delta billing` reached into
+ * `billing-7-rewrite`. A destructive command must never pick a target the
+ * caller did not name, so a prefix now resolves to nothing at all.
+ *
+ * An exact directory name still wins over the id spelling (`FEAT-5` the
+ * directory over `FEAT-5-slug`, whose id is also `FEAT-5`), and under "include"
+ * an active feature wins over an archived one. Ties among equally-exact
+ * candidates go to the first by name — deterministic, unlike the raw readdir
+ * order this replaces; `ambiguousFeatureMessage` lists them for the caller.
  */
 export async function resolveFeature(
   docsDir: string,
@@ -299,17 +401,43 @@ export async function resolveFeature(
   archived: ArchivedPolicy,
   context?: FleetContext,
 ): Promise<FeatureEntry | null> {
+  return (await featureCandidates(docsDir, arg, archived, context))[0] ?? null;
+}
+
+/**
+ * Every feature the argument names exactly, best first. Split out of
+ * `resolveFeature` so a caller that wants to REFUSE an ambiguous argument can
+ * see the tie instead of inheriting the winner.
+ */
+export async function featureCandidates(
+  docsDir: string,
+  arg: string,
+  archived: ArchivedPolicy,
+  context?: FleetContext,
+): Promise<FeatureEntry[]> {
   const all = await listFeatures(docsDir, { includeArchived: archived !== "exclude" }, context);
-  const candidates = all
+  return all
     .filter((f) => archived === "include" || f.archived === (archived === "only"))
-    .filter((f) => f.dirName === arg || f.dirName.startsWith(arg + "-"))
+    .filter((f) => f.dirName === arg || f.id === arg)
     .sort(
       (a, b) =>
         Number(b.dirName === arg) - Number(a.dirName === arg) ||
         Number(a.archived) - Number(b.archived) ||
         compareIds(a.dirName, b.dirName),
     );
-  return candidates[0] ?? null;
+}
+
+/**
+ * The message for an argument that names more than one feature — two directories
+ * carrying the same id (`FEAT-6-aaa` and `FEAT-6-zzz`). `resolveFeature` still
+ * picks one deterministically, but a command that is about to WRITE should say
+ * which directories collided and make the caller spell one out.
+ */
+export function ambiguousFeatureMessage(arg: string, candidates: FeatureEntry[]): string {
+  return (
+    `'${arg}' names ${candidates.length} features: ${candidates.map((c) => c.dirName).join(", ")}. ` +
+    "Pass the directory name you mean."
+  );
 }
 
 /**

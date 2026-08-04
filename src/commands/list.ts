@@ -1,14 +1,20 @@
 import type { Command } from "commander";
+import { existsSync } from "node:fs";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
+import { loadFile, serviceResolver } from "../core/likec4.js";
 import {
+  DocsRepoUnavailableError,
   compareIds,
+  landscapePath,
   listFeatures,
   listServices,
+  servicePaths,
   type FeatureEntry,
   type ServiceEntry,
 } from "../core/repo.js";
 import { featureChecklist, readVerification } from "../core/verify.js";
+import { docsRepoReady, reportDocsRepoError } from "./validate.js";
 
 type Section = "services" | "features";
 const SECTIONS: Section[] = ["services", "features"];
@@ -16,6 +22,7 @@ const SECTIONS: Section[] = ["services", "features"];
 interface ListOptions {
   json?: boolean;
   archived?: boolean;
+  needsWork?: boolean;
 }
 
 export function registerList(program: Command): void {
@@ -25,63 +32,183 @@ export function registerList(program: Command): void {
     .description("List the services and features in the docs repo")
     .option("--json", "emit the machine contract instead of the human view")
     .option("--archived", "include archived features")
+    .option(
+      "--needs-work",
+      "services only: the adoption worklist — every service below `vouched`, with what it is missing",
+    )
     .action(async (section: string | undefined, opts: ListOptions) => {
-      const wanted = section ? SECTIONS.filter((s) => s === section) : SECTIONS;
-      if (section && wanted.length === 0) {
+      const json = opts.json === true;
+      const wanted = opts.needsWork
+        ? SECTIONS.filter((s) => s === "services")
+        : section
+          ? SECTIONS.filter((s) => s === section)
+          : SECTIONS;
+      if (section && !SECTIONS.includes(section as Section)) {
         // `invalid-option`, same as show's bad --type: one mistake class, one code.
-        fail(opts.json === true, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
+        fail(json, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
+        return;
+      }
+      if (opts.needsWork && section === "features") {
+        fail(json, "invalid-option", "--needs-work is the service adoption worklist; drop the 'features' section.");
         return;
       }
 
       const config = await loadConfig();
       if (!config) {
-        reportNoConfig(opts.json === true);
+        reportNoConfig(json);
         return;
       }
       const { docsDir } = config;
+      // A docsDir that is not a docs repo is refused, never rendered as an empty
+      // fleet — the whole point of the gate (see validate.ts's docsRepoReady).
+      // `list features` alone does not need services/, so it asks for less.
+      if (!docsRepoReady(json, docsDir, wanted.includes("services") ? "services" : "docs")) return;
 
-      const services = wanted.includes("services") ? await listServices(docsDir) : undefined;
-      const features = wanted.includes("features")
-        ? await listFeatures(docsDir, { includeArchived: opts.archived })
-        : undefined;
-      const verification = features
-        ? await Promise.all(features.map((f) => featureVerification(docsDir, f)))
-        : undefined;
+      try {
+        const services = wanted.includes("services") ? await listServices(docsDir) : undefined;
+        const views = services ? await serviceViews(docsDir, services, config.service) : undefined;
+        const features = wanted.includes("features")
+          ? await listFeatures(docsDir, { includeArchived: opts.archived })
+          : undefined;
+        const verification = features
+          ? await Promise.all(features.map((f) => featureVerification(docsDir, f)))
+          : undefined;
 
-      if (opts.json) {
-        emitJson({
-          docsDir,
-          ...(services
-            ? {
-                services: services.map((s) => serviceJson(docsDir, s)),
-                maturity: maturityRollup(services),
-              }
-            : {}),
-          ...(features
-            ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
-            : {}),
-        });
-        return;
+        const worklist = views?.filter((v) => v.maturity !== "vouched");
+
+        if (json) {
+          emitJson({
+            docsDir,
+            ...(views
+              ? {
+                  services: (opts.needsWork ? worklist! : views).map((v) => serviceJson(docsDir, v)),
+                  maturity: maturityRollup(views),
+                }
+              : {}),
+            ...(features
+              ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
+              : {}),
+          });
+          return;
+        }
+
+        if (opts.needsWork) {
+          printWorklist(worklist!, views!.length);
+          return;
+        }
+        if (views) printServices(views);
+        if (views && features) console.log("");
+        if (features) printFeatures(features, verification!);
+      } catch (err) {
+        if (err instanceof DocsRepoUnavailableError) {
+          reportDocsRepoError(json, err);
+          return;
+        }
+        // One unreadable file used to escape as a stack trace (`internal` in
+        // --json), naming nothing. The enumeration is all-or-nothing — it reads
+        // every service's frontmatter to build one table — so the honest answer
+        // is a refusal that says WHICH path could not be read.
+        const path = (err as NodeJS.ErrnoException).path;
+        if (path === undefined) throw err;
+        fail(
+          json,
+          "repository-unavailable",
+          `${path} could not be read, so the listing would be missing a service. ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
-
-      if (services) printServices(services);
-      if (services && features) console.log("");
-      if (features) printFeatures(features, verification!);
     });
+}
+
+/* ------------------------------------------------------------------ */
+/* The per-service view                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A service entry plus the two things the enumeration cannot know on its own:
+ * whether an API is EXPECTED of it, and whether anyone standing here could
+ * check its `sources`. Both change what the maturity rung means, and both are
+ * fleet-level facts — they need the landscape and loam.json, not the directory.
+ */
+interface ServiceView {
+  entry: ServiceEntry;
+  /** `arch.spec.md` — the architecture-obligations axis, absent from ServiceEntry.has. */
+  archSpec: boolean;
+  /**
+   * Does anything in the fleet call an operation on this service? True unless
+   * the landscape PROVES otherwise, exactly as `validate`'s no-openapi grace
+   * reads it: a missing or unparseable landscape proves nothing.
+   */
+  apiExpected: boolean;
+  /** True when this service's `sources` can only be resolved from its own repo. */
+  unverifiableFromHere: boolean;
+  maturity: Maturity;
+  /** What stands between this service and the next rung, in fix order. */
+  missing: string[];
+}
+
+/**
+ * Read the living landscape ONCE and decide, per service, whether an API is
+ * expected of it. `serviceResolver` is handed the real service ids so an edge
+ * drawn into a modelled container (`paymentService.api`) counts for the service
+ * that owns it — the same resolution `validate` uses, so the two commands
+ * cannot disagree about who is called.
+ */
+async function serviceViews(
+  docsDir: string,
+  services: ServiceEntry[],
+  boundService: string | undefined,
+): Promise<ServiceView[]> {
+  const known = new Set(services.map((s) => s.id));
+  const lp = landscapePath(docsDir);
+  const land = existsSync(lp) ? await loadFile(lp) : null;
+  const called = new Set<string>();
+  // Positive evidence only: with no landscape, or one that does not parse, we
+  // know nothing about who is called and every service is assumed to have an
+  // API — the conservative direction, because claiming a service needs no
+  // contract is how a real one goes undocumented.
+  const proven = land !== null && land.errors.length === 0;
+  if (proven) {
+    const svcOf = serviceResolver(land.elements, known);
+    for (const r of land.relationships) {
+      if (r.op !== undefined) called.add(svcOf(r.target));
+    }
+  }
+
+  return services.map((entry) => {
+    const archSpec = existsSync(servicePaths(docsDir, entry.id).archSpec);
+    const apiExpected = !proven || called.has(entry.id);
+    const view = {
+      entry,
+      archSpec,
+      apiExpected,
+      unverifiableFromHere: entry.sources.declared && boundService !== entry.id,
+    };
+    const missing = gaps(view);
+    return { ...view, maturity: maturity(view), missing };
+  });
 }
 
 /* ------------------------------------------------------------------ */
 /* JSON                                                                */
 /* ------------------------------------------------------------------ */
 
-function serviceJson(docsDir: string, s: ServiceEntry): Record<string, unknown> {
+function serviceJson(docsDir: string, v: ServiceView): Record<string, unknown> {
+  const s = v.entry;
   return {
     id: s.id,
     path: repoPath(docsDir, s.dir),
-    has: s.has,
+    has: { ...s.has, archSpec: v.archSpec },
     adrs: s.adrs,
     status: s.status,
-    maturity: maturity(s),
+    maturity: v.maturity,
+    missing: v.missing,
+    apiExpected: v.apiExpected,
+    // Never omitted when true: a consumer that filters this table into a
+    // worklist has to be able to tell "checked and fine" from "not checkable
+    // from here", and absence reads as the first one.
+    ...(v.unverifiableFromHere ? { provenance: "unverifiable-from-here" } : {}),
   };
 }
 
@@ -118,25 +245,52 @@ type Maturity = (typeof MATURITY_LADDER)[number];
  * one, which is why no rung is called "adopted".
  *
  *   empty       services/<id>/ exists, no artifact is in it
- *   partial     some artifacts, but not the model+spec+openapi triple
- *   documented  the triple the adopt brief marks required is present
+ *   partial     some artifacts, but not the required set
+ *   documented  the artifacts the adopt brief marks required are present
  *   sourced     the living spec declares `sources` — something ties it to code
  *   vouched     status: verified with a sources_digest behind it — a person
  *               stamped it. `verified` with no digest is a claim with nothing
  *               behind it and stays below this rung.
+ *
+ * `openapi.yaml` is required ONLY where an API is expected. The rung used to
+ * demand it of everything, which permanently pinned every worker, cron and
+ * consumer in the fleet at `partial` — services that are fully documented and
+ * vouched for, reported as unfinished forever, and a rollup that therefore said
+ * a correctly-adopted fleet was half-done. The evidence is the same one
+ * `validate` uses to keep `service.no-openapi` quiet, so a service cannot be
+ * green in one command and unfinished in the other.
  */
-function maturity(s: ServiceEntry): Maturity {
-  if (!Object.values(s.has).some(Boolean) && s.adrs === 0) return "empty";
-  if (!(s.has.model && s.has.spec && s.has.openapi)) return "partial";
+function maturity(v: Omit<ServiceView, "maturity" | "missing">): Maturity {
+  const s = v.entry;
+  if (!Object.values(s.has).some(Boolean) && !v.archSpec && s.adrs === 0) return "empty";
+  if (!(s.has.model && s.has.spec && (!v.apiExpected || s.has.openapi))) return "partial";
   if (!s.sources.declared) return "documented";
   if (!(s.status === "verified" && s.sources.stamped)) return "sourced";
   return "vouched";
 }
 
+/**
+ * What stands between this service and `vouched`, named as the thing to go and
+ * do. One rung's worth at a time: telling somebody at `empty` that they also
+ * need a vouch is noise, and the vouch is not even possible yet.
+ */
+function gaps(v: Omit<ServiceView, "maturity" | "missing">): string[] {
+  const s = v.entry;
+  const files = [
+    ...(s.has.model ? [] : ["model.likec4"]),
+    ...(s.has.spec ? [] : ["spec.md"]),
+    ...(v.apiExpected && !s.has.openapi ? ["openapi.yaml"] : []),
+  ];
+  if (files.length > 0) return files;
+  if (!s.sources.declared) return ["sources: in the spec.md frontmatter"];
+  if (!(s.status === "verified" && s.sources.stamped)) return [`\`loam vouch --service ${s.id}\``];
+  return [];
+}
+
 /** Counts per rung, every rung present — a stable shape a fleet dashboard can diff. */
-function maturityRollup(services: ServiceEntry[]): Record<Maturity, number> {
+function maturityRollup(views: ServiceView[]): Record<Maturity, number> {
   const out = Object.fromEntries(MATURITY_LADDER.map((m) => [m, 0])) as Record<Maturity, number>;
-  for (const s of services) out[maturity(s)] += 1;
+  for (const v of views) out[v.maturity] += 1;
   return out;
 }
 
@@ -185,30 +339,45 @@ async function featureVerification(
 /* Text                                                                */
 /* ------------------------------------------------------------------ */
 
-/** Fixed-width presence flags: what a service has, and what it is missing. */
-function serviceFlags(s: ServiceEntry): string {
+/**
+ * Fixed-width presence flags. `a` and `A` are deliberately the same letter in
+ * two cases: the arch spec and the API are the two things a reader most often
+ * mistakes for each other, and one is lowercase because it is optional.
+ */
+function serviceFlags(v: ServiceView): string {
+  const s = v.entry;
   return [
     s.has.model ? "M" : "-",
     s.has.spec ? "S" : "-",
+    v.archSpec ? "a" : "-",
     s.has.openapi ? "A" : "-",
     s.has.runbook ? "R" : "-",
     s.has.health ? "H" : "-",
   ].join(" ");
 }
 
-function printServices(services: ServiceEntry[]): void {
-  console.log(`services (${services.length})  [M]odel [S]pec [A]pi [R]unbook [H]ealth`);
-  const width = Math.max(0, ...services.map((s) => s.id.length));
-  for (const s of services) {
+function printServices(views: ServiceView[]): void {
+  console.log(
+    `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [R]unbook [H]ealth`,
+  );
+  const width = Math.max(0, ...views.map((v) => v.entry.id.length));
+  const rungWidth = Math.max(0, ...views.map((v) => v.maturity.length));
+  for (const v of views) {
+    const s = v.entry;
     const adrs = s.adrs > 0 ? `  (${s.adrs} adr${s.adrs === 1 ? "" : "s"})` : "";
-    console.log(`  ${serviceFlags(s)}  ${s.id.padEnd(width)}${adrs}`.trimEnd());
+    // The rung per service, not only in the rollup: "12 partial" tells a reader
+    // the fleet is unfinished and nothing about which twelve, which is the one
+    // question the line is read to answer.
+    console.log(
+      `  ${serviceFlags(v)}  ${s.id.padEnd(width)}  ${v.maturity.padEnd(rungWidth)}${adrs}`.trimEnd(),
+    );
   }
   // How much of the fleet anyone has actually vouched for. On 100+ services this
   // is the number that says whether the docs can be trusted at all.
-  if (services.length > 0) {
+  if (views.length > 0) {
     const counted = new Map<string, number>();
-    for (const s of services) {
-      const key = s.status ?? "unmarked";
+    for (const v of views) {
+      const key = v.entry.status ?? "unmarked";
       counted.set(key, (counted.get(key) ?? 0) + 1);
     }
     const parts = [...counted.entries()]
@@ -218,9 +387,32 @@ function printServices(services: ServiceEntry[]): void {
     // The campaign dial next to the trust dial: rungs in ladder order, so the
     // line reads as progress left to right. Presence and provenance state only
     // — completeness is unchecked, so this line never says "adopted".
-    const rollup = maturityRollup(services);
+    const rollup = maturityRollup(views);
     const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map((m) => `${rollup[m]} ${m}`);
     console.log(`  maturity: ${rungs.join(" · ")}`);
+  }
+}
+
+/**
+ * The one-shot adoption worklist. Onboarding ten legacy services means asking
+ * "what is left" once a day for a month, and the answer used to require reading
+ * a presence table and a rollup and joining them by eye. A service whose
+ * provenance cannot be judged from here is LISTED, tagged, never dropped:
+ * omitting it would read as done.
+ */
+function printWorklist(views: ServiceView[], total: number): void {
+  if (views.length === 0) {
+    console.log(`nothing to do — all ${total} service(s) are vouched`);
+    return;
+  }
+  console.log(`${views.length} of ${total} service(s) need work`);
+  const width = Math.max(0, ...views.map((v) => v.entry.id.length));
+  const rungWidth = Math.max(0, ...views.map((v) => v.maturity.length));
+  for (const v of views) {
+    const note = v.unverifiableFromHere ? "  (provenance: unverifiable-from-here)" : "";
+    console.log(
+      `  ${v.entry.id.padEnd(width)}  ${v.maturity.padEnd(rungWidth)}  missing: ${v.missing.join(", ")}${note}`,
+    );
   }
 }
 

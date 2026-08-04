@@ -1,0 +1,35 @@
+{
+  "$schema": "./manifest.schema.json",
+  "schemaVersion": "1.0",
+  "phase": "baseline",
+  "fleets": [
+    {
+      "id": "replace-with-brownfield-fleet",
+      "profile": "brownfield-adoption",
+      "workDir": "REPLACE_WITH_ABSOLUTE_SERVICE_REPO_PATH",
+      "criteria": {
+        "minServices": 5,
+        "minMaturityStates": 3,
+        "minActiveFeatures": 0,
+        "minCrossServiceFeatures": 0,
+        "maxValidateMs": 60000,
+        "requireDoctorHealthy": true,
+        "requireValid": false
+      }
+    },
+    {
+      "id": "replace-with-active-change-fleet",
+      "profile": "active-cross-service",
+      "workDir": "REPLACE_WITH_ABSOLUTE_SERVICE_REPO_PATH",
+      "criteria": {
+        "minServices": 5,
+        "minMaturityStates": 0,
+        "minActiveFeatures": 1,
+        "minCrossServiceFeatures": 1,
+        "maxValidateMs": 60000,
+        "requireDoctorHealthy": true,
+        "requireValid": false
+      }
+    }
+  ]
+}

@@ -75,14 +75,27 @@ describe("examples/docs vs loam validate --all", () => {
 });
 
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
-  it("plans a coherent six-file merge plus the move, with nothing to warn or override", async () => {
+  it("plans a coherent six-file merge plus the move, warning only that the new service has no model", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.feature).toBe("FEAT-101");
     expect(payload.archived).toBe(false);
-    expect(payload.warnings).toEqual([]);
+    // FEAT-101 creates services/payment-split-service/ — spec, arch spec and
+    // contract — and the landscape gains the element, but nothing writes the
+    // service's own model.likec4. Archive used to close with "complete and
+    // current" and leave `validate --all` reporting a service it had just
+    // created as incomplete; it says so up front now. Advisory: it never gates.
+    expect(payload.warnings).toEqual([
+      {
+        severity: "warn",
+        code: "service.no-model",
+        gates: false,
+        subject: "payment-split-service",
+        message: expect.stringContaining("model.likec4"),
+      },
+    ]);
     expect(payload.overridden).toEqual([]);
     expect(payload.plan).toEqual([
       { path: "services/checkout-web/spec.md", action: "update" },

@@ -21,6 +21,7 @@ import { registerNew } from "../../src/commands/new.js";
 import { registerShow } from "../../src/commands/show.js";
 import { registerDelta } from "../../src/commands/delta.js";
 import { registerGherkin } from "../../src/commands/gherkin.js";
+import { registerRebase } from "../../src/commands/rebase.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerUnarchive } from "../../src/commands/unarchive.js";
 import { registerValidate } from "../../src/commands/validate.js";
@@ -29,6 +30,7 @@ import { registerVouch } from "../../src/commands/vouch.js";
 import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js";
+import { parseRequirements, requirementDigest } from "../../src/core/spec.js";
 
 export interface RunResult {
   /** process.exitCode after the command (0 if it never set one). */
@@ -52,6 +54,21 @@ export interface Project {
   exists(relPath: string): boolean;
   /** Delete the whole fixture tree. */
   destroy(): Promise<void>;
+}
+
+/**
+ * The `Based-On:` value a delta must carry to be written against `name` as this
+ * living document currently spells it — what `loam rebase` would stamp.
+ *
+ * Fixtures compute their pins instead of hard-coding them: a literal digest in
+ * a fixture is a second definition of `requirementDigest`, and the day the
+ * canonical serialization legitimately changes, every one of them would have to
+ * be re-derived by hand — with a stale one reading as a genuine collision.
+ */
+export function pinFor(livingMarkdown: string, name: string): string {
+  const requirement = parseRequirements(livingMarkdown).find((r) => r.name === name);
+  if (!requirement) throw new Error(`no living requirement named '${name}' to pin against`);
+  return requirementDigest(requirement);
 }
 
 /** Create a temp dir (caller owns cleanup unless using makeProject().destroy()). */
@@ -162,6 +179,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerShow(program);
     registerDelta(program);
     registerGherkin(program);
+    registerRebase(program);
     registerArchive(program);
     registerUnarchive(program);
     registerValidate(program);

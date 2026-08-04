@@ -1,9 +1,19 @@
 import type { Command } from "commander";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { stringify as stringifyYaml } from "yaml";
 import { loadConfig } from "../core/config.js";
+import { InvalidIdError, assertServiceId } from "../core/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
-import { featureIdFromDirName, featuresDir, resolveFeature } from "../core/repo.js";
+import { UnsafePathError, resolveInside } from "../core/path-safety.js";
+import {
+  DocsRepoUnavailableError,
+  compareIds,
+  featureIdFromDirName,
+  featuresDir,
+  listServices,
+  resolveFeature,
+} from "../core/repo.js";
 
 /**
  * Feature ids are `<word>-<number>`: the id has to survive being read back off
@@ -44,6 +54,26 @@ export function registerNew(program: Command): void {
         );
       }
 
+      // Service ids are validated BEFORE the config is even loaded, and long
+      // before anything is written: every one of them is interpolated into
+      // `specs/<id>/` under the new feature directory, so `--touches ../../x`
+      // was a writer pointed outside the docs repo. One grammar (core/ids.ts),
+      // the same one adopt/init/vouch refuse on, so a service that is legal to
+      // create is legal to name here and nowhere the two disagree.
+      for (const [label, ids] of [
+        ["--touches", opts.touches],
+        ["--new-service", opts.newService],
+      ] as const) {
+        for (const id of ids) {
+          try {
+            assertServiceId(id, label);
+          } catch (err) {
+            if (!(err instanceof InvalidIdError)) throw err;
+            return fail(json, "invalid-option", err.message);
+          }
+        }
+      }
+
       const config = await loadConfig();
       if (!config) {
         reportNoConfig(json);
@@ -74,23 +104,54 @@ export function registerNew(program: Command): void {
       }
       for (const svc of created) {
         files[join("specs", svc, "openapi.yaml")] = openapiTemplate(svc);
+        // The architecture axis is scaffolded only for a service this feature
+        // INTRODUCES, because that is the case where `c4.uncovered` will fire
+        // the moment the delta is written: a brand-new tagged element nothing
+        // covers. Handing an author a blank page for the outbox/retries/alerts
+        // requirement is how that axis stays empty across a whole fleet.
+        files[join("specs", svc, "arch.spec.md")] = archSpecTemplate(featureId, svc);
       }
 
       const written: string[] = [];
       for (const [rel, content] of Object.entries(files)) {
-        const path = join(dir, rel);
+        // Belt and braces over the id check above: the id grammar is what makes
+        // this safe, and `resolveInside` is what proves it at the moment of the
+        // write — including the symlink cases a grammar cannot see.
+        let path: string;
+        try {
+          path = resolveInside(docsDir, join("features", dirName, rel), "feature file");
+        } catch (err) {
+          if (!(err instanceof UnsafePathError)) throw err;
+          return fail(json, "invalid-option", err.message);
+        }
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, content, "utf8");
         written.push(repoPath(docsDir, path));
       }
 
+      const notes = await unknownServiceNotes(docsDir, touched);
+
       if (json) {
-        emitJson({ feature: featureId, path: repoPath(docsDir, dir), created: written });
+        emitJson({
+          feature: featureId,
+          path: repoPath(docsDir, dir),
+          created: written,
+          // Not an error and not a finding: `--touches` on a service that does
+          // not exist yet is legal (adopt it later, or say `--new-service`).
+          // It is reported because the silent alternative is a feature whose
+          // spec delta will never merge into anything.
+          notes,
+        });
         return;
       }
       console.log(`${featureId} scaffolded at ${repoPath(docsDir, dir)}`);
       for (const w of written) console.log(`  + ${w}`);
+      for (const note of notes) console.log(`\n  note: ${note}`);
       console.log(`\nNext: fill in the delta, then \`loam validate --feature ${featureId}\`.`);
+      console.log(
+        "If this feature changes no architecture, delete delta.likec4 — a requirements-only\n" +
+          "feature is complete without it, and an empty `model {}` validates clean too.",
+      );
     });
 }
 
@@ -98,6 +159,68 @@ function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
+/* ------------------------------------------------------------------ */
+/* Hints                                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `--touches <id>` naming neither a living `services/<id>/` nor a `--new-service`
+ * is almost always a typo, and it is silent by construction: the scaffold writes
+ * `specs/<id>/spec.md` happily, `loam validate` grades a delta against a living
+ * spec that is not there, and the mistake surfaces at archive time as a service
+ * appearing from nowhere. A note, not a refusal — naming a service that will be
+ * adopted next week is legitimate — but the near-miss is spelled out, because
+ * `order-api` vs `orders-api` is exactly the pair a person cannot see.
+ */
+async function unknownServiceNotes(docsDir: string, touched: string[]): Promise<string[]> {
+  if (touched.length === 0) return [];
+  let known: string[];
+  try {
+    known = (await listServices(docsDir)).map((s) => s.id);
+  } catch (err) {
+    // No docs repo to compare against is a different diagnosis entirely, and
+    // `loam doctor` owns it. Saying nothing here beats inventing a typo hint
+    // out of an enumeration that never ran.
+    if (!(err instanceof DocsRepoUnavailableError)) throw err;
+    return [];
+  }
+  const notes: string[] = [];
+  for (const id of touched) {
+    if (known.includes(id)) continue;
+    const near = nearestIds(id, known);
+    notes.push(
+      `--touches '${id}' matches no services/${id}/ in the docs repo` +
+        (near.length === 0 ? "" : ` — did you mean ${near.map((n) => `'${n}'`).join(" or ")}?`) +
+        ` If ${id} is introduced by this feature, pass --new-service ${id} instead.`,
+    );
+  }
+  return notes;
+}
+
+/** Known ids within a small edit distance of `id`, closest first, at most three. */
+function nearestIds(id: string, known: string[]): string[] {
+  const budget = Math.max(1, Math.floor(id.length / 4));
+  return known
+    .map((candidate) => ({ candidate, distance: editDistance(id.toLowerCase(), candidate.toLowerCase()) }))
+    .filter((scored) => scored.distance <= budget)
+    .sort((a, b) => a.distance - b.distance || compareIds(a.candidate, b.candidate))
+    .slice(0, 3)
+    .map((scored) => scored.candidate);
+}
+
+/** Plain Levenshtein — ids are short, and the row-at-a-time form keeps it obvious. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current.push(Math.min(previous[j]! + 1, current[j - 1]! + 1, substitution));
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
+}
 
 /* ------------------------------------------------------------------ */
 /* Naming                                                              */
@@ -140,10 +263,25 @@ function viewName(featureId: string): string {
 
 function intentTemplate(featureId: string, title: string | undefined): string {
   const heading = title ?? featureId;
+  // The frontmatter is SERIALIZED, never interpolated. A title is free text a
+  // person types — `Checkout: split payments` used to be pasted straight after
+  // `title: `, where the colon reopens the mapping and the file stops parsing;
+  // `Orders #42 rework` lost everything from the `#` as a YAML comment, so the
+  // feature quietly answered to a title nobody wrote. The yaml serializer is the
+  // only thing that knows every case, and it is already how migrate-openspec
+  // writes the same three keys.
+  //
+  // `owner` is deliberately NOT a key here. Scaffolding `owner:` writes an
+  // explicit null, which is a claim ("this feature has no owner") rather than
+  // the truth ("nobody has said yet") — and every reader then has to tell an
+  // absent key from a null one. The prompt survives as a comment.
+  const frontmatter = stringifyYaml(
+    { feature: featureId, ...(title === undefined ? {} : { title }), status: "proposed" },
+    { lineWidth: 0 },
+  ).trimEnd();
   return `---
-feature: ${featureId}
-${title ? `title: ${title}\n` : ""}status: proposed
-owner:                       # the team or person who answers for this
+${frontmatter}
+# owner: <the team or person who answers for this>
 ---
 
 # ${heading}
@@ -166,9 +304,17 @@ function deltaTemplate(featureId: string, touched: string[], created: string[]):
 
   const lines: string[] = [];
   if (touchedIds.length > 0) {
-    lines.push("  // Services this feature touches. Reuse the identifiers from");
-    lines.push("  // architecture/landscape.likec4 so the merge lines up.");
-    for (const [id, name] of touchedIds) lines.push(`  ${id} = softwareSystem '${name}'`);
+    // Context elements ship COMMENTED OUT, exactly like the example edge below.
+    // Declared-and-untagged is the one shape `delta.nothing-tagged` exists to
+    // refuse (an author who forgot the tags), so writing these live made every
+    // `loam new --touches X` fail its own validator on the very first run —
+    // which teaches people that the validator is noise. Uncomment a line when an
+    // edge below actually needs the identifier.
+    lines.push("  // Services this feature touches, as context for the diagram. Uncomment the");
+    lines.push("  // ones an edge below names, and reuse the identifiers from");
+    lines.push("  // architecture/landscape.likec4 so the merge lines up. They stay UNTAGGED:");
+    lines.push(`  // only #${featureId} is the change, and everything else here is context.`);
+    for (const [id, name] of touchedIds) lines.push(`  // ${id} = softwareSystem '${name}'`);
     lines.push("");
   }
   if (createdIds.length > 0) {
@@ -189,7 +335,7 @@ function deltaTemplate(featureId: string, touched: string[], created: string[]):
   const to = createdIds[0]?.[0] ?? touchedIds[1]?.[0] ?? "provider";
   lines.push("  // New calls. `metadata { op }` is the spine: it names the OpenAPI operationId");
   lines.push("  // the call uses, and `loam validate` checks it against the target's contract.");
-  lines.push("  // Uncomment and adjust:");
+  lines.push("  // Uncomment and adjust (both endpoints have to be declared above):");
   lines.push("  //");
   lines.push(`  // ${from} -> ${to} 'Calls createSplit' {`);
   lines.push(`  //   #${featureId}`);
@@ -200,6 +346,9 @@ function deltaTemplate(featureId: string, touched: string[], created: string[]):
 //
 // Everything tagged #${featureId} is exactly what \`loam archive\` folds into
 // architecture/landscape.likec4. Everything else here is context for the diagram.
+//
+// If ${featureId} changes no architecture, DELETE this file: a requirements-only
+// feature is complete without it, and an empty \`model {}\` is just as legal.
 
 specification {
   element softwareSystem
@@ -242,6 +391,52 @@ The service SHALL <observable behaviour, testable without reading the code>.
 - **Given** <the starting state>
 - **When** <the trigger>
 - **Then** <the observable outcome>
+`;
+}
+
+/**
+ * The architecture axis, scaffolded EMPTY on purpose.
+ *
+ * Same grammar as spec.md, so the template body has to be unparseable as
+ * requirements or the scaffold would ship a requirement nobody wrote — the
+ * headings are therefore indented inside an HTML comment, which puts them past
+ * the line-anchored `## ADDED Requirements` / `### Requirement:` patterns
+ * core/spec.ts matches on. Copy the block out of the comment and unindent it.
+ */
+function archSpecTemplate(featureId: string, service: string): string {
+  return `# ${service} — architecture requirement delta for ${featureId}
+
+<!-- The architecture axis: the obligations no business scenario was ever going
+     to mention — the outbox, the retries, the timeouts, the alerts.
+
+     \`Covers:\` is to an arch requirement what \`Operations:\` is to a business
+     one — it names the MODEL OBJECTS the scenarios below exercise, so coverage
+     is derived instead of trusted. Three forms, comma-separated:
+
+       Covers: ${service}                 a C4 element — its id, or the service a
+                                          bound/titled element stands for
+       Covers: consumer -> ${service}     an edge, each side resolved the same way
+       Covers: alert:<id>, sli:<id>       a signal declared in health.yaml
+
+     Every tagged element and edge in delta.likec4 wants one (\`c4.uncovered\`).
+     Delete this file if ${featureId} adds no architectural obligation.
+
+     Copy the block below out of this comment and unindent it:
+
+    ## ADDED Requirements
+
+    ### Requirement: TODO — name the architectural obligation
+    Requirement-ID: ${featureId}.${service}.arch
+
+    The service SHALL <the operational/integration behaviour, observable in test>.
+
+    Covers: ${service}
+
+    #### Scenario: TODO — name the case
+    - **Given** <the starting state>
+    - **When** <the trigger>
+    - **Then** <the observable outcome>
+-->
 `;
 }
 

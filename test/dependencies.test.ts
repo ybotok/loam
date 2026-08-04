@@ -62,11 +62,13 @@ describe("typed active-feature dependency analyzer", () => {
     expect(graph.conflicts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "requirement",
+        change: "added",
         identity: "id:REQ.shared",
         features: ["FEAT-1", "FEAT-3"],
       }),
       expect.objectContaining({
         kind: "operation",
+        change: "added",
         identity: "createShared",
         features: ["FEAT-1", "FEAT-3"],
       }),
@@ -103,6 +105,33 @@ describe("typed active-feature dependency analyzer", () => {
     const graph = await analyzeDependencies(project.docsDir);
 
     expect(graph.cycles).toEqual([["FEAT-1", "FEAT-2"]]);
+  });
+
+  it("carries the collision kind in the envelope, so a consumer can tell the two fixes apart", async () => {
+    const project = await makeProject({
+      "services/svc/spec.md": `---\nservice: svc\n---\n\n# svc\n\n## Requirements\n\n${spec("ADDED", "REQ.cancel", "Cancel an order").split("\n").slice(2).join("\n")}`,
+      "features/FEAT-1-a/specs/svc/spec.md": spec("MODIFIED", "REQ.cancel", "Cancel an order"),
+      "features/FEAT-2-b/specs/svc/spec.md": spec("MODIFIED", "REQ.cancel", "Cancel an order"),
+    });
+    cleanups.push(() => project.destroy());
+
+    const result = await runLoam(project.workDir, "dependencies", "--json");
+    const graph = JSON.parse(result.stdout);
+
+    expect(result.code).toBe(0);
+    // Two features rewriting one living requirement: no edge between them (both
+    // depend on the living state, not on each other) — the collision only shows
+    // up as a conflict, and only if the graph indexes changes as well as adds.
+    expect(graph.edges).toEqual([]);
+    expect(graph.conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "requirement",
+        change: "changed",
+        identity: "id:REQ.cancel",
+        features: ["FEAT-1", "FEAT-2"],
+      }),
+    ]));
+    expect(graph.conflicts.every((c: { change: string }) => c.change === "changed")).toBe(true);
   });
 
   it("fails cleanly for an archived or unknown focus", async () => {

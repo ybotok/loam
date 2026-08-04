@@ -16,6 +16,7 @@ import { gatesArchive } from "../src/core/issue.js";
 import {
   coherentFixture,
   makeProject,
+  pinFor,
   runLoam,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
@@ -169,6 +170,7 @@ describe("E1 spec→API: every governed operation must exist in that service's O
 ## MODIFIED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(files["services/payment-service/spec.md"]!, "Authorize a payment")}
 The service SHALL authorize a payment before capture and record the split reference.
 
 Operations: authorizePayment
@@ -196,10 +198,9 @@ Operations: authorizePayment
   });
 
   it("a REMOVED requirement must explicitly remove every operation it governed", async () => {
-    const issues = await coherenceOf({
-      // the requirement being removed has to exist to be removable — otherwise the
-      // delta-shape check fires first and this rule is never reached
-      "services/payment-split-service/spec.md": `# payment-split-service
+    // the requirement being removed has to exist to be removable — otherwise the
+    // delta-shape check fires first and this rule is never reached
+    const livingSplit = `# payment-split-service
 
 ## Requirements
 
@@ -212,12 +213,15 @@ Operations: legacyOp
 - **Given** a legacy split
 - **When** it runs
 - **Then** it completes
-`,
+`;
+    const issues = await coherenceOf({
+      "services/payment-split-service/spec.md": livingSplit,
       [`${FEATURE_REL}/specs/payment-split-service/spec.md`]: `# delta for FEAT-1
 
 ## REMOVED Requirements
 
 ### Requirement: Legacy split behaviour
+Based-On: ${pinFor(livingSplit, "Legacy split behaviour")}
 
 Operations: legacyOp
 `,
@@ -251,6 +255,7 @@ Operations: legacyOp
 ## REMOVED Requirements
 
 ### Requirement: Legacy authorization
+Based-On: ${pinFor(livingSpec, "Legacy authorization")}
 
 Operations: legacyOp
 `;

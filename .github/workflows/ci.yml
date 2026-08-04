@@ -1,11 +1,17 @@
 # Supported-runtime gate plus an install-from-tarball smoke. The seven vendored
-# OpenSpec fixtures run in the normal suite; the full upstream corpus check is
-# intentionally opt-in because it needs an external, commit-pinned checkout.
+# OpenSpec fixtures run in the normal suite; scheduled/manual jobs exercise the
+# complete release and canary corpora from external, commit-pinned checkouts.
 name: ci
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -14,10 +20,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 24]
+        node-version: ["22.22.3", "24"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -25,18 +33,68 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-        if: matrix.node-version == 20
+        if: matrix.node-version == '22.22.3'
       - run: npm run test:coverage
-        if: matrix.node-version == 24
+        if: matrix.node-version == '24'
 
   package:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node-version: "22.22.3"
+          - os: ubuntu-latest
+            node-version: "24"
+          - os: windows-latest
+            node-version: "24"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          node-version: 24
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
       - run: npm run test:package
+      - run: npm run release:check:selftest
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
+      - run: npm run pilot:check
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
+
+  openspec-corpus:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - baseline: release
+            commit: 4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b
+          - baseline: canary
+            commit: 45cca5db6137ed209117cc70510eb3e057fb981b
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: loam
+          persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: Fission-AI/OpenSpec
+          ref: ${{ matrix.commit }}
+          path: openspec-upstream
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: loam/package-lock.json
+      - run: npm ci
+        working-directory: loam
+      - name: Check the pinned OpenSpec ${{ matrix.baseline }} corpus
+        run: npm run test:openspec-corpus -- --baseline "${{ matrix.baseline }}" "$GITHUB_WORKSPACE/openspec-upstream"
+        working-directory: loam

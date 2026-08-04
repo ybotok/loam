@@ -11,7 +11,8 @@
  *  - featureIdFromDirName: id derivation from the <ID>-<slug> convention
  *  - listServices: enumeration, artifact presence, ordering, junk tolerance
  *  - listFeatures: active vs archived, per-feature services, ordering
- *  - resolveFeature: exact / prefix / near-miss / archived / absent
+ *  - resolveFeature: exact id / exact directory name / near-miss / archived / absent
+ *  - docsRepoState: absent vs not-a-docs-repo vs empty-but-real
  *  - path helpers: the only place artifact filenames are spelled
  */
 import { describe, expect, it } from "vitest";
@@ -19,6 +20,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 import {
+  DocsRepoUnavailableError,
+  ambiguousFeatureMessage,
+  docsRepoState,
+  featureCandidates,
   featureIdFromDirName,
   featurePaths,
   featureSpecPaths,
@@ -76,10 +81,47 @@ describe("featureIdFromDirName", () => {
   });
 });
 
-describe("listServices", () => {
-  it("returns [] when services/ does not exist", async () => {
+describe("docsRepoState", () => {
+  it("tells 'not there' from 'not a docs repo' from 'a docs repo with nothing in it yet'", async () => {
     await withDocs({}, async (docsDir) => {
-      expect(await listServices(docsDir)).toEqual([]);
+      expect(docsRepoState(join(docsDir, "nope")).kind).toBe("missing");
+      // the directory exists but has no services/ — most often the service
+      // repo itself, reached by a typo in docsDir
+      expect(docsRepoState(docsDir).kind).toBe("no-services");
+      await mkdir(join(docsDir, "services"), { recursive: true });
+      // an EMPTY services/ is a real docs repo before the first adopt
+      expect(docsRepoState(docsDir).kind).toBe("ok");
+    });
+  });
+
+  it("treats a file at docsDir as missing, not as a repo", async () => {
+    await withDocs({ "afile.txt": "x\n" }, async (docsDir) => {
+      expect(docsRepoState(join(docsDir, "afile.txt")).kind).toBe("missing");
+    });
+  });
+
+  it("reports the path it examined, so a caller can quote it", async () => {
+    await withDocs({}, async (docsDir) => {
+      expect(docsRepoState(docsDir).path).toBe(docsDir);
+    });
+  });
+});
+
+describe("listServices", () => {
+  it("refuses a docsDir that does not exist instead of reporting an empty fleet", async () => {
+    // The bug this closes: a mistyped docsDir looked exactly like a docs repo
+    // with no services in it, so every fleet-wide command reported success over
+    // a repository that was never there.
+    await withDocs({}, async (docsDir) => {
+      const gone = join(docsDir, "nowhere");
+      await expect(listServices(gone)).rejects.toBeInstanceOf(DocsRepoUnavailableError);
+      await expect(listServices(gone)).rejects.toThrow(gone);
+    });
+  });
+
+  it("refuses a directory that is not a docs repo, and says why", async () => {
+    await withDocs({ "README.md": "# not docs\n" }, async (docsDir) => {
+      await expect(listServices(docsDir)).rejects.toThrow(/no services\/ directory/);
     });
   });
 
@@ -297,10 +339,36 @@ describe("resolveFeature", () => {
     });
   });
 
-  it("does not let FEAT-1 match FEAT-10 (prefix match respects the id boundary)", async () => {
+  it("does not let FEAT-1 match FEAT-10 (the id is compared whole)", async () => {
     await withDocs(files, async (docsDir) => {
       expect((await resolveFeature(docsDir, "FEAT-1", "exclude"))?.dirName).toBe("FEAT-1-split");
       expect((await resolveFeature(docsDir, "FEAT-10", "exclude"))?.dirName).toBe("FEAT-10-other");
+    });
+  });
+
+  it("refuses a bare prefix of the id — an argument is a name, not a query", async () => {
+    // `loam archive FEAT` used to archive whichever feature sorted first.
+    await withDocs(
+      {
+        "features/FEAT-401-a/intent.md": "# a\n",
+        "features/FEAT-402-b/intent.md": "# b\n",
+      },
+      async (docsDir) => {
+        expect(await resolveFeature(docsDir, "FEAT", "exclude")).toBeNull();
+        expect(await resolveFeature(docsDir, "FEAT-4", "exclude")).toBeNull();
+        expect((await resolveFeature(docsDir, "FEAT-401", "exclude"))?.dirName).toBe("FEAT-401-a");
+      },
+    );
+  });
+
+  it("refuses a slug prefix — 'billing' does not reach into billing-7-rewrite", async () => {
+    await withDocs({ "features/billing-7-rewrite/intent.md": "# b\n" }, async (docsDir) => {
+      expect(await resolveFeature(docsDir, "billing", "exclude")).toBeNull();
+      expect(await resolveFeature(docsDir, "billing-7-rew", "exclude")).toBeNull();
+      // both exact spellings still resolve: the canonical id and the directory
+      expect((await resolveFeature(docsDir, "billing-7", "exclude"))?.dirName)
+        .toBe("billing-7-rewrite");
+      expect((await resolveFeature(docsDir, "billing-7-rewrite", "exclude"))?.id).toBe("billing-7");
     });
   });
 
@@ -327,6 +395,22 @@ describe("resolveFeature", () => {
         const second = await resolveFeature(docsDir, "FEAT-6", "exclude");
         expect(first?.dirName).toBe(second?.dirName);
         expect(first?.dirName).toBe("FEAT-6-aaa");
+      },
+    );
+  });
+
+  it("surfaces the collision to a caller that must not guess", async () => {
+    await withDocs(
+      {
+        "features/FEAT-6-zzz/intent.md": "# z\n",
+        "features/FEAT-6-aaa/intent.md": "# a\n",
+      },
+      async (docsDir) => {
+        const candidates = await featureCandidates(docsDir, "FEAT-6", "exclude");
+        expect(candidates.map((c) => c.dirName)).toEqual(["FEAT-6-aaa", "FEAT-6-zzz"]);
+        const message = ambiguousFeatureMessage("FEAT-6", candidates);
+        expect(message).toContain("FEAT-6-aaa");
+        expect(message).toContain("FEAT-6-zzz");
       },
     );
   });
@@ -436,11 +520,29 @@ describe("path helpers", () => {
 });
 
 describe("docs-repo detection", () => {
-  it("a directory with none of the expected subdirs is still readable, just empty", async () => {
+  it("a directory with none of the expected subdirs is not a docs repo — services/ makes it one", async () => {
+    // This used to read as an empty-but-fine docs repo. A stray directory is
+    // not an empty fleet, and the difference is a typo in docsDir.
     await withDocs({}, async (docsDir) => {
       await writeFile(join(docsDir, "loam.docs.json"), '{"version":"0","services":[]}\n', "utf8");
+      await expect(listServices(docsDir)).rejects.toBeInstanceOf(DocsRepoUnavailableError);
+      // features/ absence, by contrast, means "nothing in flight" and always will
+      expect(await listFeatures(docsDir)).toEqual([]);
+    });
+  });
+
+  it("an empty but real docs repo enumerates to nothing without complaint", async () => {
+    await withDocs({}, async (docsDir) => {
+      await mkdir(join(docsDir, "services"), { recursive: true });
       expect(await listServices(docsDir)).toEqual([]);
       expect(await listFeatures(docsDir)).toEqual([]);
+    });
+  });
+
+  it("feature enumeration still refuses a docsDir that is not there at all", async () => {
+    await withDocs({}, async (docsDir) => {
+      await expect(listFeatures(join(docsDir, "gone"))).rejects
+        .toBeInstanceOf(DocsRepoUnavailableError);
     });
   });
 });

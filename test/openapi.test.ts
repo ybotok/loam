@@ -13,10 +13,14 @@
  * Decisions documented here (asserted as desired behavior):
  *  - charset: the OpenAPI spec allows ANY string for operationId; real-world ids use
  *    hyphens ('get-user') and dots ('users.list'). Extraction must return them.
- *  - duplicates: operationId MUST be unique per OpenAPI document; every consumer
- *    treats the result as a set (membership in coherence.ts, a count in
- *    validate.ts:72 that duplicates would inflate). So operationIds() dedupes —
- *    "the set of operations the document defines".
+ *  - duplicates: operationId MUST be unique per OpenAPI document, and the reader
+ *    used to enforce that by keeping only the first slot claiming a name. That
+ *    dedup hid the single most common contract edit: RELOCATING an endpoint is a
+ *    removal marker at the old (path, method) and an upsert at the new one — the
+ *    same operationId twice, on purpose — and whichever came second in document
+ *    order vanished. So `ops` is keyed by SLOT, and an id genuinely repeated
+ *    inside one document rides out as `duplicateIds` for a caller to grade
+ *    (`openapi.duplicate-operationid`) instead of being silently halved.
  *  - strictness: only real `paths.*.<method>.operationId` keys count. Text inside
  *    block scalars / comments is not an operation. The `yaml` package is already a
  *    devDep, so a structurally correct extractor is cheap.
@@ -424,12 +428,8 @@ paths:
 /* Duplicates                                                          */
 /* ------------------------------------------------------------------ */
 
-describe("operationIds — duplicate ids collapse to the defined set", () => {
-  it("reports an operationId once even when the document repeats it", async () => {
-    // operationId MUST be unique per OpenAPI document; consumers membership-check
-    // (coherence.ts) or count ops (validate.ts:72) — multiplicity is never wanted
-    // and would double-count a (already invalid) duplicated id.
-    const doc = `openapi: 3.1.0
+describe("operationIds — a repeated id is two slots, and says so", () => {
+  const REPEATED = `openapi: 3.1.0
 info:
   title: user-service
   version: "1.0"
@@ -447,7 +447,54 @@ paths:
         "201":
           description: Authorized
 `;
-    expect(await extract(doc)).toEqual(["authorizePayment"]);
+
+  it("keeps both slots claiming one operationId", async () => {
+    // Dedup by id lost the second slot, and with it every relocation: the
+    // marker at the old path and the definition at the new one are the SAME
+    // id, so one of the two was invisible to the merge planner.
+    const root = await makeTmpDir();
+    try {
+      await writeFiles(root, { "openapi.yaml": REPEATED });
+      const doc = await readOpenapi(join(root, "openapi.yaml"));
+      expect(doc.ops.map((o) => `${o.method} ${o.path}`)).toEqual([
+        "post /payments",
+        "post /payments/legacy",
+      ]);
+      expect(doc.ops.every((o) => o.id === "authorizePayment")).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("names the repeated id so a caller can grade it instead of guessing", async () => {
+    const root = await makeTmpDir();
+    try {
+      await writeFiles(root, { "openapi.yaml": REPEATED });
+      expect((await readOpenapi(join(root, "openapi.yaml"))).duplicateIds).toEqual(["authorizePayment"]);
+      await writeFiles(root, { "clean.yaml": LIVING_OPENAPI });
+      expect((await readOpenapi(join(root, "clean.yaml"))).duplicateIds).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records a removal marker that names no operation, which no id-keyed check can see", async () => {
+    const root = await makeTmpDir();
+    try {
+      await writeFiles(root, {
+        "openapi.yaml": `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      x-loam-remove: true
+`,
+      });
+      const doc = await readOpenapi(join(root, "openapi.yaml"));
+      expect(doc.ops).toEqual([]);
+      expect(doc.anonymousRemovals).toEqual([{ path: "/legacy", method: "post" }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -495,6 +542,37 @@ ${paths}`;
       },
     );
   });
+
+  for (const markerFirst of [true, false]) {
+    it(`answers the same for a relocation with the marker ${markerFirst ? "before" : "after"} the new slot`, async () => {
+      // Removals used to be applied interleaved with upserts, one operation at
+      // a time, so the same change spelled in the other order answered "gone"
+      // instead of "defined" — and the requirement governing it was reported
+      // undefined on exactly one of the two spellings.
+      const marker = `  /old:
+    post:
+      operationId: movedOp
+      x-loam-remove: true
+`;
+      const upsert = `  /new:
+    post:
+      operationId: movedOp
+      responses: { "200": { description: OK } }
+`;
+      await withDir(
+        {
+          "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", ["movedOp"]),
+          "docs/features/FEAT-9-x/specs/payment-service/openapi.yaml":
+            `openapi: 3.1.0\npaths:\n${markerFirst ? marker + upsert : upsert + marker}`,
+        },
+        async (root) => {
+          const docsDir = join(root, "docs");
+          const ids = await serviceOperationIds(docsDir, "payment-service", join(docsDir, "features", "FEAT-9-x"));
+          expect([...ids].sort()).toEqual(["movedOp"]);
+        },
+      );
+    });
+  }
 
   it("a feature-only service (brand-new API) yields exactly the feature's ids", async () => {
     await withDir(
@@ -766,7 +844,7 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
     const root = await makeTmpDir();
     try {
       const res = await readOpenapi(join(root, "no-such-dir", "openapi.yaml"));
-      expect(res).toEqual({ ops: [], unreadable: false });
+      expect(res).toEqual({ ops: [], duplicateIds: [], anonymousRemovals: [], unreadable: false });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

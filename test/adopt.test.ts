@@ -67,7 +67,7 @@ function target(b: Record<string, any>, artifact: string): Record<string, any> {
 }
 
 describe("the work it hands over", () => {
-  it("names every artifact a baseline is made of", async () => {
+  it("names every artifact a baseline is made of, the fleet map last", async () => {
     const p = await project({}, { service: SVC });
     const b = await brief(p);
     expect(b.targets.map((t: { artifact: string }) => t.artifact)).toEqual([
@@ -78,16 +78,25 @@ describe("the work it hands over", () => {
       "adrs/",
       "runbook.md",
       "health.yaml",
+      // The eighth: not this service's file, but the one write without which the
+      // other seven are invisible to every cross-service check.
+      "landscape.likec4",
     ]);
   });
 
-  it("puts every target under the service's own directory, repo-relative", async () => {
+  it("puts every target under the service's own directory — except the fleet map, which is shared", async () => {
     // Repo-relative because the contract is diffed across machines; the absolute
     // anchor is `docsDir`, reported once.
     const p = await project({}, { service: SVC });
     const b = await brief(p);
     expect(b.path).toBe(`services/${SVC}`);
-    for (const t of b.targets) expect(t.path.startsWith(`services/${SVC}/`)).toBe(true);
+    for (const t of b.targets) {
+      if (t.artifact === "landscape.likec4") {
+        expect(t.path).toBe("architecture/landscape.likec4");
+        continue;
+      }
+      expect(t.path.startsWith(`services/${SVC}/`)).toBe(true);
+    }
     expect(b.docsDir).toBe(p.docsDir);
   });
 
@@ -266,7 +275,14 @@ describe("what happens next, and what will never happen", () => {
     expect(allHeader).toBeGreaterThan(-1);
     // the fleet check sits under the --all header, after every --service check
     expect(res.out.indexOf("landscape.service-unmodelled", allHeader)).toBeGreaterThan(allHeader);
-    expect(res.out.slice(0, allHeader)).not.toContain("landscape.service-unmodelled");
+    // The CHECK LIST above the header holds no --all-only code. (The fixture's
+    // landscape does model this service, so the fleet-map target — which quotes
+    // the same code in its shape rules — is not briefed at all here.)
+    const serviceSection = res.out.slice(
+      res.out.indexOf("what `loam validate --service " + SVC + "` then checks"),
+      allHeader,
+    );
+    expect(serviceSection).not.toContain("landscape.service-unmodelled");
   });
 
   it("meters partial adoption honestly: a missing spec or openapi is a warn in the brief, as in validate", async () => {
@@ -305,7 +321,8 @@ describe("the slash command that drives it", () => {
   it("is laid down by init and runs the real flow: brief, write, validate, hand to a human", async () => {
     const dir = await makeTmpDir("loam-adopt-cmd-");
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
-    await runLoam(dir, "init", "--docs", "./d");
+    // `--create`: `--docs` joins an existing docs repo, and ./d does not exist.
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const body = await readFile(join(dir, ".claude", "commands", "loam-adopt.md"), "utf8");
     expect(body).toContain("loam adopt --service");
     expect(body).toContain("loam validate --service");
@@ -313,6 +330,8 @@ describe("the slash command that drives it", () => {
     // the two instructions that make the difference between a baseline and a fiction
     expect(body).toContain("sources");
     expect(body).toContain("status: draft");
+    // and the fleet-level run that catches a landscape edit which never landed
+    expect(body).toContain("loam validate --all --json");
   });
 });
 

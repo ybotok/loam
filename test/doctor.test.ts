@@ -74,4 +74,41 @@ describe("doctor", () => {
       expect.objectContaining({ severity: "warning", code: "doctor.service-unbound" }),
     ]));
   });
+
+  it("prints the fix under every finding in the human view", async () => {
+    // A diagnostic that names a problem without naming its fix is a diagnostic
+    // the reader has to go research — and doctor is what someone runs BECAUSE
+    // they do not yet know what loam wants from them.
+    const root = await makeTmpDir("loam-doctor-fix-");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const docs = join(root, "docs");
+    await mkdir(docs);
+    await writeFile(join(root, "loam.json"), JSON.stringify({ docsDir: "./docs" }) + "\n", "utf8");
+
+    const result = await runLoam(root, "doctor");
+
+    expect(result.code).toBe(1);
+    const lines = result.out.split("\n");
+    const findingLines = lines.filter((l) => /^ {4}[✗⚠] /.test(l));
+    expect(findingLines.length).toBeGreaterThan(0);
+    // every finding line is followed by its fix line
+    for (const line of findingLines) {
+      const next = lines[lines.indexOf(line) + 1];
+      expect(next, line).toMatch(/^ {6}fix: \S/);
+    }
+    expect(result.out).toContain("loam init --docs");
+  });
+
+  it("carries a fix in the --json contract too, not only in the prose view", async () => {
+    const root = await makeTmpDir("loam-doctor-fix-json-");
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+
+    const report = JSON.parse((await runLoam(root, "doctor", "--json")).stdout);
+
+    expect(report.findings.length).toBeGreaterThan(0);
+    for (const finding of report.findings) {
+      expect(typeof finding.fix, finding.code).toBe("string");
+      expect(finding.fix.length, finding.code).toBeGreaterThan(0);
+    }
+  });
 });

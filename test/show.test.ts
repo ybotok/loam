@@ -254,6 +254,7 @@ describe("--json contract", () => {
         {
           name: "Authorize a payment",
           kind: "BASE",
+          covers: [],
           scenarios: 1,
           operations: ["authorizePayment"],
         },

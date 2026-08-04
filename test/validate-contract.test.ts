@@ -123,7 +123,9 @@ describe("--all", () => {
   });
 
   it("an empty docs repo passes with nothing to check", async () => {
-    await withProject({}, {}, async (p) => {
+    // A REAL docs repo with an empty services/: the only way "0 services" is
+    // reachable now that an absent services/ refuses with `services-missing`.
+    await withProject({ "services/.keep": "" }, {}, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--all");
       expect(res.code).toBe(0);
       expect(res.out).toContain("0 services");

@@ -1,52 +1,184 @@
 # Migrating from OpenSpec
 
-loam reimplements OpenSpec's requirement format from the outside: `### Requirement:` headings, `#### Scenario:` Given/When/Then blocks, `## ADDED|MODIFIED|REMOVED Requirements` delta sections. Compatibility is not assumed. Routine CI runs `test/openspec-compat.test.ts` over seven representative, verbatim files from [Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) (all provenance in [`test/fixtures/openspec/README.md`](test/fixtures/openspec/README.md)); `npm run test:openspec-corpus -- /path/to/OpenSpec` reproduces the larger result against the exact pinned v1.7.0 checkout. Everything below includes the known incompatibilities rather than hiding them.
+loam reads OpenSpec requirement Markdown from the outside: `### Requirement:` headings, `#### Scenario:` blocks, and `## ADDED|MODIFIED|REMOVED Requirements` delta sections. Compatibility is measured, not assumed.
 
-## What carries over cleanly
+Two upstream baselines are named separately:
 
-At pinned commit `45cca5db6137ed209117cc70510eb3e057fb981b`, the optional sweep parses 157 Markdown files in the living and archived spec trees, 614 requirements, and 1846 scenarios and checks parse/serialize/parse stability of the requirement content. The seven files kept in this repository cover the representative living and delta shapes in the normal regression suite. Nested bullets, fenced blocks quoting markup, `**Reason for removal**:` prose, CRLF, a leading BOM, and non-ASCII requirement names survive. A `REMOVED` requirement with no scenarios is legal, as upstream writes them. An already-archived OpenSpec change re-applied to the living spec it produced changes nothing — the merge algebra agrees with OpenSpec's.
+- released behavior: **OpenSpec v1.7.0**, exact commit `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b`;
+- compatibility canary: post-release `main` commit `45cca5db6137ed209117cc70510eb3e057fb981b`.
 
-## The capability → service mapping is a human decision
+The seven verbatim fixtures come from the main canary and run in routine CI. A scheduled/manual matrix separately checks the exact release and canary commits across living, active, and archived spec trees: release 207 files / 739 requirements / 2273 scenarios; canary 209 / 742 / 2284. These test requirement/scenario parsing, not every modern workspace feature. Provenance and checksums are in [`test/fixtures/openspec/README.md`](test/fixtures/openspec/README.md).
 
-OpenSpec's unit is the capability (`openspec/specs/<capability>/spec.md`); loam's is the service — a directory under `services/` bound to an element in the C4 landscape. Some capabilities are one service, some span several, some are a slice of one. Nothing mechanical can make that call, and loam does not try: decide where each capability's requirements live, and move them into the owning services' `services/<svc>/spec.md` under `## Requirements`.
+## Start with a read-only audit
+
+```bash
+loam audit-openspec /path/to/repo
+loam audit-openspec /path/to/repo --json
+```
+
+The input may be a repository containing `openspec/`, the `openspec/` directory itself, or a Store checkout. Modern `config.yaml`, Store metadata, nested capability folders, per-change `.openspec.yaml`, `skip_specs: true`, and project custom schemas are inventoried.
+
+Audit separates four different facts:
+
+- `readiness.living` — living specs are mechanically readable;
+- `readiness.active` — active deltas will not silently strand content;
+- capability/service mappings, active change/feature mappings, rename identities, and authored artifact dispositions — human decisions still required (`readiness.mappingsResolved`, `changesResolved`, `renamesResolved`, and `dispositionsResolved` stay separate);
+- `archiveDiagnostics` — anomalies in frozen history, reported but never allowed to block migration of living/active truth.
+
+An audit that completed exits successfully even when it found blockers. Root, YAML and I/O failures still fail. This makes “the audit ran” distinct from `ready`/`mechanicallyCompatible`.
+
+## Generate and complete the mapping
+
+Audit is read-only by default. An explicit output path outside the OpenSpec source writes a non-overwriting skeleton:
+
+```bash
+loam audit-openspec /path/to/repo --write-mapping /tmp/openspec-map.yaml
+```
+
+The mapping is versioned and bound to both the canonical planning root and a SHA-256 inventory digest. Digest and artifact paths are planning-root relative regardless of whether audit receives the repository container or its `openspec/` directory (`@workspace/` is reserved for Store metadata outside that root):
+
+```yaml
+version: 1
+source:
+  root: /path/to/repo/openspec
+  inventoryDigest: sha256:...
+
+capabilities:
+  payments/refunds:
+    services:
+      - payment-service
+    suggestedServices:
+      - refunds
+    requirementServices:
+      Authorize: []
+
+changes:
+  add-refund:
+    feature: FEAT-12
+    suggestedFeature: FEAT-1
+    title: Add refund
+
+renames:
+  "changes/rename/specs/payments/spec.md:1:1":
+    from: Old name
+    to: New name
+    existingRequirementId: null
+    requirementId: payments.authorize
+
+artifacts:
+  changes/add-refund/proposal.md:
+    kind: proposal
+    disposition: convert-to-intent
+    suggestedDisposition: convert-to-intent
+  changes/add-refund/tasks.md:
+    kind: tasks
+    disposition: preserve-as-legacy-checklist
+    suggestedDisposition: preserve-as-legacy-checklist
+```
+
+`suggestedServices`, `suggestedFeature`, and `suggestedDisposition` are hints, not decisions. The fields that count are `services`, an explicit `changes.<OpenSpec-id>.feature` plus `title`, `requirementId` where needed, and `disposition`. Feature ids use loam's `<word>-<number>` grammar and must be unique across active changes.
+
+### Capability → service is a human decision
+
+OpenSpec's unit is a capability; loam's unit is a service bound to the C4 landscape. A nested capability id stays nested (`payments/refunds`) rather than collapsing to `payments`. Mapping scope is the union of living capabilities and capabilities found only in active deltas, so a brand-new nested capability cannot disappear merely because it has not reached `specs/` yet.
+
+- With one selected service, every requirement in the capability goes there.
+- With several selected services, `requirementServices` must allocate every living **and active** requirement to one or more of them. Apply refuses an omitted allocation or a service outside the declared list.
+- If two mapped capabilities would create the same heading/`Requirement-ID` in one service, apply refuses instead of guessing which requirement wins.
+
+### Change → feature is explicit
+
+Every active OpenSpec change gets one `changes.<id>` entry. Fill both the loam feature id and the human title. The skeleton deliberately leaves `feature: null` next to a deterministic suggestion; suggestions never make a migration ready. Unknown OpenSpec change ids, malformed feature ids, blank titles, and duplicate feature ids block apply.
+
+### RENAMED keeps identity
+
+Audit parses every OpenSpec FROM/TO pair and gives it a stable mapping key. FROM must select exactly one living requirement in that delta's capability. If that requirement already has a `Requirement-ID`, the skeleton reuses it and refuses a replacement; otherwise assign a valid id. Apply places that id on the staged living source and emits a `MODIFIED` requirement with the TO heading, the same body/scenarios, and an `OpenSpec-Living-Source` annotation. Conflicting targets, duplicate sources/targets, identity collisions, and multi-change rename chains block instead of being flattened to `REMOVED` + `ADDED`.
+
+### Authored artifacts require explicit disposition
+
+Every active `proposal.md`, `design.md`, and `tasks.md` appears in the mapping with `disposition: null` until a human chooses. A suggestion does not make migration ready.
+
+Typical choices are:
+
+- proposal → `convert-to-intent`;
+- design → `review-as-feature-adr` (proposed decision material, not automatically an accepted ADR);
+- tasks → `preserve-as-legacy-checklist` until progress/order information has been reviewed;
+- `retain-read-only` or `manual-review` when conversion would overstate what is known.
+
+## Dry-run and explicit apply
+
+Validate the completed mapping without writing anything:
+
+```bash
+loam migrate-openspec /path/to/repo --map /tmp/openspec-map.yaml
+loam migrate-openspec /path/to/repo --map /tmp/openspec-map.yaml --json
+```
+
+`--mapping` remains a deprecated spelling of `--map`. Dry-run is always the default and never creates the target.
+
+Writing requires both flags:
+
+```bash
+loam migrate-openspec /path/to/repo \
+  --map /tmp/openspec-map.yaml \
+  --apply \
+  --target /tmp/loam-migration-review
+```
+
+Before apply, loam repeats the audit and compares the fresh source root/digest with the mapping. Any source edit since review invalidates the mapping. The target must be absent or empty and must not overlap the OpenSpec source. Writes are staged and swapped with rollback; source files and live loam docs are never modified.
+
+The target contains:
+
+- `services/<service>/spec.md` with mapped living requirements and `status: draft`;
+- `features/<FEAT>-<slug>/intent.md` for every active change;
+- `features/<FEAT>-<slug>/specs/<service>/spec.md` with routed ADDED/MODIFIED/REMOVED sections for every non-`skip_specs` change;
+- feature ADR/legacy files according to the explicit proposal/design/tasks dispositions, plus an exact read-only copy of the complete source change tree under `legacy/openspec/` so no authored artifact is silently lost;
+- `migration-plan.json` with active changes, mappings, archive diagnostics and every artifact disposition;
+- normalized `mapping.yaml`;
+- `FOLLOW-UP.md` naming the work that still blocks a trustworthy fleet.
+
+This is deliberately called **staged migration docs**, not a finished or green loam repository. Apply uses the reviewed feature ids and materializes active changes, but it does not invent C4 topology/deltas, OpenAPI contracts, source provenance, or vouch evidence. `skip_specs: true` changes still receive intent and legacy artifacts but no feature spec delta. Every feature therefore remains review material until the follow-up checklist is complete.
+
+## What carries over mechanically
+
+The exact-commit corpus gate checks living, active, and archived spec trees. OpenSpec v1.7.0 release `4e16790` contributes 207 Markdown files, 739 requirements, and 2273 scenarios; main canary `45cca5d` contributes 209, 742, and 2284. Both sweeps check parse/serialize/parse stability of requirement content. Nested bullets, fenced markup, removal prose, CRLF, BOM and non-ASCII names survive. `REMOVED` requirements with no scenarios remain legal.
+
+Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “ready”: routing to services, loam frontmatter, Operations/Covers links and feature identity still require decisions.
+
+## Shapes that need repair or review
+
+- **Mixed legacy complete-state deltas.** Any BASE requirement stranded under `## Behavior`, `## Error Handling` or another prose heading is reported even if the same file also contains a valid ADDED/MODIFIED section. Re-home it before conversion. `## Requirements` remains the one explicitly non-merging quote section.
+- **Spec-less changes.** They are valid only when a present, valid `.openspec.yaml` explicitly sets `skip_specs: true` and its named built-in or project custom schema resolves. A custom artifact graph never implies this opt-out by itself. Otherwise an active zero-delta change is a blocker. Explicit `skip_specs` suppresses generated feature specs while preserving intent, metadata, and authored legacy material.
+- **Malformed RENAMED.** A rename-only delta is not “empty”, but every section must supply a FROM/TO pair and every active pair needs an identity decision.
+- **External Store pointer.** A config-only code repo with `store: <id>` identifies external planning. Audit the registered Store checkout itself; loam does not guess a machine-local registry path.
+- **Frozen archive history.** Legacy shapes are diagnostics only. Keep `changes/archive/` read-only where it is; do not reconstruct it as loam `features/archive/`, whose entries imply loam computed and snapshotted the merge.
+
+## What must be added after staged apply
+
+- Truthful `sources:` paths from each service repository, followed by human `loam vouch`; staged specs intentionally remain `status: draft`.
+- `Operations:` links to provider OpenAPI `operationId`s, and `Covers:` links where architecture requirements are created.
+- `architecture/landscape.likec4`, service `model.likec4`, and explicit fleet relationships.
+- Service OpenAPI contracts and provider-before-consumer adoption where inbound edges already name operations.
+- LikeC4 and OpenAPI deltas for the already mapped active feature ids (`FEAT-12`, `BUG-42`, and so on); OpenSpec's prose change id/title remains visible in the staged slug, annotations, plan, and preserved source tree.
+- Human disposition of `config.yaml.context`, per-artifact rules, custom schemas/templates, Stores/references, Purpose prose and generated tool instructions.
+
+## Modern artifact disposition guide
+
+| OpenSpec artifact | Migration treatment |
+|---|---|
+| `config.yaml` (`schema`, `context`, `rules`, optional `store`) | Inventory and review. Move durable operating context into the docs contract; do not silently convert workflow rules into different validator semantics. |
+| `specs/<nested/capability>/spec.md` | Map requirements to one or more services. Apply stages combined `services/<svc>/spec.md` files. |
+| `specs/<capability>/design.md` | Review as a service ADR; do not mark accepted merely because the file existed. |
+| `changes/<id>/.openspec.yaml` | Preserve schema/`skip_specs`/created metadata in the plan and exact feature-local legacy tree. |
+| `changes/<id>/proposal.md` | Explicit `convert-to-intent`, or retain/manual-review in feature legacy material; the original is also preserved. |
+| `changes/<id>/specs/**/spec.md` | Validate and route ADDED/MODIFIED/REMOVED requirements into the mapped feature/service delta, preserving delta kinds; keep the original beneath `legacy/openspec/`. |
+| `changes/<id>/tasks.md` | Preserve as a non-authoritative feature-local legacy checklist with its explicit disposition until reviewed. |
+| `changes/<id>/design.md` | Stage as proposed feature ADR material for `review-as-feature-adr`, otherwise retain as legacy; never imply acceptance merely because it existed. |
+| `changes/archive/**` | Keep read-only as OpenSpec history; diagnostics do not gate living/active readiness. |
+| `schemas/<name>/schema.yaml` and templates | Review custom workflow semantics. The schema name must resolve as a direct portable member of `schemas/`; even a workflow with no specs artifact still needs explicit valid `skip_specs: true` for a zero-spec change. |
+| `.openspec-store/store.yaml`, `references`, Worksets | Record planning ownership/references for humans. They do not become a second loam fleet topology automatically. |
+| OpenSpec-generated skills/commands/instruction blocks | Remove after cutover so agents do not receive two live process contracts. |
 
 ## Migration is one-way
 
-**loam reads OpenSpec; it never writes it.** Serializing drops `## Purpose` and the `## Requirements` wrapper, and OpenSpec's own `parseSpec` throws without both — so a spec that round-trips through loam intact is still rejected by OpenSpec's parser. Do not plan on a shared repo or a return path: migrate, then retire the OpenSpec tooling.
-
-## What is lost
-
-- **`## RENAMED Requirements`** — OpenSpec's fourth delta operation. loam does not merge renames, and since the section parses to zero requirements, no counting check can catch it — so the heading itself is a **loud error** (`delta.unknown-section`) telling the author to express the rename as a `REMOVED` requirement plus an `ADDED` one.
-- **`## Purpose` prose and the `# H1` title** — invisible to every check. A living spec file keeps whatever prose is left in it (`loam archive` rewrites only the `## Requirements` section), but nothing reads it; a capability's "why" belongs in a feature's `intent.md` going forward.
-- **Legacy "complete future state" deltas** — requirements under prose headings (`## Behavior`, `## Error Handling`) parse but carry no delta kind, so the merge skips them. Each one is named by `delta.requirement-not-merged` — a warning, so `loam validate` stays green on the legal OpenSpec shape, but it **gates `loam archive`**: the merge would silently drop the requirement. A delta whose requirements are *all* outside delta sections is refused outright (`delta.no-delta-sections`, error): it would merge nothing. Re-home such requirements under a real delta heading before archiving.
-
-## What must be added
-
-- **Frontmatter** — `service:` and `status:` on every living spec (plus `sources:` naming the code it was written from — literal files and directories, never glob patterns — so `loam vouch` has something to stamp). `loam validate` warns on absent fields and errors on a mismatched `service:` or an undocumented `status:`.
-- **`Operations:` lines** — loam's extension, absent upstream (no corpus file has one, and none accidentally matches the regex). Until requirements carry them, the API axis is unchecked and `loam validate` says so per service: `api.ops-unlinked`.
-- **`model.likec4` and a landscape element** — the C4 center OpenSpec never had. `loam adopt --service <id>` emits the brief for an agent to write the baseline model, spec and OpenAPI from the code.
-
-Two smaller deltas in strictness, both pinned: heading matching is case-sensitive (`### requirement:` parses to nothing — no upstream file relies on lowercase), and RFC-2119 keywords are opaque body text (coverage is keyed off scenarios, which every upstream living requirement has anyway).
-
-## Where every file goes
-
-A real OpenSpec repo is more than spec files. The full layout — pinned by OpenSpec's own meta-spec, vendored at [`test/fixtures/openspec/living/openspec-conventions.spec.md`](test/fixtures/openspec/living/openspec-conventions.spec.md) — is `openspec/project.md`, `openspec/AGENTS.md`, `openspec/specs/<capability>/spec.md` (plus an optional `design.md`), `openspec/changes/<change-id>/{proposal.md, tasks.md, design.md (optional), specs/<capability>/spec.md}`, and `openspec/changes/archive/<date>-<id>/`; newer OpenSpec additionally manages an `<openspec-instructions>` block in the repo root's `AGENTS.md` and per-tool slash commands. Every artifact has a disposition, and none of them is converted by tooling — migration is judgment work, so building a converter would only automate the judgment away:
-
-| OpenSpec artifact | Disposition |
-|---|---|
-| `specs/<capability>/spec.md` | Requirements move into the owning services' `services/<svc>/spec.md` under `## Requirements`. Which service owns which capability is the human decision covered above. |
-| `specs/<capability>/design.md` | Service-level ADR under `services/<svc>/adrs/` — it records established patterns, which is decision material, not requirement material. |
-| `changes/<id>/` in flight | Finish it under OpenSpec first, or convert it into a `features/<FEAT>/` (rows below). Never run both tools over one change. |
-| `changes/<id>/proposal.md` | `features/<FEAT>/intent.md` — the same job under a different name: why, what, impact. |
-| `changes/<id>/specs/<capability>/spec.md` | `features/<FEAT>/specs/<svc>/spec.md`. Modern delta-sectioned files carry over verbatim; legacy "complete future state" files hit the checks in "What is lost" above and need re-homing before they archive. |
-| `changes/<id>/tasks.md` | **Discard.** loam derives the task list (`loam delta`, `loam verify`), so it cannot drift from the delta it came from; an authored copy could — SCHEMA.md's "Considered and rejected" records the decision. What a stale checklist knew that the delta does not is nothing. |
-| `changes/<id>/design.md` | Feature-level ADR under `features/<FEAT>/adrs/`, not an appendix to `intent.md`: intent answers *why* and design answers *how*, and folding the two together would blur the one document a reviewer reads first. |
-| `changes/archive/` | **Do not convert.** Keep it read-only where it is, as history. loam's `features/archive/` starts empty on purpose: an entry there means `loam archive` computed the merge and snapshotted the bytes it overwrote, and a converted OpenSpec archive would be an unverifiable reconstruction wearing that uniform. The frozen tree stays greppable, which is all history owes anyone. |
-| `project.md` | Its content becomes the preamble and conventions of the docs repo's `AGENTS.md` — project context is process contract, and that file travels with the docs. |
-| `openspec/AGENTS.md`, the `<openspec-instructions>` block, per-tool slash commands | **Remove after migration.** `loam init` writes its own `AGENTS.md` into the docs repo and the `/loam-*` commands into `.claude/commands/` — or into other agent tools' command directories via `init --tools`; two live instruction sets means an agent obeying whichever it read last. |
-
-**Feature ids.** `loam new` requires `<word>-<number>` (`ID_RE` in `src/commands/new.ts`), and the id must survive being read back off the directory name (`featureIdFromDirName` in `src/core/repo.ts`). OpenSpec change names are kebab prose (`add-two-factor-auth`), which is not a valid id — so assign sequential ids and keep the old name as the slug: `loam new FEAT-12 --title "Add two factor auth"` scaffolds `features/FEAT-12-add-two-factor-auth/`, which reads back as exactly `FEAT-12`. The round-trip holds even for slugs that open with a digit (`FEAT-12-2fa-rollout` → `FEAT-12`), so no old change name can corrupt the id it is filed under.
-
-**Adoption order.** Adopt provider services before their consumers. A service's `loam adopt` brief includes what the landscape already says about it — its inbound edges, and the `expects` list: the operationIds the fleet already calls, which its new `openapi.yaml` must define or `spine.op-undefined` fires the moment it lands. Providers first means each consumer is later adopted against contracts that exist; consumers first means edges into services whose contracts are still unwritten, and every such edge is a check deferred.
-
-**Renames flatten.** Rename history is intentionally lost in the flattening — a rename becomes `REMOVED` + `ADDED` with no link between them — and the provenance of a renamed requirement is still recoverable by searching `features/archive/` for both names, which turns up the feature that retired the old one and the feature that introduced the new one.
+loam reads OpenSpec; it never writes back into the OpenSpec workspace. Loam serialization does not preserve OpenSpec's required `## Purpose` and `## Requirements` framing as an OpenSpec round-trip contract. Migrate into a separate target, review it, cut over once, and retire the old tooling only after the staged follow-up is complete.

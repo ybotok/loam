@@ -6,7 +6,7 @@
  * representative verbatim spec files vendored from Fission-AI/OpenSpec (see
  * test/fixtures/openspec/README.md for provenance) and pins what we actually do with
  * them — including what we get wrong. scripts/check-openspec-corpus.ts reproduces
- * the separate 157-file sweep against a clean checkout at the pinned commit.
+ * the separate exact release/canary sweeps against clean pinned checkouts.
  *
  * Unlike test/spec.test.ts, which asserts DESIRED behavior and treats a failure as a
  * suspected bug, this file pins OBSERVED behavior. A failure here means either our
@@ -16,14 +16,14 @@
  * FINDINGS — where we diverge from OpenSpec
  * ============================================================================
  *
- * Established by parsing all 157 Markdown files in the living and archived spec
- * trees at OpenSpec commit 45cca5d (614 requirements, 1846 scenarios), and by
+ * Established by parsing the exact release and main-canary living, active, and
+ * archived spec corpora (release: 207/739/2273; canary: 209/742/2284), and by
  * reading OpenSpec's own parsers
  * (src/core/parsers/{markdown-parser,change-parser,spec-structure}.ts).
  *
- * WHAT WORKS. Requirement and scenario extraction is compatible on every real file:
- * all 614 requirements and 1846 scenarios are found, with the same delta kinds, and
- * round-trip is lossless (see "round-trip" below). Nested bullets, fenced blocks,
+ * WHAT WORKS. Requirement and scenario extraction is compatible on every corpus file:
+ * all 739/2273 release and 742/2284 canary requirements/scenarios are found, with the
+ * same delta kinds, and round-trip is lossless (see "round-trip" below). Nested bullets, fenced blocks,
  * `**Reason for removal**:` metadata, CRLF, and non-ASCII names all survive.
  *
  * 1. `## Purpose` — DROPPED, and its absence makes our output unreadable by OpenSpec.
@@ -593,6 +593,11 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       "covers",
       "scenarios",
       "section",
+      // Where the heading was, so `loam rebase` can rewrite one body line by
+      // surgery. Like `section`, it records the source document, not the
+      // requirement's meaning. `basedOn` is absent because this document
+      // declares no `Based-On:` — the key only exists where one is authored.
+      "line",
     ]);
   });
 

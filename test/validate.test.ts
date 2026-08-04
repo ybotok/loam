@@ -428,7 +428,11 @@ describe("positional target", () => {
       const positional = await runLoam(p.workDir, "validate", "FEAT-1", "--json");
       const flagged = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
       expect(positional.code).toBe(0);
-      expect(JSON.parse(positional.stdout)).toEqual(JSON.parse(flagged.stdout));
+      // `resolvedKind` is the one difference, and only the positional form can
+      // carry it: it reports which of the two readings the argument took.
+      const { resolvedKind, ...rest } = JSON.parse(positional.stdout);
+      expect(resolvedKind).toBe("feature");
+      expect(rest).toEqual(JSON.parse(flagged.stdout));
     });
   });
 
@@ -437,7 +441,9 @@ describe("positional target", () => {
       const positional = await runLoam(p.workDir, "validate", SVC, "--json");
       const flagged = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
       expect(positional.code).toBe(0);
-      expect(JSON.parse(positional.stdout)).toEqual(JSON.parse(flagged.stdout));
+      const { resolvedKind, ...rest } = JSON.parse(positional.stdout);
+      expect(resolvedKind).toBe("service");
+      expect(rest).toEqual(JSON.parse(flagged.stdout));
     });
   });
 
@@ -668,8 +674,12 @@ describe("service mode: the deprecation bridge (spine.op-deprecated / api.requir
       "Operations: ghostOp\n",
     );
     const { code, codes } = await serviceCodes(files);
-    expect(code).toBe(0);
+    // The op resolves to nothing, so no deprecation claim is made about it —
+    // but "governs an operation this contract does not define" IS now a finding
+    // in its own right (spec-api.op-undefined), and it gates.
+    expect(code).toBe(1);
     expect(codes).not.toContain("api.requirement-deprecated");
+    expect(codes).toContain("spec-api.op-undefined");
   });
 
   it("a requirement with no Operations line raises no deprecation warning either — the unlinked-API finding speaks instead", async () => {

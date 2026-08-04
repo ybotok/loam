@@ -65,6 +65,33 @@ describe("--json contract", () => {
     });
   });
 
+  it("carries the OpenAPI delta as slots, not just names", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      // "implement createSplit" is not a task without the slot it lives in.
+      expect(json.api).toEqual([
+        {
+          path: "/splits",
+          method: "POST",
+          operationId: "createSplit",
+          summary: "Create a split",
+          remove: false,
+        },
+      ]);
+    });
+  });
+
+  it("lists every service the feature touches, whichever one is projected", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      expect(json.services).toEqual([NEW_SVC]);
+    });
+  });
+
   it("says whether the service is new and lists the edges around it", async () => {
     await withProject(coherentFixture(), async (p) => {
       const json = JSON.parse(
@@ -78,12 +105,19 @@ describe("--json contract", () => {
     });
   });
 
-  it("reports an untouched service honestly rather than inventing work", async () => {
-    await withProject(coherentFixture(), async (p) => {
+  it("reports an untouched LIVING service honestly rather than inventing work", async () => {
+    // `kafka` has to exist for this to be the honest-empty case. A service id
+    // that names nothing at all is now a refusal (`unknown-target`, below): the
+    // two used to be the same output, which made a typo indistinguishable from
+    // a service this feature genuinely leaves alone.
+    const files = coherentFixture();
+    files["services/kafka/spec.md"] = "---\nservice: kafka\n---\n\n# kafka\n\n## Requirements\n";
+    await withProject(files, async (p) => {
       const json = JSON.parse(
         (await runLoam(p.workDir, "delta", "FEAT-1", "--service", "kafka", "--json")).stdout,
       );
       expect(json.requirements).toEqual([]);
+      expect(json.api).toEqual([]);
       expect(json.architecture).toEqual({ isNew: false, inbound: [], outbound: [], errors: [] });
     });
   });

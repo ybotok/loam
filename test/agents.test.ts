@@ -41,7 +41,7 @@ const SLASH_COMMANDS = ["loam-feature", "loam-implement", "loam-check", "loam-sh
 describe("AGENTS.md in the docs repo", () => {
   it("is scaffolded by init", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, "d", "AGENTS.md"))).toBe(true);
     expect(res.out).toContain("AGENTS.md");
@@ -49,7 +49,7 @@ describe("AGENTS.md in the docs repo", () => {
 
   it("names every command in the cycle", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     for (const cmd of ["loam new", "loam delta", "loam validate", "loam archive", "loam show"]) {
       expect(agents).toContain(cmd);
@@ -58,7 +58,7 @@ describe("AGENTS.md in the docs repo", () => {
 
   it("spells out the operationId spine — the part nobody guesses", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     expect(agents).toContain("operationId");
     expect(agents).toContain("Operations:");
@@ -67,7 +67,7 @@ describe("AGENTS.md in the docs repo", () => {
 
   it("says that archive is gated on coherence and how to override it", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     expect(agents.toLowerCase()).toContain("coherence");
     expect(agents).toContain("--approve");
@@ -75,14 +75,14 @@ describe("AGENTS.md in the docs repo", () => {
 
   it("tells the agent to read the machine contract rather than the prose", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     expect(agents).toContain("--json");
   });
 
   it("separates what a human authors from what the CLI derives", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     expect(agents).toContain("intent.md");
     expect(agents).toContain("delta.likec4");
@@ -91,10 +91,10 @@ describe("AGENTS.md in the docs repo", () => {
 
   it("is never overwritten once it exists", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const mine = "# our own house rules\n";
     await writeFile(join(dir, "d", "AGENTS.md"), mine, "utf8");
-    const second = await runLoam(dir, "init", "--docs", "./d");
+    const second = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(second.code).toBe(0);
     expect(await readFile(join(dir, "d", "AGENTS.md"), "utf8")).toBe(mine);
     expect(second.out).not.toContain("scaffolded");
@@ -104,7 +104,7 @@ describe("AGENTS.md in the docs repo", () => {
 describe("slash commands in the working repo", () => {
   it("are written into .claude/commands/ of the repo init runs in", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(res.code).toBe(0);
     for (const name of SLASH_COMMANDS) {
       expect(existsSync(join(dir, ".claude", "commands", `${name}.md`))).toBe(true);
@@ -113,7 +113,7 @@ describe("slash commands in the working repo", () => {
 
   it("each one drives real loam commands, not vibes", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const read = (n: string): Promise<string> =>
       readFile(join(dir, ".claude", "commands", `${n}.md`), "utf8");
     expect(await read("loam-feature")).toContain("loam new");
@@ -124,7 +124,7 @@ describe("slash commands in the working repo", () => {
 
   it("--no-commands leaves the repo alone", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--no-commands");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--no-commands");
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, ".claude", "commands"))).toBe(false);
     // the docs-repo half still happens
@@ -137,7 +137,7 @@ describe("slash commands in the working repo", () => {
     const mine = "my own /loam-check\n";
     await writeFile(join(dir, ".claude", "commands", "loam-check.md"), mine, "utf8");
 
-    const res = await runLoam(dir, "init", "--docs", "./d");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(res.code).toBe(0);
     expect(await readFile(join(dir, ".claude", "commands", "loam-check.md"), "utf8")).toBe(mine);
     // the others are still laid down
@@ -146,8 +146,8 @@ describe("slash commands in the working repo", () => {
 
   it("a second init reports nothing new", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
-    const second = await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
+    const second = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(second.out).not.toContain("scaffolded");
   });
 });
@@ -185,7 +185,7 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("--tools all lays down every tool's files, each in its own dialect, all driving real loam commands", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all", "--json");
     expect(res.code).toBe(0);
     const json = JSON.parse(res.stdout);
     expect(json.tools).toEqual(Object.keys(AGENT_TOOLS));
@@ -217,7 +217,7 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("--tools cursor,gemini replaces the default — no .claude/ appears", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,gemini");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "cursor,gemini");
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, ".cursor", "commands", "loam-feature.md"))).toBe(true);
     expect(existsSync(join(dir, ".gemini", "commands", "loam", "feature.toml"))).toBe(true);
@@ -228,7 +228,7 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("no --tools is the old behavior byte-for-byte: claude only, the exported bodies exactly", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     for (const [name, content] of Object.entries(COMMAND_BODIES)) {
       expect(await readFile(join(dir, ".claude", "commands", `${name}.md`), "utf8")).toBe(content);
     }
@@ -243,7 +243,7 @@ describe("multi-tool command generation (init --tools)", () => {
     const mine = "my own cursor /loam-check\n";
     await writeFile(join(dir, ".cursor", "commands", "loam-check.md"), mine, "utf8");
 
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor", "--json");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "cursor", "--json");
     expect(res.code).toBe(0);
     expect(await readFile(join(dir, ".cursor", "commands", "loam-check.md"), "utf8")).toBe(mine);
     const json = JSON.parse(res.stdout);
@@ -257,10 +257,10 @@ describe("multi-tool command generation (init --tools)", () => {
   it("a second init --tools all skips exactly what the first created, same paths, same order", async () => {
     const dir = await throwawayDir();
     const first = JSON.parse(
-      (await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json")).stdout,
+      (await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all", "--json")).stdout,
     );
     const second = JSON.parse(
-      (await runLoam(dir, "init", "--docs", "./d", "--tools", "all", "--json")).stdout,
+      (await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all", "--json")).stdout,
     );
     expect(second.created).toEqual([]);
     expect(second.skipped).toEqual(first.created);
@@ -268,7 +268,7 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("an unknown tool id is refused — invalid-option naming it and the supported list, nothing scaffolded", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,roomba", "--json");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "cursor,roomba", "--json");
     expect(res.code).toBe(1);
     const json = JSON.parse(res.stdout);
     expect(json.ok).toBe(false);
@@ -283,14 +283,14 @@ describe("multi-tool command generation (init --tools)", () => {
 
   it("--tools with an empty value is refused, not silently claude", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", ",", "--json");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", ",", "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
   });
 
   it("duplicate ids collapse: --tools cursor,cursor writes each file once and reports cursor once", async () => {
     const dir = await throwawayDir();
-    const res = await runLoam(dir, "init", "--docs", "./d", "--tools", "cursor,cursor", "--json");
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "cursor,cursor", "--json");
     expect(res.code).toBe(0);
     const json = JSON.parse(res.stdout);
     expect(json.tools).toEqual(["cursor"]);
@@ -301,7 +301,7 @@ describe("multi-tool command generation (init --tools)", () => {
   it("--tools with --no-commands is a contradiction, refused", async () => {
     const dir = await throwawayDir();
     const res = await runLoam(
-      dir, "init", "--docs", "./d", "--no-commands", "--tools", "cursor", "--json",
+      dir, "init", "--docs", "./d", "--create", "--no-commands", "--tools", "cursor", "--json",
     );
     expect(res.code).toBe(1);
     const json = JSON.parse(res.stdout);
@@ -447,7 +447,7 @@ describe("the version stamp — drift detection, never refresh", () => {
 
   it("init writes the stamp, and validate --all on a fresh repo is quiet", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
     // line 1, exactly the running binary's version — equal stamp, no finding
     expect(agents.split("\n")[0]).toBe(agentsStampLine(LOAM_VERSION));
@@ -459,7 +459,7 @@ describe("the version stamp — drift detection, never refresh", () => {
 
   it("a removed stamp warns once — as the repo's finding, not any service's — and does not invalidate", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const path = join(dir, "d", "AGENTS.md");
     const withoutStamp = (await readFile(path, "utf8")).split("\n").slice(1).join("\n");
     await writeFile(path, withoutStamp, "utf8");
@@ -480,7 +480,7 @@ describe("the version stamp — drift detection, never refresh", () => {
 
   it("hand-bumping the stamp silences it — the documented remedy for a curated file", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const path = join(dir, "d", "AGENTS.md");
     await writeFile(path, `${agentsStampLine(LOAM_VERSION)}\n# our own house rules\n`, "utf8");
 
@@ -490,7 +490,7 @@ describe("the version stamp — drift detection, never refresh", () => {
 
   it("a stamp NEWER than the binary is quiet: that is an old binary, not a stale file", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
     const path = join(dir, "d", "AGENTS.md");
     await writeFile(path, `${agentsStampLine("99.99.99")}\n# from the future\n`, "utf8");
 
@@ -546,7 +546,7 @@ describe("the version stamp — drift detection, never refresh", () => {
 describe("the documented cycle actually runs", () => {
   it("new -> validate -> delta -> archive works end to end as AGENTS.md describes it", async () => {
     const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d");
+    await runLoam(dir, "init", "--docs", "./d", "--create");
 
     const created = await runLoam(dir, "new", "FEAT-1", "--title", "Split", "--new-service", "svc-a");
     expect(created.code).toBe(0);

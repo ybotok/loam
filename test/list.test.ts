@@ -73,8 +73,9 @@ describe("text output", () => {
       const res = await runLoam(p.workDir, "list", "services");
       const full = res.out.split("\n").find((l) => l.includes("payment-service"))!;
       const bare = res.out.split("\n").find((l) => l.includes("checkout-web"))!;
-      expect(full).toContain("M S A R H");
-      expect(bare).toContain("- S - - -");
+      // arch.spec.md sits between spec and api, lowercase because it is optional
+      expect(full).toContain("M S - A R H");
+      expect(bare).toContain("- S - - - -");
     });
   });
 
@@ -129,7 +130,9 @@ describe("text output", () => {
   });
 
   it("says so plainly when a section is empty", async () => {
-    await withProject({}, async (p) => {
+    // A REAL docs repo whose services/ is empty — the one way "0 services" is
+    // reachable now that a missing services/ is a refusal, not a green zero.
+    await withProject({ "services/.keep": "" }, async (p) => {
       const res = await runLoam(p.workDir, "list");
       expect(res.code).toBe(0);
       expect(res.out).toContain("services (0)");
@@ -346,11 +349,13 @@ describe("--json contract", () => {
       expect(svc).toEqual({
         id: "payment-service",
         path: "services/payment-service",
-        has: { model: true, spec: true, openapi: true, runbook: true, health: true },
+        has: { model: true, spec: true, archSpec: false, openapi: true, runbook: true, health: true },
         adrs: 1,
         status: null,
         // every artifact, no sources: presence says documented, nothing more
         maturity: "documented",
+        missing: ["sources: in the spec.md frontmatter"],
+        apiExpected: true,
       });
     });
   });
@@ -427,7 +432,7 @@ describe("--json contract", () => {
   });
 
   it("emits valid JSON even for an empty docs repo", async () => {
-    await withProject({}, async (p) => {
+    await withProject({ "services/.keep": "" }, async (p) => {
       const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
       expect(json).toEqual({
         contractVersion: "1.0",

@@ -8,12 +8,15 @@
  */
 import { existsSync } from "node:fs";
 import { FleetContext } from "./fleet-context.js";
+import { serviceOf } from "./likec4.js";
 import { operations } from "./openapi.js";
 import {
   SPEC_AXES,
   compareIds,
+  featurePaths,
   featureSpecPaths,
   listFeatures,
+  servicePaths,
   type FeatureEntry,
   type SpecAxis,
 } from "./repo.js";
@@ -38,6 +41,20 @@ export interface DependencyEdge {
 
 export interface FeatureConflict {
   kind: "requirement" | "operation";
+  /**
+   * How the owners collide.
+   *
+   * `added` — two features ADD the same identity (or define the same
+   * operationId): whichever archives second replaces the first outright.
+   *
+   * `changed` — two features MODIFY or REMOVE the same living requirement.
+   * That collision was invisible until now, and it is the more common one on a
+   * fleet: nobody adds "Cancel an order" twice, but two teams editing its text
+   * in the same week is a Tuesday. A MODIFIED requirement carries its FULL new
+   * text, so the second archive does not merge the first one's wording — it
+   * overwrites it, silently and completely.
+   */
+  change: "added" | "changed";
   service: string;
   axis?: SpecAxis["file"];
   identity: string;
@@ -98,14 +115,50 @@ function addOwner(index: Map<string, Set<string>>, key: string, feature: string)
   index.set(key, owners);
 }
 
-async function readFacts(feature: FeatureEntry, context: FleetContext): Promise<FeatureFacts> {
+async function readFacts(
+  docsDir: string,
+  feature: FeatureEntry,
+  context: FleetContext,
+): Promise<FeatureFacts> {
   const addedRequirements: FeatureFacts["addedRequirements"] = [];
   const changedRequirements: FeatureFacts["changedRequirements"] = [];
   const introducedOperations: FeatureFacts["introducedOperations"] = [];
   const requiredOperations: FeatureFacts["requiredOperations"] = [];
 
+  /**
+   * The operationIds a service ALREADY has, per service.
+   *
+   * This is the whole difference between a dependency graph and a rumour mill.
+   * A feature's `openapi.yaml` is a COMPLETE document, not a patch — authors
+   * restate the living API around the slot they are changing — so every feature
+   * that so much as mentions `authorizePayment` used to be recorded as
+   * INTRODUCING it, and every other feature governing it as REQUIRING it. Two
+   * features quoting the same living operation therefore depended on each other
+   * in both directions: an invented cycle, an invented conflict, and an ordering
+   * for work that had none. `loam validate`'s coherence pass already subtracts
+   * the living contract this way (core/coherence.ts); this is the same
+   * subtraction, so the two cannot disagree about what "new" means.
+   *
+   * Cached per service inside the call and, through the FleetContext, across
+   * features: a fleet-wide graph asks about the same ten services N times.
+   */
+  const livingByService = new Map<string, Set<string>>();
+  const living = async (service: string): Promise<Set<string>> => {
+    let ids = livingByService.get(service);
+    if (ids === undefined) {
+      ids = new Set(
+        (await operations(servicePaths(docsDir, service).openapi, context))
+          .filter((op) => !op.remove)
+          .map((op) => op.id),
+      );
+      livingByService.set(service, ids);
+    }
+    return ids;
+  };
+
   for (const service of feature.services) {
     const paths = featureSpecPaths(feature.dir, service);
+    const livingIds = await living(service);
     for (const axis of SPEC_AXES) {
       const path = paths[axis.key];
       if (!existsSync(path)) continue;
@@ -117,6 +170,9 @@ async function readFacts(feature: FeatureEntry, context: FleetContext): Promise<
           changedRequirements.push(fact);
         }
         for (const operationId of requirement.operations) {
+          // Governing an operation the service already provides is not a
+          // dependency on anybody: the contract it needs is already merged.
+          if (livingIds.has(operationId)) continue;
           requiredOperations.push({ service, operationId });
         }
       }
@@ -125,8 +181,36 @@ async function readFacts(feature: FeatureEntry, context: FleetContext): Promise<
     if (existsSync(paths.openapi)) {
       const featureOperations = await operations(paths.openapi, context);
       for (const operation of featureOperations) {
+        if (livingIds.has(operation.id)) continue;
         if (operation.remove) requiredOperations.push({ service, operationId: operation.id });
         else introducedOperations.push({ service, operationId: operation.id });
+      }
+    }
+  }
+
+  // The C4 delta is the FOURTH place a feature names an operation, and it was
+  // the one the graph could not see: an edge carrying `metadata { op 'x' }` is
+  // a call this feature builds on `x`, which is exactly the "must land first"
+  // relation this module exists to compute. Validate already says so — it
+  // reports `c4-api.op-pending` when the op is defined by another feature in
+  // flight — so the graph disagreeing with the validator about the same pair of
+  // features was the graph being wrong, not quiet.
+  //
+  // Endpoints resolve through `serviceOf` — the element's `metadata { service }`
+  // binding, title as fallback — the same join every other check uses, so
+  // renaming a box in a diagram cannot silently unhook it here either.
+  const deltaPath = featurePaths(feature.dir).delta;
+  if (existsSync(deltaPath)) {
+    const doc = await context.loadLikeC4(deltaPath);
+    // A delta that does not parse proves nothing about who depends on whom.
+    // `loam validate` owns that diagnosis (`delta.invalid`); inventing edges out
+    // of a half-read document would be worse than the silence.
+    if (doc.errors.length === 0) {
+      for (const rel of doc.relationships) {
+        if (rel.op === undefined) continue;
+        const service = serviceOf(doc.elements, rel.target);
+        if ((await living(service)).has(rel.op)) continue;
+        requiredOperations.push({ service, operationId: rel.op });
       }
     }
   }
@@ -239,14 +323,25 @@ export async function analyzeDependencies(
   context = new FleetContext(),
 ): Promise<DependencyGraph> {
   const features = await listFeatures(docsDir, {}, context);
-  const facts = await Promise.all(features.map((feature) => readFacts(feature, context)));
+  const facts = await Promise.all(features.map((feature) => readFacts(docsDir, feature, context)));
   const requirementOwners = new Map<string, Set<string>>();
+  // The second index over the SAME identity: who MODIFIES or REMOVES it. Only
+  // the first index existed, so the graph could see "two features add the same
+  // requirement" and was blind to "two features rewrite the same requirement" —
+  // the collision that actually happens on a fleet, and the one whose loser
+  // loses their whole authored text without a word from any command.
+  const changedOwners = new Map<string, Set<string>>();
   const operationOwners = new Map<string, Set<string>>();
 
   for (const fact of facts) {
     for (const added of fact.addedRequirements) {
       for (const identity of reqKeys(added.requirement)) {
         addOwner(requirementOwners, reqIndexKey(added.service, added.axis, identity), fact.feature.id);
+      }
+    }
+    for (const changed of fact.changedRequirements) {
+      for (const identity of reqKeys(changed.requirement)) {
+        addOwner(changedOwners, reqIndexKey(changed.service, changed.axis, identity), fact.feature.id);
       }
     }
     for (const operation of fact.introducedOperations) {
@@ -284,22 +379,31 @@ export async function analyzeDependencies(
     .sort((a, b) => compareIds(a.from, b.from) || compareIds(a.to, b.to));
 
   const conflicts: FeatureConflict[] = [];
-  for (const [key, owners] of requirementOwners) {
-    if (owners.size < 2) continue;
-    const [service, axis, identity] = key.split("\0") as [string, SpecAxis["file"], string];
-    conflicts.push({
-      kind: "requirement",
-      service,
-      axis,
-      identity,
-      features: [...owners].sort(compareIds),
-    });
+  for (const [index, change] of [
+    [requirementOwners, "added"],
+    [changedOwners, "changed"],
+  ] as const) {
+    for (const [key, owners] of index) {
+      if (owners.size < 2) continue;
+      const [service, axis, identity] = key.split("\0") as [string, SpecAxis["file"], string];
+      conflicts.push({
+        kind: "requirement",
+        change,
+        service,
+        axis,
+        identity,
+        features: [...owners].sort(compareIds),
+      });
+    }
   }
   for (const [key, owners] of operationOwners) {
     if (owners.size < 2) continue;
     const [service, identity] = key.split("\0") as [string, string];
     conflicts.push({
       kind: "operation",
+      // Two features DEFINING the same operationId — the only way an operation
+      // collides, since removals address a living slot rather than claim one.
+      change: "added",
       service,
       identity,
       features: [...owners].sort(compareIds),
@@ -307,6 +411,7 @@ export async function analyzeDependencies(
   }
   conflicts.sort((a, b) =>
     compareIds(a.kind, b.kind)
+    || compareIds(a.change, b.change)
     || compareIds(a.service, b.service)
     || compareIds(a.axis ?? "", b.axis ?? "")
     || compareIds(a.identity, b.identity));

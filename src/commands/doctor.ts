@@ -43,6 +43,10 @@ function printDoctor(report: DoctorReport): void {
     console.log("\n  findings");
     for (const finding of report.findings) {
       console.log(`    ${finding.severity === "blocker" ? "✗" : "⚠"} ${finding.code}: ${finding.message}`);
+      // The fix is printed on its own indented line rather than appended to the
+      // message: what is wrong and what to type are two different sentences,
+      // and someone scanning a blocked repo reads down the `fix:` column.
+      console.log(`      fix: ${finding.fix}`);
     }
   }
 }

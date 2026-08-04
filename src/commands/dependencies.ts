@@ -75,7 +75,13 @@ function printGraph(graph: DependencyGraph, featureId?: string): void {
       const where = conflict.kind === "requirement"
         ? `${conflict.service}/${conflict.axis}`
         : conflict.service;
-      console.log(`    ! ${where} ${conflict.identity}: ${conflict.features.join(", ")}`);
+      // "added by" vs "changed by": the two collisions want different fixes.
+      // Two features ADDING the same identity is usually duplicated work that
+      // should become one feature; two features CHANGING it is usually genuine
+      // parallel work whose second archive would silently overwrite the first's
+      // full text, so the losers need to be re-based, not merged.
+      const how = conflict.change === "added" ? "added by" : "changed by";
+      console.log(`    ! ${where} ${conflict.identity} — ${how} ${conflict.features.join(", ")}`);
     }
   }
 

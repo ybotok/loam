@@ -908,33 +908,33 @@ describe("reading the verification back", () => {
   });
 });
 
-describe("a hand-edited record that lost its shape reads as no record", () => {
+describe("a hand-edited record that lost its shape is unreadable, not absent", () => {
   // verification.yaml is deliberately plain YAML that "has to survive without
-  // loam", so human edits are expected. A record whose shape no longer holds
-  // what the readers dereference (`summary` with its numbers, `recorded`,
-  // `checklist`, claims with id/verdict) must read as "no record" — the
-  // documented unreadable-is-null semantics — never surface as a TypeError
-  // from inside the command.
-  it("read mode: yaml without summary → the honest no-record branch, not a crash", async () => {
+  // loam", so human edits are expected — and a record whose shape no longer
+  // holds what the readers dereference must never surface as a TypeError from
+  // inside the command. It used to read as "no record" instead, which is the
+  // one answer that is worse than a crash: the file is right there, holding
+  // somebody's answers (in a fleet, other repositories' attestations), and
+  // "not verified" invited the next --record to overwrite all of it. Three
+  // states, three answers: absent, unreadable, and a record.
+  it("read mode: yaml without summary → unreadable, naming the file", async () => {
     const p = await project();
     await p.write(
       RECORD,
       ["feature: FEAT-1", "recorded: 2026-08-04", "checklist: deadbeefdeadbeef", "claims: []"].join("\n") + "\n",
     );
     const res = await runLoam(p.workDir, "verify", FEAT, "--json");
-    expect(res.code, res.out).toBe(0);
+    expect(res.code).toBe(1);
     const json = JSON.parse(res.stdout);
-    expect(json.recorded).toBe(null);
-    expect(json.verified).toBe(false);
-    // prose mode says "Not verified", not STALE — a staleness verdict about a
-    // file that is not a record would send the agent re-answering for nothing
+    expect(json.error.code).toBe("record-unreadable");
+    expect(json.error.message).toContain(RECORD);
+    // and it never claims the record is missing
     const prose = await runLoam(p.workDir, "verify", FEAT);
-    expect(prose.code).toBe(0);
-    expect(prose.out).toContain("Not verified");
-    expect(prose.out).not.toContain("STALE");
+    expect(prose.code).toBe(1);
+    expect(prose.out).not.toContain("Not verified — no");
   });
 
-  it("an archived feature's summary-less record: 'no record', where v.summary.claims used to TypeError", async () => {
+  it("an archived feature's summary-less record is unreadable too, where v.summary.claims used to TypeError", async () => {
     const p = await project();
     await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
     expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
@@ -956,15 +956,10 @@ describe("a hand-edited record that lost its shape reads as no record", () => {
       ].join("\n") + "\n",
     );
     const res = await runLoam(p.workDir, "verify", FEAT, "--json");
-    expect(res.code, res.out).toBe(0);
-    const json = JSON.parse(res.stdout);
-    expect(json.frozen).toBe(true);
-    expect(json.recorded).toBe(null);
-    expect(json.summary).toBe(null);
-    expect(json.verified).toBe(false);
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("record-unreadable");
     const prose = await runLoam(p.workDir, "verify", FEAT);
-    expect(prose.code).toBe(0);
-    expect(prose.out).toContain("no verification record");
+    expect(prose.out).not.toContain("no verification record");
   });
 
   it("a claims entry whose verdict nobody defined disqualifies the whole record", async () => {
@@ -973,9 +968,9 @@ describe("a hand-edited record that lost its shape reads as no record", () => {
     const p = await project();
     await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
     await p.write(RECORD, (await p.read(RECORD)).replace(/verdict: confirmed/g, "verdict: yes"));
-    const json = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout);
-    expect(json.recorded).toBe(null);
-    expect(json.summary.unanswered).toBe(4);
+    const res = await runLoam(p.workDir, "verify", FEAT, "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("record-unreadable");
   });
 
   it("a well-formed record a human merely annotated still reads — extra keys are not damage", async () => {
@@ -1077,7 +1072,11 @@ describe("the slash command that drives it", () => {
   it("is laid down by init and runs the real loop: checklist, evidence, record, report", async () => {
     const dir = await makeTmpDir("loam-verify-cmd-");
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
-    await runLoam(dir, "init", "--docs", "./d");
+    // `init` only ADOPTS an existing docs repo; making one is `--create`. This
+    // test is about the command files init lays down, not about how the docs
+    // repo came to be, so it takes the shortest path to a valid one.
+    const init = await runLoam(dir, "init", "--docs", "./d", "--create");
+    expect(init.code, init.out).toBe(0);
     const body = await readFile(join(dir, ".claude", "commands", "loam-verify.md"), "utf8");
     expect(body).toContain("loam verify $1 --json");
     expect(body).toContain("--record");
@@ -1228,9 +1227,17 @@ describe("federated service verification", () => {
       p,
       local.map((claim) => ({ id: claim.id, verdict: "confirmed", evidence: ["proof.ts:1"] })),
     );
+    // The repo declares itself — so the refusal is about git, not about binding.
+    await writeFile(
+      join(p.workDir, "loam.json"),
+      JSON.stringify({ docsDir: p.docsDir, service: SPLIT }, null, 2) + "\n",
+      "utf8",
+    );
     const result = await runLoam(p.workDir, "verify", FEAT, "--service", SPLIT, "--record", file, "--json");
     expect(result.code).toBe(1);
-    expect(JSON.parse(result.stdout).error.code).toBe("repository-unavailable");
+    const err = JSON.parse(result.stdout).error;
+    expect(err.code).toBe("repository-unavailable");
+    expect(err.message).toContain("git");
     expect(p.exists(RECORD)).toBe(false);
   });
 

@@ -111,7 +111,9 @@ describe("archive OpenAPI operation removal", () => {
       expect(res.out).toContain("removes 'legacyOp' (post /legacy)");
       const text = await p.read("services/payment-service/openapi.yaml");
       const api = parse(text);
-      expect(api.paths["/legacy"].post).toBeUndefined();
+      // `/legacy` held only the retired operation, so the path goes too — an
+      // empty path item is a route the contract advertises and nothing serves.
+      expect(api.paths["/legacy"]).toBeUndefined();
       expect(api.paths["/health"].get.operationId).toBe("health");
       expect(api.components.schemas.Legacy).toBeDefined();
       expect(text).not.toContain("x-loam-remove");

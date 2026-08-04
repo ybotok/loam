@@ -22,7 +22,10 @@ import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../cor
 import { resolveInside, resolvePortableFileInside } from "../core/path-safety.js";
 import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import {
+  acquireDocsLock,
+  DocsBusyError,
   message,
+  planWrite,
   quietRm,
   rollbackError,
   rollbackStaged,
@@ -83,7 +86,31 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
     reportNoConfig(json);
     return;
   }
-  const { docsDir } = config;
+  // The same lock archive takes, for the same reason: unarchive rewrites the
+  // living spec, contract and landscape from a snapshot, and an archive landing
+  // inside that window would have its merge silently reverted by our restore —
+  // or ours by its merge. One writer per docs repo, whichever direction it
+  // writes in.
+  let release: () => Promise<void>;
+  try {
+    release = await acquireDocsLock(config.docsDir);
+  } catch (err) {
+    if (err instanceof DocsBusyError) throw new RestoreFailure("docs-busy", err.message);
+    throw err;
+  }
+  try {
+    await unarchiveLocked(config.docsDir, featureId, json, force);
+  } finally {
+    await release();
+  }
+}
+
+async function unarchiveLocked(
+  docsDir: string,
+  featureId: string,
+  json: boolean,
+  force: boolean,
+): Promise<void> {
   const featuresDir = featuresRoot(docsDir);
   const archiveDir = join(featuresDir, "archive");
 
@@ -130,7 +157,12 @@ async function runUnarchive(featureId: string, json: boolean, force: boolean): P
     const current = existsSync(entry.target) ? await readFile(entry.target, "utf8") : null;
     if (current === null || sha256(current) !== entry.after) drifted.push(entry.path);
     const before = entry.snapshot === null ? null : await readFile(entry.snapshot, "utf8");
-    writes.push({ path: entry.target, content: before });
+    // A restore whose destination is GONE is a create, and takes the same
+    // no-clobber swap an archive's creates take: between the manifest read and
+    // the swap, another writer may have put that path back, and a rename would
+    // bury it. The same helper both commands use, so neither can decide
+    // differently about the same file.
+    writes.push(planWrite(entry.target, before));
   }
   if (drifted.length > 0 && !force) {
     fail(

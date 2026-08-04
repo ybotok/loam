@@ -10,12 +10,15 @@ import {
   elementService,
   loadFile,
   serviceOf,
+  serviceResolver,
   type Elem,
   type LikeC4Error,
   type LoadedDoc,
   type Rel,
 } from "../core/likec4.js";
 import {
+  DocsRepoUnavailableError,
+  docsRepoState,
   featurePaths,
   featureSpecPaths,
   featureSpecServices,
@@ -45,7 +48,15 @@ import {
 import { readOpenapi } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
-import { featureProvenance, serviceProvenance } from "../core/provenance.js";
+import {
+  emptySourcesMessage,
+  expandSourceFiles,
+  featureProvenance,
+  missingSources,
+  patternSources,
+  serviceProvenance,
+  unsafeSources,
+} from "../core/provenance.js";
 import {
   closeIds,
   coversCandidates,
@@ -66,7 +77,67 @@ interface ValidateOptions {
   feature?: string;
   all?: boolean;
   strict?: boolean;
+  errorsOnly?: boolean;
   json?: boolean;
+}
+
+/**
+ * The refusal every READ command owes a `docsDir` that is not a docs repo.
+ *
+ * It is not a formality. `validate --all` and `list` used to answer a docsDir
+ * that does not exist with a green report over zero services, which is the one
+ * output a fleet gate must never produce: "nothing is wrong" and "I could not
+ * look" are opposite facts, and in CI the first one merges. The two codes are
+ * kept apart because the fixes point in different directions — a wrong path in
+ * loam.json versus a docs repo that was never cloned or scaffolded — exactly
+ * the way `no-config` and `config-invalid` are kept apart.
+ *
+ * "Zero services" stays reachable, and only from a REAL docs repo whose
+ * `services/` is empty: that is a legitimate state (before the first
+ * `loam adopt`) and it must keep exiting 0.
+ *
+ * `need` says how much of a docs repo this particular run has to have. A run
+ * that only reads features genuinely does not need `services/` — repo.ts takes
+ * the same position for `listFeatures` — and refusing there would turn one
+ * diagnosis into two contradictory ones. A run that enumerates services needs
+ * the directory that IS the list of services.
+ *
+ * It lives in validate.ts because validate is the fleet gate this doctrine is
+ * about; `list` and `show` import it rather than growing two more copies that
+ * could drift into three different sentences for one fact.
+ */
+export function docsRepoReady(json: boolean, docsDir: string, need: "docs" | "services"): boolean {
+  const state = docsRepoState(docsDir);
+  if (state.kind === "ok" || (state.kind === "no-services" && need === "docs")) return true;
+  if (state.kind === "missing") {
+    fail(
+      json,
+      "docs-missing",
+      `The configured docs repo does not exist: ${state.path}. ` +
+        "Fix `docsDir` in loam.json, clone the docs repo there, " +
+        "or run `loam init --docs <dir> --create` to make a new one.",
+    );
+    return false;
+  }
+  fail(
+    json,
+    "services-missing",
+    `${state.path} is not a docs repo — it has no services/ directory. ` +
+      "Point `docsDir` in loam.json at the shared docs repo, " +
+      "or run `loam init --docs <dir> --create` to make one.",
+  );
+  return false;
+}
+
+/**
+ * The same refusal, reached the other way: `listServices`/`listFeatures` throw
+ * `DocsRepoUnavailableError` when the repo goes away mid-run (or when a caller
+ * reaches enumeration without passing the gate above). Mapping it back onto the
+ * same two codes keeps one breach spelled one way, instead of surfacing as the
+ * `internal` catch-all in cli.ts.
+ */
+export function reportDocsRepoError(json: boolean, err: DocsRepoUnavailableError): void {
+  fail(json, err.state.kind === "missing" ? "docs-missing" : "services-missing", err.message);
 }
 
 export function registerValidate(program: Command): void {
@@ -78,6 +149,7 @@ export function registerValidate(program: Command): void {
     .option("--feature <id>", "validate a feature delta instead of a service")
     .option("--all", "validate every service and every active feature")
     .option("--strict", "exit 1 on any warning too — a per-invocation CI lever; the report and --json payload do not change")
+    .option("--errors-only", "print only errors and warnings — a rendering lever; the --json payload does not change")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (target: string | undefined, opts: ValidateOptions) => {
       const json = opts.json === true;
@@ -103,6 +175,10 @@ export function registerValidate(program: Command): void {
         return;
       }
       const { docsDir } = config;
+      // Before anything is enumerated: a docsDir that is not a docs repo must
+      // refuse, not report an empty fleet. See docsRepoReady. `--feature` is the
+      // one mode that never enumerates services, so it asks for less.
+      if (!docsRepoReady(json, docsDir, opts.feature ? "docs" : "services")) return;
       // One invocation, one filesystem snapshot. Nothing is global: a later
       // command gets a fresh index and therefore cannot observe stale files.
       const fleet = new FleetContext();
@@ -114,90 +190,173 @@ export function registerValidate(program: Command): void {
         config.service === service ? process.cwd() : undefined;
 
       const targets: TargetReport[] = [];
-      // Services whose `sources` only their own repos can resolve — counted
-      // under --all and reported ONCE (`sources.unverifiable-from-here`): from
-      // the central docs repo the fleet gate checks zero of them, and without
-      // this line that silence reads as "verified".
-      let unverifiable = 0;
-      if (opts.all) {
-        // Parse the living landscape ONCE for the whole run: loadFile spins up
-        // a fresh LikeC4 workspace per call, and paying that per service makes
-        // the fleet's main CI command O(services) re-parses of the same file.
-        const lp = landscapeFile(docsDir);
-        const land = existsSync(lp) ? await fleet.loadLikeC4(lp) : null;
-        // The fleet-level cross-check first: it frames everything below it, and a
-        // service nobody drew is worth knowing before its own findings scroll past.
-        const landscape = await validateLandscape(docsDir, land, fleet);
-        if (landscape) targets.push(landscape);
-        // The agent contract check, --all only: AGENTS.md is written once and
-        // never refreshed (the ownership contract), so the one thing the
-        // docs-repo-wide mode owes it is detection — a stamp older than the
-        // binary means agents are branching on tables the binary no longer
-        // honours. It grades the repo, not any service, so it rides on the
-        // landscape target (synthesized when there is no landscape to check).
-        const agentsPath = join(docsDir, "AGENTS.md");
-        const agents = agentsStaleFinding(
-          existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
-          LOAM_VERSION,
-        );
-        if (agents !== null) {
-          if (landscape) landscape.findings.push(agents);
-          else targets.push({ kind: "landscape", id: "landscape", findings: [agents] });
-        }
-        for (const svc of await listServices(docsDir, fleet)) {
-          targets.push(await validateService(docsDir, svc.id, repoOf(svc.id), land, config.gherkinDir, fleet));
-          if (repoOf(svc.id) === undefined && (await namesSources(docsDir, svc.id))) unverifiable += 1;
-        }
-        for (const feat of await listFeatures(docsDir, {}, fleet)) {
-          targets.push(await validateFeature(docsDir, feat, land, fleet));
-        }
-      } else if (opts.feature) {
-        const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);
-        if (!feature) {
-          fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature, fleet));
-          return;
-        }
-        targets.push(await validateFeature(docsDir, feature, undefined, fleet));
-      } else if (target !== undefined) {
-        // The positional reads the way `show` reads one: try the feature first
-        // (ids like FEAT-101 are distinctive, service names are arbitrary), then
-        // the service. --service/--feature stay as the explicit spellings for a
-        // name that could be both.
-        const feature = await resolveFeature(docsDir, target, "exclude", fleet);
-        if (feature) {
-          targets.push(await validateFeature(docsDir, feature, undefined, fleet));
-        } else {
-          const isService = (await listServices(docsDir, fleet)).some((s) => s.id === target);
-          // Neither reading exists. An archived feature is its own diagnosis
-          // ("already archived", not "no such thing"); anything else reads as a
-          // service, so the did-you-mean hints in service.unknown fire.
-          if (!isService && (await resolveFeature(docsDir, target, "only", fleet)) !== null) {
-            fail(json, "unknown-target", await missingFeatureMessage(docsDir, target, fleet));
+      /** What the positional argument turned out to name, for the JSON payload. */
+      let resolvedKind: "service" | "feature" | undefined;
+
+      try {
+        if (opts.all) {
+          // Parse the living landscape ONCE for the whole run: loadFile spins up
+          // a fresh LikeC4 workspace per call, and paying that per service makes
+          // the fleet's main CI command O(services) re-parses of the same file.
+          const lp = landscapeFile(docsDir);
+          const land = existsSync(lp) ? await fleet.loadLikeC4(lp) : null;
+          // The fleet-level cross-check first: it frames everything below it, and a
+          // service nobody drew is worth knowing before its own findings scroll past.
+          targets.push(await validateLandscape(docsDir, land, fleet));
+          const landscape = targets[0]!;
+          // The agent contract check, --all only: AGENTS.md is written once and
+          // never refreshed (the ownership contract), so the one thing the
+          // docs-repo-wide mode owes it is detection — a stamp older than the
+          // binary means agents are branching on tables the binary no longer
+          // honours. It grades the repo, not any service, so it rides on the
+          // landscape target.
+          const agentsPath = join(docsDir, "AGENTS.md");
+          const agents = agentsStaleFinding(
+            existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
+            LOAM_VERSION,
+          );
+          if (agents !== null) landscape.findings.push(agents);
+          for (const svc of await listServices(docsDir, fleet)) {
+            targets.push(
+              await guarded({ kind: "service", id: svc.id }, () =>
+                validateService({
+                  docsDir,
+                  service: svc.id,
+                  repoDir: repoOf(svc.id),
+                  preloaded: land,
+                  gherkinDir: config.gherkinDir,
+                  fleet,
+                  landscapeReported: true,
+                }),
+              ),
+            );
+          }
+          for (const feat of await listFeatures(docsDir, {}, fleet)) {
+            targets.push(
+              await guarded({ kind: "feature", id: feat.id }, () =>
+                validateFeature(docsDir, feat, land, fleet),
+              ),
+            );
+          }
+        } else if (opts.feature) {
+          const feature = await resolveFeature(docsDir, opts.feature, "exclude", fleet);
+          if (!feature) {
+            fail(json, "unknown-target", await missingFeatureMessage(docsDir, opts.feature, fleet));
             return;
           }
-          targets.push(await validateService(docsDir, target, repoOf(target), undefined, config.gherkinDir, fleet));
+          targets.push(
+            await guarded({ kind: "feature", id: feature.id }, () =>
+              validateFeature(docsDir, feature, undefined, fleet),
+            ),
+          );
+        } else if (target !== undefined) {
+          // The positional reads the way `show` reads one: try the feature first
+          // (ids like FEAT-101 are distinctive, service names are arbitrary), then
+          // the service. --service/--feature stay as the explicit spellings for a
+          // name that could be both — and when both readings exist, the run says
+          // so out loud instead of silently taking one (`target.ambiguous`).
+          const feature = await resolveFeature(docsDir, target, "exclude", fleet);
+          const isService = (await listServices(docsDir, fleet)).some((s) => s.id === target);
+          if (feature) {
+            resolvedKind = "feature";
+            const report = await guarded({ kind: "feature", id: feature.id }, () =>
+              validateFeature(docsDir, feature, undefined, fleet),
+            );
+            if (isService) report.findings.unshift(ambiguousTarget(target, "feature"));
+            targets.push(report);
+          } else {
+            // Neither reading exists. An archived feature is its own diagnosis
+            // ("already archived", not "no such thing"); anything else reads as a
+            // service, so the did-you-mean hints in service.unknown fire.
+            if (!isService && (await resolveFeature(docsDir, target, "only", fleet)) !== null) {
+              fail(json, "unknown-target", await missingFeatureMessage(docsDir, target, fleet));
+              return;
+            }
+            resolvedKind = "service";
+            targets.push(
+              await guarded({ kind: "service", id: target }, () =>
+                validateService({
+                  docsDir,
+                  service: target,
+                  repoDir: repoOf(target),
+                  gherkinDir: config.gherkinDir,
+                  fleet,
+                }),
+              ),
+            );
+          }
+        } else {
+          const service = opts.service ?? config.service;
+          if (!service) {
+            fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+            return;
+          }
+          targets.push(
+            await guarded({ kind: "service", id: service }, () =>
+              validateService({
+                docsDir,
+                service,
+                repoDir: repoOf(service),
+                gherkinDir: config.gherkinDir,
+                fleet,
+              }),
+            ),
+          );
         }
-      } else {
-        const service = opts.service ?? config.service;
-        if (!service) {
-          fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+      } catch (err) {
+        // The docs repo went away between the gate above and the enumeration.
+        if (err instanceof DocsRepoUnavailableError) {
+          reportDocsRepoError(json, err);
           return;
         }
-        targets.push(await validateService(docsDir, service, repoOf(service), undefined, config.gherkinDir, fleet));
+        // An IO failure that `guarded` could not localise to one target — it
+        // happened in the ENUMERATION, which reads every living spec's
+        // frontmatter to build the service list. There is no partial report to
+        // give: without the list, no service was checked, including the ones
+        // that are fine. Say which file, and refuse; the one thing that must
+        // not happen is a stack trace on stdout's sibling stream and an
+        // `internal` envelope that names nothing.
+        const path = (err as NodeJS.ErrnoException).path;
+        if (path === undefined) throw err;
+        fail(
+          json,
+          "repository-unavailable",
+          `${path} could not be read, so the service list itself is unknown and nothing was validated. ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return;
       }
 
+      // Counted off the findings rather than alongside them, so the rollup line
+      // and the per-service findings can never disagree about how many services
+      // this run could not check.
+      //
+      // Counted by SUBJECT, not by finding: a service whose spec.md and
+      // arch.spec.md both name `sources` raises two findings — each document
+      // has its own list and its own answer — but it is one service nobody
+      // here can check, and "2 services' sources" over a fleet of one is a
+      // number that sends the reader looking for a service that does not exist.
+      const unverifiable = new Set(
+        targets.flatMap((t) =>
+          t.findings.filter((f) => f.code === UNVERIFIABLE).map((f) => f.subject ?? t.id),
+        ),
+      ).size;
       const valid = reportValid(targets);
+      const capped = targets.map(capDetails);
       if (json) {
         emitJson({
           valid,
           summary: summary(targets),
-          // --all only: single-target runs never counted, so a stable 0 there
-          // would claim a check that did not happen.
-          ...(opts.all ? { sourcesUnverifiableFromHere: unverifiable } : {}),
-          targets: targets.map(targetJson),
+          ...(resolvedKind === undefined ? {} : { resolvedKind }),
+          // Emitted in every mode now that it is derived per service: a
+          // single-service run knows exactly as much about its own blind spot
+          // as `--all` knows about the fleet's.
+          sourcesUnverifiableFromHere: unverifiable,
+          targets: capped.map(targetJson),
         });
       } else {
-        renderText(targets, opts.all === true, unverifiable);
+        renderText(capped, opts.all === true, unverifiable, opts.errorsOnly === true);
       }
       // --strict is a per-invocation CI lever: it fails the run on any error or
       // warning (ok-severity confirmations never trip it — virtually every
@@ -217,6 +376,96 @@ function summary(targets: TargetReport[]): Record<string, number> {
     features: targets.filter((t) => t.kind === "feature").length,
     errors: countSeverity(targets, "error"),
     warnings: countSeverity(targets, "warn"),
+  };
+}
+
+/** The one code the rollup line counts; spelled once so the two cannot drift. */
+const UNVERIFIABLE = "sources.unverifiable-from-here";
+
+/**
+ * How many `details` lines any one finding may print before the rest are
+ * summarised away.
+ *
+ * A finding's details are evidence, not a log: LikeC4 reports one syntax error
+ * as dozens of cascading diagnostics, and a fleet-sized repo multiplies that by
+ * every target that mentions the file. The report is read by a person scrolling
+ * a CI log and by an agent with a context window, and neither of them is helped
+ * by the four-hundredth copy. The cap is applied to the JSON payload too, on
+ * purpose: `--json` is the interface an agent pipes, and an unbounded array is
+ * the same denial-of-attention there, just machine-readable.
+ */
+const DETAIL_LIMIT = 10;
+
+/** Truncate every finding's details, marking what was dropped so nothing looks complete when it is not. */
+function capDetails(t: TargetReport): TargetReport {
+  return {
+    ...t,
+    findings: t.findings.map((f) => {
+      const details = f.details ?? [];
+      if (details.length <= DETAIL_LIMIT) return f;
+      return {
+        ...f,
+        details: [...details.slice(0, DETAIL_LIMIT), `… (+${details.length - DETAIL_LIMIT} more)`],
+      };
+    }),
+  };
+}
+
+/**
+ * One target's checks, with an IO exception turned into a finding ON that
+ * target instead of aborting the run.
+ *
+ * A fleet gate that dies on the first unreadable file reports nothing about the
+ * other ninety-nine services — one bad permission bit, one file that is a
+ * dangling symlink, and CI's answer to "how is the fleet" becomes a stack
+ * trace. The failure is real and it is an error, so the run still exits 1; what
+ * changes is that everything else is still graded, and the finding names the
+ * service and the path instead of arriving as the `internal` catch-all.
+ */
+async function guarded(
+  target: { kind: "service" | "feature"; id: string },
+  run: () => Promise<TargetReport>,
+): Promise<TargetReport> {
+  try {
+    return await run();
+  } catch (err) {
+    // A docs repo that vanished mid-run is not one target's problem — it is the
+    // whole run's, and the action's own catch reports it.
+    if (err instanceof DocsRepoUnavailableError) throw err;
+    const path = (err as NodeJS.ErrnoException).path;
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      kind: target.kind,
+      id: target.id,
+      findings: [
+        {
+          severity: "error",
+          code: target.kind === "service" ? "service.unreadable" : "feature.unreadable",
+          subject: target.id,
+          message:
+            `${target.id}: ${path === undefined ? "an artifact" : path} could not be read — ` +
+            `nothing about this ${target.kind} was checked. ${reason}`,
+        },
+      ],
+    };
+  }
+}
+
+/**
+ * `target.ambiguous` — the positional named a service AND a feature. The tie is
+ * still broken the way it always was (the feature wins), because changing which
+ * one is picked would silently re-target every script that relies on it; what
+ * is new is that the run says which reading it took and how to force the other.
+ */
+function ambiguousTarget(arg: string, chosen: "service" | "feature"): Finding {
+  const other = chosen === "feature" ? "service" : "feature";
+  return {
+    severity: "warn",
+    code: "target.ambiguous",
+    subject: arg,
+    message:
+      `'${arg}' names both a service and a feature — validated as the ${chosen}. ` +
+      `Pass --${other} ${arg} for the other reading.`,
   };
 }
 
@@ -243,19 +492,43 @@ const EXTERNAL_TAG = "external";
  * `metadata { service '<id>' }` naming nothing is an error either way: a binding
  * is a claim about this repo, not a guess at one.
  *
- * Returns null when there is no landscape to check against. `preloaded` is the
- * already-parsed landscape under --all — the same doc every service check gets.
+ * An ABSENT landscape is a finding, not a skipped check. It used to return null
+ * — no target, no findings, and a fleet gate that went green over a docs repo
+ * with no fleet map at all, which is the single artifact every derived view and
+ * every spine check is computed from. It is graded by what its absence proves:
+ * with services in `services/` it is an ERROR (a fleet that exists is undrawn),
+ * with none it is a WARNING (a docs repo before its first adopt legitimately
+ * has nothing to draw, but the file still belongs there — `loam init` scaffolds
+ * it, and a repo missing it will silently accept never getting one).
+ *
+ * `preloaded` is the already-parsed landscape under --all — the same doc every
+ * service check gets.
  */
 async function validateLandscape(
   docsDir: string,
   preloaded?: LoadedDoc | null,
   fleet?: FleetContext,
-): Promise<TargetReport | null> {
+): Promise<TargetReport> {
   const path = landscapeFile(docsDir);
-  if (!existsSync(path)) return null;
-
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "landscape", id: "landscape", findings };
+
+  if (!existsSync(path)) {
+    const count = (await listServices(docsDir, fleet)).length;
+    findings.push({
+      severity: count > 0 ? "error" : "warn",
+      code: "landscape.missing",
+      message:
+        `landscape: architecture/landscape.likec4 does not exist — ` +
+        (count > 0
+          ? `${count} service(s) are adopted and nothing draws the fleet. `
+          : "nothing draws the fleet. ") +
+        "It is the one map every derived view and the C4↔API spine are computed from: " +
+        "write a `specification { element softwareSystem }` + `model { … }` document there " +
+        "with one element per services/<id>/, bound with `metadata { service '<id>' }`.",
+    });
+    return report;
+  }
 
   const land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
   if (land.errors.length > 0) {
@@ -274,6 +547,30 @@ async function validateLandscape(
   // Services are top-level; a dotted id is a container inside one.
   const drawn = land.elements.filter((e) => !e.id.includes("."));
   const modelled = new Set(drawn.map(elementService));
+
+  // Two boxes standing for one service directory. Every join in loam is
+  // `element -> service`, computed by picking the FIRST element that resolves —
+  // so with two of them, which one wins is readdir order, and the edges of the
+  // loser are attributed to a service they do not belong to. Silent until now,
+  // and unfixable by staring at either element on its own.
+  const perService = new Map<string, Elem[]>();
+  for (const e of drawn) {
+    if (e.tags.includes(EXTERNAL_TAG)) continue;
+    const id = elementService(e);
+    perService.set(id, [...(perService.get(id) ?? []), e]);
+  }
+  for (const [id, elems] of perService) {
+    if (elems.length < 2) continue;
+    // A collision only matters where it decides something: a real directory to
+    // attribute to, or a binding somebody wrote down on purpose.
+    if (!services.has(id) && !elems.some((e) => e.service !== undefined)) continue;
+    findings.push({
+      severity: "warn",
+      code: "landscape.binding-duplicate",
+      subject: id,
+      message: `landscape: ${elems.length} elements resolve to service '${id}' (${elems.map((e) => e.id).join(", ")}) — every element→service join picks one of them arbitrarily, so the others' edges are filed under a service that does not own them; keep one element per services/<id>/`,
+    });
+  }
 
   for (const id of services) {
     if (modelled.has(id)) continue;
@@ -338,14 +635,26 @@ async function validateLandscape(
  * other pass every cross-axis check vacuously — a repo migrated from OpenSpec
  * does exactly that by default, and vacuous is not the same as checked.
  */
-async function validateService(
-  docsDir: string,
-  service: string,
-  repoDir?: string,
-  preloaded?: LoadedDoc | null,
-  gherkinDir?: string,
-  fleet?: FleetContext,
-): Promise<TargetReport> {
+interface ServiceCheck {
+  docsDir: string;
+  service: string;
+  /** The service's own repo, when loam is standing in it. Undefined from the docs repo. */
+  repoDir?: string;
+  /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
+  preloaded?: LoadedDoc | null;
+  gherkinDir?: string;
+  fleet?: FleetContext;
+  /**
+   * True when this run ALSO emits a `landscape` target. It decides one thing:
+   * whether a landscape parse error's details are repeated here. Under --all
+   * they are not — the landscape target already carries them once, and N copies
+   * of one parser's cascade is the whole report.
+   */
+  landscapeReported?: boolean;
+}
+
+async function validateService(check: ServiceCheck): Promise<TargetReport> {
+  const { docsDir, service, repoDir, preloaded, gherkinDir, fleet } = check;
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
   const paths = servicePaths(docsDir, service);
@@ -416,13 +725,36 @@ async function validateService(
         : await fleet.loadLikeC4(landscapeFile(docsDir))
       : null);
 
+  // Which service directories actually exist — the positive evidence
+  // `serviceOf` needs to resolve an edge drawn into a modelled CONTAINER
+  // (`paymentService.api`) back to the service that owns it. Without it every
+  // such edge resolves to the container's own title, i.e. to a service nobody
+  // has ever adopted, and drops out of the spine unnoticed.
+  const known = new Set((await listServices(docsDir, fleet)).map((s) => s.id));
+
   // Requirement coverage.
   let reqs: Requirement[] = [];
   if (existsSync(paths.spec)) {
     reqs = fleet === undefined
       ? parseRequirements(await readFile(paths.spec, "utf8"))
       : await fleet.readRequirements(paths.spec);
-    findings.push(coverageFinding(`${service}: requirements`, reqs));
+    // A living spec with no `### Requirement:` block at all is the baseline
+    // `loam adopt` scaffolds and nobody ever filled in. "requirements covered
+    // (0 requirements, all with scenarios)" is true of it and says the opposite
+    // of what a reader needs: every cross-axis check downstream — API
+    // governance, the Operations: spine, gherkin generation — is vacuous here,
+    // and the green tick is what let a whole fleet score `sourced` over empty
+    // files.
+    if (reqs.length === 0) {
+      findings.push({
+        severity: "warn",
+        code: "spec.no-requirements",
+        subject: service,
+        message: `${service}: spec.md holds no '### Requirement:' blocks — every requirement-driven check below is vacuous, and nothing here can go out of date because nothing is written down`,
+      });
+    } else {
+      findings.push(coverageFinding(`${service}: requirements`, reqs));
+    }
     findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
     findings.push(...requirementIdFindings(reqs, `${service}: spec.md`, service));
     findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
@@ -440,6 +772,11 @@ async function validateService(
   const liveOps = api.ops.filter((o) => !o.remove);
   const ops = liveOps.map((o) => o.id);
   const deprecatedOps = new Set(liveOps.filter((o) => o.deprecated).map((o) => o.id));
+  // The living landscape's element→service resolver, container-aware and
+  // memoized. Every question below that asks "does this edge point at me?"
+  // asks it through this one function, so the no-openapi grace and the spine
+  // check can never disagree about which edges are inbound.
+  const landSvcOf = land === null ? null : serviceResolver(land.elements, known);
   if (!existsSync(paths.openapi)) {
     // Quiet only on positive evidence — the landscape parsed and no edge calls
     // an operation on this service. A missing or broken landscape proves
@@ -447,7 +784,7 @@ async function validateService(
     const expected =
       land === null ||
       land.errors.length > 0 ||
-      land.relationships.some((r) => r.op !== undefined && serviceOf(land.elements, r.target) === service);
+      land.relationships.some((r) => r.op !== undefined && landSvcOf!(r.target) === service);
     if (expected) {
       findings.push({
         severity: "warn",
@@ -475,6 +812,30 @@ async function validateService(
         code: "openapi.remove-marker-living",
         message: `${service}: living openapi.yaml contains ${removeMarkers.length} x-loam-remove marker(s) (${removeMarkers.map((op) => op.id).join(", ")}) — removal markers are valid only in feature deltas`,
       });
+    }
+    const defined = new Set(ops);
+    // `Operations:` on a LIVING requirement, resolved against this service's own
+    // contract. Nothing did this before: the same spine is checked inside a
+    // feature delta (coherence's spec-api.op-undefined) and then never again, so
+    // a typo that shipped, or an operation later renamed out of openapi.yaml,
+    // left a living requirement governing an operation that does not exist —
+    // green forever, and every downstream join through that id silently empty.
+    // Same code and severity as the feature-scope check on purpose: one breach,
+    // one name, wherever it is found.
+    for (const r of reqs) {
+      if (r.kind === "REMOVED") continue;
+      for (const op of r.operations) {
+        if (defined.has(op)) continue;
+        const close = closeIds(op, ops);
+        findings.push({
+          severity: "error",
+          code: "spec-api.op-undefined",
+          subject: service,
+          message:
+            `${service}: requirement '${r.name}' governs '${op}', not defined in ${service}'s OpenAPI` +
+            (close.length > 0 ? `. Did you mean: ${close.join(", ")}?` : ""),
+        });
+      }
     }
     if (ops.length > 0) {
     const governed = new Set(reqs.flatMap((r) => r.operations));
@@ -508,8 +869,7 @@ async function validateService(
     // Deprecation is the documented first step of removing an op; the explicit
     // feature marker is the final step. Until that delta archives, the op stays
     // live, so the fix is migration or a coordinated retirement. Ops the contract does not define at all
-    // prove nothing here and are left to the coherence checks.
-    const defined = new Set(ops);
+    // prove nothing here and are left to spec-api.op-undefined above.
     for (const r of reqs) {
       const resolved = r.operations.filter((op) => defined.has(op));
       if (resolved.length === 0 || !resolved.every((op) => deprecatedOps.has(op))) continue;
@@ -529,17 +889,29 @@ async function validateService(
     if (land.errors.length > 0) {
       // A living landscape that does not parse disables the C4↔API spine check —
       // that is a broken source of truth, not a skippable detail.
+      //
+      // The parser's own output is attached ONCE per run, and not here when the
+      // run has a landscape target to carry it. One syntax error in one file
+      // becomes N copies of a dozen cascading diagnostics on a fleet of N
+      // services — the report stops being readable at exactly the moment
+      // somebody needs to read it, and the fix is one file either way.
       findings.push({
         severity: "error",
         code: "spine.landscape-invalid",
-        message: `${service}: landscape.likec4 has ${land.errors.length} error(s) — spine check impossible`,
-        details: land.errors.map(errorText),
+        subject: service,
+        message:
+          `${service}: landscape.likec4 has ${land.errors.length} error(s) — spine check impossible` +
+          (check.landscapeReported === true
+            ? "; the parser output is reported once, on the landscape target"
+            : ""),
+        ...(check.landscapeReported === true ? {} : { details: land.errors.map(errorText) }),
       });
     } else {
-      // Which element IS this service is the binding's call, with the title as the
-      // fallback — matching on the title alone means a renamed box silently drops
-      // out of the spine, and the check goes on reporting nothing at all.
-      const svcOf = (id: string): string => serviceOf(land.elements, id);
+      // Which element IS this service is the binding's call, then a title that
+      // names a real services/<id>/, and an edge into a modelled container
+      // counts as an edge into its service — matching the exact id alone meant a
+      // container edge left the spine without a word.
+      const svcOf = landSvcOf!;
       const opset = new Set(ops);
       let checked = 0;
       let broken = 0;
@@ -650,6 +1022,7 @@ async function validateService(
 
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));
+  findings.push(...(await sourceScopeFindings(docsDir, service, repoDir)));
 
   // The generated-gherkin freshness chain, service-repo-scoped like sources.*:
   // it needs the repo (the suite lives there), and it stays quiet until
@@ -892,8 +1265,42 @@ async function validateFeature(
   const activeCovers = archDeltas.flatMap(({ reqs }) =>
     coversEntries(reqs.filter((r) => r.kind === "ADDED" || r.kind === "MODIFIED")),
   );
+
+  // What the living landscape ALREADY holds. A delta has to re-declare the
+  // elements its new edges attach to, and authors tag those re-declarations
+  // along with everything else — so a requirements-only feature that touches an
+  // existing service was told to write `Covers:` lines for architecture it is
+  // not adding. c4.uncovered is an obligation on NEW architecture; an element
+  // the living landscape already resolves is not new, whatever the tag says.
+  // Loaded lazily: a delta with nothing tagged never pays for the parse.
+  let living: LoadedDoc | null | undefined = preloadedLand;
+  const livingLandscape = async (): Promise<LoadedDoc | null> => {
+    if (living === undefined) {
+      const lp = landscapeFile(docsDir);
+      living = existsSync(lp)
+        ? fleet === undefined
+          ? await loadFile(lp)
+          : await fleet.loadLikeC4(lp)
+        : null;
+    }
+    return living;
+  };
+  const alreadyLiving = async (): Promise<LoadedDoc | null> => {
+    if (taggedEls.length === 0 && taggedRels.length === 0) return null;
+    const doc = await livingLandscape();
+    return doc !== null && doc.errors.length === 0 ? doc : null;
+  };
+  const base = await alreadyLiving();
+  const baseSvcOf = base === null ? null : serviceResolver(base.elements);
+  const baseIds = new Set(base?.elements.map((e) => e.id) ?? []);
+  const baseServices = new Set((base?.elements ?? []).map(elementService));
+  const baseEdges = new Set(
+    (base?.relationships ?? []).map((r) => `${baseSvcOf!(r.source)}\u0000${baseSvcOf!(r.target)}`),
+  );
+
   for (const e of taggedEls) {
     if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
+    if (baseIds.has(e.id) || baseServices.has(elementService(e))) continue;
     if (activeCovers.some((c) => coversElement(c, e))) continue;
     findings.push({
       severity: "warn",
@@ -903,6 +1310,7 @@ async function validateFeature(
     });
   }
   for (const r of taggedRels) {
+    if (baseEdges.has(`${serviceOf(elements, r.source)} ${serviceOf(elements, r.target)}`)) continue;
     if (activeCovers.some((c) => coversEdge(c, r, elements))) continue;
     findings.push({
       severity: "warn",
@@ -919,16 +1327,8 @@ async function validateFeature(
   // lazily, and only when an entry fails against what is already in hand: the
   // clean path never pays for a workspace spin.
   if (archDeltas.some(({ reqs }) => coversEntries(reqs).length > 0)) {
-    let land = preloadedLand;
-    if (land === undefined) {
-      const lp = landscapeFile(docsDir);
-      land = existsSync(lp)
-        ? fleet === undefined
-          ? await loadFile(lp)
-          : await fleet.loadLikeC4(lp)
-        : null;
-    }
-    const landParses = land !== null && land !== undefined && land.errors.length === 0 ? land : null;
+    const land = await livingLandscape();
+    const landParses = land !== null && land.errors.length === 0 ? land : null;
     const baseElements = [...elements, ...(landParses?.elements ?? [])];
     const baseRels = [...deltaRels, ...(landParses?.relationships ?? [])];
     for (const { service: svc, reqs } of archDeltas) {
@@ -1006,12 +1406,27 @@ function coverageFinding(label: string, reqs: Requirement[]): Finding {
 
 const MARKER: Record<Severity, string> = { ok: "✓", warn: "⚠", error: "✗" };
 
-function renderText(targets: TargetReport[], all: boolean, unverifiable: number): void {
+/**
+ * `--errors-only` is a RENDERING lever, the way `--strict` is an exit-code
+ * lever: neither changes the report, and the `--json` payload is unaffected by
+ * both. On a fleet of a hundred services the clean run prints several hundred
+ * `ok` confirmations, and the two warnings that matter are somewhere inside it;
+ * anyone reading a CI log wants the exceptions, and anyone auditing wants all
+ * of it. Both are available, from the same run, and neither is the default.
+ */
+function renderText(
+  targets: TargetReport[],
+  all: boolean,
+  unverifiable: number,
+  errorsOnly: boolean,
+): void {
   for (const t of targets) {
+    const shown = errorsOnly ? t.findings.filter((f) => f.severity !== "ok") : t.findings;
+    if (shown.length === 0) continue;
     // A feature announces itself; a service's findings already carry its name.
     if (t.kind === "feature") console.log(t.id);
     let header: string | undefined;
-    for (const f of t.findings) {
+    for (const f of shown) {
       const hint = f.text ?? {};
       if (hint.header && hint.header !== header) {
         header = hint.header;
@@ -1027,7 +1442,15 @@ function renderText(targets: TargetReport[], all: boolean, unverifiable: number)
     }
   }
 
-  if (!all) return;
+  if (!all) {
+    // Without the --all footer there would be nothing at all to print for a
+    // clean single target under --errors-only — and silence is the one output
+    // that must never mean "checked, fine".
+    if (errorsOnly && targets.every((t) => t.findings.every((f) => f.severity === "ok"))) {
+      console.log(`${targets.map((t) => t.id).join(", ")}: no errors or warnings`);
+    }
+    return;
+  }
   const s = summary(targets);
   const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
   console.log(
@@ -1046,14 +1469,74 @@ function renderText(targets: TargetReport[], all: boolean, unverifiable: number)
 
 /* ------------------------------------------------------------------ */
 
-/** Does either living spec name any `sources`? The unverifiable-from-here count. */
-async function namesSources(docsDir: string, service: string): Promise<boolean> {
+/**
+ * The two things a `sources` list can be that `serviceProvenance` cannot say.
+ *
+ * `sources.unverifiable-from-here` — the spec names sources and loam is NOT in
+ * that service's repository, so every sources check (existence, digest,
+ * staleness) is skipped. serviceProvenance returns an empty list in that case
+ * and the silence read as "checked and fine". It used to be counted only under
+ * `--all` and printed as one rollup line, which meant `validate --service X`
+ * run from the docs repo — the single most common way anyone looks at one
+ * service — reported nothing at all about its own blind spot. Severity `ok`,
+ * deliberately: nothing is WRONG with the docs, the check simply cannot run
+ * here, and grading it a warning would make a correctly-adopted fleet
+ * permanently yellow and `--strict` permanently red in the docs repo's CI.
+ *
+ * `sources.empty` — the paths exist, and expand to no files at all: an empty
+ * directory, or a tree the repository itself ignores. A digest over nothing
+ * never changes, so the stamp would read as current forever. `loam vouch`
+ * already refuses to stamp it; until now `validate` said nothing, so an author
+ * got a green run followed by a refusal, two commands contradicting each other
+ * about one document. The sentence comes from `emptySourcesMessage`, the same
+ * definition vouch refuses with, under the label vouch uses.
+ */
+async function sourceScopeFindings(
+  docsDir: string,
+  service: string,
+  repoDir: string | undefined,
+): Promise<Finding[]> {
   const paths = servicePaths(docsDir, service);
-  for (const path of [paths.spec, paths.archSpec]) {
+  const out: Finding[] = [];
+  for (const { path, file } of [
+    { path: paths.spec, file: "spec.md" },
+    { path: paths.archSpec, file: "arch.spec.md" },
+  ]) {
     if (!existsSync(path)) continue;
-    if (listField(await readFrontmatter(path), "sources").length > 0) return true;
+    const sources = listField(await readFrontmatter(path), "sources");
+    if (sources.length === 0) continue;
+    // vouch's own labelling: a bare service id for spec.md, qualified for the
+    // arch axis. The refusal and the finding must be the same sentence.
+    const label = file === "spec.md" ? service : `${service}: ${file}`;
+    if (repoDir === undefined) {
+      out.push({
+        severity: "ok",
+        code: UNVERIFIABLE,
+        subject: service,
+        message: `${label}: ${sources.length} source(s) declared, but this is not ${service}'s repository — nothing here can resolve them. Run \`loam validate --service ${service}\` from inside it.`,
+      });
+      continue;
+    }
+    // Every other shape of broken list is serviceProvenance's to grade, and
+    // grading them twice would send an author fixing one thing from two
+    // findings. "Covers no files" is only meaningful once the paths are real.
+    if (
+      patternSources(sources).length > 0 ||
+      unsafeSources(repoDir, sources).length > 0 ||
+      missingSources(repoDir, sources).length > 0
+    ) {
+      continue;
+    }
+    const expansion = await expandSourceFiles(repoDir, sources, label);
+    if (expansion.files.length > 0) continue;
+    out.push({
+      severity: "warn",
+      code: "sources.empty",
+      subject: service,
+      message: expansion.empty ?? emptySourcesMessage(label, sources),
+    });
   }
-  return false;
+  return out;
 }
 
 /** Heuristic: an edge is "covered" if a scenario names the target or a keyword from the edge title. */

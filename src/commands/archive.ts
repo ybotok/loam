@@ -6,7 +6,11 @@ import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { gatesArchive, type Issue } from "../core/issue.js";
 import {
+  acquireDocsLock,
+  DocsBusyError,
   message,
+  planWrite,
+  quietPruneEmptyParents,
   quietRm,
   rollbackError,
   rollbackStaged,
@@ -122,18 +126,52 @@ function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void {
   emitJsonError(code, msg, { issues: issues.map(issueJson) });
 }
 
+/**
+ * Take the docs repo's advisory lock for the WHOLE plan+commit window, then
+ * archive.
+ *
+ * The window is the point. Two archives that overlap do not fight over a
+ * rename: they each read the living landscape, each splice their additions into
+ * the bytes they read, and the second write replaces the first — both exit 0,
+ * and `validate` stays green over a landscape that is missing one feature's
+ * architecture, because a document with fewer elements is not an invalid one.
+ * That is the only silent-loss path in loam that a later command cannot even
+ * detect, so it is closed at the coarsest possible granularity: one writer per
+ * docs repo, refusing rather than queueing, because a CLI that blocks for an
+ * unknown time is worse for an agent than one that says `docs-busy`.
+ */
 async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {
+  const json = opts.json === true;
+  const config = await loadConfig();
+  if (!config) {
+    reportNoConfig(json);
+    return;
+  }
+  let release: () => Promise<void>;
+  try {
+    release = await acquireDocsLock(config.docsDir);
+  } catch (err) {
+    if (err instanceof DocsBusyError) throw new ArchiveFailure("docs-busy", err.message);
+    throw err;
+  }
+  try {
+    await archiveLocked(config, featureId, opts);
+  } finally {
+    await release();
+  }
+}
+
+async function archiveLocked(
+  config: { docsDir: string },
+  featureId: string,
+  opts: ArchiveOptions,
+): Promise<void> {
   const dryRun = opts.dryRun === true;
   const json = opts.json === true;
   // All prose goes through here so `--json` keeps stdout a single JSON document.
   const say = (line = ""): void => {
     if (!json) console.log(line);
   };
-  const config = await loadConfig();
-  if (!config) {
-    reportNoConfig(json);
-    return;
-  }
   const featuresDir = featuresRoot(config.docsDir);
   const feature = await resolveFeature(config.docsDir, featureId, "exclude");
   if (!feature) {
@@ -276,7 +314,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
         }
         const heading = axis.key === "spec" ? svc : `${svc} — architecture`;
         const frontmatter = `---\nservice: ${svc}\nstatus: draft\n---\n\n# ${heading}\n\n`;
-        writes.push({ path: livingPath, content: `${frontmatter}## Requirements\n\n${serializeRequirements(created)}` });
+        writes.push(planWrite(livingPath, `${frontmatter}## Requirements\n\n${serializeRequirements(created)}`));
         say(`  ${axis.label}: ${svc} — created living ${axis.file} (${created.length} requirement(s))`);
         continue;
       }
@@ -294,7 +332,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
         );
       }
       const merged = applyRequirementDelta(parseRequirements(livingText), deltaReqs);
-      writes.push({ path: livingPath, content: rewriteRequirementsRun(livingText, merged) });
+      writes.push(planWrite(livingPath, rewriteRequirementsRun(livingText, merged)));
 
       const c = summarize(deltaReqs);
       say(`  ${axis.label}: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
@@ -311,11 +349,13 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     const ops = featureOps.filter((op) => !op.remove).map((op) => op.id);
     if (!existsSync(livingOpenapi)) {
       // A removal against a non-existent contract is gated by coherence. Keep
-      // the feature-only marker out of living docs even under --approve.
-      const content = featureOps.some((op) => op.remove)
-        ? stripOpenapiRemovalMarkers(featText, svc)
-        : featText;
-      writes.push({ path: livingOpenapi, content });
+      // the feature-only marker out of living docs even under --approve — and
+      // ask the DOCUMENT, not the operation reader: a marker with no
+      // operationId is invisible to `operations()`, so gating the strip on
+      // "does the reader see a removal" let exactly that marker through into a
+      // living contract, published to every consumer of the fleet.
+      const content = stripOpenapiRemovalMarkers(featText, svc);
+      writes.push(planWrite(livingOpenapi, content));
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
       let merge: OpenapiMergeResult;
@@ -325,9 +365,9 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
         if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
         throw err;
       }
-      const { text, modified, removed, componentsModified, unresolved } = merge;
+      const { text, modified, pathItemModified, removed, componentsModified, unresolved } = merge;
       if (text !== null) {
-        writes.push({ path: livingOpenapi, content: text });
+        writes.push(planWrite(livingOpenapi, text));
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
       }
       if (removed.length > 0) {
@@ -342,6 +382,15 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
           message: `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale`,
         });
         say(`      ⚠ overwrites ${label} — the living definition differs`);
+      }
+      for (const label of pathItemModified) {
+        planWarns.push({
+          severity: "warn",
+          code: "openapi.path-item-modified",
+          subject: svc,
+          message: `${svc}: the delta redefines the path-level key ${label}, which the living OpenAPI already has — the merge overwrites it wholesale, and it applies to EVERY operation on that path, including ones this feature never mentions`,
+        });
+        say(`      ⚠ overwrites path-level ${label} — the living definition differs`);
       }
       for (const comp of componentsModified) {
         planWarns.push({
@@ -390,6 +439,25 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     } else {
       say(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);
     }
+  }
+
+  // A service this archive BRINGS INTO EXISTENCE arrives without the one file
+  // `validate` demands of every service: its own model.likec4. The merge cannot
+  // write it — the delta's tagged subtree is a landscape-level box, not a
+  // container model, and inventing a plausible one is the kind of quiet fiction
+  // the rest of loam exists to prevent — so the archive says so instead, and
+  // stops claiming the docs are complete. Non-gating: the feature is coherent
+  // and the merge is correct; what is missing is the next step, and refusing
+  // here would make onboarding a new service impossible in one command.
+  const newServices = deltaServices.filter((svc) => !existsSync(servicePaths(config.docsDir, svc).dir));
+  for (const svc of newServices) {
+    if (existsSync(servicePaths(config.docsDir, svc).model)) continue;
+    planWarns.push({
+      severity: "warn",
+      code: "service.no-model",
+      subject: svc,
+      message: `${svc}: this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4 — 'loam validate --all' will report the service as incomplete until it exists. Run 'loam adopt <path-to-${svc}-repo> --service ${svc}' from the service repo, or write the model by hand.`,
+    });
   }
 
   // Gate on what only the plan could see: a merged operation pointing at a
@@ -442,7 +510,16 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
 
   // COMMIT — the whole plan computed cleanly. Stage every new version beside its
   // target, snapshot what is about to be overwritten, then swap them into place.
-  const staged = await stageWrites(writes);
+  // Staging touches the filesystem — a read-only `architecture/`, a full disk,
+  // a target whose pre-image cannot be read. None of that is a bug in loam, and
+  // reporting `internal` sends the reader looking for one; it is the same
+  // answer as any other merge that could not be computed: nothing was written.
+  let staged;
+  try {
+    staged = await stageWrites(writes);
+  } catch (err) {
+    throw new ArchiveFailure("merge-failed", `${message(err)} — nothing was written`);
+  }
   let snapshot = false;
   let createdArchiveDir: string | undefined;
   try {
@@ -462,7 +539,12 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     // nowhere else. Retaining it is harmless: the next archive's writeSnapshot
     // begins by clearing the same directory.
     if (snapshot && failures.length === 0) await quietRm(snapshotDir(featureDir));
-    if (createdArchiveDir !== undefined) await quietRm(createdArchiveDir);
+    // `features/archive/` is shared the moment it exists: another archive can
+    // have moved a whole feature into it between our mkdir and this rollback,
+    // and a recursive remove of "the directory we created" took that feature —
+    // snapshot and all — with it, on OUR failure path, in silence. Empty
+    // directories only, stopping at the first that is not.
+    if (createdArchiveDir !== undefined) await quietPruneEmptyParents(archiveDir, createdArchiveDir);
     // The code is a caller's answer to "can I trust the repo?": merge-failed
     // means yes (rolled back), rollback-incomplete means look at it by hand.
     const wrapped = rollbackError(err, failures);
@@ -479,7 +561,15 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   }
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
   console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${id}\` puts it back`);
-  console.log("  living spec + landscape are now complete + current.");
+  const incomplete = planWarns.filter((w) => w.code === "service.no-model");
+  if (incomplete.length === 0) {
+    console.log("  living spec + landscape are now complete + current.");
+    return;
+  }
+  // The closing line is a claim about the whole docs repo, and it is the line a
+  // reader stops at. Printing it above a service that will fail the next
+  // `validate --all` is how a red fleet gets reported as a finished one.
+  for (const w of incomplete) console.log(`  ⚠ ${w.message}`);
 }
 
 /** The full plan, as files: what a dry run shows instead of doing. */
@@ -777,7 +867,7 @@ async function planLandscapeMerge(
     );
   }
 
-  return { writes: [{ path: landscapePath, content }], addedEls, addedRels };
+  return { writes: [planWrite(landscapePath, content)], addedEls, addedRels };
 }
 
 /**

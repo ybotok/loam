@@ -136,6 +136,7 @@ paths:
     expect(mergeOpenapiPaths(LIVING, "openapi: 3.1.0\ncomponents: {}\n", "pets")).toEqual({
       text: null,
       modified: [],
+      pathItemModified: [],
       removed: [],
       componentsModified: [],
       unresolved: [],
@@ -155,7 +156,9 @@ paths:
     const merged = parse(result.text!);
 
     expect(result.removed).toEqual(["'createPet' (post /pets)"]);
-    expect(merged.paths["/pets"].post).toBeUndefined();
+    // The last method gone takes the path with it: `/pets: {}` is a path the
+    // contract still advertises and nothing answers.
+    expect(merged.paths["/pets"]).toBeUndefined();
     expect(result.text).not.toContain("x-loam-remove");
     // Removal is deliberately not component GC: stale components are safe and
     // may still be referenced elsewhere in the contract.

@@ -29,8 +29,12 @@ import {
 } from "./repo.js";
 import {
   KIND_RE,
+  REQUIREMENT_DIGEST_LENGTH,
+  REQUIREMENT_DIGEST_RE,
+  basedOnDeclarations,
   isRequirementsHeading,
   parseRequirements,
+  requirementDigest,
   requirementIdProblems,
   sectionHeadings,
   type Requirement,
@@ -85,18 +89,25 @@ export async function deltaShapeIssues(
   const services = await featureSpecServices(featureDir, context);
   if (services.length === 0) return issues;
 
-  // What OTHER features in flight are adding. Only built if something is missing
-  // from the living spec — the common case never pays for the scan.
-  let inFlight: Map<string, string> | null = null;
-  const addedElsewhere = async (
+  // What OTHER features in flight claim. Only built when a claim has to be
+  // checked — the common case never pays for the scan.
+  let inFlight: ActiveClaims | null = null;
+  const claimedElsewhere = async (
+    which: keyof ActiveClaims,
     service: string,
     axis: SpecAxis,
     requirement: Pick<Requirement, "id" | "name">,
   ): Promise<string | undefined> => {
-    inFlight ??= await activeAdditions(docsDir, featureId, context);
-    return inFlight.get(key(service, axis, requirementKey(requirement)))
-      ?? inFlight.get(key(service, axis, `name:${requirement.name}`));
+    inFlight ??= await activeClaims(docsDir, featureId, context);
+    const map = inFlight[which];
+    return map.get(key(service, axis, requirementKey(requirement)))
+      ?? map.get(key(service, axis, `name:${requirement.name}`));
   };
+  const addedElsewhere = (
+    service: string,
+    axis: SpecAxis,
+    requirement: Pick<Requirement, "id" | "name">,
+  ): Promise<string | undefined> => claimedElsewhere("added", service, axis, requirement);
 
   // Both requirement-carrying files per service run the same checks — one code
   // path parameterized by filename, the merge's own factoring. `where` names
@@ -146,6 +157,44 @@ export async function deltaShapeIssues(
             code: "delta.requirement-id-duplicate",
             subject: service,
             message: `${where}: Requirement-ID '${problem.id}' is shared by ${problem.requirements.map((name) => `'${name}'`).join(", ")} — one ID may identify only one requirement`,
+          });
+        }
+      }
+
+      // The `Based-On:` pin as a DOCUMENT question, settled before anything is
+      // compared against the living spec: a value that is not a digest, or two
+      // of them on one requirement, is a pin nobody can evaluate — and a pin
+      // that silently protects nothing is worse than no pin at all, because its
+      // author believes they are covered. ADDED is refused for the same reason
+      // rather than ignored: a requirement with no living version cannot have
+      // been written against one, so the line is a misunderstanding today and a
+      // digest-shaped lie on the day someone turns it into a MODIFIED.
+      for (const r of reqs) {
+        const declared = basedOnDeclarations(r);
+        if (declared.length > 1) {
+          issues.push({
+            severity: "error",
+            code: "delta.baseline-invalid",
+            subject: service,
+            message: `${where}: requirement '${r.name}' declares Based-On ${declared.length} times — a delta is written against exactly one living version`,
+          });
+          continue;
+        }
+        const pin = declared[0];
+        if (pin === undefined) continue;
+        if (!REQUIREMENT_DIGEST_RE.test(pin)) {
+          issues.push({
+            severity: "error",
+            code: "delta.baseline-invalid",
+            subject: service,
+            message: `${where}: requirement '${r.name}' has invalid Based-On '${pin}' — expected ${REQUIREMENT_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
+          });
+        } else if (r.kind === "ADDED") {
+          issues.push({
+            severity: "error",
+            code: "delta.baseline-invalid",
+            subject: service,
+            message: `${where}: ADDED requirement '${r.name}' carries Based-On '${pin}', but an added requirement has no living version to be based on — drop the line, or make it MODIFIED`,
           });
         }
       }
@@ -203,8 +252,75 @@ export async function deltaShapeIssues(
                 : `${where}: the ${livingDoc} shares Requirement-ID '${problem.id}' across ${problem.requirements.map((name) => `'${name}'`).join(", ")}, so this delta cannot select one safely`,
         });
       }
+      // Two living requirements under one heading make the delta algebra
+      // disagree with itself on the SAME input: MODIFIED replaces the first
+      // match (findIndex) while REMOVED deletes every match (filter). So one
+      // delta edits one of the twins and leaves the other, and the next one
+      // deletes both — and neither outcome is what an author reading the
+      // living document could have predicted. Gating rather than advisory,
+      // because there is no reading of the delta that makes the merge correct;
+      // the fix is in the living document, and it is one rename.
+      for (const [name, twins] of livingByName) {
+        if (twins.length < 2) continue;
+        issues.push({
+          severity: "error",
+          code: "delta.living-duplicate-requirement",
+          subject: service,
+          message: `${where}: the ${livingDoc} declares ${twins.length} requirements named '${name}' — MODIFIED would rewrite only the first and REMOVED would delete both, so no delta applies to it predictably. Give them distinct names (or distinct Requirement-IDs and headings) first.`,
+        });
+      }
+
       // Lowercased living name -> its exact spelling, for the near-duplicate warning.
       const livingFolded = new Map(living.map((r) => [r.name.toLowerCase(), r.name] as const));
+
+      /**
+       * The pin, against the living requirement this delta actually selects.
+       *
+       * This is the check `delta.modified-conflict` cannot be: that one names
+       * the other feature while BOTH are in flight, and the collision that
+       * happens on a fleet outlives the window. A archives, leaves `features/`,
+       * and stops being an active claim; B revalidates GREEN, and its MODIFIED —
+       * carrying the full text it wrote against the pre-A document — replaces
+       * A's requirement wholesale, scenarios and all, with `+0 ~1 -0` and exit
+       * 0. Nothing downstream can even detect it afterwards: `unarchive A`
+       * refuses `snapshot-stale`, and `--force` takes B out with it.
+       *
+       * A digest of what the author read closes that by not depending on
+       * timing at all. Stale is an ERROR and gates, because there is no reading
+       * of a stale delta under which the merge is what its author meant.
+       * Missing is a warning and does not: a delta adopted from OpenSpec never
+       * had the line, and refusing to archive an entire migrated corpus is not
+       * a safety property, it is an outage.
+       */
+      const checkBaseline = (r: Requirement, selected: Requirement): void => {
+        // A pin the document pass already refused is not also stale: that would
+        // send its author to `loam rebase` for a problem rebase does not fix.
+        const declared = basedOnDeclarations(r);
+        if (declared.length > 1) return;
+        if (r.basedOn !== undefined && !REQUIREMENT_DIGEST_RE.test(r.basedOn)) return;
+        const current = requirementDigest(selected);
+        if (r.basedOn === undefined) {
+          issues.push({
+            severity: "warn",
+            code: "delta.baseline-missing",
+            subject: service,
+            message: `${where}: ${r.kind} requirement '${r.name}' carries no Based-On, so nothing can say whether the living text moved since this delta was written. Run \`loam rebase ${featureId}\` to pin it (Based-On: ${current}).`,
+          });
+          return;
+        }
+        if (r.basedOn === current) return;
+        issues.push({
+          severity: "error",
+          code: "delta.baseline-stale",
+          subject: service,
+          message:
+            `${where}: ${r.kind} requirement '${r.name}' was written against living version ${r.basedOn}, but the ${livingDoc} now holds ${current} — someone landed a change to it in between. ` +
+            (r.kind === "MODIFIED"
+              ? `This MODIFIED carries its FULL new text, so merging it would replace theirs outright.`
+              : `Merging this REMOVED would delete what they landed.`) +
+            ` Re-read the living requirement, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
+        });
+      };
 
       for (const r of reqs) {
         // BASE in a delta file means the requirement is under no delta section, so
@@ -285,6 +401,24 @@ export async function deltaShapeIssues(
           continue;
         }
 
+        // MODIFIED vs MODIFIED on ONE living requirement. The ADDED case has
+        // been caught since delta.added-conflict: two features adding the same
+        // name collide loudly, because the second archive is refused. Two
+        // features CHANGING the same requirement collide in total silence —
+        // both deltas apply cleanly, and whichever archives second replaces
+        // the first's text, scenarios and all, with a version written against
+        // a document that no longer exists. A warning, not a gate: the second
+        // author may well be rewriting on purpose, and only they can say.
+        const alsoChanged = await claimedElsewhere("changed", service, axis, r);
+        if (alsoChanged !== undefined) {
+          issues.push({
+            severity: "warn",
+            code: "delta.modified-conflict",
+            subject: service,
+            message: `${where}: ${r.kind} requirement '${r.name}' is also changed by ${alsoChanged} — both deltas apply cleanly, so whichever archives second REPLACES the other's text wholesale. Agree on one owner, or fold the two changes together.`,
+          });
+        }
+
         if (r.id !== undefined) {
           const idMatches = livingById.get(r.id) ?? [];
           const nameMatches = livingByName.get(r.name) ?? [];
@@ -300,8 +434,16 @@ export async function deltaShapeIssues(
           }
           // A differing heading is the explicit loam rename mechanism: the
           // stable ID selects the old requirement, MODIFIED supplies its new name.
-          if (idMatches.length === 1) continue;
+          if (idMatches.length === 1) {
+            checkBaseline(r, idMatches[0]!);
+            continue;
+          }
         } else if (livingNames.has(r.name)) {
+          // Twins under one heading are already refused
+          // (`delta.living-duplicate-requirement`), and applyRequirementDelta
+          // takes the first either way — so the pin is compared against the
+          // same requirement the merge would rewrite.
+          checkBaseline(r, livingByName.get(r.name)![0]!);
           continue;
         }
 
@@ -331,13 +473,26 @@ export async function deltaShapeIssues(
   return issues;
 }
 
-/** (service, axis, requirement) triples that other ACTIVE features add, mapped to the feature id. */
-async function activeAdditions(
+/**
+ * What other ACTIVE features claim, per (service, axis, requirement): what they
+ * ADD, and — separately — what they CHANGE or REMOVE. The two are separate
+ * indexes because they mean opposite things to the reader: an addition
+ * elsewhere explains why a MODIFIED target is missing today, a change elsewhere
+ * warns that the target is contested. One scan builds both; scanning twice
+ * would double the fleet walk for the same bytes.
+ */
+interface ActiveClaims {
+  added: Map<string, string>;
+  changed: Map<string, string>;
+}
+
+async function activeClaims(
   docsDir: string,
   exclude: string,
   context?: FleetContext,
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+): Promise<ActiveClaims> {
+  const added = new Map<string, string>();
+  const changed = new Map<string, string>();
   for (const feature of await listFeatures(docsDir, {}, context)) {
     if (feature.id === exclude) continue;
     for (const service of feature.services) {
@@ -348,7 +503,8 @@ async function activeAdditions(
           ? parseRequirements(await readFile(path, "utf8"))
           : await context.readRequirements(path);
         for (const r of reqs) {
-          if (r.kind !== "ADDED") continue;
+          const map = r.kind === "ADDED" ? added : r.kind === "MODIFIED" || r.kind === "REMOVED" ? changed : null;
+          if (map === null) continue;
           for (const identity of new Set([requirementKey(r), `name:${r.name}`])) {
             const k = key(service, axis, identity);
             if (!map.has(k)) map.set(k, feature.id);
@@ -357,5 +513,5 @@ async function activeAdditions(
       }
     }
   }
-  return map;
+  return { added, changed };
 }

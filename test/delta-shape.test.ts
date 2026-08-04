@@ -31,7 +31,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
 import { deltaShapeIssues } from "../src/core/delta.js";
 import type { Issue } from "../src/core/issue.js";
 
@@ -56,14 +56,19 @@ The service SHALL authorize a payment before capture.
 - **Then** the payment is authorized
 `;
 
-/** A delta section with one requirement carrying a scenario. */
-function section(heading: string, name: string): string {
+/**
+ * A delta section with one requirement carrying a scenario. `basedOn` pins it
+ * to a living version the way `loam rebase` would — needed wherever the
+ * requirement is MODIFIED/REMOVED and the assertion is that nothing at all is
+ * reported, since an unpinned one draws `delta.baseline-missing`.
+ */
+function section(heading: string, name: string, basedOn?: string): string {
   return `# ${SVC} — delta
 
 ${heading}
 
 ### Requirement: ${name}
-The service SHALL do the thing.
+${basedOn === undefined ? "" : `Based-On: ${basedOn}\n`}The service SHALL do the thing.
 
 #### Scenario: It happens
 - **Given** a trigger
@@ -563,12 +568,13 @@ The service SHALL capture an authorized payment.
 });
 
 describe("MODIFIED and REMOVED against the living spec", () => {
-  it("a MODIFIED requirement that exists is clean", async () => {
+  it("a MODIFIED requirement that exists, pinned to it, is clean", async () => {
     const issues = await shapeIssues({
       [`services/${SVC}/spec.md`]: LIVING,
       "features/FEAT-1-x/specs/payment-service/spec.md": section(
         "## MODIFIED Requirements",
         "Authorize a payment",
+        pinFor(LIVING, "Authorize a payment"),
       ),
     });
     expect(issues).toEqual([]);
@@ -598,7 +604,7 @@ describe("MODIFIED and REMOVED against the living spec", () => {
     expect(codes(issues)).toContain("delta.modified-unknown");
   });
 
-  it("a REMOVED requirement that exists is clean", async () => {
+  it("a REMOVED requirement that exists, pinned to it, is clean", async () => {
     const issues = await shapeIssues({
       [`services/${SVC}/spec.md`]: LIVING,
       "features/FEAT-1-x/specs/payment-service/spec.md": `# delta
@@ -606,6 +612,7 @@ describe("MODIFIED and REMOVED against the living spec", () => {
 ## REMOVED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING, "Authorize a payment")}
 `,
     });
     expect(issues).toEqual([]);
