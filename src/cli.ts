@@ -12,6 +12,9 @@ import { registerUnarchive } from "./commands/unarchive.js";
 import { registerValidate } from "./commands/validate.js";
 import { registerVerify } from "./commands/verify.js";
 import { registerVouch } from "./commands/vouch.js";
+import { registerDoctor } from "./commands/doctor.js";
+import { registerDependencies } from "./commands/dependencies.js";
+import { registerMigrateOpenSpec } from "./commands/migrate-openspec.js";
 import { emitJsonError } from "./core/json.js";
 import { LOAM_VERSION } from "./core/version.js";
 
@@ -39,6 +42,9 @@ registerUnarchive(program);
 registerValidate(program);
 registerVerify(program);
 registerVouch(program);
+registerDoctor(program);
+registerDependencies(program);
+registerMigrateOpenSpec(program);
 
 // Set once a command's action actually runs: every subcommand declares its own
 // `--json`, so past that point the parsed option is the authoritative answer.

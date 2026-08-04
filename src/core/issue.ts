@@ -42,6 +42,16 @@ export type IssueCode =
   | "c4-api.op-pending"
   /** E2's lifecycle shadow — a NEW tagged edge consumes an operation the living provider contract marks `deprecated: true`; advisory, never a gate */
   | "c4-api.op-deprecated"
+  /** a NEW tagged edge consumes an operation this same feature removes */
+  | "c4-api.op-removing"
+  /** an operation-removal marker addresses no living path+method */
+  | "openapi.remove-target-missing"
+  /** an operation-removal marker's id differs from the living operation at that path+method */
+  | "openapi.remove-target-mismatch"
+  /** a REMOVED requirement governs an operation but the feature has no matching removal marker */
+  | "openapi.remove-marker-missing"
+  /** an operation-removal marker is not justified by a REMOVED requirement */
+  | "openapi.remove-marker-unjustified"
   /** W1 — an operation is called but no requirement governs it */
   | "c4.op-ungoverned"
   /** W2 — the feature adds an operation no architecture edge consumes */
@@ -57,6 +67,16 @@ export type IssueCode =
   | "delta.no-delta-sections"
   /** a requirement stranded under a prose heading — archive will not merge it */
   | "delta.requirement-not-merged"
+  /** a Requirement-ID in a delta violates the stable-id grammar */
+  | "delta.requirement-id-invalid"
+  /** one delta requirement declares Requirement-ID more than once */
+  | "delta.requirement-id-repeated"
+  /** one Requirement-ID identifies multiple requirements in a delta */
+  | "delta.requirement-id-duplicate"
+  /** the living spec has malformed/ambiguous IDs and cannot be selected safely */
+  | "delta.living-requirement-id-invalid"
+  /** a delta's stable ID and heading select different living requirements */
+  | "delta.requirement-identity-collision"
   /** MODIFIED a requirement the living spec does not have */
   | "delta.modified-unknown"
   /** REMOVED a requirement the living spec does not have */

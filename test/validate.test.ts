@@ -97,6 +97,24 @@ describe("service mode: model + requirement + API coverage", () => {
     });
   });
 
+  it("rejects x-loam-remove markers in a living OpenAPI contract", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = LIVING_OPENAPI.replace(
+      "      operationId: authorizePayment\n",
+      "      operationId: authorizePayment\n      x-loam-remove: true\n",
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(1);
+      const payload = JSON.parse(res.stdout);
+      expect(payload.targets[0].findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ severity: "error", code: "openapi.remove-marker-living" }),
+        ]),
+      );
+    });
+  });
+
   it("no loam.json in cwd fails with a pointer to `loam init`", async () => {
     const dir = await makeTmpDir();
     try {

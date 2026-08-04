@@ -32,8 +32,9 @@
  *    and a gate in front of shipping is an invitation to rubber-stamp it.
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin.js";
 import { parseRequirements } from "../src/core/spec.js";
@@ -1134,5 +1135,168 @@ describe("the machine contract", () => {
     expect(full.verified).toBe(true);
     // and it agrees with what a read-mode re-run would have said
     expect((await checklist(p)).verified).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Federated, commit-bound service attestations                        */
+/* ------------------------------------------------------------------ */
+
+async function serviceRepo(p: Project, service: string, name = service): Promise<string> {
+  const repo = name === "primary" ? p.workDir : join(dirname(p.workDir), name);
+  await mkdir(repo, { recursive: true });
+  await writeFile(
+    join(repo, "loam.json"),
+    JSON.stringify({ docsDir: p.docsDir, service }, null, 2) + "\n",
+    "utf8",
+  );
+  await writeFile(join(repo, "proof.ts"), "export const proof = true;\n// implementation evidence\n", "utf8");
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["add", "loam.json", "proof.ts"], { cwd: repo });
+  execFileSync(
+    "git",
+    ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", "fixture"],
+    { cwd: repo },
+  );
+  return repo;
+}
+
+async function recordService(
+  repo: string,
+  service: string,
+  evidence = "proof.ts:2",
+): Promise<Record<string, any>> {
+  const view = JSON.parse((await runLoam(repo, "verify", FEAT, "--json")).stdout) as Record<string, any>;
+  const local = (view.claims as Claim[]).filter((claim) => claim.subject === service);
+  await writeFile(
+    join(repo, "answers.json"),
+    JSON.stringify(
+      local.map((claim) => ({ id: claim.id, verdict: "confirmed", evidence: [evidence] })),
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+  const result = await runLoam(repo, "verify", FEAT, "--service", service, "--record", "answers.json", "--json");
+  return { result, json: JSON.parse(result.stdout), local };
+}
+
+describe("federated service verification", () => {
+  it("merges two service repositories, captures each commit, and stays partial until every claim is answered", async () => {
+    const p = await project();
+    const splitRepo = await serviceRepo(p, SPLIT, "primary");
+    const paymentRepo = await serviceRepo(p, "payment-service", "payment-work");
+
+    const split = await recordService(splitRepo, SPLIT);
+    expect(split.result.code, split.result.out).toBe(0);
+    expect(split.json.verified).toBe(false);
+    expect(split.json.summary).toMatchObject({ claims: 4, confirmed: 3, unanswered: 1 });
+    const splitHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: splitRepo, encoding: "utf8" }).trim();
+    expect(split.json.attestations).toEqual([
+      expect.objectContaining({ service: SPLIT, commit: splitHead }),
+    ]);
+
+    const payment = await recordService(paymentRepo, "payment-service");
+    expect(payment.result.code, payment.result.out).toBe(0);
+    expect(payment.json.verified).toBe(true);
+    expect(payment.json.summary).toMatchObject({ claims: 4, confirmed: 4, unanswered: 0 });
+    const paymentHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: paymentRepo, encoding: "utf8" }).trim();
+    expect(payment.json.attestations).toEqual([
+      expect.objectContaining({ service: "payment-service", commit: paymentHead }),
+      expect.objectContaining({ service: SPLIT, commit: splitHead }),
+    ]);
+
+    const read = JSON.parse((await runLoam(splitRepo, "verify", FEAT, "--json")).stdout);
+    expect(read.verified).toBe(true);
+    expect(read.recorded.attestations).toHaveLength(2);
+    expect(read.claims.every((claim: Record<string, unknown>) => claim.verdict === "confirmed")).toBe(true);
+  });
+
+  it("refuses to attest a service different from loam.json", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, "payment-service", "primary");
+    const result = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", "answers.json", "--json");
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout).error.code).toBe("service-mismatch");
+  });
+
+  it("refuses service recording when the repository has no committed git HEAD", async () => {
+    const p = await project();
+    await writeFile(join(p.workDir, "proof.ts"), "proof\n", "utf8");
+    const local = (await claims(p)).filter((claim) => claim.subject === SPLIT);
+    const file = await writeAnswers(
+      p,
+      local.map((claim) => ({ id: claim.id, verdict: "confirmed", evidence: ["proof.ts:1"] })),
+    );
+    const result = await runLoam(p.workDir, "verify", FEAT, "--service", SPLIT, "--record", file, "--json");
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout).error.code).toBe("repository-unavailable");
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it.each([
+    ["parent traversal", "../outside.ts:1"],
+    ["non-canonical path", "./proof.ts:1"],
+    ["line outside the file", "proof.ts:99"],
+  ])("refuses %s evidence", async (_label, evidence) => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const attempt = await recordService(repo, SPLIT, evidence);
+    expect(attempt.result.code).toBe(1);
+    expect(attempt.json.error.code).toBe("answers-unevidenced");
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it("refuses evidence through a symlink that escapes the service repository", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const outside = join(dirname(repo), "outside.ts");
+    await writeFile(outside, "external\n", "utf8");
+    await symlink(outside, join(repo, "escape.ts"));
+    const attempt = await recordService(repo, SPLIT, "escape.ts:1");
+    expect(attempt.result.code).toBe(1);
+    expect(attempt.json.error.message).toContain("symlink");
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it("refuses evidence changed after the commit being attested", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    await writeFile(join(repo, "proof.ts"), "changed after HEAD\n", "utf8");
+    const attempt = await recordService(repo, SPLIT, "proof.ts:1");
+    expect(attempt.result.code).toBe(1);
+    expect(attempt.json.error.message).toContain("uncommitted changes");
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it("prunes stale claims and their attestation when another service records against a changed checklist", async () => {
+    const p = await project();
+    const splitRepo = await serviceRepo(p, SPLIT, "primary");
+    const paymentRepo = await serviceRepo(p, "payment-service", "payment-work");
+    await recordService(splitRepo, SPLIT);
+    const payment = await recordService(paymentRepo, "payment-service");
+    const staleId = payment.local[0]!.id;
+
+    await p.write(
+      `${DIR}/delta.likec4`,
+      (await p.read(`${DIR}/delta.likec4`)).replace("metadata { op 'createSplit' }", "metadata { op 'createSplitV2' }"),
+    );
+    const refreshed = await recordService(splitRepo, SPLIT);
+    expect(refreshed.result.code, refreshed.result.out).toBe(0);
+    const record = parse(await p.read(RECORD)) as Record<string, any>;
+    expect(record.claims.some((claim: Record<string, unknown>) => claim.id === staleId)).toBe(false);
+    expect(record.attestations.map((a: Record<string, unknown>) => a.service)).toEqual([SPLIT]);
+    expect(refreshed.json.verified).toBe(false);
+    expect(refreshed.json.summary.unanswered).toBe(1);
+  });
+
+  it("keeps legacy global --record compatible with arbitrary non-empty evidence", async () => {
+    const p = await project();
+    const result = await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p), "--json");
+    expect(result.code, result.out).toBe(0);
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    expect(doc.schema).toBeUndefined();
+    expect(doc.attestations).toBeUndefined();
+    expect(doc.summary).toEqual({ claims: 4, confirmed: 4, unconfirmed: 0 });
   });
 });

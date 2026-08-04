@@ -195,11 +195,7 @@ Operations: authorizePayment
     expect(issues[0]!.message).not.toContain("'createSplit'");
   });
 
-  it("ops of a REMOVED requirement are not held to the contract (the requirement is being deleted)", async () => {
-    // A feature removing a requirement (and its endpoint) must not be forced to keep
-    // the op defined — E1's rationale is "would corrupt the living docs on archive",
-    // and archiving a REMOVED requirement deletes it. Cf. spec.ts which exempts
-    // REMOVED from the scenario rule for the same reason.
+  it("a REMOVED requirement must explicitly remove every operation it governed", async () => {
     const issues = await coherenceOf({
       // the requirement being removed has to exist to be removable — otherwise the
       // delta-shape check fires first and this rule is never reached
@@ -226,7 +222,99 @@ Operations: legacyOp
 Operations: legacyOp
 `,
     });
-    expect(issues).toEqual([]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      severity: "error",
+      code: "openapi.remove-marker-missing",
+      subject: "payment-split-service",
+    });
+  });
+});
+
+describe("explicit OpenAPI operation removal lifecycle", () => {
+  const livingSpec = `# payment-service
+
+## Requirements
+
+### Requirement: Legacy authorization
+The service SHALL authorize with the legacy flow.
+
+Operations: legacyOp
+
+#### Scenario: Legacy
+- **Given** a request
+- **When** it runs
+- **Then** it completes
+`;
+  const removedSpec = `# delta
+
+## REMOVED Requirements
+
+### Requirement: Legacy authorization
+
+Operations: legacyOp
+`;
+  const livingApi = `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      operationId: legacyOp
+      responses: { "200": { description: ok } }
+`;
+  const removalApi = `openapi: 3.1.0
+paths:
+  /legacy:
+    post:
+      operationId: legacyOp
+      x-loam-remove: true
+`;
+
+  const removalFiles = (): Record<string, string> => ({
+    "services/payment-service/spec.md": livingSpec,
+    "services/payment-service/openapi.yaml": livingApi,
+    [`${FEATURE_REL}/specs/payment-service/spec.md`]: removedSpec,
+    [`${FEATURE_REL}/specs/payment-service/openapi.yaml`]: removalApi,
+  });
+
+  it("accepts an exact marker justified by the REMOVED requirement", async () => {
+    expect(await coherenceOf(removalFiles())).toEqual([]);
+  });
+
+  it("gates a marker whose path+method target is absent", async () => {
+    const files = removalFiles();
+    files[`${FEATURE_REL}/specs/payment-service/openapi.yaml`] = removalApi.replace("/legacy:", "/missing:");
+    const issues = await coherenceOf(files);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ severity: "error", code: "openapi.remove-target-missing" });
+    expect(gatesArchive(issues[0]!)).toBe(true);
+  });
+
+  it("gates a marker whose operationId does not match the living slot", async () => {
+    const files = removalFiles();
+    files["services/payment-service/openapi.yaml"] = livingApi.replace("operationId: legacyOp", "operationId: anotherOp");
+    const issues = await coherenceOf(files);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ severity: "error", code: "openapi.remove-target-mismatch" });
+  });
+
+  it("gates a marker with no REMOVED requirement justification", async () => {
+    const files = removalFiles();
+    delete files[`${FEATURE_REL}/specs/payment-service/spec.md`];
+    const issues = await coherenceOf(files);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ severity: "error", code: "openapi.remove-marker-unjustified" });
+  });
+
+  it("rejects a new tagged edge that consumes an operation removed by the same feature", async () => {
+    const files = removalFiles();
+    files[`${FEATURE_REL}/delta.likec4`] = delta(`  client = softwareSystem 'client'
+  payment = softwareSystem 'payment-service'
+  client -> payment 'Calls legacy' {
+    #FEAT-1
+    metadata { op 'legacyOp' }
+  }`);
+    const issues = await coherenceOf(files);
+    expect(issues.map((i) => i.code)).toContain("c4-api.op-removing");
   });
 });
 

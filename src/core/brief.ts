@@ -100,7 +100,7 @@ views {
     purpose: "the living requirements — what this service is required to do, as it stands today",
     shape: [
       "Frontmatter (below), then a `## Requirements` heading.",
-      "`### Requirement: <name>` — ONE observable behaviour, written with SHALL, testable without reading the code. The name is its identity: `loam archive` matches later changes to it by name, so a rename reads as a different requirement.",
+      "`### Requirement: <name>` — ONE observable behaviour, written with SHALL, testable without reading the code. Add `Requirement-ID: <id>` in its body for stable identity across heading renames; legacy requirements without one continue to match by exact name.",
       "At least one `#### Scenario: <name>` per requirement, with Given/When/Then bullets. This is gated (`requirements.missing-scenarios`) — scenarios are the acceptance criteria and the source for tests.",
       "`Operations: <operationId>[, <operationId>]` in the requirement body names the API operations it governs. Every one must exist in this service's openapi.yaml.",
       "Document what the service DOES today, not what it should do. This is the baseline; changes to it belong in a feature delta.",
@@ -274,6 +274,24 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     severity: "error",
     via: VIA_SERVICE,
     what: "one `### Requirement:` name defined twice in one living spec.md or arch.spec.md — a later merge edits only the first, the rest live on as stale copies",
+  },
+  {
+    code: "spec.requirement-id-invalid",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "an optional `Requirement-ID:` violates `[A-Za-z][A-Za-z0-9._-]{0,127}` — stable identities must be portable and unambiguous",
+  },
+  {
+    code: "spec.requirement-id-repeated",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "one requirement declares `Requirement-ID:` more than once — keep exactly one identity line",
+  },
+  {
+    code: "spec.requirement-id-duplicate",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "one stable Requirement-ID identifies multiple requirements in one spec.md or arch.spec.md",
   },
   // The keep-last pair: a second `Operations:` / `Covers:` line in one
   // requirement body REPLACES the first — assignment, not append — so the

@@ -5,6 +5,7 @@ import {
   collectRefs,
   mergeOpenapiPaths,
   resolvePointer,
+  stripOpenapiRemovalMarkers,
 } from "../src/core/openapi-merge.js";
 
 const LIVING = `# keep this comment
@@ -135,9 +136,61 @@ paths:
     expect(mergeOpenapiPaths(LIVING, "openapi: 3.1.0\ncomponents: {}\n", "pets")).toEqual({
       text: null,
       modified: [],
+      removed: [],
       componentsModified: [],
       unresolved: [],
     });
+  });
+
+  it("removes only the exact living path+method target and never persists the marker", () => {
+    const feature = `openapi: 3.1.0
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      x-loam-remove: true
+`;
+
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+    const merged = parse(result.text!);
+
+    expect(result.removed).toEqual(["'createPet' (post /pets)"]);
+    expect(merged.paths["/pets"].post).toBeUndefined();
+    expect(result.text).not.toContain("x-loam-remove");
+    // Removal is deliberately not component GC: stale components are safe and
+    // may still be referenced elsewhere in the contract.
+    expect(merged.components.schemas.Pet).toBeDefined();
+  });
+
+  it("does not delete a different living operation under an approved mismatched marker", () => {
+    const feature = `paths:
+  /pets:
+    post:
+      operationId: deletePet
+      x-loam-remove: true
+`;
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+    const merged = parse(result.text!);
+
+    expect(result.removed).toEqual([]);
+    expect(merged.paths["/pets"].post.operationId).toBe("createPet");
+    expect(result.text).not.toContain("x-loam-remove");
+  });
+
+  it("strips removal-only paths before an approved create can become living", () => {
+    const feature = `openapi: 3.1.0
+info: { title: new-service, version: "1" }
+paths:
+  /ghost:
+    post:
+      operationId: ghostOp
+      x-loam-remove: true
+`;
+    const text = stripOpenapiRemovalMarkers(feature, "new-service");
+    const cleaned = parse(text);
+
+    expect(text).not.toContain("x-loam-remove");
+    expect(cleaned.paths["/ghost"]).toBeUndefined();
   });
 
   it("uses a typed error contract for an unreadable document", () => {

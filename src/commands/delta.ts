@@ -88,6 +88,7 @@ export function registerDelta(program: Command): void {
       if (json) {
         const reqJson = (r: Requirement): Record<string, unknown> => ({
           kind: r.kind,
+          id: r.id,
           name: r.name,
           text: r.text.join("\n").trim(),
           operations: r.operations,

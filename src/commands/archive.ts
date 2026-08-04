@@ -42,8 +42,13 @@ import {
   servicePaths,
   SPEC_AXES,
 } from "../core/repo.js";
-import { operationIds } from "../core/openapi.js";
-import { mergeOpenapiPaths, OpenapiMergeError, type OpenapiMergeResult } from "../core/openapi-merge.js";
+import { operations } from "../core/openapi.js";
+import {
+  mergeOpenapiPaths,
+  OpenapiMergeError,
+  stripOpenapiRemovalMarkers,
+  type OpenapiMergeResult,
+} from "../core/openapi-merge.js";
 import { featureCoherence } from "../core/coherence.js";
 import {
   parseRequirements,
@@ -247,6 +252,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   // ran before the plan, but only the computed merge can see these; they block
   // the same way, and --approve overrides them the same way.
   const planGates: Issue[] = [];
+  const openapiRemovals: Array<{ service: string; operations: string[] }> = [];
 
   // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
@@ -301,9 +307,15 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     if (!existsSync(featOpenapi)) continue;
     const featText = await readFile(featOpenapi, "utf8");
     const livingOpenapi = servicePaths(config.docsDir, svc).openapi;
-    const ops = await operationIds(featOpenapi);
+    const featureOps = await operations(featOpenapi);
+    const ops = featureOps.filter((op) => !op.remove).map((op) => op.id);
     if (!existsSync(livingOpenapi)) {
-      writes.push({ path: livingOpenapi, content: featText });
+      // A removal against a non-existent contract is gated by coherence. Keep
+      // the feature-only marker out of living docs even under --approve.
+      const content = featureOps.some((op) => op.remove)
+        ? stripOpenapiRemovalMarkers(featText, svc)
+        : featText;
+      writes.push({ path: livingOpenapi, content });
       say(`  openapi: ${svc} — created (${ops.join(", ")})`);
     } else {
       let merge: OpenapiMergeResult;
@@ -313,10 +325,14 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
         if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
         throw err;
       }
-      const { text, modified, componentsModified, unresolved } = merge;
+      const { text, modified, removed, componentsModified, unresolved } = merge;
       if (text !== null) {
         writes.push({ path: livingOpenapi, content: text });
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
+      }
+      if (removed.length > 0) {
+        openapiRemovals.push({ service: svc, operations: removed });
+        for (const label of removed) say(`      - removes ${label}`);
       }
       for (const label of modified) {
         planWarns.push({
@@ -415,6 +431,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
     plan,
     warnings: warnings.map(issueJson),
     overridden: overridden.map(issueJson),
+    openapiRemovals,
   });
 
   if (dryRun) {

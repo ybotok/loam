@@ -118,6 +118,7 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
         errors: model.errors.map(errorText),
       },
       requirements: reqs.map((r) => ({
+        id: r.id,
         name: r.name,
         kind: r.kind,
         scenarios: r.scenarios.length,

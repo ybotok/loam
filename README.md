@@ -78,6 +78,8 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 |---|---|
 | `loam init --docs <dir>` | Point at (and scaffold) the single shared docs repo; write local `loam.json`, `AGENTS.md` and slash-command wrappers for your AI tools (`--tools claude,cursor,…\|all`). |
 | `loam list [services\|features]` | What is in the docs repo, and what is missing from it. |
+| `loam doctor` | Read-only preflight for runtime, config, docs-repo access, fleet roots, counts, and the current service binding. Blockers exit 1; incomplete optional bindings stay warnings. |
+| `loam dependencies [<FEAT>]` | Derive the active-feature dependency graph and same-identity conflicts from requirement deltas and OpenAPI operationIds. Optional focus includes transitive prerequisites. |
 | `loam new <FEAT> --title <t>` | Scaffold a feature: intent, C4 delta, a requirement delta per service. Validates clean out of the box. |
 | `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
 | `loam adopt --service <id>` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, the checks that follow — and the ones that do not exist. Writes nothing. |
@@ -88,10 +90,13 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
 | `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on gating coherence issues. `--dry-run` prints the plan and writes nothing. |
 | `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
+| `loam migrate-openspec <root>` | Strict dry-run inventory of an OpenSpec checkout/workspace: capabilities, active/archive changes, counts, RENAMED/unsupported shapes, and capability→service decisions still needing a human. |
 
 Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope keeps three different questions apart — `ok` (the command ran), `valid` (the docs pass), `verified` (somebody says the code was built, and showed evidence).
 
 `archive` is the one command that rewrites the source of truth, so it computes the whole merge before touching disk, commits each file through a temp-file rename, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature, which is what makes `unarchive` an undo rather than a guess. **`verify` does not gate `archive`** — coherence gates because loam *computed* it; a verdict is somebody's word about code loam never read, and a gate in front of shipping only teaches everyone that the cheapest way past it is to say yes.
+
+API retirement is explicit and reviewable: a feature marks the exact path/method operation with `x-loam-remove: true` and removes the governing requirement in the same delta. Validation refuses stale, mismatched, or unjustified markers; archive deletes the method without persisting the marker or garbage-collecting components, and reports the removals in both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
 
 ## Working with AI agents
 

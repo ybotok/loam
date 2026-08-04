@@ -228,6 +228,8 @@ function specTemplate(featureId: string, service: string): string {
 ## ADDED Requirements
 
 ### Requirement: TODO — name the behaviour
+Requirement-ID: ${featureId}.${service}.requirement
+
 The service SHALL <observable behaviour, testable without reading the code>.
 
 <!-- Operations: createSplit

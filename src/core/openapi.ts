@@ -14,16 +14,23 @@ import { featureSpecPaths, servicePaths } from "./repo.js";
  */
 export const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 
-/** One operation as the reader sees it: its id, and whether the contract marks it `deprecated: true`. */
+/** One operation as the reader sees it, including loam's feature-only removal marker. */
 export interface Operation {
   id: string;
   /**
    * The standard per-operation OpenAPI `deprecated` flag — lifecycle
-   * visibility, the documented first step of retiring an op. loam has no
-   * removal semantics: the operation stays defined and callable until a human
-   * deletes it from the contract.
+   * visibility, the documented first step of retiring an op.
    */
   deprecated: boolean;
+  /**
+   * `x-loam-remove: true` asks a FEATURE delta to remove this exact operation
+   * on archive. The marker is never a callable operation and is illegal in a
+   * living contract.
+   */
+  remove: boolean;
+  /** Exact slot the marker/upsert addresses; removal is deliberately path+method-safe. */
+  path: string;
+  method: string;
 }
 
 /** The parse of one OpenAPI document: its operations, and whether the file could be read at all. */
@@ -75,14 +82,20 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
   const paths = (doc as { paths?: unknown } | null)?.paths;
   if (!paths || typeof paths !== "object") return { ops: [], unreadable: false };
   const ops = new Map<string, Operation>();
-  for (const item of Object.values(paths as Record<string, unknown>)) {
+  for (const [path, item] of Object.entries(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
     for (const [method, op] of Object.entries(item as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method)) continue;
       if (!op || typeof op !== "object") continue;
       const id = (op as Record<string, unknown>)["operationId"];
       if (typeof id === "string" && id.length > 0 && !ops.has(id)) {
-        ops.set(id, { id, deprecated: (op as Record<string, unknown>)["deprecated"] === true });
+        ops.set(id, {
+          id,
+          deprecated: (op as Record<string, unknown>)["deprecated"] === true,
+          remove: (op as Record<string, unknown>)["x-loam-remove"] === true,
+          path,
+          method,
+        });
       }
     }
   }
@@ -100,9 +113,8 @@ export async function operationIds(openapiPath: string, context?: FleetContext):
 }
 
 /**
- * The operationIds a service provides — its living `openapi.yaml`, plus a feature's
- * `openapi.yaml` delta for that service (a feature can add endpoints to a service, or
- * define a brand-new service's API).
+ * The operationIds a service will provide after a feature is applied: living
+ * operations, plus feature upserts, minus explicit feature removals.
  */
 export async function serviceOperationIds(
   docsDir: string,
@@ -111,10 +123,14 @@ export async function serviceOperationIds(
   context?: FleetContext,
 ): Promise<string[]> {
   if (context !== undefined) return context.serviceOperationIds(docsDir, service, featureDir);
-  const ids = new Set<string>();
+  const ids = new Set(
+    (await operations(servicePaths(docsDir, service).openapi)).filter((op) => !op.remove).map((op) => op.id),
+  );
   if (featureDir) {
-    for (const id of await operationIds(featureSpecPaths(featureDir, service).openapi)) ids.add(id);
+    for (const op of await operations(featureSpecPaths(featureDir, service).openapi)) {
+      if (op.remove) ids.delete(op.id);
+      else ids.add(op.id);
+    }
   }
-  for (const id of await operationIds(servicePaths(docsDir, service).openapi)) ids.add(id);
   return [...ids];
 }

@@ -27,14 +27,17 @@
  * cheapest way past a gate is always to say yes.
  */
 import type { Command } from "commander";
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
+import { resolvePortableFileInside } from "../core/path-safety.js";
 import { featuresDir, resolveFeature } from "../core/repo.js";
 import { readCucumberReport, runnerAnswers } from "../core/results.js";
 import {
   buildVerification,
+  buildFederatedVerification,
   checkAnswers,
   featureChecklist,
   readVerification,
@@ -49,6 +52,7 @@ import {
 interface VerifyOptions {
   record?: string;
   results?: string;
+  service?: string;
   json?: boolean;
 }
 
@@ -74,6 +78,10 @@ export function registerVerify(program: Command): void {
       "--results <file>",
       "answer the scenario.tested claims mechanically from a cucumber JSON test report",
     )
+    .option(
+      "--service <id>",
+      "record only this service's claims, bound to the current repository commit",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: VerifyOptions) => {
       const json = opts.json === true;
@@ -84,6 +92,13 @@ export function registerVerify(program: Command): void {
         return;
       }
       const { docsDir } = config;
+      if (opts.service !== undefined && config.service !== undefined && config.service !== opts.service) {
+        return fail(
+          json,
+          "service-mismatch",
+          `This repository is configured as service '${config.service}', so it cannot attest claims for '${opts.service}'.`,
+        );
+      }
 
       // Archived features resolve too: a shipped feature's verification is worth
       // reading back, and it travelled into the archive with everything else.
@@ -126,7 +141,20 @@ export function registerVerify(program: Command): void {
 /* ------------------------------------------------------------------ */
 
 function statuses(checklist: Checklist, recorded: Verification | null): ClaimStatus[] {
-  const byId = new Map((recorded?.claims ?? []).map((c) => [c.id, c]));
+  const subjects = new Map(checklist.claims.map((claim) => [claim.id, claim.subject]));
+  const attested =
+    recorded?.schema !== 2
+      ? null
+      : new Set(
+          (recorded.attestations ?? []).flatMap((attestation) =>
+            attestation.claims.filter((id) => subjects.get(id) === attestation.service),
+          ),
+        );
+  const byId = new Map(
+    (recorded?.claims ?? [])
+      .filter((claim) => attested === null || attested.has(claim.id))
+      .map((claim) => [claim.id, claim]),
+  );
   return checklist.claims.map((c) => {
     const answer = byId.get(c.id);
     return {
@@ -177,6 +205,7 @@ function report(
               recorded: recorded.recorded,
               checklist: recorded.checklist,
               stale,
+              ...(recorded.attestations === undefined ? {} : { attestations: recorded.attestations }),
             },
       claims,
     });
@@ -203,6 +232,11 @@ function report(
     );
     if (stale) {
       console.log("  STALE: the feature changed after this was recorded. Answer the claims above again.");
+    }
+    for (const attestation of recorded.attestations ?? []) {
+      console.log(
+        `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}, ${plural(attestation.claims.length, "claim")}).`,
+      );
     }
   }
   if (!verified) {
@@ -243,6 +277,7 @@ function reportFrozen(
               path: repoPath(docsDir, verificationPath(featureDir)),
               recorded: v.recorded,
               checklist: v.checklist,
+              ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
             },
       claims: v === null ? [] : v.claims,
     });
@@ -270,6 +305,11 @@ function reportFrozen(
   console.log(
     "  This checklist is frozen at record time: the feature is archived and its claims are not re-derived.",
   );
+  for (const attestation of v.attestations ?? []) {
+    console.log(
+      `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}).`,
+    );
+  }
 }
 
 const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "✗", unanswered: "?" };
@@ -290,12 +330,23 @@ async function record(
   opts: VerifyOptions,
   json: boolean,
 ): Promise<void> {
+  const service = opts.service;
+  const scopedClaims =
+    service === undefined ? checklist.claims : checklist.claims.filter((claim) => claim.subject === service);
+  if (service !== undefined && scopedClaims.length === 0) {
+    return fail(
+      json,
+      "unknown-service",
+      `The current ${checklist.feature} checklist has no claims owned by service '${service}'.`,
+    );
+  }
+
   // The runner's half: with --results, every scenario.tested claim is the
   // report's to answer — matched by digest, confirmed only by a green run.
   const runnerClaims =
-    opts.results === undefined ? [] : checklist.claims.filter((c) => c.kind === "scenario.tested");
+    opts.results === undefined ? [] : scopedClaims.filter((c) => c.kind === "scenario.tested");
   const agentClaims =
-    opts.results === undefined ? checklist.claims : checklist.claims.filter((c) => c.kind !== "scenario.tested");
+    opts.results === undefined ? scopedClaims : scopedClaims.filter((c) => c.kind !== "scenario.tested");
 
   let fromRunner: Answer[] = [];
   if (opts.results !== undefined) {
@@ -344,7 +395,29 @@ async function record(
   );
   if (!checked.ok) return fail(json, checked.code, checked.message);
 
-  const verification = buildVerification(checklist, [...fromRunner, ...checked.answers], today(new Date()));
+  let serviceCommit: string | undefined;
+  if (service !== undefined) {
+    const commit = await repositoryCommit(process.cwd());
+    if (!commit.ok) return fail(json, "repository-unavailable", commit.message);
+    serviceCommit = commit.commit;
+    const evidenceFailure = await validateServiceEvidence(checked.answers, process.cwd(), serviceCommit);
+    if (evidenceFailure !== null) return fail(json, "answers-unevidenced", evidenceFailure);
+  }
+
+  const recorded = today(new Date());
+  let verification: Verification;
+  if (service === undefined) {
+    verification = buildVerification(checklist, [...fromRunner, ...checked.answers], recorded);
+  } else {
+    verification = buildFederatedVerification(
+      checklist,
+      service,
+      [...fromRunner, ...checked.answers],
+      await readVerification(featureDir),
+      recorded,
+      serviceCommit!,
+    );
+  }
   const path = await writeVerification(featureDir, verification);
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
 
@@ -364,6 +437,7 @@ async function record(
       verified,
       recorded: verification.recorded,
       summary: verification.summary,
+      ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
       unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
     });
     return;
@@ -379,14 +453,127 @@ async function record(
         `${opts.record === undefined ? "" : `, ${checked.answers.length} by ${opts.record}`}.`,
     );
   }
+  if (service !== undefined) {
+    const attestation = verification.attestations?.find((item) => item.service === service);
+    if (attestation !== undefined) {
+      console.log(`  ${service} attested at git commit ${attestation.commit}.`);
+    }
+  }
   for (const c of unconfirmed) {
     console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
   }
+  const unanswered = verification.summary.unanswered ?? 0;
   console.log(
-    unconfirmed.length === 0
-      ? "\n  The record travels with the feature into features/archive/."
-      : "\n  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
+    unanswered > 0
+      ? `\n  Partial federation — ${plural(unanswered, "claim")} remain unanswered for their owning service repositories.`
+      : unconfirmed.length === 0
+        ? "\n  The record travels with the feature into features/archive/."
+        : "\n  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
   );
+}
+
+/**
+ * In federated mode, a confirmation is accepted only when every evidence item
+ * resolves to a real line in this repository. Legacy global mode deliberately
+ * keeps its original, looser evidence contract for backward compatibility.
+ */
+async function validateServiceEvidence(
+  answers: Answer[],
+  repoDir: string,
+  commit: string,
+): Promise<string | null> {
+  for (const answer of answers) {
+    if (answer.verdict !== "confirmed") continue;
+    for (const evidence of answer.evidence) {
+      const match = /^(.+):([1-9]\d*)$/.exec(evidence);
+      if (match === null) {
+        return `Claim ${answer.id} has evidence '${evidence}' — service evidence must be a canonical relative file:line.`;
+      }
+      const relativePath = match[1]!;
+      const line = Number(match[2]);
+      let absolutePath: string;
+      try {
+        absolutePath = resolvePortableFileInside(repoDir, relativePath, `evidence for ${answer.id}`);
+      } catch (err) {
+        return `Claim ${answer.id} has unsafe evidence '${evidence}': ${err instanceof Error ? err.message : String(err)}`;
+      }
+      try {
+        const info = await stat(absolutePath);
+        if (!info.isFile()) {
+          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' is not a regular file.`;
+        }
+        const source = await readFile(absolutePath, "utf8");
+        const lines = source.split(/\r\n|\n|\r/).length;
+        if (line > lines) {
+          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${lines} line(s).`;
+        }
+        const committed = await committedFile(repoDir, commit, relativePath);
+        if (!committed.ok) {
+          return `Claim ${answer.id} has evidence '${evidence}' that is not bound to ${commit.slice(0, 12)}: ${committed.message}`;
+        }
+        const committedLines = committed.source.split(/\r\n|\n|\r/).length;
+        if (line > committedLines) {
+          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${committedLines} line(s) at ${commit.slice(0, 12)}.`;
+        }
+      } catch (err) {
+        return `Claim ${answer.id} has unreadable evidence '${evidence}': ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+  }
+  return null;
+}
+
+type CommitResult = { ok: true; commit: string } | { ok: false; message: string };
+type CommittedFileResult = { ok: true; source: string } | { ok: false; message: string };
+
+/** Require the evidence blob to exist at HEAD and have no uncommitted edits. */
+async function committedFile(repoDir: string, commit: string, path: string): Promise<CommittedFileResult> {
+  const clean = await git(repoDir, ["diff", "--quiet", commit, "--", path]);
+  if (clean.code !== 0) {
+    return {
+      ok: false,
+      message: clean.code === 1 ? `'${path}' has uncommitted changes` : clean.stderr || "git diff failed",
+    };
+  }
+  const blob = await git(repoDir, ["show", `${commit}:${path}`]);
+  if (blob.code !== 0) {
+    return { ok: false, message: blob.stderr || `'${path}' is not tracked by that commit` };
+  }
+  return { ok: true, source: blob.stdout };
+}
+
+interface GitResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+function git(repoDir: string, args: string[]): Promise<GitResult> {
+  return new Promise((done) => {
+    execFile("git", ["-C", repoDir, ...args], { encoding: "utf8" }, (error, stdout, stderr) => {
+      done({
+        code: error === null ? 0 : ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1),
+        stdout,
+        stderr: stderr.trim(),
+      });
+    });
+  });
+}
+
+/** Resolve HEAD without a shell, so repository paths remain data, never code. */
+async function repositoryCommit(repoDir: string): Promise<CommitResult> {
+  const result = await git(repoDir, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  if (result.code !== 0) {
+    return {
+      ok: false,
+      message: `Federated verification requires a git repository with a committed HEAD: ${result.stderr || "git rev-parse failed"}`,
+    };
+  }
+  const commit = result.stdout.trim();
+  if (!/^[0-9a-f]{40,64}$/i.test(commit)) {
+    return { ok: false, message: `Git returned an invalid HEAD commit '${commit}'.` };
+  }
+  return { ok: true, commit };
 }
 
 /**

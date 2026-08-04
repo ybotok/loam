@@ -26,6 +26,9 @@ import { registerUnarchive } from "../../src/commands/unarchive.js";
 import { registerValidate } from "../../src/commands/validate.js";
 import { registerVerify } from "../../src/commands/verify.js";
 import { registerVouch } from "../../src/commands/vouch.js";
+import { registerDoctor } from "../../src/commands/doctor.js";
+import { registerDependencies } from "../../src/commands/dependencies.js";
+import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js";
 
 export interface RunResult {
   /** process.exitCode after the command (0 if it never set one). */
@@ -164,6 +167,9 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerValidate(program);
     registerVerify(program);
     registerVouch(program);
+    registerDoctor(program);
+    registerDependencies(program);
+    registerMigrateOpenSpec(program);
     await program.parseAsync(["node", "loam", ...args]);
   } finally {
     console.log = origLog;

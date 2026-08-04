@@ -8,6 +8,8 @@ export interface OpenapiMergeResult {
   text: string | null;
   /** Labels of existing operations overwritten with different content. */
   modified: string[];
+  /** Labels of living operations deleted by `x-loam-remove: true` markers. */
+  removed: string[];
   /** `<kind>/<name>` of living components overwritten with different content. */
   componentsModified: string[];
   /** Local refs reachable from merged content that resolve in neither document. */
@@ -30,6 +32,40 @@ export class OpenapiMergeError extends Error {
 }
 
 /**
+ * Remove feature-only operation-removal markers before a feature contract is
+ * used to create a brand-new living document. Normally coherence refuses this
+ * shape because there cannot be a removal target; this guard also keeps
+ * `--approve` from ever persisting the marker into living docs.
+ */
+export function stripOpenapiRemovalMarkers(featureText: string, service: string): string {
+  const feature = parseDocument(featureText);
+  if (feature.errors.length > 0) {
+    throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
+  }
+  const paths = feature.get("paths");
+  if (!isMap(paths)) return featureText;
+  for (const item of paths.items) {
+    const path = scalarKey(item.key);
+    if (!isMap(item.value)) continue;
+    const removals: string[] = [];
+    for (const method of item.value.items) {
+      const m = scalarKey(method.key);
+      if (!HTTP_METHODS.has(m)) continue;
+      const plain = feature.getIn(["paths", path, m]);
+      if (isMap(plain) && plain.get("x-loam-remove") === true) removals.push(m);
+    }
+    for (const method of removals) feature.deleteIn(["paths", path, method]);
+    const remaining = feature.getIn(["paths", path]);
+    if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
+  }
+  try {
+    return feature.toString();
+  } catch (error) {
+    throw new OpenapiMergeError("feature", service, errorMessage(error));
+  }
+}
+
+/**
  * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
  * text splicing). A feature document without paths is a successful no-op.
  * The merged operations' local component-ref closure rides along recursively;
@@ -46,7 +82,7 @@ export function mergeOpenapiPaths(
   }
   const featPaths = feature.get("paths");
   if (!isMap(featPaths) || featPaths.items.length === 0) {
-    return { text: null, modified: [], componentsModified: [], unresolved: [] };
+    return { text: null, modified: [], removed: [], componentsModified: [], unresolved: [] };
   }
   let featPlain: unknown;
   try {
@@ -69,6 +105,7 @@ export function mergeOpenapiPaths(
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
   const modified: string[] = [];
+  const removed: string[] = [];
   for (const item of featPaths.items) {
     const path = scalarKey(item.key);
     const featItem = item.value;
@@ -80,13 +117,28 @@ export function mergeOpenapiPaths(
         const before = living.getIn(["paths", path, m]);
         const beforePlain = plainChild(plainChild(plainChild(livingPlain, "paths"), path), m);
         const afterPlain = plainChild(featItemPlain, m);
+        if (HTTP_METHODS.has(m) && isRemoval(afterPlain)) {
+          // Coherence validates the marker and gates absent/mismatched targets.
+          // The merge remains defensive under --approve: never delete a
+          // different operation merely because it occupies the requested slot.
+          if (
+            before !== undefined &&
+            operationIdOf(beforePlain) !== undefined &&
+            operationIdOf(beforePlain) === operationIdOf(afterPlain)
+          ) {
+            removed.push(opLabel(beforePlain, afterPlain, m, path));
+            living.deleteIn(["paths", path, m]);
+          }
+          continue;
+        }
         if (HTTP_METHODS.has(m) && before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
           modified.push(opLabel(beforePlain, afterPlain, m, path));
         }
         living.setIn(["paths", path, m], afterPlain);
       }
     } else {
-      living.setIn(["paths", path], featItemPlain);
+      const clean = withoutRemovalMarkers(featItemPlain);
+      if (clean !== undefined) living.setIn(["paths", path], clean);
     }
   }
 
@@ -126,7 +178,7 @@ export function mergeOpenapiPaths(
 
   for (const item of featPaths.items) {
     const path = scalarKey(item.key);
-    walk(plainChild(plainChild(featPlain, "paths"), path), `paths ${path}`);
+    walk(withoutRemovalMarkers(plainChild(plainChild(featPlain, "paths"), path)), `paths ${path}`);
   }
 
   for (const { kind, name, value } of copies) {
@@ -145,7 +197,7 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
-  return { text, modified, componentsModified, unresolved };
+  return { text, modified, removed, componentsModified, unresolved };
 }
 
 /** Every `$ref` string value anywhere in a plain JS tree, in document order. */
@@ -189,16 +241,33 @@ export function resolvePointer(root: unknown, ref: string): { found: boolean; va
 
 /** Name an overwritten operation by its operationId (feature's, else living's), or path+method. */
 export function opLabel(before: unknown, after: unknown, method: string, path: string): string {
-  const idOf = (node: unknown): string | undefined => {
-    const value = isMap(node)
-      ? node.get("operationId")
-      : node !== null && typeof node === "object"
-        ? (node as Record<string, unknown>)["operationId"]
-        : undefined;
-    return typeof value === "string" && value.length > 0 ? value : undefined;
-  };
-  const operation = idOf(after) ?? idOf(before);
+  const operation = operationIdOf(after) ?? operationIdOf(before);
   return operation !== undefined ? `'${operation}' (${method} ${path})` : `${method} ${path}`;
+}
+
+/** Is this operation node a feature-only explicit removal marker? */
+function isRemoval(node: unknown): boolean {
+  return node !== null &&
+    typeof node === "object" &&
+    (node as Record<string, unknown>)["x-loam-remove"] === true;
+}
+
+/** Read an operationId from a YAML or plain operation node. */
+function operationIdOf(node: unknown): string | undefined {
+  const value = isMap(node)
+    ? node.get("operationId")
+    : node !== null && typeof node === "object"
+      ? (node as Record<string, unknown>)["operationId"]
+      : undefined;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Copy a path item without feature-only removal operations. */
+function withoutRemovalMarkers(node: unknown): unknown {
+  if (node === null || typeof node !== "object" || Array.isArray(node)) return node;
+  const entries = Object.entries(node as Record<string, unknown>)
+    .filter(([method, value]) => !(HTTP_METHODS.has(method) && isRemoval(value)));
+  return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }
 
 /** Convert a YAML scalar key into the string used by OpenAPI maps. */

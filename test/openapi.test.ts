@@ -545,6 +545,33 @@ ${paths}`;
     );
   });
 
+  it("applies feature upserts and removals to the living operation set", async () => {
+    await withDir(
+      {
+        "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", [
+          "authorizePayment",
+          "capturePayment",
+        ]),
+        "docs/features/FEAT-9-x/specs/payment-service/openapi.yaml": `openapi: 3.1.0
+paths:
+  /p0:
+    post:
+      operationId: authorizePayment
+      x-loam-remove: true
+  /refund:
+    post:
+      operationId: refundPayment
+      responses: { "200": { description: ok } }
+`,
+      },
+      async (root) => {
+        const docsDir = join(root, "docs");
+        const ids = await serviceOperationIds(docsDir, "payment-service", join(docsDir, "features", "FEAT-9-x"));
+        expect(ids).toEqual(["capturePayment", "refundPayment"]);
+      },
+    );
+  });
+
   it("neither living nor feature openapi exists -> []", async () => {
     await withDir({ "docs/loam.docs.json": "{}\n" }, async (root) => {
       const docsDir = join(root, "docs");
@@ -631,8 +658,8 @@ paths:
           description: OK
 `;
     expect(await extractOps(doc)).toEqual([
-      { id: "authorizePayment", deprecated: true },
-      { id: "authorizePaymentV2", deprecated: false },
+      { id: "authorizePayment", deprecated: true, remove: false, path: "/payments/authorize", method: "post" },
+      { id: "authorizePaymentV2", deprecated: false, remove: false, path: "/payments/v2/authorize", method: "post" },
     ]);
   });
 
@@ -650,7 +677,9 @@ paths:
         "200":
           description: OK
 `;
-    expect(await extractOps(doc)).toEqual([{ id: "quotedFlag", deprecated: false }]);
+    expect(await extractOps(doc)).toEqual([
+      { id: "quotedFlag", deprecated: false, remove: false, path: "/p", method: "post" },
+    ]);
   });
 
   it("the flag rides the same 8-HTTP-method discipline — a vendor extension's deprecated op stays invisible", async () => {
@@ -669,7 +698,9 @@ paths:
       operationId: ghostOp
       deprecated: true
 `;
-    expect(await extractOps(doc)).toEqual([{ id: "realOp", deprecated: false }]);
+    expect(await extractOps(doc)).toEqual([
+      { id: "realOp", deprecated: false, remove: false, path: "/p", method: "post" },
+    ]);
   });
 
   it("operationIds stays the same set, in the same order — it is operations() minus the flag", async () => {
@@ -693,6 +724,18 @@ paths:
           description: OK
 `;
     expect(await extract(doc)).toEqual(["opA", "opB"]);
+  });
+
+  it("reads an exact feature removal marker beside its operation slot", async () => {
+    const doc = `paths:
+  /legacy:
+    delete:
+      operationId: deleteLegacy
+      x-loam-remove: true
+`;
+    expect(await extractOps(doc)).toEqual([
+      { id: "deleteLegacy", deprecated: false, remove: true, path: "/legacy", method: "delete" },
+    ]);
   });
 });
 
@@ -738,7 +781,9 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
   it("a valid contract reads exactly as before, flag down", async () => {
     const res = await readOf(LIVING_OPENAPI);
     expect(res.unreadable).toBe(false);
-    expect(res.ops).toEqual([{ id: "authorizePayment", deprecated: false }]);
+    expect(res.ops).toEqual([
+      { id: "authorizePayment", deprecated: false, remove: false, path: "/payments/authorize", method: "post" },
+    ]);
   });
 
   it("operations() is readOpenapi() minus the flag — broken input still degrades to []", async () => {

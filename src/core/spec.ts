@@ -16,6 +16,11 @@ export interface Scenario {
 export interface Requirement {
   /** BASE for a living spec; ADDED/MODIFIED/REMOVED inside a feature delta. */
   kind: DeltaKind;
+  /**
+   * Stable identity from a `Requirement-ID:` body line. Optional so existing
+   * OpenSpec-compatible documents continue to use their heading as identity.
+   */
+  id?: string;
   name: string;
   text: string[];
   /** OpenAPI operationIds this requirement governs, from an `Operations:` line. */
@@ -45,6 +50,55 @@ export interface Requirement {
 export const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
 const REQ_RE = /^###\s+Requirement:\s*(.+?)\s*$/;
 const SCN_RE = /^####\s+Scenario:\s*(.+?)\s*$/;
+const REQUIREMENT_ID_LINE_RE = /^\s*Requirement-ID:\s*(.*?)\s*$/i;
+
+/** Portable, review-friendly stable IDs. Case-sensitive by design. */
+export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+
+export type RequirementIdProblem =
+  | { kind: "invalid"; requirement: string; value: string }
+  | { kind: "repeated"; requirement: string; values: string[] }
+  | { kind: "duplicate"; id: string; requirements: string[] };
+
+/** Every authored Requirement-ID value in a requirement body, including blanks. */
+export function requirementIdDeclarations(requirement: Requirement): string[] {
+  return requirement.text.flatMap((line) => {
+    const match = REQUIREMENT_ID_LINE_RE.exec(line);
+    return match === null ? [] : [match[1]!.trim()];
+  });
+}
+
+/** Structural ID problems within one spec/delta document. */
+export function requirementIdProblems(reqs: Requirement[]): RequirementIdProblem[] {
+  const problems: RequirementIdProblem[] = [];
+  const owners = new Map<string, string[]>();
+  for (const requirement of reqs) {
+    const declarations = requirementIdDeclarations(requirement);
+    const values = declarations.length > 0
+      ? declarations
+      : requirement.id === undefined
+        ? []
+        : [requirement.id];
+    if (declarations.length > 1) {
+      problems.push({ kind: "repeated", requirement: requirement.name, values: declarations });
+    }
+    for (const value of values) {
+      if (!REQUIREMENT_ID_RE.test(value)) {
+        problems.push({ kind: "invalid", requirement: requirement.name, value });
+      }
+    }
+    // A repeated declaration is already an error. Do not also pretend its
+    // keep-last parse result is an unambiguous document identity.
+    if (values.length !== 1 || !REQUIREMENT_ID_RE.test(values[0]!)) continue;
+    const names = owners.get(values[0]!) ?? [];
+    names.push(requirement.name);
+    owners.set(values[0]!, names);
+  }
+  for (const [id, requirements] of owners) {
+    if (requirements.length > 1) problems.push({ kind: "duplicate", id, requirements });
+  }
+  return problems;
+}
 
 /**
  * THE requirements section: the one H2 a living spec keeps its requirements
@@ -106,7 +160,7 @@ export function sectionHeadings(md: string): Array<{ text: string; line: number 
   const out: Array<{ text: string; line: number }> = [];
   stripBom(md).split(/\r?\n/).forEach((line, i) => {
     if (fenced(line)) return;
-    if (/^##\s+/.test(line) && !/^###/.test(line)) out.push({ text: line.trim(), line: i + 1 });
+    if (/^##\s+/.test(line) && !line.startsWith("###")) out.push({ text: line.trim(), line: i + 1 });
   });
   return out;
 }
@@ -147,7 +201,7 @@ export function splitRequirementsSection(
     // Position 0 only, mirroring stripBom: elsewhere U+FEFF is content.
     if (offset === 0 && line.charCodeAt(0) === 0xfeff) line = line.slice(1);
     if (!fenced(line)) {
-      if (/^##\s+/.test(line) && !/^###/.test(line)) {
+      if (/^##\s+/.test(line) && !line.startsWith("###")) {
         if (inSection) {
           sectionEnd = offset;
           inSection = false;
@@ -184,7 +238,7 @@ export function parseRequirements(md: string): Requirement[] {
     }
     // Any H2 heading ends the current requirement/scenario capture — section prose
     // must not leak into the previous scenario's body.
-    if (/^##\s+/.test(line) && !/^###/.test(line)) {
+    if (/^##\s+/.test(line) && !line.startsWith("###")) {
       req = null;
       scn = null;
       section = line.trim();
@@ -211,6 +265,8 @@ export function parseRequirements(md: string): Requirement[] {
       scn.lines.push(line);
     } else if (req) {
       req.text.push(line);
+      const mi = REQUIREMENT_ID_LINE_RE.exec(line);
+      if (mi) req.id = mi[1]!.trim();
       const mo = /^\s*Operations?:\s*(.+?)\s*$/i.exec(line);
       if (mo) req.operations = mo[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
       // The Covers: mirror — same placement (requirement body, not a scenario),
@@ -238,7 +294,13 @@ export function serializeRequirements(reqs: Requirement[]): string {
   const chunks: string[] = [];
   for (const r of reqs) {
     const chunk: string[] = [`### Requirement: ${r.name}`];
-    const text = r.text.join("\n").trim();
+    const body = [...r.text];
+    // Parsed documents already carry the authored line in `text`. This branch
+    // also makes programmatically constructed Requirements serialize fully.
+    if (r.id !== undefined && !body.some((line) => REQUIREMENT_ID_LINE_RE.test(line))) {
+      body.unshift(`Requirement-ID: ${r.id}`);
+    }
+    const text = body.join("\n").trim();
     if (text) chunk.push("", text);
     for (const s of r.scenarios) {
       chunk.push("", `#### Scenario: ${s.name}`);
@@ -252,16 +314,48 @@ export function serializeRequirements(reqs: Requirement[]): string {
 
 /** Apply a feature's ADDED/MODIFIED/REMOVED requirements onto a living requirement set. */
 export function applyRequirementDelta(living: Requirement[], delta: Requirement[]): Requirement[] {
+  const malformed = [...requirementIdProblems(living), ...requirementIdProblems(delta)];
+  if (malformed.length > 0) {
+    throw new Error("cannot merge requirements with invalid, repeated, or duplicate Requirement-ID declarations");
+  }
   let result: Requirement[] = living.map((r) => ({ ...r, kind: "BASE" as DeltaKind }));
   for (const d of delta) {
     // BASE is not a delta kind — a requirement outside an ADDED/MODIFIED/REMOVED
     // section (e.g. quoted under ## Notes) is documentation, not a change.
     if (d.kind === "BASE") continue;
-    if (d.kind === "REMOVED") {
+    if (d.id !== undefined) {
+      const idMatches = result
+        .map((r, i) => (r.id === d.id ? i : -1))
+        .filter((i) => i >= 0);
+      const nameMatches = result
+        .map((r, i) => (r.name === d.name ? i : -1))
+        .filter((i) => i >= 0);
+      const otherNameMatches = nameMatches.filter((i) => !idMatches.includes(i));
+      if (idMatches.length > 1 || otherNameMatches.length > 0) {
+        throw new Error(
+          `ambiguous requirement identity for '${d.name}' (${d.id}): Requirement-ID and heading select different living requirements`,
+        );
+      }
+      if (d.kind === "REMOVED") {
+        const selected = new Set(idMatches);
+        result = result.filter((_, i) => !selected.has(i));
+      } else {
+        const merged: Requirement = { ...d, kind: "BASE" };
+        if (idMatches.length === 1) result[idMatches[0]!] = merged;
+        else result.push(merged);
+      }
+    } else if (d.kind === "REMOVED") {
       result = result.filter((r) => r.name !== d.name);
     } else {
       const i = result.findIndex((r) => r.name === d.name);
-      const merged: Requirement = { ...d, kind: "BASE" };
+      // A legacy delta may still modify an ID-bearing living requirement by
+      // its exact heading. Keep the identity while the repository migrates.
+      const inheritedId = i >= 0 ? result[i]!.id : undefined;
+      const merged: Requirement = {
+        ...d,
+        ...(inheritedId === undefined ? {} : { id: inheritedId }),
+        kind: "BASE",
+      };
       if (i >= 0) result[i] = merged;
       else result.push(merged);
     }

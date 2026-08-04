@@ -429,13 +429,14 @@ describe("gap: `## RENAMED Requirements` is unrecognized and the rename is lost"
     expect(applyRequirementDelta([], parseRequirements(md))).toEqual([]);
   });
 
-  it("the delta-shape check refuses the section loudly, telling the author to write REMOVED+ADDED", async () => {
+  it("the delta-shape check refuses the section loudly and points to loam's stable-ID rename", async () => {
     // The parse facts above are why this must be an error: the section yields zero
     // requirements, so no per-requirement check — not even the whole-file
     // merges-nothing check, which counts requirements — will ever see the rename.
     // The heading is the only evidence it existed, and losing it silently is the
     // BOM failure class again. Rename semantics stay unimplemented (the corpus
-    // never uses them); the error names the supported spelling of the same intent.
+    // never uses them); the error names the supported stable-ID spelling and
+    // retains REMOVED+ADDED as the legacy fallback.
     const p = await makeProject({
       "features/FEAT-1-x/specs/payment-service/spec.md": [
         "# payment-service — delta",
@@ -455,6 +456,8 @@ describe("gap: `## RENAMED Requirements` is unrecognized and the rename is lost"
       const issue = issues.find((i) => i.code === "delta.unknown-section")!;
       expect(issue.severity).toBe("error");
       expect(issue.message).toContain("RENAMED");
+      expect(issue.message).toContain("Requirement-ID");
+      expect(issue.message).toContain("MODIFIED requirement");
       expect(issue.message).toContain("REMOVED requirement plus an ADDED one");
     } finally {
       await p.destroy();

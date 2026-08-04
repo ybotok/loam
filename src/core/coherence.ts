@@ -5,7 +5,7 @@ import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, listFeatures, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
-import { operationIds, operations, serviceOperationIds } from "./openapi.js";
+import { operations, serviceOperationIds } from "./openapi.js";
 import type { FleetContext } from "./fleet-context.js";
 
 export type { Issue, IssueCode } from "./issue.js";
@@ -74,6 +74,8 @@ export async function featureCoherence(
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir, context);
   const reqOps = new Map<string, string[]>();
+  const removedReqOps = new Map<string, Set<string>>();
+  const removingOps = new Map<string, Set<string>>();
   const featureApiOps = new Set<string>();
   for (const svc of svcNames) {
     const paths = featureSpecPaths(featureDir, svc);
@@ -84,13 +86,65 @@ export async function featureCoherence(
       // REMOVED requirements are being retired along with their operations — their
       // ops neither claim the contract (E1) nor govern anything after the merge.
       reqOps.set(svc, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
+      removedReqOps.set(
+        svc,
+        new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
+      );
     }
     // Only operations genuinely NEW to this service count as feature-added: authors
     // restate the full living API in the delta file (it is a complete document, not a patch).
-    const featOps = await operationIds(paths.openapi, context);
+    const featOps = await operations(paths.openapi, context);
+    const removals = featOps.filter((op) => op.remove);
+    removingOps.set(svc, new Set(removals.map((op) => op.id)));
     if (featOps.length > 0) {
-      const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi, context));
-      for (const op of featOps) if (!living.has(op)) featureApiOps.add(op);
+      const livingOps = await operations(servicePaths(docsDir, svc).openapi, context);
+      const living = new Set(livingOps.filter((op) => !op.remove).map((op) => op.id));
+      for (const op of featOps) {
+        if (!op.remove && !living.has(op.id)) featureApiOps.add(op.id);
+      }
+
+      // Removal is exact: the feature names both an operationId and the
+      // path+method slot it expects to delete. That catches stale deltas whose
+      // target moved or was already retired before the archive planner runs.
+      const justified = removedReqOps.get(svc) ?? new Set<string>();
+      for (const marker of removals) {
+        const target = livingOps.find((op) => op.path === marker.path && op.method === marker.method);
+        if (target === undefined) {
+          issues.push({
+            severity: "error",
+            code: "openapi.remove-target-missing",
+            subject: svc,
+            message: `${svc}: removal marker for '${marker.id}' addresses ${marker.method} ${marker.path}, but no living operation exists there`,
+          });
+        } else if (target.id !== marker.id) {
+          issues.push({
+            severity: "error",
+            code: "openapi.remove-target-mismatch",
+            subject: svc,
+            message: `${svc}: removal marker names '${marker.id}' at ${marker.method} ${marker.path}, but the living operation there is '${target.id}'`,
+          });
+        }
+        if (!justified.has(marker.id)) {
+          issues.push({
+            severity: "error",
+            code: "openapi.remove-marker-unjustified",
+            subject: svc,
+            message: `${svc}: removal marker for '${marker.id}' is not governed by a REMOVED requirement's Operations: line`,
+          });
+        }
+      }
+    }
+  }
+  for (const [svc, required] of removedReqOps) {
+    const marked = removingOps.get(svc) ?? new Set<string>();
+    for (const op of required) {
+      if (marked.has(op)) continue;
+      issues.push({
+        severity: "error",
+        code: "openapi.remove-marker-missing",
+        subject: svc,
+        message: `${svc}: REMOVED requirement governs '${op}', but its feature openapi.yaml has no matching x-loam-remove: true marker`,
+      });
     }
   }
   const declaredOps = new Set([...reqOps.values()].flat());
@@ -181,7 +235,9 @@ export async function featureCoherence(
     }
     const target = svcOf(r.target);
     const available = await serviceOperationIds(docsDir, target, featureDir, context);
-    if (!available.includes(r.op)) {
+    if (removingOps.get(target)?.has(r.op) === true) {
+      issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
+    } else if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);
       if (other !== undefined) {
         issues.push({ severity: "warn", code: "c4-api.op-pending", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, defined by in-flight ${other} — archive it first` });
@@ -238,8 +294,9 @@ async function activeOpAdditions(
   for (const feature of await listFeatures(docsDir, {}, context)) {
     if (feature.id === exclude) continue;
     for (const service of feature.services) {
-      for (const op of await operationIds(featureSpecPaths(feature.dir, service).openapi, context)) {
-        const k = `${service} ${op}`;
+      for (const op of await operations(featureSpecPaths(feature.dir, service).openapi, context)) {
+        if (op.remove) continue;
+        const k = `${service} ${op.id}`;
         if (!map.has(k)) map.set(k, feature.id);
       }
     }

@@ -36,7 +36,12 @@ import {
   type Severity,
   type TargetReport,
 } from "../core/report.js";
-import { parseRequirements, requirementsMissingScenarios, type Requirement } from "../core/spec.js";
+import {
+  parseRequirements,
+  requirementIdProblems,
+  requirementsMissingScenarios,
+  type Requirement,
+} from "../core/spec.js";
 import { readOpenapi } from "../core/openapi.js";
 import { featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
@@ -419,6 +424,7 @@ async function validateService(
       : await fleet.readRequirements(paths.spec);
     findings.push(coverageFinding(`${service}: requirements`, reqs));
     findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
+    findings.push(...requirementIdFindings(reqs, `${service}: spec.md`, service));
     findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
   } else {
     findings.push({
@@ -430,8 +436,10 @@ async function validateService(
 
   // API coverage: every operation in openapi.yaml is governed by a requirement.
   const api = await readOpenapi(paths.openapi, fleet);
-  const ops = api.ops.map((o) => o.id);
-  const deprecatedOps = new Set(api.ops.filter((o) => o.deprecated).map((o) => o.id));
+  const removeMarkers = api.ops.filter((o) => o.remove);
+  const liveOps = api.ops.filter((o) => !o.remove);
+  const ops = liveOps.map((o) => o.id);
+  const deprecatedOps = new Set(liveOps.filter((o) => o.deprecated).map((o) => o.id));
   if (!existsSync(paths.openapi)) {
     // Quiet only on positive evidence — the landscape parsed and no edge calls
     // an operation on this service. A missing or broken landscape proves
@@ -460,7 +468,15 @@ async function validateService(
       message: `${service}: openapi.yaml does not parse — API coverage and the landscape spine are unchecked`,
       ...(api.error === undefined ? {} : { details: [api.error] }),
     });
-  } else if (ops.length > 0) {
+  } else {
+    if (removeMarkers.length > 0) {
+      findings.push({
+        severity: "error",
+        code: "openapi.remove-marker-living",
+        message: `${service}: living openapi.yaml contains ${removeMarkers.length} x-loam-remove marker(s) (${removeMarkers.map((op) => op.id).join(", ")}) — removal markers are valid only in feature deltas`,
+      });
+    }
+    if (ops.length > 0) {
     const governed = new Set(reqs.flatMap((r) => r.operations));
     const orphans = ops.filter((op) => !governed.has(op));
     if (orphans.length === 0) {
@@ -489,10 +505,9 @@ async function validateService(
     }
     // Lifecycle: a requirement whose `Operations:` list resolves ONLY to
     // deprecated operations governs behaviour the contract is retiring.
-    // Deprecation is the documented first step of removing an op (loam has no
-    // removal semantics — the op stays until a human deletes it), so the fix
-    // is migrating the requirement to the replacement operation, or retiring
-    // it with the ops it governs. Ops the contract does not define at all
+    // Deprecation is the documented first step of removing an op; the explicit
+    // feature marker is the final step. Until that delta archives, the op stays
+    // live, so the fix is migration or a coordinated retirement. Ops the contract does not define at all
     // prove nothing here and are left to the coherence checks.
     const defined = new Set(ops);
     for (const r of reqs) {
@@ -503,6 +518,7 @@ async function validateService(
         code: "api.requirement-deprecated",
         message: `${service}: requirement '${r.name}' governs only deprecated operation(s) (${resolved.join(", ")}) — the behaviour it describes is on its way out; migrate it to the replacement operation, or retire it`,
       });
+    }
     }
   }
 
@@ -589,6 +605,7 @@ async function validateService(
   if (existsSync(paths.archSpec)) {
     findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
     findings.push(...duplicateRequirementFindings(archReqs, `${service}: arch.spec.md`, service));
+    findings.push(...requirementIdFindings(archReqs, `${service}: arch.spec.md`, service));
     findings.push(...repeatedListLineFindings(archReqs, `${service}: arch.spec.md`, service));
   }
   // A health.yaml that exists but does not read is reported once, and the
@@ -667,6 +684,34 @@ function duplicateRequirementFindings(reqs: Requirement[], where: string, subjec
       subject,
       message: `${where}: requirement '${name}' is defined ${n} times — a merge edits only the first, every other copy lives on stale; keep exactly one`,
     }));
+}
+
+/** Stable IDs are optional, but once authored they must select exactly one requirement. */
+function requirementIdFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
+  return requirementIdProblems(reqs).map((problem) => {
+    if (problem.kind === "invalid") {
+      return {
+        severity: "error" as const,
+        code: "spec.requirement-id-invalid",
+        subject,
+        message: `${where}: requirement '${problem.requirement}' has invalid Requirement-ID '${problem.value}' — use 1-128 characters matching [A-Za-z][A-Za-z0-9._-]*`,
+      };
+    }
+    if (problem.kind === "repeated") {
+      return {
+        severity: "error" as const,
+        code: "spec.requirement-id-repeated",
+        subject,
+        message: `${where}: requirement '${problem.requirement}' declares Requirement-ID ${problem.values.length} times — identity must be declared exactly once`,
+      };
+    }
+    return {
+      severity: "error" as const,
+      code: "spec.requirement-id-duplicate",
+      subject,
+      message: `${where}: Requirement-ID '${problem.id}' is shared by ${problem.requirements.map((name) => `'${name}'`).join(", ")} — one ID may identify only one requirement`,
+    };
+  });
 }
 
 /**

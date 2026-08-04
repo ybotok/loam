@@ -35,7 +35,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
-import { operationIds } from "./openapi.js";
+import { operationIds, operations } from "./openapi.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 
@@ -141,7 +141,9 @@ export async function featureChecklist(
     // Contract — only what is NEW. A delta's openapi.yaml is a whole document,
     // not a patch, so authors restate the living API inside it; asking whether a
     // service still exposes what it already exposed is noise.
-    const featOps = await operationIds(paths.openapi);
+    const featOps = (await operations(paths.openapi))
+      .filter((operation) => !operation.remove)
+      .map((operation) => operation.id);
     if (featOps.length > 0) {
       const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi));
       for (const op of featOps) {
@@ -164,7 +166,7 @@ export async function featureChecklist(
             ...claim(
               "scenario.tested",
               svc,
-              [svc, r.name, s.name, body.slice(0, ID_LENGTH)],
+              [svc, r.id ?? r.name, s.name, body.slice(0, ID_LENGTH)],
               `scenario '${s.name}' of requirement '${r.name}' (${svc}) is covered by a test`,
             ),
             digest: body.slice(0, DIGEST_LENGTH),
@@ -190,7 +192,7 @@ export async function featureChecklist(
             ...claim(
               "scenario.tested",
               svc,
-              [svc, "arch.spec.md", r.name, s.name, body.slice(0, ID_LENGTH)],
+              [svc, "arch.spec.md", r.id ?? r.name, s.name, body.slice(0, ID_LENGTH)],
               `scenario '${s.name}' of arch requirement '${r.name}' (${svc}, arch.spec.md) is covered by a test`,
             ),
             digest: body.slice(0, DIGEST_LENGTH),
@@ -432,6 +434,8 @@ function stringList(v: unknown): string[] {
 export interface RecordedClaim {
   id: string;
   kind: ClaimKind;
+  /** Present in federated records; omitted by legacy records written before schema 2. */
+  subject?: string;
   claim: string;
   verdict: Verdict;
   /** Who answered — absent only in records written before `--results` existed. */
@@ -440,14 +444,26 @@ export interface RecordedClaim {
   note?: string;
 }
 
+/** A service repository's commit-bound contribution to a federated record. */
+export interface ServiceAttestation {
+  service: string;
+  commit: string;
+  recorded: string;
+  /** Claim ids this commit answered. Kept explicit so stale answers can be pruned safely. */
+  claims: string[];
+}
+
 export interface Verification {
+  /** Federated, partial records use schema 2. Absent means the original all-at-once format. */
+  schema?: 2;
   feature: string;
   /** The day the answers were recorded. */
   recorded: string;
   /** The checklist digest they answer — how a later reader spots a record gone stale. */
   checklist: string;
-  summary: { claims: number; confirmed: number; unconfirmed: number };
+  summary: { claims: number; confirmed: number; unconfirmed: number; unanswered?: number };
   claims: RecordedClaim[];
+  attestations?: ServiceAttestation[];
 }
 
 /**
@@ -489,6 +505,79 @@ export function buildVerification(
 }
 
 /**
+ * Replace one service's contribution while retaining current contributions
+ * from other repositories. Claim ids removed from the live checklist are
+ * pruned from both the answers and their attestations, so a changed feature can
+ * never keep a green answer to a question it no longer asks.
+ */
+export function buildFederatedVerification(
+  checklist: Checklist,
+  service: string,
+  answers: Answer[],
+  previous: Verification | null,
+  recorded: string,
+  commit: string,
+): Verification {
+  const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
+  const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
+
+  // An old all-at-once record remains readable, but its answers have no commit
+  // attestation and therefore cannot silently become somebody else's
+  // federated contribution. The first schema-2 write starts a clean federation.
+  const previouslyAttested = new Set((previous?.attestations ?? []).flatMap((a) => a.claims));
+  const retained = (previous?.schema === 2 ? previous.claims : []).filter((claim) => {
+    const current = currentById.get(claim.id);
+    return current !== undefined && current.subject !== service && previouslyAttested.has(claim.id);
+  });
+  const local = answers.map((answer): RecordedClaim => {
+    const claim = currentById.get(answer.id)!;
+    return {
+      id: claim.id,
+      kind: claim.kind,
+      subject: claim.subject,
+      claim: claim.claim,
+      verdict: answer.verdict,
+      answered_by: answer.answered_by,
+      evidence: answer.evidence,
+      ...(answer.note === undefined ? {} : { note: answer.note }),
+    };
+  });
+  const byId = new Map([...retained, ...local].map((claim) => [claim.id, claim]));
+  const claims = checklist.claims.flatMap((claim) => {
+    const answer = byId.get(claim.id);
+    if (answer === undefined) return [];
+    // Normalize retained legacy entries to the current question text and add
+    // the subject schema 2 needs for future independent replacement.
+    return [{ ...answer, kind: claim.kind, subject: claim.subject, claim: claim.claim }];
+  });
+
+  const retainedAttestations = (previous?.attestations ?? []).flatMap((attestation) => {
+    if (attestation.service === service) return [];
+    const ids = attestation.claims.filter(
+      (id) => currentById.get(id)?.subject === attestation.service && byId.has(id),
+    );
+    return ids.length === 0 ? [] : [{ ...attestation, claims: ids }];
+  });
+  const attestations: ServiceAttestation[] = [
+    ...retainedAttestations,
+    { service, commit, recorded, claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id) },
+  ].sort((a, b) => a.service.localeCompare(b.service));
+
+  const confirmed = claims.filter((claim) => claim.verdict === "confirmed").length;
+  const unconfirmed = claims.length - confirmed;
+  const unanswered = checklist.claims.length - claims.length;
+  return {
+    schema: 2,
+    feature: checklist.feature,
+    recorded,
+    checklist: checklist.digest,
+    summary: { claims: checklist.claims.length, confirmed, unconfirmed, unanswered },
+    claims,
+    attestations,
+  };
+}
+
+/**
  * The record as a file. The header explains what the reader is looking at,
  * because the whole point is that this is legible to someone who has never run
  * loam — including the part loam cannot vouch for.
@@ -506,6 +595,14 @@ export function renderVerification(v: Verification): string {
     "#",
     "# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same",
     "# one, the feature changed after this was recorded and these answers are stale.",
+    ...(v.schema === 2
+      ? [
+          "#",
+          "# Schema 2 is federated: each service entry under `attestations` binds its claim ids",
+          "# and file:line evidence to that repository's git commit. Missing claims are honestly",
+          "# unanswered; another service run may add them without rewriting existing attestations.",
+        ]
+      : []),
     "",
   ].join("\n");
   // lineWidth 0: never fold a claim onto a second line — these are grepped and diffed.
@@ -553,6 +650,7 @@ function asVerification(doc: unknown): Verification | null {
     !isCount(summary["claims"]) ||
     !isCount(summary["confirmed"]) ||
     !isCount(summary["unconfirmed"]) ||
+    (summary["unanswered"] !== undefined && !isCount(summary["unanswered"])) ||
     !Array.isArray(doc["claims"])
   ) {
     return null;
@@ -560,11 +658,22 @@ function asVerification(doc: unknown): Verification | null {
   for (const c of doc["claims"]) {
     if (!isRecord(c)) return null;
     if (typeof c["id"] !== "string" || typeof c["kind"] !== "string" || typeof c["claim"] !== "string") return null;
+    if (c["subject"] !== undefined && typeof c["subject"] !== "string") return null;
     if (typeof c["verdict"] !== "string" || !(VERDICTS as readonly string[]).includes(c["verdict"])) return null;
     // The frozen view iterates evidence per claim — a scalar here would crash it.
     if (!Array.isArray(c["evidence"]) || c["evidence"].some((e) => typeof e !== "string")) return null;
     if (c["note"] !== undefined && typeof c["note"] !== "string") return null;
     if (c["answered_by"] !== undefined && typeof c["answered_by"] !== "string") return null;
+  }
+  if (doc["schema"] !== undefined && doc["schema"] !== 2) return null;
+  if (doc["attestations"] !== undefined) {
+    if (!Array.isArray(doc["attestations"])) return null;
+    for (const a of doc["attestations"]) {
+      if (!isRecord(a)) return null;
+      if (typeof a["service"] !== "string" || typeof a["commit"] !== "string" || typeof a["recorded"] !== "string") return null;
+      if (!/^[0-9a-f]{40,64}$/i.test(a["commit"])) return null;
+      if (!Array.isArray(a["claims"]) || a["claims"].some((id) => typeof id !== "string")) return null;
+    }
   }
   return doc as unknown as Verification;
 }

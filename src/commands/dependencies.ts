@@ -1,0 +1,86 @@
+import type { Command } from "commander";
+import { loadConfig } from "../core/config.js";
+import {
+  analyzeDependencies,
+  type DependencyGraph,
+  type DependencyReason,
+} from "../core/dependencies.js";
+import { FleetContext } from "../core/fleet-context.js";
+import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { resolveFeature } from "../core/repo.js";
+
+interface DependenciesOptions {
+  json?: boolean;
+}
+
+export function registerDependencies(program: Command): void {
+  program
+    .command("dependencies")
+    .argument("[featureId]", "active feature id; omit for the whole in-flight graph")
+    .description("Show dependencies and conflicts derived from active feature artifacts")
+    .option("--json", "emit the machine contract instead of the human view")
+    .action(async (featureArg: string | undefined, opts: DependenciesOptions) => {
+      const json = opts.json === true;
+      const config = await loadConfig();
+      if (!config) {
+        reportNoConfig(json);
+        return;
+      }
+
+      const context = new FleetContext();
+      const feature = featureArg === undefined
+        ? null
+        : await resolveFeature(config.docsDir, featureArg, "exclude", context);
+      if (featureArg !== undefined && feature === null) {
+        fail(json, "unknown-target", `No active feature '${featureArg}' in ${config.docsDir}.`);
+        return;
+      }
+
+      const graph = await analyzeDependencies(config.docsDir, feature?.id, context);
+      if (json) {
+        emitJson({
+          command: "dependencies",
+          docsDir: config.docsDir,
+          feature: feature?.id ?? null,
+          ...graph,
+        });
+        return;
+      }
+      printGraph(graph, feature?.id);
+    });
+}
+
+function reasonText(reason: DependencyReason): string {
+  return reason.kind === "operation"
+    ? `${reason.service} operation ${reason.operationId}`
+    : `${reason.service}/${reason.axis} ${reason.identity}`;
+}
+
+function printGraph(graph: DependencyGraph, featureId?: string): void {
+  const scope = featureId === undefined ? "active features" : `${featureId} and prerequisites`;
+  console.log(`dependencies — ${scope} (${graph.nodes.length})`);
+  console.log(`  order: ${graph.order.length === 0 ? "(none)" : graph.order.join(" → ")}`);
+
+  for (const node of graph.nodes) {
+    console.log(`\n  ${node.id}${node.dependsOn.length === 0 ? "  (independent)" : ""}`);
+    for (const edge of graph.edges.filter((candidate) => candidate.from === node.id)) {
+      console.log(`    depends on ${edge.to}`);
+      for (const reason of edge.reasons) console.log(`      - ${reasonText(reason)}`);
+    }
+  }
+
+  if (graph.conflicts.length > 0) {
+    console.log("\n  conflicts");
+    for (const conflict of graph.conflicts) {
+      const where = conflict.kind === "requirement"
+        ? `${conflict.service}/${conflict.axis}`
+        : conflict.service;
+      console.log(`    ! ${where} ${conflict.identity}: ${conflict.features.join(", ")}`);
+    }
+  }
+
+  if (graph.cycles.length > 0) {
+    console.log("\n  cycles");
+    for (const cycle of graph.cycles) console.log(`    ! ${cycle.join(" ↔ ")}`);
+  }
+}

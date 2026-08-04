@@ -325,6 +325,8 @@ history behind it.
   tagged \`#external\`;
 - **the diff applies**: a \`MODIFIED\` or \`REMOVED\` requirement exists in the living
   spec, an \`ADDED\` one does not, and a section heading matches the grammar exactly;
+- a \`Requirement-ID: <id>\` is optional, but when present it is valid and unique;
+  archive selects by it, so carry the same ID through \`MODIFIED\` to rename a heading;
 - **every requirement in a delta is under a delta section**: one under a prose heading
   (\`## Behavior\`) is documentation as far as the merge is concerned and is dropped
   (warning). \`## Requirements\` is exempt — quoting the living state is legal.
@@ -399,6 +401,22 @@ which invocation surfaces what:
   and update the stamp line. A hand-curated file silences it the same way, by
   keeping the stamp current. The file is never refreshed automatically — your
   edits outrank the template, so detection is all loam does.
+- \`loam doctor\` is read-only local/fleet preflight. Its blockers are
+  \`doctor.config-missing\`, \`doctor.config-invalid\`, \`doctor.docs-missing\`, and
+  \`doctor.services-missing\`. Accessibility and incomplete binding stay warnings:
+  \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.inventory-unreadable\`,
+  \`doctor.landscape-missing\`, \`doctor.service-unbound\`, and \`doctor.service-unknown\`.
+- \`loam migrate-openspec <root>\` is a dry-run inventory. Its unsupported-shape
+  vocabulary is \`openspec.specs-missing\`, \`openspec.capability-no-spec\`,
+  \`openspec.living-empty\`, \`openspec.living-requirements-outside-section\`,
+  \`openspec.living-delta-section\`, \`openspec.change-no-specs\`,
+  \`openspec.change-empty\`, \`openspec.change-without-delta-sections\`,
+  \`openspec.nonstandard-change-spec\`, and \`openspec.renamed-unsupported\`.
+- Repository containment failures are explicit: \`sources.path-outside\` rejects a
+  provenance source outside the service repo and \`gherkin.path-outside\` rejects a
+  generated-suite target outside it. Federated verify recording refuses under
+  \`service-mismatch\`, \`unknown-service\`, or \`repository-unavailable\` when the
+  selected service, fleet identity, and repository commit cannot be bound safely.
 - Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.malformed\`,
   \`frontmatter.field-mismatch\`,
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md —
@@ -672,11 +690,15 @@ and say it.
 | \`c4.invalid\` | model.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
 | \`requirements.missing-scenarios\` | a requirement with no scenario | add the acceptance criteria; do not delete the requirement |
 | \`spec.duplicate-requirement\` | one \`### Requirement:\` name defined twice in one living spec.md or arch.spec.md — a merge edits only the first, the rest live on as stale copies | keep exactly one block per name (merge the bodies); the two files are separate namespaces, so a name in both is fine |
+| \`spec.requirement-id-invalid\` | a \`Requirement-ID\` violates \`[A-Za-z][A-Za-z0-9._-]{0,127}\` | replace it with a portable stable ID; do not remove an established ID merely to silence the check |
+| \`spec.requirement-id-repeated\` | one requirement declares \`Requirement-ID\` more than once | keep exactly one identity line |
+| \`spec.requirement-id-duplicate\` | one ID identifies multiple requirements in the same file | give each requirement its own stable ID |
 | \`spec.repeated-operations\` (warn) | a second \`Operations:\` line in one requirement body — the last line REPLACES the earlier ones, whose list is silently lost (living specs and feature deltas alike) | merge them into one comma-separated \`Operations:\` line |
 | \`spec.repeated-covers\` (warn) | same for \`Covers:\` — the last line wins, the earlier list is silently lost | merge them into one comma-separated \`Covers:\` line |
 | \`service.no-spec\` (warn) | no living spec.md — a part-adopted service, legal but unchecked | write it; until it exists, requirement coverage and API governance are vacuous |
 | \`service.no-openapi\` (warn) | no openapi.yaml, and the landscape cannot prove nobody calls this service | write the contract, or model the service so the fleet map shows no one expects an API |
 | \`openapi.invalid\` | openapi.yaml exists but does not parse — an unreadable contract proves nothing, so no \`api.*\` or spine finding is graded against it (before this code, the empty parse graded every inbound edge \`spine.op-undefined\`) | fix the YAML first — the API axis is unchecked until it reads |
+| \`openapi.remove-marker-living\` | a living openapi.yaml contains feature-only \`x-loam-remove: true\` | remove the marker from living; retire the operation through a feature delta with a matching REMOVED requirement |
 | \`api.ungoverned\` (warn) | operation(s) no requirement's \`Operations:\` line names | write the requirement, or link an existing one |
 | \`api.ops-unlinked\` (warn) | operations AND requirements exist but zero \`Operations:\` lines join them — the API axis is vacuously green | link each requirement to the operations it governs |
 | \`api.requirement-deprecated\` (warn) | a requirement's \`Operations:\` list resolves only to operations the OpenAPI marks \`deprecated: true\` — the behaviour it governs is on its way out | migrate the requirement to the replacement operation, or retire it with the ops it governs |
@@ -704,6 +726,11 @@ what lets a feature ship:
 | \`c4-api.op-undefined\` | an edge calls an operation the target does not expose | a broken contract between services — fix the caller or add the endpoint |
 | \`c4-api.op-pending\` (warn) | the called operation is defined by another feature in flight | archive that feature first |
 | \`c4-api.op-deprecated\` (warn) | a NEW tagged edge consumes an operation the living provider's OpenAPI marks \`deprecated: true\` — building new consumption on a dying op (quiet when this feature's own openapi delta drops the flag: that IS the un-deprecation) | point the edge at the replacement operation, or say why the deprecated one is right; never gates archive |
+| \`c4-api.op-removing\` | a NEW tagged edge consumes an operation this feature removes | remove or redirect the new edge; one feature cannot retire and add consumption of the same operation |
+| \`openapi.remove-target-missing\` | an \`x-loam-remove: true\` marker's exact path+method does not exist in living OpenAPI | update the stale marker to the current slot, or drop it if the operation is already gone |
+| \`openapi.remove-target-mismatch\` | the marker's operationId differs from the living operation at that path+method | name the living operation exactly; loam never deletes the different operation occupying the slot |
+| \`openapi.remove-marker-missing\` | a REMOVED requirement governs an operation but the feature has no removal marker | add the exact path/method operation with its operationId and \`x-loam-remove: true\` to the feature openapi.yaml |
+| \`openapi.remove-marker-unjustified\` | a removal marker is not named by any REMOVED requirement's \`Operations:\` line | remove the marker or retire the governing requirement in the same feature |
 | \`c4.op-ungoverned\` (warn) | an operation is called but no requirement governs it | write the requirement |
 | \`c4.op-link-missing\` (warn) | a "Calls" edge in the delta with no \`metadata { op }\` | link it to the operationId |
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
@@ -713,6 +740,9 @@ what lets a feature ship:
 | \`delta.unknown-section\` | a heading that nearly matches the delta grammar | fix it — everything under it merges as NOTHING today, silently |
 | \`delta.no-delta-sections\` | requirements, but no \`## ADDED/MODIFIED/REMOVED Requirements\` section anywhere — the whole delta would merge nothing | put every changed requirement under its delta section |
 | \`delta.requirement-not-merged\` (warn, gates archive) | a requirement under a prose heading (\`## Behavior\`) instead of a delta section | move it under \`## ADDED\`/\`## MODIFIED\`/\`## REMOVED Requirements\` — as written, archive drops it. If it really is documentation, quote it under \`## Requirements\`, which is exempt |
+| \`delta.requirement-id-invalid\` / \`delta.requirement-id-repeated\` / \`delta.requirement-id-duplicate\` | a stable ID is malformed or ambiguous inside the delta | repair it before archive; identity is never inferred from an invalid declaration |
+| \`delta.living-requirement-id-invalid\` | the living file's IDs are malformed or ambiguous | repair the living spec first; the delta cannot select it safely |
+| \`delta.requirement-identity-collision\` | the delta's ID and heading point at different living requirements | fix the ID or heading; archive will not guess which identity should win |
 | \`delta.modified-unknown\` | MODIFIED a requirement the living spec does not have | use ADDED, or fix the name (a spelling slip reads as a different requirement) |
 | \`delta.removed-unknown\` | REMOVED one that does not exist | drop the section, or fix the name |
 | \`delta.added-duplicate\` | ADDED a name the living spec already has | use MODIFIED — as written, the merge REPLACES the living requirement |

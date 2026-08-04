@@ -149,11 +149,17 @@ export class FleetContext {
   }
 
   async serviceOperationIds(docsDir: string, service: string, featureDir?: string): Promise<string[]> {
-    const ids = new Set<string>();
+    const ids = new Set(
+      (await this.operations(servicePaths(docsDir, service).openapi))
+        .filter((op) => !op.remove)
+        .map((op) => op.id),
+    );
     if (featureDir !== undefined) {
-      for (const id of await this.operationIds(featureSpecPaths(featureDir, service).openapi)) ids.add(id);
+      for (const op of await this.operations(featureSpecPaths(featureDir, service).openapi)) {
+        if (op.remove) ids.delete(op.id);
+        else ids.add(op.id);
+      }
     }
-    for (const id of await this.operationIds(servicePaths(docsDir, service).openapi)) ids.add(id);
     return [...ids];
   }
 

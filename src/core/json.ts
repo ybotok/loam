@@ -85,6 +85,9 @@ export type ErrorCode =
   | "answers-unreadable"
   | "answers-mismatch"
   | "answers-unevidenced"
+  | "service-mismatch"
+  | "unknown-service"
+  | "repository-unavailable"
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {
