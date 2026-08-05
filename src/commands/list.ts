@@ -13,7 +13,13 @@ import {
   type FeatureEntry,
   type ServiceEntry,
 } from "../core/repo.js";
-import { featureChecklist, readVerification } from "../core/verify.js";
+import {
+  featureChecklist,
+  readVerification,
+  tallyRecord,
+  verificationVerdict,
+  type VerificationVerdict,
+} from "../core/verify.js";
 import { docsRepoReady, reportDocsRepoError } from "./validate.js";
 
 type Section = "services" | "features";
@@ -303,8 +309,18 @@ interface VerificationCell {
   state: "recorded" | "stale";
   /** The day the record was written. */
   recorded: string;
+  /**
+   * `verify --json`'s own three-valued verdict, through `verificationVerdict` —
+   * not a fourth opinion computed here. `attested` is the one this column got
+   * wrong: a scenario confirmed on an agent's word printed as `11/11` under a
+   * heading that said `verified`, and `list --json` is how the fleet is graded.
+   */
+  verdict: VerificationVerdict;
+  /** Both counts are `tallyRecord`'s — the record's `claims[]`, never its `summary:` block. */
   confirmed: number;
   claims: number;
+  /** Of the confirmed, the scenario claims on an agent's word (`attestedClaims`). */
+  attested: number;
 }
 
 /**
@@ -327,11 +343,14 @@ async function featureVerification(
   const stale = f.archived
     ? false
     : (await featureChecklist(docsDir, f.dir, f.id)).digest !== v.checklist;
+  const tally = tallyRecord(v);
   return {
     state: stale ? "stale" : "recorded",
     recorded: v.recorded,
-    confirmed: v.summary.confirmed,
-    claims: v.summary.claims,
+    verdict: verificationVerdict(tally, stale),
+    confirmed: tally.confirmed,
+    claims: tally.claims,
+    attested: tally.attested,
   };
 }
 
@@ -419,14 +438,22 @@ function printWorklist(views: ServiceView[], total: number): void {
 /** Narrow verification cell: confirmed/claims when a record answers, one word when it does not. */
 function verificationMark(v: VerificationCell | null): string {
   if (v === null) return "-";
-  return v.state === "stale" ? "stale" : `${v.confirmed}/${v.claims}`;
+  if (v.state === "stale") return "stale";
+  // `11/11` and `11/11 attested` are different facts — the first is a
+  // digest-matched green run, the second is somebody's word about one. Without
+  // the suffix a complete count is the same glyph either way, which is exactly
+  // the reading `verify`, `status` and the JSON envelope stopped giving.
+  return `${v.confirmed}/${v.claims}${v.verdict === "attested" ? " attested" : ""}`;
 }
 
 function printFeatures(features: FeatureEntry[], verification: (VerificationCell | null)[]): void {
   const active = features.filter((f) => !f.archived).length;
   const archived = features.length - active;
   const counts = `${active} active${archived > 0 ? `, ${archived} archived` : ""}`;
-  console.log(`features (${counts})  [I]ntent [D]elta  verified`);
+  // Not `verified`: the column reports three verdicts and only one of them is
+  // that one. A heading that names the strong verdict makes every other cell
+  // read as it.
+  console.log(`features (${counts})  [I]ntent [D]elta  verification`);
   const width = Math.max(0, ...features.map((f) => f.id.length));
   const cells = verification.map(verificationMark);
   const cellWidth = Math.max(0, ...cells.map((c) => c.length));

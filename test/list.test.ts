@@ -8,7 +8,7 @@
  * Families:
  *  - text output: sections, counts, artifact flags, ordering
  *  - filtering: services-only / features-only / archived
- *  - verification column: -, recorded (confirmed/claims), stale, frozen when archived
+ *  - verification column: -, recorded (confirmed/claims), attested, stale, frozen when archived
  *  - --json: envelope, field shape, repo-relative paths, ordering
  *  - failure modes: no config, empty repo
  */
@@ -201,9 +201,13 @@ describe("verification column", () => {
       const feat = json.features.find((f: { id: string }) => f.id === "FEAT-1");
       expect(feat.verification).toEqual({
         state: "recorded",
+        // One claim is unconfirmed, so the record is short of every verdict —
+        // the scenario claim on the agent's word does not change that.
+        verdict: "unverified",
         recorded: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         confirmed: 3,
         claims: 4,
+        attested: 1,
       });
     });
   });
@@ -248,10 +252,43 @@ describe("verification column", () => {
       expect(feat.archived).toBe(true);
       expect(feat.verification).toEqual({
         state: "recorded",
+        // The record was written with --record and no --results, so its one
+        // scenario claim rests on an agent's word: attested, never verified.
+        verdict: "attested",
         recorded: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         confirmed: 4,
         claims: 4,
+        attested: 1,
       });
+    });
+  });
+
+  /**
+   * The seam this closes: a complete record answered by an agent printed the
+   * same `11/11` as a digest-matched green run, under a column headed
+   * `verified`, while `verify --json`, `status` and the record itself all said
+   * `attested`. `list --json` is how a fleet is graded, so it is the one
+   * surface where the distinction most has to survive.
+   */
+  it("says 'attested', not a bare count, for a record confirmed on an agent's word", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      await recordFeat1(p);
+      const res = await runLoam(p.workDir, "list", "features");
+      expect(featureRow(res.out, "FEAT-1")).toContain("4/4 attested");
+      // and the heading no longer names the one verdict this row is not
+      expect(res.out).not.toContain("[D]elta  verified");
+
+      const json = JSON.parse((await runLoam(p.workDir, "list", "features", "--json")).stdout);
+      const feat = json.features.find((f: { id: string }) => f.id === "FEAT-1");
+      expect(feat.verification.verdict).toBe("attested");
+      expect(feat.verification.attested).toBe(1);
+
+      // the three surfaces agree, which is the whole point
+      const verify = JSON.parse((await runLoam(p.workDir, "verify", "FEAT-1", "--json")).stdout);
+      expect(verify.verdict).toBe("attested");
+      expect(verify.verified).toBe(false);
+      const status = JSON.parse((await runLoam(p.workDir, "status", "FEAT-1", "--json")).stdout);
+      expect(status.verification.verdict).toBe("attested");
     });
   });
 });

@@ -28,26 +28,35 @@
  */
 import type { Command } from "commander";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { resolvePortableFileInside } from "../core/path-safety.js";
 import { featuresDir, resolveFeature } from "../core/repo.js";
-import { readCucumberReport, runnerAnswers } from "../core/results.js";
+import { contestedDigests, readCucumberReport, runnerAnswers, type ReportScenario } from "../core/results.js";
 import {
+  attestedNotice,
   buildVerification,
   buildFederatedVerification,
   checkAnswers,
   featureChecklist,
   readVerificationState,
+  tallyAnswers,
+  tallyRecord,
   verificationPath,
+  verificationVerdict,
   writeVerification,
   type Answer,
   type AnsweredBy,
+  type AnsweredClaim,
   type Checklist,
+  type Claim,
+  type ConsumedReport,
   type DiscardedAnswer,
   type Verification,
+  type VerifyNotice,
 } from "../core/verify.js";
 
 interface VerifyOptions {
@@ -139,7 +148,9 @@ export function registerVerify(program: Command): void {
           json,
           "record-unreadable",
           `${repoPath(docsDir, verificationPath(feature.dir))} exists but cannot be read as a verification record: ${existing.reason}. ` +
-            "It is plain YAML — repair it by hand, or delete it and record again. loam will not overwrite a record it could not read.",
+            (existing.code === "verify.record-miscounted"
+              ? "Record the answers again rather than editing the counts: a summary made to agree by hand still says nothing about what was checked."
+              : "It is plain YAML — repair it by hand, or delete it and record again. loam will not overwrite a record it could not read."),
         );
       }
       const recorded = existing.state === "ok" ? existing.verification : null;
@@ -168,7 +179,25 @@ export function registerVerify(program: Command): void {
         // Standing in a service repo, `--service` is what the repo already
         // says: omitting it must not fall back to the legacy all-at-once form,
         // which claims the whole fleet's checklist on this one repo's word.
-        await record(docsDir, feature.dir, checklist, opts.service ?? config.service, recorded, opts, json);
+        //
+        // The repo root, not the cwd — `vouch`'s and `gherkin`'s reason. An
+        // attestation names a commit and rests on evidence resolved inside
+        // "this repository", and `config.root` is the directory loam.json was
+        // actually found in. Off `process.cwd()`, running from a subdirectory
+        // silently changed all three: evidence resolved against the
+        // subdirectory, `--results` had to live in it, and `git rev-parse` ran
+        // there — a submodule or nested checkout under it would have named
+        // somebody else's commit on this repository's attestation.
+        await record(
+          docsDir,
+          feature.dir,
+          checklist,
+          opts.service ?? config.service,
+          config.root ?? process.cwd(),
+          recorded,
+          opts,
+          json,
+        );
         return;
       }
 
@@ -249,7 +278,19 @@ function report(
   // A record that answers a different question set is not an answer to this one,
   // however complete it looks — so staleness disqualifies it as a whole.
   const stale = recorded !== null && recorded.checklist !== checklist.digest;
-  const verified = recorded !== null && !stale && claims.length > 0 && summary.confirmed === claims.length;
+  const tally = tallyAnswers(claims);
+  const verdict = verificationVerdict(tally, stale);
+  // `verified` keeps its name and its type, and loses its old meaning: a
+  // scenario claim on an agent's word is answered, not run, so it no longer
+  // reads the same as a green suite. `verdict` carries the distinction.
+  const verified = verdict === "verified";
+  // Contest is derivable from the checklist alone, so the read view says it
+  // too: an agent looking at what it owes should learn that a second service
+  // answers the same claim BEFORE it runs a suite whose report cannot be
+  // attributed. Always from the whole checklist, never the lens — a shared
+  // digest is a fact about the feature, and a narrowed view is the one place it
+  // would otherwise be invisible.
+  const notices = [...noticesFor(claims, checklist.feature), ...contestedNotices(checklist.claims)];
 
   if (json) {
     emitJson({
@@ -260,6 +301,8 @@ function report(
       // verdict for the feature's.
       ...(lens === undefined ? {} : { service: lens, checklistClaims: checklist.claims.length }),
       verified,
+      verdict,
+      attested: tally.attested,
       summary,
       services: owners,
       recorded:
@@ -271,8 +314,10 @@ function report(
               checklist: recorded.checklist,
               stale,
               ...(recorded.attestations === undefined ? {} : { attestations: recorded.attestations }),
+              ...(recorded.report === undefined ? {} : { report: recorded.report }),
             },
       claims,
+      ...(notices.length === 0 ? {} : { notices }),
     });
     return;
   }
@@ -291,7 +336,7 @@ function report(
     return;
   }
   for (const c of claims) {
-    console.log(`  ${MARK[c.verdict]} ${c.id}  [${c.subject}]  ${c.claim}${byRunner(c.answered_by)}`);
+    console.log(`  ${MARK[c.verdict]} ${c.id}  [${c.subject}]  ${c.claim}${answeredMark(c)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
@@ -310,9 +355,15 @@ function report(
       console.log(
         `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}, ${plural(attestation.claims.length, "claim")}).`,
       );
+      if (attestation.report !== undefined) console.log(`      from ${reportLine(attestation.report)}`);
     }
+    if (recorded.report !== undefined) console.log(`  Answered from ${reportLine(recorded.report)}.`);
   }
-  if (!verified) {
+  for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
+  // An attested record has answered every question — telling it to "answer each
+  // claim" would send an agent round a loop it has already run. The notice
+  // above names the one thing left, which is a test run.
+  if (verdict === "unverified") {
     console.log("\n  Answer each claim, then record the answers:\n");
     console.log('    [{ "id": "<claim id>", "verdict": "confirmed", "evidence": ["src/x.ts:42"] }]');
     console.log(`\n    loam verify ${checklist.feature} --record answers.json${recordSuffix(scope, owners)}`);
@@ -357,10 +408,16 @@ function federationNote(scope: { lens?: string; bound?: string }, owners: string
  * The frozen view: an archived feature's record, verbatim. No checklist is
  * derived and no staleness is judged — there is nothing current to judge
  * against, and pretending otherwise is how a true record reads as a lie.
- * `frozen` is the marker a consumer branches on; `verified` comes from the
- * record's own summary, because the record is all there is. No record at all is
- * reported as exactly that — with `summary: null`, not zero claims, which would
- * falsely say the feature promised nothing.
+ * `frozen` is the marker a consumer branches on.
+ *
+ * The verdict is recounted from `claims[]`, never taken from `summary`: this is
+ * the post-ship verdict on a feature nobody can re-derive a checklist for, so a
+ * record whose counts had drifted from its own answers reported a shipped
+ * feature as fully confirmed. (A record that contradicts itself never reaches
+ * here — `readVerificationState` refuses it — so the recount and the summary
+ * agree; the recount is what says WHY.) No record at all is reported as exactly
+ * that, with `summary: null`, not zero claims, which would falsely say the
+ * feature promised nothing.
  */
 function reportFrozen(
   docsDir: string,
@@ -369,12 +426,18 @@ function reportFrozen(
   v: Verification | null,
   json: boolean,
 ): void {
+  const tally = v === null ? null : tallyRecord(v);
+  const verdict = tally === null ? "unverified" : verificationVerdict(tally);
+  const notices = v === null ? [] : noticesFor(v.claims, featureId);
+
   if (json) {
     emitJson({
       feature: featureId,
       path: repoPath(docsDir, featureDir),
       frozen: true,
-      verified: v !== null && v.summary.claims > 0 && v.summary.confirmed === v.summary.claims,
+      verified: verdict === "verified",
+      verdict,
+      attested: tally?.attested ?? 0,
       summary: v === null ? null : v.summary,
       recorded:
         v === null
@@ -384,8 +447,10 @@ function reportFrozen(
               recorded: v.recorded,
               checklist: v.checklist,
               ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
+              ...(v.report === undefined ? {} : { report: v.report }),
             },
       claims: v === null ? [] : v.claims,
+      ...(notices.length === 0 ? {} : { notices }),
     });
     return;
   }
@@ -404,13 +469,12 @@ function reportFrozen(
     // `subject` is absent in records written before schema 2 — an old record
     // must read as itself, not gain a service it never named.
     const subject = c.subject === undefined ? "" : `  [${c.subject}]`;
-    console.log(`  ${MARK[c.verdict]} ${c.id}${subject}  ${c.claim}${byRunner(c.answered_by)}`);
+    console.log(`  ${MARK[c.verdict]} ${c.id}${subject}  ${c.claim}${answeredMark(c)}`);
     for (const e of c.evidence) console.log(`      ${e}`);
     if (c.note !== undefined) console.log(`      note: ${c.note}`);
   }
-  console.log(
-    `\n  Recorded ${v.recorded} — ${v.summary.confirmed} confirmed, ${v.summary.unconfirmed} unconfirmed.`,
-  );
+  const counts = tallyRecord(v);
+  console.log(`\n  Recorded ${v.recorded} — ${counts.confirmed} confirmed, ${counts.unconfirmed} unconfirmed.`);
   console.log(
     "  This checklist is frozen at record time: the feature is archived and its claims are not re-derived.",
   );
@@ -418,25 +482,91 @@ function reportFrozen(
     console.log(
       `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}).`,
     );
+    if (attestation.report !== undefined) console.log(`      from ${reportLine(attestation.report)}`);
   }
+  if (v.report !== undefined) console.log(`  Answered from ${reportLine(v.report)}.`);
+  for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
 }
 
 const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "✗", unanswered: "?" };
 
-/** The runner's verdicts are marked in prose; the agent's are the unmarked default. */
-function byRunner(who: AnsweredBy | undefined): string {
-  return who === "runner" ? "  [runner]" : "";
+/**
+ * Who answered, where that changes what the verdict means. `[runner]` is a
+ * digest-matched green run; `[attested]` is a scenario claim confirmed on
+ * somebody's word — the same ✓, a weaker fact, and it must be visible on the
+ * line itself and not only in the summary. Everything else is unmarked: an
+ * agent's answer about a service existing or an operation being exposed is
+ * exactly what the checklist asks for.
+ */
+function answeredMark(c: AnsweredClaim): string {
+  if (c.answered_by === "runner") return "  [runner]";
+  return c.kind === "scenario.tested" && c.verdict === "confirmed" ? "  [attested]" : "";
+}
+
+/** Everything a verify surface has to say about a set of answers beyond the counts. */
+function noticesFor(claims: readonly AnsweredClaim[], feature: string): VerifyNotice[] {
+  const attested = attestedNotice(claims, feature);
+  return attested === null ? [] : [attested];
+}
+
+/**
+ * The claims one report could not attribute: a scenario digest — and therefore
+ * an `@loam-digest-…` tag — that more than one service claims.
+ *
+ * This is now a GUARD rather than a diagnosis of ordinary authoring. Until the
+ * digest was salted by service, two services wording a scenario identically
+ * really did share one tag, and this is what stopped one repository's green run
+ * from confirming the other's claim. `scenarioBodyHash` folds the owning
+ * service into the hash, so a claim's digest is computed from the same service
+ * the claim is filed under and two subjects cannot share one short of a
+ * truncated-sha256 collision. It stays because the invariant is worth asserting
+ * where it is relied on: if this ever fires, a digest is answering for two
+ * services and no report can say which, so nothing here may confirm.
+ *
+ * Derived from claims rather than from a report, so the read view raises it too
+ * — the collision exists the moment the checklist does, and learning about it
+ * from a `--results` run that already happened is learning too late.
+ */
+function contestedNotices(claims: readonly Claim[]): VerifyNotice[] {
+  const contested = contestedDigests(claims);
+  if (contested.size === 0) return [];
+  const shared = [...contested].map(([digest, services]) => `${digest} (${services.join(", ")})`);
+  return [
+    {
+      code: "verify.digest-contested",
+      severity: "warn",
+      message:
+        `${plural(contested.size, "scenario digest")} claimed by more than one service: ${shared.join("; ")}. ` +
+        "The digest is salted by service, so this is a hash collision, not shared wording — but one report still " +
+        "cannot say whose suite ran them, so a shared --results run leaves them unconfirmed. " +
+        "Record each service's claims from its own repository with --service.",
+      claims: claims.filter((c) => c.digest !== undefined && contested.has(c.digest)).map((c) => c.id),
+    },
+  ];
+}
+
+/** The report a `--results` run consumed, as one line a reviewer can check by hand. */
+function reportLine(r: ConsumedReport): string {
+  return `${r.path} (sha256 ${r.digest.slice(0, 12)}…, ${plural(r.scenarios, "tagged scenario")}, written ${r.mtime})`;
 }
 
 /* ------------------------------------------------------------------ */
 /* Recording                                                           */
 /* ------------------------------------------------------------------ */
 
+/**
+ * `repoDir` is the repository an attestation is ABOUT: the commit it names, the
+ * tree its evidence must resolve inside, and where a `--results` report has to
+ * live. It is threaded rather than read here because it comes from
+ * `config.root`, and a `process.cwd()` in this function was the whole bug —
+ * from a subdirectory, "this repo" quietly became that subdirectory.
+ */
 async function record(
   docsDir: string,
   featureDir: string,
   checklist: Checklist,
   service: string | undefined,
+  repoDir: string,
   previous: Verification | null,
   opts: VerifyOptions,
   json: boolean,
@@ -477,20 +607,14 @@ async function record(
     opts.results === undefined ? scopedClaims : scopedClaims.filter((c) => c.kind !== "scenario.tested");
 
   let fromRunner: Answer[] = [];
+  let consumed: ConsumedReport | undefined;
   if (opts.results !== undefined) {
-    let doc: unknown;
-    try {
-      doc = JSON.parse(await readFile(resolve(process.cwd(), opts.results), "utf8"));
-    } catch (err) {
-      return fail(
-        json,
-        "answers-unreadable",
-        `Cannot read ${opts.results} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    const report = readCucumberReport(doc, opts.results);
-    if (!report.ok) return fail(json, "answers-unreadable", report.message);
-    fromRunner = runnerAnswers(runnerClaims, report.scenarios, opts.results);
+    // A federated record attests for THIS repository, so its report has to be a
+    // file inside it — see readResults.
+    const read = await readResults(opts.results, service === undefined ? undefined : repoDir);
+    if (!read.ok) return fail(json, read.code, read.message);
+    consumed = read.report;
+    fromRunner = runnerAnswers(runnerClaims, read.scenarios, consumed.path);
   }
 
   // The agent's half — exactly what the runner does not own. --results alone
@@ -499,6 +623,9 @@ async function record(
   let raw: unknown = [];
   if (opts.record !== undefined) {
     try {
+      // The one path that stays cwd-relative, and deliberately: the answer set
+      // is a file the caller just wrote and hands to the command, not part of
+      // the repository being attested. Nothing on the record points at it.
       raw = JSON.parse(await readFile(resolve(process.cwd(), opts.record), "utf8"));
     } catch (err) {
       return fail(
@@ -526,10 +653,19 @@ async function record(
 
   let serviceCommit: string | undefined;
   if (service !== undefined) {
-    const commit = await repositoryCommit(process.cwd());
+    const commit = await repositoryCommit(repoDir);
     if (!commit.ok) return fail(json, "repository-unavailable", commit.message);
     serviceCommit = commit.commit;
-    const evidenceFailure = await validateServiceEvidence(checked.answers, process.cwd(), serviceCommit);
+    // Both halves, one validator. The runner's evidence used to skip it
+    // entirely: `--results` minted confirmations whose evidence strings nothing
+    // ever checked, in the one mode that promises every answer is bound to this
+    // repository at this commit.
+    const evidenceFailure = await validateServiceEvidence(
+      [...fromRunner, ...checked.answers],
+      repoDir,
+      serviceCommit,
+      consumed,
+    );
     if (evidenceFailure !== null) return fail(json, "answers-unevidenced", evidenceFailure);
   }
 
@@ -537,7 +673,7 @@ async function record(
   let verification: Verification;
   let discarded: DiscardedAnswer[] = [];
   if (service === undefined) {
-    verification = buildVerification(checklist, [...fromRunner, ...checked.answers], recorded);
+    verification = buildVerification(checklist, [...fromRunner, ...checked.answers], recorded, consumed);
   } else {
     const built = buildFederatedVerification(
       checklist,
@@ -546,6 +682,7 @@ async function record(
       previous,
       recorded,
       serviceCommit!,
+      consumed,
     );
     verification = built.verification;
     discarded = built.discarded;
@@ -555,11 +692,14 @@ async function record(
 
   // The same judgment read mode makes (see report): the record just written IS
   // the current checklist's answer, so `stale` is false by construction and the
-  // remaining question is whether every claim was confirmed. Without this field
-  // an agent that recorded all-confirmed answers would have to re-run verify
-  // just to learn the state it created.
-  const verified =
-    verification.summary.claims > 0 && verification.summary.confirmed === verification.summary.claims;
+  // remaining question is whether every claim was confirmed — and, now, by
+  // whom. Counted from the claims, not from the summary this same call wrote.
+  // Without these fields an agent that recorded all-confirmed answers would
+  // have to re-run verify just to learn the state it created.
+  const tally = tallyRecord(verification);
+  const verdict = verificationVerdict(tally);
+  const verified = verdict === "verified";
+  const notices = [...noticesFor(verification.claims, verification.feature), ...contestedNotices(runnerClaims)];
 
   if (json) {
     emitJson({
@@ -567,24 +707,27 @@ async function record(
       path: repoPath(docsDir, path),
       digest: verification.checklist,
       verified,
+      verdict,
+      attested: tally.attested,
       recorded: verification.recorded,
       summary: verification.summary,
       ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
+      ...(consumed === undefined ? {} : { report: consumed }),
       unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
       ...(discarded.length === 0 ? {} : { discarded }),
+      ...(notices.length === 0 ? {} : { notices }),
     });
     return;
   }
 
   console.log(`${verification.feature} verification recorded — ${repoPath(docsDir, path)}\n`);
-  console.log(
-    `  ${verification.summary.confirmed} of ${plural(verification.summary.claims, "claim")} confirmed with evidence.`,
-  );
-  if (opts.results !== undefined) {
+  console.log(`  ${tally.confirmed} of ${plural(tally.claims, "claim")} confirmed with evidence.`);
+  if (consumed !== undefined) {
     console.log(
       `  ${plural(fromRunner.length, "scenario claim")} answered by the test runner (${opts.results})` +
         `${opts.record === undefined ? "" : `, ${checked.answers.length} by ${opts.record}`}.`,
     );
+    console.log(`  Report read: ${reportLine(consumed)}.`);
   }
   if (service !== undefined) {
     const attestation = verification.attestations?.find((item) => item.service === service);
@@ -619,28 +762,127 @@ async function record(
       );
     }
   }
-  const unanswered = verification.summary.unanswered ?? 0;
+  console.log("");
+  for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
   console.log(
-    unanswered > 0
-      ? `\n  Partial federation — ${plural(unanswered, "claim")} remain unanswered for their owning service repositories.`
-      : unconfirmed.length === 0
-        ? "\n  The record travels with the feature into features/archive/."
-        : "\n  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
+    tally.unanswered > 0
+      ? `  Partial federation — ${plural(tally.unanswered, "claim")} remain unanswered for their owning service repositories.`
+      : verdict === "attested"
+        ? "  Recorded as attested, not verified: the record travels into features/archive/ saying so."
+        : unconfirmed.length === 0
+          ? "  The record travels with the feature into features/archive/."
+          : "  Recorded as it stands. Nothing gates on this — it is what a reviewer reads later, so leave it true.",
   );
 }
 
+type ResultsRead =
+  | { ok: true; report: ConsumedReport; scenarios: ReportScenario[] }
+  | { ok: false; code: ErrorCode; message: string };
+
 /**
- * In federated mode, a confirmation is accepted only when every evidence item
- * resolves to a real line in this repository. Legacy global mode deliberately
- * keeps its original, looser evidence contract for backward compatibility.
+ * The report as an artifact, not merely as a parse.
+ *
+ * `repoDir` is set in federated mode, and there the report must be a file
+ * INSIDE the repository being attested, resolved by the same rules as evidence
+ * (`resolvePortableFileInside`): an attestation says "at this commit, in this
+ * repository", and a report living somewhere else answers for a run nobody
+ * standing here can find. The legacy all-at-once form binds to no repository at
+ * all, so it takes the path as spelled — its looser contract, unchanged.
+ *
+ * Either way the bytes are digested and the file's mtime read, because loam
+ * cannot prove a JSON file came from executing this commit and should stop
+ * implying otherwise. It can say precisely which file it consumed, and that
+ * goes on the record.
+ */
+async function readResults(spelled: string, repoDir: string | undefined): Promise<ResultsRead> {
+  let path: string;
+  if (repoDir === undefined) {
+    path = resolve(process.cwd(), spelled);
+  } else {
+    try {
+      path = resolvePortableFileInside(repoDir, spelled, "test report");
+    } catch (err) {
+      return {
+        ok: false,
+        code: "answers-unreadable",
+        message:
+          `Cannot answer from ${spelled}: ${err instanceof Error ? err.message : String(err)}. ` +
+          "A federated attestation rests on a report inside the repository it attests — give the path relative to the repo root.",
+      };
+    }
+  }
+
+  let bytes: Buffer;
+  let mtime: Date;
+  try {
+    bytes = await readFile(path);
+    mtime = (await stat(path)).mtime;
+  } catch (err) {
+    return {
+      ok: false,
+      code: "answers-unreadable",
+      message: `Cannot read ${spelled} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  let doc: unknown;
+  try {
+    doc = JSON.parse(bytes.toString("utf8"));
+  } catch (err) {
+    return {
+      ok: false,
+      code: "answers-unreadable",
+      message: `Cannot read ${spelled} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  const parsed = readCucumberReport(doc, spelled);
+  if (!parsed.ok) return { ok: false, code: "answers-unreadable", message: parsed.message };
+  return {
+    ok: true,
+    scenarios: parsed.scenarios,
+    report: {
+      path: spelled,
+      digest: createHash("sha256").update(bytes).digest("hex"),
+      mtime: mtime.toISOString(),
+      scenarios: parsed.scenarios.length,
+    },
+  };
+}
+
+/**
+ * In federated mode, a confirmation is accepted only when its evidence holds up
+ * in this repository: an agent's `file:line` resolves to a real line that is
+ * unchanged at the attested commit, and the runner's evidence names the report
+ * loam just read. Legacy global mode deliberately keeps its original, looser
+ * evidence contract for backward compatibility.
  */
 async function validateServiceEvidence(
   answers: Answer[],
   repoDir: string,
   commit: string,
+  report?: ConsumedReport,
 ): Promise<string | null> {
+  if (report !== undefined) {
+    // Most reports are build output and untracked, and `git diff` is quiet on
+    // those — nothing here invents a rule for them. One the repository DOES
+    // carry has to match the commit being attested, like any other file the
+    // evidence rests on.
+    const clean = await git(repoDir, ["diff", "--quiet", commit, "--", report.path]);
+    if (clean.code === 1) {
+      return `The test report '${report.path}' is committed to this repository and differs from ${commit.slice(0, 12)} — commit it or attest the commit it belongs to.`;
+    }
+  }
   for (const answer of answers) {
     if (answer.verdict !== "confirmed") continue;
+    if (answer.answered_by === "runner") {
+      // The runner's evidence is a scenario inside the report, not a file:line
+      // in the source — there is nothing to resolve. What must hold is that it
+      // names THAT report: an answer pointing anywhere else is not this run's.
+      const stray = answer.evidence.filter((e) => report === undefined || !e.startsWith(`${report.path}: `));
+      if (stray.length > 0) {
+        return `Claim ${answer.id} has runner evidence ${stray.map((e) => `'${e}'`).join(", ")} that does not name the report loam read.`;
+      }
+      continue;
+    }
     for (const evidence of answer.evidence) {
       const match = /^(.+):([1-9]\d*)$/.exec(evidence);
       if (match === null) {

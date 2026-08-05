@@ -27,6 +27,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
 import { emitJson, emitJsonError, fail, reportNoConfig } from "../core/json.js";
 import {
   featureSpecPaths,
@@ -91,7 +92,14 @@ export function registerGherkin(program: Command): void {
         );
       }
 
-      const repoDir = process.cwd();
+      // The repo root, not the cwd: `config.root` is the directory loam.json
+      // was actually found in, and config discovery walks upward. Taken from
+      // `process.cwd()` this emitted the whole suite into whatever directory
+      // the caller happened to stand in — `src/api/features/loam/…` inside the
+      // source tree, which the next run from the root neither finds, replaces
+      // nor deletes, and which `loam validate` grades as a suite that was never
+      // generated.
+      const repoDir = config.root ?? process.cwd();
       let root: string;
       try {
         root = gherkinRoot(repoDir, config.gherkinDir);
@@ -109,45 +117,57 @@ export function registerGherkin(program: Command): void {
       // a BASE requirement is the living state quoted, a REMOVED one is being
       // retired, and neither is behaviour anybody is about to test. Living mode
       // takes everything the living files hold.
+      //
+      // Read through `decodeDocument`, not `readFile(…, "utf8")`, and refused
+      // rather than degraded: a spec.md saved as UTF-16 decodes to a document
+      // with no requirements in it, which here is not merely a wrong answer but
+      // a destructive one — an empty plan makes every existing .feature under
+      // loam/ an orphan, and a living run DELETES its orphans. The whole
+      // generated suite would go because a docs file was written by PowerShell.
       let mode: "feature" | "living" = "living";
       let featureId: string | undefined;
       const byAxis: Array<{ axis: SpecAxis; reqs: Requirement[] }> = [];
-      if (featureArg !== undefined) {
-        const feature = await resolveFeature(config.docsDir, featureArg, "exclude");
-        if (!feature) {
-          return fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureArg));
+      const readSpec = async (path: string): Promise<Requirement[]> =>
+        parseRequirements(decodeDocument(await readFile(path), path));
+      try {
+        if (featureArg !== undefined) {
+          const feature = await resolveFeature(config.docsDir, featureArg, "exclude");
+          if (!feature) {
+            return fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureArg));
+          }
+          mode = "feature";
+          featureId = feature.id;
+          const paths = featureSpecPaths(feature.dir, service);
+          for (const axis of SPEC_AXES) {
+            const path = paths[axis.key];
+            const reqs = existsSync(path)
+              ? (await readSpec(path)).filter((r) => r.kind === "ADDED" || r.kind === "MODIFIED")
+              : [];
+            byAxis.push({ axis, reqs });
+          }
+        } else {
+          const paths = servicePaths(config.docsDir, service);
+          if (!existsSync(paths.spec)) {
+            return fail(
+              json,
+              "unknown-target",
+              `No living spec at ${paths.spec}. Run \`loam adopt\` for '${service}' first.`,
+            );
+          }
+          for (const axis of SPEC_AXES) {
+            const path = paths[axis.key];
+            const reqs = existsSync(path) ? (await readSpec(path)).filter((r) => r.kind !== "REMOVED") : [];
+            byAxis.push({ axis, reqs });
+          }
         }
-        mode = "feature";
-        featureId = feature.id;
-        const paths = featureSpecPaths(feature.dir, service);
-        for (const axis of SPEC_AXES) {
-          const path = paths[axis.key];
-          const reqs = existsSync(path)
-            ? parseRequirements(await readFile(path, "utf8")).filter(
-                (r) => r.kind === "ADDED" || r.kind === "MODIFIED",
-              )
-            : [];
-          byAxis.push({ axis, reqs });
-        }
-      } else {
-        const paths = servicePaths(config.docsDir, service);
-        if (!existsSync(paths.spec)) {
-          return fail(
-            json,
-            "unknown-target",
-            `No living spec at ${paths.spec}. Run \`loam adopt\` for '${service}' first.`,
-          );
-        }
-        for (const axis of SPEC_AXES) {
-          const path = paths[axis.key];
-          const reqs = existsSync(path)
-            ? parseRequirements(await readFile(path, "utf8")).filter((r) => r.kind !== "REMOVED")
-            : [];
-          byAxis.push({ axis, reqs });
-        }
+      } catch (err) {
+        if (!(err instanceof NotUtf8DocumentError)) throw err;
+        return fail(json, "repository-unavailable", `Cannot emit gherkin: ${err.message}`);
       }
 
-      const plan = planEmission(byAxis, { featureTag: featureId, version: LOAM_VERSION });
+      // `service` is not decoration: it salts every `@loam-digest-…` stamp, and
+      // it is the same string `loam verify` files the matching claims under.
+      const plan = planEmission(byAxis, { service, featureTag: featureId, version: LOAM_VERSION });
 
       // Orphans of THIS scope, inside loam/ and nowhere else. Feature mode owns
       // only its own emissions: stamped files carrying this feature's tag whose

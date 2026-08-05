@@ -7,8 +7,10 @@
  * gap mechanically: one `.feature` file per requirement, steps taken from the
  * scenario's own bullet lines, and a digest TAG (`@loam-digest-<16hex>`) on
  * every scenario using the SAME body-hash recipe `loam verify` folds into its
- * claim ids (verify.ts's scenarioBodyHash) — so the test skeleton, the claim
- * and the spec can never quietly disagree about what a scenario says. A tag
+ * claim ids (verify.ts's scenarioBodyHash — salted by the owning service and
+ * by the spec axis, so a stamp belongs to one suite and one axis) — so the
+ * test skeleton, the claim and the spec can never quietly disagree about what
+ * a scenario says, and no two repositories can answer each other's. A tag
  * rather than a comment because tags are what cucumber's JSON report carries
  * per scenario: the stamp rides through the runner untouched, which is what
  * lets `loam verify --results` match a report scenario back to its claim.
@@ -21,8 +23,8 @@
  * bytes, which is what lets `loam validate` grade staleness by digest instead
  * of by guesswork.
  */
-import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { existsSync, statSync, type Dirent } from "node:fs";
+import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseRequirements, type Requirement } from "./spec.js";
 import { listFeatures, servicePaths, SPEC_AXES, type SpecAxis } from "./repo.js";
@@ -51,15 +53,25 @@ export function gherkinRoot(repoDir: string, gherkinDir?: string): string {
 
 /**
  * The digest stamped onto every generated scenario: verify's scenario body
- * hash, at the sources-digest length. Content identity WITHIN an axis, not
- * provenance — two identically-worded scenarios of one axis share a digest,
- * and that is the point: the stamp answers "does the suite still contain a
- * test for THESE words". The axis rides in the hash (the arch recipe salts
- * the body), so the two spec files stay two namespaces all the way into a
- * cucumber report — a business run can never answer for an arch scenario.
+ * hash, at the sources-digest length. Content identity WITHIN one service and
+ * one axis, not provenance — two identically-worded scenarios of one service's
+ * one axis share a digest, and that is the point: the stamp answers "does this
+ * suite still contain a test for THESE words".
+ *
+ * Both salts ride in the hash (see `scenarioBodyHash`), so the namespaces stay
+ * separate all the way into a cucumber report: a business run can never answer
+ * for an arch scenario, and one service's green run can never answer another
+ * service's claim just because the two specs spell the sentence the same way.
+ * `service` is required and never defaulted — a stamp that forgot it would be
+ * a tag no claim matches, and the fleet bug it exists to close would come back
+ * silently.
  */
-export function scenarioDigest(lines: string[], axis: ScenarioAxis = "business"): string {
-  return scenarioBodyHash(lines, axis).slice(0, GHERKIN_DIGEST_LENGTH);
+export function scenarioDigest(
+  service: string,
+  lines: string[],
+  axis: ScenarioAxis = "business",
+): string {
+  return scenarioBodyHash(service, lines, axis).slice(0, GHERKIN_DIGEST_LENGTH);
 }
 
 /** The digest as the tag on the line above each `Scenario:`. */
@@ -224,10 +236,14 @@ export interface PlannedFeature {
  * Tags ride the `Feature:` line and are inherited by every scenario in the
  * file: `@<FEAT>` in feature mode (living emissions carry no feature tag),
  * `@architecture` on the arch axis.
+ *
+ * `opts.service` is the suite's owner and salts every digest stamp — the same
+ * service `loam verify` files the matching claims under. Required, not
+ * defaulted: an emission that guessed it would stamp tags no claim matches.
  */
 export function planEmission(
   byAxis: Array<{ axis: SpecAxis; reqs: Requirement[] }>,
-  opts: { featureTag?: string; version: string },
+  opts: { service: string; featureTag?: string; version: string },
 ): PlannedFeature[] {
   const used = new Set<string>();
   const out: PlannedFeature[] = [];
@@ -241,7 +257,13 @@ export function planEmission(
         ...(opts.featureTag === undefined ? [] : [`@${opts.featureTag}`]),
         ...(axis.key === "archSpec" ? ["@architecture"] : []),
       ];
-      const { content, digests, stepless } = renderFeature(r, tags, opts.version, axisLabel(axis));
+      const { content, digests, stepless } = renderFeature(
+        r,
+        tags,
+        opts.version,
+        opts.service,
+        axisLabel(axis),
+      );
       out.push({ fileName, axis, requirement: r, digests, stepless, content });
     }
   }
@@ -256,11 +278,16 @@ export function planEmission(
  * the `Scenario:` keyword, where Gherkin puts scenario-level tags, so the
  * runner attaches it to the scenario and carries it into the JSON report.
  * Deterministic to the byte.
+ *
+ * `service` is the owner of the suite being written, and it salts every digest
+ * — the same service `loam verify` files the matching claims under. The two
+ * have to be the same string or the stamps this writes match no claim at all.
  */
 export function renderFeature(
   r: Requirement,
   tags: string[],
   version: string,
+  service: string,
   axis: ScenarioAxis = "business",
 ): { content: string; digests: string[]; stepless: string[] } {
   const lines: string[] = [gherkinStampLine(version)];
@@ -274,7 +301,7 @@ export function renderFeature(
   const digests: string[] = [];
   const stepless: string[] = [];
   for (const s of r.scenarios) {
-    const digest = scenarioDigest(s.lines, axis);
+    const digest = scenarioDigest(service, s.lines, axis);
     digests.push(digest);
     lines.push("", `  ${scenarioDigestTag(digest)}`, `  Scenario: ${s.name}`);
     const { description, steps } = scenarioGherkin(s.lines);
@@ -383,13 +410,14 @@ export function parseStampedFeature(text: string): StampedFeature | null {
  *   its axis's living spec; reported once per file, because every scenario in
  *   it is moot together.
  *
- * Digests are content identity within an axis, deliberately: two
- * identically-worded scenarios of one axis share one digest, so one stamped
- * copy covers both — while the axes stay separate namespaces twice over:
- * every comparison here is axis-scoped, and the digest recipe itself salts
- * the arch axis (an arch scenario's integration test is not answered by a
- * business .feature that happens to spell the same words — not here, and not
- * in a cucumber report either).
+ * Digests are content identity within one service and one axis, deliberately:
+ * two identically-worded scenarios of one service's one axis share one digest,
+ * so one stamped copy covers both — while the axes stay separate namespaces
+ * twice over (every comparison here is axis-scoped, and the recipe salts the
+ * arch axis), and the services stay separate because the recipe salts the
+ * service too. That last salt is why a stamped file copied out of another
+ * service's repository grades `gherkin.orphaned`/`gherkin.stale` here instead
+ * of quietly counting as this service's coverage.
  *
  * All warnings — `--strict` is the CI escalation — plus one `ok` confirmation
  * (`gherkin.current`, the `sources.current` pattern) when a generated suite
@@ -441,7 +469,7 @@ export async function gherkinFindings(ctx: {
         if (r.kind === "REMOVED") continue;
         state.reqNames.add(r.name);
         for (const s of r.scenarios) {
-          const digest = scenarioDigest(s.lines, label);
+          const digest = scenarioDigest(ctx.service, s.lines, label);
           state.digests.add(digest);
           state.scenarios.push({ req: r.name, name: s.name, digest });
         }
@@ -514,16 +542,37 @@ export async function gherkinFindings(ctx: {
  * Every `.feature` file at or under `root`, sorted by repo-relative path —
  * enumeration is part of the output contract, so the order cannot depend on
  * the filesystem's. Dot-entries are skipped, like every other walk in loam.
+ *
+ * Symlinks are FOLLOWED — repo.ts's `entryIs` and brief.ts's `hasMarkdown` are
+ * the same rule for the same reason. A `Dirent` from `readdir(withFileTypes)`
+ * never follows one, so `isFile()` and `isDirectory()` are both false for a
+ * symlinked `.feature`: it was invisible to the orphan scan (`loam gherkin`
+ * left it behind forever) and invisible to the staleness scan (it graded as no
+ * coverage at all). Composing a suite out of links is legitimate, so they are
+ * followed rather than refused, and a dangling one is skipped exactly as an
+ * absent file is.
  */
 export async function featureFilesUnder(root: string): Promise<string[]> {
   const out: string[] = [];
+  // Following links means a cycle is now possible; every directory is entered
+  // once by its resolved path, so a loop terminates instead of hanging.
+  const entered = new Set<string>();
   const walk = async (dir: string): Promise<void> => {
     if (!existsSync(dir)) return;
+    let resolved: string;
+    try {
+      resolved = await realpath(dir);
+    } catch {
+      return;
+    }
+    if (entered.has(resolved)) return;
+    entered.add(resolved);
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (entry.name.startsWith(".")) continue;
       const abs = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(abs);
-      else if (entry.isFile() && entry.name.endsWith(".feature")) out.push(abs);
+      const what = entryKind(abs, entry);
+      if (what === "dir") await walk(abs);
+      else if (what === "file" && entry.name.endsWith(".feature")) out.push(abs);
     }
   };
   await walk(root);
@@ -532,4 +581,15 @@ export async function featureFilesUnder(root: string): Promise<string[]> {
     const rb = b.split(sep).join("/");
     return ra < rb ? -1 : ra > rb ? 1 : 0;
   });
+}
+
+/** What an entry IS, resolving a symlink to find out. Nothing when it dangles. */
+function entryKind(abs: string, e: Dirent): "dir" | "file" | null {
+  if (!e.isSymbolicLink()) return e.isDirectory() ? "dir" : e.isFile() ? "file" : null;
+  try {
+    const s = statSync(abs);
+    return s.isDirectory() ? "dir" : s.isFile() ? "file" : null;
+  } catch {
+    return null;
+  }
 }

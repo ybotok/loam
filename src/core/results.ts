@@ -10,6 +10,11 @@
  * which is the point, because an agent must not be able to SAY a scenario is
  * tested; only a green run may.
  *
+ * That identity is CONTENT, and content stops one step short of a fleet: two
+ * services whose specs word a scenario identically share a digest, so one
+ * repository's report matches the other repository's claim. Those claims are
+ * refused rather than answered — see {@link contestedDigests}.
+ *
  * Parsing is deliberately tolerant of everything except the shape it matches
  * on. The format is what cucumber-js `--format json`, cucumber-jvm, behave and
  * SpecFlow emit — an array of features, each `elements[]` (scenarios) with
@@ -104,6 +109,38 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
 }
 
 /**
+ * The digests that more than one service claims, with the services that claim
+ * them — a scenario worded identically in two services' specs.
+ *
+ * The digest is a hash of the scenario body and of nothing else, so `loam
+ * gherkin` stamps the same tag into both repositories and a report from either
+ * one matches both claims. A report says which scenario ran; it never says
+ * whose suite ran it, and the two repositories never ran each other's tests.
+ * loam has no way to tell them apart, so it does not choose: the answer is
+ * refused, with the services named, and `--service` is the way to give a report
+ * an owner (it narrows the checklist to one repository's claims before the
+ * matching starts, so nothing here is contested).
+ *
+ * Only the SERVICE boundary counts. One service's spec repeating a scenario
+ * word for word is genuinely one test — that is the documented meaning of the
+ * stamp — and both claims may be answered by the one run.
+ */
+export function contestedDigests(claims: readonly Claim[]): Map<string, string[]> {
+  const owners = new Map<string, Set<string>>();
+  for (const c of claims) {
+    if (c.digest === undefined) continue;
+    const seen = owners.get(c.digest) ?? new Set<string>();
+    seen.add(c.subject);
+    owners.set(c.digest, seen);
+  }
+  const contested = new Map<string, string[]>();
+  for (const [digest, services] of owners) {
+    if (services.size > 1) contested.set(digest, [...services].sort());
+  }
+  return contested;
+}
+
+/**
  * Answer every claim from the report — the runner's half of the record. Meant
  * for `scenario.tested` claims (the only kind carrying a digest); a claim
  * without one is answered `unconfirmed` rather than skipped, because silence
@@ -114,14 +151,26 @@ export function readCucumberReport(doc: unknown, reportName: string): ReportRead
  * step, every step `passed`, every before/after hook `passed`, and the
  * element-level status (when the dialect reports one) is `passed`. One failed
  * occurrence wins as failure, a skipped-only run is "skipped" not green, and
- * no match at all is "not found in report".
+ * no match at all is "not found in report". A digest two services share is
+ * refused before any of that: see {@link contestedDigests}.
  */
 export function runnerAnswers(
   claims: Claim[],
   scenarios: ReportScenario[],
   reportName: string,
 ): Answer[] {
+  const contested = contestedDigests(claims);
   return claims.map((c) => {
+    const rivals = c.digest === undefined ? undefined : contested.get(c.digest);
+    if (rivals !== undefined) {
+      return answer(
+        c.id,
+        "unconfirmed",
+        [],
+        `${scenarioDigestTag(c.digest!)} is worded identically in ${rivals.join(", ")}, so ${reportName} cannot say whose suite ran it. ` +
+          "Record each service's claims from its own repo with --service.",
+      );
+    }
     const runs = c.digest === undefined ? [] : scenarios.filter((s) => s.digests.includes(c.digest!));
     if (runs.length === 0) {
       const tag = c.digest === undefined ? "a digest tag" : scenarioDigestTag(c.digest);

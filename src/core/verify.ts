@@ -13,10 +13,16 @@
  * service will exist, it will expose this operation, that service will call it,
  * this scenario will have a test. loam derives that list mechanically from the
  * same files `validate` already reads, an agent answers each claim with
- * evidence, and `--record` writes the answers down beside the feature. The
- * scenario claims do not even take the agent's word: `--results` answers them
- * from a cucumber JSON report, matched by the digest tag `loam gherkin`
- * stamped — only a green run may say a scenario is tested (results.ts).
+ * evidence, and `--record` writes the answers down beside the feature.
+ *
+ * A scenario claim is answered mechanically wherever it can be: `--results`
+ * reads a cucumber JSON report and matches it by the digest tag `loam gherkin`
+ * stamped, and only a green run confirms one (results.ts). Where it cannot —
+ * a legacy service whose suite is months away, which is the fleet loam exists
+ * for — `--record` may still take an agent's word for it, and the record marks
+ * that answer ATTESTED rather than run: `verified` is reserved for a checklist
+ * whose scenarios a run answered, and `verify.scenario-attested` says so on
+ * every surface that reads the record.
  *
  * Two properties make the record worth keeping. The claim ids are a function of
  * the claim and of nothing else — so two runs are diffable, reordering the delta
@@ -161,7 +167,7 @@ export async function featureChecklist(
       for (const r of parseRequirements(await readFile(paths.spec, "utf8"))) {
         if (r.kind === "BASE" || r.kind === "REMOVED") continue;
         for (const s of r.scenarios) {
-          const body = scenarioBodyHash(s.lines);
+          const body = scenarioBodyHash(svc, s.lines);
           scenarios.push({
             ...claim(
               "scenario.tested",
@@ -187,7 +193,7 @@ export async function featureChecklist(
       for (const r of parseRequirements(await readFile(paths.archSpec, "utf8"))) {
         if (r.kind === "BASE" || r.kind === "REMOVED") continue;
         for (const s of r.scenarios) {
-          const body = scenarioBodyHash(s.lines, "arch");
+          const body = scenarioBodyHash(svc, s.lines, "arch");
           scenarios.push({
             ...claim(
               "scenario.tested",
@@ -251,20 +257,44 @@ export type ScenarioAxis = "business" | "arch";
  * the stamp and the report `--results` reads can never disagree about what a
  * scenario says.
  *
- * The AXIS is part of the identity: an arch scenario salts the body with its
- * file name, so identically-worded scenarios across `spec.md` and
- * `arch.spec.md` can never share a digest. Without the salt a green BUSINESS
- * run answered the arch claim too — an integration test nobody wrote read as
- * run — collapsing the two-questions doctrine exactly where `--results` was
- * supposed to hold it mechanically.
+ * The identity is (SERVICE, AXIS, body), and both salts are there for the same
+ * reason: a digest that spans two namespaces lets one green run answer a
+ * question nobody ran a test for.
+ *
+ * - The AXIS salt keeps `spec.md` and `arch.spec.md` apart. Without it a green
+ *   BUSINESS run answered the arch claim too — an integration test nobody wrote
+ *   read as run.
+ * - The SERVICE salt keeps two repositories apart. "the service returns 404 for
+ *   an unknown id" is worded the same way in nine services of a real fleet;
+ *   unsalted, all nine shared one digest, `loam gherkin` stamped one tag into
+ *   nine repositories, and one repository's green run confirmed the other
+ *   eight's claims — across suites that never ran each other's tests.
+ *
+ * The service salt is what makes that case CORRECT rather than merely refused:
+ * `contestedDigests` could only decline to answer a shared digest, which left a
+ * fleet with ordinary repeated wording holding claims nothing could ever
+ * answer.
+ *
+ * Both salts renamed every claim id and every stamped tag on the day they
+ * landed, and both readings are legible rather than silent: an existing
+ * `verification.yaml` answers a checklist digest that is no longer derived and
+ * reports STALE, and an existing generated `.feature` carries digests the
+ * living spec no longer computes and reports `gherkin.stale` beside the
+ * `gherkin.missing` for the new ones. One `loam gherkin` and one re-record
+ * clear both.
  */
-export function scenarioBodyHash(lines: string[], axis: ScenarioAxis = "business"): string {
-  // NUL-separated like claimId's tuples: no business body can spell the arch
-  // salt by starting with the file name, so the namespaces stay disjoint.
+export function scenarioBodyHash(
+  service: string,
+  lines: string[],
+  axis: ScenarioAxis = "business",
+): string {
+  // NUL-separated like claimId's tuples, and for its reason: no body can spell
+  // the salt in front of it, so the namespaces stay disjoint. Spelled as an
+  // escape and never as a raw NUL in the literal — a raw one makes this file
+  // read as `data` to `file(1)` and invisible to `grep`.
   const body = lines.join("\n").trim();
-  return createHash("sha256")
-    .update(axis === "arch" ? `arch.spec.md\u0000${body}` : body)
-    .digest("hex");
+  const onAxis = axis === "arch" ? `arch.spec.md\u0000${body}` : body;
+  return createHash("sha256").update(`${service}\u0000${onAxis}`).digest("hex");
 }
 
 /**
@@ -487,6 +517,28 @@ export interface RecordedClaim {
   note?: string;
 }
 
+/**
+ * The test report a `--results` run consumed.
+ *
+ * Nothing can prove a JSON file came from executing a particular commit — a
+ * report is bytes, and bytes are writable. What loam can do is stop leaving the
+ * question open: it records exactly which file it read (inside the attesting
+ * repository, resolved by the same path rules as evidence), the sha256 of the
+ * bytes it read, the file's own mtime and how many digest-tagged scenarios it
+ * carried. A reviewer holding the repository can tell whether this is that
+ * file; before this, `answered_by: runner` named nothing at all.
+ */
+export interface ConsumedReport {
+  /** As it was passed to `--results` — repo-relative in a federated record. */
+  path: string;
+  /** Full sha256 of the bytes read, so `shasum -a 256 <path>` answers the question. */
+  digest: string;
+  /** ISO-8601 mtime of the report file — when the run that wrote it finished. */
+  mtime: string;
+  /** How many digest-tagged scenarios the report carried. */
+  scenarios: number;
+}
+
 /** A service repository's commit-bound contribution to a federated record. */
 export interface ServiceAttestation {
   service: string;
@@ -494,6 +546,8 @@ export interface ServiceAttestation {
   recorded: string;
   /** Claim ids this commit answered. Kept explicit so stale answers can be pruned safely. */
   claims: string[];
+  /** The report that answered this service's scenario claims, when `--results` did. */
+  report?: ConsumedReport;
 }
 
 export interface Verification {
@@ -506,7 +560,128 @@ export interface Verification {
   checklist: string;
   summary: { claims: number; confirmed: number; unconfirmed: number; unanswered?: number };
   claims: RecordedClaim[];
+  /** The all-at-once form's consumed report; the federated form files it per attestation. */
+  report?: ConsumedReport;
   attestations?: ServiceAttestation[];
+}
+
+/* ------------------------------------------------------------------ */
+/* The verdict                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Anything carrying an answer, whichever surface holds it: a recorded claim, or
+ * the read view's per-claim status. Structural on purpose — the same questions
+ * are asked of both, and neither should have to convert into the other to be
+ * counted.
+ */
+export interface AnsweredClaim {
+  id: string;
+  kind: string;
+  verdict: string;
+  answered_by?: string;
+}
+
+/**
+ * The confirmed `scenario.tested` claims that no test run answered.
+ *
+ * A scenario claim's whole premise is that a run answers it — its digest IS the
+ * tag `loam gherkin` stamps, and `--results` matches the two mechanically. An
+ * agent may still answer one, because a legacy service has no runnable suite
+ * for months and that fleet is who loam is for; but the answer is somebody's
+ * word about a test, and it must not read as the run. A record written before
+ * `--results` existed carries no `answered_by` at all: unknown counts as agent
+ * here, because the alternative is to credit a run nobody can point at.
+ */
+export function attestedClaims(claims: readonly AnsweredClaim[]): string[] {
+  return claims
+    .filter((c) => c.kind === "scenario.tested" && c.verdict === "confirmed" && c.answered_by !== "runner")
+    .map((c) => c.id);
+}
+
+/** How a set of answers counts up — recounted from the answers, never read off a `summary`. */
+export interface RecordTally {
+  /** Questions asked: answered, plus the ones a federated record leaves for other repos. */
+  claims: number;
+  confirmed: number;
+  unconfirmed: number;
+  unanswered: number;
+  /** Of the confirmed, the scenario claims on an agent's word. See {@link attestedClaims}. */
+  attested: number;
+}
+
+/**
+ * `unanswered` is the count the answers themselves cannot show: a federated
+ * record holds only what somebody answered, and the claims still owed to other
+ * repositories exist on the checklist, not in `claims[]`. Read views that carry
+ * an `unanswered` status inside the list pass 0 and are counted in place.
+ */
+export function tallyAnswers(claims: readonly AnsweredClaim[], unanswered = 0): RecordTally {
+  const of = (verdict: string): number => claims.filter((c) => c.verdict === verdict).length;
+  return {
+    claims: claims.length + unanswered,
+    confirmed: of("confirmed"),
+    unconfirmed: of("unconfirmed"),
+    unanswered: of("unanswered") + unanswered,
+    attested: attestedClaims(claims).length,
+  };
+}
+
+/**
+ * The record's own answers, recounted. Never `v.summary`: the summary is what
+ * whoever wrote the file said the answers add up to, and every reader that
+ * believed it reported a record full of unconfirmed claims as fully confirmed.
+ * `readVerificationState` refuses a record whose summary contradicts this, so a
+ * caller holding a Verification may use either — and should use this one.
+ */
+export function tallyRecord(v: Verification): RecordTally {
+  return tallyAnswers(v.claims, v.summary.unanswered ?? 0);
+}
+
+/**
+ * Three states, because two were a lie. `verified` is the strong claim — every
+ * question answered, every answer confirmed, and every scenario answered by a
+ * digest-matched green run. `attested` is the same completeness resting, for at
+ * least one scenario, on an agent's word. `unverified` is everything else:
+ * nothing recorded, a record gone stale, a claim unanswered or unconfirmed, or
+ * a checklist that asks nothing at all.
+ */
+export const VERIFICATION_VERDICTS = ["verified", "attested", "unverified"] as const;
+export type VerificationVerdict = (typeof VERIFICATION_VERDICTS)[number];
+
+export function verificationVerdict(t: RecordTally, stale = false): VerificationVerdict {
+  if (stale || t.claims === 0 || t.confirmed !== t.claims) return "unverified";
+  return t.attested > 0 ? "attested" : "verified";
+}
+
+/** A finding a verify surface reports about a record. Stable code, prose that may change. */
+export interface VerifyNotice {
+  code: string;
+  severity: "warn";
+  message: string;
+  /** The claims it is about, when it is about claims. */
+  claims?: string[];
+}
+
+/**
+ * The one notice `verify`, `list` and `status` all show: this record's scenario
+ * claims were confirmed without a run.
+ *
+ * It is a warning and it gates nothing — verify has never gated, and a service
+ * with no suite yet has to be able to ship. What it must never do is read the
+ * same as a green run.
+ */
+export function attestedNotice(claims: readonly AnsweredClaim[], feature: string): VerifyNotice | null {
+  const ids = attestedClaims(claims);
+  if (ids.length === 0) return null;
+  return {
+    code: "verify.scenario-attested",
+    severity: "warn",
+    message:
+      `${ids.length} scenario claim(s) are confirmed on an agent's word, not on a test run: ${ids.join(", ")}. ` +
+      `Answer them mechanically once the suite runs: \`loam verify ${feature} --results <cucumber.json>\`.`,
+    claims: ids,
+  };
 }
 
 /**
@@ -523,6 +698,7 @@ export function buildVerification(
   checklist: Checklist,
   answers: Answer[],
   today: string,
+  report?: ConsumedReport,
 ): Verification {
   const byId = new Map(answers.map((a) => [a.id, a]));
   const claims: RecordedClaim[] = checklist.claims.map((c) => {
@@ -544,6 +720,7 @@ export function buildVerification(
     checklist: checklist.digest,
     summary: { claims: claims.length, confirmed, unconfirmed: claims.length - confirmed },
     claims,
+    ...(report === undefined ? {} : { report }),
   };
 }
 
@@ -588,6 +765,7 @@ export function buildFederatedVerification(
   previous: Verification | null,
   recorded: string,
   commit: string,
+  report?: ConsumedReport,
 ): FederatedBuild {
   const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
   const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
@@ -631,7 +809,16 @@ export function buildFederatedVerification(
   });
   const attestations: ServiceAttestation[] = [
     ...retainedAttestations,
-    { service, commit, recorded, claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id) },
+    {
+      service,
+      commit,
+      recorded,
+      claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id),
+      // Filed with the attestation, not the record: the report is one
+      // repository's run, and it is pruned or retained with that repository's
+      // answers rather than outliving them.
+      ...(report === undefined ? {} : { report }),
+    },
   ].sort((a, b) => a.service.localeCompare(b.service));
 
   const confirmed = claims.filter((claim) => claim.verdict === "confirmed").length;
@@ -679,6 +866,12 @@ export function renderVerification(v: Verification): string {
     "# `answered_by: agent` means somebody's word about the code, which loam did not",
     "# check. Nothing gates on either.",
     "#",
+    "# A `scenario.tested` claim confirmed by an agent is ATTESTED, not run: loam",
+    "# reports it as `verify.scenario-attested` and the feature does not count as",
+    "# verified until a report answers it. `report:` records the file a --results run",
+    "# read — its sha256 and mtime say WHICH file, not that it came from that commit;",
+    "# no digest can say that.",
+    "#",
     "# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same",
     "# one, the feature changed after this was recorded and these answers are stale.",
     ...(v.schema === 2
@@ -709,8 +902,14 @@ export function renderVerification(v: Verification): string {
  */
 export type VerificationRead =
   | { state: "absent" }
-  /** `reason` names the YAML line when the parser gave one — the file is the thing to fix. */
-  | { state: "unreadable"; reason: string }
+  /**
+   * `reason` names the YAML line when the parser gave one — the file is the
+   * thing to fix. `code` is set for the one unreadable that parses perfectly: a
+   * record whose `summary` contradicts its own `claims[]`. That lives here
+   * rather than in a state of its own so every reader which already refuses an
+   * unreadable record refuses this one too, without a line of new code.
+   */
+  | { state: "unreadable"; reason: string; code?: "verify.record-miscounted" }
   | { state: "ok"; verification: Verification };
 
 export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
@@ -729,13 +928,53 @@ export async function readVerificationState(featureDir: string): Promise<Verific
     return { state: "unreadable", reason: yamlReason(err) };
   }
   const verification = asVerification(doc);
-  return verification === null
-    ? {
-        state: "unreadable",
-        reason:
-          "it parses as YAML but does not have a verification record's shape (feature, recorded, checklist, summary and claims)",
-      }
-    : { state: "ok", verification };
+  if (verification === null) {
+    return {
+      state: "unreadable",
+      reason:
+        "it parses as YAML but does not have a verification record's shape (feature, recorded, checklist, summary and claims)",
+    };
+  }
+  const miscount = summaryDisagreement(verification);
+  if (miscount === null) return { state: "ok", verification };
+  return {
+    state: "unreadable",
+    // Spelled twice on purpose: the field is what a caller branches on, the
+    // prose is what a terminal prints and what somebody greps for.
+    code: "verify.record-miscounted",
+    reason: `verify.record-miscounted: ${miscount}`,
+  };
+}
+
+/**
+ * Does the record's `summary` add up from its own `claims[]`?
+ *
+ * The summary is what wrote the file; the claims are what it answered. Nothing
+ * ever compared them, so every reader that took the shortcut — verify's frozen
+ * verdict for a shipped feature, list's column, status's block — reported a
+ * record full of unconfirmed claims as fully confirmed. Believing either side
+ * over the other would be a guess about which half was tampered with, so a
+ * record that contradicts itself is refused like any other file loam cannot
+ * use. The code is in the reason: it travels wherever the reason is printed.
+ */
+function summaryDisagreement(v: Verification): string | null {
+  const t = tallyAnswers(v.claims);
+  const unanswered = v.summary.unanswered ?? 0;
+  const says: string[] = [];
+  if (v.summary.confirmed !== t.confirmed) {
+    says.push(`says ${v.summary.confirmed} confirmed where claims[] holds ${t.confirmed}`);
+  }
+  if (v.summary.unconfirmed !== t.unconfirmed) {
+    says.push(`says ${v.summary.unconfirmed} unconfirmed where claims[] holds ${t.unconfirmed}`);
+  }
+  if (v.summary.claims !== v.claims.length + unanswered) {
+    says.push(
+      `says ${v.summary.claims} claim(s)${unanswered === 0 ? "" : ` including ${unanswered} unanswered`} where claims[] holds ${v.claims.length}`,
+    );
+  }
+  return says.length === 0
+    ? null
+    : `its summary ${says.join(", ")} — the record contradicts itself, so neither half can be believed`;
 }
 
 /** A YAML failure with its line, when the parser located one: that line is the fix. */
@@ -752,6 +991,11 @@ function yamlReason(err: unknown): string {
  * verification column shows one glyph either way); anything that WRITES must
  * use {@link readVerificationState} instead, or it overwrites what it could not
  * read.
+ *
+ * A record whose summary contradicts its own claims is one of the nulls now, so
+ * no reader can print its counts as fact. Reading it as ABSENT is the safe half
+ * of the truth and not the whole of it: a reader that can say why should take
+ * {@link readVerificationState} and its `code`.
  */
 export async function readVerification(featureDir: string): Promise<Verification | null> {
   const read = await readVerificationState(featureDir);
@@ -794,6 +1038,7 @@ function asVerification(doc: unknown): Verification | null {
     if (c["answered_by"] !== undefined && typeof c["answered_by"] !== "string") return null;
   }
   if (doc["schema"] !== undefined && doc["schema"] !== 2) return null;
+  if (!isConsumedReport(doc["report"])) return null;
   if (doc["attestations"] !== undefined) {
     if (!Array.isArray(doc["attestations"])) return null;
     for (const a of doc["attestations"]) {
@@ -801,9 +1046,22 @@ function asVerification(doc: unknown): Verification | null {
       if (typeof a["service"] !== "string" || typeof a["commit"] !== "string" || typeof a["recorded"] !== "string") return null;
       if (!/^[0-9a-f]{40,64}$/i.test(a["commit"])) return null;
       if (!Array.isArray(a["claims"]) || a["claims"].some((id) => typeof id !== "string")) return null;
+      if (!isConsumedReport(a["report"])) return null;
     }
   }
   return doc as unknown as Verification;
+}
+
+/** Absent is fine — most records answer nothing from a report. Present must be whole: it is printed. */
+function isConsumedReport(v: unknown): boolean {
+  if (v === undefined) return true;
+  return (
+    isRecord(v) &&
+    typeof v["path"] === "string" &&
+    typeof v["digest"] === "string" &&
+    typeof v["mtime"] === "string" &&
+    isCount(v["scenarios"])
+  );
 }
 
 /** A summary count: a finite number. YAML hands back strings for anything quoted. */

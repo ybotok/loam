@@ -9,6 +9,7 @@
  * refusal to run anywhere but the service's own repo.
  */
 import { describe, expect, it, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -155,7 +156,7 @@ describe("step conversion", () => {
         "- **Then** the payment is authorized",
       ].join("\n"),
     );
-    const { content } = renderFeature(req!, [], "0.0.0");
+    const { content } = renderFeature(req!, [], "0.0.0", "payment-split-service");
     expect(content).toContain("    Some prose that stays.");
     expect(content).toContain("    - just a note bullet");
     expect(content).toContain("    Given a valid card");
@@ -232,8 +233,12 @@ describe("feature mode", () => {
     const payload = JSON.parse(res.stdout);
 
     const [req] = parseRequirements(FEATURE_SPEC);
-    const expected = scenarioBodyHash(req!.scenarios[0]!.lines).slice(0, 16);
-    expect(scenarioDigest(req!.scenarios[0]!.lines)).toBe(expected);
+    // Salted by the service that owns the suite — the same service `loam verify`
+    // files the claims under, and the reason one repo's green run cannot answer
+    // another's identically-worded scenario.
+    const expected = scenarioBodyHash("payment-split-service", req!.scenarios[0]!.lines).slice(0, 16);
+    expect(scenarioDigest("payment-split-service", req!.scenarios[0]!.lines)).toBe(expected);
+    expect(scenarioDigest("ledger-service", req!.scenarios[0]!.lines)).not.toBe(expected);
     expect(payload.files[0].digests).toEqual([expected]);
     const onDisk = await readWork(p, "features/loam/split-a-payment.feature");
     // as a TAG on the line above the Scenario keyword — cucumber's JSON report
@@ -547,6 +552,60 @@ describe("validate: the staleness chain", () => {
 
     await runLoam(p.workDir, "gherkin");
     expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  /**
+   * Salting the digest by service renamed every stamp `loam gherkin` writes.
+   * The one-time cost is only acceptable if an already-generated suite READS as
+   * moved rather than quietly failing to match: the old words are stale, the
+   * new words are missing, and one regeneration clears both — the same reading
+   * a reworded scenario gets, which is the point.
+   */
+  it("a suite generated before the service salt is stale and missing, not silent", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+
+    const scenario = parseRequirements(LIVING_SPEC)[0]!.scenarios[0]!;
+    // the pre-salt recipe, spelled out: the body hash with no service in it
+    const preSalt = createHash("sha256").update(scenario.lines.join("\n").trim()).digest("hex").slice(0, 16);
+    const salted = scenarioDigest("payment-service", scenario.lines);
+    expect(preSalt).not.toBe(salted);
+
+    const file = "features/loam/authorize-a-payment.feature";
+    await writeWork(p, file, (await readWork(p, file)).replace(salted, preSalt));
+
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => f.code).sort()).toEqual(["gherkin.missing", "gherkin.stale"]);
+
+    await runLoam(p.workDir, "gherkin");
+    expect((await gherkinValidate(p, "payment-service")).map((f) => f.code)).toEqual(["gherkin.current"]);
+  });
+
+  /**
+   * `readdir(withFileTypes)` never follows a symlink, so `isFile()` was false
+   * for a symlinked `.feature` and the whole file was invisible: `loam validate`
+   * graded it as nothing at all and `loam gherkin` could never collect it as an
+   * orphan, so it sat in loam/ forever. repo.ts and brief.ts follow links for
+   * the same reason; this walk now does too.
+   */
+  it("sees a symlinked .feature under loam/ — it grades, and regeneration can remove it", async () => {
+    const p = await project(livingFixture(), { service: "payment-service" });
+    await runLoam(p.workDir, "gherkin");
+
+    const target = join(p.workDir, "vendor", "legacy.feature");
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, `${gherkinStampLine(LOAM_VERSION)}\nFeature: Retired requirement\n`, "utf8");
+    await symlink(target, join(p.workDir, "features", "loam", "legacy.feature"));
+
+    const findings = await gherkinValidate(p, "payment-service");
+    expect(findings.map((f) => f.code)).toEqual(["gherkin.orphaned"]);
+    expect(findings[0]!.message).toContain("features/loam/legacy.feature");
+
+    const regen = await runLoam(p.workDir, "gherkin", "--json");
+    expect(JSON.parse(regen.stdout).deleted).toEqual(["features/loam/legacy.feature"]);
+    expect(existsSync(join(p.workDir, "features/loam/legacy.feature"))).toBe(false);
+    // the LINK went; loam owns loam/, and it does not own what a link points at
+    expect(existsSync(target)).toBe(true);
   });
 
   it("gherkin.orphaned fires per file when the requirement goes away, and regeneration removes the file", async () => {

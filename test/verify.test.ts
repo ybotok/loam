@@ -106,8 +106,8 @@ async function confirmAll(p: Project, feature = FEAT): Promise<string> {
 /* --- the runner's side: cucumber reports ---------------------------- */
 
 /** The digest the emitter stamps for scenario `sc` of requirement `req` in a spec source. */
-function digestOf(spec: string, req = 0, sc = 0, axis: "business" | "arch" = "business"): string {
-  return scenarioDigest(parseRequirements(spec)[req]!.scenarios[sc]!.lines, axis);
+function digestOf(spec: string, req = 0, sc = 0, axis: "business" | "arch" = "business", service = SPLIT): string {
+  return scenarioDigest(service, parseRequirements(spec)[req]!.scenarios[sc]!.lines, axis);
 }
 
 interface Run {
@@ -865,7 +865,10 @@ describe("reading the verification back", () => {
     expect((await checklist(p)).verified).toBe(false);
     await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
     const after = await checklist(p);
-    expect(after.verified).toBe(true);
+    // Р13(b): confirmAll answers as an agent, so every claim is confirmed but
+    // the scenario claim rests on nobody's test run — attested, not verified.
+    expect(after.verified).toBe(false);
+    expect(after.verdict).toBe("attested");
     expect(after.summary).toEqual({ claims: 4, confirmed: 4, unconfirmed: 0, unanswered: 0 });
   });
 
@@ -979,7 +982,10 @@ describe("a hand-edited record that lost its shape is unreadable, not absent", (
     await p.write(RECORD, (await p.read(RECORD)) + "reviewed_by: a human, in a PR\n");
     const json = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout);
     expect(json.recorded).not.toBe(null);
-    expect(json.verified).toBe(true);
+    // The point is that the annotated record still READS and gets judged; the
+    // verdict itself is attested because confirmAll answers as an agent.
+    expect(json.verified).toBe(false);
+    expect(json.verdict).toBe("attested");
   });
 });
 
@@ -997,7 +1003,9 @@ describe("archived features — the record is frozen history", () => {
 
     const c = await checklist(p);
     expect(c.frozen).toBe(true);
-    expect(c.verified).toBe(true);
+    // The frozen verdict is recounted from claims[] and honours answered_by.
+    expect(c.verified).toBe(false);
+    expect(c.verdict).toBe("attested");
     // all four claims exactly as recorded — including the api.exposes claim
     // whose operation archive merged into the living openapi
     expect(c.summary).toEqual({ claims: 4, confirmed: 4, unconfirmed: 0 });
@@ -1131,9 +1139,10 @@ describe("the machine contract", () => {
     const full = JSON.parse(
       (await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p), "--json")).stdout,
     );
-    expect(full.verified).toBe(true);
+    expect(full.verified).toBe(false);
+    expect(full.verdict).toBe("attested");
     // and it agrees with what a read-mode re-run would have said
-    expect((await checklist(p)).verified).toBe(true);
+    expect((await checklist(p)).verdict).toBe("attested");
   });
 });
 
@@ -1197,7 +1206,8 @@ describe("federated service verification", () => {
 
     const payment = await recordService(paymentRepo, "payment-service");
     expect(payment.result.code, payment.result.out).toBe(0);
-    expect(payment.json.verified).toBe(true);
+    expect(payment.json.verified).toBe(false);
+    expect(payment.json.verdict).toBe("attested");
     expect(payment.json.summary).toMatchObject({ claims: 4, confirmed: 4, unanswered: 0 });
     const paymentHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: paymentRepo, encoding: "utf8" }).trim();
     expect(payment.json.attestations).toEqual([
@@ -1206,7 +1216,8 @@ describe("federated service verification", () => {
     ]);
 
     const read = JSON.parse((await runLoam(splitRepo, "verify", FEAT, "--json")).stdout);
-    expect(read.verified).toBe(true);
+    expect(read.verified).toBe(false);
+    expect(read.verdict).toBe("attested");
     expect(read.recorded.attestations).toHaveLength(2);
     expect(read.claims.every((claim: Record<string, unknown>) => claim.verdict === "confirmed")).toBe(true);
   });

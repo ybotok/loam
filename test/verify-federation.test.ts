@@ -37,12 +37,14 @@ import {
   coherentFixture,
   makeProject,
   runLoam,
+  FEATURE_SPEC,
   LANDSCAPE,
   LIVING_OPENAPI,
   LIVING_SPEC,
   type Project,
 } from "./helpers/harness.js";
-import { parseStampedFeature, slugOf } from "../src/core/gherkin.js";
+import { parseStampedFeature, scenarioDigest, slugOf } from "../src/core/gherkin.js";
+import { parseRequirements } from "../src/core/spec.js";
 
 const FEAT = "FEAT-1";
 const DIR = "features/FEAT-1-split";
@@ -113,6 +115,25 @@ async function answersFile(dir: string, claims: Claim[], name = "answers.json"):
     "utf8",
   );
   return name;
+}
+
+/** A cucumber report whose one scenario carries FEATURE_SPEC's digest and ran green. */
+function greenReport(): unknown {
+  const digest = scenarioDigest(SPLIT, parseRequirements(FEATURE_SPEC)[0]!.scenarios[0]!.lines);
+  return [
+    {
+      uri: "features/loam/split-a-payment.feature",
+      name: "Split a payment",
+      elements: [
+        {
+          name: "Split across two payees",
+          type: "scenario",
+          tags: [{ name: `@loam-digest-${digest}` }],
+          steps: [{ result: { status: "passed" } }],
+        },
+      ],
+    },
+  ];
 }
 
 /** Attest this service's claims from its own repo, the way a service agent does. */
@@ -250,6 +271,97 @@ describe("--service requires the repository to declare itself", () => {
     expect(doc.schema).toBe(2);
     expect(doc.attestations.map((a: Record<string, unknown>) => a.service)).toEqual([SPLIT]);
     expect(doc.summary.unanswered).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 3b. "This repo" is the repo, not the directory it was typed in      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `loam.json` is discovered by walking UP, so a command may legitimately be run
+ * from anywhere inside the repository — and every attestation is a statement
+ * about the repository, never about the caller's directory. Off `process.cwd()`
+ * an agent standing one directory deeper had to spell its evidence relative to
+ * that directory to be believed, which is a different claim about a different
+ * tree, and one no reviewer holding the repo could re-check. `gherkin` and
+ * `vouch` were fixed for the same reason; this is the third site.
+ */
+describe("recording from a subdirectory of the service repo", () => {
+  it("resolves evidence, the --results report and the commit against the repo root", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "split-work");
+    const deep = join(repo, "src", "impl");
+    await mkdir(deep, { recursive: true });
+
+    const local = (await allClaims(p)).filter((c) => c.subject === SPLIT);
+    const scenario = local.filter((c) => c.kind === "scenario.tested");
+    expect(scenario).toHaveLength(1);
+
+    // The report and the evidence live at the repo root, spelled the way the
+    // repository spells them. Neither exists under the cwd — so a run that
+    // resolves either against the cwd cannot succeed by accident.
+    await writeFile(join(repo, "report.json"), JSON.stringify(greenReport(), null, 2), "utf8");
+    expect(existsSync(join(deep, "report.json"))).toBe(false);
+    expect(existsSync(join(deep, "proof.ts"))).toBe(false);
+
+    // The answer set is the caller's own file and stays cwd-relative: nothing
+    // on the record points at it, and it is not part of the tree being attested.
+    const file = await answersFile(deep, local.filter((c) => c.kind !== "scenario.tested"));
+
+    const res = await runLoam(
+      deep, "verify", FEAT, "--service", SPLIT, "--record", file, "--results", "report.json", "--json",
+    );
+    expect(res.code, res.out).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.attestations).toEqual([
+      expect.objectContaining({
+        service: SPLIT,
+        commit: head(repo),
+        report: expect.objectContaining({ path: "report.json" }),
+      }),
+    ]);
+    // The report the ROOT holds answered the scenario, so nothing here rests on
+    // an agent's word. (The record is still `unverified`: one claim on this
+    // checklist belongs to payment-service and no repo has answered it yet.)
+    expect(json.attested).toBe(0);
+
+    const doc = parse(await p.read(RECORD)) as Record<string, any>;
+    expect(
+      doc.claims.find((c: Record<string, unknown>) => c.kind === "scenario.tested").answered_by,
+    ).toBe("runner");
+    const agentAnswered = doc.claims.filter((c: Record<string, unknown>) => c.answered_by === "agent");
+    expect(agentAnswered.length).toBeGreaterThan(0);
+    expect(agentAnswered.map((c: Record<string, unknown>) => c.evidence)).toEqual(
+      agentAnswered.map(() => ["proof.ts:2"]),
+    );
+  });
+
+  it("refuses evidence that is only real relative to the cwd", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "split-work");
+    const deep = join(repo, "src", "impl");
+    await mkdir(deep, { recursive: true });
+    // A file that exists, is committed, and is spelled as the CWD sees it. The
+    // repository spells it `src/impl/local.ts`; `local.ts` is not a path in it.
+    await writeFile(join(deep, "local.ts"), "export const local = true;\n", "utf8");
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync(
+      "git",
+      ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", "local"],
+      { cwd: repo },
+    );
+
+    const local = (await allClaims(p)).filter((c) => c.subject === SPLIT);
+    await writeFile(
+      join(deep, "answers.json"),
+      JSON.stringify(local.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["local.ts:1"] }))),
+      "utf8",
+    );
+    const res = await runLoam(deep, "verify", FEAT, "--service", SPLIT, "--record", "answers.json", "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("answers-unevidenced");
+    expect(p.exists(RECORD)).toBe(false);
   });
 });
 
