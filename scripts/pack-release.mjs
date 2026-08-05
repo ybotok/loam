@@ -1,11 +1,35 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
+// mitigation), and `shell: true` would change quoting for every argument. Run
+// npm's own JS entry through this Node instead: npm_execpath is set whenever
+// the script runs under `npm run`, and the two layout probes cover a direct
+// `node scripts/...` invocation on Windows and on POSIX.
+function resolveNpm() {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
+      return [process.execPath, candidate];
+    }
+  }
+  if (process.platform === "win32") {
+    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
+  }
+  return ["npm"];
+}
+const [npmCommand, ...npmPrefix] = resolveNpm();
 
 function usage(message) {
   if (message) console.error(`error: ${message}`);
@@ -28,16 +52,30 @@ await mkdir(outputDir, { recursive: true });
 const existing = await readdir(outputDir);
 if (existing.length > 0) throw new Error(`release output must be empty: ${outputDir}`);
 
-const head = spawnSync("git", ["rev-parse", "HEAD"], {
-  cwd: projectRoot,
-  encoding: "utf8",
-});
-if (head.status !== 0 || !/^[a-f0-9]{40}$/.test(head.stdout.trim())) {
+// `^{commit}` peels a ref to the commit it names. An annotated or signed tag —
+// what `npm version` and `git tag -a/-s` create — is its own object, so on a tag
+// push GITHUB_SHA is the tag object's sha and only equals HEAD after peeling.
+function peeledCommit(ref) {
+  const result = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  });
+  const sha = result.stdout?.trim() ?? "";
+  return result.status === 0 && /^[a-f0-9]{40}$/.test(sha) ? sha : null;
+}
+
+const sourceCommit = peeledCommit("HEAD");
+if (!sourceCommit) {
   throw new Error("release packaging requires an exact git commit");
 }
-const sourceCommit = head.stdout.trim();
-if (process.env.GITHUB_SHA && process.env.GITHUB_SHA !== sourceCommit) {
-  throw new Error(`GITHUB_SHA ${process.env.GITHUB_SHA} does not match checked-out HEAD ${sourceCommit}`);
+if (process.env.GITHUB_SHA) {
+  const workflowCommit = peeledCommit(process.env.GITHUB_SHA);
+  if (workflowCommit !== sourceCommit) {
+    throw new Error(
+      `GITHUB_SHA ${process.env.GITHUB_SHA} resolves to ${workflowCommit ?? "no commit"}, `
+        + `which does not match checked-out HEAD ${sourceCommit}`,
+    );
+  }
 }
 const trackedDiff = spawnSync("git", ["diff", "--quiet", "HEAD", "--"], {
   cwd: projectRoot,
@@ -73,7 +111,7 @@ if (publicationInputs.status !== 0 || publicationInputs.stdout.trim()) {
 
 const result = spawnSync(
   npmCommand,
-  ["pack", "--json", "--pack-destination", outputDir],
+  [...npmPrefix, "pack", "--json", "--pack-destination", outputDir],
   { cwd: projectRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
 );
 if (result.stderr) process.stderr.write(result.stderr);

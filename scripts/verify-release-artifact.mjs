@@ -1,12 +1,38 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { appendFile, readFile, readdir, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
+const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const MIN_NODE = [22, 22, 3];
 const MIN_NPM = [11, 5, 1];
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
+// mitigation), and `shell: true` would change quoting for every argument. Run
+// npm's own JS entry through this Node instead: npm_execpath is set whenever
+// the script runs under `npm run`, and the two layout probes cover a direct
+// `node scripts/...` invocation on Windows and on POSIX.
+function resolveNpm() {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
+      return [process.execPath, candidate];
+    }
+  }
+  if (process.platform === "win32") {
+    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
+  }
+  return ["npm"];
+}
+const [npmCommand, ...npmPrefix] = resolveNpm();
 
 function usage(message) {
   if (message) console.error(`error: ${message}`);
@@ -62,14 +88,27 @@ if (!/^[a-f0-9]{64}$/.test(artifact.sha256)) throw new Error("release manifest h
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.GITHUB_EVENT_NAME !== "push" || process.env.GITHUB_REF_TYPE !== "tag") {
   throw new Error("artifact publication is restricted to a GitHub Actions tag push");
 }
-if (!process.env.GITHUB_SHA || artifact.sourceCommit !== process.env.GITHUB_SHA) {
-  throw new Error(`artifact commit ${artifact.sourceCommit ?? "(missing)"} does not match workflow commit ${process.env.GITHUB_SHA ?? "(missing)"}`);
+// `^{commit}` peels a ref to the commit it names. On a tag push GITHUB_SHA is
+// the tag OBJECT's sha whenever the tag is annotated or signed — the default for
+// `npm version` and for `git tag -a/-s` — while the manifest records the peeled
+// commit, so the two only compare equal after peeling.
+const workflowCommit = (() => {
+  if (!process.env.GITHUB_SHA) return null;
+  const result = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${process.env.GITHUB_SHA}^{commit}`], {
+    cwd: projectRoot,
+    encoding: "utf8",
+  });
+  const sha = result.stdout?.trim() ?? "";
+  return result.status === 0 && /^[a-f0-9]{40}$/.test(sha) ? sha : null;
+})();
+if (!workflowCommit || artifact.sourceCommit !== workflowCommit) {
+  throw new Error(`artifact commit ${artifact.sourceCommit ?? "(missing)"} does not match workflow commit ${workflowCommit ?? process.env.GITHUB_SHA ?? "(missing)"}`);
 }
 if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL || !process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
   throw new Error("GitHub OIDC request context is unavailable");
 }
 if (!atLeast(tuple(process.versions.node), MIN_NODE)) throw new Error(`Node ${process.versions.node} is below 22.22.3`);
-const npm = spawnSync(npmCommand, ["--version"], { encoding: "utf8" });
+const npm = spawnSync(npmCommand, [...npmPrefix, "--version"], { encoding: "utf8" });
 const npmVersion = npm.stdout?.trim() ?? "";
 if (npm.status !== 0 || !atLeast(tuple(npmVersion), MIN_NPM)) throw new Error(`npm ${npmVersion || "unavailable"} is below 11.5.1`);
 

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,7 +7,30 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
+// mitigation), and `shell: true` would change quoting for every argument. Run
+// npm's own JS entry through this Node instead: npm_execpath is set whenever
+// the script runs under `npm run`, and the two layout probes cover a direct
+// `node scripts/...` invocation on Windows and on POSIX.
+function resolveNpm() {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
+      return [process.execPath, candidate];
+    }
+  }
+  if (process.platform === "win32") {
+    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
+  }
+  return ["npm"];
+}
+const [npmCommand, ...npmPrefix] = resolveNpm();
 const MIN_NODE = [22, 22, 3];
 const MIN_OIDC_NPM = [11, 5, 1];
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -29,8 +53,13 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 if (options.publish && !options.tag) usage("--publish requires --tag");
 if (options.githubOutput && !options.publish) usage("--github-output is only valid with --publish");
-if (options.fixtureReady && (options.publish || options.tag || options.githubOutput || process.env.GITHUB_ACTIONS === "true")) {
-  usage("--fixture-ready is a local static self-test only and cannot be combined with a tag, publish, GitHub output, or GitHub Actions");
+// The fixture waives three prerequisites that only the canonical repository can
+// satisfy, so it must never stand in for the real preflight — which runs on a
+// tag. Running inside Actions is not itself the conflict: CI runs this self-test
+// on every push and pull request, and refusing there left the static checks
+// unverified in the one place the project counts.
+if (options.fixtureReady && (options.publish || options.tag || options.githubOutput || process.env.GITHUB_REF_TYPE === "tag")) {
+  usage("--fixture-ready is a static self-test only and cannot be combined with a tag, publish, GitHub output, or a tag ref");
 }
 
 const failures = [];
@@ -169,7 +198,7 @@ const publishRuns = workflow.jobs.publish.steps.map((step) => step.run ?? "").jo
 check(!/npm (?:ci|install(?! --global npm@11\.5\.1)|run build|pack)/.test(publishRuns), "publish job does not install project dependencies, rebuild, or repack");
 
 const npmCache = await mkdtemp(join(tmpdir(), "loam-release-check-cache-"));
-const pack = spawnSync(npmCommand, ["pack", "--json", "--dry-run", "--ignore-scripts"], {
+const pack = spawnSync(npmCommand, [...npmPrefix, "pack", "--json", "--dry-run", "--ignore-scripts"], {
   cwd: root,
   encoding: "utf8",
   env: { ...process.env, npm_config_cache: npmCache },
@@ -193,7 +222,7 @@ if (pack.status !== 0) {
 
 if (options.publish) {
   check(atLeast(tuple(process.versions.node), MIN_NODE), "publish runtime satisfies Node >=22.22.3");
-  const npmVersion = spawnSync(npmCommand, ["--version"], { encoding: "utf8" });
+  const npmVersion = spawnSync(npmCommand, [...npmPrefix, "--version"], { encoding: "utf8" });
   const npmText = npmVersion.stdout?.trim() ?? "";
   check(
     npmVersion.status === 0 && atLeast(tuple(npmText), MIN_OIDC_NPM),

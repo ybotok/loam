@@ -4,7 +4,10 @@
 name: ci
 
 on:
+  # Only main pushes: a bare `push:` ran the whole matrix twice for every commit
+  # on a pull-request branch, and ran it again alongside release.yml on a tag.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -12,6 +15,12 @@ on:
 
 permissions:
   contents: read
+
+# One live run per ref per trigger, so a superseded commit stops burning
+# minutes and a scheduled corpus run is not cancelled by a push to main.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:

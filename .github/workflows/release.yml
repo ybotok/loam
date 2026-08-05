@@ -45,7 +45,10 @@ jobs:
           name: npm-package-${{ github.sha }}
           path: ${{ runner.temp }}/loam-release
           if-no-files-found: error
-          retention-days: 1
+          # Long enough to outlive the human-approval gate below. At 1 day a tag
+          # cut on a Friday expires before anyone approves it, and the publish
+          # job then repacks a candidate nobody reviewed.
+          retention-days: 14
           compression-level: 0
 
   publish:

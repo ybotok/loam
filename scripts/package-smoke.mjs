@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,7 +11,30 @@ const scratch = await mkdtemp(join(tmpdir(), "loam-package-smoke-"));
 const packDir = join(scratch, "pack");
 const installDir = join(scratch, "install");
 const cacheDir = join(scratch, "npm-cache");
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
+// mitigation), and `shell: true` would change quoting for every argument. Run
+// npm's own JS entry through this Node instead: npm_execpath is set whenever
+// the script runs under `npm run`, and the two layout probes cover a direct
+// `node scripts/...` invocation on Windows and on POSIX.
+function resolveNpm() {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
+      return [process.execPath, candidate];
+    }
+  }
+  if (process.platform === "win32") {
+    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
+  }
+  return ["npm"];
+}
+const [npmCommand, ...npmPrefix] = resolveNpm();
 const isolatedEnv = {
   ...process.env,
   npm_config_cache: cacheDir,
@@ -52,8 +76,11 @@ function run(command, args, cwd, capture = false) {
   return result.stdout ?? "";
 }
 
-function jsonCommand(bin, args, cwd) {
-  const output = run(bin, [...args, "--json"], cwd, true);
+// The installed CLI is always run as `node <installed dist/cli.js>`: the
+// node_modules/.bin shim is a .cmd on Windows, which Node >= 20.12 will not
+// spawn without a shell. The shim's existence is asserted separately.
+function jsonCommand(cli, args, cwd) {
+  const output = run(process.execPath, [cli, ...args, "--json"], cwd, true);
   const envelope = JSON.parse(output);
   if (envelope.ok !== true || envelope.contractVersion !== "1.0") {
     throw new Error(`loam ${args.join(" ")} did not return a successful v1.0 JSON envelope`);
@@ -71,7 +98,7 @@ try {
   if (suppliedTarball === null) {
     const packedJson = run(
       npmCommand,
-      ["pack", "--json", "--pack-destination", packDir],
+      [...npmPrefix, "pack", "--json", "--pack-destination", packDir],
       projectRoot,
       true,
     );
@@ -127,17 +154,19 @@ try {
   await writeFile(join(installDir, "package.json"), '{"private":true}\n', { flag: "wx" });
   run(
     npmCommand,
-    ["install", "--engine-strict", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
+    [...npmPrefix, "install", "--engine-strict", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
     installDir,
   );
 
-  const bin = join(
+  const shim = join(
     installDir,
     "node_modules",
     ".bin",
     process.platform === "win32" ? "loam.cmd" : "loam",
   );
-  run(bin, ["--help"], installDir, true);
+  await stat(shim).catch(() => {
+    throw new Error(`installing the tarball did not create the loam bin shim at ${shim}`);
+  });
 
   const installedPackageRoot = join(
     installDir,
@@ -152,7 +181,9 @@ try {
     || manifest.engines?.node !== ">=22.22.3") {
     throw new Error("installed package identity, engine contract, or loam bin mapping is incorrect");
   }
-  const version = run(bin, ["--version"], installDir, true).trim();
+  const cli = resolve(installedPackageRoot, manifest.bin.loam);
+  run(process.execPath, [cli, "--help"], installDir, true);
+  const version = run(process.execPath, [cli, "--version"], installDir, true).trim();
   if (version !== manifest.version) {
     throw new Error(`installed loam --version is ${version}, expected ${manifest.version}`);
   }
@@ -169,9 +200,11 @@ try {
 
   // Exercise a small real workflow through the installed tarball, not the
   // source tree: initialize a docs repo, scaffold a feature, then inventory it.
-  jsonCommand(bin, ["init", "--docs", "docs", "--no-commands"], installDir);
-  jsonCommand(bin, ["new", "SMOKE-1", "--title", "Tarball workflow"], installDir);
-  const inventory = jsonCommand(bin, ["list"], installDir);
+  // `--create` is required: init refuses to scaffold a docs repo that --docs
+  // only names, so that a misspelled path cannot silently fork the fleet.
+  jsonCommand(cli, ["init", "--docs", "docs", "--create", "--no-commands"], installDir);
+  jsonCommand(cli, ["new", "SMOKE-1", "--title", "Tarball workflow"], installDir);
+  const inventory = jsonCommand(cli, ["list"], installDir);
   if (inventory.features?.length !== 1 || inventory.features[0]?.id !== "SMOKE-1") {
     throw new Error("installed tarball workflow did not inventory the scaffolded SMOKE-1 feature");
   }
@@ -200,7 +233,7 @@ try {
 
   const mappingPath = join(installDir, "openspec-mapping.yaml");
   const audit = jsonCommand(
-    bin,
+    cli,
     ["audit-openspec", openspecProject, "--write-mapping", mappingPath],
     installDir,
   );
@@ -214,7 +247,7 @@ try {
   await writeFile(mappingPath, stringifyYaml(mapping, { lineWidth: 0 }), "utf8");
 
   const dryRun = jsonCommand(
-    bin,
+    cli,
     ["migrate-openspec", openspecProject, "--map", mappingPath],
     installDir,
   );
@@ -223,7 +256,7 @@ try {
   }
   const migrationTarget = join(installDir, "openspec-migrated");
   const applied = jsonCommand(
-    bin,
+    cli,
     [
       "migrate-openspec",
       openspecProject,

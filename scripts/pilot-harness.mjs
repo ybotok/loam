@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -8,7 +8,30 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+// Node >= 20.12 refuses to spawn npm.cmd without a shell (the CVE-2024-27980
+// mitigation), and `shell: true` would change quoting for every argument. Run
+// npm's own JS entry through this Node instead: npm_execpath is set whenever
+// the script runs under `npm run`, and the two layout probes cover a direct
+// `node scripts/...` invocation on Windows and on POSIX.
+function resolveNpm() {
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    process.env.npm_execpath,
+    join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(nodeDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("npm-cli.js") && existsSync(candidate)) {
+      return [process.execPath, candidate];
+    }
+  }
+  if (process.platform === "win32") {
+    throw new Error("cannot locate npm-cli.js, and npm.cmd is not spawnable without a shell on Node >= 20.12");
+  }
+  return ["npm"];
+}
+const [npmCommand, ...npmPrefix] = resolveNpm();
 const PROFILES = ["brownfield-adoption", "active-cross-service"];
 
 function usage(message) {
@@ -338,7 +361,7 @@ if (sha256(await readFile(privateTarballPath)) !== artifact.sha256) {
 await writeFile(resolve(installDir, "package.json"), '{"private":true}\n', { flag: "wx" });
 const install = spawnSync(
   npmCommand,
-  ["install", "--engine-strict", "--ignore-scripts", "--no-audit", "--no-fund", privateTarballPath],
+  [...npmPrefix, "install", "--engine-strict", "--ignore-scripts", "--no-audit", "--no-fund", privateTarballPath],
   {
     cwd: installDir,
     encoding: "utf8",
