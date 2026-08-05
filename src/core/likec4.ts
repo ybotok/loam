@@ -8,7 +8,7 @@ export interface LikeC4Error {
   sourceFsPath?: string;
 }
 
-/** loam-neutral element view (flattened from the LikeC4 computed model). */
+/** loam-neutral element view (flattened from the LikeC4 parsed model). */
 export interface Elem {
   id: string;
   kind: string;
@@ -140,6 +140,55 @@ export interface LoadedDoc {
 }
 
 /**
+ * The slice of a LikeC4 model loam reads: elements and relationships, and on
+ * each of those only id/kind/title/description/tags/metadata.
+ *
+ * It is a type of its own, rather than an inline cast at the one call site,
+ * because BOTH of LikeC4's model stages expose exactly this slice — which is
+ * what makes the cheap stage a safe substitute for the expensive one. The
+ * substitution is pinned in test/likec4-model-parity.test.ts, which flattens
+ * both stages through `flattenModel` below and compares the results.
+ */
+export interface ReadableModel {
+  elements: () => Iterable<{
+    id: string;
+    kind: string;
+    title: string;
+    description?: unknown;
+    tags?: readonly string[];
+    metadata?: unknown;
+  }>;
+  relationships: () => Iterable<{
+    source: { id: string };
+    target: { id: string };
+    title?: string | null;
+    tags?: readonly string[];
+    metadata?: unknown;
+  }>;
+}
+
+/** Flatten a LikeC4 model into loam's neutral `Elem`/`Rel` view. */
+export function flattenModel(model: ReadableModel): { elements: Elem[]; relationships: Rel[] } {
+  const elements: Elem[] = [...model.elements()].map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    title: e.title,
+    description: descText(e.description),
+    service: metaKey(e.metadata, "service"),
+    tags: [...(e.tags ?? [])],
+  }));
+  const relationships: Rel[] = [...model.relationships()].map((r) => ({
+    source: r.source.id,
+    target: r.target.id,
+    // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
+    title: r.title ?? undefined,
+    op: metaKey(r.metadata, "op"),
+    tags: [...(r.tags ?? [])],
+  }));
+  return { elements, relationships };
+}
+
+/**
  * Load and validate a single self-contained `.likec4` document, in-process
  * (no external tool, no JVM). Returns validation errors and, if clean, the
  * flattened elements + relationships.
@@ -165,42 +214,14 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
       return { errors, elements: [], relationships: [] };
     }
 
-    const model = (await likec4.computedModel()) as {
-      elements: () => Iterable<{
-        id: string;
-        kind: string;
-        title: string;
-        description?: unknown;
-        tags?: string[];
-        metadata?: unknown;
-      }>;
-      relationships: () => Iterable<{
-        source: { id: string };
-        target: { id: string };
-        title?: string;
-        tags?: string[];
-        metadata?: unknown;
-      }>;
-    };
-
-    const elements: Elem[] = [...model.elements()].map((e) => ({
-      id: e.id,
-      kind: e.kind,
-      title: e.title,
-      description: descText(e.description),
-      service: metaKey(e.metadata, "service"),
-      tags: [...(e.tags ?? [])],
-    }));
-    const relationships: Rel[] = [...model.relationships()].map((r) => ({
-      source: r.source.id,
-      target: r.target.id,
-      // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
-      title: r.title ?? undefined,
-      op: metaKey(r.metadata, "op"),
-      tags: [...(r.tags ?? [])],
-    }));
-
-    return { errors, elements, relationships };
+    // `parsedModel`, not `computedModel`: the computed stage additionally
+    // computes every VIEW the document declares (and a default one when it
+    // declares none), which loam never reads — it renders nothing. That work is
+    // superlinear in the number of RELATIONSHIPS, so a landscape at fleet shape
+    // turned `loam list` from under a second into minutes. The elements and
+    // relationships below are identical either way.
+    const model = (await likec4.parsedModel()) as ReadableModel;
+    return { errors, ...flattenModel(model) };
   } finally {
     await likec4.dispose();
   }

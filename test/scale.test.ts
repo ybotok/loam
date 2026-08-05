@@ -12,12 +12,22 @@
  * so the expected counts are DERIVED from the same constants that build it —
  * changing the shape changes both sides together.
  *
- * Wall-clock is gated, but only generously: observed ~4s for the whole run on
- * a dev laptop, stable within 4% across consecutive runs, so the 60s ceiling
- * is >10x headroom for slower CI. It exists to catch pathological blowups —
- * an accidental per-service re-parse of the landscape or a return of the
- * per-feature double-load turns 40-odd workspace spins into hundreds, and
- * THAT is what must never land silently.
+ * Wall-clock is gated, but only as a blowup alarm, and the ceiling has to
+ * tolerate the fact that this file runs inside a 64-file parallel suite. What
+ * it costs, measured: ~12s for `validate --all` on an idle box, ~30s with the
+ * cores saturated, and 65-77s when the whole suite is running beside it. Those
+ * numbers are the machine, not a regression — the same fixture on 4d8cb4b (the
+ * commit before the ANALYSIS-5 campaign) measures 11.9s against 12.1s today,
+ * so the earlier "~4s on a dev laptop" in this header described hardware this
+ * one is not.
+ *
+ * It exists to catch pathological blowups — an accidental per-service re-parse
+ * of the landscape or a return of the per-feature double-load turns 40-odd
+ * workspace spins into hundreds, and THAT is what must never land silently.
+ * That class is an order of magnitude, so it trips this ceiling under any load;
+ * vitest's own 120s testTimeout is the hard backstop behind it, and the ceiling
+ * sits just under it so a blowup fails with the message below rather than an
+ * opaque timeout.
  */
 import { describe, it, expect } from "vitest";
 import { makeProject, runLoam, type Project } from "./helpers/harness.js";
@@ -294,11 +304,13 @@ describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () =
         findings.filter((f) => f.severity === "warn" && f.code !== "sources.absent"),
       ).toEqual([]);
 
-      // The generous ceiling (see header): pathological blowups only.
+      // The blowup alarm (see header): sized for a loaded box inside the
+      // parallel suite, and kept under vitest's 120s testTimeout so a real
+      // blowup reports this message instead of timing out.
       expect(
         elapsed,
         `validate --all over ${SERVICES} services / ${FEATURES} features took ${Math.round(elapsed)}ms`,
-      ).toBeLessThan(60_000);
+      ).toBeLessThan(110_000);
     } finally {
       await p.destroy();
     }
