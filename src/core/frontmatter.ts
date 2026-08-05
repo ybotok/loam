@@ -9,6 +9,11 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isMap, parse, parseDocument } from "yaml";
+// The decode rule lives with the reads it was written for (fleet-context.ts);
+// importing it back here closes a cycle through repo.ts, which is harmless for
+// the same reason spec.ts↔gherkin.ts is: nothing is used at module scope, so no
+// evaluation order can observe a half-built module.
+import { decodeDocument, NotUtf8DocumentError } from "./fleet-context.js";
 
 export interface Frontmatter {
   /** True when a terminated `---` block was found, even if it was empty. */
@@ -23,6 +28,18 @@ export interface Frontmatter {
    * replace-don't-merge rule for the same state.
    */
   malformed: boolean;
+  /**
+   * Why the FILE could not be read as text at all, or absent when it could —
+   * set only by `readFrontmatter`, since a caller that already holds a string
+   * has nothing left to decode.
+   *
+   * A third state, not a shade of the other two: `present: false` here means
+   * nobody could look, where everywhere else it means nobody wrote a header.
+   * A checker must ask this first, or it reports "owner/status/sources missing"
+   * over a file whose lines are right there — the same false cascade
+   * `malformed` exists to stop, one layer lower down.
+   */
+  unreadable?: string;
   /** The parsed mapping, or {} when absent or malformed. */
   data: Record<string, unknown>;
   /** The document with the frontmatter removed. */
@@ -190,10 +207,32 @@ export function rawBody(source: string): string {
   return at === null ? md : md.slice(at.bodyStart);
 }
 
-/** Read a markdown file's frontmatter; a missing file reads as absent. */
+/**
+ * Read a markdown file's frontmatter; a missing file reads as absent.
+ *
+ * Bytes in, decoded through `decodeDocument`, because `readFile(path, "utf8")`
+ * turns a UTF-16 spec.md into mojibake whose opening `---` is no longer at
+ * position 0 — so the header reads as ABSENT, and `status`, `owner` and
+ * `sources` all come back missing over a file that spells every one of them.
+ * The same blindness `stripBom` exists to stop, one encoding wider.
+ *
+ * The failure travels as a FLAG rather than an exception, which is how every
+ * reader here degrades (`readOpenapi`'s `unreadable`) and is load-bearing at
+ * exactly this call: this is the read behind the fleet ENUMERATION
+ * (repo.ts `listServices`), so throwing would turn one PowerShell-saved file
+ * into a `loam list` that reports nothing about the other 119 services.
+ * Parsers never diagnose; a checker grades the flag.
+ */
 export async function readFrontmatter(path: string): Promise<Frontmatter> {
   if (!existsSync(path)) return { present: false, malformed: false, data: {}, body: "" };
-  return parseFrontmatter(await readFile(path, "utf8"));
+  let text: string;
+  try {
+    text = decodeDocument(await readFile(path), path);
+  } catch (err) {
+    if (!(err instanceof NotUtf8DocumentError)) throw err;
+    return { present: false, malformed: false, unreadable: err.message, data: {}, body: "" };
+  }
+  return parseFrontmatter(text);
 }
 
 /** The statuses each kind of artifact may carry. */

@@ -14,10 +14,26 @@
  * ids are also compared, sorted and printed in tables, so shell metacharacters,
  * spaces and leading dots are refused even where the filesystem would accept
  * them. Widening the alphabet later is a compatible change; narrowing it is not.
+ *
+ * "Works" also means "works on Windows", which this project tests in CI: the
+ * two rules below are the ones POSIX accepts and Windows does not. They used to
+ * live in migrate-openspec.ts alone, as a second, stricter copy of this grammar
+ * — so the PRIMARY authoring path (`--service`, `--touches`, `adopt`) accepted
+ * ids the migration refused, and `services/CON/` or `services/payments./` got
+ * as far as a directory nobody can create or open. Narrowing is not a
+ * compatible change, which is exactly why it belongs here, once, rather than in
+ * whichever command happened to think of it.
  */
 
 /** The one grammar: alphanumeric head, then alphanumerics, dot, underscore, hyphen. */
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * The MS-DOS device names Windows still reserves. Reserved with any extension
+ * and in any case (`nul`, `NUL.txt`), so the test is on the stem — the part
+ * before the first dot — uppercased.
+ */
+const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/;
 
 /** Prose form of the rule, shown verbatim in every refusal so the fix is obvious. */
 export const SERVICE_ID_RULE =
@@ -52,6 +68,22 @@ export function serviceIdProblem(id: unknown, label = "--service"): string | nul
   }
   if (!SERVICE_ID.test(id)) {
     return `Invalid ${label} '${id}': ${SERVICE_ID_RULE}.`;
+  }
+  // Both refusals below are about Windows, and both get their own sentence for
+  // the same reason `..` does: "does not match the id grammar" is true and
+  // useless, because the id LOOKS fine and the problem is what the filesystem
+  // does with it.
+  if (WINDOWS_DEVICE.test(id.split(".")[0]!.toUpperCase())) {
+    return (
+      `Invalid ${label} '${id}': '${id.split(".")[0]}' is a reserved device name on Windows — ` +
+      `services/${id}/ cannot be created there at all, so the docs repo would only work on some of the machines that clone it.`
+    );
+  }
+  if (/[. ]$/.test(id)) {
+    return (
+      `Invalid ${label} '${id}': a service id may not end with '.' or a space — ` +
+      `Windows strips both when creating a directory, so '${id}' and '${id.replace(/[. ]+$/, "")}' would silently become one directory there and two everywhere else.`
+    );
   }
   return null;
 }

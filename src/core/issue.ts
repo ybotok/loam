@@ -104,6 +104,8 @@ export type IssueCode =
   | "openapi.path-item-modified"
   /** an `x-loam-remove: true` marker with no operationId — loam cannot tell which operation it retires, and the marker itself would reach the living contract */
   | "openapi.remove-marker-anonymous"
+  /** an `x-loam-remove: true` written at PATH level, beside the methods — it addresses no operation, so it retires nothing and is not a contract key either */
+  | "openapi.remove-marker-path-level"
   /** the living OpenAPI defines one operationId in two (path, method) slots — every join on the id picks one arbitrarily */
   | "openapi.duplicate-operationid"
   /** an `x-loam-based-on` that is not a digest, or sits on an operation the living contract does not have */

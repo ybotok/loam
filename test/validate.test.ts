@@ -70,6 +70,42 @@ The service SHALL do the thing.
 `;
 }
 
+/**
+ * The files that make `services/<svc>/` a living service, for a feature delta
+ * to legally address. Without one, `delta.service-unknown` fires: a `specs/<svc>/`
+ * that names nothing archive would materialise as a phantom service directory.
+ */
+function livingService(svc: string): Record<string, string> {
+  return {
+    [`services/${svc}/model.likec4`]: `specification {
+  element softwareSystem
+}
+
+model {
+  svc = softwareSystem '${svc}' {
+    metadata {
+      service '${svc}'
+    }
+  }
+}
+`,
+    // A requirement the deltas below never re-ADD, so seeding the service does
+    // not manufacture a delta.requirement-exists collision of its own.
+    [`services/${svc}/spec.md`]: `# ${svc}
+
+## Requirements
+
+### Requirement: Exist
+The service SHALL exist.
+
+#### Scenario: It exists
+- **Given** the fleet
+- **When** it is listed
+- **Then** ${svc} is in it
+`,
+  };
+}
+
 /** Minimal valid delta spec for one service (requirement + scenario, no Operations). */
 function goodDeltaSpec(svc: string): string {
   return `# ${svc} — delta
@@ -272,26 +308,45 @@ describe("service mode: graded absences", () => {
     });
   });
 
-  it("a missing openapi.yaml warns when the landscape shows an inbound op call", async () => {
+  it("a missing openapi.yaml errors when the landscape shows an inbound op call", async () => {
     const files = coherentFixture();
     delete files[`services/${SVC}/openapi.yaml`];
     await withProject(files, { service: SVC }, async (p) => {
       const res = await runLoam(p.workDir, "validate");
-      // the spine error for the now-dangling edge co-fires; the warn names the cause
       expect(res.code).toBe(1);
       expect(res.out).toContain("No OpenAPI contract at");
-      expect(res.out).toContain(`not defined in ${SVC}'s OpenAPI`);
+      expect(res.out).toContain("operation link(s) already point into it");
+      expect(res.out).toContain("authorizePayment");
+      // One missing file is ONE finding: a contract that is not there proves
+      // nothing about an edge, so the per-edge cascade is suspended.
+      expect(res.out).not.toContain(`not defined in ${SVC}'s OpenAPI`);
     });
   });
 
-  it("a missing openapi.yaml warns when there is no landscape to say nobody calls it", async () => {
+  it("a missing openapi.yaml still errors with no landscape, because a living requirement governs an op", async () => {
     const files = coherentFixture();
     delete files[`services/${SVC}/openapi.yaml`];
     delete files["architecture/landscape.likec4"];
     await withProject(files, { service: SVC }, async (p) => {
       const res = await runLoam(p.workDir, "validate");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("No OpenAPI contract at");
+      expect(res.out).toContain("operation link(s) already point into it");
+    });
+  });
+
+  it("a missing openapi.yaml only warns when nothing joins into it at all", async () => {
+    const files = coherentFixture();
+    delete files[`services/${SVC}/openapi.yaml`];
+    delete files["architecture/landscape.likec4"];
+    // No landscape to prove nobody calls it, and no living Operations: line to
+    // strand — the documented grace, and the surviving warn path.
+    files[`services/${SVC}/spec.md`] = LIVING_SPEC.replace("Operations: authorizePayment\n\n", "");
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate");
       expect(res.code).toBe(0);
       expect(res.out).toContain("No OpenAPI contract at");
+      expect(res.out).toContain("API coverage and the landscape spine are unchecked");
     });
   });
 
@@ -900,6 +955,9 @@ views {
   }
 }
 `,
+      // core-service must live: the delta's `core` element is untagged, so
+      // nothing here introduces it and `delta.service-unknown` would fire.
+      ...livingService("core-service"),
       "features/FEAT-2/specs/core-service/spec.md": `# core-service — delta for FEAT-2
 
 ## ADDED Requirements
@@ -927,7 +985,10 @@ The service SHALL keep records.
 describe("feature dir resolution", () => {
   it("feature id matches its exact directory name", async () => {
     await withProject(
-      { "features/FEAT-2/specs/core-service/spec.md": goodDeltaSpec("core-service") },
+      {
+        ...livingService("core-service"),
+        "features/FEAT-2/specs/core-service/spec.md": goodDeltaSpec("core-service"),
+      },
       {},
       async (p) => {
         const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-2");
@@ -962,6 +1023,8 @@ describe("feature dir resolution", () => {
 
   it("when both FEAT-3 and FEAT-3-slug exist, exactly one is picked (pinned; ambiguity unflagged — minor)", async () => {
     const files: Record<string, string> = {
+      ...livingService("svc-exact"),
+      ...livingService("svc-slug"),
       "features/FEAT-3/specs/svc-exact/spec.md": goodDeltaSpec("svc-exact"),
       "features/FEAT-3-slug/specs/svc-slug/spec.md": goodDeltaSpec("svc-slug"),
     };

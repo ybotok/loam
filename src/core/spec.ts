@@ -6,6 +6,10 @@
  * Scenarios are the acceptance criteria (Given/When/Then) and the source for tests.
  */
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { decodeDocument } from "./fleet-context.js";
+import { scenarioGherkin } from "./gherkin.js";
+import type { Finding } from "./report.js";
 
 export type DeltaKind = "ADDED" | "MODIFIED" | "REMOVED" | "BASE";
 
@@ -305,6 +309,29 @@ export function splitRequirementsSection(
   return { head: text.slice(0, cut), run: text.slice(cut, sectionEnd), tail: text.slice(sectionEnd) };
 }
 
+/**
+ * A requirement document from disk as text — decoded, or refused by name.
+ *
+ * The read that belongs with the parser, because `readFile(path, "utf8")` and
+ * `parseRequirements` together are a trap: a UTF-16 spec.md decodes to a string
+ * in which no line matches `^###\s+Requirement:`, so the parser returns [] and
+ * the document grades as an empty baseline instead of an unreadable one. Every
+ * question loam asks of a spec — is it covered, does the delta merge, what does
+ * the C4 spine touch — is then answered about a file nobody read.
+ *
+ * It THROWS (`NotUtf8DocumentError`, which names the path), unlike
+ * `readFrontmatter` next door, because the two failures are not the same
+ * failure. Frontmatter is read by the fleet enumeration, where one bad file
+ * must not cost the other 119 services, so there it is a flag. A requirement
+ * document is read by ONE target, and the caller is the only one who knows what
+ * to do about it: a read-only command turns it into a finding on that target
+ * (validate's `guarded`, which names the file and keeps grading the rest), a
+ * command that writes refuses outright rather than computing over mojibake.
+ */
+export async function readRequirementsDocument(path: string): Promise<string> {
+  return decodeDocument(await readFile(path), path);
+}
+
 /** Parse all requirements (with their scenarios and delta kind) from a markdown doc. */
 export function parseRequirements(md: string): Requirement[] {
   const out: Requirement[] = [];
@@ -374,6 +401,67 @@ export function parseRequirements(md: string): Requirement[] {
 /** Requirements with no scenario — the OpenSpec coverage rule (every requirement needs ≥1). */
 export function requirementsMissingScenarios(reqs: Requirement[]): Requirement[] {
   return reqs.filter((r) => r.kind !== "REMOVED" && r.scenarios.length === 0);
+}
+
+/** A `#### Scenario:` heading whose body holds nothing a runner would execute. */
+export interface SteplessScenario {
+  requirement: string;
+  scenario: string;
+}
+
+/**
+ * Scenarios that satisfy the coverage rule above and test nothing.
+ *
+ * `requirementsMissingScenarios` counts HEADINGS, so a `#### Scenario:` with no
+ * recognizable Given/When/Then line satisfied the fleet gate's coverage claim
+ * outright — and it is not a hypothetical shape: it is what `loam new`
+ * scaffolds and what an agent writes when it puts the criteria in prose.
+ * Downstream the same emptiness is fatal twice over: cucumber runs a stepless
+ * scenario vacuously green, and `loam verify --results` can never confirm it.
+ *
+ * The detector is `loam gherkin`'s own — `scenarioGherkin` decides what a step
+ * IS, and a second opinion here would mean the gate and the emitted suite could
+ * disagree about whether a scenario has any. That import is the one place these
+ * two modules are circular (gherkin.ts parses requirements); both sides export
+ * only function declarations, which are hoisted, so neither evaluation order
+ * can observe a half-built module.
+ */
+export function steplessScenarios(reqs: Requirement[]): SteplessScenario[] {
+  const out: SteplessScenario[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const s of r.scenarios) {
+      if (scenarioGherkin(s.lines).steps.length === 0) out.push({ requirement: r.name, scenario: s.name });
+    }
+  }
+  return out;
+}
+
+/**
+ * The stepless half of the coverage check, as findings — the missing-scenario
+ * half stays where it is (`requirementsMissingScenarios`), because the two are
+ * different states with different fixes: one requirement owes acceptance
+ * criteria, the other owes STEPS in criteria somebody has already written.
+ *
+ * `label` is the coverage check's own label (`payment-service: requirements`),
+ * so both halves of one document name it the same way.
+ */
+export function steplessFindings(label: string, subject: string, reqs: Requirement[]): Finding[] {
+  const bare = steplessScenarios(reqs);
+  if (bare.length === 0) return [];
+  return [
+    {
+      severity: "error",
+      code: "requirements.stepless-scenario",
+      subject,
+      message:
+        `${label}: ${bare.length} scenario(s) have a heading and no recognizable steps — ` +
+        `they satisfy the coverage rule and test nothing. Cucumber runs a stepless scenario vacuously green and ` +
+        `\`loam verify --results\` can never confirm it. Write the body as \`- **Given/When/Then**\` bullets.`,
+      details: bare.map((s) => `${s.requirement} — ${s.scenario}`),
+      text: { detailPrefix: "- " },
+    },
+  ];
 }
 
 /** Serialize requirements back to OpenSpec markdown (`### Requirement:` + `#### Scenario:`). */

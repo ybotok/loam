@@ -19,11 +19,11 @@
  * ties the result to a repository, which is why the brief argues for it instead
  * of merely listing it.
  */
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { relative } from "node:path";
-import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
-import { landscapePath, servicePaths } from "./repo.js";
+import { join, relative } from "node:path";
+import { elementService, loadFile, serviceResolver, type Elem } from "./likec4.js";
+import { landscapePath, listServices, servicePaths } from "./repo.js";
 
 /* ------------------------------------------------------------------ */
 /* The artifacts                                                       */
@@ -54,6 +54,11 @@ export interface BriefTarget {
    * openapi.yaml as a warn (`service.no-spec` / `service.no-openapi`), not an
    * error: partial adoption is a supported state, and the warns are the
    * progress meter.
+   *
+   * Constant per artifact except one: `openapi.yaml` is required only where the
+   * fleet map shows an API is expected (see `apiExpected`), because the brief is
+   * read as an instruction and "MISSING openapi.yaml" told an agent to write a
+   * contract for a service that serves no requests.
    */
   required: boolean;
   /** What the artifact is for, in one line. */
@@ -175,6 +180,10 @@ model {
   }
 }
 
+// Views are LikeC4's, not loam's: loam parses this file and computes no view,
+// so nothing below is read by any check. Keep it for 'npx likec4 start', which
+// does render it. Scoped to one service 'include *' is cheap; the same line in
+// architecture/landscape.likec4 walks every call in the fleet and takes minutes.
 views {
   view of paymentService {
     include *
@@ -256,6 +265,8 @@ Covers: paymentService.db, paymentService -> kafka
   {
     artifact: "openapi.yaml",
     key: "openapi",
+    // Overridden per service in `serviceBrief`: an API is required only where
+    // the fleet expects one. See `apiExpected`.
     required: true,
     purpose: "the API contract — the operations this service exposes",
     shape: [
@@ -263,6 +274,13 @@ Covers: paymentService.db, paymentService -> kafka
       "EVERY operation carries an `operationId`. That token is the spine: the C4 edge's `metadata { op }`, the requirement's `Operations:` line and this `operationId` are one name spelled three times, and they must be identical.",
       "loam reads operationIds and nothing else in this file. The schemas are for humans, codegen and review — they are not checked, so getting them wrong is invisible here and expensive later.",
       "Document the endpoints that exist. An operation the fleet already calls (see `landscape.expects`) must be in here, or the contract breaks the moment this lands.",
+      // The instruction the brief was missing, and the one that matters most:
+      // it used to mark this artifact required unconditionally, in capitals,
+      // which for a UI, a worker or a cron told the agent to invent an API into
+      // the source of truth. `required` is derived now; this says so in prose
+      // as well, because an agent reading the shape rules must not re-derive
+      // "MISSING" as "write something".
+      "If this service exposes no HTTP API, there is no file to write. Do not invent one — an empty or imagined contract is a claim the whole fleet then joins against. `required` above is derived from the fleet map: it is false exactly when the landscape parses and no edge calls an operation on this service, which is the same evidence that keeps `service.no-openapi` quiet.",
     ],
   },
   {
@@ -408,10 +426,16 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     what: "spec.md does not exist yet — legal mid-adoption, but requirement coverage and API governance are unchecked until it does",
   },
   {
+    // `warn` is the floor, not the whole story, and the difference matters to a
+    // baseline: the absence is graded an ERROR once something already written
+    // down joins into the file — a living requirement's `Operations:` line, or
+    // an op-linked landscape edge (`landscape.expects`, above). For a service
+    // the fleet already calls, `required: true` on this target and this row are
+    // the same fact stated twice.
     code: "service.no-openapi",
     severity: "warn",
     via: VIA_SERVICE,
-    what: "openapi.yaml does not exist yet — quiet only when the landscape proves no other service calls an operation on this one",
+    what: "openapi.yaml does not exist yet — quiet only when the landscape proves no other service calls an operation on this one, and an ERROR rather than a warning once a living `Operations:` line or a landscape edge already names an operation it would have defined",
   },
   {
     code: "openapi.invalid",
@@ -575,7 +599,12 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
  * Anything nothing checks belongs on this list, where its status IS the point.
  */
 export const UNCHECKED: string[] = [
-  "Whether model.likec4 declares a `views { ... }` block, or any view at all. Views are how a human reads the model — LikeC4 renders them, `loam` reads none of them — so a model with no view passes every check and shows nobody anything. Write one (`view of <element> { include * }`).",
+  // Not merely unchecked — unread. This entry used to end "write one", on the
+  // theory that a view is what makes a model legible. It is, to LikeC4's
+  // renderer; loam computes none. Saying otherwise taught agents that a views
+  // block was owed to loam, and an `include *` over the FLEET map is the one
+  // shape that costs minutes rather than milliseconds.
+  "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. loam reads elements and relationships out of the PARSED model and renders nothing, so it computes no view and a model without one is missing nothing loam wants. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start`. Scope them when you do — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
   "Whether the model has exactly ONE top-level element for the service, with its containers nested inside. Five top-level boxes for one service parse, validate and bind exactly as well as one — and then the fleet map, which joins elements to directories, has five candidates for the same service and no way to say which is wrong.",
   "Whether the model is the architecture the code actually has. loam parses model.likec4; it never reads a line of the service.",
   "Whether a requirement is TRUE of the service. `loam validate` checks that a requirement has a scenario, never that either one describes real behaviour.",
@@ -656,6 +685,11 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
   const paths = servicePaths(docsDir, service);
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 
+  // Read before the artifact loop, not after it: what the fleet already says
+  // about this service decides whether it owes an API contract at all.
+  const landscape = await landscapeContext(docsDir, service);
+  const owesApi = apiExpected(landscape);
+
   const targets: BriefTarget[] = [];
   for (const { key, ...artifact } of ARTIFACTS) {
     // `adrs/` is a directory, and an empty one is not an existing artifact —
@@ -664,6 +698,7 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
     const exists = dir ? await hasMarkdown(paths[key]) : existsSync(paths[key]);
     targets.push({
       ...artifact,
+      ...(key === "openapi" ? { required: owesApi } : {}),
       path: dir ? `${rel(paths[key])}/` : rel(paths[key]),
       exists,
       action: exists ? "diff" : "create",
@@ -676,7 +711,6 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
   // has one. Everything else about the target is unconditional — the file is
   // shared, so `action` is `edit` whenever it exists and `create` only for the
   // very first service of a brand-new docs repo.
-  const landscape = await landscapeContext(docsDir, service);
   if (landscape.modelled !== true) {
     targets.push({
       ...landscapeArtifact(service, landscape.expects, landscape.present),
@@ -702,7 +736,55 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
 async function hasMarkdown(dir: string): Promise<boolean> {
   if (!existsSync(dir)) return false;
   const entries = await readdir(dir, { withFileTypes: true });
-  return entries.some((e) => e.isFile() && e.name.endsWith(".md"));
+  // `statSync` for the symlink case: a Dirent never follows one, so `isFile()`
+  // is false for a symlinked ADR and the directory reads as empty (repo.ts's
+  // `entryIs` is the same rule for `services/` and `features/`).
+  return entries.some((e) => {
+    if (!e.name.endsWith(".md")) return false;
+    if (e.isFile()) return true;
+    if (!e.isSymbolicLink()) return false;
+    try {
+      return statSync(join(dir, e.name)).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Does the fleet expect an API of this service?
+ *
+ * The brief marked `openapi.yaml` required unconditionally, and printed the
+ * absence as `MISSING` in capitals — while `loam validate` and `loam list`
+ * derive the opposite from the same landscape (`service.no-openapi` stays quiet
+ * when nothing calls the service, and `list`'s maturity ladder stops demanding
+ * a contract). For a UI, a worker or a cron the brief was therefore telling an
+ * agent to INVENT an API contract into the source of truth — the one class of
+ * guess this whole module exists to refuse, and the one the brief itself names
+ * 219 lines further down.
+ *
+ * Positive evidence only, exactly as `list` reads it: a landscape that is
+ * absent or does not parse proves nothing about who calls this service, so the
+ * contract is still owed. `expects` is the ops on inbound edges, which is
+ * `list`'s `called` set seen from one service.
+ */
+function apiExpected(landscape: LandscapeContext): boolean {
+  return !landscape.parses || landscape.expects.length > 0;
+}
+
+/**
+ * The service ids the resolver may fall back on when an element carries no
+ * `metadata { service }` binding — the same positive evidence `validate` and
+ * `list` hand it. A docs repo that cannot be enumerated (no `services/` yet:
+ * `adopt` runs there) leaves the resolver with bindings alone, which is what it
+ * had before.
+ */
+async function knownServices(docsDir: string): Promise<ReadonlySet<string>> {
+  try {
+    return new Set((await listServices(docsDir)).map((s) => s.id));
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -741,7 +823,12 @@ async function landscapeContext(docsDir: string, service: string): Promise<Lands
     bound: e.service !== undefined,
   }));
 
-  const svcOf = (id: string): string => serviceOf(land.elements, id);
+  // One resolver for the whole scan, built with the real service ids: an edge
+  // drawn into a modelled container (`paymentService.api`) is an edge into the
+  // service, and `expects` — which now decides whether this service owes an
+  // OpenAPI contract at all — has to see it. Building it once also stops the
+  // per-edge rebuild the old `serviceOf(land.elements, id)` call did.
+  const svcOf = serviceResolver(land.elements, await knownServices(docsDir));
   const inbound: LandscapeEdge[] = [];
   const outbound: LandscapeEdge[] = [];
   for (const r of land.relationships) {

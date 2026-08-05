@@ -26,7 +26,6 @@
  */
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
@@ -42,7 +41,15 @@ import {
   type SourceIndexEntry,
 } from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
-import { message, rollbackStaged, stageWrites, swapStaged, type PlannedWrite } from "../core/staging.js";
+import {
+  message,
+  NotUtf8Error,
+  readUtf8,
+  rollbackStaged,
+  stageWrites,
+  swapStaged,
+  type PlannedWrite,
+} from "../core/staging.js";
 
 interface VouchOptions {
   service?: string;
@@ -100,6 +107,9 @@ export type VouchOutcome =
         | "unknown-target"
         | "sources-absent"
         | "sources-path-missing"
+        // The spec is there but is not UTF-8 text: a diagnosable state, not the
+        // unexpected throw `internal` is for.
+        | "repository-unavailable"
         | "vouch-raced"
         | "merge-failed"
         | "rollback-incomplete"
@@ -143,7 +153,14 @@ export function registerVouch(program: Command): void {
       const outcome = await vouch({
         docsDir: config.docsDir,
         service,
-        repoDir: process.cwd(),
+        // The repo root, not the cwd. `sources:` are spelled relative to the
+        // repository — that is what they mean in the frontmatter and what
+        // `loam validate` resolves them against — so vouching from a
+        // subdirectory used to report every real source as missing
+        // (`sources-path-missing`) and refuse the stamp. `config.root` is the
+        // directory loam.json was found in, which is the only definition of
+        // "this repo" that does not move with the caller.
+        repoDir: config.root ?? process.cwd(),
         today: today(new Date()),
       });
       if (!outcome.ok) return fail(json, outcome.code, outcome.message);
@@ -286,7 +303,14 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   // word. `stageWrites` has already read what is on disk right now, so the
   // check is a comparison, not another read: if the file is not what was
   // verified, this run is describing a document that no longer exists.
-  const raced = staged.filter((s, i) => s.before !== verified[i]!.raw);
+  // Bytes, not text: `stageWrites` reads the file as a Buffer (a string
+  // comparison against it is never equal, which made every vouch report
+  // `vouch-raced` and stamp nothing). A file that is GONE is still a race —
+  // `null` is not "empty", it is "the document this run described is not
+  // there any more".
+  const raced = staged.filter(
+    (s, i) => s.before === null || !s.before.equals(Buffer.from(verified[i]!.raw, "utf8")),
+  );
   if (raced.length > 0) {
     // Nothing has swapped yet, so the rollback is only the temp files going
     // away — the other writer's stamp is left exactly as it landed.
@@ -346,7 +370,27 @@ async function verifySpec(
   path: string,
   file: string,
 ): Promise<VerifiedSpec | Extract<VouchOutcome, { ok: false }>> {
-  const raw = await readFile(path, "utf8");
+  // Through readUtf8, so the round trip below is exact: the stamp is computed
+  // from `raw` and the race check compares `Buffer.from(raw)` against the bytes
+  // on disk, which only agree if the file decoded without substitutions. A
+  // non-UTF-8 spec is refused by name rather than stamped as verified with
+  // every undecodable byte replaced. Refused HERE rather than left to the CLI's
+  // top-level handler, which would report a diagnosable state as `internal`.
+  // What it replaces is a diagnosis that was worse than none: a UTF-16 spec
+  // decoded to a document with no frontmatter loam could find, so vouch refused
+  // it as `sources-absent` — "names no sources" — over a file whose `sources:`
+  // line is right there.
+  let raw: string;
+  try {
+    raw = await readUtf8(path);
+  } catch (err) {
+    if (!(err instanceof NotUtf8Error)) throw err;
+    return {
+      ok: false,
+      code: "repository-unavailable",
+      message: `${req.service}: ${file} cannot be vouched for — ${err.message}`,
+    };
+  }
   const fm = parseFrontmatter(raw);
   // Before any sources reasoning: a header that does not parse hides whatever
   // fields the author wrote, so "names no sources" would be a false diagnosis —

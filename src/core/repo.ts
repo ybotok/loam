@@ -7,11 +7,13 @@
  * exist", "which features are in flight" or "where does artifact X live" asks
  * here, so the layout is spelled exactly once.
  */
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "./frontmatter.js";
 import type { FleetContext } from "./fleet-context.js";
+import { serviceIdProblem } from "./ids.js";
+import type { Finding } from "./report.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";
@@ -41,6 +43,19 @@ export interface ServiceEntry {
    * can only be answered from inside the service's own repo.
    */
   sources: { declared: boolean; stamped: boolean };
+  /**
+   * Why no loam command can author this directory, or absent when the name is a
+   * legal service id — `serviceIdProblem`'s own sentence, so the read model and
+   * the refusal say the same thing.
+   *
+   * The enumeration still LISTS it: the directory is there, it holds somebody's
+   * documents, and hiding it would repeat the symlink mistake one field up. But
+   * every authoring command (`adopt`, `delta`, `rebase`, `new --touches`,
+   * `init`) refuses this id with `invalid-option`, so grading it as an ordinary
+   * service left the fleet gate demanding fixes no loam command can make. The
+   * NAME is the finding — see `serviceIdFindings`.
+   */
+  idProblem?: string;
 }
 
 export interface FeatureEntry {
@@ -266,6 +281,31 @@ function requireDocsRepo(docsDir: string, allow: DocsRepoKind[]): void {
 /* ------------------------------------------------------------------ */
 
 /**
+ * What a directory entry IS, following a symlink to find out.
+ *
+ * `readdir(withFileTypes)` does not follow symlinks: for a symlink `Dirent`
+ * every `isDirectory()`/`isFile()` is false, whatever it points at. That made a
+ * symlinked `services/<id>/` or `features/<id>/` vanish from every enumeration
+ * at once — `list`, `validate --all`, the fleet gate — with no diagnostic
+ * anywhere, which is the one outcome a shared docs repo cannot survive: the
+ * fleet gate reported a service that is not there as fine because it never saw
+ * it. Composing a docs repo out of symlinks (a worktree, a submodule, one
+ * service's directory shared between two checkouts) is legitimate, so they are
+ * FOLLOWED rather than refused. A dangling link stats as nothing and is skipped
+ * exactly as an absent directory is — it is not a service, and saying so would
+ * mean inventing an entry to hang the complaint on.
+ */
+function entryIs(dir: string, e: Dirent, want: "dir" | "file"): boolean {
+  if (!e.isSymbolicLink()) return want === "dir" ? e.isDirectory() : e.isFile();
+  try {
+    const s = statSync(join(dir, e.name));
+    return want === "dir" ? s.isDirectory() : s.isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Sorted names of the real subdirectories of `dir` (dot-dirs and files skipped).
  * A missing `dir` is an empty list — the swallow is deliberate but narrow: it
  * only ever runs INSIDE a docs repo that `requireDocsRepo` has already
@@ -276,7 +316,7 @@ async function subdirs(dir: string): Promise<string[]> {
   if (!existsSync(dir)) return [];
   const entries = await readdir(dir, { withFileTypes: true });
   return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir"))
     .map((e) => e.name)
     .sort(compareIds);
 }
@@ -284,7 +324,7 @@ async function subdirs(dir: string): Promise<string[]> {
 async function countMarkdown(dir: string): Promise<number> {
   if (!existsSync(dir)) return 0;
   const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => e.isFile() && e.name.endsWith(".md")).length;
+  return entries.filter((e) => e.name.endsWith(".md") && entryIs(dir, e, "file")).length;
 }
 
 /** Services a feature carries a delta for, ordered — the subdirs of its specs/. */
@@ -305,9 +345,11 @@ export async function listServices(docsDir: string, context?: FleetContext): Pro
     names.map(async (id): Promise<ServiceEntry> => {
       const p = servicePaths(docsDir, id);
       const fm = await readFrontmatter(p.spec);
+      const idProblem = serviceIdProblem(id, "directory name");
       return {
         id,
         dir: p.dir,
+        ...(idProblem === null ? {} : { idProblem }),
         has: {
           model: existsSync(p.model),
           spec: existsSync(p.spec),
@@ -324,6 +366,37 @@ export async function listServices(docsDir: string, context?: FleetContext): Pro
       };
     }),
   );
+}
+
+/**
+ * The directories under `services/` that no loam command can address.
+ *
+ * A finding rather than a silent skip, and an ERROR rather than a warning,
+ * because the state is not survivable in either direction: `loam adopt`,
+ * `loam delta`, `loam rebase` and `loam new --touches` all refuse the id with
+ * `invalid-option`, so the documents in there can never be updated by loam
+ * again, while `validate --all` used to grade the directory as an ordinary
+ * service and demand `model.likec4`, a spec and a landscape binding for it. The
+ * fix is a rename, and it is a rename loam cannot do for you — the id is
+ * spelled in the landscape binding, in the frontmatter and in every feature
+ * that touched the service — so the message names all three.
+ *
+ * Emitted from the fleet target (`validate --all`), where the SET of service
+ * directories is the thing being checked; a per-service run is already refused
+ * by its own `--service` guard before it gets here.
+ */
+export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
+  return services
+    .filter((s) => s.idProblem !== undefined)
+    .map((s) => ({
+      severity: "error" as const,
+      code: "service.id-invalid",
+      subject: s.id,
+      message:
+        `services/${s.id}/ — ${s.idProblem} ` +
+        `Every authoring command refuses this id (\`loam adopt\`, \`loam delta\`, \`loam new --touches\`), so nothing in that directory can be changed through loam. ` +
+        `Rename the directory to a legal id, then update its \`service:\` frontmatter, its \`metadata { service '${s.id}' }\` binding in architecture/landscape.likec4, and any features/<FEAT>/specs/${s.id}/ that names it.`,
+    }));
 }
 
 async function readFeature(dir: string, dirName: string, archived: boolean): Promise<FeatureEntry> {

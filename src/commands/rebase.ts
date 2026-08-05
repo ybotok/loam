@@ -23,6 +23,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import {
@@ -43,7 +44,12 @@ import {
   swapStaged,
   type PlannedWrite,
 } from "../core/staging.js";
-import { parseRequirements, requirementDigest, type Requirement } from "../core/spec.js";
+import {
+  parseRequirements,
+  readRequirementsDocument,
+  requirementDigest,
+  type Requirement,
+} from "../core/spec.js";
 import {
   OpenapiMergeError,
   pinOpenapiOperations,
@@ -168,23 +174,36 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
 
   const outcomes: PinOutcome[] = [];
   const writes: PlannedWrite[] = [];
-  for (const service of services) {
-    for (const axis of SPEC_AXES) {
-      const specPath = featureSpecPaths(feature.dir, service)[axis.key];
-      if (!existsSync(specPath)) continue;
-      const planned = await planAxis(docsDir, service, axis, specPath);
-      outcomes.push(...planned.outcomes);
-      if (planned.content !== null) writes.push({ path: specPath, content: planned.content });
+  try {
+    for (const service of services) {
+      for (const axis of SPEC_AXES) {
+        const specPath = featureSpecPaths(feature.dir, service)[axis.key];
+        if (!existsSync(specPath)) continue;
+        const planned = await planAxis(docsDir, service, axis, specPath);
+        outcomes.push(...planned.outcomes);
+        if (planned.content !== null) writes.push({ path: specPath, content: planned.content });
+      }
+      // The contract axis. It needs the pin more than the requirement axes do:
+      // a requirement delta spells only the requirements it changes, while an
+      // openapi delta is a COMPLETE document and spells the whole contract.
+      const openapiPath = featureSpecPaths(feature.dir, service).openapi;
+      if (existsSync(openapiPath)) {
+        const planned = await planOpenapi(docsDir, service, openapiPath);
+        outcomes.push(...planned.outcomes);
+        if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
+      }
     }
-    // The contract axis. It needs the pin more than the requirement axes do:
-    // a requirement delta spells only the requirements it changes, while an
-    // openapi delta is a COMPLETE document and spells the whole contract.
-    const openapiPath = featureSpecPaths(feature.dir, service).openapi;
-    if (existsSync(openapiPath)) {
-      const planned = await planOpenapi(docsDir, service, openapiPath);
-      outcomes.push(...planned.outcomes);
-      if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
-    }
+  } catch (err) {
+    if (!(err instanceof NotUtf8DocumentError)) throw err;
+    // A pin is a claim about text somebody read. Over a document loam could not
+    // decode it would be a digest of mojibake with loam's name on it — the
+    // precise false claim this command exists to prevent — and the next archive
+    // would land a stale delta over living text on the strength of it. So it
+    // refuses by name and writes nothing, exactly as `loam archive` refuses a
+    // merge it could not read, under archive's code. The refusal is here, in
+    // the PLAN, so it lands before stageWrites: no file is touched, and a
+    // feature spanning four services does not get two of them pinned.
+    return fail(json, "merge-failed", `rebase ${id} failed — nothing was pinned: ${err.message}`);
   }
 
   if (!dryRun && writes.length > 0) {
@@ -283,10 +302,15 @@ async function planAxis(
   axis: SpecAxis,
   specPath: string,
 ): Promise<AxisPlan> {
-  const raw = await readFile(specPath, "utf8");
+  // Both sides through the decoding read: the delta because line surgery over a
+  // document loam mis-decoded would write bytes nobody authored, the living
+  // because it is what every digest below is taken over.
+  const raw = await readRequirementsDocument(specPath);
   const reqs = parseRequirements(raw);
   const livingPath = servicePaths(docsDir, service)[axis.key];
-  const living = existsSync(livingPath) ? parseRequirements(await readFile(livingPath, "utf8")) : [];
+  const living = existsSync(livingPath)
+    ? parseRequirements(await readRequirementsDocument(livingPath))
+    : [];
 
   const outcomes: PinOutcome[] = [];
   const edits: LineEdit[] = [];
@@ -337,10 +361,16 @@ async function planAxis(
  */
 async function planOpenapi(docsDir: string, service: string, openapiPath: string): Promise<AxisPlan> {
   const livingPath = servicePaths(docsDir, service).openapi;
-  const living = existsSync(livingPath) ? await readFile(livingPath, "utf8") : "";
+  // Decoded, not `readFile(…, "utf8")`, for the requirement axes' reason: a
+  // contract read with U+FFFD substituted in defines no operation loam can
+  // match, so every pin would come out `unresolved` — "this feature adds them
+  // all" — over a living contract that already serves them. Read outside the
+  // try below, whose job is the merge's own diagnosis and not this one.
+  const living = existsSync(livingPath) ? decodeDocument(await readFile(livingPath), livingPath) : "";
+  const delta = decodeDocument(await readFile(openapiPath), openapiPath);
   let plan: OpenapiPinPlan;
   try {
-    plan = pinOpenapiOperations(await readFile(openapiPath, "utf8"), living, service);
+    plan = pinOpenapiOperations(delta, living, service);
   } catch (err) {
     // A document loam cannot read is validate's diagnosis to make
     // (`openapi.invalid`), not this command's to guess at — and stamping into a

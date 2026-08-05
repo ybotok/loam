@@ -26,6 +26,40 @@ import { makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harnes
  */
 const DOCS_REPO = { "services/.gitkeep": "" };
 
+/**
+ * The files that make `services/<svc>/` a living service. `--touches` names a
+ * service that already exists (`--new-service` is what introduces one), so a
+ * touched service with nothing behind it trips `delta.service-unknown`.
+ */
+function livingService(svc: string): Record<string, string> {
+  return {
+    [`services/${svc}/model.likec4`]: `specification {
+  element softwareSystem
+}
+
+model {
+  svc = softwareSystem '${svc}' {
+    metadata {
+      service '${svc}'
+    }
+  }
+}
+`,
+    [`services/${svc}/spec.md`]: `# ${svc}
+
+## Requirements
+
+### Requirement: Exist
+The service SHALL exist.
+
+#### Scenario: It exists
+- **Given** the fleet
+- **When** it is listed
+- **Then** ${svc} is in it
+`,
+  };
+}
+
 async function withProject(
   files: Record<string, string>,
   fn: (p: Project) => Promise<void>,
@@ -240,7 +274,9 @@ describe("templates", () => {
 
 describe("a fresh scaffold validates clean", () => {
   it("passes `validate --feature` with no parse errors and no findings against it", async () => {
-    await withProject({}, async (p) => {
+    // payment-split-service is introduced by the delta's own tagged element;
+    // payment-service is merely touched, so it has to already exist.
+    await withProject(livingService("payment-service"), async (p) => {
       await runLoam(
         p.workDir,
         "new",

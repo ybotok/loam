@@ -81,6 +81,10 @@ export type ErrorCode =
   | "feature-active"
   | "snapshot-missing"
   | "snapshot-stale"
+  /** A snapshot pre-image whose bytes no longer match the digest archive recorded for them: `unarchive` will not restore text nobody wrote. */
+  | "snapshot-corrupt"
+  /** A `loam archive`/`unarchive` was killed mid-commit: the living docs are half-written, and this run refuses rather than writing over the evidence. */
+  | "commit-interrupted"
   | "restore-failed"
   | "answers-unreadable"
   | "answers-mismatch"
