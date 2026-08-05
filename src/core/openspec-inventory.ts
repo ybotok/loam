@@ -327,29 +327,44 @@ async function locateOpenSpecRoot(
     );
   }
   if (hasNestedShape) {
-    if (await isSymbolicLink(nested)) {
-      throw new OpenSpecRootError(
-        `OpenSpec planning root must not be a symbolic link: ${nested}. Pass the canonical planning directory explicitly.`,
-      );
-    }
+    await assertPlanningRootNotLinked(nested);
     return { inputRoot, root: nested, kind: existsSync(storeMarker) ? "store" : "project" };
   }
-  // OpenSpec stores may omit empty planning directories. Keep their canonical
-  // future root at <store>/openspec so paths do not change after the first spec.
-  if (existsSync(storeMarker)) return { inputRoot, root: nested, kind: "store" };
+  // The shape decides the root, the Store marker only decides the kind. Deciding
+  // "store" first sent `root` to <store>/openspec for a checkout that keeps its
+  // planning shape at the checkout root: a directory that does not exist reads
+  // as an empty, fully compatible workspace, and apply then stages nothing.
   if (hasDirectShape) {
     const parentStoreMarker = basename(inputRoot) === "openspec"
       ? join(dirname(inputRoot), ".openspec-store", "store.yaml")
       : "";
-    return {
-      inputRoot,
-      root: inputRoot,
-      kind: parentStoreMarker !== "" && existsSync(parentStoreMarker) ? "store" : "openspec-root",
-    };
+    const store = existsSync(storeMarker) || (parentStoreMarker !== "" && existsSync(parentStoreMarker));
+    return { inputRoot, root: inputRoot, kind: store ? "store" : "openspec-root" };
+  }
+  // OpenSpec stores may omit empty planning directories. Keep their canonical
+  // future root at <store>/openspec so paths do not change after the first spec
+  // — but only when that directory is really there. Auditing a root that does
+  // not exist is how a Store checkout came back `ready` over invisible content.
+  if (existsSync(storeMarker)) {
+    await assertPlanningRootNotLinked(nested);
+    if (!await isDirectory(nested)) {
+      throw new OpenSpecRootError(
+        `Store checkout ${inputRoot} has no OpenSpec planning content: neither ${nested} nor config.yaml, project.md, specs/ or changes/ at the checkout root.`,
+      );
+    }
+    return { inputRoot, root: nested, kind: "store" };
   }
   throw new OpenSpecRootError(
     `No OpenSpec workspace found at ${inputRoot} (expected openspec/config.yaml, specs/, changes/, project.md, or .openspec-store/store.yaml).`,
   );
+}
+
+async function assertPlanningRootNotLinked(path: string): Promise<void> {
+  if (await isSymbolicLink(path)) {
+    throw new OpenSpecRootError(
+      `OpenSpec planning root must not be a symbolic link: ${path}. Pass the canonical planning directory explicitly.`,
+    );
+  }
 }
 
 function portable(root: string, path: string): string {
@@ -369,6 +384,20 @@ async function subdirs(path: string): Promise<string[]> {
   if (!await isDirectory(path)) return [];
   return (await readdir(path, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort(compareIds);
+}
+
+/**
+ * Exactly what `subdirs` drops. walkFiles does not drop it, so a change behind a
+ * dot-directory was never enumerated as a change while its files were still
+ * classified, counted and given a disposition slot — a decision recorded as
+ * selected for an artifact nothing migrates.
+ */
+async function hiddenSubdirs(path: string): Promise<string[]> {
+  if (!await isDirectory(path)) return [];
+  return (await readdir(path, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("."))
     .map((entry) => entry.name)
     .sort(compareIds);
 }
@@ -467,6 +496,24 @@ function changeSpecCoordinates(
   return { changeId: match?.[1] ?? "", capability: match?.[2] ?? "" };
 }
 
+/**
+ * Which lines are fenced content, marker included \u2014 the same rule
+ * `parseRequirements` and `sectionHeadings` apply, which spec.ts keeps private.
+ * Without it a FROM/TO line inside a fenced example of the rename syntax became
+ * a phantom pair, and the only cure was editing the OpenSpec source migration
+ * promises never to touch.
+ */
+function fencedLines(lines: string[]): boolean[] {
+  let fence: string | null = null;
+  return lines.map((line) => {
+    const marker = /^\s*(```|~~~)/.exec(line);
+    if (marker === null) return fence !== null;
+    if (fence === null) fence = marker[1]!;
+    else if (fence === marker[1]!) fence = null;
+    return true;
+  });
+}
+
 function renameUsages(
   path: string,
   raw: string,
@@ -474,6 +521,7 @@ function renameUsages(
   mapped: Record<string, string>,
 ): OpenSpecRenamedUsage[] {
   const lines = raw.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const fenced = fencedLines(lines);
   const headings = sectionHeadings(raw);
   const coordinates = changeSpecCoordinates(path, scope);
   const output: OpenSpecRenamedUsage[] = [];
@@ -483,6 +531,7 @@ function renameUsages(
     const pairs: Array<{ from: string | null; to: string | null }> = [];
     let pendingFrom: string | null = null;
     for (let line = heading.line; line < end - 1; line += 1) {
+      if (fenced[line] === true) continue;
       const text = lines[line] ?? "";
       const from = /^\s*-\s*FROM:\s*(.*?)\s*$/i.exec(text);
       if (from !== null) {
@@ -583,6 +632,24 @@ function inspectChangeShape(
       issue(unsupported, scope, "openspec.change-empty", path, "Change spec has no parseable Requirement headings.");
     }
     return;
+  }
+  // `## Requirements` is the heading OpenSpec's own living-spec template
+  // mandates, so this is the shape a team produces by copying a living spec into
+  // a change directory. It parses, it is counted, and nothing routes it: only
+  // delta-kind requirements reach the staged feature. Blocking is what keeps the
+  // per-change counters and what actually lands the same number.
+  const quoted = requirements.filter(
+    (requirement) => requirement.kind === "BASE"
+      && requirement.section !== undefined
+      && isRequirementsHeading(requirement.section),
+  );
+  if (quoted.length > 0) {
+    unsupported.push({
+      code: "openspec.change-quoted-requirements",
+      path,
+      message: `${quoted.length} requirement(s) sit under ## Requirements in a change delta, which stages nothing; re-home them under ADDED, MODIFIED, or REMOVED.`,
+      scope,
+    });
   }
   const stranded = requirements.filter(
     (requirement) => requirement.kind === "BASE"
@@ -698,6 +765,14 @@ async function inspectConfig(
   }
 }
 
+/**
+ * A calendar date, optionally with a time. OpenSpec's template writes the plain
+ * date, but a timestamp is still a date — and rejecting it blocked every change
+ * and every capability in the workspace over one field nobody reads, fixable
+ * only by editing the source migration promises not to touch.
+ */
+const CHANGE_CREATED_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
 async function inspectChangeMetadata(
   root: string,
   dir: string,
@@ -732,8 +807,8 @@ async function inspectChangeMetadata(
       invalid("skip_specs must be a boolean when present.");
     }
     if ("created" in metadata
-      && (typeof metadata.created !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(metadata.created))) {
-      invalid("created must be a string in YYYY-MM-DD format when present.");
+      && (typeof metadata.created !== "string" || !CHANGE_CREATED_RE.test(metadata.created))) {
+      invalid("created must be a string date in YYYY-MM-DD or ISO-8601 date-time form when present.");
     }
     if ("goal" in metadata && (typeof metadata.goal !== "string" || metadata.goal.length === 0)) {
       invalid("goal must be a non-empty string when present.");
@@ -762,7 +837,7 @@ async function inspectChangeMetadata(
       path,
       schema,
       skipSpecs: valid && schema !== null && metadata.skip_specs === true,
-      created: typeof metadata.created === "string" && /^\d{4}-\d{2}-\d{2}$/.test(metadata.created)
+      created: typeof metadata.created === "string" && CHANGE_CREATED_RE.test(metadata.created)
         ? metadata.created
         : null,
       fields: Object.keys(metadata).sort(compareIds),
@@ -1030,7 +1105,9 @@ function artifactFor(root: string, absolute: string): OpenSpecArtifact {
   let kind: OpenSpecArtifactKind = "other";
   let disposition: OpenSpecArtifactDisposition = "manual-review";
 
-  if (path === "@workspace/.openspec-store/store.yaml") {
+  // A Store checkout that keeps its planning shape at the checkout root holds
+  // its own metadata inside the planning root, not beside it.
+  if (path === "@workspace/.openspec-store/store.yaml" || rootPath === ".openspec-store/store.yaml") {
     [kind, disposition] = ["store-metadata", "record-external-planning-root"];
   } else if (rootPath === "config.yaml") [kind, disposition] = ["config", "translate-project-context"];
   else if (rootPath === "project.md") [kind, disposition] = ["project-context", "translate-project-context"];
@@ -1133,7 +1210,9 @@ export function createOpenSpecMappingSkeleton(inventory: OpenSpecInventory): Ope
 
 async function digestInventory(root: string, files: string[]): Promise<string> {
   const hash = createHash("sha256");
-  hash.update("loam-openspec-inventory-v2\0");
+  // v3 narrowed the covered set to living + active. The version string is what
+  // stops a v2 mapping from being accepted against a v3 reading of the same tree.
+  hash.update("loam-openspec-inventory-v3\0");
   for (const absolute of [...new Set(files)].sort((a, b) => compareIds(sourceInventoryPath(root, a), sourceInventoryPath(root, b)))) {
     const path = sourceInventoryPath(root, absolute);
     const bytes = await readFile(absolute);
@@ -1201,7 +1280,21 @@ export async function inventoryOpenSpec(
   const capabilities: OpenSpecCapability[] = [];
   const livingRequirements = new Map<string, ReturnType<typeof parseRequirements>>();
   const livingCounts: OpenSpecCounts = { specFiles: 0, requirements: 0, scenarios: 0 };
-  const livingFiles = (await walkFiles(specsRoot)).filter((path) => basename(path) === "spec.md");
+  const livingTree = await walkFiles(specsRoot);
+  const livingFiles = livingTree.filter((path) => basename(path) === "spec.md");
+  // The living twin of openspec.nonstandard-change-spec. Selecting living specs
+  // by exact basename is right, but without the mirror a mis-cased or renamed
+  // file simply disappears: specs/payments/Spec.md audited as a clean, empty
+  // corpus while the identical shape under a change was reported.
+  for (const file of livingTree.filter((path) =>
+    /\.md$/i.test(path) && basename(path) !== "spec.md" && basename(path) !== "design.md")) {
+    blockers.push({
+      code: "openspec.nonstandard-living-spec",
+      path: portable(root, file),
+      message: "Markdown under specs/ is named neither spec.md nor design.md, so no capability reads it.",
+      scope: "living",
+    });
+  }
   for (const specFile of livingFiles) {
     const id = portable(specsRoot, dirname(specFile));
     const inspected = await inspectSpecFile(root, specFile, "living", null, mapping, renamed, blockers);
@@ -1215,6 +1308,22 @@ export async function inventoryOpenSpec(
   const activeIds = (await subdirs(changesRoot)).filter((id) => id !== "archive");
   const archiveRoot = join(changesRoot, "archive");
   const archivedIds = await subdirs(archiveRoot);
+  for (const id of await hiddenSubdirs(changesRoot)) {
+    blockers.push({
+      code: "openspec.hidden-change-directory",
+      path: portable(root, join(changesRoot, id)),
+      message: "A dot-prefixed change directory is not enumerated as a change, so nothing under it is migrated; rename it or move it out of changes/.",
+      scope: "active",
+    });
+  }
+  for (const id of await hiddenSubdirs(archiveRoot)) {
+    archiveDiagnostics.push({
+      code: "openspec.hidden-change-directory",
+      path: portable(root, join(archiveRoot, id)),
+      message: "A dot-prefixed archive directory is not enumerated as a change; frozen history is retained read-only where it is.",
+      scope: "archive",
+    });
+  }
   const fallbackSchema = config?.schema ?? "spec-driven";
   const active = await inventoryChanges(
     root,
@@ -1237,8 +1346,27 @@ export async function inventoryOpenSpec(
     archiveDiagnostics,
   );
 
+  // Last-resort backstop under the whole "audited past the corpus" family, and
+  // the one check that does not depend on root selection being right: an
+  // inventory that read no living spec AND no active change describes nothing,
+  // so no verdict over it can be `ready`. That is exactly the shape the Store
+  // misdetection produced — ready, mechanically compatible, zero capabilities,
+  // zero unsupported shapes — where the failure verdict was more confident than
+  // any success verdict. A greenfield workspace whose only requirements live
+  // under changes/ has an active change and is not caught here.
+  if (livingCounts.specFiles === 0 && active.length === 0) {
+    blockers.push({
+      code: "openspec.workspace-empty",
+      path: ".",
+      message: `Planning root ${root} holds no living spec and no active change; there is nothing to migrate, so confirm this is the directory that really holds the corpus.`,
+      scope: "workspace",
+    });
+  }
+
   const artifactFiles = await walkFiles(root);
-  if (storeMetadataExists && !storeMetadataSymlink) artifactFiles.push(storeMetadata);
+  if (storeMetadataExists && !storeMetadataSymlink && !artifactFiles.includes(storeMetadata)) {
+    artifactFiles.push(storeMetadata);
+  }
   for (const absolute of artifactFiles) {
     const bytes = await readFile(absolute);
     if (isUtf8(bytes)) continue;
@@ -1253,23 +1381,50 @@ export async function inventoryOpenSpec(
       "Migration can preserve only valid UTF-8 authored artifacts; convert this file to UTF-8 before apply.",
     );
   }
-  const inventoryDigest = await digestInventory(root, artifactFiles);
+  // The digest binds a mapping to the truth it was reviewed against, and frozen
+  // archive history is neither migrated nor allowed to block readiness. Covering
+  // it meant a colleague's typo fix under changes/archive/ killed a completed
+  // mapping, with no --force and no indication of which file moved.
+  const inventoryDigest = await digestInventory(
+    root,
+    artifactFiles.filter((absolute) => artifactScope(portable(root, absolute)) !== "archive"),
+  );
   const artifacts = artifactFiles
     .map((path) => artifactFor(root, path))
     .sort((a, b) => compareIds(a.path, b.path));
 
   // Capability ownership must cover the active horizon too: a brand-new
   // capability may exist only under changes/<id>/specs until archive.
+  //
+  // `routedNames` is the subset a split capability must actually allocate. A
+  // renamed requirement is routed by its FROM — that is what keeps the delta in
+  // the same services as the living text it rewrites — so demanding an
+  // allocation for its TO as well asked a reviewer for a decision apply ignores.
   const requirementNamesByCapability = new Map<string, Set<string>>();
+  const routedNamesByCapability = new Map<string, Set<string>>();
   const activeChangesByCapability = new Map<string, Set<string>>();
+  const activeRenamePairs = renamed.filter((rename) =>
+    rename.scope === "active"
+    && rename.from !== null && rename.from !== ""
+    && rename.to !== null && rename.to !== "");
   for (const [capability, requirements] of livingRequirements) {
     requirementNamesByCapability.set(capability, new Set(requirements.map((item) => item.name)));
+    routedNamesByCapability.set(capability, new Set(requirements.map((item) => item.name)));
   }
   for (const change of active) {
     for (const spec of change.specs) {
       const names = requirementNamesByCapability.get(spec.capability) ?? new Set<string>();
-      for (const name of spec.requirementNames) names.add(name);
+      const routed = routedNamesByCapability.get(spec.capability) ?? new Set<string>();
+      for (const name of spec.requirementNames) {
+        names.add(name);
+        const pairs = activeRenamePairs.filter((rename) =>
+          rename.changeId === change.id
+          && rename.capability === spec.capability
+          && (name === rename.from || name === rename.to));
+        routed.add(pairs.length === 1 ? pairs[0]!.from! : name);
+      }
       requirementNamesByCapability.set(spec.capability, names);
+      routedNamesByCapability.set(spec.capability, routed);
       const changes = activeChangesByCapability.get(spec.capability) ?? new Set<string>();
       changes.add(change.id);
       activeChangesByCapability.set(spec.capability, changes);
@@ -1320,6 +1475,7 @@ export async function inventoryOpenSpec(
       .sort(compareIds);
     const requirementNames = [...(requirementNamesByCapability.get(capability) ?? [])].sort(compareIds);
     const requirementNameSet = new Set(requirementNames);
+    const routedNames = [...(routedNamesByCapability.get(capability) ?? [])].sort(compareIds);
     const requirementServices = dictionary<string[]>();
     for (const [requirement, allocated] of Object.entries(capabilityMapping.requirementServices)) {
       if (!requirementNameSet.has(requirement)) {
@@ -1342,11 +1498,13 @@ export async function inventoryOpenSpec(
         }
       }
     }
-    for (const requirement of requirementNames) {
+    // Only routed names get an empty slot in the skeleton: an unroutable name
+    // offered for allocation is a decision that changes nothing.
+    for (const requirement of routedNames) {
       if (ownValue(requirementServices, requirement) === undefined) requirementServices[requirement] = [];
     }
     if (services.length > 1) {
-      for (const requirement of requirementNames) {
+      for (const requirement of routedNames) {
         if ((ownValue(requirementServices, requirement) ?? []).length === 0) {
           mappingIssues.push({
             code: "mapping.requirement-allocation-missing",
@@ -1612,8 +1770,14 @@ export async function inventoryOpenSpec(
 
   const decisionKinds = new Set<OpenSpecArtifactKind>(["proposal", "tasks", "change-design"]);
   const artifactDecisions: OpenSpecArtifactDecision[] = artifacts
+    // Never offer a disposition for an artifact no enumerated change owns —
+    // dot-prefixed change directories are refused, not migrated, and a
+    // `selectedDisposition` recorded for one is a decision about nothing.
     .filter((artifact): artifact is OpenSpecArtifact & { kind: "proposal" | "tasks" | "change-design" } =>
-      artifact.scope === "active" && decisionKinds.has(artifact.kind))
+      artifact.scope === "active"
+      && decisionKinds.has(artifact.kind)
+      && artifact.changeId !== undefined
+      && activeChangeIds.has(artifact.changeId))
     .map((artifact) => {
       const selected = ownValue(mapping.artifacts, artifact.path) ?? null;
       return {

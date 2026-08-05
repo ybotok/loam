@@ -3,6 +3,10 @@ import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from "node
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Command } from "commander";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { findConfigPath, parseConfig } from "../core/config.js";
+import { DOCS_SUBDIRS, docsRepoFiles } from "../core/docs.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
+import { serviceIdProblem } from "../core/ids.js";
 import { fail, emitJson, type ErrorCode } from "../core/json.js";
 import {
   createOpenSpecMappingSkeleton,
@@ -21,6 +25,7 @@ import {
 } from "../core/spec.js";
 import {
   message,
+  planWrite,
   rollbackError,
   rollbackStaged,
   stageWrites,
@@ -192,32 +197,75 @@ function stringList(value: unknown, label: string): string[] {
   return [...new Set(value.map((item) => (item as string).trim()).filter(Boolean))];
 }
 
+/**
+ * The service ids a mapping may name, checked against the ONE grammar.
+ *
+ * This used to carry its own copy of the rule — the same alphabet regex, the
+ * `.`/`..` tests, the trailing dot and the Windows device names — which is how
+ * the two spellings drifted apart to begin with: for a while migrate was the
+ * STRICTER of the two, so the primary authoring path accepted ids a migration
+ * refused. ids.ts owns the grammar now, so a mapping can only ever name a
+ * `services/<id>/` the authoring commands can still address.
+ *
+ * The refusal keeps migrate's own shape — `OpenSpecCommandError` with
+ * `invalid-option`, not an `Issue` — and `serviceIdProblem`'s label carries the
+ * mapping key, so the message still points at the line of the YAML to edit.
+ */
 function serviceList(value: unknown, label: string): string[] {
   const services = stringList(value, label);
   for (const service of services) {
-    const windowsStem = service.split(".")[0]!.toUpperCase();
-    const windowsReserved = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsStem);
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(service)
-      || service === "."
-      || service === ".."
-      || service.endsWith(".")
-      || windowsReserved) {
-      throw new OpenSpecCommandError(
-        "invalid-option",
-        `${label} contains unsafe service id '${service}'; use letters, digits, dot, underscore, or hyphen.`,
-      );
-    }
+    const problem = serviceIdProblem(service, label);
+    if (problem !== null) throw new OpenSpecCommandError("invalid-option", problem);
   }
   return services;
 }
 
-async function readMapping(path: string): Promise<OpenSpecMapping> {
-  let raw: string;
+/**
+ * A document this command is about to migrate, decoded or refused BY NAME.
+ *
+ * Every other read on this path used `readFile(…, "utf8")`, which never fails:
+ * bytes that are not UTF-8 become U+FFFD and a UTF-16 spec.md becomes text with
+ * no headings in it. Downstream that is not a wrong answer but a silent one —
+ * `parseRequirements` returns [], the capability materializes as a `spec.md`
+ * with an empty `## Requirements`, and the migration reports success over a file
+ * whose every requirement was dropped. Migration is the one command whose input
+ * is somebody else's repository, written by tooling loam does not control, so
+ * this is where lossy decoding is both most likely and least acceptable.
+ *
+ * The ingest scan already refuses non-UTF-8 artifacts up front
+ * (`openspec.non-utf8-artifact`); holding the same rule at the point of use
+ * means a read added later cannot quietly skip it, and it is what catches the
+ * encoding the scan's `isUtf8` cannot see — UTF-16 written without a BOM, whose
+ * bytes are valid UTF-8 with a NUL between every character.
+ */
+function decodeSource(bytes: Buffer, path: string, label: string): string {
   try {
-    raw = await readFile(path, "utf8");
+    return decodeDocument(bytes, path);
+  } catch (error) {
+    if (!(error instanceof NotUtf8DocumentError)) throw error;
+    // `error.message` already opens with the path; the label says which of the
+    // two inputs it is — the corpus being migrated, or the mapping about it.
+    throw new OpenSpecCommandError("invalid-option", `${label}: ${error.message}`);
+  }
+}
+
+/** A path under the audited OpenSpec root, decoded the same way. */
+async function readSourceArtifact(root: string, artifactPath: string): Promise<string> {
+  const absolute = join(root, artifactPath);
+  return decodeSource(await readFile(absolute), absolute, "OpenSpec source artifact");
+}
+
+async function readMapping(path: string): Promise<OpenSpecMapping> {
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
   } catch (error) {
     throw new OpenSpecCommandError("unknown-target", `Cannot read OpenSpec mapping ${path}: ${message(error)}`);
   }
+  // Decoded rather than assumed: a mapping saved as UTF-16 parses as YAML with
+  // no capabilities block, and the refusal would name a missing decision
+  // instead of the encoding that hid it.
+  const raw = decodeSource(bytes, path, "OpenSpec mapping");
   let parsed: unknown;
   try {
     parsed = parseYaml(raw);
@@ -371,6 +419,58 @@ async function writeMappingSkeleton(
   return output;
 }
 
+/**
+ * The other half of "never writes into … live loam docs". Overlap with the
+ * OpenSpec source was the only thing checked, so `--target <docs>/features` on a
+ * fresh fleet passed and put phantom features into every `loam list`.
+ *
+ * The line is the docs tree, not the repository: every enumerating command reads
+ * `<docsDir>/services` and `<docsDir>/features`, so a target under docsDir joins
+ * the live fleet, while a sibling of it is merely a directory. A config that
+ * governs the target but cannot be parsed is refused too — an unreadable
+ * docsDir cannot be shown to be somewhere else.
+ */
+async function assertOutsideLoamDocs(stage: string): Promise<void> {
+  const canonicalStage = await canonicalForCreate(stage);
+  const governing = findConfigPath(canonicalStage);
+  if (governing !== null) {
+    const docsDir = await governingDocsDir(governing);
+    if (docsDir === null || contains(docsDir, canonicalStage)) {
+      throw new OpenSpecCommandError(
+        "invalid-option",
+        `Refusing to stage a migration inside the live loam docs ${docsDir ?? `governed by ${governing}`}: ${stage}. Migrate into a standalone directory and cut over after review.`,
+      );
+    }
+  }
+  // A docs repo checked out without its loam.json — the landscape is the file
+  // no docs repo is without, and `loam init` scaffolds it before anything else.
+  for (let dir = canonicalStage; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, "architecture", "landscape.likec4"))) {
+      throw new OpenSpecCommandError(
+        "invalid-option",
+        `Refusing to stage a migration inside a loam docs repository: ${join(dir, "architecture", "landscape.likec4")} is above ${stage}. Migrate into a standalone directory and cut over after review.`,
+      );
+    }
+    if (dirname(dir) === dir) return;
+  }
+}
+
+/**
+ * Canonical docsDir of the config at `path`, or null when it cannot be read —
+ * including "read as UTF-8 it would have said something else", which is why the
+ * bytes go through `decodeDocument`. Null is the conservative answer here: the
+ * caller refuses to stage rather than accept a docsDir it cannot establish.
+ */
+async function governingDocsDir(path: string): Promise<string | null> {
+  try {
+    return await canonicalForCreate(
+      parseConfig(decodeDocument(await readFile(path), path), dirname(path)).docsDir,
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function assertEmptyNonOverlappingStage(inventory: OpenSpecInventory, stage: string): Promise<void> {
   const canonicalStage = await canonicalForCreate(stage);
   const canonicalSource = await realpath(inventory.inputRoot);
@@ -380,6 +480,7 @@ async function assertEmptyNonOverlappingStage(inventory: OpenSpecInventory, stag
       `Staging directory must not overlap the OpenSpec source workspace: ${stage}`,
     );
   }
+  await assertOutsideLoamDocs(stage);
   try {
     if ((await lstat(stage)).isSymbolicLink()) {
       throw new OpenSpecCommandError(
@@ -441,7 +542,7 @@ async function writeMigrationTarget(
   inventory: OpenSpecInventory,
   mapping: OpenSpecMapping,
   target: string,
-  planned: { livingWrites: PlannedWrite[]; activeWrites: PlannedWrite[] },
+  planned: { livingWrites: PlannedWrite[]; activeWrites: PlannedWrite[]; legacyWrites: PlannedWrite[] },
 ): Promise<{ directory: string; files: string[]; followUpBlockers: string[] }> {
   await assertEmptyNonOverlappingStage(inventory, target);
   // All migration content was read while planning. Re-hash after those reads so
@@ -454,7 +555,7 @@ async function writeMigrationTarget(
     );
   }
   const followUpBlockers = [
-    "Add architecture/landscape.likec4 and bind every staged service to a C4 element.",
+    "Model every staged service in architecture/landscape.likec4 and bind it with metadata { service '<id>' }; the scaffolded landscape is deliberately empty.",
     "Add each service model.likec4 and OpenAPI contract; migrated requirements have no Operations/Covers links yet unless authored upstream.",
     "Set truthful sources from each service repository, validate, and have a human run loam vouch; staged specs remain status: draft.",
     ...(inventory.changes.active.length === 0
@@ -468,7 +569,12 @@ async function writeMigrationTarget(
           // one requirement still lose the loser's text silently.
           "Run `loam rebase <FEAT>` per staged feature: OpenSpec deltas carry no Based-On, so no MODIFIED/REMOVED requirement is pinned to the living text it was written against.",
         ]),
-    "Review config context/rules, Purpose prose, Stores/references, custom schemas, and every artifact disposition in migration-plan.json.",
+    "Review config context/rules, Stores/references, custom schemas, and every artifact disposition in migration-plan.json.",
+    "Review the verbatim OpenSpec living tree under legacy/openspec/specs/: Purpose prose, section prose, and capability design.md have no loam equivalent and were copied, not converted.",
+    // The cutover was undocumented, which is how a staged target that cannot
+    // answer `loam validate` reads as finished work. Naming the two halves —
+    // what is fleet content and what is review residue — is the whole procedure.
+    "Cut over only once `loam validate --all` here is green: services/ and features/ are the fleet content, while legacy/, mapping.yaml, migration-plan.json, FOLLOW-UP.md, and this repository's own loam.json/AGENTS.md are review residue that does not move.",
   ];
   const plan = {
     version: 1,
@@ -489,11 +595,13 @@ async function writeMigrationTarget(
     note: "Staged migration docs only. Living specs and mapped active changes were materialized without changing the OpenSpec source or live loam docs. The result is intentionally not expected to validate green until the listed architecture, API, provenance, and review work is completed.",
   };
   const writes: PlannedWrite[] = [
-    { path: join(target, "migration-plan.json"), content: `${JSON.stringify(plan, null, 2)}\n` },
-    { path: join(target, "mapping.yaml"), content: stringifyYaml(normalizedMapping(inventory, mapping), { lineWidth: 0 }) },
-    { path: join(target, "FOLLOW-UP.md"), content: renderFollowUp(followUpBlockers) },
+    planWrite(join(target, "migration-plan.json"), `${JSON.stringify(plan, null, 2)}\n`),
+    planWrite(join(target, "mapping.yaml"), stringifyYaml(normalizedMapping(inventory, mapping), { lineWidth: 0 })),
+    planWrite(join(target, "FOLLOW-UP.md"), renderFollowUp(followUpBlockers)),
+    ...docsRepoScaffold(target),
     ...planned.livingWrites,
     ...planned.activeWrites,
+    ...planned.legacyWrites,
   ];
   assertDistinctPlannedPaths(writes);
   for (const write of writes) write.exclusive = true;
@@ -518,18 +626,82 @@ async function writeMigrationTarget(
     }
     throw rollbackError(error, failures);
   }
+  // The skeleton `loam init` lays down, after the content that fills it. A docs
+  // repo is recognised by `services/` plus AGENTS.md, and until now `services/`
+  // existed only if some capability happened to route there: migrate a corpus
+  // whose requirements all live under `changes/` — legitimate, and the shape a
+  // greenfield OpenSpec workspace has — and the target came out with no
+  // `services/` at all, so `loam init --docs <target> --service <id>` answered
+  // "not a docs repo" and every read command refused it as `services-missing`.
+  // Empty directories, created after the swap so a rolled-back apply leaves the
+  // target as empty as it found it.
+  for (const dir of DOCS_SUBDIRS) await mkdir(join(target, dir), { recursive: true });
   return { directory: target, files: writes.map((write) => write.path), followUpBlockers };
+}
+
+/**
+ * The staged target is a real docs repo, not a folder of markdown.
+ *
+ * FOLLOW-UP.md tells the migrator to validate, rebase and vouch against this
+ * directory, and every one of those commands resolves its fleet from loam.json:
+ * without these three files none of the instructions it gives can be executed,
+ * and the reviewer has no way to see what is still missing. The landscape is
+ * laid down EMPTY for the same reason `loam init` lays it down empty — an absent
+ * landscape silences every cross-service check, and a generated one would be a
+ * guess presented as the map. Each staged service then shows up as exactly one
+ * `landscape.service-unmodelled` error, which is the first follow-up item.
+ *
+ * The bytes come from `docs.ts`, so this IS the repo `loam init` makes rather
+ * than a lookalike. Only the landscape's opening comment differs, and it differs
+ * through a parameter: the migrator needs to be told why their map is empty,
+ * and everything after that sentence is advice that does not depend on how the
+ * repo was created.
+ */
+function docsRepoScaffold(target: string): PlannedWrite[] {
+  return docsRepoFiles({
+    landscapePreamble: "// Fleet map for a staged OpenSpec migration. It arrives EMPTY because\n"
+      + "// OpenSpec has no topology: loam has nothing to read here and will not\n"
+      + "// guess \"who calls whom\" into the source of truth. Every services/<id>/\n"
+      + "// staged beside this file needs an element and a binding below — until\n"
+      + "// then each one is a `landscape.service-unmodelled` error.",
+  }).map(([rel, content]) => planWrite(join(target, rel), content));
 }
 
 async function planMigrationWrites(
   inventory: OpenSpecInventory,
   mapping: OpenSpecMapping,
   target: string,
-): Promise<{ livingWrites: PlannedWrite[]; activeWrites: PlannedWrite[] }> {
+): Promise<{ livingWrites: PlannedWrite[]; activeWrites: PlannedWrite[]; legacyWrites: PlannedWrite[] }> {
   const livingWrites = await materializeLivingSpecs(inventory, mapping, target);
   const activeWrites = await materializeActiveChanges(inventory, mapping, target);
-  assertDistinctPlannedPaths([...livingWrites, ...activeWrites]);
-  return { livingWrites, activeWrites };
+  const legacyWrites = await copyLivingTree(inventory, target);
+  assertDistinctPlannedPaths([...livingWrites, ...activeWrites, ...legacyWrites]);
+  return { livingWrites, activeWrites, legacyWrites };
+}
+
+/**
+ * The living tree, byte for byte, the way each change tree already gets
+ * `legacy/openspec/`.
+ *
+ * `materializeLivingSpecs` emits frontmatter plus serialized requirements, so
+ * everything a living spec holds AROUND its requirements has nowhere to land:
+ * `## Purpose`, prose between `## Requirements` and the first requirement, and
+ * the whole of `specs/<capability>/design.md` — which the summary counts under
+ * `review-as-service-adr` while FOLLOW-UP.md tells the migrator to review prose
+ * that had been written nowhere. (Prose inside a requirement body survives
+ * serialization and is not the subject here.)
+ */
+async function copyLivingTree(inventory: OpenSpecInventory, target: string): Promise<PlannedWrite[]> {
+  const writes: PlannedWrite[] = [];
+  for (const artifact of inventory.artifacts) {
+    if (artifact.scope !== "living") continue;
+    const segments = safeArtifactRelative(artifact.path, "specs/", "The OpenSpec living tree");
+    writes.push(planWrite(
+      join(target, "legacy", "openspec", "specs", ...segments),
+      await readSourceArtifact(inventory.root, artifact.path),
+    ));
+  }
+  return writes;
 }
 
 function assertDistinctPlannedPaths(writes: PlannedWrite[]): void {
@@ -576,7 +748,7 @@ async function materializeLivingSpecs(
   for (const capability of inventory.living.capabilities) {
     const selected = ownValue(mapping.capabilities, capability.id);
     if (selected === undefined) continue; // readiness prevents this on --apply
-    const raw = await readFile(join(inventory.root, capability.files[0]!), "utf8");
+    const raw = await readSourceArtifact(inventory.root, capability.files[0]!);
     const requirements = parseRequirements(raw);
     for (const parsed of requirements) {
       const renamedId = renameIds.get(`${capability.id}\0${parsed.name}`);
@@ -604,10 +776,10 @@ async function materializeLivingSpecs(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([service, requirements]) => {
       assertMaterializedRequirementIds(`Mapped living service '${service}'`, requirements);
-      return {
-        path: join(target, "services", service, "spec.md"),
-        content: `---\n${stringifyYaml({ service, status: "draft" }, { lineWidth: 0 }).trimEnd()}\n---\n\n# ${service}\n\n<!-- Staged from OpenSpec. Add truthful sources and complete C4/OpenAPI links before validation/vouch. -->\n\n## Requirements\n\n${serializeRequirements(requirements)}`,
-      };
+      return planWrite(
+        join(target, "services", service, "spec.md"),
+        `---\n${stringifyYaml({ service, status: "draft" }, { lineWidth: 0 }).trimEnd()}\n---\n\n# ${service}\n\n<!-- Staged from OpenSpec. Purpose/section prose and capability design.md are preserved verbatim under legacy/openspec/specs/. Add truthful sources and complete C4/OpenAPI links before validation/vouch. -->\n\n## Requirements\n\n${serializeRequirements(requirements)}`,
+      );
     });
 }
 
@@ -657,12 +829,11 @@ function renderAuthoredBundle(heading: string, artifacts: AuthoredArtifactCopy[]
   ].join("\n\n")).join("\n\n---\n\n")}\n`;
 }
 
-function safeArtifactRelative(changeId: string, artifactPath: string): string[] {
-  const prefix = `changes/${changeId}/`;
+function safeArtifactRelative(artifactPath: string, prefix: string, owner: string): string[] {
   if (!artifactPath.startsWith(prefix)) {
     throw new OpenSpecCommandError(
       "invalid-option",
-      `OpenSpec change '${changeId}' contains an artifact outside its change directory: ${artifactPath}.`,
+      `${owner} contains an artifact outside its own directory: ${artifactPath}.`,
     );
   }
   const segments = artifactPath.slice(prefix.length).split("/");
@@ -682,7 +853,7 @@ async function materializeActiveChanges(
   for (const capability of inventory.living.capabilities) {
     livingByCapability.set(
       capability.id,
-      parseRequirements(await readFile(join(inventory.root, capability.files[0]!), "utf8")),
+      parseRequirements(await readSourceArtifact(inventory.root, capability.files[0]!)),
     );
   }
   const inventoryArtifactsByPath = new Map(inventory.artifacts.map((artifact) => [artifact.path, artifact]));
@@ -696,11 +867,11 @@ async function materializeActiveChanges(
     // Preserve the complete authored source change tree, including metadata,
     // rename syntax, custom artifacts, and original delta section ordering.
     for (const artifactPath of change.artifacts) {
-      const segments = safeArtifactRelative(change.id, artifactPath);
-      writes.push({
-        path: join(featureDir, "legacy", "openspec", ...segments),
-        content: await readFile(join(inventory.root, artifactPath), "utf8"),
-      });
+      const segments = safeArtifactRelative(artifactPath, `changes/${change.id}/`, `OpenSpec change '${change.id}'`);
+      writes.push(planWrite(
+        join(featureDir, "legacy", "openspec", ...segments),
+        await readSourceArtifact(inventory.root, artifactPath),
+      ));
     }
 
     const authored: Array<AuthoredArtifactCopy & { kind: "proposal" | "tasks" | "change-design" }> = [];
@@ -713,7 +884,7 @@ async function materializeActiveChanges(
         path: artifactDecision.path,
         kind: artifactDecision.kind,
         disposition,
-        raw: await readFile(join(inventory.root, artifactDecision.path), "utf8"),
+        raw: await readSourceArtifact(inventory.root, artifactDecision.path),
       });
     }
 
@@ -726,41 +897,41 @@ async function materializeActiveChanges(
     const intentBody = convertedProposals.length > 0
       ? renderAuthoredBundle("## Migrated OpenSpec proposal", convertedProposals)
       : "No proposal was converted into this intent. Review the retained OpenSpec artifacts and migration-plan.json before promotion.\n";
-    writes.push({
-      path: join(featureDir, "intent.md"),
-      content: `${migrationFrontmatter(feature, decision.title)}\n\n# ${decision.title}\n\n<!-- Staged from OpenSpec change '${change.id}'. This feature is deliberately not validation-green yet. -->\n\n${intentBody}`,
-    });
+    writes.push(planWrite(
+      join(featureDir, "intent.md"),
+      `${migrationFrontmatter(feature, decision.title)}\n\n# ${decision.title}\n\n<!-- Staged from OpenSpec change '${change.id}'. This feature is deliberately not validation-green yet. -->\n\n${intentBody}`,
+    ));
     if (retainedProposals.length > 0) {
-      writes.push({
-        path: join(featureDir, "legacy", "proposal.md"),
-        content: renderAuthoredBundle("# Retained OpenSpec proposal", retainedProposals),
-      });
+      writes.push(planWrite(
+        join(featureDir, "legacy", "proposal.md"),
+        renderAuthoredBundle("# Retained OpenSpec proposal", retainedProposals),
+      ));
     }
 
     const tasks = authored.filter((artifact) => artifact.kind === "tasks");
     if (tasks.length > 0) {
-      writes.push({
-        path: join(featureDir, "legacy", "tasks.md"),
-        content: renderAuthoredBundle("# OpenSpec task checklist", tasks),
-      });
+      writes.push(planWrite(
+        join(featureDir, "legacy", "tasks.md"),
+        renderAuthoredBundle("# OpenSpec task checklist", tasks),
+      ));
     }
     const reviewedDesigns = authored.filter(
       (artifact) => artifact.kind === "change-design" && artifact.disposition === "review-as-feature-adr",
     );
     if (reviewedDesigns.length > 0) {
-      writes.push({
-        path: join(featureDir, "adrs", "openspec-design.md"),
-        content: renderAuthoredBundle("# OpenSpec design (review required)", reviewedDesigns),
-      });
+      writes.push(planWrite(
+        join(featureDir, "adrs", "openspec-design.md"),
+        renderAuthoredBundle("# OpenSpec design (review required)", reviewedDesigns),
+      ));
     }
     const retainedDesigns = authored.filter(
       (artifact) => artifact.kind === "change-design" && artifact.disposition !== "review-as-feature-adr",
     );
     if (retainedDesigns.length > 0) {
-      writes.push({
-        path: join(featureDir, "legacy", "design.md"),
-        content: renderAuthoredBundle("# Retained OpenSpec design", retainedDesigns),
-      });
+      writes.push(planWrite(
+        join(featureDir, "legacy", "design.md"),
+        renderAuthoredBundle("# Retained OpenSpec design", retainedDesigns),
+      ));
     }
 
     if (change.metadata.skipSpecs) continue;
@@ -786,7 +957,7 @@ async function materializeActiveChanges(
     };
 
     for (const spec of change.specs) {
-      const requirements = parseRequirements(await readFile(join(inventory.root, spec.path), "utf8"))
+      const requirements = parseRequirements(await readSourceArtifact(inventory.root, spec.path))
         .filter((requirement) => requirement.kind !== "BASE");
       for (const parsed of requirements) {
         const matchingRenames = changeRenames.filter((rename) =>
@@ -857,10 +1028,10 @@ async function materializeActiveChanges(
         `Active change '${change.id}' mapped to service '${service}'`,
         requirements,
       );
-      writes.push({
-        path: join(featureDir, "specs", service, "spec.md"),
-        content: serializeDeltaRequirements(requirements),
-      });
+      writes.push(planWrite(
+        join(featureDir, "specs", service, "spec.md"),
+        serializeDeltaRequirements(requirements),
+      ));
     }
   }
   return writes;

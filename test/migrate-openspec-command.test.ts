@@ -17,6 +17,9 @@ afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()!();
 });
 
+/** The stable codes of a findings list, in order. */
+const codesOf = (findings: Array<{ code: string }>): string[] => findings.map((f) => f.code);
+
 const LIVING = `# Payments
 
 ## Purpose
@@ -462,17 +465,35 @@ ${DELTA}`;
   it("recognizes config-only projects and empty Store roots without inventing a missing-spec blocker", async () => {
     const project = await workspace({ "config.yaml": "schema: spec-driven\n" });
     const projectInventory = await inventoryOpenSpec(project.root);
-    expect(projectInventory).toMatchObject({ ready: true, mechanicallyCompatible: true });
+    // No missing-spec blocker is invented — that is what this test is about.
+    // But a workspace where loam read no living spec and no active change is
+    // not `ready` either: reporting ready over content nobody read is how the
+    // whole corpus went missing in А1.
+    expect(codesOf(projectInventory.unsupported)).not.toContain("openspec.specs-missing");
+    expect(codesOf(projectInventory.unsupported)).toEqual(["openspec.workspace-empty"]);
+    expect(projectInventory).toMatchObject({ ready: false, mechanicallyCompatible: false });
 
     const store = await makeTmpDir("loam-openspec-store-");
     cleanups.push(() => rm(store, { recursive: true, force: true }));
     await writeFiles(store, { ".openspec-store/store.yaml": "id: team-plans\n" });
+    // The marker picks the KIND; the shape picks the root. A checkout claiming
+    // to be a store has to actually hold the planning directory.
+    await mkdir(join(store, "openspec"), { recursive: true });
     const storeInventory = await inventoryOpenSpec(store);
     expect(storeInventory.workspace).toMatchObject({
       kind: "store",
       storeMetadataPath: "@workspace/.openspec-store/store.yaml",
     });
-    expect(storeInventory).toMatchObject({ ready: true, mechanicallyCompatible: true });
+    expect(codesOf(storeInventory.unsupported)).not.toContain("openspec.specs-missing");
+    expect(codesOf(storeInventory.unsupported)).toEqual(["openspec.workspace-empty"]);
+    expect(storeInventory).toMatchObject({ ready: false, mechanicallyCompatible: false });
+  });
+
+  it("refuses a store checkout with no planning content at all, rather than auditing nothing", async () => {
+    const bare = await makeTmpDir("loam-openspec-bare-store-");
+    cleanups.push(() => rm(bare, { recursive: true, force: true }));
+    await writeFiles(bare, { ".openspec-store/store.yaml": "id: team-plans\n" });
+    await expect(inventoryOpenSpec(bare)).rejects.toThrow(/has no OpenSpec planning content/);
   });
 });
 
@@ -691,6 +712,48 @@ describe("OpenSpec audit and mapping-driven migration commands", () => {
       );
       expect(result.code, `${firstId ?? "no-id"} then ${secondId ?? "no-id"}`).toBe(1);
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: { code: "invalid-option" } });
+    }
+  });
+
+  it("grades mapping service ids with the one shared grammar, not a second copy of it", async () => {
+    // `serviceList` used to inline its own alphabet regex, `.`/`..` tests,
+    // trailing-dot test and Windows device names. Two copies is how the grammar
+    // drifted apart: for a while migrate was the STRICTER of the two, so the
+    // primary authoring path (`--service`, `--touches`, `adopt`) accepted ids a
+    // migration refused. src/core/ids.ts owns the rule now; migrate keeps its
+    // own refusal shape (`invalid-option`, never an Issue).
+    const fixture = await workspace({
+      "config.yaml": "schema: spec-driven\n",
+      "specs/payments/spec.md": LIVING,
+    });
+    const inventory = await inventoryOpenSpec(fixture.root);
+    const migrateAs = async (service: string): Promise<{ code: number; stdout: string }> => {
+      const mapping = await mappingFile(inventory);
+      mapping.document.capabilities.payments!.services = [service];
+      await writeFile(mapping.path, JSON.stringify(mapping.document), "utf8");
+      return runLoam(fixture.root, "migrate-openspec", fixture.root, "--map", mapping.path, "--json");
+    };
+
+    // Every id the shared rule refuses is still refused here, under the same
+    // code, and the message quotes the value so the YAML line is findable.
+    // `pay..ments` is the one the inlined copy ACCEPTED — its alphabet regex
+    // allowed dots anywhere — and refusing it now is the point of one grammar.
+    for (const bad of ["CON", "nul.txt", "LPT1", "payments.", ".", "..", "../escape", "-leading", "pay..ments"]) {
+      const result = await migrateAs(bad);
+      expect(result.code, bad).toBe(1);
+      const report = JSON.parse(result.stdout);
+      expect(report, bad).toMatchObject({ ok: false, error: { code: "invalid-option" } });
+      expect(report.error.message, bad).toContain(`'${bad}'`);
+      // and the mapping key, so the refusal names the line to edit
+      expect(report.error.message, bad).toContain("capabilities.payments.services");
+    }
+
+    // Nothing migrate used to accept has become refused: the whole alphabet,
+    // and the two ids that only LOOK like reserved device names.
+    for (const good of ["payment-service", "payments_v2", "payments.v2", "svc2", "CONSOLE", "nullify"]) {
+      const result = await migrateAs(good);
+      expect(result.code, good).toBe(0);
+      expect(JSON.parse(result.stdout), good).toMatchObject({ ok: true, ready: true });
     }
   });
 
