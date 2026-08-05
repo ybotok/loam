@@ -21,17 +21,22 @@ import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { resolveInside, resolvePortableFileInside } from "../core/path-safety.js";
 import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
+import { sayRecovery } from "./archive.js";
 import {
   acquireDocsLock,
+  clearCommitIntent,
   DocsBusyError,
+  InterruptedCommitError,
   message,
   planWrite,
   quietRm,
+  recoverInterruptedCommit,
   rollbackError,
   rollbackStaged,
   sha256,
   stageWrites,
   swapStaged,
+  writeCommitIntent,
   SNAPSHOT_DIR,
   SNAPSHOT_MANIFEST,
   SNAPSHOT_VERSION,
@@ -74,7 +79,11 @@ export function registerUnarchive(program: Command): void {
       try {
         await runUnarchive(featureId, json, opts.force === true);
       } catch (err) {
-        const code = err instanceof RestoreFailure ? err.code : "restore-failed";
+        const code = err instanceof RestoreFailure
+          ? err.code
+          : err instanceof InterruptedCommitError
+            ? "commit-interrupted"
+            : "restore-failed";
         fail(json, code, `unarchive ${featureId} failed: ${message(err)}`);
       }
     });
@@ -111,6 +120,11 @@ async function unarchiveLocked(
   json: boolean,
   force: boolean,
 ): Promise<void> {
+  // Same first move as archive, under the same lock: a commit killed between two
+  // renames is exactly the state an undo must not be computed on top of.
+  const recovered = await recoverInterruptedCommit(docsDir);
+  if (recovered !== null && !json) sayRecovery(recovered);
+
   const featuresDir = featuresRoot(docsDir);
   const archiveDir = join(featuresDir, "archive");
 
@@ -153,16 +167,49 @@ async function unarchiveLocked(
   // loss, so it takes --force to say it was meant.
   const writes: PlannedWrite[] = [];
   const drifted: string[] = [];
+  // Pre-images whose bytes are not the bytes archive wrote down. Collected
+  // whole, then refused together: "which files" is what makes the message
+  // actionable, and no destination is staged until every one is accounted for.
+  const corrupt: string[] = [];
   for (const entry of manifest.files) {
-    const current = existsSync(entry.target) ? await readFile(entry.target, "utf8") : null;
-    if (current === null || sha256(current) !== entry.after) drifted.push(entry.path);
-    const before = entry.snapshot === null ? null : await readFile(entry.snapshot, "utf8");
+    const current = existsSync(entry.target) ? await readFile(entry.target) : null;
+    const now = current === null ? null : sha256(current);
+    // Drift is "restoring this would destroy something", so a file already
+    // holding its OWN pre-image is not drifted — putting it back writes the
+    // same bytes. It is also the state an interrupted restore leaves behind
+    // (the repair finishes the swaps it can, then this command re-runs): the
+    // narrower test used to call every repaired file a later change and demand
+    // `--force` to discard this command's own half-finished undo.
+    const restored = entry.existed ? now === entry.before : now === null;
+    if (now !== entry.after && !restored) drifted.push(entry.path);
+    let before: Buffer | null = null;
+    if (entry.snapshot !== null) {
+      before = await readFile(entry.snapshot);
+      // The one check that was missing entirely. `after` describes what archive
+      // WROTE and is checked above; nothing described the bytes it would
+      // RESTORE, so a pre-image edited inside the archived feature — a bad
+      // merge, a rebase, an editor — was written back verbatim and this command
+      // said "the living docs are back to what they said before the archive"
+      // over text nobody ever wrote.
+      if (sha256(before) !== entry.before) corrupt.push(entry.path);
+    }
     // A restore whose destination is GONE is a create, and takes the same
     // no-clobber swap an archive's creates take: between the manifest read and
     // the swap, another writer may have put that path back, and a rename would
     // bury it. The same helper both commands use, so neither can decide
     // differently about the same file.
     writes.push(planWrite(entry.target, before));
+  }
+  if (corrupt.length > 0) {
+    fail(
+      json,
+      "snapshot-corrupt",
+      `unarchive ${feature.id} — BLOCKED: ${corrupt.length} snapshot pre-image(s) no longer match the digest archive ` +
+        `recorded for them, so restoring them would write text nobody authored: ${corrupt.join(", ")}. ` +
+        `--force does not override this — it discards LATER changes to the living docs, and the damage here is to the ` +
+        `undo itself. Restore the living docs from version control instead.`,
+    );
+    return;
   }
   if (drifted.length > 0 && !force) {
     fail(
@@ -185,13 +232,24 @@ async function unarchiveLocked(
 
   const staged = await stageWrites(writes);
   try {
+    // The same journal archive writes, in the other direction: a restore killed
+    // between two renames leaves the docs half-back, and the merged text it was
+    // replacing is recorded nowhere — so a repair FINISHES this restore rather
+    // than undoing it, from the same digest-checked pre-images.
+    await writeCommitIntent(
+      docsDir,
+      { command: "unarchive", restore: "after", feature: feature.id, moveFrom: feature.dir, moveTo: dest },
+      staged,
+    );
     await swapStaged(staged);
     await rename(feature.dir, dest);
+    await clearCommitIntent(docsDir);
   } catch (err) {
     // The code is a caller's answer to "can I trust the repo?": restore-failed
     // means yes (rolled back), rollback-incomplete means look at it by hand —
     // rollbackError's message lists the files that need one.
     const failures = await rollbackStaged(staged);
+    await clearCommitIntent(docsDir);
     const wrapped = rollbackError(err, failures);
     throw new RestoreFailure(failures.length > 0 ? "rollback-incomplete" : "restore-failed", wrapped.message);
   }
@@ -213,6 +271,7 @@ async function unarchiveLocked(
       restored,
       removed,
       discarded: drifted,
+      ...(recovered === null ? {} : { recovered }),
     });
     return;
   }
@@ -231,6 +290,8 @@ interface ValidatedSnapshotEntry {
   path: string;
   existed: boolean;
   after: string;
+  /** sha256 the pre-image beside the manifest must still have; null when archive created the destination. */
+  before: string | null;
   /** Contained destination under the docs repo. */
   target: string;
   /** Contained pre-image, or null when archive created the destination. */
@@ -267,6 +328,14 @@ async function readManifest(
       if (!isRecord(raw)) return null;
       if (typeof raw.path !== "string" || typeof raw.existed !== "boolean") return null;
       if (typeof raw.after !== "string" || !/^[0-9a-f]{64}$/.test(raw.after)) return null;
+      // A manifest that claims a pre-image must say what it should hash to, and
+      // one that claims none must not. Either way it is a shape question, so it
+      // is answered here with the rest of them; whether the bytes MATCH is a
+      // different answer with its own code (`snapshot-corrupt`).
+      if (raw.existed ? typeof raw.before !== "string" || !/^[0-9a-f]{64}$/.test(raw.before) : raw.before !== null) {
+        return null;
+      }
+      const before = raw.existed ? (raw.before as string) : null;
       if (seen.has(raw.path)) return null;
       seen.add(raw.path);
 
@@ -287,7 +356,7 @@ async function readManifest(
         const unexpected = resolvePortableFileInside(featureDir, snapshotRel, `snapshot pre-image '${raw.path}'`);
         if (existsSync(unexpected)) return null;
       }
-      files.push({ path: raw.path, existed: raw.existed, after: raw.after, target, snapshot });
+      files.push({ path: raw.path, existed: raw.existed, after: raw.after, before, target, snapshot });
     }
 
     return {

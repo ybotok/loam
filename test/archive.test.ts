@@ -2154,6 +2154,27 @@ describe("addressing a feature by its directory name", () => {
     // an ADDED requirement absent from the living spec consults the in-flight
     // scan, and a raw dirName used to fail the `feature.id !== arg` exclusion.
     const p = await makeProject({
+      // The service has to exist: a delta addressing a service the fleet does
+      // not have is now `delta.service-unknown`, which gates archive so a
+      // typo'd `--touches` cannot create a service out of the misspelling.
+      // Its living requirement is a different one — the ADDED requirement below
+      // must still be absent, or activeAdditions is never consulted.
+      "services/core-service/spec.md": `---
+service: core-service
+owner: core
+---
+# core-service
+
+## Requirements
+
+### Requirement: Serve the thing
+The service SHALL serve the thing.
+
+#### Scenario: It serves
+- **Given** a thing
+- **When** asked
+- **Then** it is served
+`,
       "features/FEAT-2-solo/specs/core-service/spec.md": `# core-service — delta for FEAT-2
 
 ## ADDED Requirements

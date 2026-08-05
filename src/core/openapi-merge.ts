@@ -252,6 +252,10 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
     for (const [path, item] of Object.entries(paths)) {
       if (!isRecord(item)) continue;
       for (const [m, value] of Object.entries(item)) {
+        // A loam marker at PATH level, deleted here for the same reason the
+        // resolved-tree branch drops it: the two branches must agree exactly
+        // about what a living contract may carry.
+        if (FEATURE_ONLY_KEYS.has(m)) feature.deleteIn(["paths", path, m]);
         if (!HTTP_METHODS.has(m)) continue;
         if (isRemoval(value)) feature.deleteIn(["paths", path, m]);
         // The surviving operations keep their formatting but lose their pin:
@@ -351,6 +355,14 @@ export function mergeOpenapiPaths(
       if (!isRecord(featItemPlain)) {
         throw new OpenapiMergeError("feature", service, `path '${path}' is not a mapping`);
       }
+      // EVERY branch publishes through withoutFeatureMarkers. This one used to
+      // copy every key of the feature path item and guard only the HTTP
+      // methods, so a path-level `x-loam-remove` landed in the living contract
+      // with `modified: []` and no warning. A key the strip drops is never
+      // written; the removal handling below still reads the RAW item, because
+      // that is where the markers it acts on live.
+      const publish = withoutFeatureMarkers(featItemPlain);
+      const publishable = isRecord(publish) ? publish : {};
       for (const [m, afterPlain] of Object.entries(featItemPlain)) {
         const before = living.getIn(["paths", path, m]);
         const beforePlain = plainChild(existingPlain, m);
@@ -382,6 +394,12 @@ export function mergeOpenapiPaths(
           }
           if (verdict === "stale") baselineStale.push(opLabel(beforePlain, afterPlain, m, path));
         }
+        if (!(m in publishable)) {
+          // A feature-only marker at path level. It is never published, and
+          // never reported as a path-item overwrite either — it is not a key of
+          // the contract at all. The archive gate names it to the author.
+          continue;
+        }
         // The difference check covers EVERY key of the path item; only the
         // LABEL depends on whether the key is an HTTP method.
         if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
@@ -390,7 +408,7 @@ export function mergeOpenapiPaths(
         }
         // Without the strip the living contract would grow a pin to a version
         // of itself, and the NEXT feature's baseline would hash it.
-        living.setIn(["paths", path, m], withoutOperationBaseline(afterPlain));
+        living.setIn(["paths", path, m], publishable[m]);
       }
       // Removing the last method leaves `\/x: {}` — a path the contract still
       // advertises and nothing answers. The same cleanup
@@ -545,16 +563,30 @@ function operationIdOf(node: unknown): string | undefined {
 }
 
 /**
+ * Every key that is an instruction to loam rather than part of the contract.
+ * At PATH level neither has any meaning — `x-loam-remove` addresses one
+ * operation and `x-loam-based-on` pins one — so a path item carrying either is
+ * an authoring mistake, and one that must not be published whatever else is
+ * done about it.
+ */
+const FEATURE_ONLY_KEYS = new Set(["x-loam-remove", OPENAPI_BASELINE_KEY]);
+
+/**
  * Copy a path item without anything that belongs to the FEATURE rather than to
- * the contract: removal-marker operations, and the `x-loam-based-on` pins on the
- * operations that survive. Both are instructions to loam, and a living contract
- * that carries either is lying to the next reader — and, for the pin, to the
- * next feature's baseline.
+ * the contract: removal-marker operations, the `x-loam-based-on` pins on the
+ * operations that survive, and a loam marker written at PATH level. All three
+ * are instructions to loam, and a living contract that carries any of them is
+ * lying to the next reader — and, for the pin, to the next feature's baseline.
+ *
+ * The path-level case used to fall through: the filter guarded only HTTP
+ * methods, so `x-loam-remove: true` beside the methods was copied verbatim into
+ * the fleet's living contract, where it also kept the empty-path cleanup from
+ * ever seeing an empty path.
  */
 function withoutFeatureMarkers(node: unknown): unknown {
   if (node === null || typeof node !== "object" || Array.isArray(node)) return node;
   const entries = Object.entries(node as Record<string, unknown>)
-    .filter(([method, value]) => !(HTTP_METHODS.has(method) && isRemoval(value)))
+    .filter(([key, value]) => !FEATURE_ONLY_KEYS.has(key) && !(HTTP_METHODS.has(key) && isRemoval(value)))
     .map(([key, value]) => [key, HTTP_METHODS.has(key) ? withoutOperationBaseline(value) : value] as const);
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
 }

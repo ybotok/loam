@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -168,6 +169,20 @@ export interface OpenapiDoc {
    */
   anonymousRemovals: AnonymousRemoval[];
   /**
+   * Paths carrying `x-loam-remove: true` at PATH level, beside the methods
+   * rather than inside one.
+   *
+   * Not an operation, so nothing keyed by (path, method) could see it — and this
+   * reader is method-keyed like the merge was. A marker written there addressed
+   * no operation, so archive copied it into the living contract verbatim, where
+   * it was invisible to `openapi.remove-marker-living` for the same reason and
+   * kept the empty-path cleanup from ever firing. Reported as its own list
+   * because the answer differs by document: in a FEATURE delta it is an
+   * authoring mistake, in a LIVING contract it is a marker that must never have
+   * been published.
+   */
+  pathLevelRemovals: string[];
+  /**
    * True when the file EXISTS but cannot be read as an OpenAPI document —
    * broken YAML, or a document that is not a mapping. A missing file is not
    * unreadable (absence is `service.no-openapi`'s question), and an empty one
@@ -206,10 +221,16 @@ export interface OpenapiDoc {
 export async function readOpenapi(openapiPath: string, context?: FleetContext): Promise<OpenapiDoc> {
   if (context !== undefined) return context.readOpenapi(openapiPath);
   if (!existsSync(openapiPath)) return empty();
-  const text = await readFile(openapiPath, "utf8");
+  const bytes = await readFile(openapiPath);
+  // A contract whose bytes are not UTF-8 is as unreadable as broken YAML, and
+  // for a worse reason: `toString("utf8")` would substitute U+FFFD and hand the
+  // parser a document nobody wrote. It travels as `unreadable` so validate
+  // grades it `openapi.invalid` — the file is the error, and every check that
+  // reads the contract stays suspended.
+  if (!isUtf8(bytes)) return { ...empty(), unreadable: true, error: "file is not valid UTF-8" };
   let doc: unknown;
   try {
-    doc = parse(text);
+    doc = parse(bytes.toString("utf8"));
   } catch (e) {
     return { ...empty(), unreadable: true, error: e instanceof Error ? e.message : String(e) };
   }
@@ -223,9 +244,11 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
   if (!paths || typeof paths !== "object") return empty();
   const ops: Operation[] = [];
   const anonymousRemovals: AnonymousRemoval[] = [];
+  const pathLevelRemovals: string[] = [];
   const seen = new Map<string, number>();
   for (const [path, item] of Object.entries(paths as Record<string, unknown>)) {
     if (!item || typeof item !== "object") continue;
+    if ((item as Record<string, unknown>)["x-loam-remove"] === true) pathLevelRemovals.push(path);
     for (const [method, op] of Object.entries(item as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method)) continue;
       if (!op || typeof op !== "object") continue;
@@ -249,11 +272,11 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
     }
   }
   const duplicateIds = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
-  return { ops, duplicateIds, anonymousRemovals, unreadable: false };
+  return { ops, duplicateIds, anonymousRemovals, pathLevelRemovals, unreadable: false };
 }
 
 function empty(): OpenapiDoc {
-  return { ops: [], duplicateIds: [], anonymousRemovals: [], unreadable: false };
+  return { ops: [], duplicateIds: [], anonymousRemovals: [], pathLevelRemovals: [], unreadable: false };
 }
 
 /** The operations alone — for every caller whose own finding already covers the unreadable case. */

@@ -9,9 +9,13 @@ import {
   type LoadedDoc,
   type Rel,
 } from "./likec4.js";
+import { closeIds } from "./arch.js";
 import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./issue.js";
+import { repoPath } from "./json.js";
+import type { Finding } from "./report.js";
 import {
+  docsRepoState,
   featurePaths,
   featureSpecPaths,
   featureSpecServices,
@@ -19,6 +23,7 @@ import {
   listFeatures,
   listServices,
   servicePaths,
+  SPEC_AXES,
 } from "./repo.js";
 import { parseRequirements, type Requirement } from "./spec.js";
 import {
@@ -30,7 +35,11 @@ import {
   readOpenapi,
   serviceOperationIds,
 } from "./openapi.js";
-import type { FleetContext } from "./fleet-context.js";
+import {
+  documentConflictFinding,
+  landscapeConflictFinding,
+  type FleetContext,
+} from "./fleet-context.js";
 
 export type { Issue, IssueCode } from "./issue.js";
 
@@ -472,6 +481,116 @@ export async function featureCoherence(
   }
 
   return issues;
+}
+
+/* ------------------------------------------------------------------ */
+/* What the merge would do to the LIVING documents                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Per-service deltas addressed to a service that exists nowhere: no
+ * `services/<svc>/`, and nothing in this feature's own tagged delta introducing
+ * one.
+ *
+ * `validate` grades this (`delta.service-unknown`); `archive` is where it costs
+ * something, because `specs/<svc>/` is what the merge MATERIALISES
+ * `services/<svc>/` from — one wrong character in `--touches` and the fleet
+ * acquires a living service nobody meant to adopt, under a banner saying the
+ * living docs are complete. Both gates read this function so they cannot drift
+ * into disagreeing about which service ids are real; the `code:` literal lives
+ * here, once, where the drift collector sees it.
+ *
+ * A delta that did not parse proves nothing either way — whether it introduces
+ * the service is exactly what nobody can read — so the question is suspended
+ * there rather than answered by guessing. `delta.invalid` is that file's
+ * finding, and coherence already makes it.
+ *
+ * `services/<svc>/` is asked for directly rather than through the enumeration:
+ * a feature may be graded in a docs repo with no `services/` at all (repo.ts
+ * takes the same position), where enumerating is a refusal, not an answer.
+ */
+export async function unknownDeltaServices(
+  docsDir: string,
+  featureDir: string,
+  featureId: string,
+  preloadedDelta?: LoadedDoc,
+  context?: FleetContext,
+): Promise<Finding[]> {
+  const deltaPath = featurePaths(featureDir).delta;
+  let delta: LoadedDoc | undefined;
+  if (existsSync(deltaPath)) {
+    delta = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
+  }
+  if (delta !== undefined && delta.errors.length > 0) return [];
+
+  const introduces = new Set(
+    (delta?.elements ?? []).filter((e) => e.tags.includes(featureId)).map(elementService),
+  );
+  const unknown = (await featureSpecServices(featureDir, context)).filter(
+    (svc) => !existsSync(servicePaths(docsDir, svc).dir) && !introduces.has(svc),
+  );
+  if (unknown.length === 0) return [];
+
+  // The near-miss hint, on the same rule `service.unknown` uses — a typo is
+  // only diagnosable against the ids that DO exist.
+  const closeTo =
+    docsRepoState(docsDir).kind === "ok" ? (await listServices(docsDir, context)).map((s) => s.id) : [];
+  return unknown.map((svc) => {
+    const close = closeIds(svc, closeTo);
+    return {
+      severity: "error",
+      code: "delta.service-unknown",
+      subject: svc,
+      message:
+        `specs/${svc}/ addresses a service that does not exist: there is no services/${svc}/ and this feature's ` +
+        `delta.likec4 does not introduce one — archiving would create it out of the typo.` +
+        (close.length > 0 ? ` Did you mean: ${close.join(", ")}?` : " `loam list services` shows what exists."),
+    };
+  });
+}
+
+/**
+ * Git conflict markers in the LIVING documents a merge of this feature would
+ * rewrite: each touched service's requirement files, and the fleet map.
+ *
+ * The rule and the sentence are fleet-context's — one spelling of the breach,
+ * wherever it is found. What this adds is the SET: the documents `archive`
+ * rewrites. A conflicted `services/<svc>/spec.md` parses as prose, so every
+ * check upstream of the merge reads it as a valid document with some odd
+ * headings in it; the rewrite then drops whichever marker lines fall inside the
+ * requirements run it owns, and a conflict anyone could see becomes a file
+ * nobody can tell is wrong. For a shared docs repo that a fleet lands in
+ * through PRs, that is the default failure and not an edge.
+ *
+ * `openapi.yaml` is deliberately absent: markers make it unparseable, so the
+ * YAML reader already refuses it by name and a second finding would only say
+ * the same thing later.
+ */
+export async function livingMergeConflicts(
+  docsDir: string,
+  services: string[],
+  context?: FleetContext,
+): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const read = async (path: string): Promise<string> =>
+    context === undefined ? readFile(path, "utf8") : context.readText(path);
+
+  for (const svc of services) {
+    const paths = servicePaths(docsDir, svc);
+    for (const axis of SPEC_AXES) {
+      const path = paths[axis.key];
+      if (!existsSync(path)) continue;
+      const finding = documentConflictFinding(repoPath(docsDir, path), svc, await read(path));
+      if (finding !== null) out.push(finding);
+    }
+  }
+
+  const landscape = landscapePath(docsDir);
+  if (existsSync(landscape)) {
+    const finding = landscapeConflictFinding(repoPath(docsDir, landscape), await read(landscape));
+    if (finding !== null) out.push(finding);
+  }
+  return out;
 }
 
 /**

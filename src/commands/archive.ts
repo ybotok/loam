@@ -1,24 +1,32 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, mkdir, rename } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { gatesArchive, type Issue } from "../core/issue.js";
 import {
   acquireDocsLock,
+  clearCommitIntent,
   DocsBusyError,
+  InterruptedCommitError,
   message,
+  NotUtf8Error,
   planWrite,
   quietPruneEmptyParents,
   quietRm,
+  readUtf8,
+  recoverInterruptedCommit,
   rollbackError,
   rollbackStaged,
   snapshotDir,
+  SnapshotClobberError,
   stageWrites,
   swapStaged,
+  writeCommitIntent,
   writeSnapshot,
   SNAPSHOT_DIR,
+  type CommitRecovery,
   type PlannedWrite,
 } from "../core/staging.js";
 import {
@@ -46,14 +54,15 @@ import {
   servicePaths,
   SPEC_AXES,
 } from "../core/repo.js";
-import { operations } from "../core/openapi.js";
+import { readOpenapi } from "../core/openapi.js";
 import {
   mergeOpenapiPaths,
   OpenapiMergeError,
   stripOpenapiRemovalMarkers,
   type OpenapiMergeResult,
 } from "../core/openapi-merge.js";
-import { featureCoherence } from "../core/coherence.js";
+import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
+import { findingJson, type Finding } from "../core/report.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -100,10 +109,18 @@ export function registerArchive(program: Command): void {
       } catch (err) {
         // Plan-phase failures happen before any write; commit-phase failures are
         // rolled back by runArchive, which says so in the message it throws.
-        const code = err instanceof ArchiveFailure ? err.code : "internal";
-        fail(json, code, `archive ${featureId} failed: ${message(err)}`);
+        // A file loam cannot decode is one it cannot merge, and that is the same
+        // answer as any other merge it could not compute: nothing was written.
+        fail(json, archiveErrorCode(err), `archive ${featureId} failed: ${message(err)}`);
       }
     });
+}
+
+function archiveErrorCode(err: unknown): ErrorCode {
+  if (err instanceof ArchiveFailure) return err.code;
+  if (err instanceof NotUtf8Error) return "merge-failed";
+  if (err instanceof InterruptedCommitError) return "commit-interrupted";
+  return "internal";
 }
 
 /**
@@ -124,6 +141,19 @@ function issueJson(i: Issue): Record<string, unknown> {
 /** The failure envelope plus the issues that caused it, so a caller need not re-run validate. */
 function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void {
   emitJsonError(code, msg, { issues: issues.map(issueJson) });
+}
+
+/**
+ * The same envelope for a refusal computed from `Finding`s rather than
+ * `Issue`s — the plan-time checks whose codes are not coherence's (they belong
+ * to the LIVING documents, not to the feature) and so are not `IssueCode`s.
+ *
+ * `gates: true` is asserted rather than derived: every finding listed in a
+ * refusal is a reason archive stopped, which is what the field means. Nothing
+ * advisory reaches here.
+ */
+function refuseFindings(code: ErrorCode, msg: string, findings: Finding[]): void {
+  emitJsonError(code, msg, { issues: findings.map((f) => ({ ...findingJson(f), gates: true })) });
 }
 
 /**
@@ -172,6 +202,14 @@ async function archiveLocked(
   const say = (line = ""): void => {
     if (!json) console.log(line);
   };
+  // Before anything is read: a commit that was killed between two renames left
+  // the living docs half-written, and every other command in loam would have
+  // planned against them as if they were the truth. Under the same lock, so the
+  // repair cannot race a writer. It refuses when the half-merged files have been
+  // edited since — that is a human's call, not a merge's.
+  const recovered = await recoverInterruptedCommit(config.docsDir);
+  if (recovered !== null && !json) sayRecovery(recovered);
+
   const featuresDir = featuresRoot(config.docsDir);
   const feature = await resolveFeature(config.docsDir, featureId, "exclude");
   if (!feature) {
@@ -188,6 +226,34 @@ async function archiveLocked(
   // fresh Langium workspace each time. Nothing writes it in between.
   const deltaLikec4 = featurePaths(featureDir).delta;
   const deltaDoc = existsSync(deltaLikec4) ? await loadFile(deltaLikec4) : undefined;
+
+  const deltaServices = await featureSpecServices(featureDir);
+
+  // Git conflict markers in a LIVING document this merge would rewrite, before
+  // anything else is asked of it. Both sides of somebody's merge are in the
+  // file, so nothing it says is anyone's text — and the requirements rewrite
+  // deletes whichever marker lines fall inside the section it owns, turning a
+  // conflict anyone can see into a file nobody can tell is wrong. Checked ahead
+  // of the coherence gate for `inspectLandscape`'s reason: a conflicted
+  // document parses, so every verdict downstream of it is an opinion about half
+  // of two people's work.
+  //
+  // --approve does not apply, exactly as with the strayed-requirement refusal
+  // below: --approve overrides judgments about the FEATURE, and this is a fact
+  // about the living document.
+  const conflicted = await livingMergeConflicts(config.docsDir, deltaServices);
+  if (conflicted.length > 0) {
+    const msg = `archive ${id} — BLOCKED: ${conflicted.length} living document(s) still hold git conflict markers`;
+    if (json) {
+      refuseFindings("merge-failed", msg, conflicted);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const f of conflicted) console.error(`  ✗ ${f.message}`);
+    console.error(`\n--approve does not override this — the loss is mechanical, not a judgment call.`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Gate: GATING issues block the archive. Severity and gating are two
   // different questions (issue.ts): errors gate because the merge would write
@@ -224,7 +290,36 @@ async function archiveLocked(
     say();
   }
 
-  const deltaServices = await featureSpecServices(featureDir);
+  // A `specs/<svc>/` addressed to a service that exists nowhere. `validate`
+  // graded this and archive did not, which is the half that costs something:
+  // `specs/<svc>/` is what the merge MATERIALISES `services/<svc>/` from, so a
+  // one-character slip in `--touches` archived at exit 0 and left the fleet a
+  // living service nobody meant to adopt. The set comes from coherence.ts's
+  // `unknownDeltaServices` — the same function validate reads — so the two
+  // gates cannot drift into disagreeing about which ids are real.
+  //
+  // Gated exactly like a coherence error, --approve included: which service you
+  // meant is a judgment about the FEATURE. A feature that genuinely introduces
+  // one has a better escape hatch than --approve anyway — tag its element in
+  // delta.likec4, which is also what makes the fleet map true afterwards.
+  const unknownServices = await unknownDeltaServices(config.docsDir, featureDir, id, deltaDoc);
+  if (unknownServices.length > 0 && !opts.approve) {
+    const msg = `archive ${id} — BLOCKED: ${unknownServices.length} per-service delta(s) address a service that does not exist`;
+    if (json) {
+      refuseFindings("not-coherent", msg, unknownServices);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const f of unknownServices) console.error(`  ✗ ${f.message}`);
+    console.error(`\nFix the id, or introduce the service in this feature's delta.likec4 — or re-run with --approve to create it anyway.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (unknownServices.length > 0) {
+    say(`⚠ archiving despite ${unknownServices.length} unknown service(s) (--approve) — this merge creates them:`);
+    for (const f of unknownServices) say(`  ✗ ${f.message}`);
+    say();
+  }
 
   // A LIVING requirement outside `## Requirements` is a merge loam cannot do
   // correctly: the rewrite replaces only the requirements RUN inside that
@@ -241,7 +336,7 @@ async function archiveLocked(
       if (!existsSync(featureSpecPaths(featureDir, svc)[axis.key])) continue;
       const livingPath = servicePaths(config.docsDir, svc)[axis.key];
       if (!existsSync(livingPath)) continue;
-      for (const r of parseRequirements(await readFile(livingPath, "utf8"))) {
+      for (const r of parseRequirements(await readUtf8(livingPath))) {
         // The ONE definition of the heading (spec.ts): the guard and the rewrite
         // boundary match the same way, so they cannot disagree about "outside".
         if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
@@ -291,6 +386,8 @@ async function archiveLocked(
   // the same way, and --approve overrides them the same way.
   const planGates: Issue[] = [];
   const openapiRemovals: Array<{ service: string; operations: string[] }> = [];
+  /** Services this feature introduces on the architecture axis alone — filled by the landscape merge below. */
+  const architectureServices = new Set<string>();
 
   // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
@@ -301,7 +398,7 @@ async function archiveLocked(
     for (const axis of SPEC_AXES) {
       const deltaPath = featureSpecPaths(featureDir, svc)[axis.key];
       if (!existsSync(deltaPath)) continue;
-      const deltaReqs = parseRequirements(await readFile(deltaPath, "utf8"));
+      const deltaReqs = parseRequirements(await readUtf8(deltaPath));
 
       const livingPath = servicePaths(config.docsDir, svc)[axis.key];
       if (!existsSync(livingPath)) {
@@ -318,7 +415,7 @@ async function archiveLocked(
         say(`  ${axis.label}: ${svc} — created living ${axis.file} (${created.length} requirement(s))`);
         continue;
       }
-      const livingText = await readFile(livingPath, "utf8");
+      const livingText = await readUtf8(livingPath);
       // TWO `## Requirements` headings would put the rewrite's one-section
       // invariant to a choice it must not make: the run of the first would be
       // rewritten while the second survived verbatim in the tail — and its
@@ -343,10 +440,24 @@ async function archiveLocked(
   for (const svc of deltaServices) {
     const featOpenapi = featureSpecPaths(featureDir, svc).openapi;
     if (!existsSync(featOpenapi)) continue;
-    const featText = await readFile(featOpenapi, "utf8");
+    const featText = await readUtf8(featOpenapi);
     const livingOpenapi = servicePaths(config.docsDir, svc).openapi;
-    const featureOps = await operations(featOpenapi);
-    const ops = featureOps.filter((op) => !op.remove).map((op) => op.id);
+    const featDoc = await readOpenapi(featOpenapi);
+    const ops = featDoc.ops.filter((op) => !op.remove).map((op) => op.id);
+    // An `x-loam-remove: true` written at PATH level retires nothing: the marker
+    // addresses one operation, and beside the methods there is no operation for
+    // it to address. The merge now strips it on every branch, so the living
+    // contract is safe either way — but the author asked for a removal that will
+    // not happen, and silence there is how a retired endpoint stayed live.
+    // Gated like the other plan-visible breaches, --approve and all.
+    for (const path of featDoc.pathLevelRemovals) {
+      planGates.push({
+        severity: "error",
+        code: "openapi.remove-marker-path-level",
+        subject: svc,
+        message: `${svc}: '${path}' carries x-loam-remove at PATH level, beside the methods — a removal marker names ONE operation, so this retires nothing and is not a contract key either. Move it inside the operation you are retiring (with its operationId), or delete it.`,
+      });
+    }
     if (!existsSync(livingOpenapi)) {
       // A removal against a non-existent contract is gated by coherence. Keep
       // the feature-only marker out of living docs even under --approve — and
@@ -360,7 +471,7 @@ async function archiveLocked(
     } else {
       let merge: OpenapiMergeResult;
       try {
-        merge = mergeOpenapiPaths(await readFile(livingOpenapi, "utf8"), featText, svc);
+        merge = mergeOpenapiPaths(await readUtf8(livingOpenapi), featText, svc);
       } catch (err) {
         if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
         throw err;
@@ -435,6 +546,18 @@ async function archiveLocked(
     const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
       const plan = await planLandscapeMerge(landscapePath, deltaLikec4, delta.elements, newEls, newRels, id);
+      // A service can arrive on the ARCHITECTURE axis alone: an element this
+      // merge ADDS, carrying a `metadata { service }` binding, with no
+      // `specs/<svc>/` anywhere in the feature. It is a service the fleet gate
+      // will demand a directory for the moment this merge lands, so it owes the
+      // same warning as one arriving with a requirement delta — and until it
+      // did, the closing "complete + current" line printed over a landscape
+      // this very archive had just made red. Read off the ADDED elements, not
+      // the tagged ones: an element the living landscape already had is not
+      // arriving, and one that is never merged is not there to demand anything.
+      for (const e of plan.addedEls) {
+        if (e.service !== undefined) architectureServices.add(e.service);
+      }
       writes.push(...plan.writes);
       say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
       for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
@@ -454,36 +577,46 @@ async function archiveLocked(
   // stops claiming the docs are complete. Non-gating: the feature is coherent
   // and the merge is correct; what is missing is the next step, and refusing
   // here would make onboarding a new service impossible in one command.
-  const newServices = deltaServices.filter((svc) => !existsSync(servicePaths(config.docsDir, svc).dir));
+  const newServices = [...new Set([...deltaServices, ...architectureServices])].filter(
+    (svc) => !existsSync(servicePaths(config.docsDir, svc).dir),
+  );
   for (const svc of newServices) {
     if (existsSync(servicePaths(config.docsDir, svc).model)) continue;
+    // Two shapes of the same debt: a service with a requirement delta gets its
+    // directory from this merge, one that arrives only in the landscape gets no
+    // directory at all — and `validate --all` fails the second harder
+    // (`landscape.service-unmodelled` names the binding with nothing behind it).
+    const creates = deltaServices.includes(svc)
+      ? `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`
+      : `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`;
     planWarns.push({
       severity: "warn",
       code: "service.no-model",
       subject: svc,
-      message: `${svc}: this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4 — 'loam validate --all' will report the service as incomplete until it exists. Run 'loam adopt <path-to-${svc}-repo> --service ${svc}' from the service repo, or write the model by hand.`,
+      message: `${svc}: ${creates} — 'loam validate --all' will report the service as incomplete until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
     });
   }
 
   // Gate on what only the plan could see: a merged operation pointing at a
-  // component that exists nowhere. Same doctrine as the coherence gate — a
-  // judgment call --approve overrides (unlike the mechanical merge-failed
-  // refusals), and a dry run is gated too. Checked after the whole plan so the
-  // refusal costs nothing: no write has happened yet either way.
+  // component that exists nowhere, a removal marker addressing no operation.
+  // Same doctrine as the coherence gate — a judgment call --approve overrides
+  // (unlike the mechanical merge-failed refusals), and a dry run is gated too.
+  // Checked after the whole plan so the refusal costs nothing: no write has
+  // happened yet either way.
   if (planGates.length > 0 && !opts.approve) {
-    const msg = `archive ${id} — BLOCKED: ${planGates.length} unresolved $ref(s) in the OpenAPI merge`;
+    const msg = `archive ${id} — BLOCKED: ${planGates.length} issue(s) in the OpenAPI merge`;
     if (json) {
       refuseJson("not-coherent", msg, [...issues, ...planWarns, ...planGates]);
       return;
     }
     console.error(`${msg}:`);
     for (const i of planGates) console.error(`  ✗ ${i.message}`);
-    console.error(`\nDefine the referenced component(s) in the feature's openapi.yaml, or fix the ref — or re-run with --approve to merge the dangling reference anyway.`);
+    console.error(`\nFix them in the feature's openapi.yaml — or re-run with --approve to merge anyway.`);
     process.exitCode = 1;
     return;
   }
   if (planGates.length > 0) {
-    say(`\n  ⚠ archiving despite ${planGates.length} unresolved $ref(s) (--approve):`);
+    say(`\n  ⚠ archiving despite ${planGates.length} OpenAPI merge issue(s) (--approve):`);
     for (const i of planGates) say(`      ✗ ${i.message}`);
   }
 
@@ -505,6 +638,10 @@ async function archiveLocked(
     warnings: warnings.map(issueJson),
     overridden: overridden.map(issueJson),
     openapiRemovals,
+    // Present only when this run found an interrupted commit and dealt with it:
+    // an agent that sees the docs change under it deserves to be told why, and
+    // the absent field is the ordinary case.
+    ...(recovered === null ? {} : { recovered }),
   });
 
   if (dryRun) {
@@ -530,19 +667,43 @@ async function archiveLocked(
   try {
     await writeSnapshot(featureDir, config.docsDir, id, dirName, staged);
     snapshot = true;
+    // The journal, fsynced, BEFORE the first rename: swapStaged is N renames and
+    // only each one of them is atomic, so a kill between two used to leave a
+    // half-merged repo that nothing could name — `doctor` and `status` called it
+    // healthy and `validate --all` blamed the delta. Written from `staged`, so
+    // it records the same digests the swaps are about to produce.
+    await writeCommitIntent(
+      config.docsDir,
+      { command: "archive", restore: "before", feature: id, moveFrom: featureDir, moveTo: archiveDest },
+      staged,
+    );
     await swapStaged(staged);
     createdArchiveDir = await mkdir(archiveDir, { recursive: true });
     await rename(featureDir, archiveDest);
+    // Last: while it exists, the commit is in flight.
+    await clearCommitIntent(config.docsDir);
   } catch (err) {
+    if (err instanceof SnapshotClobberError) {
+      // Nothing swapped — the refusal happens before the journal is even
+      // written — so this only takes the temp files away. Its own code, because
+      // the answer is not "re-run": a previous archive of this feature is still
+      // sitting in the living docs.
+      await rollbackStaged(staged);
+      throw new ArchiveFailure("commit-interrupted", err.message);
+    }
     // Everything this run made, unmade: the swapped files, the snapshot inside the
     // feature that is staying put, and features/archive/ if we are the ones who
     // created it (mkdir reports nothing when it was already there).
     const failures = await rollbackStaged(staged);
+    // The rollback decided the outcome, so the journal has nothing left to
+    // describe — including on rollback-incomplete, where the files it names are
+    // the ones the message tells a human to look at.
+    await clearCommitIntent(config.docsDir);
     // The snapshot goes only when the rollback HELD. On rollback-incomplete it
     // holds the only on-disk pre-images of the very files the message tells the
     // reader to repair by hand — a MODIFIED requirement's previous text appears
-    // nowhere else. Retaining it is harmless: the next archive's writeSnapshot
-    // begins by clearing the same directory.
+    // nowhere else. Retaining it is safe: the next archive of this feature reads
+    // it before it would replace it, and refuses if the living docs have moved.
     if (snapshot && failures.length === 0) await quietRm(snapshotDir(featureDir));
     // `features/archive/` is shared the moment it exists: another archive can
     // have moved a whole feature into it between our mkdir and this rollback,
@@ -566,15 +727,46 @@ async function archiveLocked(
   }
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
   console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${id}\` puts it back`);
+  // The closing line is a claim about the whole docs repo, and it is the line a
+  // reader stops at. It may be printed only when this archive left nothing the
+  // next `validate --all` will fail on — a service with no model, or a gate the
+  // caller told it to merge past. Printing it over either is how a red fleet
+  // gets reported as a finished one.
   const incomplete = planWarns.filter((w) => w.code === "service.no-model");
-  if (incomplete.length === 0) {
+  if (incomplete.length === 0 && overridden.length === 0) {
     console.log("  living spec + landscape are now complete + current.");
     return;
   }
-  // The closing line is a claim about the whole docs repo, and it is the line a
-  // reader stops at. Printing it above a service that will fail the next
-  // `validate --all` is how a red fleet gets reported as a finished one.
   for (const w of incomplete) console.log(`  ⚠ ${w.message}`);
+  if (overridden.length > 0) {
+    console.log(
+      `  ⚠ merged past ${overridden.length} gating issue(s) with --approve — the living docs carry them now; \`loam validate --all\` says what they cost.`,
+    );
+  }
+}
+
+/**
+ * What the recovery did, before this command's own output — a docs repo that
+ * changed under the caller is the first thing they have to be told, not a
+ * footnote. Shared by archive and unarchive through the same CommitRecovery.
+ */
+export function sayRecovery(r: CommitRecovery): void {
+  const what = `an interrupted \`loam ${r.command} ${r.feature}\``;
+  if (r.outcome === "completed") {
+    console.log(`⚠ ${what} had in fact finished — cleared its commit record.\n`);
+    return;
+  }
+  if (r.outcome === "consistent") {
+    console.log(`⚠ ${what} was rolled back before it wrote anything — cleared its commit record.\n`);
+    return;
+  }
+  // An interrupted archive is UNDONE and an interrupted unarchive is FINISHED —
+  // the merged text a restore was replacing is written down nowhere, so there is
+  // nothing to go back to. Say which happened; the paths are the same either way.
+  const what_ = r.command === "archive" ? "put them back from" : "finished them from";
+  console.log(`⚠ ${what} left ${r.repaired.length} file(s) half-written; ${what_} its snapshot:`);
+  for (const p of r.repaired) console.log(`  ↩ ${p}`);
+  console.log("");
 }
 
 /** The full plan, as files: what a dry run shows instead of doing. */
@@ -641,7 +833,7 @@ async function planLandscapeMerge(
   newRels: Rel[],
   featureId: string,
 ): Promise<LandscapePlan> {
-  const text = await readFile(landscapePath, "utf8");
+  const text = await readUtf8(landscapePath);
   const land = await loadFile(landscapePath);
   if (land.errors.length > 0) {
     throw new ArchiveFailure("merge-failed", `landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
@@ -708,7 +900,7 @@ async function planLandscapeMerge(
 
   if (addedEls.length === 0 && addedRels.length === 0) return { writes: [], addedEls, addedRels };
 
-  const deltaText = await readFile(deltaPath, "utf8");
+  const deltaText = await readUtf8(deltaPath);
   const scan = scanModel(deltaText);
   if (scan === null) {
     throw new ArchiveFailure("merge-failed", "delta.likec4 has no model block — nothing to splice the additions from");

@@ -850,7 +850,13 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
     const root = await makeTmpDir();
     try {
       const res = await readOpenapi(join(root, "no-such-dir", "openapi.yaml"));
-      expect(res).toEqual({ ops: [], duplicateIds: [], anonymousRemovals: [], unreadable: false });
+      expect(res).toEqual({
+        ops: [],
+        duplicateIds: [],
+        anonymousRemovals: [],
+        pathLevelRemovals: [],
+        unreadable: false,
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
