@@ -1,11 +1,13 @@
 /** Read-only installation/repository diagnostics for `loam doctor`. */
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./config.js";
 import { LOAM_VERSION } from "./version.js";
 import { docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
 import { loadFile } from "./likec4.js";
+import { AGENT_TOOLS, plannedCommandFiles } from "./agent.js";
+import { agentsStaleFinding, agentsStampLine, agentsStampVersion } from "./agents-stamp.js";
 
 export type DoctorSeverity = "blocker" | "warning";
 
@@ -49,7 +51,30 @@ export interface DoctorReport {
     configured: string | null;
     status: "unbound" | "matched" | "unknown";
   };
+  /** The agent surface of this repo — see `inspectAgentSurface`. */
+  agents: AgentSurface;
   findings: DoctorFinding[];
+}
+
+export interface AgentSurface {
+  /** Tool ids this repo has an agent surface for. Empty is legal (`init --no-commands`). */
+  tools: string[];
+  /** Whether `tools` came from loam.json's own record or from what is on disk. */
+  toolsSource: "config" | "disk";
+  /** How many files the running binary would lay down for `tools`. */
+  plannedFiles: number;
+  /** Repo-relative paths of those files that are not there. */
+  missingFiles: string[];
+  stamp: {
+    /** Where the docs repo's AGENTS.md is, or null when `docsDir` did not resolve. */
+    path: string | null;
+    /** Whether it could be read at all — absent and unstamped are different facts. */
+    present: boolean;
+    /** The version the stamp names, null when there is none (or an unparseable one). */
+    version: string | null;
+    /** Whether `agents.stale` fired: the stamp is missing or trails this binary. */
+    stale: boolean;
+  };
 }
 
 interface ConfigInspection {
@@ -167,6 +192,129 @@ async function inspectLandscape(path: string, findings: DoctorFinding[]): Promis
       fix: `Fix ${path}; every fleet-wide check is blind until it parses.`,
     });
   }
+}
+
+/**
+ * The tool ids loam.json records `init` as having written files for, or null
+ * when it records none we can plan for.
+ *
+ * `parseConfig` checks `agentTools`' SHAPE and deliberately not its contents —
+ * a config written by a newer binary may name a tool this one has never heard
+ * of, and refusing to load it would break every command, not just this check.
+ * So the registry filter belongs here: `plannedCommandFiles` throws on an id it
+ * does not know, and a config from the future must not turn the read-only
+ * preflight into a crash. A tool we cannot plan files for is a tool we have
+ * nothing to say about.
+ */
+function recordedTools(config: LoamConfig | null): string[] | null {
+  const ids = (config?.agentTools ?? []).filter((t) => t in AGENT_TOOLS);
+  return ids.length === 0 ? null : ids;
+}
+
+/**
+ * Which tools this repo has agent files for, asked of the layout itself: a tool
+ * counts when any file it would be given is already there.
+ *
+ * The fallback for a loam.json written before `agentTools` existed, and the
+ * only answer a hand-written one can have — so its absence must never be the
+ * thing that reports a problem. This asks a narrower question than `init`'s
+ * own scan, and on purpose: init scans for a tool's dot-directory to decide
+ * what a repo would LIKE, while doctor grades what loam has already put there.
+ * A repo that runs Claude Code and took `--no-commands --no-skills` has chosen
+ * to have no loam files, and is not behind the binary for it.
+ */
+function detectedTools(repoRoot: string): string[] {
+  return Object.keys(AGENT_TOOLS).filter((id) =>
+    plannedCommandFiles(repoRoot, [id]).some((f) => existsSync(f.path)));
+}
+
+/**
+ * What the running binary would write for this repo's tools that is not here.
+ *
+ * By EXISTENCE only, never by content. `plannedCommandFiles` hands over each
+ * file's bytes as well as its path, and comparing those would yield "your file
+ * differs from the template" — one step from offering to rewrite it, which is
+ * the thing loam refuses (agents-stamp.ts). A file that exists is the team's,
+ * whatever it now says; only a file that is not there is news.
+ *
+ * The probe is `existsSync`, the same one `init` uses to compute its `skipped`
+ * list, so doctor cannot disagree with init about which files init would write.
+ */
+async function inspectAgentSurface(
+  repoRoot: string,
+  config: LoamConfig | null,
+  docsDir: string | null,
+  findings: DoctorFinding[],
+): Promise<AgentSurface> {
+  const recorded = recordedTools(config);
+  const tools = recorded ?? detectedTools(repoRoot);
+  const planned = plannedCommandFiles(repoRoot, tools);
+  const missingFiles = planned
+    .filter((f) => !existsSync(f.path))
+    .map((f) => relative(repoRoot, f.path).split(/[\\/]/).join("/"));
+
+  if (missingFiles.length > 0) {
+    // A warning, never a blocker: an out-of-date command set is a repo whose
+    // agents have fewer entry points than they could, not one where anything
+    // refuses to run. doctor's blockers are for the second kind.
+    const flags = [
+      `--docs ${config?.docsDirAsWritten ?? "<dir>"}`,
+      ...(config?.service === undefined ? [] : [`--service ${config.service}`]),
+      `--tools ${tools.join(",")}`,
+    ].join(" ");
+    findings.push({
+      severity: "warning",
+      code: "doctor.agent-files-missing",
+      message:
+        `${missingFiles.length} of the ${planned.length} command and skill files loam v${LOAM_VERSION} `
+        + `lays down for ${tools.join(", ")} are not in this repo — it was initialized by an older loam, `
+        + `or they were deleted: ${missingFiles.join(", ")}`,
+      fix:
+        `Re-run \`loam init ${flags}\` here — it writes only the files that are absent and leaves every `
+        + "existing one untouched. Nothing is regenerated, so leaving this standing costs entry points "
+        + "and nothing else.",
+    });
+  }
+
+  // AGENTS.md lives in the DOCS repo, not here: it travels with the thing it
+  // describes. The comparison is `agentsStaleFinding`'s, not a second copy of
+  // it — doctor only adds the `fix` column its own findings owe the reader.
+  const agentsFile = docsDir === null ? null : join(docsDir, "AGENTS.md");
+  let agentsText: string | null = null;
+  if (agentsFile !== null) {
+    try {
+      agentsText = await readFile(agentsFile, "utf8");
+    } catch {
+      // Unreadable reads as absent, exactly as `validate --all` treats it: no
+      // file, no contract to have drifted. An unreadable docs repo is already
+      // its own finding.
+    }
+  }
+  const stale = agentsStaleFinding(agentsText, LOAM_VERSION);
+  if (stale !== null) {
+    findings.push({
+      severity: "warning",
+      code: stale.code,
+      message: stale.message,
+      fix:
+        `Review ${agentsFile} against the current \`loam --help\`, then set its stamp line to `
+        + `\`${agentsStampLine(LOAM_VERSION)}\`. loam never rewrites that file — bumping the stamp IS `
+        + "the record that somebody looked.",
+    });
+  }
+
+  return {
+    tools,
+    toolsSource: recorded === null ? "disk" : "config",
+    plannedFiles: planned.length,
+    missingFiles,
+    stamp: {
+      path: agentsFile,
+      present: agentsText !== null,
+      version: agentsText === null ? null : agentsStampVersion(agentsText),
+      stale: stale !== null,
+    },
+  };
 }
 
 export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
@@ -306,6 +454,11 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     });
   }
 
+  // The slash commands (and everything else `init` lays down for a tool) belong
+  // to the repo `init` ran in — the directory holding loam.json, which is not
+  // the cwd now that config discovery walks upward.
+  const agents = await inspectAgentSurface(dirname(path), inspected.config, docsDir, findings);
+
   return {
     healthy: !findings.some((finding) => finding.severity === "blocker"),
     runtime: {
@@ -326,6 +479,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     },
     counts: { services: services.length, activeFeatures: activeFeatures.length },
     currentService,
+    agents,
     findings,
   };
 }

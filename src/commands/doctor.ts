@@ -23,6 +23,17 @@ function yesNo(value: boolean): string {
   return value ? "yes" : "no";
 }
 
+/**
+ * The stamp as one readable token. "absent" and "unstamped" are kept apart
+ * because they are different repos: the first has no AGENTS.md at all, the
+ * second has one nobody has claimed a version for.
+ */
+function stampLabel(stamp: DoctorReport["agents"]["stamp"]): string {
+  if (!stamp.present) return "absent";
+  if (stamp.version === null) return "unstamped";
+  return `v${stamp.version}${stamp.stale ? " (stale)" : ""}`;
+}
+
 function printDoctor(report: DoctorReport): void {
   console.log(`loam doctor — ${report.healthy ? "healthy" : "blocked"}`);
   console.log(`  runtime       ${report.runtime.package}@${report.runtime.version}`);
@@ -38,6 +49,15 @@ function printDoctor(report: DoctorReport): void {
   );
   console.log(
     `  binding       ${report.currentService.configured ?? "(none)"} · ${report.currentService.status}`,
+  );
+  // The agent surface is reported whether or not it has drifted — like every
+  // line above it, this is state, not a complaint. Only the findings block is
+  // silent when there is nothing to say.
+  const agents = report.agents;
+  console.log(
+    `  agents        ${agents.tools.length === 0 ? "(none)" : agents.tools.join(", ")}`
+    + ` (${agents.toolsSource}) · ${agents.plannedFiles} files · ${agents.missingFiles.length} missing`
+    + ` · AGENTS.md ${stampLabel(agents.stamp)}`,
   );
   if (report.findings.length > 0) {
     console.log("\n  findings");
