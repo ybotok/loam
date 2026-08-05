@@ -21,6 +21,24 @@ export interface LoamConfig {
    */
   gherkinDir?: string;
   /**
+   * The agent tools `loam init` has written command and skill files for in this
+   * repo, by AGENT_TOOLS id.
+   *
+   * Recorded because the two ways a generated file can be absent look identical
+   * on disk: the binary grew a command nobody has re-run `init` for, or nobody
+   * ever selected that tool here. Only this list tells them apart, and `loam
+   * doctor` needs the difference to know which absence is worth reporting.
+   *
+   * ACCUMULATED, never replaced — a later `init --tools cursor` does not
+   * un-write the claude files an earlier run left on disk, so the record of
+   * what this repo holds has to keep them too.
+   *
+   * Optional, and unvalidated against the registry on purpose: a config written
+   * by an older binary has no list at all, and one written by a NEWER binary
+   * may name a tool this one has never heard of. Neither may refuse to load.
+   */
+  agentTools?: string[];
+  /**
    * The directory the config was actually FOUND in — the repo root, which is
    * not necessarily the cwd now that discovery walks upward. Everything a
    * command resolves against "this repo" (gherkinDir, relative `sources:`)
@@ -151,6 +169,17 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     && (typeof record.gherkinDir !== "string" || record.gherkinDir === "")) {
     throw new ConfigError("gherkinDir", `${file}: "gherkinDir" must be a non-empty string when present.`);
   }
+  // Shape only. Which ids are legal is the registry's question, and asking it
+  // here would make a config written by a newer binary — one that knows a tool
+  // this one does not — unloadable for every command, not just for `init`.
+  if (record.agentTools !== undefined
+    && (!Array.isArray(record.agentTools)
+      || record.agentTools.some((t) => typeof t !== "string" || t === ""))) {
+    throw new ConfigError(
+      "agentTools",
+      `${file}: "agentTools" must be an array of non-empty strings when present.`,
+    );
+  }
   if (typeof record.gherkinDir === "string") {
     // Validate the owned output directory, not merely its spelling. This also
     // catches an otherwise-contained path whose existing parent is a symlink
@@ -168,6 +197,7 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     docsDir: resolve(configDir, record.docsDir),
     ...(record.service === undefined ? {} : { service: record.service as string }),
     ...(record.gherkinDir === undefined ? {} : { gherkinDir: record.gherkinDir as string }),
+    ...(record.agentTools === undefined ? {} : { agentTools: record.agentTools as string[] }),
     root: resolve(configDir),
     docsDirAsWritten: record.docsDir,
   };

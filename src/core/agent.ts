@@ -3,11 +3,17 @@
  * cycle without being told it each time.
  *
  * AGENTS.md goes into the docs repo — it travels with the thing it describes.
- * The slash commands go into the repo `init` runs in, because that is where the
- * agent is invoked — Claude Code by default, other tools via `init --tools`
- * (the AGENT_TOOLS registry below: one shared body, a per-tool path and
- * wrapper). Neither is ever overwritten: they are starting points, and a
- * team's edits to them outrank ours.
+ * The command and skill files go into the repo `init` runs in, because that is
+ * where the agent is invoked — for whichever tools the repo shows signs of, via
+ * the AGENT_TOOLS registry below: one shared body, a per-tool path and wrapper.
+ * Neither is ever overwritten: they are starting points, and a team's edits to
+ * them outrank ours.
+ *
+ * Two deliveries, one body. A slash command has to be TYPED, so it only ever
+ * reaches an agent whose operator already knows loam exists. A skill is loaded
+ * by the model itself when the task matches its `description`, which is how the
+ * protocol reaches an agent that was never told about it. That difference is
+ * the whole reason both are written by default.
  *
  * The stamp on the first line is the one concession to that never-refresh
  * contract: it records which loam wrote the file, so `loam validate --all` can
@@ -73,6 +79,9 @@ with \`no-config\` rather than guessing.
   documents from a repo that is not that service's.
 - \`gherkinDir\` — optional, default \`features\`: the directory \`loam gherkin\`
   writes its own \`loam/\` subtree into.
+- \`agentTools\` — optional: the agent tools \`loam init\` has written command and
+  skill files for here, accumulated across runs. Written by \`init\`, read by
+  \`loam doctor\`; nothing else depends on it, and a config without it loads.
 
 **Step 0 of everything below, once per repo:**
 
@@ -543,9 +552,20 @@ to stderr; \`--help\` and \`--version\` output pass through untouched). Without
 
 Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
 not. The code-by-code fix table lives in the \`/loam-check\` command \`loam init\` lays
-down — for Claude Code by default; \`loam init --tools <ids|all>\` emits the same
-commands, same bodies, into other agent tools' own command directories. The map of
-which invocation surfaces what:
+down. \`init\` writes that body twice for every tool it configures: once as a slash
+command in the tool's own command directory (you type it), and once as an Agent
+Skill at \`<tool-dir>/skills/loam-check/SKILL.md\` (the model loads it by itself when
+the task matches the skill's description). Same body, two ways in.
+
+Which tools get them is detected from the repo: \`loam init\` scans for the
+dot-directories of the tools it knows (\`.claude\`, \`.cursor\`, \`.gemini\`, …) and
+writes for the ones it finds, falling back to Claude Code when it finds none.
+\`loam init --tools <ids|all>\` overrides the scan — an unknown id is refused
+(\`invalid-option\`) rather than skipped — and \`--no-commands\` / \`--no-skills\`
+each suppress one delivery. The tools written for are recorded in
+\`loam.json\` as \`agentTools\`, which is how \`loam doctor\` tells a file missing
+because the binary grew a new command from one missing because nobody ever
+selected that tool. The map of which invocation surfaces what:
 
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
@@ -609,7 +629,12 @@ which invocation surfaces what:
   \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.docs-absolute\`
   (\`docsDir\` stored as an absolute path in a committed loam.json — it resolves
   only on the machine that ran \`loam init\`), \`doctor.inventory-unreadable\`,
-  \`doctor.landscape-missing\`, \`doctor.service-unbound\`, and \`doctor.service-unknown\`.
+  \`doctor.landscape-missing\`, \`doctor.service-unbound\`, \`doctor.service-unknown\`,
+  and \`doctor.agent-files-missing\` — some of the command or skill files this loam
+  lays down for the tools this repo selected are absent, because it was
+  initialized by an older binary or they were deleted. Re-running \`loam init\`
+  writes only what is missing and never touches an existing file, so leaving it
+  standing costs entry points and nothing else.
 - \`loam dependencies [<FEAT>]\` derives the ordering of the features in flight
   from the artifacts themselves — requirement identities and OpenAPI
   operationIds, never from validator prose. It is the answer to every
@@ -1257,6 +1282,18 @@ is in that snapshot and nowhere else, so anything you write by hand is a guess.
 ];
 
 /**
+ * One delivery of one command: where the file goes, and what goes in it. Both
+ * halves are thin by construction — the protocol is `CommandContent.body` and
+ * nothing here may restate it.
+ */
+export interface AgentFileEmitter {
+  /** Repo-relative path segments of the file. */
+  path(name: string): string[];
+  /** The full file: this tool's wrapper around the shared body. */
+  format(cmd: CommandContent): string;
+}
+
+/**
  * A tool the commands can be emitted for — the registry key is the `--tools`
  * id (OpenSpec's ids where the tool has one there). A path and a wrapper are
  * the WHOLE adapter: OpenSpec's per-tool command layer, minus everything loam
@@ -1266,11 +1303,52 @@ is in that snapshot and nowhere else, so anything you write by hand is a guess.
  * test/agents.test.ts.
  */
 export interface AgentTool {
-  /** Repo-relative path segments of one command's file. */
-  path(name: string): string[];
-  /** The full file: this tool's wrapper around the shared body. */
-  format(cmd: CommandContent): string;
+  /**
+   * Repo-relative path segments of one command's file. Absent — together with
+   * `format` — for a tool that registers no command files at all: Codex reads
+   * skills and nothing else, and inventing a command directory for it would
+   * scatter files no agent ever loads.
+   */
+  path?(name: string): string[];
+  /** The full command file: this tool's wrapper around the shared body. */
+  format?(cmd: CommandContent): string;
+  /** The skill delivery. Absent for a tool with no skills convention. */
+  skill?: AgentFileEmitter;
+  /**
+   * Repo-relative paths whose presence means this tool is in use here — what
+   * `loam init` scans when no `--tools` says otherwise. Usually just the tool's
+   * own dot-directory; spelled per tool because the exceptions matter more than
+   * the rule (see `github-copilot`, whose `.github/` says nothing at all).
+   */
+  detect: string[];
 }
+
+/**
+ * Pre-approved tools in a generated file's frontmatter, so an agent that honors
+ * the field stops asking permission for each `loam` call. It only pre-approves:
+ * everything else a command needs (Read, Write, the service's own test runner)
+ * stays under the user's normal permission settings, and a tool that does not
+ * know the field ignores it.
+ */
+const LOAM_ALLOWED_TOOLS = "Bash(loam:*)";
+
+/**
+ * The Agent Skills convention, which every tool in the registry that reads
+ * skills at all spells the same way: `<tool-dir>/skills/<name>/SKILL.md`, YAML
+ * frontmatter, then the shared body verbatim.
+ *
+ * `description` is load-bearing in a way no command file's is — it is the only
+ * thing the model sees before deciding whether to load the skill — so it comes
+ * from the same `CommandContent.description` the command wrappers use rather
+ * than a second, skill-flavoured copy that could drift into a better pitch for
+ * a worse protocol.
+ */
+const skillsIn = (dir: string): AgentFileEmitter => ({
+  path: (name) => [dir, "skills", name, "SKILL.md"],
+  format: (c) =>
+    `---\nname: ${c.name}\ndescription: ${c.description}\n` +
+    `allowed-tools: ${LOAM_ALLOWED_TOOLS}\n---\n\n${c.body}`,
+});
 
 /**
  * TOML basic-string escapes for the one non-markdown format. Today's bodies
@@ -1279,6 +1357,27 @@ export interface AgentTool {
  */
 const tomlLine = (s: string): string => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 const tomlBlock = (s: string): string => s.replace(/\\/g, "\\\\").replace(/"""/g, '""\\"');
+
+/* The four markdown command dialects the registry actually needs. Shared so a
+ * tool's entry is its PATH and its dialect's name — the part that differs —
+ * instead of a wall of near-identical template literals. `claude` deliberately
+ * spells its own wrapper inline even though `hintedMd` matches it byte for
+ * byte: an edit made here for some other tool must not be able to re-spell the
+ * one format that is frozen. */
+/** Description-only frontmatter — the most common dialect by a wide margin. */
+const describedMd = (c: CommandContent): string =>
+  `---\ndescription: ${c.description}\n---\n\n${c.body}`;
+/** Description plus Claude's `argument-hint`, for the tools that copied it. */
+const hintedMd = (c: CommandContent): string =>
+  `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`;
+/** Name plus description — the Cascade-style workflow frontmatter. */
+const namedMd = (c: CommandContent): string =>
+  `---\nname: ${c.name}\ndescription: ${c.description}\n---\n\n${c.body}`;
+/** No frontmatter at all: a title line is the whole wrapper. */
+const titledMd = (c: CommandContent): string => `# ${c.name}\n\n${c.body}`;
+
+/** The `loam-` prefix a namespace directory carries instead of the file name. */
+const unprefixed = (name: string): string => name.replace(/^loam-/, "");
 
 export const AGENT_TOOLS: Record<string, AgentTool> = {
   // The original target and the default. This wrapper must stay byte-identical
@@ -1289,34 +1388,163 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     path: (name) => [".claude", "commands", `${name}.md`],
     format: (c) =>
       `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+    skill: skillsIn(".claude"),
+    detect: [".claude"],
   },
   // Cursor invokes by flat file name (`/loam-check`); its frontmatter `name`
   // field spells that invocation form.
   cursor: {
     path: (name) => [".cursor", "commands", `${name}.md`],
     format: (c) => `---\nname: /${c.name}\n---\n\n${c.body}`,
+    skill: skillsIn(".cursor"),
+    detect: [".cursor"],
   },
   // Copilot prompt files: `.prompt.md` extension, description-only frontmatter.
+  // Detection cannot use `.github/` — almost every repo has one and almost none
+  // of them means Copilot — so it looks for the files Copilot itself reads.
   "github-copilot": {
     path: (name) => [".github", "prompts", `${name}.prompt.md`],
-    format: (c) => `---\ndescription: ${c.description}\n---\n\n${c.body}`,
+    format: describedMd,
+    skill: skillsIn(".github"),
+    detect: [
+      ".github/copilot-instructions.md",
+      ".github/instructions",
+      ".github/prompts",
+      ".github/agents",
+      ".github/skills",
+      ".github/workflows/copilot-setup-steps.yml",
+      ".github/.mcp.json",
+    ],
   },
   // Gemini: TOML, and a namespace DIRECTORY — `.gemini/commands/loam/check.toml`
   // is invoked as `/loam:check`, so the file name drops the `loam-` prefix the
   // flat-named tools carry.
   gemini: {
-    path: (name) => [".gemini", "commands", "loam", `${name.replace(/^loam-/, "")}.toml`],
+    path: (name) => [".gemini", "commands", "loam", `${unprefixed(name)}.toml`],
     format: (c) =>
       `description = "${tomlLine(c.description)}"\nprompt = """\n${tomlBlock(c.body)}"""`,
+    skill: skillsIn(".gemini"),
+    detect: [".gemini"],
   },
   opencode: {
     path: (name) => [".opencode", "commands", `${name}.md`],
-    format: (c) => `---\ndescription: ${c.description}\n---\n\n${c.body}`,
+    format: describedMd,
+    skill: skillsIn(".opencode"),
+    detect: [".opencode"],
   },
-  // Cline reads workflows from `.clinerules/` — plain markdown, no frontmatter.
+  // Cline reads workflows from `.clinerules/` — plain markdown, no frontmatter —
+  // but its skills from `.cline/`. The two directories are unrelated, so both
+  // count as a sighting.
   cline: {
     path: (name) => [".clinerules", "workflows", `${name}.md`],
     format: (c) => `# ${c.name}\n\n${c.body}`,
+    skill: skillsIn(".cline"),
+    detect: [".cline", ".clinerules"],
+  },
+  // Amazon Q surfaces these as its PROMPT library, not as commands: the file is
+  // invoked `@loam-check`, never `/loam-check`. Same file shape regardless.
+  "amazon-q": {
+    path: (name) => [".amazonq", "prompts", `${name}.md`],
+    format: describedMd,
+    skill: skillsIn(".amazonq"),
+    detect: [".amazonq"],
+  },
+  // Antigravity's directory is `.agent/`, which is why the id and the directory
+  // do not match here as they do almost everywhere else.
+  antigravity: {
+    path: (name) => [".agent", "workflows", `${name}.md`],
+    format: describedMd,
+    skill: skillsIn(".agent"),
+    detect: [".agent"],
+  },
+  // Auggie is the Augment CLI: id `auggie`, directory `.augment/`.
+  auggie: {
+    path: (name) => [".augment", "commands", `${name}.md`],
+    format: hintedMd,
+    skill: skillsIn(".augment"),
+    detect: [".augment"],
+  },
+  // Skills-only, deliberately: Codex reads `.codex/skills/` and does not load
+  // custom command files, so it declares no command emitter at all rather than
+  // laying down files nothing will ever open.
+  codex: {
+    skill: skillsIn(".codex"),
+    detect: [".codex"],
+  },
+  // Continue's prompt files take a bare `.prompt` extension, and `invokable`
+  // is what promotes one from a template to something you can call.
+  continue: {
+    path: (name) => [".continue", "prompts", `${name}.prompt`],
+    format: (c) =>
+      `---\nname: ${c.name}\ndescription: ${c.description}\ninvokable: true\n---\n\n${c.body}`,
+    skill: skillsIn(".continue"),
+    detect: [".continue"],
+  },
+  // Crush namespaces like Gemini does — `.crush/commands/loam/check.md` is
+  // `/loam:check` — but stays markdown.
+  crush: {
+    path: (name) => [".crush", "commands", "loam", `${unprefixed(name)}.md`],
+    format: namedMd,
+    skill: skillsIn(".crush"),
+    detect: [".crush"],
+  },
+  // Devin Desktop, formerly Windsurf: Cascade-style workflows, and the rename
+  // moved the directory from `.windsurf/` to `.devin/`. New files go to the new
+  // directory; a repo still holding the old one is still a Devin repo, so both
+  // are sightings.
+  devin: {
+    path: (name) => [".devin", "workflows", `${name}.md`],
+    format: namedMd,
+    skill: skillsIn(".devin"),
+    detect: [".devin", ".windsurf"],
+  },
+  factory: {
+    path: (name) => [".factory", "commands", `${name}.md`],
+    format: hintedMd,
+    skill: skillsIn(".factory"),
+    detect: [".factory"],
+  },
+  junie: {
+    path: (name) => [".junie", "commands", `${name}.md`],
+    format: describedMd,
+    skill: skillsIn(".junie"),
+    detect: [".junie"],
+  },
+  // Kilo Code workflows carry no frontmatter — the title line is all the
+  // wrapper there is.
+  kilocode: {
+    path: (name) => [".kilocode", "workflows", `${name}.md`],
+    format: titledMd,
+    skill: skillsIn(".kilocode"),
+    detect: [".kilocode"],
+  },
+  // Kiro uses Copilot's `.prompt.md` extension under its own directory.
+  kiro: {
+    path: (name) => [".kiro", "prompts", `${name}.prompt.md`],
+    format: describedMd,
+    skill: skillsIn(".kiro"),
+    detect: [".kiro"],
+  },
+  // Qwen Code retired its TOML commands in favour of markdown + frontmatter,
+  // so this is markdown despite the Gemini lineage.
+  qwen: {
+    path: (name) => [".qwen", "commands", `${name}.md`],
+    format: describedMd,
+    skill: skillsIn(".qwen"),
+    detect: [".qwen"],
+  },
+  // Roo/Zoo Code: id `roocode`, directory `.roo/`, no frontmatter.
+  roocode: {
+    path: (name) => [".roo", "commands", `${name}.md`],
+    format: titledMd,
+    skill: skillsIn(".roo"),
+    detect: [".roo"],
+  },
+  trae: {
+    path: (name) => [".trae", "commands", `${name}.md`],
+    format: namedMd,
+    skill: skillsIn(".trae"),
+    detect: [".trae"],
   },
 };
 
@@ -1327,43 +1555,80 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
  * files, so the export and the disk can never disagree.
  */
 export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
-  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format(c)]),
+  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format!(c)]),
 );
 
+/** The two ways a command body reaches an agent. Both are on by default. */
+export const DELIVERIES = ["commands", "skills"] as const;
+export type Delivery = (typeof DELIVERIES)[number];
+
 /**
- * Every command file the selected tools would lay down, in creation order —
- * the same list `init` probes for `skipped` BEFORE the scaffold runs, so
- * created + skipped is the same list on every repo.
+ * Every file the selected tools would lay down, in creation order — the same
+ * list `init` probes for `skipped` BEFORE the scaffold runs, so created +
+ * skipped is the same list on every repo.
+ *
+ * Called with two arguments it returns EVERYTHING the binary would write under
+ * default delivery: commands and skills both. That is the contract callers
+ * outside this module depend on — `loam doctor` asks "what should be here?"
+ * and a half-answer would report a fully-scaffolded repo as fully scaffolded
+ * while ignoring every skill file. The name predates the second delivery and is
+ * kept because it is imported elsewhere; `delivery` narrows it.
  */
 export function plannedCommandFiles(
   cwd: string,
   toolIds: string[],
+  delivery: readonly Delivery[] = DELIVERIES,
 ): Array<{ path: string; content: string }> {
   return toolIds.flatMap((id) => {
     const tool = AGENT_TOOLS[id];
     if (tool === undefined) throw new Error(`unknown agent tool: ${id}`);
-    return COMMANDS.map((c) => ({
-      path: join(cwd, ...tool.path(c.name)),
-      content: tool.format(c),
-    }));
+    const emitters: AgentFileEmitter[] = [];
+    // A tool declares only the deliveries it actually reads, so an absent
+    // emitter is a fact about the tool, never a reason to fall back to some
+    // other tool's convention.
+    const { path, format, skill } = tool;
+    if (delivery.includes("commands") && path !== undefined && format !== undefined) {
+      emitters.push({ path, format });
+    }
+    if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
+    return emitters.flatMap((e) =>
+      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(c) })),
+    );
   });
 }
 
 /**
- * Write the slash commands for the selected tools into `cwd`. Existing files
- * are left alone — the never-overwrite contract covers every tool, not just
- * the default. Returns the paths created.
+ * Write the command and skill files for the selected tools into `cwd`. Existing
+ * files are left alone — the never-overwrite contract covers every tool and
+ * every delivery, not just the default one. Returns the paths created.
  */
 export async function scaffoldAgentCommands(
   cwd: string,
   toolIds: string[] = ["claude"],
+  delivery: readonly Delivery[] = DELIVERIES,
 ): Promise<string[]> {
   const created: string[] = [];
-  for (const { path, content } of plannedCommandFiles(cwd, toolIds)) {
+  for (const { path, content } of plannedCommandFiles(cwd, toolIds, delivery)) {
     if (existsSync(path)) continue;
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, content, "utf8");
     created.push(path);
   }
   return created;
+}
+
+/**
+ * The registry ids whose marker paths are present in `cwd` — what `loam init`
+ * writes for when nobody passed `--tools`.
+ *
+ * A repo with `.cursor/` and no Claude Code used to get `.claude/commands/`
+ * and nothing it could actually run. Presence is the whole test, and existence
+ * (not directory-ness) is what is asked, because a marker is as often a file as
+ * a directory — `.github/copilot-instructions.md` is the honest signal for
+ * Copilot where `.github/` itself is noise.
+ */
+export function detectAgentTools(cwd: string): string[] {
+  return Object.entries(AGENT_TOOLS)
+    .filter(([, tool]) => tool.detect.some((marker) => existsSync(join(cwd, marker))))
+    .map(([id]) => id);
 }

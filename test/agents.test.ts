@@ -122,7 +122,7 @@ describe("slash commands in the working repo", () => {
     expect(await read("loam-ship")).toContain("loam archive");
   });
 
-  it("--no-commands leaves the repo alone", async () => {
+  it("--no-commands leaves the command directory alone", async () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--no-commands");
     expect(res.code).toBe(0);
@@ -156,17 +156,109 @@ describe("multi-tool command generation (init --tools)", () => {
   // Path expectations pinned as literals, per tool, for one probe command: a
   // moved path must fail HERE, not in some user's repo — and the registry
   // growing a tool must extend this table (the exactness test below).
-  const CHECK_FILE: Record<string, string[]> = {
-    claude: [".claude", "commands", "loam-check.md"],
-    cursor: [".cursor", "commands", "loam-check.md"],
-    "github-copilot": [".github", "prompts", "loam-check.prompt.md"],
-    gemini: [".gemini", "commands", "loam", "check.toml"],
-    opencode: [".opencode", "commands", "loam-check.md"],
-    cline: [".clinerules", "workflows", "loam-check.md"],
+  //
+  // `command: null` is Codex, which reads skills and registers no command files
+  // at all; every other tool declares both deliveries. The skill column is the
+  // Agent Skills convention — `<tool-dir>/skills/<name>/SKILL.md` — and its
+  // directory is the tool's OWN, which for cline is not the directory its
+  // commands go in.
+  interface Pin {
+    command: string[] | null;
+    skill: string[];
+  }
+  const CHECK_FILE: Record<string, Pin> = {
+    claude: {
+      command: [".claude", "commands", "loam-check.md"],
+      skill: [".claude", "skills", "loam-check", "SKILL.md"],
+    },
+    cursor: {
+      command: [".cursor", "commands", "loam-check.md"],
+      skill: [".cursor", "skills", "loam-check", "SKILL.md"],
+    },
+    "github-copilot": {
+      command: [".github", "prompts", "loam-check.prompt.md"],
+      skill: [".github", "skills", "loam-check", "SKILL.md"],
+    },
+    gemini: {
+      command: [".gemini", "commands", "loam", "check.toml"],
+      skill: [".gemini", "skills", "loam-check", "SKILL.md"],
+    },
+    opencode: {
+      command: [".opencode", "commands", "loam-check.md"],
+      skill: [".opencode", "skills", "loam-check", "SKILL.md"],
+    },
+    cline: {
+      command: [".clinerules", "workflows", "loam-check.md"],
+      skill: [".cline", "skills", "loam-check", "SKILL.md"],
+    },
+    "amazon-q": {
+      command: [".amazonq", "prompts", "loam-check.md"],
+      skill: [".amazonq", "skills", "loam-check", "SKILL.md"],
+    },
+    antigravity: {
+      command: [".agent", "workflows", "loam-check.md"],
+      skill: [".agent", "skills", "loam-check", "SKILL.md"],
+    },
+    auggie: {
+      command: [".augment", "commands", "loam-check.md"],
+      skill: [".augment", "skills", "loam-check", "SKILL.md"],
+    },
+    codex: { command: null, skill: [".codex", "skills", "loam-check", "SKILL.md"] },
+    continue: {
+      command: [".continue", "prompts", "loam-check.prompt"],
+      skill: [".continue", "skills", "loam-check", "SKILL.md"],
+    },
+    crush: {
+      command: [".crush", "commands", "loam", "check.md"],
+      skill: [".crush", "skills", "loam-check", "SKILL.md"],
+    },
+    devin: {
+      command: [".devin", "workflows", "loam-check.md"],
+      skill: [".devin", "skills", "loam-check", "SKILL.md"],
+    },
+    factory: {
+      command: [".factory", "commands", "loam-check.md"],
+      skill: [".factory", "skills", "loam-check", "SKILL.md"],
+    },
+    junie: {
+      command: [".junie", "commands", "loam-check.md"],
+      skill: [".junie", "skills", "loam-check", "SKILL.md"],
+    },
+    kilocode: {
+      command: [".kilocode", "workflows", "loam-check.md"],
+      skill: [".kilocode", "skills", "loam-check", "SKILL.md"],
+    },
+    kiro: {
+      command: [".kiro", "prompts", "loam-check.prompt.md"],
+      skill: [".kiro", "skills", "loam-check", "SKILL.md"],
+    },
+    qwen: {
+      command: [".qwen", "commands", "loam-check.md"],
+      skill: [".qwen", "skills", "loam-check", "SKILL.md"],
+    },
+    roocode: {
+      command: [".roo", "commands", "loam-check.md"],
+      skill: [".roo", "skills", "loam-check", "SKILL.md"],
+    },
+    trae: {
+      command: [".trae", "commands", "loam-check.md"],
+      skill: [".trae", "skills", "loam-check", "SKILL.md"],
+    },
   };
-
   it("the pinned path table covers exactly the registry — a new tool must be pinned here", () => {
     expect(Object.keys(CHECK_FILE).sort()).toEqual(Object.keys(AGENT_TOOLS).sort());
+  });
+
+  it("the pins agree with the registry itself, tool by tool, for both deliveries", () => {
+    // The table above is a literal restatement of the registry; this is what
+    // makes it one. A path helper edited to a new spelling fails here with the
+    // tool named, rather than only on the one tool the --tools all test reads.
+    for (const [id, pin] of Object.entries(CHECK_FILE)) {
+      const tool = AGENT_TOOLS[id]!;
+      expect(tool.path === undefined ? null : tool.path("loam-check"), `${id} command path`)
+        .toEqual(pin.command);
+      expect(tool.skill!.path("loam-check"), `${id} skill path`).toEqual(pin.skill);
+    }
   });
 
   it("the claude wrapper is the historical byte format — description + argument-hint frontmatter", () => {
@@ -190,29 +282,62 @@ describe("multi-tool command generation (init --tools)", () => {
     const json = JSON.parse(res.stdout);
     expect(json.tools).toEqual(Object.keys(AGENT_TOOLS));
     const read = (segs: string[]): Promise<string> => readFile(join(dir, ...segs), "utf8");
-    for (const segs of Object.values(CHECK_FILE)) {
-      expect(
-        json.created.some((c: string) => c.endsWith(join(...segs))),
-        `created is missing ${segs.join("/")}`,
-      ).toBe(true);
-      expect(await read(segs)).toContain("loam validate");
+    for (const { command, skill } of Object.values(CHECK_FILE)) {
+      for (const segs of command === null ? [skill] : [command, skill]) {
+        expect(
+          json.created.some((c: string) => c.endsWith(join(...segs))),
+          `created is missing ${segs.join("/")}`,
+        ).toBe(true);
+        expect(await read(segs)).toContain("loam validate");
+      }
     }
     // the wrapper is the tool's own dialect, not claude's everywhere
-    const claude = await read(CHECK_FILE["claude"]!);
+    const cmd = (id: string): Promise<string> => read(CHECK_FILE[id]!.command!);
+    const claude = await cmd("claude");
     expect(claude).toMatch(/^---\ndescription: /);
     expect(claude).toContain("argument-hint:");
-    expect(await read(CHECK_FILE["cursor"]!)).toMatch(/^---\nname: \/loam-check\n---\n\n/);
-    const copilot = await read(CHECK_FILE["github-copilot"]!);
+    expect(await cmd("cursor")).toMatch(/^---\nname: \/loam-check\n---\n\n/);
+    const copilot = await cmd("github-copilot");
     expect(copilot).toMatch(/^---\ndescription: /);
     expect(copilot).not.toContain("argument-hint:");
-    const gemini = await read(CHECK_FILE["gemini"]!);
+    const gemini = await cmd("gemini");
     expect(gemini).toMatch(/^description = "/);
     expect(gemini).toContain('prompt = """');
     expect(gemini.endsWith('"""')).toBe(true);
-    expect(await read(CHECK_FILE["opencode"]!)).toMatch(/^---\ndescription: /);
+    expect(await cmd("opencode")).toMatch(/^---\ndescription: /);
     // cline: a title line, no frontmatter block at the top (the body's own
     // markdown tables still carry `---` rows, so only the head is asserted)
-    expect(await read(CHECK_FILE["cline"]!)).toMatch(/^# loam-check\n\n/);
+    expect(await cmd("cline")).toMatch(/^# loam-check\n\n/);
+    // and the dialects the registry grew after the first six
+    expect(await cmd("amazon-q")).toMatch(/^---\ndescription: /);
+    expect(await cmd("auggie")).toContain("argument-hint:");
+    expect(await cmd("continue")).toMatch(
+      /^---\nname: loam-check\ndescription: [^\n]+\ninvokable: true\n---\n\n/,
+    );
+    expect(await cmd("crush")).toMatch(/^---\nname: loam-check\ndescription: /);
+    expect(await cmd("devin")).toMatch(/^---\nname: loam-check\ndescription: /);
+    expect(await cmd("kilocode")).toMatch(/^# loam-check\n\n/);
+    expect(await cmd("roocode")).toMatch(/^# loam-check\n\n/);
+    expect(await cmd("trae")).toMatch(/^---\nname: loam-check\ndescription: /);
+    // codex is skills-only: nothing under a command directory of its own
+    expect(existsSync(join(dir, ".codex", "commands"))).toBe(false);
+    expect(existsSync(join(dir, ".codex", "prompts"))).toBe(false);
+  });
+
+  it("every skill file is the Agent Skills header over the byte-identical shared body", async () => {
+    // The whole point of the second delivery is that it is the SAME protocol —
+    // a skill that drifts from its command is two contracts wearing one name.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all");
+    for (const id of Object.keys(CHECK_FILE)) {
+      const skill = await readFile(join(dir, ...CHECK_FILE[id]!.skill), "utf8");
+      expect(skill, `${id} skill frontmatter`).toMatch(
+        /^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: Bash\(loam:\*\)\n---\n\n/,
+      );
+      // the body after the frontmatter is claude's body after ITS frontmatter
+      const body = (s: string): string => s.slice(s.indexOf("\n---\n\n") + "\n---\n\n".length);
+      expect(body(skill), `${id} skill body`).toBe(body(COMMAND_BODIES["loam-check"]!));
+    }
   });
 
   it("--tools cursor,gemini replaces the default — no .claude/ appears", async () => {
@@ -220,13 +345,15 @@ describe("multi-tool command generation (init --tools)", () => {
     const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "cursor,gemini");
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, ".cursor", "commands", "loam-feature.md"))).toBe(true);
+    expect(existsSync(join(dir, ".cursor", "skills", "loam-feature", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, ".gemini", "commands", "loam", "feature.toml"))).toBe(true);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
-    // the human output names what was generated for whom
+    // the human output names what was generated for whom, per delivery
     expect(res.out).toContain("commands:  cursor, gemini");
+    expect(res.out).toContain("skills:    cursor, gemini");
   });
 
-  it("no --tools is the old behavior byte-for-byte: claude only, the exported bodies exactly", async () => {
+  it("no --tools in a bare repo is the old behavior byte-for-byte: claude only, the exported bodies exactly", async () => {
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create");
     for (const [name, content] of Object.entries(COMMAND_BODIES)) {
@@ -235,6 +362,35 @@ describe("multi-tool command generation (init --tools)", () => {
     for (const other of [".cursor", ".gemini", ".github", ".opencode", ".clinerules"]) {
       expect(existsSync(join(dir, other)), `${other} appeared without --tools`).toBe(false);
     }
+  });
+
+  it("--no-skills writes commands only; --no-commands writes skills only", async () => {
+    const commandsOnly = await throwawayDir();
+    expect(
+      (await runLoam(commandsOnly, "init", "--docs", "./d", "--create", "--no-skills")).code,
+    ).toBe(0);
+    expect(existsSync(join(commandsOnly, ".claude", "commands", "loam-check.md"))).toBe(true);
+    expect(existsSync(join(commandsOnly, ".claude", "skills"))).toBe(false);
+
+    const skillsOnly = await throwawayDir();
+    expect(
+      (await runLoam(skillsOnly, "init", "--docs", "./d", "--create", "--no-commands")).code,
+    ).toBe(0);
+    expect(existsSync(join(skillsOnly, ".claude", "commands"))).toBe(false);
+    expect(existsSync(join(skillsOnly, ".claude", "skills", "loam-check", "SKILL.md"))).toBe(true);
+  });
+
+  it("both suppressions together write nothing, and report no tools", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--docs", "./d", "--create", "--no-commands", "--no-skills", "--json",
+    );
+    expect(res.code).toBe(0);
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    const json = JSON.parse(res.stdout);
+    expect(json.tools).toEqual([]);
+    // the docs-repo half still happens
+    expect(existsSync(join(dir, "d", "AGENTS.md"))).toBe(true);
   });
 
   it("never overwrites another tool's edited command either", async () => {
@@ -308,6 +464,30 @@ describe("multi-tool command generation (init --tools)", () => {
     expect(json.error.code).toBe("invalid-option");
     expect(json.error.message).toContain("--no-commands");
     expect(existsSync(join(dir, ".cursor"))).toBe(false);
+  });
+
+  it("--tools with --no-skills is the same contradiction, refused the same way", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--docs", "./d", "--create", "--no-skills", "--tools", "cursor", "--json",
+    );
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.error.code).toBe("invalid-option");
+    expect(json.error.message).toContain("--no-skills");
+    expect(existsSync(join(dir, ".cursor"))).toBe(false);
+  });
+
+  it("--tools with both suppressions names both in the refusal", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--docs", "./d", "--create",
+      "--no-commands", "--no-skills", "--tools", "cursor", "--json",
+    );
+    expect(res.code).toBe(1);
+    const message = JSON.parse(res.stdout).error.message;
+    expect(message).toContain("--no-commands");
+    expect(message).toContain("--no-skills");
   });
 });
 

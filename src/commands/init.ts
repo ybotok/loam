@@ -13,7 +13,13 @@ import { emitJson, fail } from "../core/json.js";
 import { plannedDocsFiles, scaffoldDocs } from "../core/docs.js";
 import { docsRepoState, listServices } from "../core/repo.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
-import { AGENT_TOOLS, plannedCommandFiles, scaffoldAgentCommands } from "../core/agent.js";
+import {
+  AGENT_TOOLS,
+  detectAgentTools,
+  plannedCommandFiles,
+  scaffoldAgentCommands,
+  type Delivery,
+} from "../core/agent.js";
 
 interface InitOptions {
   docs: string;
@@ -24,16 +30,19 @@ interface InitOptions {
   force?: boolean;
   /** commander's --no-commands: true unless the flag is passed. */
   commands: boolean;
-  /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = claude. */
+  /** commander's --no-skills: true unless the flag is passed. */
+  skills: boolean;
+  /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = autodetect. */
   tools?: string;
   json?: boolean;
 }
 
 /**
  * Resolve --tools to registry ids, or null after reporting the refusal. The
- * default (claude) lives at the call site, not in commander, so an explicit
- * `--tools` is distinguishable from none — which is what lets the
- * `--no-commands` contradiction be refused instead of silently arbitrated.
+ * default (the cwd scan) lives at the call site, not in commander, so an
+ * explicit `--tools` is distinguishable from none — which is what lets both the
+ * autodetection fallback and the `--no-*` contradiction be decided instead of
+ * silently arbitrated.
  */
 function resolveTools(raw: string, json: boolean): string[] | null {
   const supported = Object.keys(AGENT_TOOLS);
@@ -96,9 +105,11 @@ export function registerInit(program: Command): void {
     .option("--force", `write ${CONFIG_FILENAME} here even though one governs a parent directory`)
     .option(
       "--tools <ids>",
-      `agent tools to write the slash commands for: comma-separated (${Object.keys(AGENT_TOOLS).join(", ")}) or "all"`,
+      "agent tools to generate for, overriding the scan of this directory: " +
+        `comma-separated (${Object.keys(AGENT_TOOLS).join(", ")}) or "all"`,
     )
     .option("--no-commands", "skip the slash commands for this repo entirely")
+    .option("--no-skills", "skip the agent skills for this repo entirely")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: InitOptions) => {
       const json = opts.json === true;
@@ -162,17 +173,34 @@ export function registerInit(program: Command): void {
         return;
       }
 
-      // --tools selects the command files to write; --no-commands says write
-      // none. Together they contradict — refused, not arbitrated.
-      if (opts.tools !== undefined && !opts.commands) {
+      // --tools selects the files to write; --no-commands and --no-skills each
+      // say write none of that kind. Together they contradict — refused, not
+      // arbitrated, in either combination.
+      const suppressed = [
+        ...(opts.commands ? [] : ["--no-commands"]),
+        ...(opts.skills ? [] : ["--no-skills"]),
+      ];
+      if (opts.tools !== undefined && suppressed.length > 0) {
         fail(
           json,
           "invalid-option",
-          "--tools contradicts --no-commands: one selects command files, the other suppresses them.",
+          `--tools contradicts ${suppressed.join(" and ")}: ` +
+            "one selects the files to generate, the other suppresses them.",
         );
         return;
       }
-      const tools = opts.tools === undefined ? ["claude"] : resolveTools(opts.tools, json);
+      const delivery: Delivery[] = [
+        ...(opts.commands ? (["commands"] as const) : []),
+        ...(opts.skills ? (["skills"] as const) : []),
+      ];
+
+      // Without --tools the repo decides: whichever tools have left their own
+      // dot-directories here. Falling back to claude keeps a bare repo behaving
+      // exactly as it did before the scan existed. `detected` is reported either
+      // way — what the scan saw is a fact about the repo, not about the flags.
+      const detected = detectAgentTools(cwd);
+      const scanned = detected.length > 0 ? detected : ["claude"];
+      const tools = opts.tools === undefined ? scanned : resolveTools(opts.tools, json);
       if (tools === null) return;
 
       // `skipped` is the other half of the never-overwrite contract: the
@@ -181,24 +209,32 @@ export function registerInit(program: Command): void {
       // created + skipped is the same list on every repo. Both halves come from
       // the scaffolds' own planned-file lists, so the probe cannot drift from
       // what is actually written.
-      const commandFiles = opts.commands ? plannedCommandFiles(cwd, tools) : [];
-      const candidates = [...plannedDocsFiles(docsDir), ...commandFiles.map((f) => f.path)];
+      const agentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery) : [];
+      const candidates = [...plannedDocsFiles(docsDir), ...agentFiles.map((f) => f.path)];
       const skipped = candidates.filter((p) => existsSync(p));
 
       // Joining touches the docs repo not at all: it is somebody's committed
       // repository, and "point at it" must never mean "write to it".
       const created = joining && opts.create !== true ? [] : (await scaffoldDocs(docsDir)).created;
-      if (opts.commands) created.push(...(await scaffoldAgentCommands(cwd, tools)));
+      const generatedFor = delivery.length > 0 ? tools : [];
+      if (delivery.length > 0) {
+        created.push(...(await scaffoldAgentCommands(cwd, tools, delivery)));
+      }
 
       const stored = storedDocsDir(opts.docs);
       // Only THIS directory's config is spread forward. Under --force there is
       // a config in an ancestor too, and inheriting its `service` would bind
       // this repo to a service somebody else's repo declared.
       const existing = existsSync(localConfigPath(cwd)) ? await loadConfig(cwd) : null;
+      // Union, not replacement: this run's files join the ones earlier runs left
+      // on disk, and `agentTools` is a record of what the repo HOLDS. A run that
+      // generated nothing adds nothing and erases nothing.
+      const recordedTools = [...new Set([...(existing?.agentTools ?? []), ...generatedFor])];
       const config: LoamConfig = {
         ...existing,
         docsDir: stored,
         ...(opts.service ? { service: opts.service } : {}),
+        ...(recordedTools.length > 0 ? { agentTools: recordedTools } : {}),
       };
       const configFile = await saveConfig(config, cwd);
 
@@ -208,8 +244,11 @@ export function registerInit(program: Command): void {
         // `docsDir` stays the resolved absolute path — it is what a consumer
         // needs to find the repo. `docsDirStored` is what was written to
         // loam.json, which is the fact this command is now careful about.
-        // `tools` names what the command files were generated FOR — empty
-        // under --no-commands, when none were.
+        // `tools` names what files were generated FOR — empty when every
+        // delivery was suppressed and none were. `detected` is the separate
+        // question of what the scan SAW, which `--tools` overrides without
+        // changing: an agent comparing the two learns whether its selection
+        // matches the repo.
         emitJson({
           docsDir,
           docsDirStored: stored,
@@ -217,7 +256,8 @@ export function registerInit(program: Command): void {
           services: serviceCount,
           created,
           skipped,
-          tools: opts.commands ? tools : [],
+          tools: generatedFor,
+          detected,
         });
         return;
       }
@@ -233,7 +273,11 @@ export function registerInit(program: Command): void {
       if (config.service) console.log(`  service:   ${config.service}`);
       console.log(`  config:    ${configFile}`);
       console.log(`             commit ${CONFIG_FILENAME} — docsDir is resolved relative to it`);
+      if (opts.tools === undefined && detected.length > 0) {
+        console.log(`  detected:  ${detected.join(", ")}`);
+      }
       if (opts.commands) console.log(`  commands:  ${tools.join(", ")}`);
+      if (opts.skills) console.log(`  skills:    ${tools.join(", ")}`);
       if (created.length > 0) {
         console.log("  scaffolded:");
         for (const c of created) console.log(`    + ${c}`);

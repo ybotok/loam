@@ -9,10 +9,11 @@
  *     exactly as the caller spelled it so a committed config survives a clone,
  *     is idempotent (never clobbers user files), and preserves previously
  *     configured `service` on re-init (config spread).
- *   - init --json: {ok, docsDir, created, skipped, tools} — skipped is the
- *     other half of the never-overwrite contract, tools names the agent tools
- *     the command files were generated for — and a clean refusal when --docs
- *     names a file. The per-tool matrix itself is pinned in test/agents.test.ts.
+ *   - init --json: {ok, docsDir, created, skipped, tools, detected} — skipped is
+ *     the other half of the never-overwrite contract, tools names the agent
+ *     tools files were generated for, detected the separate question of which
+ *     tools the repo scan SAW — and a clean refusal when --docs names a file.
+ *     The per-tool matrix itself is pinned in test/agents.test.ts.
  *   - config: missing loam.json is a clean exit-1 error on every command that
  *     needs it; malformed loam.json fails cleanly with a diagnostic naming the
  *     config, and `loam init` can rewrite it.
@@ -235,16 +236,38 @@ describe("init: --json contract", () => {
     expect(json.created.some((p: string) => p.endsWith("architecture"))).toBe(true);
   });
 
-  it("--no-commands keeps the slash commands out of both lists", async () => {
+  it("--no-commands keeps the slash commands out of both lists — and leaves the skills", async () => {
     const dir = await throwawayDir();
     const json = JSON.parse(
       (await runLoam(dir, "init", "--create", "--docs", "./d", "--no-commands", "--json")).stdout,
     );
     expect(json.ok).toBe(true);
     const all: string[] = [...json.created, ...json.skipped];
+    expect(all.some((p) => p.includes(join(".claude", "commands")))).toBe(false);
+    // The two deliveries are separate answers to "how does the body reach an
+    // agent" — a slash command is typed, a skill is loaded by the model off its
+    // description — so suppressing one must not suppress the other. This flag
+    // used to mean "no agent files at all" only because there was one delivery.
+    expect(all.some((p) => p.includes(join(".claude", "skills")))).toBe(true);
+    // and the tool IS claimed: files were generated for it, just not commands
+    expect(json.tools).toEqual(["claude"]);
+  });
+
+  it("--no-commands --no-skills is the way to get no agent files at all", async () => {
+    const dir = await throwawayDir();
+    const json = JSON.parse(
+      (await runLoam(dir, "init", "--create", "--docs", "./d", "--no-commands", "--no-skills", "--json"))
+        .stdout,
+    );
+    expect(json.ok).toBe(true);
+    const all: string[] = [...json.created, ...json.skipped];
     expect(all.some((p) => p.includes(".claude"))).toBe(false);
-    // and no tool is claimed to have been generated for
     expect(json.tools).toEqual([]);
+    // and nothing is recorded in loam.json either — that absence is what keeps
+    // `doctor` from reporting a repo which deliberately has no loam files as one
+    // that has fallen behind the binary
+    const config = JSON.parse(await readFile(join(dir, "loam.json"), "utf8"));
+    expect(config.agentTools).toBeUndefined();
   });
 
   it("refuses --docs naming a file, inside the envelope", async () => {
