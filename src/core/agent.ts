@@ -567,6 +567,36 @@ each suppress one delivery. The tools written for are recorded in
 because the binary grew a new command from one missing because nobody ever
 selected that tool. The map of which invocation surfaces what:
 
+- \`loam status [<FEAT>]\` is the orientation surface — the question you have when
+  you join a repository halfway, or come back having lost the session, and the one
+  every other command assumed you could already answer. It writes nothing and
+  stores nothing: there is no state file, every answer is re-derived from the
+  files, so a document someone edited in another window is visible on the next run
+  with nothing to invalidate. Artifacts come back as \`missing\` (owed, nothing in
+  the way — write it now), \`blocked\` (not written and not writable yet; the entry
+  names what comes first), \`draft\` (on disk, and the shared checks report an error
+  against it — what exists is wrong), \`ready\` (on disk and clean, but something
+  outside the documents — code, a test run, a recording — still has to answer it)
+  or \`done\`. The payload's reason to exist is \`next[]\`: ordered, first entry
+  first, each carrying a code and the literal command to run. Fleet-wide those are
+  \`next.adopt\` (a service with no spec.md — nothing about it is written down, so
+  no feature can be graded against it), \`next.feature\` (something is in flight;
+  ask \`loam status <FEAT>\` about it), \`next.archive\` (authored and verified —
+  ship it, and everything waiting on it is released) and \`next.fleet-clean\`
+  (nothing is owed). On one feature: \`next.author-intent\`, \`next.touch-service\`
+  (no per-service delta at all yet), \`next.author-spec\`, \`next.author-openapi\`,
+  \`next.author-scenarios\`, \`next.rebase\` (requirements or operations with no
+  baseline pin — until they have one the merge cannot tell what it EDITS from what
+  it merely quotes), \`next.archive-first\` (another feature in flight has to land
+  before this one), \`next.fix-coherence\` (the three axes disagree and archive
+  refuses), \`next.verify\` (the done-check has not been started — or its record
+  will not read, or it answers a checklist the feature has since moved out from
+  under, which is not the same as a finished one), \`next.verify-unconfirmed\`
+  (started, and claims are still open — close them from each affected service's
+  own repository), \`next.archive\`, and \`next.archived\` for one that shipped.
+  It grades nothing of its own: the verdict is the one \`loam validate --feature\`
+  and \`loam archive\` compute, so a status that says clean and a gate that refuses
+  can never be two different opinions.
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
   \`requirements.missing-scenarios\`, \`spec.duplicate-requirement\`,
