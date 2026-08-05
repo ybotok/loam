@@ -62,6 +62,30 @@ describe("doctor reports the agent surface", () => {
     expect(report.agents.plannedFiles).toBeGreaterThan(0);
   });
 
+  it("a repo that never asked for skills is not missing them", async () => {
+    // §3.7's false positive: `--no-skills` left doctor reporting all six skill
+    // files as missing on a repo that was correct the moment it was created.
+    // Which deliveries a repo holds is written down nowhere and must not be, so
+    // the question is asked of the files.
+    const pair = await repoPair();
+    expect(
+      (await runLoam(pair.svc, "init", "--docs", "../docs", "--service", "payment-service", "--no-skills"))
+        .code,
+    ).toBe(0);
+
+    const report = await diagnose(pair.svc);
+
+    expect(codes(report.findings)).not.toContain("doctor.agent-files-missing");
+    expect(report.agents.missingFiles).toEqual([]);
+
+    // The genuine signal survives: a command file deleted from that same repo
+    // is still a held delivery with a hole in it.
+    await rm(join(pair.svc, ".claude", "commands", "loam-ship.md"));
+    expect((await diagnose(pair.svc)).agents.missingFiles).toEqual([
+      ".claude/commands/loam-ship.md",
+    ]);
+  });
+
   it("names the files the binary would write that are not here, and stays a warning", async () => {
     // The failure this exists for: a seventh slash command ships, and an
     // already-initialized repo simply does not have it. Nothing else in loam
@@ -87,12 +111,19 @@ describe("doctor reports the agent surface", () => {
     // --tools has to name this repo's tools or a cursor-only repo gets claude
     // files it never asked for while its own stay missing.
     const { svc } = await initialized();
-    await rm(join(svc, ".claude", "commands"), { recursive: true });
+    // Delete ONE file, not the directory: a delivery with no files left is
+    // indistinguishable on disk from `init --no-commands`, which is the §3.7
+    // false positive, so removing the whole directory now reports nothing.
+    await rm(join(svc, ".claude", "commands", "loam-check.md"));
 
     const report = await diagnose(svc);
     const fix = report.findings.find((f) => f.code === "doctor.agent-files-missing")!.fix;
 
-    expect(fix).toContain("loam init --docs ../docs --service payment-service --tools claude");
+    // No `--service`: a --docs-less re-run now keeps the committed pointer and
+    // spreads the config forward, so repeating the binding would be noise.
+    expect(fix).toContain("loam init --docs ../docs --tools claude");
+    expect(fix).not.toContain("--service");
+    expect(fix).toContain("keeps this repo's service binding");
     // and it promises only detection: nothing is offered up for rewriting
     expect(fix).toContain("leaves every existing one untouched");
     expect(fix).toContain("Nothing is regenerated");
@@ -279,7 +310,11 @@ describe("doctor reports the agent surface", () => {
 
     const lines = res.out.split("\n");
     const agentsLine = lines.find((l) => l.startsWith("  agents "));
-    expect(agentsLine).toMatch(/^ {2}agents {8}claude \(config\) · \d+ files · 1 missing · AGENTS\.md v/);
+    expect(agentsLine).toMatch(
+      /^ {2}agents {8}claude \(config\) · \d+ files · 1 missing · \d+ stale · AGENTS\.md v/,
+    );
+    // The write path is state too, and a clean repo says so.
+    expect(lines.find((l) => l.startsWith("  write path"))).toMatch(/^ {2}write path {4}clean$/);
     const findingIndex = lines.findIndex((l) => l.includes("doctor.agent-files-missing"));
     expect(findingIndex).toBeGreaterThan(-1);
     expect(lines[findingIndex]).toMatch(/^ {4}⚠ /);

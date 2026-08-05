@@ -6,8 +6,14 @@ import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./con
 import { LOAM_VERSION } from "./version.js";
 import { docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
 import { loadFile } from "./likec4.js";
-import { AGENT_TOOLS, plannedCommandFiles } from "./agent.js";
-import { agentsStaleFinding, agentsStampLine, agentsStampVersion } from "./agents-stamp.js";
+import { AGENT_TOOLS, DELIVERIES, plannedCommandFiles, type Delivery } from "./agent.js";
+import {
+  agentsStaleFinding,
+  agentsStampLine,
+  agentsStampVersion,
+  versionTrails,
+} from "./agents-stamp.js";
+import { scanWritePathResidue, type WritePathResidue } from "./staging.js";
 
 export type DoctorSeverity = "blocker" | "warning";
 
@@ -53,6 +59,12 @@ export interface DoctorReport {
   };
   /** The agent surface of this repo — see `inspectAgentSurface`. */
   agents: AgentSurface;
+  /**
+   * What a write that did not finish left in the docs repo, or null when
+   * `docsDir` never resolved. Reported as state, like `docs` and `counts`: a
+   * lock somebody is legitimately holding right now is a fact, not a complaint.
+   */
+  writePath: WritePathResidue | null;
   findings: DoctorFinding[];
 }
 
@@ -65,6 +77,11 @@ export interface AgentSurface {
   plannedFiles: number;
   /** Repo-relative paths of those files that are not there. */
   missingFiles: string[];
+  /**
+   * Repo-relative paths of the ones that ARE there carrying no version stamp,
+   * or one older than this binary — see `staleAgentFiles`.
+   */
+  staleFiles: string[];
   stamp: {
     /** Where the docs repo's AGENTS.md is, or null when `docsDir` did not resolve. */
     path: string | null;
@@ -229,15 +246,71 @@ function detectedTools(repoRoot: string): string[] {
 }
 
 /**
- * What the running binary would write for this repo's tools that is not here.
+ * Which deliveries this repo actually HOLDS for one tool — a delivery counts
+ * when at least one of its files is on disk.
  *
- * By EXISTENCE only, never by content. `plannedCommandFiles` hands over each
- * file's bytes as well as its path, and comparing those would yield "your file
- * differs from the template" — one step from offering to rewrite it, which is
- * the thing loam refuses (agents-stamp.ts). A file that exists is the team's,
- * whatever it now says; only a file that is not there is news.
+ * `loam init --no-skills` (or `--no-commands`) records the tool in `agentTools`
+ * and writes one delivery, so planning both and subtracting what exists reported
+ * every skill file as missing on a brand-new repo — under a message saying it
+ * "was initialized by an older loam" and a `fix` that re-runs init without the
+ * flag that was the whole point. Which deliveries a repo asked for is written
+ * down nowhere, and must not be: the files ARE the record (there is no state
+ * file loam can disagree with). So the question is asked of them.
  *
- * The probe is `existsSync`, the same one `init` uses to compute its `skipped`
+ * A tool with NO files at all is the other story — recorded, then deleted — and
+ * the caller falls back to the full plan there, which is what the finding's
+ * "or they were deleted" already says.
+ */
+function heldDeliveries(repoRoot: string, tool: string): readonly Delivery[] {
+  const held = DELIVERIES.filter((d) =>
+    plannedCommandFiles(repoRoot, [tool], [d]).some((f) => existsSync(f.path)));
+  return held.length > 0 ? held : DELIVERIES;
+}
+
+/**
+ * Of the planned files that ARE here, the ones whose stamp is missing or older
+ * than this binary.
+ *
+ * The stamp is the ONLY thing read out of a generated file — never the body.
+ * Comparing bodies would yield "your file differs from the template", one step
+ * from offering to rewrite it, which is the thing loam refuses: a team's edits
+ * to a generated file outrank ours. A stamp is a different claim — it says
+ * which loam wrote these instructions — and it can be false while every edit
+ * around it is legitimate. Same doctrine as AGENTS.md (agents-stamp.ts), same
+ * repair: a human looks, and bumps the stamp or deletes the file so a re-run of
+ * `loam init` lays down the current one.
+ *
+ * Absence of a stamp counts, because that is what every file written before
+ * stamping existed looks like — precisely the "initialized by an older loam"
+ * population this check is for.
+ */
+async function staleAgentFiles(
+  repoRoot: string,
+  planned: Array<{ path: string }>,
+): Promise<string[]> {
+  const stale: string[] = [];
+  for (const file of planned) {
+    let text: string;
+    try {
+      text = await readFile(file.path, "utf8");
+    } catch {
+      // Unreadable is not stale: it is either the missing-file finding above or
+      // a permissions problem, and neither is answered by editing a stamp.
+      continue;
+    }
+    const stamp = agentsStampVersion(text);
+    if (stamp === null || versionTrails(stamp, LOAM_VERSION)) {
+      stale.push(relative(repoRoot, file.path).split(/[\\/]/).join("/"));
+    }
+  }
+  return stale;
+}
+
+/**
+ * What the running binary would write for this repo's tools that is not here,
+ * and what is here under an older loam's name.
+ *
+ * Presence is `existsSync`, the same probe `init` uses to compute its `skipped`
  * list, so doctor cannot disagree with init about which files init would write.
  */
 async function inspectAgentSurface(
@@ -248,20 +321,25 @@ async function inspectAgentSurface(
 ): Promise<AgentSurface> {
   const recorded = recordedTools(config);
   const tools = recorded ?? detectedTools(repoRoot);
-  const planned = plannedCommandFiles(repoRoot, tools);
+  const planned = tools.flatMap((id) =>
+    plannedCommandFiles(repoRoot, [id], heldDeliveries(repoRoot, id)));
+  const present = planned.filter((f) => existsSync(f.path));
   const missingFiles = planned
     .filter((f) => !existsSync(f.path))
     .map((f) => relative(repoRoot, f.path).split(/[\\/]/).join("/"));
+  const staleFiles = await staleAgentFiles(repoRoot, present);
 
   if (missingFiles.length > 0) {
     // A warning, never a blocker: an out-of-date command set is a repo whose
     // agents have fewer entry points than they could, not one where anything
     // refuses to run. doctor's blockers are for the second kind.
-    const flags = [
-      `--docs ${config?.docsDirAsWritten ?? "<dir>"}`,
-      ...(config?.service === undefined ? [] : [`--service ${config.service}`]),
-      `--tools ${tools.join(",")}`,
-    ].join(" ");
+    //
+    // The fix spells `--docs` and `--tools` and deliberately NOT `--service`:
+    // `init` spreads the committed config forward, and a `--docs`-less re-run
+    // keeps the pointer the repo already commits, so the binding survives
+    // untouched. Every interpolation here stands for exactly one argument —
+    // test/agent-commands-runnable.test.ts parses this string, and a `${flags}`
+    // holding three of them is a command it cannot check.
     findings.push({
       severity: "warning",
       code: "doctor.agent-files-missing",
@@ -270,9 +348,30 @@ async function inspectAgentSurface(
         + `lays down for ${tools.join(", ")} are not in this repo — it was initialized by an older loam, `
         + `or they were deleted: ${missingFiles.join(", ")}`,
       fix:
-        `Re-run \`loam init ${flags}\` here — it writes only the files that are absent and leaves every `
-        + "existing one untouched. Nothing is regenerated, so leaving this standing costs entry points "
-        + "and nothing else.",
+        `Re-run \`loam init --docs ${config?.docsDirAsWritten ?? "<dir>"} --tools ${tools.join(",")}\` `
+        + "here — it writes only the files that are absent and leaves every existing one untouched, and "
+        + "it keeps this repo's service binding. Nothing is regenerated, so leaving this standing costs "
+        + "entry points and nothing else.",
+    });
+  }
+
+  if (staleFiles.length > 0) {
+    // Also a warning, and for a stronger reason than the one above: these files
+    // are the team's now. Only a person can say whether their edits still mean
+    // what the current binary's tables say, so loam reports and stops.
+    findings.push({
+      severity: "warning",
+      code: "doctor.agent-files-stale",
+      message:
+        `${staleFiles.length} of the ${planned.length} command and skill files here carry no `
+        + `\`${agentsStampLine(LOAM_VERSION)}\` stamp, or one older than this loam — the protocol and `
+        + `code tables they instruct an agent with may describe a loam that no longer exists: `
+        + `${staleFiles.join(", ")}`,
+      fix:
+        "Read each against the body this loam writes, then set its stamp line to "
+        + `\`${agentsStampLine(LOAM_VERSION)}\`; or delete the file and re-run \`loam init\` to lay `
+        + "down the current one. loam never rewrites a file that exists — your edits outrank the "
+        + "template, which is why the stamp is a human's claim and not a refresh.",
     });
   }
 
@@ -308,6 +407,7 @@ async function inspectAgentSurface(
     toolsSource: recorded === null ? "disk" : "config",
     plannedFiles: planned.length,
     missingFiles,
+    staleFiles,
     stamp: {
       path: agentsFile,
       present: agentsText !== null,
@@ -315,6 +415,80 @@ async function inspectAgentSurface(
       stale: stale !== null,
     },
   };
+}
+
+/**
+ * Grade what a write that did not finish left in the docs repo.
+ *
+ * Three of the four are blockers, which is unusual for doctor and deliberate:
+ * they are not "you have fewer entry points than you could", they are "the
+ * living docs may be half-written and the next reader cannot tell". Before this
+ * existed, a SIGKILL between two of archive's renames left `doctor: healthy:
+ * true` over merged spec.md + openapi.yaml and an unmerged landscape, and the
+ * next `loam archive` reported loam's own half-merge as the author's bug.
+ *
+ * The temp files are the exception: a `.loam-*.tmp` was never linked into place,
+ * so nothing reads it and nothing depends on it. It is litter, not damage.
+ */
+function gradeWritePathResidue(
+  docsDir: string,
+  residue: WritePathResidue,
+  findings: DoctorFinding[],
+): void {
+  if (residue.lock !== null) {
+    const lockFile = join(docsDir, residue.lock.path);
+    findings.push({
+      // Held by a live process is a fact about right now — wait and re-run.
+      // Held by a process that no longer exists is damage: nothing will ever
+      // release it, and every archive and unarchive refuses `docs-busy` until
+      // somebody deletes it.
+      severity: residue.lock.stale ? "blocker" : "warning",
+      code: "doctor.docs-locked",
+      message: residue.lock.stale
+        ? `${residue.lock.path} is held by ${residue.lock.holder}, a process that no longer exists on this host — every \`loam archive\` and \`loam unarchive\` will refuse with \`docs-busy\` until it is gone.`
+        : `${residue.lock.path} is held by ${residue.lock.holder}; another archive or unarchive is running against this docs repo.`,
+      fix: residue.lock.stale
+        ? `Delete ${lockFile} — its holder is dead, so nothing is going to release it. Check \`loam doctor\` again afterwards for an interrupted commit.`
+        : "Wait for it to finish and re-run; nothing is read or written while it is held.",
+    });
+  }
+
+  if (residue.intentUnreadable) {
+    findings.push({
+      severity: "blocker",
+      code: "doctor.commit-unreadable",
+      message: `${docsDir} holds a .loam-commit that cannot be read — a commit was interrupted and the one record of which files it had already written is unreadable.`,
+      fix: "Hand this to a human: compare the living docs against version control before running any loam command that writes. `loam archive` and `loam unarchive` both refuse with `commit-interrupted` while it is there.",
+    });
+  } else if (residue.intent !== null) {
+    const i = residue.intent;
+    // The command is spelled out per branch rather than interpolated into one
+    // sentence: `loam ${i.command} ${i.feature}` reads fine to a person and is
+    // opaque to test/agent-commands-runnable.test.ts, which parses the commands
+    // loam prints against the real program. Same discipline as spelling `code:`
+    // literally — be visible to your own guard.
+    const repair = i.command === "archive"
+      ? `\`loam archive ${i.feature}\` — it recovers first, under the lock, putting the half-written files back from the snapshot`
+      : `\`loam unarchive ${i.feature}\` — it recovers first, under the lock, finishing the restore (an interrupted restore is FINISHED, never undone: the merged text it was replacing is written down nowhere)`;
+    findings.push({
+      severity: "blocker",
+      code: "doctor.commit-interrupted",
+      message:
+        `A ${i.command === "archive" ? `\`loam archive ${i.feature}\`` : `\`loam unarchive ${i.feature}\``} `
+        + `was killed mid-commit (${i.host}, pid ${i.pid}, ${i.at}) — `
+        + `${i.files.length} file(s) may be half-written: ${i.files.map((f) => f.path).join(", ")}`,
+      fix: `Re-run ${repair}, and refuses with \`commit-interrupted\` rather than guessing if a file has been edited since.`,
+    });
+  }
+
+  if (residue.temps.length > 0) {
+    findings.push({
+      severity: "warning",
+      code: "doctor.staging-temps",
+      message: `${residue.temps.length} orphaned staging file(s) under ${docsDir}: ${residue.temps.join(", ")} — a killed writer's scratch, never linked into place.`,
+      fix: "The next `loam archive` or `loam unarchive` removes its own; delete any that remain. Nothing reads them, so they cost disk and nothing else.",
+    });
+  }
 }
 
 export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
@@ -414,6 +588,15 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     await inspectLandscape(landscapeFile, findings);
   }
 
+  // What a killed writer left behind. Read from `scanWritePathResidue`, whose
+  // spellings of `.loam-lock` / `.loam-commit` / the temp-file pattern are
+  // staging's own — doctor grades, it does not re-spell. This is the surface
+  // ANALYSIS-5 §3.5 found reporting `healthy: true` over half-merged docs.
+  const writePath = docsDir !== null && exists && readable
+    ? await scanWritePathResidue(docsDir)
+    : null;
+  if (docsDir !== null && writePath !== null) gradeWritePathResidue(docsDir, writePath, findings);
+
   let services: Awaited<ReturnType<typeof listServices>> = [];
   let activeFeatures: Awaited<ReturnType<typeof listFeatures>> = [];
   if (docsDir !== null && readable && servicesDir) {
@@ -450,7 +633,12 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
       severity: "warning",
       code: "doctor.service-unknown",
       message: `Configured service '${configuredService}' is not present under services/.`,
-      fix: `Run \`loam adopt ${configuredService}\` to onboard it, or fix "service" in ${path}.`,
+      // `--service <id>`, not a positional: `loam adopt` takes no argument, so
+      // the spelling this finding used to print was refused by commander with
+      // "too many arguments" — as the FIRST instruction a freshly bound service
+      // repo ever receives. test/agent-commands-runnable.test.ts parses every
+      // `loam …` loam prints against the real program so it cannot recur.
+      fix: `Run \`loam adopt --service ${configuredService}\` to onboard it, or fix "service" in ${path}.`,
     });
   }
 
@@ -480,6 +668,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     counts: { services: services.length, activeFeatures: activeFeatures.length },
     currentService,
     agents,
+    writePath,
     findings,
   };
 }

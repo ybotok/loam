@@ -34,6 +34,25 @@ function stampLabel(stamp: DoctorReport["agents"]["stamp"]): string {
   return `v${stamp.version}${stamp.stale ? " (stale)" : ""}`;
 }
 
+/**
+ * What a killed writer left in the docs repo, as one line. "clean" is the
+ * answer on every healthy repo, and "(unresolved)" keeps it apart from clean:
+ * a docsDir that never resolved was never looked at.
+ */
+function writePathLabel(residue: DoctorReport["writePath"]): string {
+  if (residue === null) return "(unresolved)";
+  const parts = [
+    ...(residue.lock === null ? [] : [`lock held${residue.lock.stale ? " (stale)" : ""}`]),
+    ...(residue.intentUnreadable
+      ? ["interrupted commit (unreadable)"]
+      : residue.intent === null
+        ? []
+        : [`interrupted ${residue.intent.command} of ${residue.intent.feature}`]),
+    ...(residue.temps.length === 0 ? [] : [`${residue.temps.length} orphaned temp file(s)`]),
+  ];
+  return parts.length === 0 ? "clean" : parts.join(" · ");
+}
+
 function printDoctor(report: DoctorReport): void {
   console.log(`loam doctor — ${report.healthy ? "healthy" : "blocked"}`);
   console.log(`  runtime       ${report.runtime.package}@${report.runtime.version}`);
@@ -57,8 +76,12 @@ function printDoctor(report: DoctorReport): void {
   console.log(
     `  agents        ${agents.tools.length === 0 ? "(none)" : agents.tools.join(", ")}`
     + ` (${agents.toolsSource}) · ${agents.plannedFiles} files · ${agents.missingFiles.length} missing`
-    + ` · AGENTS.md ${stampLabel(agents.stamp)}`,
+    + ` · ${agents.staleFiles.length} stale · AGENTS.md ${stampLabel(agents.stamp)}`,
   );
+  // The write path is state too, and its clean answer is the one worth printing
+  // most often: a reader who has just been told the docs are half-written needs
+  // to see it go away.
+  console.log(`  write path    ${writePathLabel(report.writePath)}`);
   if (report.findings.length > 0) {
     console.log("\n  findings");
     for (const finding of report.findings) {

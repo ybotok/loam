@@ -111,7 +111,7 @@ export function registerInit(program: Command): void {
     .option("--no-commands", "skip the slash commands for this repo entirely")
     .option("--no-skills", "skip the agent skills for this repo entirely")
     .option("--json", "emit the machine contract instead of the human view")
-    .action(async (opts: InitOptions) => {
+    .action(async (opts: InitOptions, command: Command) => {
       const json = opts.json === true;
       const cwd = process.cwd();
 
@@ -144,7 +144,27 @@ export function registerInit(program: Command): void {
         return;
       }
 
-      const docsDir = resolve(cwd, opts.docs);
+      // Only THIS directory's config is spread forward. Under --force there is
+      // a config in an ancestor too, and inheriting its `service` would bind
+      // this repo to a service somebody else's repo declared.
+      const existing = existsSync(localConfigPath(cwd)) ? await loadConfig(cwd) : null;
+
+      // A re-run must not move a committed pointer. `--docs` has a default
+      // (`.loam-docs`), so an init invoked for any OTHER reason — `--service`,
+      // a new `--tools`, the fix `doctor.agent-files-missing` prints — used to
+      // arrive here carrying a docsDir nobody typed: the default then named no
+      // docs repo, the refusal steered the caller to `--create`, and `--create`
+      // rewrote `docsDir` in the committed loam.json to a freshly scaffolded
+      // empty one. `validate --all` went green over an empty fleet, which is
+      // the exact outcome `--create` exists to prevent. So the flag wins only
+      // when it was actually passed; otherwise the file this repo already
+      // committed does.
+      const committedDocs = existing?.docsDirAsWritten;
+      const docsTyped = command.getOptionValueSource("docs") !== "default";
+      const docsSource: "flag" | "config" | "default" =
+        docsTyped ? "flag" : committedDocs === undefined ? "default" : "config";
+      const docsOption = !docsTyped && committedDocs !== undefined ? committedDocs : opts.docs;
+      const docsDir = resolve(cwd, docsOption);
 
       // The one predictable failure: --docs naming a file. Refused here so the
       // caller gets a clean envelope/message instead of mkdir's ENOTDIR throw.
@@ -221,11 +241,7 @@ export function registerInit(program: Command): void {
         created.push(...(await scaffoldAgentCommands(cwd, tools, delivery)));
       }
 
-      const stored = storedDocsDir(opts.docs);
-      // Only THIS directory's config is spread forward. Under --force there is
-      // a config in an ancestor too, and inheriting its `service` would bind
-      // this repo to a service somebody else's repo declared.
-      const existing = existsSync(localConfigPath(cwd)) ? await loadConfig(cwd) : null;
+      const stored = storedDocsDir(docsOption);
       // Union, not replacement: this run's files join the ones earlier runs left
       // on disk, and `agentTools` is a record of what the repo HOLDS. A run that
       // generated nothing adds nothing and erases nothing.
@@ -252,6 +268,10 @@ export function registerInit(program: Command): void {
         emitJson({
           docsDir,
           docsDirStored: stored,
+          // Where the pointer came from: `flag` (a --docs somebody typed),
+          // `config` (the one this repo already committed — a re-run cannot
+          // move it), or `default` (nothing said, nothing committed).
+          docsDirSource: docsSource,
           docsRepo: joining ? "existing" : "created",
           services: serviceCount,
           created,
@@ -269,7 +289,10 @@ export function registerInit(program: Command): void {
       } else {
         console.log(`  docs repo: ${docsDir}  (created)`);
       }
-      console.log(`  docsDir:   ${stored}  (as stored in ${CONFIG_FILENAME})`);
+      console.log(
+        `  docsDir:   ${stored}  (as stored in ${CONFIG_FILENAME}`
+        + (docsSource === "config" ? " — kept; no --docs was passed" : "") + ")",
+      );
       if (config.service) console.log(`  service:   ${config.service}`);
       console.log(`  config:    ${configFile}`);
       console.log(`             commit ${CONFIG_FILENAME} — docsDir is resolved relative to it`);

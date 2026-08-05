@@ -527,8 +527,12 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
   it("does not overclaim runner exclusivity: --record without --results is the documented fallback", () => {
     expect(AGENTS_MD).not.toMatch(/no agent can SAY a scenario is tested/);
     expect(AGENTS_MD).toMatch(/ALWAYS pass `--results`/);
-    expect(AGENTS_MD).toMatch(/`--record` without `--results` is\nthe fallback/);
+    // Asserted without the line wrap: the claim is the sentence, not its reflow.
+    expect(AGENTS_MD).toMatch(/`--record` without `--results` is\s+the fallback/);
     expect(AGENTS_MD).toMatch(/answered_by: agent/);
+    // Р13(b): the fallback is visible, and says what it costs.
+    expect(AGENTS_MD).toMatch(/\*\*attested\*\*, not verified/);
+    expect(AGENTS_MD).toContain("`verify.scenario-attested`");
   });
 });
 

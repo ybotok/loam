@@ -24,6 +24,7 @@ import {
   type ArtifactState,
   type FeatureStatusReport,
   type FleetStatusReport,
+  type InterruptedCommit,
   type NextStep,
   type VerificationState,
 } from "../core/status.js";
@@ -54,6 +55,8 @@ export function registerStatus(program: Command): void {
       // for. `status` counts services, so it needs services/ in both modes.
       if (!docsRepoReady(json, docsDir, "services")) return;
       const context = new FleetContext();
+      // What the refusal below says it was answering when it gave up.
+      let scope = "this repository";
 
       try {
         if (featureArg === undefined) {
@@ -81,7 +84,17 @@ export function registerStatus(program: Command): void {
           fail(json, "unknown-target", await missingFeatureMessage(docsDir, featureArg, context));
           return;
         }
-        const report = await featureStatus(docsDir, feature, { service: opts.service, context });
+        scope = feature.id;
+        // `config.service` is not a lens like `--service`: it says which
+        // repository this IS, and three of the steps (`loam gherkin`, `verify
+        // --record --service`) refuse anywhere else. Without it status handed a
+        // docs-repo reader commands only a service repo can run, and never told
+        // a service repo that the work in front of it was its own.
+        const report = await featureStatus(docsDir, feature, {
+          service: opts.service,
+          boundService: config.service,
+          context,
+        });
         if (opts.service !== undefined && !report.feature.services.includes(opts.service)) {
           fail(
             json,
@@ -107,14 +120,28 @@ export function registerStatus(program: Command): void {
         // `internal` envelope that names nothing: the projection is
         // all-or-nothing (a status missing one artifact reads as a feature that
         // does not owe it), so the honest answer is a refusal naming the path.
-        const path = (err as NodeJS.ErrnoException).path;
-        if (path === undefined) throw err;
+        //
+        // A filesystem failure is recognised by its errno, NOT by carrying a
+        // `path`. Node reports EISDIR from `read()` with no path at all — the
+        // directory opened, the read failed — so the whole point of this branch
+        // was defeated by the commonest way a malformed docs repo breaks: one
+        // directory where a file belongs killed BOTH forms of status with a bare
+        // `internal: EISDIR`, naming neither the file nor the feature. Anything
+        // without an errno is a real bug and still escapes.
+        const e = err as NodeJS.ErrnoException;
+        if (e.path === undefined && typeof e.errno !== "number") throw err;
+        const why = err instanceof Error ? err.message : String(err);
         fail(
           json,
           "repository-unavailable",
-          `${path} could not be read, so the status would be missing an artifact. ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          e.path !== undefined
+            ? `${e.path} could not be read, so the status of ${scope} would be missing an artifact. ${why}`
+            : // Naming the target's own directory here would be a guess, and a
+              // guess that is wrong precisely when it matters: one malformed
+              // feature makes every OTHER feature's status fail too, and each
+              // would have accused its own files. Say what is known instead.
+              `A file under ${docsDir} could not be read, so the status of ${scope} would be missing an artifact. ${why}. ` +
+              `The failure named no path — that is how Node reports a directory sitting where a file belongs.`,
         );
       }
       // No exit code is set on any path above that succeeded, deliberately.
@@ -138,6 +165,7 @@ export function registerStatus(program: Command): void {
  */
 function featureJson(r: FeatureStatusReport): Record<string, unknown> {
   return {
+    interrupted: r.interrupted,
     feature: r.feature,
     service: r.service,
     artifacts: r.artifacts,
@@ -149,6 +177,7 @@ function featureJson(r: FeatureStatusReport): Record<string, unknown> {
 
 function fleetJson(r: FleetStatusReport): Record<string, unknown> {
   return {
+    interrupted: r.interrupted,
     service: r.service,
     services: r.services,
     features: r.features,
@@ -165,17 +194,44 @@ function pad(values: string[]): number {
   return Math.max(0, ...values.map((v) => v.length));
 }
 
+/**
+ * The half-merged-repo banner, printed FIRST and on stderr.
+ *
+ * stderr, alone among this command's output, because it is not part of the
+ * answer: it is the reason the answer may be wrong. A reader piping `status`
+ * into a pager still sees it, and the human view stays the shape every other
+ * run has. `--json` carries the same fact in `interrupted`.
+ */
+function printInterrupted(i: InterruptedCommit): void {
+  console.error(
+    i.unreadable
+      ? "⚠ this docs repo holds a .loam-commit that cannot be read — a commit was interrupted and nothing here can be trusted until a human compares the living docs against version control."
+      : `⚠ a \`${i.recover}\` was killed mid-commit (${i.host}, pid ${i.pid}, ${i.at}) — ${i.files.length} file(s) may be half-written: ${i.files.join(", ")}. Everything below is derived from them.`,
+  );
+  console.error("");
+}
+
 /** `spec (payment-service)` — the artifact id plus the service, when it has one. */
 function artifactLabel(a: ArtifactState): string {
   return a.service === null ? a.id : `${a.id} (${a.service})`;
 }
 
+/**
+ * The counts come from the record's `claims:` array (verify's `tallyRecord`),
+ * never from its `summary:` block. The verdict is printed beside the state
+ * because they answer different questions and only together are they honest:
+ * `recorded  4/4 confirmed` used to be the whole line for a feature `verify`
+ * calls `attested` — complete, and resting on somebody's word about a test.
+ */
 function verificationLine(v: VerificationState): string {
   if (v.state === "absent") return "none";
   if (v.state === "unreadable") return "unreadable";
-  return `${v.state}  ${v.confirmed}/${v.claims} confirmed${
-    v.unanswered > 0 ? ` · ${v.unanswered} unanswered` : ""
-  }  (recorded ${v.recorded ?? "?"})`;
+  return (
+    `${v.state} · ${v.verdict}  ${v.confirmed}/${v.claims} confirmed` +
+    (v.unanswered > 0 ? ` · ${v.unanswered} unanswered` : "") +
+    (v.attested > 0 ? ` · ${v.attested} scenario(s) on an agent's word, not a test run` : "") +
+    `  (recorded ${v.recorded ?? "?"})`
+  );
 }
 
 /**
@@ -193,6 +249,7 @@ function printNext(steps: NextStep[]): void {
 }
 
 function printFeature(r: FeatureStatusReport, ambiguous: string[]): void {
+  if (r.interrupted !== null) printInterrupted(r.interrupted);
   const f = r.feature;
   console.log(`loam status ${f.id} — ${f.stage}${f.archived ? " (archived)" : ""}`);
   console.log(`  feature       ${f.dirName}  ${f.path}`);
@@ -242,6 +299,7 @@ function printFeature(r: FeatureStatusReport, ambiguous: string[]): void {
 }
 
 function printFleet(r: FleetStatusReport): void {
+  if (r.interrupted !== null) printInterrupted(r.interrupted);
   const s = r.services;
   console.log(`loam status — ${s.total} service(s) · ${r.features.length} feature(s) in flight`);
   console.log(

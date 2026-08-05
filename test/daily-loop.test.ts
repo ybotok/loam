@@ -37,6 +37,40 @@ import {
  */
 const DOCS_REPO = { "services/.gitkeep": "" };
 
+/**
+ * The files that make `services/<svc>/` a living service. `--touches` names a
+ * service that already exists (`--new-service` is the flag that introduces
+ * one), so a fixture that touches nothing real trips `delta.service-unknown`.
+ */
+function livingService(svc: string): Record<string, string> {
+  return {
+    [`services/${svc}/model.likec4`]: `specification {
+  element softwareSystem
+}
+
+model {
+  svc = softwareSystem '${svc}' {
+    metadata {
+      service '${svc}'
+    }
+  }
+}
+`,
+    [`services/${svc}/spec.md`]: `# ${svc}
+
+## Requirements
+
+### Requirement: Exist
+The service SHALL exist.
+
+#### Scenario: It exists
+- **Given** the fleet
+- **When** it is listed
+- **Then** ${svc} is in it
+`,
+  };
+}
+
 async function withProject(
   files: Record<string, string>,
   fn: (p: Project) => Promise<void>,
@@ -123,7 +157,7 @@ describe("`new --title` is serialized, never interpolated", () => {
 
 describe("a `--touches` scaffold validates clean on the first run", () => {
   it("emits zero errors — the context elements are commented out", async () => {
-    await withProject({}, async (p) => {
+    await withProject(livingService("svc-a"), async (p) => {
       expect(
         (await runLoam(p.workDir, "new", "FEAT-1", "--title", "T", "--touches", "svc-a")).code,
       ).toBe(0);
@@ -136,6 +170,18 @@ describe("a `--touches` scaffold validates clean on the first run", () => {
       // change. The gate is NOT relaxed — the scaffold stopped breaking it.
       expect(codesOf(res.stdout)).toContain("delta.valid");
       expect(codesOf(res.stdout)).not.toContain("delta.nothing-tagged");
+    });
+  });
+
+  it("but `--touches` a service that does not exist is the typo, and the gate says so", async () => {
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--title", "T", "--touches", "svc-a");
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      // Nothing introduces svc-a: the scaffold comments its context element
+      // out, and no services/svc-a/ exists — archive would create the
+      // directory out of the typo.
+      expect(errorsOf(res.stdout).map((f) => f.code)).toEqual(["delta.service-unknown"]);
     });
   });
 
@@ -158,7 +204,9 @@ describe("a `--touches` scaffold validates clean on the first run", () => {
   });
 
   it("a new service keeps its tagged element, so its delta is still a change", async () => {
-    await withProject({}, async (p) => {
+    // svc-b is introduced by the delta's own tagged element and needs no
+    // seeding; svc-a is merely touched, so it has to already exist.
+    await withProject(livingService("svc-a"), async (p) => {
       await runLoam(p.workDir, "new", "FEAT-1", "--touches", "svc-a", "--new-service", "svc-b");
       const delta = await p.read("features/FEAT-1/delta.likec4");
       const tagged = delta.split("\n").find((l) => l.includes("'svc-b'"))!;

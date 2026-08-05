@@ -26,6 +26,7 @@ import {
   FEATURE_SPEC,
   LIVING_OPENAPI,
   LIVING_SPEC,
+  SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
 import { ARTIFACT_STATUSES } from "../src/core/status.js";
@@ -87,7 +88,10 @@ async function recordVerification(
     id: c.id,
     verdict,
     evidence: verdict === "confirmed" ? ["src/split.ts:12"] : [],
-    answered_by: "agent",
+    // This helper exists to model a COMPLETE verification, and under Р13(b)
+    // that means a green run: a scenario claim answered by an agent reads as
+    // `attested`, never `verified`, so the feature would never reach `done`.
+    answered_by: "runner",
   }));
   await p.write(
     `${FEAT_DIR}/verification.yaml`,
@@ -488,9 +492,12 @@ describe("the fleet payload", () => {
     });
     expect(payload.order).toEqual(["FEAT-1"]);
 
-    expect(codes(payload.next)).toEqual(["next.adopt", "next.feature"]);
+    // `next.fleet-gate` is always last while anything is in flight: it names
+    // the command CI runs, which the fleet form never used to mention.
+    expect(codes(payload.next)).toEqual(["next.adopt", "next.feature", "next.fleet-gate"]);
     expect((payload.next as NextStep[])[0]!.command).toBe("loam adopt --service orphan-service --json");
     expect((payload.next as NextStep[])[1]!.command).toBe("loam status FEAT-1 --json");
+    expect((payload.next as NextStep[]).at(-1)!.command).toBe("loam validate --all --json");
     await p.destroy();
   });
 
@@ -517,7 +524,7 @@ describe("the fleet payload", () => {
     await recordVerification(p, "FEAT-1");
     const payload = await statusJson(p);
 
-    expect(codes(payload.next)).toEqual(["next.archive", "next.feature"]);
+    expect(codes(payload.next)).toEqual(["next.archive", "next.feature", "next.fleet-gate"]);
     expect((payload.next as NextStep[])[0]!.command).toBe("loam archive FEAT-1 --dry-run --json");
     const later = (payload.features as Array<Record<string, any>>).find((f) => f.id === "FEAT-9")!;
     expect(later.stage).toBe("missing");
@@ -529,6 +536,10 @@ describe("the fleet payload", () => {
     const p = await makeProject({
       "architecture/landscape.likec4": coherentFixture()["architecture/landscape.likec4"]!,
       "services/payment-service/spec.md": LIVING_SPEC,
+      // A spec with no model.likec4 is an incomplete service, which is itself
+      // outstanding work (`next.complete-service`) — so the fixture has to be
+      // complete for "nothing outstanding" to be the thing under test.
+      "services/payment-service/model.likec4": SERVICE_MODEL,
     });
     const payload = await statusJson(p);
     expect(payload.features).toEqual([]);
@@ -647,7 +658,8 @@ describe("the human view", () => {
     await recordVerification(p, "FEAT-1");
     const run = await runLoam(p.workDir, "status", "FEAT-1", "--service", "payment-split-service");
     expect(run.stdout).toContain("narrowed to   payment-split-service");
-    expect(run.stdout).toMatch(/verification\s+recorded\s+\d+\/\d+ confirmed/);
+    // The line now carries verify's own verdict beside the state.
+    expect(run.stdout).toMatch(/verification\s+recorded · verified\s+\d+\/\d+ confirmed/);
     expect(run.stdout).toContain("(recorded 2026-08-01)");
     await p.destroy();
   });

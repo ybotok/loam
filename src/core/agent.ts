@@ -19,6 +19,12 @@
  * contract: it records which loam wrote the file, so `loam validate --all` can
  * say when the tables below describe a binary that no longer exists
  * (`agents.stale` — detection only, never a rewrite; agents-stamp.ts).
+ *
+ * The per-tool command and skill files carry the SAME stamp, for the same
+ * reason and with the same answer: `loam doctor` reports `doctor.agent-files-stale`
+ * and never rewrites. Without it, absence was the only drift loam could see —
+ * a command file mangled to one line left doctor saying `healthy: true`, which
+ * across a hundred repositories is invisible rot with no repair path.
  */
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -348,7 +354,10 @@ says so once and stops the warning for good.
 1. **Adopt** — a service with no documentation at all starts at
    \`loam adopt --service <id> --json\`, which briefs you on the baseline to write.
    See "Adopting a service" below. Once per service, not once per feature.
-2. **Understand** — \`loam list --json\`, \`loam show <service> --json\`.
+2. **Understand** — \`loam status --json\` first if you joined halfway or lost the
+   session: it says what is in flight and what the next step is, for the fleet or
+   for one feature (\`loam status FEAT-101 --json\`). Then \`loam list --json\` and
+   \`loam show <service> --json\`.
    Never propose a change to a service you have not read.
 3. **Scaffold** — \`loam new FEAT-101 --title "..." --touches <existing> --new-service <new>\`.
    The scaffold leaves a \`delta.likec4\` whose context elements are commented out —
@@ -434,10 +443,35 @@ a failed hook, or no matching scenario at all, is \`unconfirmed\` with the
 reason. The digest is the only identity: a reworded spec scenario matches
 nothing until the suite is regenerated and re-run. When a report exists,
 ALWAYS pass \`--results\` — under it the runner owns every scenario claim, and
-an answers-file entry for one is refused. \`--record\` without \`--results\` is
-the fallback for a service with no runnable suite yet: there your word answers
-the scenario claims too, and the record says so (\`answered_by: agent\`) — an
-assertion a reviewer can weigh, never proof a test ran.
+an answers-file entry for one is refused.
+
+\`--record\` without \`--results\` is the fallback for a service with no runnable
+suite yet: there your word answers the scenario claims too. It still works, and
+it costs something you must know about. The record says who answered
+(\`answered_by: agent\`), and that answer changes the VERDICT: a feature whose
+scenario claims rest on an agent's word is **attested**, not verified.
+\`verify --json\` reports \`verdict: "attested"\` with \`verified: false\` and an
+\`attested\` count, \`loam status\` marks it and adds a \`next.verify-attested\` step,
+and the notice rides in \`notices[]\` under \`verify.scenario-attested\` (warn —
+nothing gates on it, because a legacy service with no suite must still be able
+to ship). Answer them mechanically the moment a suite runs:
+\`loam verify <FEAT> --results <report.json>\`.
+
+Two more codes belong to the record itself. \`verify.record-miscounted\` (error):
+a \`verification.yaml\` whose \`summary\` block contradicts its own \`claims[]\` — the
+record is refused as unreadable rather than believed in either half, and
+re-recording is the repair, never editing the counts. \`verify.digest-contested\`
+(warn): two or more services word a scenario identically, so they share one
+\`@loam-digest-…\` tag and no single cucumber report can say whose suite ran it —
+those scenario claims are left unconfirmed, and each service records its own
+from its own repository with \`--service\`.
+
+A consumed report is written down: \`report\` on the record (or on that
+repository's attestation) carries the path, a sha256 of the bytes, the file's
+mtime and how many tagged scenarios it held. That identifies WHICH file
+answered the claims, and — when the file is committed — that it matches the
+attested commit. It does not prove the file came from executing that commit; no
+digest can.
 
 Everything else you answer from the code, and \`--record answers.json\` takes
 those back, writing \`features/<FEAT>/verification.yaml\` — it travels into the
@@ -578,28 +612,50 @@ selected that tool. The map of which invocation surfaces what:
   against it — what exists is wrong), \`ready\` (on disk and clean, but something
   outside the documents — code, a test run, a recording — still has to answer it)
   or \`done\`. The payload's reason to exist is \`next[]\`: ordered, first entry
-  first, each carrying a code and the literal command to run. Fleet-wide those are
+  first, each carrying a code and the literal command to run. \`next.recover-commit\`
+  outranks every other step in both forms and is never elided: a \`.loam-commit\`
+  journal says an archive or unarchive was killed mid-commit, so some of the files
+  everything below is derived from may be half-written. Its command is that exact
+  archive/unarchive re-run, which repairs from the pre-image first, under the lock
+  — except when the journal itself cannot be read, where it is \`loam doctor\` and
+  the repair is a human's comparison against version control. Fleet-wide the rest are
   \`next.adopt\` (a service with no spec.md — nothing about it is written down, so
-  no feature can be graded against it), \`next.feature\` (something is in flight;
+  no feature can be graded against it), \`next.complete-service\` (a living spec.md
+  with no model.likec4 beside it), \`next.feature\` (something is in flight;
   ask \`loam status <FEAT>\` about it), \`next.archive\` (authored and verified —
-  ship it, and everything waiting on it is released) and \`next.fleet-clean\`
-  (nothing is owed). On one feature: \`next.author-intent\`, \`next.touch-service\`
+  ship it, and everything waiting on it is released), \`next.fleet-clean\`
+  (nothing is owed), \`next.elided\` (the fleet list hit its cap and says how many
+  steps of the same kinds it left out — it is ordered most-unblocking first, so
+  work down it and re-run) and \`next.fleet-gate\` (always last while anything is
+  outstanding: \`loam validate --all\` is what CI runs, and the fleet form grades
+  nothing itself). On one feature: \`next.author-intent\`, \`next.touch-service\`
   (no per-service delta at all yet), \`next.author-spec\`, \`next.author-openapi\`,
   \`next.author-scenarios\`, \`next.rebase\` (requirements or operations with no
   baseline pin — until they have one the merge cannot tell what it EDITS from what
   it merely quotes), \`next.archive-first\` (another feature in flight has to land
   before this one), \`next.fix-coherence\` (the three axes disagree and archive
-  refuses), \`next.verify\` (the done-check has not been started — or its record
+  refuses), \`next.generate-tests\` (a per-service delta carries scenarios no test
+  run has answered — \`loam gherkin <FEAT> --service <svc>\` in that service's own
+  repository), \`next.verify\` (the done-check has not been started — or its record
   will not read, or it answers a checklist the feature has since moved out from
   under, which is not the same as a finished one), \`next.verify-unconfirmed\`
   (started, and claims are still open — close them from each affected service's
-  own repository), \`next.archive\`, and \`next.archived\` for one that shipped.
+  own repository), \`next.attest-service\` (this repo IS one of the services that
+  owes an answer, so the step is bound to this commit), \`next.verify-attested\`
+  (every claim is confirmed but a scenario rests on an agent's word rather than a
+  green run — see "The done-check"), \`next.archive\`, and \`next.archived\` for one
+  that shipped.
   It grades nothing of its own: the verdict is the one \`loam validate --feature\`
-  and \`loam archive\` compute, so a status that says clean and a gate that refuses
-  can never be two different opinions.
+  and \`loam archive\` compute — status takes the UNION of what both of them refuse,
+  so it may be more pessimistic than either and can never be greener than both.
+  \`verification\` carries \`verdict\` (\`verified\` | \`attested\` | \`unverified\`)
+  and \`attested\` (how many scenario claims rest on an agent's word) beside the
+  recounted totals, and \`checks.issues[]\` carries \`gates\` and \`details\` on every
+  finding.
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
-  \`requirements.missing-scenarios\`, \`spec.duplicate-requirement\`,
+  \`requirements.missing-scenarios\`, \`requirements.stepless-scenario\`,
+  \`spec.merge-conflict\`, \`spec.duplicate-requirement\`,
   \`spec.no-requirements\`, \`spec.repeated-operations\`, \`spec.repeated-covers\`,
   \`openapi.invalid\`, \`openapi.duplicate-operationid\` (one operationId in two
   (path, method) slots — every join on the id then picks one of them arbitrarily),
@@ -616,11 +672,15 @@ selected that tool. The map of which invocation surfaces what:
   answers to that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
+  \`delta.service-unknown\`,
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
   \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,
   \`spec.repeated-operations\` / \`spec.repeated-covers\` (on the feature's own
   spec deltas — same silent-line-loss check as service scope),
+  \`spec.merge-conflict\` / \`requirements.stepless-scenario\` (same codes as
+  service scope, graded on the feature's spec.md and arch.spec.md deltas —
+  both breaches merge into the living document),
   the architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
   feature's arch.spec.md deltas), and
   the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
@@ -635,9 +695,13 @@ selected that tool. The map of which invocation surfaces what:
   is what computes it: \`order\` is a dependency-first sequence, \`conflicts\`
   the pairs no ordering fixes, \`cycles\` the ones that need a human.
 - \`loam validate --all\` runs both of those for everything and adds the fleet
-  cross-check: \`landscape.missing\`, \`landscape.invalid\`, \`landscape.service-unmodelled\`,
+  cross-check: \`landscape.missing\`, \`landscape.invalid\`,
+  \`landscape.merge-conflict\`, \`landscape.service-unmodelled\`,
   \`landscape.service-undocumented\`, \`landscape.binding-unknown\`,
-  \`landscape.binding-duplicate\`, plus a per-service
+  \`landscape.binding-duplicate\`, \`service.id-invalid\` (a \`services/<id>/\`
+  directory no loam command can address — fleet scope only, and graded before
+  the map is opened, so it stands even when the landscape is missing or
+  unreadable), plus a per-service
   \`sources.unverifiable-from-here\` (severity \`ok\`, one per service whose
   \`sources\` only its own repo can check — it is a confirmation, not work, and
   the fleet rollup line is derived from those findings), and one check on this very file — \`agents.stale\`
@@ -655,16 +719,62 @@ selected that tool. The map of which invocation surfaces what:
   at all — \`doctor.landscape-merge-conflict\` (it still holds \`<<<<<<<\` markers,
   so it is two halves of two different maps), \`doctor.landscape-invalid\` (it does
   not parse) and \`doctor.landscape-unreadable\` (it is there but could not be
-  read). Accessibility, portability and incomplete binding stay warnings:
+  read). It also grades what a WRITE that did not finish left in the docs repo,
+  reported as \`writePath\` beside the findings: \`doctor.docs-locked\` (a held
+  \`.loam-lock\` — a warning while its holder is alive, since the answer is to wait
+  and re-run, and a BLOCKER once the holder is a process that no longer exists on
+  this host, since nothing will ever release it and every archive and unarchive
+  refuses \`docs-busy\` until it is deleted), \`doctor.commit-interrupted\` (blocker:
+  a \`.loam-commit\` naming an archive or unarchive that was killed mid-commit, so
+  the living docs may be half-written — re-run that exact command and it recovers
+  first, under the lock), \`doctor.commit-unreadable\` (blocker, and the worst case:
+  the record of which files that commit had already written cannot be parsed, so
+  nothing can grade it — compare against version control by hand) and
+  \`doctor.staging-temps\` (warn: orphaned \`.loam-*.tmp\` scratch that was never
+  linked into place — litter, not damage). Accessibility, portability and
+  incomplete binding stay warnings:
   \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.docs-absolute\`
   (\`docsDir\` stored as an absolute path in a committed loam.json — it resolves
   only on the machine that ran \`loam init\`), \`doctor.inventory-unreadable\`,
   \`doctor.landscape-missing\`, \`doctor.service-unbound\`, \`doctor.service-unknown\`,
-  and \`doctor.agent-files-missing\` — some of the command or skill files this loam
-  lays down for the tools this repo selected are absent, because it was
-  initialized by an older binary or they were deleted. Re-running \`loam init\`
-  writes only what is missing and never touches an existing file, so leaving it
-  standing costs entry points and nothing else.
+  and the two about this repo's own generated command and skill files:
+  \`doctor.agent-files-missing\` — some of them are absent, because the repo was
+  initialized by an older binary or they were deleted — and
+  \`doctor.agent-files-stale\` — some that ARE here carry no
+  \`<!-- generated by loam vX.Y.Z -->\` stamp, or one older than the running
+  binary, so the protocol and code tables they instruct an agent with may
+  describe a loam that no longer exists. EXPECT the second one on the first
+  \`loam doctor\` after an upgrade, on a repo nobody has touched: stamping is
+  newer than the files, so nothing written by an earlier loam carries a stamp
+  at all, and every one of them reads as unstamped. That is the intended
+  reading — an unstamped file is one nobody has confirmed still describes this
+  binary — but it means the finding is not evidence that anything was edited or
+  broken.
+  For the first, run the command the finding's own \`fix\` field spells: it names
+  this repo's \`docsDir\`, its service binding and its tool ids explicitly, and
+  \`loam init\` writes only the command and skill files that are absent and never
+  touches one that already exists. (It does rewrite \`loam.json\` — but a re-run
+  with no \`--docs\` keeps the pointer the file already commits, so it cannot move
+  the fleet under you. Reach for \`--create\` only to make a docs repo that does
+  not exist yet; beside a working \`docsDir\` it scaffolds a second, empty source
+  of truth and \`validate --all\` then goes green over an empty fleet.)
+  For the second there is no command: the repair is by hand, one file at a
+  time. Read each file the finding names against the body this loam writes,
+  then set (or add) its stamp line to \`<!-- generated by loam vX.Y.Z -->\` for
+  the running version — or, if you have no local edits worth keeping, delete
+  that file and re-run \`loam init\`, which lays the current one down. Neither is
+  ever regenerated in place: your edits outrank the template, so detection is
+  all loam does, and the stamp is a human's claim that the file still means what
+  it says rather than a refresh. Leaving either finding standing costs entry
+  points and the accuracy of what the entry points say, nothing else.
+- \`loam rebase <FEAT>\` writes the baseline pins: \`Based-On:\` under every
+  MODIFIED/REMOVED requirement in the feature's spec deltas, and
+  \`x-loam-based-on\` on every operation in its openapi.yaml, from the living text
+  as it stands right now. Run it when you finish authoring a delta and again
+  after you resolve a collision — it is the one mechanism standing between two
+  features in flight and silently reverting each other's landed work. It refuses
+  rather than inventing a pin, and re-pinning is not resolving: see
+  "The requirement baseline".
 - \`loam dependencies [<FEAT>]\` derives the ordering of the features in flight
   from the artifacts themselves — requirement identities and OpenAPI
   operationIds, never from validator prose. It is the answer to every
@@ -674,16 +784,33 @@ selected that tool. The map of which invocation surfaces what:
   \`--write-mapping\` writes a non-overwriting, digest-bound decision skeleton
   outside the source tree. \`loam migrate-openspec <root> --map <file>\` validates
   that mapping and stays dry-run unless both \`--apply\` and an empty \`--target\`
-  are supplied. Living/active shape diagnostics are \`openspec.specs-missing\`,
+  are supplied. Living/active shape diagnostics are \`openspec.workspace-empty\`
+  (the audited root holds no living spec and no active change, so there is
+  nothing to migrate and no verdict over it can be \`ready\`),
+  \`openspec.specs-missing\`,
   \`openspec.config-invalid\`, \`openspec.external-store-pointer\`,
   \`openspec.living-empty\`, \`openspec.living-requirements-outside-section\`,
-  \`openspec.living-delta-section\`, \`openspec.change-metadata-invalid\`,
+  \`openspec.living-delta-section\`, \`openspec.nonstandard-living-spec\` (markdown
+  under \`specs/\` named neither spec.md nor design.md, so no capability reads
+  it), \`openspec.change-metadata-invalid\`,
   \`openspec.change-schema-unresolved\`, \`openspec.skip-specs-with-specs\`,
   \`openspec.change-no-specs\`, \`openspec.change-empty\`,
   \`openspec.change-without-delta-sections\`,
   \`openspec.change-requirements-outside-delta-sections\`,
+  \`openspec.change-quoted-requirements\` (requirements under a \`## Requirements\`
+  heading INSIDE a change delta — the shape OpenSpec's own living-spec template
+  mandates, and one that stages nothing, so loam refuses it rather than counting
+  requirements it cannot route),
+  \`openspec.hidden-change-directory\` (a dot-prefixed directory under
+  \`changes/\` is not enumerated as a change, so nothing under it migrates —
+  rename it or move it out; under \`changes/archive/\` the same code is an archive
+  diagnostic and does not gate, because frozen history never blocks),
   \`openspec.nonstandard-change-spec\`, \`openspec.renamed-malformed\`,
-  \`openspec.symlink-unsupported\`, and \`openspec.non-utf8-artifact\`;
+  \`openspec.requirement-id-invalid\`, \`openspec.requirement-id-repeated\`,
+  \`openspec.requirement-id-duplicate\` (a stable \`Requirement-ID\` that is
+  malformed, declared twice, or shared by two requirements — identity is never
+  inferred from an invalid declaration, so the RENAMED chain cannot be followed
+  through it), \`openspec.symlink-unsupported\`, and \`openspec.non-utf8-artifact\`;
   the same shapes in frozen history are non-blocking archive diagnostics.
   Mapping refuses stale or incomplete decisions under \`mapping.source-missing\`,
   \`mapping.source-root-mismatch\`, \`mapping.source-digest-mismatch\`,
@@ -723,8 +850,12 @@ selected that tool. The map of which invocation surfaces what:
 - \`loam archive\` alone reports the breaches only the merge computation can see:
   \`living.requirement-outside-requirements\` (error), \`openapi.op-modified\` (warn),
   \`openapi.path-item-modified\` (warn), \`openapi.component-modified\` (warn),
-  \`openapi.ref-unresolved\` (error) and \`service.no-model\` (warn — the archive
-  creates \`services/<id>/\` and nothing writes its model.likec4).
+  \`openapi.ref-unresolved\` (error), \`openapi.remove-marker-path-level\` (error —
+  an \`x-loam-remove: true\` written at PATH level, beside the methods rather than
+  inside one: it addresses no operation, so it retires nothing, and it is not a
+  contract key either) and \`service.no-model\` (warn — the archive creates
+  \`services/<id>/\`, or puts a service in the landscape the fleet has no directory
+  for at all, and nothing writes its model.likec4).
 
 \`loam validate <target>\` is the positional spelling of the first two: a feature id
 or a service id, tried in that order, so the feature wins when one name could be
@@ -770,14 +901,21 @@ to scaffold over an existing feature), \`sources-absent\` / \`sources-path-missi
 \`vouch-raced\` (\`loam vouch\` refusing to stamp — the last one when the document
 changed between the read and the write, so nothing was written),
 \`not-coherent\` / \`living-outside-requirements\` /
-\`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` / \`docs-busy\`
+\`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` / \`docs-busy\` /
+\`commit-interrupted\`
 (\`loam archive\` — see the
 archive gate below; \`docs-busy\` means another archive or unarchive holds the docs
 repo's lock, nothing was read or written, and re-running once it finishes works),
-\`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` /
-\`restore-failed\` / \`rollback-incomplete\` / \`docs-busy\` (\`loam unarchive\` — the
+\`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` / \`snapshot-corrupt\` /
+\`restore-failed\` / \`rollback-incomplete\` / \`docs-busy\` / \`commit-interrupted\`
+(\`loam unarchive\` — the
 \`restore-failed\` / \`rollback-incomplete\` pair splits
-exactly as archive's does; see "Taking an archive back"), \`gherkin-conflict\`
+exactly as archive's does; see "Taking an archive back"). \`commit-interrupted\` is
+the pair's shared refusal: a previous archive or unarchive was killed mid-commit
+and this run cannot repair it on its own — a half-written file has been edited
+since, the repairing pre-image is gone or altered, or \`.loam-commit\` itself
+cannot be read. \`loam doctor\` names the same state as
+\`doctor.commit-interrupted\`. And \`gherkin-conflict\`
 (\`loam gherkin <FEAT>\` would overwrite a \`.feature\` file owned by another
 feature still in flight — the whole emission refuses and names the owner),
 \`answers-unreadable\` / \`answers-mismatch\` /
@@ -839,6 +977,12 @@ or delete that directory, and never reconstruct an old living spec by hand from 
 archived delta: what the requirement said BEFORE is not in there, and a plausible
 reconstruction is a lie the next reader has no way to catch.
 
+Every pre-image is digested when the archive writes it, and re-checked before the
+restore stages anything: \`snapshot-corrupt\` means a pre-image's bytes no longer
+match the digest archive recorded for them, so restoring it would write text
+nobody authored. \`--force\` does NOT override that one — the damage is to the
+undo itself, not to the living docs — and the fix is version control.
+
 It refuses rather than guesses, under codes you can branch on: \`feature-active\` (a
 feature of that id is in flight again), \`snapshot-missing\` (archived before loam
 recorded this — the docs have to come back from version control), \`snapshot-stale\`
@@ -895,6 +1039,11 @@ result. It never reads the service — so anything you cannot show, do not write
    docs repo does not exist yet), then \`loam doctor\` — it resolves \`docsDir\`,
    checks the docs repo is one, and reports the service binding. Do not go on with
    \`docs-missing\`, \`services-missing\` or any \`doctor.*\` blocker standing.
+   Every \`doctor\` finding carries a \`fix\` field spelling the exact command —
+   type that, not an approximation of it.
+   If this repo is already wired, \`loam status --json\` in the docs repo is the
+   fastest way to see whether $1 is even the service that owes work next: its
+   \`next.adopt\` entries name the services with nothing written down yet.
 1. \`loam adopt --service $1 --json\`. That output IS the brief:
    - \`warnings[]\` — read these FIRST. A near-miss against an existing service id
      usually means \`$1\` is a typo, and a brief followed to the letter then produces
@@ -947,13 +1096,20 @@ behaviour nobody can find is the one failure mode none of loam's checks can catc
 1. Read \`AGENTS.md\` at the root of the docs repo first — it defines the ID spine
    everything here depends on.
 2. Understand the current state before proposing a change:
+   - \`loam status --json\` — what is already in flight and what it is waiting on.
+     Run this FIRST if you joined this repository halfway or lost the session:
+     \`next[]\` is ordered and each entry carries the literal command to run, so it
+     tells you whether the work is to start $1 at all. \`loam status $1 --json\`
+     narrows it to one feature once $1 exists
    - \`loam list --json\` — what services exist, and what documentation they are missing
    - \`loam show <service> --json\` — what a service owns, exposes, and who already calls it
 3. Scaffold it: \`loam new $1 --title "$2"\`, adding \`--touches <id>\` for every service the
    feature touches and \`--new-service <id>\` for every one it introduces. Every id goes
    through the \`services/<id>/\` grammar, so a typo is refused (\`invalid-option\`)
    rather than scaffolded; a \`--touches\` that matches nothing existing comes back as
-   a \`note\` with the close ids, not as a failure.
+   a \`note\` with the close ids, not as a failure — read it, because a \`--touches\`
+   naming a service that does not exist is \`delta.service-unknown\` at validate time
+   and a phantom \`services/<typo>/\` directory if it ever archives.
 4. Author what the templates left as TODO:
    - \`intent.md\` — the problem in business terms
    - \`delta.likec4\` — new elements and edges, each tagged \`#$1\`; every call edge carries
@@ -965,10 +1121,22 @@ behaviour nobody can find is the one failure mode none of loam's checks can catc
      idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
      tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
    - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference
-5. \`loam validate --feature $1 --json\`. Do not stop while \`valid\` is false.
-6. \`loam dependencies $1 --json\` before anyone starts building: it says which
+5. **\`loam rebase $1\`** — the step between authoring and checking, and the one that
+   stops two features in flight from silently deleting each other's work. It pins
+   every MODIFIED/REMOVED requirement (\`Based-On:\`) and every operation in the
+   contract delta (\`x-loam-based-on\`) to the living version you wrote against.
+   Run it on the contract axis even if you changed exactly one endpoint: that is
+   what marks the REST of the document as quotation the merge must not write back.
+   Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` warn,
+   nothing refuses, and the second feature to archive reverts the first — with
+   \`+0 ~1 -0\`, exit 0, and nobody told.
+   Restamping is not resolving: if rebase reports a requirement as MOVED, re-read
+   the living text and fold in what you still mean BEFORE you ship.
+6. \`loam validate --feature $1 --json\`. Do not stop while \`valid\` is false.
+7. \`loam dependencies $1 --json\` before anyone starts building: it says which
    features in flight have to archive first (\`order\`) and which collisions no
-   ordering fixes (\`conflicts\`, \`cycles\`).
+   ordering fixes (\`conflicts\`, \`cycles\`). Every conflict it names is one \`loam rebase\`
+   cannot fix for you — two intentions have to be merged by people.
 
 The operation's three spellings — the edge's \`op\`, the requirement's \`Operations:\`
 line, and the OpenAPI \`operationId\` — must match exactly.
@@ -983,6 +1151,11 @@ line, and the OpenAPI \`operationId\` — must match exactly.
 repository, which needs its own committed ./loam.json — if there is none,
 \`loam init --docs <path-to-docs-repo> --service $2\` then \`loam doctor\` first.
 
+0. \`loam status $1 --json\` — where this feature actually is. Run it before
+   anything else if you joined halfway or lost the session: it says which
+   artifacts are still owed, whether another feature has to archive first, and
+   what the next step is, each \`next[]\` entry carrying the literal command. It
+   writes nothing, so it is always safe to re-run.
 1. \`loam delta $1 --service $2 --json\` (drop \`--service\` to use the service configured
    in ./loam.json). That output IS the task:
    - \`intent\` — why this exists
@@ -1014,7 +1187,18 @@ repository, which needs its own committed ./loam.json — if there is none,
    refused (\`record-federated\`) once another service has attested.
 5. Honour the contract: every operation in \`architecture.inbound\` must exist under
    exactly that operationId, and every one in \`architecture.outbound\` must be called.
-6. \`loam validate --feature $1 --json\` before handing back.
+6. If building made you change the feature's documents at all — a requirement's
+   wording, an operation in its openapi.yaml — **\`loam rebase $1\`** before you
+   validate. Every edit you make in the docs repo while other features are in
+   flight is written against a living document that may have moved since the
+   feature directory was created, and the pins are the only thing that lets the
+   merge tell an EDIT from a QUOTE. \`delta.baseline-missing\` and
+   \`openapi.baseline-missing\` are the warnings that say you skipped it;
+   \`delta.baseline-stale\` / \`openapi.baseline-stale\` are archive refusing because
+   somebody landed a change underneath you — re-read theirs, fold in what you
+   still mean, then rebase again. Re-pinning without re-reading is how you
+   overwrite someone else's requirement with loam's blessing.
+7. \`loam validate --feature $1 --json\` before handing back.
 
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
 leave the spec disagreeing with the code.
@@ -1051,6 +1235,8 @@ and say it.
 | \`service.no-model\` | the directory is real but there is no model.likec4 | run \`loam adopt\` for it — without the C4 center nothing else has anywhere to hang |
 | \`c4.invalid\` | model.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
 | \`requirements.missing-scenarios\` | a requirement with no scenario | add the acceptance criteria; do not delete the requirement |
+| \`requirements.stepless-scenario\` | a scenario with a heading and no recognizable steps — it satisfies the coverage rule and tests nothing: cucumber runs it vacuously green and \`loam verify --results\` can never confirm it. Graded on spec.md and arch.spec.md alike, in \`--service\` and \`--feature\` scope both, because a stepless scenario in a delta merges into the living spec and is called covered forever after | write the body as \`- **Given/When/Then**\` bullets |
+| \`spec.merge-conflict\` | a requirement document still holds \`<<<<<<<\` / \`=======\` / \`>>>>>>>\` markers — nobody wrote what it now says. Graded on living spec.md/arch.spec.md and on a feature's deltas of them, in both scopes | resolve the conflict in the file the finding names. \`loam archive\` refuses (\`merge-failed\`) on a conflicted living document it would rewrite, and \`--approve\` does not override it: the merge rewrites the requirements section and takes whichever marker lines fall inside it, so a conflict anyone can see would become a document nobody can tell is wrong |
 | \`spec.duplicate-requirement\` | one \`### Requirement:\` name defined twice in one living spec.md or arch.spec.md — a merge edits only the first, the rest live on as stale copies | keep exactly one block per name (merge the bodies); the two files are separate namespaces, so a name in both is fine |
 | \`spec.requirement-id-invalid\` | a \`Requirement-ID\` violates \`[A-Za-z][A-Za-z0-9._-]{0,127}\` | replace it with a portable stable ID; do not remove an established ID merely to silence the check |
 | \`spec.requirement-id-repeated\` | one requirement declares \`Requirement-ID\` more than once | keep exactly one identity line |
@@ -1060,7 +1246,7 @@ and say it.
 | \`spec.no-requirements\` (warn) | a LIVING spec.md with no \`### Requirement:\` block at all — every requirement-driven check below it is vacuous, not passing | write the requirements, or say in the file why the service has none yet |
 | \`service.unreadable\` | an artifact of this service could not be read (permissions, a dangling symlink) — nothing about the service was checked, and the rest of the fleet still was | fix the file the finding names; a service silently skipped would have read as a clean one |
 | \`service.no-spec\` (warn) | no living spec.md — a part-adopted service, legal but unchecked | write it; until it exists, requirement coverage and API governance are vacuous |
-| \`service.no-openapi\` (warn) | no openapi.yaml, and the landscape cannot prove nobody calls this service | write the contract, or model the service so the fleet map shows no one expects an API |
+| \`service.no-openapi\` (error, or warn) | no openapi.yaml — deleted, renamed, or never written. ERROR when something already written down joins into the absent file: a LIVING non-REMOVED requirement's \`Operations:\` line, or a landscape edge carrying \`metadata { op }\` into this service. The finding's \`details\` list the stranded operationIds. WARN when nothing joins into it but the landscape cannot prove nobody calls this service (it is absent, or it does not parse). Silent when the landscape parses and no edge calls an operation here — a worker, a cron or a UI owes no contract | error: put the file back — every link the \`details\` name resolves to nothing until it is there. If the operations are genuinely gone, retire them through a feature delta (REMOVED requirement + \`x-loam-remove\` marker) instead of deleting the contract out from under them. warn: write the contract, or model the service in the fleet map so it shows no one expects an API |
 | \`openapi.invalid\` | openapi.yaml exists but does not parse — an unreadable contract proves nothing, so no \`api.*\` or spine finding is graded against it (before this code, the empty parse graded every inbound edge \`spine.op-undefined\`) | fix the YAML first — the API axis is unchecked until it reads |
 | \`openapi.remove-marker-living\` | a living openapi.yaml contains feature-only \`x-loam-remove: true\` | remove the marker from living; retire the operation through a feature delta with a matching REMOVED requirement |
 | \`openapi.duplicate-operationid\` (warn) | one operationId occupies two (path, method) slots in a living contract — every join on the id (a requirement's \`Operations:\` line, an edge's \`metadata { op }\`, a removal marker) then picks one of them arbitrarily | give each slot its own id; the identity of an operation is its path and method, and the id is how the other axes name it |
@@ -1090,6 +1276,9 @@ what lets a feature ship:
 |---|---|---|
 | \`delta.invalid\` | delta.likec4 does not parse | fix this first — an unreadable axis makes every other check meaningless |
 | \`delta.nothing-tagged\` | the delta declares elements/relationships but none carry \`#<FEAT>\` | tag what IS the change — untagged parts are context, and archive merges only tags |
+| \`delta.service-unknown\` | a \`specs/<svc>/\` directory addresses a service that neither exists as \`services/<svc>/\` nor is introduced by this feature's own tagged delta.likec4 — a typo in \`--touches\`, which archive would otherwise materialise as a phantom service directory | fix the id (the message offers close ones); suspended while \`delta.invalid\` stands, because an unparseable delta cannot be asked what it introduces |
+| \`spec.merge-conflict\` | a spec delta (\`specs/<svc>/spec.md\` or \`arch.spec.md\`) still holds \`<<<<<<<\` / \`=======\` / \`>>>>>>>\` markers — the same code and the same sentence as service scope, because the markers merge into the living document as prose under somebody's requirement | resolve the conflict before archive; the merge rewrites the requirements section and the marker lines inside it disappear with it |
+| \`requirements.stepless-scenario\` | a scenario in a spec delta with a heading and no steps — same code as service scope, and it merges into the living spec as a requirement the coverage rule calls covered from then on | write the body as \`- **Given/When/Then**\` bullets |
 | \`spec-api.op-undefined\` | a requirement governs an operation its provider's OpenAPI does not define | define the endpoint, or correct the \`Operations:\` line |
 | \`spec-api.op-pending\` (warn) | the governed operation is defined by another feature in flight | archive that feature first |
 | \`c4-api.op-undefined\` | an edge calls an operation the target does not expose | a broken contract between services — fix the caller or add the endpoint |
@@ -1133,6 +1322,8 @@ what lets a feature ship:
 |---|---|---|
 | \`landscape.missing\` | \`architecture/landscape.likec4\` does not exist — an ERROR as soon as \`services/\` holds one service, a warning only in an empty docs repo | create it: a \`specification { ... }\` block declaring the kinds, then a \`model { ... }\` block with one bound element per service (\`metadata { service '<id>' }\`) and one edge per cross-service call carrying \`metadata { op '<operationId>' }\`. With no fleet map every cross-service check is blind, not passing |
 | \`landscape.invalid\` | the living landscape does not parse | fix it first — the fleet cross-check cannot run against a document nobody can read |
+| \`service.id-invalid\` | a \`services/<id>/\` directory whose name is not a legal service id — every authoring command refuses it, so nothing in that directory can be changed through loam. Fleet scope only: the SET of service directories is what makes the id a question, and a \`--service\` run is already refused by its own guard before it gets this far. Graded before the map is opened, so it stands even when the landscape is missing or unreadable | rename the directory, then update its \`service:\` frontmatter, its \`metadata { service }\` binding in the landscape, and any \`features/<FEAT>/specs/<id>/\` naming it |
+| \`landscape.merge-conflict\` | the fleet map still holds conflict markers — it is two halves of two different maps, and every cross-service check reads it. Checked BEFORE the parse and returns like \`landscape.invalid\`: nothing is concluded from the file, so no \`landscape.service-unmodelled\` fires behind it | resolve it keeping BOTH sides' elements and edges; ten people adopting ten services into one landscape.likec4 in the same week is how it happens. \`loam archive\` refuses on it too (\`merge-failed\`, not overridable with \`--approve\`) |
 | \`landscape.service-unmodelled\` | a \`services/<svc>/\` no element in the landscape resolves to | draw it, or bind an existing element with \`metadata { service '<svc>' }\` — the fleet map is incomplete until you do |
 | \`landscape.service-undocumented\` (warn) | a landscape element with no \`services/<id>/\` | document the service, bind the element to the directory it means, or tag it \`#external\` if it is not ours |
 | \`landscape.binding-unknown\` | an element's \`metadata { service }\` names a directory that does not exist | fix the id or create the service — a binding is a claim, and this one is false |
@@ -1170,6 +1361,7 @@ plan time (they never appear in \`validate\`):
 | \`service.no-model\` (warn) | the archive creates \`services/<id>/\` but nothing writes its \`model.likec4\` | run \`loam adopt --service <id>\` after the archive lands, or the new service ships without a C4 center and \`validate --all\` grades it incomplete |
 | \`openapi.component-modified\` (warn) | a component the merged operations reference already exists in the living OpenAPI with different content — the merge copies the feature's version over it wholesale | make sure the redefinition is intended; if not, align the feature's component with the living one |
 | \`openapi.ref-unresolved\` | a \`$ref\` reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — the merge would write a dangling reference | define the missing component or fix the ref; \`--approve\` merges the dangling reference anyway. External refs (not starting \`#/\`) are never checked |
+| \`openapi.remove-marker-path-level\` | an \`x-loam-remove: true\` written at PATH level, beside the methods instead of inside the operation being retired — it names no operation, so it retires nothing, and it is not a contract key either | move the marker inside the operation (with its \`operationId\`), or delete it. The merge is safe either way — a feature-only key is never published into the living contract — but the removal you asked for will not happen |
 
 \`sources.stale\` and \`content.stale\` are the warnings you cannot close by yourself.
 Fix what the code now says, then hand it back — the stamp is a person's claim to
@@ -1200,6 +1392,15 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    SpecFlow emit the same format). The generated scenarios carry
    \`@loam-digest-…\` tags that ride into the report; that digest is the match,
    so never retitle or hand-edit a generated scenario to make one pass.
+   If there is no runnable suite yet you MAY answer them yourself, and the record
+   will say so: \`answered_by: agent\` makes the feature **attested**, not verified
+   (\`verified: false\`, \`verdict: "attested"\`, the \`verify.scenario-attested\`
+   notice, and a \`next.verify-attested\` step in \`loam status\`). Nothing gates on
+   it — a legacy service with no suite must still be able to ship — but say so
+   when you hand back, and close it with \`--results\` the moment a suite runs.
+   \`verify.digest-contested\` (warn) is the case where two services word a
+   scenario identically: they share one digest, so no single report can say whose
+   suite ran it, and each service must record its own with \`--service\`.
 3. Answer every OTHER claim by finding it in the code. Not by reasoning that it
    must be there — by opening the file:
    - \`service.exists\` — the service is deployable: its build, its entry point.
@@ -1240,7 +1441,10 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    \`answers-unevidenced\` (a \`confirmed\` with nothing behind it),
    \`answers-unreadable\` (a report or answers file it cannot read),
    \`record-unreadable\` (a \`verification.yaml\` that exists but cannot be read as a
-   record — it is never overwritten; a human repairs it),
+   record — it is never overwritten; a human repairs it, and
+   \`verify.record-miscounted\` is the reason when its \`summary\` block contradicts
+   its own \`claims[]\`: neither half can be believed, so re-record rather than
+   editing the counts),
    \`service-mismatch\` (\`--service\` names a service this repo does not declare) and
    \`repository-unavailable\` (\`--service\` from a repo that declares none, or whose
    commit cannot be read — an attestation must be bound to the code it is about).
@@ -1252,7 +1456,8 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
 7. Reading is safe from anywhere: \`loam verify $1 --service <id> --json\` without
    \`--record\` writes nothing and works from the docs repo too. \`services\` lists
    every subject of the checklist, so it is how you find out which repos still
-   owe an attestation.
+   owe an attestation, and \`loam status $1 --json\` says the same thing in the
+   shape of a next step.
 
 Anything you cannot show is \`unconfirmed\` with a note. That is a successful record,
 and it is the useful one: nothing gates on this file, so the only thing it is for is
@@ -1269,7 +1474,14 @@ everyone later.
 
 1. Confirm the code is actually built and merged. Archiving folds the delta into the
    living docs; doing it early makes the docs claim something that does not exist.
+   \`loam status $1 --json\` answers "is this actually finished" in one call, and its
+   \`next[]\` names what is outstanding if it is not.
 2. \`loam validate --feature $1 --json\` — must come back \`valid: true\`.
+   If it reports \`delta.baseline-missing\` or \`openapi.baseline-missing\`, run
+   \`loam rebase $1\` and re-validate BEFORE going on: those two say nothing has
+   pinned what this delta was written against, so the merge cannot tell the text
+   you EDITED from the text you merely restated, and it upserts all of it —
+   reverting whatever another feature landed in between, silently and with exit 0.
 3. \`loam archive $1 --dry-run --json\` first. \`plan[]\` is every file the merge would
    write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`), and
    none of them are written — read it before letting the merge touch the source of
@@ -1277,7 +1489,11 @@ everyone later.
    merge will do that is legal but lossy — advisory warnings never block, which is
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
    contract already defines gets overwritten wholesale (\`openapi.component-modified\`
-   is the same story for a component the merged operations carry), and \`delta.added-conflict\`
+   is the same story for a component the merged operations carry),
+   \`delta.baseline-missing\` / \`openapi.baseline-missing\` mean the pins are still not
+   there and this merge may revert somebody (go back to step 2),
+   \`service.no-model\` means a service arrives with no C4 centre behind it, and
+   \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
    ADDED now collides with the living spec) unless a human \`--approve\`s the
@@ -1290,7 +1506,9 @@ everyone later.
    - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,
      each with \`gates\` resolved (advisory warnings do not block). Fix the breaches.
      \`--approve\` overrides the gating issues and is a human's call to make, not
-     yours: report the breach and stop.
+     yours: report the breach and stop. \`openapi.remove-marker-path-level\` arrives
+     here too: an \`x-loam-remove\` written beside the methods instead of inside the
+     operation retires nothing.
    - \`living-outside-requirements\` — the LIVING spec holds a requirement outside
      \`## Requirements\`, and the merge would duplicate it. Re-home it, then re-run.
      \`--approve\` does not move this one.
@@ -1298,15 +1516,29 @@ everyone later.
      decides what it is.
    - \`merge-failed\` — the merge could not be computed, or failed and was rolled
      back. Either way the living docs are unchanged; fix the reported cause, re-run.
+     A file loam cannot decode as UTF-8 refuses here by name rather than being
+     rewritten with replacement characters. So does a living document that still
+     holds git conflict markers — the \`spec.merge-conflict\` /
+     \`landscape.merge-conflict\` findings ride in \`findings[]\`, and \`--approve\`
+     does not override them: the loss is mechanical, not a judgment call.
    - \`docs-busy\` — another \`loam archive\` or \`loam unarchive\` holds the docs
      repo's lock. Nothing was read or written; wait for it and re-run once.
+   - \`commit-interrupted\` — a previous archive or unarchive was killed mid-commit
+     and this run cannot repair it on its own: a half-written file was edited
+     since, its pre-image is gone or altered, or \`.loam-commit\` cannot be read.
+     Run \`loam doctor\` (\`doctor.commit-interrupted\` / \`doctor.commit-unreadable\`
+     name the same state) and hand it to a human — re-running does not help.
    - \`rollback-incomplete\` — the merge failed AND some files could not be restored.
      Stop and hand it to a human; the message lists the files to check.
 
 Archived by mistake? \`loam unarchive $1\` restores the living docs from the snapshot
 archive left in \`features/archive/$1*/.loam-before/\` and re-opens the feature. Do not
 hand-edit the living docs back instead: the previous text of a \`MODIFIED\` requirement
-is in that snapshot and nowhere else, so anything you write by hand is a guess.
+is in that snapshot and nowhere else, so anything you write by hand is a guess. It
+refuses under \`snapshot-corrupt\` when a pre-image's bytes no longer match the digest
+the archive recorded — \`--force\` does not override that one, because the damage is
+to the undo itself — and under \`snapshot-missing\` for an archive older than the
+current snapshot format. Both mean version control is the way back.
 `,
   },
 ];
@@ -1409,11 +1641,33 @@ const titledMd = (c: CommandContent): string => `# ${c.name}\n\n${c.body}`;
 /** The `loam-` prefix a namespace directory carries instead of the file name. */
 const unprefixed = (name: string): string => name.replace(/^loam-/, "");
 
+/**
+ * The command body a file actually gets: the shared protocol under the same
+ * version stamp AGENTS.md carries.
+ *
+ * Applied once, here, rather than in twenty wrappers — the stamp is a fact
+ * about loam, not about a tool's dialect, and a per-wrapper copy is twenty
+ * chances to forget it. It rides at the top of the BODY (not the file) because
+ * every dialect puts something of its own first: YAML frontmatter, a TOML key,
+ * a title line. An HTML comment is invisible in all of them, and
+ * `agentsStampVersion` matches it wherever in the file it lands.
+ *
+ * A repo initialized before stamping existed has unstamped files, which is
+ * exactly what `doctor.agent-files-stale` is for: nobody has confirmed that
+ * those instructions still describe this binary.
+ */
+const stamped = (c: CommandContent): CommandContent => ({
+  ...c,
+  body: `${agentsStampLine(LOAM_VERSION)}\n\n${c.body}`,
+});
+
 export const AGENT_TOOLS: Record<string, AgentTool> = {
-  // The original target and the default. This wrapper must stay byte-identical
-  // to what loam has always written: SLASH_COMMANDS below derives through it,
-  // and an already-initialized repo must read as fully scaffolded (`skipped`),
-  // never as drifted.
+  // The original target and the default. This WRAPPER must stay byte-identical
+  // to what loam has always written — SLASH_COMMANDS below derives through it —
+  // and an already-initialized repo must still read as fully scaffolded
+  // (`skipped` is existsSync, never content). What the wrapper wraps now
+  // carries a version stamp, which is the one thing about a generated file loam
+  // will report on; see `stamped`.
   claude: {
     path: (name) => [".claude", "commands", `${name}.md`],
     format: (c) =>
@@ -1585,7 +1839,7 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
  * files, so the export and the disk can never disagree.
  */
 export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
-  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format!(c)]),
+  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format!(stamped(c))]),
 );
 
 /** The two ways a command body reaches an agent. Both are on by default. */
@@ -1622,7 +1876,7 @@ export function plannedCommandFiles(
     }
     if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
     return emitters.flatMap((e) =>
-      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(c) })),
+      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stamped(c)) })),
     );
   });
 }
