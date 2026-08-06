@@ -2,9 +2,9 @@
 
 All notable project changes are recorded here. The format follows Keep a Changelog, and release versions follow Semantic Versioning.
 
-## [Unreleased]
+## [0.1.0-beta.1] - 2026-08-06
 
-This entry covers the pre-publication hardening pass. Most of it is not new capability — it is the difference between a command that reports a problem and one that was quietly blind to it, and in four places it is the difference between an undo that works and one that certifies text nobody wrote. Grouped by what a user would notice.
+The first published release, and a prerelease on purpose: it ships under the `beta` dist-tag, not `latest`. This entry covers the pre-publication hardening pass. Most of it is not new capability — it is the difference between a command that reports a problem and one that was quietly blind to it, and in four places it is the difference between an undo that works and one that certifies text nobody wrote. Grouped by what a user would notice.
 
 ### Fixed — data loss and silent failure
 
@@ -84,6 +84,6 @@ README, COMPARISON, SCHEMA and MIGRATING were re-checked claim by claim against 
 
 - The supported runtime now matches the direct LikeC4 dependency: Node.js 22.22.3 or newer.
 
-## Release candidate awaiting a date
+## Upgrading to this release
 
-`0.1.0-beta.1` is the current package version, but this file does not claim that it has been published. Before creating `v0.1.0-beta.1`, move the relevant notes into a dated `## [0.1.0-beta.1] - YYYY-MM-DD` section. The release preflight enforces that step.
+Nothing to upgrade from — this is the first published version. One note for a repository initialized from a pre-release build: the first `loam doctor` after installing this one reports `doctor.agent-files-stale` for **every** generated command and skill file. Earlier builds wrote no version stamp, so "no stamp" and "an old stamp" are indistinguishable, and loam refuses to assume the instructions on disk describe this binary. Read each file, then bump its stamp by hand, or delete it and re-run `loam init` — the drift is reported and never repaired for you.
