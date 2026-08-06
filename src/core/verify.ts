@@ -42,6 +42,7 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
 import { operationIds, operations } from "./openapi.js";
+import { isRecord } from "./records.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
 import { parseRequirements } from "./spec.js";
 
@@ -302,7 +303,7 @@ export function scenarioBodyHash(
  * make a record look stale. It changes when a claim is added, removed or
  * reworded, which is exactly when an answer set stops describing the feature.
  */
-export function checklistDigest(claims: Claim[]): string {
+function checklistDigest(claims: Claim[]): string {
   const ids = claims.map((c) => c.id).sort();
   return createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, DIGEST_LENGTH);
 }
@@ -488,10 +489,6 @@ function missingAdvice(
         "this all-at-once form has to answer the whole checklist in one file."
     : `Every unanswered claim belongs to a different service (${owners.join(", ")}) and this repository can only attest '${mine}' — ` +
         `run ${form} in each of those repositories instead.`;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function stringList(v: unknown): string[] {
@@ -702,7 +699,13 @@ export function buildVerification(
 ): Verification {
   const byId = new Map(answers.map((a) => [a.id, a]));
   const claims: RecordedClaim[] = checklist.claims.map((c) => {
-    const a = byId.get(c.id)!;
+    // Callers hand in an answer per claim — `runnerAnswers` is total over the
+    // checklist, and both other callers map the checklist to build theirs. The
+    // branch is here because the alternative to a diagnosis is a `TypeError` on
+    // `a.verdict`, which cli.ts reports as `internal` with a stack about a
+    // property of `undefined` and no word about which claim went missing.
+    const a = byId.get(c.id);
+    if (a === undefined) throw new Error(`buildVerification: no answer for claim ${c.id}`);
     return {
       id: c.id,
       kind: c.kind,
@@ -779,7 +782,16 @@ export function buildFederatedVerification(
     return current !== undefined && current.subject !== service && previouslyAttested.has(claim.id);
   });
   const local = answers.map((answer): RecordedClaim => {
-    const claim = currentById.get(answer.id)!;
+    // Same contract as `buildVerification`: an answer is built from the live
+    // checklist, so it always names a current claim. Off-checklist answers do
+    // NOT belong here — `discarded` means "an answer the PREVIOUS record held",
+    // and routing an incoming stray into it would change what the printed
+    // notice tells an operator. A caller that reaches this gets told which
+    // answer it was rather than a `TypeError` on `claim.kind`.
+    const claim = currentById.get(answer.id);
+    if (claim === undefined) {
+      throw new Error(`buildFederatedVerification: answer ${answer.id} names no current claim`);
+    }
     return {
       id: claim.id,
       kind: claim.kind,

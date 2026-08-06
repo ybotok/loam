@@ -4,6 +4,14 @@ import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { loadFile, serviceResolver } from "../core/likec4.js";
 import {
+  MATURITY_LADDER,
+  maturityGaps,
+  maturityRollup,
+  serviceMaturity,
+  type Maturity,
+  type MaturityInput,
+} from "../core/maturity.js";
+import {
   DocsRepoUnavailableError,
   compareIds,
   landscapePath,
@@ -20,7 +28,7 @@ import {
   verificationVerdict,
   type VerificationVerdict,
 } from "../core/verify.js";
-import { docsRepoReady, reportDocsRepoError } from "./validate.js";
+import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 
 type Section = "services" | "features";
 const SECTIONS: Section[] = ["services", "features"];
@@ -66,7 +74,7 @@ export function registerList(program: Command): void {
       }
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as an empty
-      // fleet — the whole point of the gate (see validate.ts's docsRepoReady).
+      // fleet — the whole point of the gate (see docs-repo-gate.ts).
       // `list features` alone does not need services/, so it asks for less.
       if (!docsRepoReady(json, docsDir, wanted.includes("services") ? "services" : "docs")) return;
 
@@ -114,15 +122,7 @@ export function registerList(program: Command): void {
         // --json), naming nothing. The enumeration is all-or-nothing — it reads
         // every service's frontmatter to build one table — so the honest answer
         // is a refusal that says WHICH path could not be read.
-        const path = (err as NodeJS.ErrnoException).path;
-        if (path === undefined) throw err;
-        fail(
-          json,
-          "repository-unavailable",
-          `${path} could not be read, so the listing would be missing a service. ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        reportRepositoryUnavailable(json, err, "the listing would be missing a service", docsDir);
       }
     });
 }
@@ -132,21 +132,11 @@ export function registerList(program: Command): void {
 /* ------------------------------------------------------------------ */
 
 /**
- * A service entry plus the two things the enumeration cannot know on its own:
- * whether an API is EXPECTED of it, and whether anyone standing here could
- * check its `sources`. Both change what the maturity rung means, and both are
- * fleet-level facts — they need the landscape and loam.json, not the directory.
+ * The graded view: the rung's own inputs (core/maturity.ts) plus the one fact
+ * only this command knows — whether anyone standing here could check the
+ * service's `sources`, which needs loam.json's binding, not the directory.
  */
-interface ServiceView {
-  entry: ServiceEntry;
-  /** `arch.spec.md` — the architecture-obligations axis, absent from ServiceEntry.has. */
-  archSpec: boolean;
-  /**
-   * Does anything in the fleet call an operation on this service? True unless
-   * the landscape PROVES otherwise, exactly as `validate`'s no-openapi grace
-   * reads it: a missing or unparseable landscape proves nothing.
-   */
-  apiExpected: boolean;
+interface ServiceView extends MaturityInput {
   /** True when this service's `sources` can only be resolved from its own repo. */
   unverifiableFromHere: boolean;
   maturity: Maturity;
@@ -191,8 +181,8 @@ async function serviceViews(
       apiExpected,
       unverifiableFromHere: entry.sources.declared && boundService !== entry.id,
     };
-    const missing = gaps(view);
-    return { ...view, maturity: maturity(view), missing };
+    const missing = maturityGaps(view);
+    return { ...view, maturity: serviceMaturity(view), missing };
   });
 }
 
@@ -232,72 +222,6 @@ function featureJson(
     has: f.has,
     verification,
   };
-}
-
-/* ------------------------------------------------------------------ */
-/* Maturity — the adoption campaign's dial                             */
-/* ------------------------------------------------------------------ */
-
-/** The adoption-maturity ladder, in order. Each rung stands on every rung below it. */
-const MATURITY_LADDER = ["empty", "partial", "documented", "sourced", "vouched"] as const;
-type Maturity = (typeof MATURITY_LADDER)[number];
-
-/**
- * One monotone word for how far a service's documentation has got. Derived
- * from artifact PRESENCE and provenance state only — the data list already
- * holds — never from what the artifacts say. COMPLETENESS of adopted docs is
- * explicitly on the unchecked list (brief.ts): a service with one endpoint
- * documented out of thirty climbs this ladder exactly as fast as a thorough
- * one, which is why no rung is called "adopted".
- *
- *   empty       services/<id>/ exists, no artifact is in it
- *   partial     some artifacts, but not the required set
- *   documented  the artifacts the adopt brief marks required are present
- *   sourced     the living spec declares `sources` — something ties it to code
- *   vouched     status: verified with a sources_digest behind it — a person
- *               stamped it. `verified` with no digest is a claim with nothing
- *               behind it and stays below this rung.
- *
- * `openapi.yaml` is required ONLY where an API is expected. The rung used to
- * demand it of everything, which permanently pinned every worker, cron and
- * consumer in the fleet at `partial` — services that are fully documented and
- * vouched for, reported as unfinished forever, and a rollup that therefore said
- * a correctly-adopted fleet was half-done. The evidence is the same one
- * `validate` uses to keep `service.no-openapi` quiet, so a service cannot be
- * green in one command and unfinished in the other.
- */
-function maturity(v: Omit<ServiceView, "maturity" | "missing">): Maturity {
-  const s = v.entry;
-  if (!Object.values(s.has).some(Boolean) && !v.archSpec && s.adrs === 0) return "empty";
-  if (!(s.has.model && s.has.spec && (!v.apiExpected || s.has.openapi))) return "partial";
-  if (!s.sources.declared) return "documented";
-  if (!(s.status === "verified" && s.sources.stamped)) return "sourced";
-  return "vouched";
-}
-
-/**
- * What stands between this service and `vouched`, named as the thing to go and
- * do. One rung's worth at a time: telling somebody at `empty` that they also
- * need a vouch is noise, and the vouch is not even possible yet.
- */
-function gaps(v: Omit<ServiceView, "maturity" | "missing">): string[] {
-  const s = v.entry;
-  const files = [
-    ...(s.has.model ? [] : ["model.likec4"]),
-    ...(s.has.spec ? [] : ["spec.md"]),
-    ...(v.apiExpected && !s.has.openapi ? ["openapi.yaml"] : []),
-  ];
-  if (files.length > 0) return files;
-  if (!s.sources.declared) return ["sources: in the spec.md frontmatter"];
-  if (!(s.status === "verified" && s.sources.stamped)) return [`\`loam vouch --service ${s.id}\``];
-  return [];
-}
-
-/** Counts per rung, every rung present — a stable shape a fleet dashboard can diff. */
-function maturityRollup(views: ServiceView[]): Record<Maturity, number> {
-  const out = Object.fromEntries(MATURITY_LADDER.map((m) => [m, 0])) as Record<Maturity, number>;
-  for (const v of views) out[v.maturity] += 1;
-  return out;
 }
 
 /* ------------------------------------------------------------------ */

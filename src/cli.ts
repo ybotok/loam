@@ -18,6 +18,8 @@ import { registerVerify } from "./commands/verify.js";
 import { registerVouch } from "./commands/vouch.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerDependencies } from "./commands/dependencies.js";
+import { registerExplore } from "./commands/explore.js";
+import { registerInstructions } from "./commands/instructions.js";
 import { registerMigrateOpenSpec } from "./commands/migrate-openspec.js";
 import { emitJsonError } from "./core/json.js";
 import { LOAM_VERSION } from "./core/version.js";
@@ -50,6 +52,7 @@ export function buildProgram(): Command {
   registerInit(program);
   registerAdopt(program);
   registerList(program);
+  registerExplore(program);
   registerNew(program);
   registerShow(program);
   registerStatus(program);
@@ -63,6 +66,7 @@ export function buildProgram(): Command {
   registerVouch(program);
   registerDoctor(program);
   registerDependencies(program);
+  registerInstructions(program);
   registerMigrateOpenSpec(program);
 
   return program;

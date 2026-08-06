@@ -30,6 +30,7 @@
  * claim "not found".
  */
 import { DIGEST_TAG_RE, scenarioDigestTag } from "./gherkin.js";
+import { isRecord } from "./records.js";
 import type { Answer, Claim } from "./verify.js";
 
 /** One report scenario, reduced to what matching needs. */
@@ -216,10 +217,6 @@ function reason(r: ReportScenario): string {
   const h = r.hooks.findIndex((s) => s !== "passed");
   if (h >= 0) return `${r.hooks[h]} in a before/after hook`;
   return `scenario status '${r.status ?? "unknown"}'`;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function str(v: unknown): string | undefined {

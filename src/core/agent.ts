@@ -358,6 +358,14 @@ says so once and stops the warning for good.
    session: it says what is in flight and what the next step is, for the fleet or
    for one feature (\`loam status FEAT-101 --json\`). Then \`loam list --json\` and
    \`loam show <service> --json\`.
+   Then \`loam explore <service> --json\` around the services you believe are
+   involved — it writes nothing and answers the one question the next step takes
+   as an argument: which services this change actually touches. It reports the
+   ring one hop out in the fleet map (\`neighbours\`), how far each service's
+   documentation has got (\`maturity\`), what each already exposes, the features
+   already in flight over the same ground (\`overlaps\`), and the \`loam new\` line
+   the seeds imply (\`scaffold\`). \`--op <operationId>\` seeds from an operation
+   when you know the call but not who owns it.
    Never propose a change to a service you have not read.
 3. **Scaffold** — \`loam new FEAT-101 --title "..." --touches <existing> --new-service <new>\`.
    The scaffold leaves a \`delta.likec4\` whose context elements are commented out —
@@ -780,6 +788,24 @@ selected that tool. The map of which invocation surfaces what:
   operationIds, never from validator prose. It is the answer to every
   "another feature in flight does this first" finding, and to
   \`delta.added-conflict\` / \`delta.modified-conflict\`, which no ordering fixes.
+- \`loam explore [<service>...]\` reads the fleet around a change nobody has
+  written down yet, and writes nothing. It exists because \`loam new\`'s
+  \`--touches\` list is the hardest call in the cycle and the only one nothing
+  downstream catches: a list short by one service produces a feature that
+  validates, archives and ships with a consumer nobody updated. What it derives
+  is mechanical — the one-hop ring, each service's rung, its living operations,
+  who already calls whom, and which active features cover the same services. It
+  does NOT decide which of those neighbours you actually change; that is a
+  judgement about intent, and loam does not make those.
+- \`loam instructions [<workflow>] [args...]\` prints one of the six workflow
+  protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
+  \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
+  pass. The protocol ships inside the binary, so it describes the loam you are
+  about to run rather than the one that scaffolded the repository; the command
+  and skill files \`loam init\` writes are pointers at it. It reads no
+  \`loam.json\` and no docs repo, deliberately: \`loam-adopt\`'s own first step is
+  to run \`loam init\` when there is no config, so it cannot be the step that
+  requires one.
 - \`loam audit-openspec <root>\` is the read-only OpenSpec inventory; an explicit
   \`--write-mapping\` writes a non-overwriting, digest-bound decision skeleton
   outside the source tree. \`loam migrate-openspec <root> --map <file>\` validates
@@ -878,10 +904,12 @@ it. It changes the exit code and nothing else:
 what it was. The stricter grade is a per-invocation lever, visible in the CI
 pipeline that passes the flag — deliberately not a per-repo profile.
 
-\`loam delta <FEAT> --json\` exits 1 when \`architecture.errors\` is non-empty, with
-\`ok: true\` and the full payload intact: the empty C4 slice means the delta did
-not parse, not that the feature changes no architecture. Branch on the exit code
-before consuming the slice as a task brief.
+\`loam delta <FEAT> --json\` exits 1 when either authored document behind the brief
+failed to parse — \`architecture.errors\` non-empty, or \`openapi.unreadable\` true —
+with \`ok: true\` and the full payload intact: the empty C4 slice means the delta
+did not parse, and an empty \`api\` beside \`openapi.unreadable\` means the contract
+delta did not parse, neither of them "this feature changes nothing there". Branch
+on the exit code before consuming either slice as a task brief.
 
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
 \`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
@@ -1020,6 +1048,23 @@ export interface CommandContent {
   description: string;
   /** What the user passes, in Claude's `argument-hint` spelling. */
   argumentHint: string;
+  /** One or two sentences: what this workflow is for, and who does which half. */
+  purpose: string;
+  /**
+   * The literal `loam instructions …` line the generated file tells an agent to
+   * run, placeholders and all. Spelled per command rather than derived from
+   * `argumentHint`, because the mapping from a hint to positional arguments is
+   * exactly the kind of clever derivation that is right five times and wrong
+   * once — and the once is a command an agent pastes.
+   */
+  invocation: string;
+  /**
+   * The verbs, in order, and nothing else. This is the half of the protocol
+   * that does not move between releases: a reader with a stale file can still
+   * tell whether a run went sideways, without the file claiming to know this
+   * binary's flags or finding codes.
+   */
+  spine: string[];
   /** The protocol itself: markdown, ends with a newline. */
   body: string;
 }
@@ -1030,6 +1075,17 @@ const COMMANDS: CommandContent[] = [
     description:
       "Adopt a service — write its baseline docs from its code, as draft, then validate",
     argumentHint: "<service-id>",
+    purpose:
+      "Write one service's baseline documentation into the docs repo from its code, as `draft`. You read the code; loam states the work and checks the result — it never reads the service, so anything you cannot show, do not write.",
+    invocation: "loam instructions loam-adopt $1",
+    spine: [
+      "wire this repo (`loam init`, then `loam doctor`) if it has no ./loam.json yet",
+      "`loam adopt` — the brief: every file to write, the grammar of each, and what the fleet map already says",
+      "read the code, keeping the list of every path you open — that list becomes `sources`",
+      "write the artifacts, everything `status: draft`",
+      "validate the service, then validate the whole fleet — a baseline that passes one and fails the other is documented and invisible",
+      "hand back with what you could not determine from the code, and let a human vouch",
+    ],
     body: `Write one service's baseline documentation into the loam docs repo (its path is
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
 result. It never reads the service — so anything you cannot show, do not write.
@@ -1091,6 +1147,18 @@ behaviour nobody can find is the one failure mode none of loam's checks can catc
     description:
       "Start a new loam feature — scaffold it, then author the C4 delta and requirement deltas",
     argumentHint: `<FEAT-id> "<title>"`,
+    purpose:
+      "Start a feature in the docs repo: decide which services it touches, scaffold it, then author the C4 delta and one requirement delta per service. The `--touches` list is the hardest call in the cycle and nothing downstream catches one that is short by a service.",
+    invocation: 'loam instructions loam-feature $1 "$2"',
+    spine: [
+      "read `AGENTS.md` at the docs repo root — it defines the ID spine everything else depends on",
+      "`loam explore` around the services you think are involved: the ring one hop out, and what is already in flight over the same ground",
+      "`loam status` / `loam list` / `loam show` — what exists and what is already owed",
+      "`loam new` with a `--touches` per service it changes and a `--new-service` per service it introduces",
+      "author what the templates left as TODO: intent, the C4 delta, the per-service spec / arch spec / openapi",
+      "`loam rebase` — pin every MODIFIED requirement and every operation to the living version you wrote against",
+      "validate the feature, then read `loam dependencies` before anyone starts building",
+    ],
     body: `Start a new feature in the loam docs repo (its path is \`docsDir\` in ./loam.json).
 
 1. Read \`AGENTS.md\` at the root of the docs repo first — it defines the ID spine
@@ -1103,6 +1171,27 @@ behaviour nobody can find is the one failure mode none of loam's checks can catc
      narrows it to one feature once $1 exists
    - \`loam list --json\` — what services exist, and what documentation they are missing
    - \`loam show <service> --json\` — what a service owns, exposes, and who already calls it
+2b. \`loam explore <service> --json --as $1\` around every service you believe this
+   feature touches. This is the step that decides step 3's \`--touches\` list, and it
+   is the only decision in the cycle nothing downstream catches — a list short by one
+   service produces a feature that validates, archives and ships with a consumer
+   nobody updated. Read four fields:
+   - \`neighbours\` — the services one hop out in the fleet map. Weigh each one. loam
+     knows they are connected, not whether you change them, and it deliberately
+     leaves them OUT of the suggested command line rather than guessing for you
+   - \`services[].maturity\` — a service at \`empty\` or \`partial\` has no baseline to
+     write a delta against, so the work starts with \`loam adopt --service <id>\`, not
+     with this feature
+   - \`services[].operations\` — what each already exposes, so an operation you are
+     about to "add" that is already there becomes a MODIFIED requirement instead
+   - \`overlaps\` — active features already carrying a delta for these services.
+     \`loam dependencies --json\` (step 7) then says which must archive first
+   \`--op <operationId>\` seeds from an operation when you know the call but not who
+   owns it. A seed naming no \`services/<id>/\` is reported in \`unknown\` with the
+   closest real ids rather than refused — the feature may be introducing it, and a
+   typo looks identical until you read that list. \`scaffold\` is the literal step-3
+   command line the seeds imply, with \`--new-service\` where the service does not
+   exist yet.
 3. Scaffold it: \`loam new $1 --title "$2"\`, adding \`--touches <id>\` for every service the
    feature touches and \`--new-service <id>\` for every one it introduces. Every id goes
    through the \`services/<id>/\` grammar, so a typo is refused (\`invalid-option\`)
@@ -1147,6 +1236,18 @@ line, and the OpenAPI \`operationId\` — must match exactly.
     description:
       "Implement a loam feature's slice for one service — generated gherkin first, tests from it, then code",
     argumentHint: "<FEAT-id> [service]",
+    purpose:
+      "Build one service's part of a feature, in that service's own repository. The generated Gherkin is the acceptance criterion — it comes before the step definitions, and those come before the code.",
+    invocation: "loam instructions loam-implement $1 $2",
+    spine: [
+      "`loam status` — where this feature actually is, and what is owed before you start",
+      "`loam delta` — the task: the intent, every requirement verbatim, the endpoints, and the calls in and out",
+      "`loam gherkin` in the service's repo — the digest-stamped `.feature` files. Never edit them",
+      "write step definitions for the generated scenarios first, outside the generated directory",
+      "implement until the suite passes, running it with a JSON report",
+      "honour the contract in both directions: expose every inbound operation, call every outbound one",
+      "`loam rebase` if building made you change the feature's documents at all, then validate the feature",
+    ],
     body: `Implement one service's part of a feature. Every step runs in the SERVICE'S own
 repository, which needs its own committed ./loam.json — if there is none,
 \`loam init --docs <path-to-docs-repo> --service $2\` then \`loam doctor\` first.
@@ -1166,11 +1267,19 @@ repository, which needs its own committed ./loam.json — if there is none,
    - \`architecture\` — whether this service is new, and the calls in and out of it
    - \`api\` — the endpoints this feature adds or retires for this service: path,
      method, operationId and summary, with removals spelled \`REMOVE <METHOD> <path>\`
+   - \`openapi\` — whether that contract could be read at all: \`unreadable\`, plus an
+     \`error\` when the parser gave a message. It rides beside \`api\` rather than
+     inside it because \`api\` stays the operations array it has always been, and it
+     is what tells an empty \`api\` apart from a contract delta that did not parse
    - \`services\` — every service this feature projects onto, so a run without
      \`--service\` tells you which ones to ask for rather than guessing
-   Exit 1 with \`ok: true\` means \`architecture.errors\` is non-empty: delta.likec4 did
-   not parse, and the empty C4 slice is a parse failure, not "no architecture change".
-   Stop and fix the delta (\`loam validate $1 --json\`) before building anything.
+   Exit 1 with \`ok: true\` means one of the two authored documents behind this brief
+   did not parse: \`architecture.errors\` non-empty (delta.likec4), or
+   \`openapi.unreadable\` true (the feature's openapi.yaml for this service). The empty
+   slice is the parse failure itself, not "nothing changes there". Stop and fix that
+   document before building anything — for the delta, \`loam validate $1 --json\` names
+   the error; the contract delta is not graded by validate, so read the parser message
+   the payload carries.
 2. In the service's repo, \`loam gherkin $1 --json\` — one \`.feature\` file per changed
    requirement lands under \`<gherkinDir>/loam/\` (default \`features/loam/\`), scenarios
    digest-stamped, arch requirements tagged \`@architecture\`. Those files ARE the
@@ -1208,6 +1317,26 @@ leave the spec disagreeing with the code.
     name: "loam-check",
     description: "Validate the loam docs repo and fix what it reports",
     argumentHint: "[--all | <FEAT-id> | <service>]",
+    purpose:
+      "Run loam's checks and fix what they find. Branch on `findings[].code`, never on the prose — and remember that a coherence finding marked `gates` stops `loam archive` even when it is only a warning.",
+    // No `$1`, unlike the other five. This body carries no placeholder at all —
+    // `loam-check`'s argument is a target you pass to `loam validate`, not
+    // something the protocol interpolates — and the argument hint's FIRST form
+    // is `--all`, so `loam instructions loam-check $1` expanded to
+    // `loam instructions loam-check --all`, which commander reads as an unknown
+    // option and refuses with exit 1. A pointer file whose one instruction
+    // fails leaves an agent with no protocol at all, which is a state the fat
+    // body could never reach. The command still tolerates a leading-dash
+    // argument (see `allowUnknownOption` in commands/instructions.ts); this is
+    // the half of the fix that stops loam printing the broken line in the first
+    // place.
+    invocation: "loam instructions loam-check",
+    spine: [
+      "`loam validate --all` in the docs repo for the fleet, or `loam validate <target>` for one feature or service",
+      "fix every error, and every finding that gates the archive",
+      "leave an advisory warning standing only if you can say why, and say it",
+      "re-run until the grade is the one you meant",
+    ],
     body: `Run loam's checks and fix what they find.
 
 - whole fleet: \`loam validate --all --json\` (run in the docs repo)
@@ -1373,6 +1502,16 @@ have read it.
     description:
       "Verify a built loam feature against its own promises, claim by claim, with evidence",
     argumentHint: "<FEAT-id>",
+    purpose:
+      "Check that the code somebody built is the feature that was designed. loam derives the questions; a test runner and you answer them. loam never reads the service, so a verdict is worth exactly what its evidence is worth.",
+    invocation: "loam instructions loam-verify $1",
+    spine: [
+      "`loam verify` — the checklist, derived from the feature's own artifacts",
+      "run the generated suite with a JSON report: the scenario claims are the runner's to answer, not yours",
+      "answer the remaining claims yourself, every one carrying a `file:line` that resolves",
+      "record from each affected service's own repository, bound to that service",
+      "read the verdict honestly — a scenario confirmed on your word is `attested`, not `verified`",
+    ],
     body: `Check that the code somebody just built is the feature that was designed.
 
 loam derives the questions; the test runner and you answer them. loam never
@@ -1470,6 +1609,16 @@ everyone later.
     name: "loam-ship",
     description: "Archive a finished loam feature — merge its deltas into the living docs",
     argumentHint: "<FEAT-id>",
+    purpose:
+      "Merge a shipped feature into the living specs, API and landscape. This is the one command that rewrites the source of truth, so every step before it exists to make the merge reviewable before it runs.",
+    invocation: "loam instructions loam-ship $1",
+    spine: [
+      "confirm the code is actually built and merged — archiving early makes the docs claim something that does not exist",
+      "`loam validate --feature $1` must come back valid; if it says nothing pinned the delta, rebase and re-validate first",
+      "`loam archive $1 --dry-run` — read the whole plan and every warning before the merge touches anything",
+      "`loam archive $1` for real, and read what it reports it did",
+      "`loam unarchive $1` is the undo if the plan turns out to have been wrong",
+    ],
     body: `Archive a shipped feature.
 
 1. Confirm the code is actually built and merged. Archiving folds the delta into the
@@ -1586,6 +1735,15 @@ export interface AgentTool {
 }
 
 /**
+ * A registry entry that really does emit command files — both halves of the
+ * command adapter present. The distinction is not hypothetical: `codex`
+ * declares neither, on purpose. Naming it lets the one entry the rest of this
+ * module derives THROUGH carry that guarantee in its type, instead of at the
+ * use site where the only way to state it was a pair of `!`.
+ */
+type CommandEmittingTool = AgentTool & Required<Pick<AgentTool, "path" | "format">>;
+
+/**
  * Pre-approved tools in a generated file's frontmatter, so an agent that honors
  * the field stops asking permission for each `loam` call. It only pre-approves:
  * everything else a command needs (Read, Write, the service's own test runner)
@@ -1642,11 +1800,65 @@ const titledMd = (c: CommandContent): string => `# ${c.name}\n\n${c.body}`;
 const unprefixed = (name: string): string => name.replace(/^loam-/, "");
 
 /**
- * The command body a file actually gets: the shared protocol under the same
- * version stamp AGENTS.md carries.
+ * What a generated file actually contains: the purpose, the spine, and the
+ * command that prints the rest.
  *
- * Applied once, here, rather than in twenty wrappers — the stamp is a fact
- * about loam, not about a tool's dialect, and a per-wrapper copy is twenty
+ * The protocol itself stays in `body` and ships inside the binary, reachable as
+ * `loam instructions <name>`. The file on disk gets a pointer to it, because
+ * these two things go stale in opposite directions and only one of them can be
+ * fixed. A generated file is written once, never regenerated (that is the
+ * never-overwrite contract, and it is deliberate — your edits outrank the
+ * template), so a repo scaffolded a year ago holds a year-old protocol: exact
+ * flags, exact finding codes, exact step order, all of it asserted with total
+ * confidence by a file whose reader has no way to know it is describing a
+ * different release. That is not a hypothetical failure mode. It is the one
+ * every project shipping generated agent instructions has had, and the fix
+ * everybody reaches for — regenerate on upgrade — trades it for silently
+ * overwriting what a human wrote.
+ *
+ * Thinning the file is the third option. What remains is what does not move
+ * between releases: what this workflow is for, and the verbs in order. What
+ * leaves is everything version-shaped. `doctor.agent-files-stale` still reports
+ * a file whose stamp has fallen behind, and now has almost nothing to be right
+ * about — which is the point.
+ *
+ * The trade is real and worth stating: an agent that cannot execute `loam` now
+ * has a spine instead of a protocol. That is the correct failure. Every step
+ * below the spine is a loam invocation, so an agent that cannot run loam was
+ * never going to complete this workflow from the file either — it was going to
+ * try, using a year-old flag.
+ */
+function stubBody(c: CommandContent): string {
+  const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
+  return `${c.purpose}
+
+**Run this first.** It is the protocol, and it ships with the binary you are about
+to call — so it names this loam's flags, its finding codes and its fix tables,
+not the ones that were current when this repository was scaffolded:
+
+    ${c.invocation}
+
+The spine it fills in, so you can tell a run that went sideways from one that did not:
+
+${steps}
+
+Every step above is a \`loam\` invocation, and each command's own \`--json\` output
+carries what to do next: findings have stable codes, and \`loam status --json\` puts
+the ordered \`next[]\` — each entry a code and the literal command — in one place.
+Branch on the codes, never on the prose.
+
+This file is a pointer, not the protocol. loam wrote it once and will never
+rewrite it, so your edits here outrank the template and nothing will quietly
+undo them. Where this file and \`loam instructions\` disagree, the command is right.
+`;
+}
+
+/**
+ * The command body a file actually gets: the pointer, under the same version
+ * stamp AGENTS.md carries.
+ *
+ * The stamp is applied once, here, rather than in twenty wrappers — it is a
+ * fact about loam, not about a tool's dialect, and a per-wrapper copy is twenty
  * chances to forget it. It rides at the top of the BODY (not the file) because
  * every dialect puts something of its own first: YAML frontmatter, a TOML key,
  * a title line. An HTML comment is invisible in all of them, and
@@ -1656,25 +1868,38 @@ const unprefixed = (name: string): string => name.replace(/^loam-/, "");
  * exactly what `doctor.agent-files-stale` is for: nobody has confirmed that
  * those instructions still describe this binary.
  */
-const stamped = (c: CommandContent): CommandContent => ({
+const stubbed = (c: CommandContent): CommandContent => ({
   ...c,
-  body: `${agentsStampLine(LOAM_VERSION)}\n\n${c.body}`,
+  body: `${agentsStampLine(LOAM_VERSION)}\n\n${stubBody(c)}`,
 });
 
+/**
+ * The original target and the default. This WRAPPER must stay byte-identical
+ * to what loam has always written — SLASH_COMMANDS below derives through it —
+ * and an already-initialized repo must still read as fully scaffolded
+ * (`skipped` is existsSync, never content). What the wrapper wraps now carries
+ * a version stamp, which is the one thing about a generated file loam will
+ * report on; see `stubbed`.
+ *
+ * It stands outside the registry object because SLASH_COMMANDS reaches for it
+ * by name. That lookup was `AGENT_TOOLS["claude"]!.format!` — two assertions on
+ * an exported const evaluated at import time, so renaming the key, or letting
+ * this entry lose `format` the way `codex` legitimately has, would have thrown
+ * a TypeError while the CLI entry point was still being loaded: before
+ * `program.exitOverride()` exists, and therefore with no envelope around it.
+ * Named and typed, both mistakes are typecheck failures instead. The registry
+ * still lists it first, and the emitted bytes are unchanged.
+ */
+const CLAUDE: CommandEmittingTool = {
+  path: (name) => [".claude", "commands", `${name}.md`],
+  format: (c) =>
+    `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
+  skill: skillsIn(".claude"),
+  detect: [".claude"],
+};
+
 export const AGENT_TOOLS: Record<string, AgentTool> = {
-  // The original target and the default. This WRAPPER must stay byte-identical
-  // to what loam has always written — SLASH_COMMANDS below derives through it —
-  // and an already-initialized repo must still read as fully scaffolded
-  // (`skipped` is existsSync, never content). What the wrapper wraps now
-  // carries a version stamp, which is the one thing about a generated file loam
-  // will report on; see `stamped`.
-  claude: {
-    path: (name) => [".claude", "commands", `${name}.md`],
-    format: (c) =>
-      `---\ndescription: ${c.description}\nargument-hint: ${c.argumentHint}\n---\n\n${c.body}`,
-    skill: skillsIn(".claude"),
-    detect: [".claude"],
-  },
+  claude: CLAUDE,
   // Cursor invokes by flat file name (`/loam-check`); its frontmatter `name`
   // field spells that invocation form.
   cursor: {
@@ -1833,14 +2058,70 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
 };
 
 /**
- * The Claude-format files, keyed by command name. Kept as the exported shape
- * because it IS the on-disk contract of every repo initialized before
- * `--tools` existed — and derived through the same adapter that writes the
- * files, so the export and the disk can never disagree.
+ * The Claude-format files, keyed by command name: exactly what **this** binary
+ * would write, derived through the same adapter that writes them, so the export
+ * and a freshly scaffolded repo can never disagree.
+ *
+ * Read that scope literally. It used to be described as the on-disk contract of
+ * every repo initialized before `--tools` existed, and that is no longer true
+ * of anything but a fresh scaffold: a file holds the STUB now, every repo
+ * scaffolded before that holds the full protocol, and because loam never
+ * regenerates a generated file the two disagree permanently and on purpose. An
+ * export cannot describe files this binary did not write.
+ *
+ * The protocol those older files carry is `PROTOCOLS`. Anything asserting on
+ * protocol content wants that one — this answers "what would loam write here",
+ * not "what does loam instruct".
  */
 export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
-  COMMANDS.map((c) => [c.name, AGENT_TOOLS["claude"]!.format!(stamped(c))]),
+  COMMANDS.map((c) => [c.name, CLAUDE.format(stubbed(c))]),
 );
+
+/**
+ * The workflow protocols themselves, keyed by command name — what
+ * `loam instructions <name>` prints, and the corpus every check over loam's
+ * agent-facing prose reads.
+ *
+ * Separate from SLASH_COMMANDS since the file became a pointer: the protocol is
+ * still the thing that must document every stable code (`codes-drift`) and
+ * every `loam …` line it teaches must still parse against the real CLI
+ * (`agent-commands-runnable`). Those two properties are about the INSTRUCTIONS,
+ * and they did not move just because the delivery did.
+ */
+export const PROTOCOLS: Record<string, string> = Object.fromEntries(
+  COMMANDS.map((c) => [c.name, c.body]),
+);
+
+/** The workflow names, in cycle order — `loam instructions` with no argument lists these. */
+export const WORKFLOWS: ReadonlyArray<Pick<CommandContent, "name" | "description" | "argumentHint">> =
+  COMMANDS.map(({ name, description, argumentHint }) => ({ name, description, argumentHint }));
+
+/**
+ * One workflow's protocol with `$1`, `$2`, … replaced by the arguments given.
+ *
+ * An unsupplied placeholder is LEFT STANDING rather than blanked: the bodies
+ * are written so `$1` reads as "the feature id goes here", and a protocol that
+ * silently dropped it would hand an agent `loam validate --feature --json` — a
+ * command that parses, runs, and answers a different question. Extra arguments
+ * are ignored for the same reason: this substitutes, it does not validate.
+ *
+ * An EMPTY argument counts as unsupplied, and that is not pedantry. Several
+ * tool dialects expand an absent positional to the empty string, and
+ * `loam-feature`'s own invocation quotes its second one (`--title "$2"`), so
+ * `/loam-feature FEAT-101` with no title arrives here as `["FEAT-101", ""]`.
+ * Blanking it produced `loam new FEAT-101 --title ""` — which is exactly the
+ * failure the paragraph above describes, reached by the one path that paragraph
+ * did not cover: the command succeeds, and writes a feature whose title is the
+ * empty string and whose intent.md opens with a bare `#`.
+ */
+export function protocolFor(name: string, args: readonly string[] = []): string | null {
+  const body = PROTOCOLS[name];
+  if (body === undefined) return null;
+  return body.replace(/\$([1-9])/g, (whole, digit: string) => {
+    const arg = args[Number(digit) - 1];
+    return arg === undefined || arg === "" ? whole : arg;
+  });
+}
 
 /** The two ways a command body reaches an agent. Both are on by default. */
 export const DELIVERIES = ["commands", "skills"] as const;
@@ -1876,7 +2157,7 @@ export function plannedCommandFiles(
     }
     if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
     return emitters.flatMap((e) =>
-      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stamped(c)) })),
+      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stubbed(c)) })),
     );
   });
 }

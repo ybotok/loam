@@ -8,6 +8,9 @@ import {
   operationDigest,
   withoutOperationBaseline,
 } from "./openapi.js";
+// Every `isRecord` below asks one question of a resolved plain tree: is this a
+// node that can hold OpenAPI keys — an object, not an array?
+import { isRecord } from "./records.js";
 
 /**
  * What a feature's operation IS, relative to the living contract — the one
@@ -244,8 +247,36 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   // deleting a key through it would change every use), so those documents get
   // their `paths` rewritten from the resolved tree instead: losing formatting
   // is a cost, shipping the marker is a corruption.
+  //
+  // The test has to reach the OPERATION nodes too, not just the path items. The
+  // in-place branch strips a surviving operation's pin through
+  // `["paths", p, m, x-loam-based-on]`, and an aliased operation is exactly one
+  // level below where the check used to look — so `deleteIn` walked into a node
+  // that is not a collection and threw out of archive as `internal`, on a
+  // document whose only fault was writing one operation twice.
+  //
+  // What disqualifies a method is "there is something here to strip and I cannot
+  // reach it", not "this is not a map node". Only a resolved MAPPING can be a
+  // removal marker or carry a pin, so a method spelled as a scalar — `get: ~`,
+  // or a string — is nothing the in-place branch would have touched; demanding a
+  // map node of it too demoted whole documents to the rewrite branch and cost
+  // their author every comment, anchor and hand-chosen key order inside `paths`,
+  // in the bytes archive installs as the living contract. What is left is the
+  // real hazard: a mapping the AST does not hand back as a map. An alias is the
+  // one node kind that resolves to a mapping without being one, and a method
+  // whose KEY is an alias is not findable by name at all, so `deleteIn` reports
+  // nothing deleted and the marker ships in silence. Both answer `undefined` or
+  // a non-map here, and both belong on the safe branch.
   const editable =
-    isMap(feature.get("paths")) && Object.keys(paths).every((p) => isMap(feature.getIn(["paths", p])));
+    isMap(feature.get("paths")) &&
+    Object.entries(paths).every(
+      ([p, item]) =>
+        isMap(feature.getIn(["paths", p])) &&
+        (!isRecord(item) ||
+          Object.entries(item).every(
+            ([m, op]) => !HTTP_METHODS.has(m) || !isRecord(op) || isMap(feature.getIn(["paths", p, m])),
+          )),
+    );
   if (!editable) {
     feature.setIn(["paths"], cleaned);
   } else {
@@ -406,6 +437,21 @@ export function mergeOpenapiPaths(
           if (HTTP_METHODS.has(m)) modified.push(opLabel(beforePlain, afterPlain, m, path));
           else pathItemModified.push(`'${m}' (${path})`);
         }
+        // Every shape question above was answered from the RESOLVED tree, which
+        // is exactly what makes an aliased path item read as an ordinary
+        // mapping. The WRITE cannot be that forgiving: `setIn` walks the AST,
+        // and one shared value backs every use of an anchor, so an operation
+        // merged through the alias would land in every other path that
+        // references it. There is no way to write into one use of an anchor and
+        // not the rest, so this is a refusal rather than a fallback — and it is
+        // asked here, at the write, because reading is safe and writing is not.
+        if (!isMap(living.getIn(["paths", path]))) {
+          throw new OpenapiMergeError(
+            "living",
+            service,
+            `path '${path}' is written as a YAML alias — one shared value backs every use, so merging into it would rewrite every other path that aliases it. Expand it before archiving.`,
+          );
+        }
         // Without the strip the living contract would grow a pin to a version
         // of itself, and the NEXT feature's baseline would hash it.
         living.setIn(["paths", path, m], publishable[m]);
@@ -495,11 +541,6 @@ function noop(): OpenapiMergeResult {
   };
 }
 
-/** A resolved plain tree that can hold OpenAPI keys — an object, not an array. */
-function isRecord(node: unknown): node is Record<string, unknown> {
-  return node !== null && typeof node === "object" && !Array.isArray(node);
-}
-
 /** Every `$ref` string value anywhere in a plain JS tree, in document order. */
 export function collectRefs(node: unknown): string[] {
   const out: string[] = [];
@@ -540,7 +581,7 @@ export function resolvePointer(root: unknown, ref: string): { found: boolean; va
 }
 
 /** Name an overwritten operation by its operationId (feature's, else living's), or path+method. */
-export function opLabel(before: unknown, after: unknown, method: string, path: string): string {
+function opLabel(before: unknown, after: unknown, method: string, path: string): string {
   const operation = operationIdOf(after) ?? operationIdOf(before);
   return operation !== undefined ? `'${operation}' (${method} ${path})` : `${method} ${path}`;
 }

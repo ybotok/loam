@@ -33,7 +33,7 @@
  */
 import { describe, expect, it, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin.js";
@@ -47,6 +47,7 @@ import {
   FEATURE_SPEC,
   LIVING_SPEC,
   type Project,
+  type RunResult,
 } from "./helpers/harness.js";
 
 const FEAT = "FEAT-1";
@@ -1085,7 +1086,14 @@ describe("the slash command that drives it", () => {
     // repo came to be, so it takes the shortest path to a valid one.
     const init = await runLoam(dir, "init", "--docs", "./d", "--create");
     expect(init.code, init.out).toBe(0);
-    const body = await readFile(join(dir, ".claude", "commands", "loam-verify.md"), "utf8");
+    // The file init lays down is a pointer; the loop itself is what
+    // `loam instructions` prints, version-matched to this binary. Both are
+    // asserted, because a pointer at a protocol nobody can reach is worse than
+    // the stale copy it replaced.
+    const file = await readFile(join(dir, ".claude", "commands", "loam-verify.md"), "utf8");
+    expect(file).toContain("loam instructions loam-verify $1");
+
+    const body = (await runLoam(dir, "instructions", "loam-verify")).out;
     expect(body).toContain("loam verify $1 --json");
     expect(body).toContain("--record");
     // the runner's half of the loop: generate the report, feed it back
@@ -1189,6 +1197,46 @@ async function recordService(
   return { result, json: JSON.parse(result.stdout), local };
 }
 
+/** Commit a path that already exists in `repo`, so it is carried by HEAD. */
+function commitInto(repo: string, path: string): void {
+  execFileSync("git", ["add", path], { cwd: repo });
+  execFileSync(
+    "git",
+    ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", `add ${path}`],
+    { cwd: repo },
+  );
+}
+
+/**
+ * Put a `git` on PATH that dies of SIGKILL on every `diff` and passes anything
+ * else through to the real one, and return the undo.
+ *
+ * The case under test is a child that never reaches an exit status — an OOM
+ * kill, a CI timeout, a fork that failed. No exit code can stand in for it,
+ * because the whole point is that there is no exit code: node reports
+ * `error.code` as null rather than a number, which is the input that used to
+ * slip past a `=== 1` test. `execFile` resolves the binary through PATH, so
+ * shadowing it is the only way to make a real run produce that shape.
+ */
+async function killGitDiff(): Promise<() => Promise<void>> {
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = await makeTmpDir("loam-git-shim-");
+  const shim = join(bin, "git");
+  await writeFile(
+    shim,
+    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "diff" ]; then kill -9 $$; fi\ndone\nexec "${real}" "$@"\n`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const previous = process.env["PATH"];
+  process.env["PATH"] = `${bin}:${previous ?? ""}`;
+  return async () => {
+    if (previous === undefined) delete process.env["PATH"];
+    else process.env["PATH"] = previous;
+    await rm(bin, { recursive: true, force: true });
+  };
+}
+
 describe("federated service verification", () => {
   it("merges two service repositories, captures each commit, and stays partial until every claim is answered", async () => {
     const p = await project();
@@ -1284,6 +1332,42 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, "proof.ts:1");
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.message).toContain("uncommitted changes");
+    expect(p.exists(RECORD)).toBe(false);
+  });
+
+  it("refuses to attest when git cannot finish the committed-report check", async () => {
+    // The committed-report check has three outcomes, not two: the report
+    // matches, the report differs, or git never got far enough to say. The
+    // third one is the dangerous one, because the run that hits it is a run on
+    // a machine already falling over — an OOM kill, a CI timeout — and a check
+    // that treats "no answer" as "no problem" fails open exactly there, writing
+    // an attestation whose report was never bound to the commit. Nothing on the
+    // record would afterwards show that the binding had gone unchecked.
+    const p = await project(scenarioOnlyFixture());
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const report = await writeReport(p, [
+      { digest: digestOf(SCENARIOS_ONLY, 0, 0) },
+      { digest: digestOf(SCENARIOS_ONLY, 0, 1), name: "Reject a split that does not sum" },
+    ]);
+    // Committed, so the skipped check is one that had a real answer to give.
+    // Every claim on this checklist is the runner's, so the report is the only
+    // thing the evidence check consults git about — the refusal can be about
+    // nothing else.
+    commitInto(repo, report);
+
+    const restore = await killGitDiff();
+    let result: RunResult;
+    try {
+      result = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--results", report, "--json");
+    } finally {
+      await restore();
+    }
+    expect(result.code).toBe(1);
+    const err = JSON.parse(result.stdout).error;
+    expect(err.code).toBe("answers-unevidenced");
+    expect(err.message).toContain(`Cannot tell whether the test report '${report}' is bound to`);
+    expect(err.message).toContain("git could not be run to completion");
+    // The whole point: no attestation was written on an unchecked binding.
     expect(p.exists(RECORD)).toBe(false);
   });
 

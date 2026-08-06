@@ -27,7 +27,7 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { loadConfig } from "../core/config.js";
-import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
 import {
   contentDigest,
@@ -36,11 +36,13 @@ import {
   missingSources,
   patternSources,
   sourcesDigest,
+  today,
   unsafeSources,
   type SkippedSource,
   type SourceIndexEntry,
 } from "../core/provenance.js";
 import { SPEC_AXES, servicePaths } from "../core/repo.js";
+import { plural } from "./format.js";
 import {
   message,
   NotUtf8Error,
@@ -92,8 +94,14 @@ export type VouchOutcome =
       ok: true;
       status: "verified";
       lastVerified: string;
-      /** Every spec-axis file stamped, in SPEC_AXES order: spec.md first, arch.spec.md behind it when present. */
-      stamped: StampedSpec[];
+      /**
+       * Every spec-axis file stamped. Named, not ordered: spec.md is required
+       * for a vouch to happen at all, and arch.spec.md is the only other file
+       * one can touch, so the type is what says which is which. An array said it
+       * in a comment instead, and every reader had to assert non-emptiness to
+       * reach the file that comment promised was there.
+       */
+      stamped: { spec: StampedSpec; archSpec: StampedSpec | null };
     }
   | {
       ok: false;
@@ -136,7 +144,7 @@ export function registerVouch(program: Command): void {
 
       const service = opts.service ?? config.service;
       if (service === undefined) {
-        return fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+        return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
       }
       // Vouching hashes the code the doc was written from, so it can only run
       // where that code is. From anywhere else the paths are someone else's.
@@ -165,26 +173,24 @@ export function registerVouch(program: Command): void {
       });
       if (!outcome.ok) return fail(json, outcome.code, outcome.message);
 
-      // spec.md is required, so it always leads `stamped`; arch.spec.md is the
-      // only possible second entry.
-      const [spec, arch] = outcome.stamped;
+      const { spec, archSpec: arch } = outcome.stamped;
       if (json) {
         emitJson({
           service,
-          path: repoPath(config.docsDir, spec!.path),
+          path: repoPath(config.docsDir, spec.path),
           status: outcome.status,
           last_verified: outcome.lastVerified,
-          sources: spec!.sources,
-          sources_digest: spec!.digest,
-          content_digest: spec!.contentDigest,
-          files: spec!.files,
-          skipped: spec!.skipped,
+          sources: spec.sources,
+          sources_digest: spec.digest,
+          content_digest: spec.contentDigest,
+          files: spec.files,
+          skipped: spec.skipped,
           // The architecture axis, same keys: null when the service has no
           // arch.spec.md, so a consumer can tell "none present" from an older
           // loam that never reported the axis. status/last_verified are not
           // repeated — the vouch is one act, and they hold for every file in it.
           archSpec:
-            arch === undefined
+            arch === null
               ? null
               : {
                   path: repoPath(config.docsDir, arch.path),
@@ -197,7 +203,9 @@ export function registerVouch(program: Command): void {
         });
         return;
       }
-      for (const [i, s] of outcome.stamped.entries()) {
+      // spec.md first, arch.spec.md behind it when present — the order the
+      // person who vouched reads them in, and the order the axes are declared.
+      for (const [i, s] of [spec, ...(arch === null ? [] : [arch])].entries()) {
         console.log(`${i > 0 ? "\n" : ""}${service} vouched — ${repoPath(config.docsDir, s.path)}\n`);
         console.log(`  status          ${outcome.status}`);
         console.log(`  last_verified   ${outcome.lastVerified}`);
@@ -246,45 +254,24 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
 
   // Verify first, stamp after: spec.md is required (checked above), arch.spec.md
   // rides when it exists, and one file that cannot be verified refuses the run
-  // before anything is written.
-  const verified: VerifiedSpec[] = [];
-  for (const axis of SPEC_AXES) {
-    const path = paths[axis.key];
-    if (!existsSync(path)) continue;
-    const outcome = await verifySpec(req, path, axis.file);
+  // before anything is written. The two axes are walked by name rather than
+  // accumulated in a loop, because everything downstream needs to know WHICH
+  // file it is holding — the required one or the optional one — and a loop can
+  // only say that positionally.
+  const [specAxis, archAxis] = SPEC_AXES;
+  const specVerified = await verifySpec(req, paths[specAxis.key], specAxis.file);
+  if (!specVerified.ok) return specVerified;
+  let archVerified: VerifiedSpec | null = null;
+  if (existsSync(paths[archAxis.key])) {
+    const outcome = await verifySpec(req, paths[archAxis.key], archAxis.file);
     if (!outcome.ok) return outcome;
-    verified.push(outcome);
+    archVerified = outcome;
   }
+  const verified: VerifiedSpec[] = [specVerified, ...(archVerified === null ? [] : [archVerified])];
 
-  const stamped: StampedSpec[] = [];
-  const writes: PlannedWrite[] = [];
-  for (const v of verified) {
-    // Two passes on purpose: `content_digest` hashes the body BELOW the
-    // frontmatter, and withFrontmatterFields promises that body byte-identical —
-    // so hashing after the first stamp and writing the hash in a second one
-    // yields a digest that is true of the file exactly as written. A re-vouch
-    // takes the same road and refreshes every field, this one included.
-    const restamped = withFrontmatterFields(v.raw, {
-      status: "verified",
-      last_verified: req.today,
-      sources_digest: v.digest,
-      // Beside the digest, what it was taken over. `sources_digest` alone can
-      // only ever say THAT the code moved; the next `loam validate` reads this
-      // back to say which files did.
-      sources_files: encodeSourceIndex(v.index),
-    });
-    const bodyDigest = contentDigest(restamped);
-    writes.push({ path: v.path, content: withFrontmatterFields(restamped, { content_digest: bodyDigest }) });
-    stamped.push({
-      path: v.path,
-      file: v.file,
-      digest: v.digest,
-      contentDigest: bodyDigest,
-      sources: v.sources,
-      files: v.index.length,
-      skipped: v.skipped,
-    });
-  }
+  const specPlan = planStamp(specVerified, req.today);
+  const archPlan = archVerified === null ? null : planStamp(archVerified, req.today);
+  const writes: PlannedWrite[] = [specPlan.write, ...(archPlan === null ? [] : [archPlan.write])];
 
   // Commit through archive's stage-and-swap machinery (core/staging.ts) rather
   // than a writeFile per file: every stamp is computed above in memory, so a
@@ -308,9 +295,17 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   // `vouch-raced` and stamp nothing). A file that is GONE is still a race —
   // `null` is not "empty", it is "the document this run described is not
   // there any more".
-  const raced = staged.filter(
-    (s, i) => s.before === null || !s.before.equals(Buffer.from(verified[i]!.raw, "utf8")),
-  );
+  // Joined by path, not by index: pairing the two lists positionally assumed
+  // `stageWrites` returns one entry per planned write in order — true today,
+  // promised nowhere, and a compare-and-set that silently compares the wrong
+  // pair would stamp over somebody else's vouch. A staged write no verified
+  // file claims has nothing to be compared against, so it counts as raced;
+  // fail-closed is the only safe direction here.
+  const verifiedByPath = new Map(verified.map((v) => [v.path, v] as const));
+  const raced = staged.filter((s) => {
+    const v = verifiedByPath.get(s.write.path);
+    return v === undefined || s.before === null || !s.before.equals(Buffer.from(v.raw, "utf8"));
+  });
   if (raced.length > 0) {
     // Nothing has swapped yet, so the rollback is only the temp files going
     // away — the other writer's stamp is left exactly as it landed.
@@ -344,7 +339,48 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
           message: `${message(err)} — the vouch was rolled back, no spec was stamped`,
         };
   }
-  return { ok: true, status: "verified", lastVerified: req.today, stamped };
+  return {
+    ok: true,
+    status: "verified",
+    lastVerified: req.today,
+    stamped: { spec: specPlan.stamped, archSpec: archPlan === null ? null : archPlan.stamped },
+  };
+}
+
+/**
+ * One verified file's share of the commit: the bytes to write, and the record
+ * of what was stamped into them. Kept beside each other because they are the
+ * same computation — the report must describe the file that was actually
+ * written, not a second guess at it.
+ */
+function planStamp(v: VerifiedSpec, lastVerified: string): { write: PlannedWrite; stamped: StampedSpec } {
+  // Two passes on purpose: `content_digest` hashes the body BELOW the
+  // frontmatter, and withFrontmatterFields promises that body byte-identical —
+  // so hashing after the first stamp and writing the hash in a second one
+  // yields a digest that is true of the file exactly as written. A re-vouch
+  // takes the same road and refreshes every field, this one included.
+  const restamped = withFrontmatterFields(v.raw, {
+    status: "verified",
+    last_verified: lastVerified,
+    sources_digest: v.digest,
+    // Beside the digest, what it was taken over. `sources_digest` alone can
+    // only ever say THAT the code moved; the next `loam validate` reads this
+    // back to say which files did.
+    sources_files: encodeSourceIndex(v.index),
+  });
+  const bodyDigest = contentDigest(restamped);
+  return {
+    write: { path: v.path, content: withFrontmatterFields(restamped, { content_digest: bodyDigest }) },
+    stamped: {
+      path: v.path,
+      file: v.file,
+      digest: v.digest,
+      contentDigest: bodyDigest,
+      sources: v.sources,
+      files: v.index.length,
+      skipped: v.skipped,
+    },
+  };
 }
 
 /** A spec-axis file whose sources all check out, carrying what the stamp needs. */
@@ -464,19 +500,4 @@ async function verifySpec(
     return { ok: false, code: "sources-absent", message: emptySourcesMessage(label, sources) };
   }
   return { ok: true, path, file, raw, sources, digest, index, skipped };
-}
-
-/**
- * The local calendar day. A vouch is a person saying "today I read this", so it
- * is their date, not UTC's — `toISOString` files an evening vouch in the
- * Americas under tomorrow.
- */
-function today(now: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

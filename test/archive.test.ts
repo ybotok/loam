@@ -924,6 +924,44 @@ describe("openapi merge", () => {
       await p.destroy();
     }
   });
+
+  it("a feature openapi that does not read as an OpenAPI document is refused (merge-failed) and no living contract is created", async () => {
+    // The create branch never asked whether the document it was about to
+    // INSTALL could be read. A sequence where a mapping belongs yields zero
+    // operations, which is the same answer as a contract that defines nothing —
+    // so the plan printed `created ()` and these three lines landed verbatim in
+    // services/payment-split-service/openapi.yaml, published as that service's
+    // contract, at exit 0. Every other reader of this flag suspends its own
+    // judgement; the one command that WRITES must too.
+    //
+    // `--approve` because the coherence gate refuses this feature for a
+    // different reason (its requirement governs createSplit, which no readable
+    // contract now defines), and that gate is not what is under test: the write
+    // PAST it is, and --approve is exactly how a person gets there.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"] =
+      "- not\n- a\n- mapping\n";
+    const p = await makeProject(files);
+    try {
+      const before = await treeHashes(p.docsDir);
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      const json = JSON.parse(res!.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      expect(json.error.message).toContain(
+        "features/FEAT-1-split/specs/payment-split-service/openapi.yaml",
+      );
+      expect(
+        p.exists("services/payment-split-service/openapi.yaml"),
+        "a document loam cannot read was installed as the living contract",
+      ).toBe(false);
+      expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
 });
 
 describe("landscape merge adversarial", () => {

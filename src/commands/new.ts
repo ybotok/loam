@@ -3,24 +3,19 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { loadConfig } from "../core/config.js";
-import { InvalidIdError, assertServiceId } from "../core/ids.js";
+import { FEATURE_ID_RULE, InvalidIdError, assertServiceId, isFeatureId } from "../core/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { UnsafePathError, resolveInside } from "../core/path-safety.js";
 import {
   DocsRepoUnavailableError,
-  compareIds,
   featureIdFromDirName,
   featuresDir,
   listServices,
+  nearestIds,
   resolveFeature,
+  type FeatureEntry,
 } from "../core/repo.js";
-
-/**
- * Feature ids are `<word>-<number>`: the id has to survive being read back off
- * the directory name (FEAT-101-payment-splitting -> FEAT-101), or the feature
- * would answer to a name it was never given.
- */
-const ID_RE = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+import { docsRepoReady, reportDocsRepoError } from "./docs-repo-gate.js";
 
 interface NewOptions {
   title?: string;
@@ -46,11 +41,15 @@ export function registerNew(program: Command): void {
       const json = opts.json === true;
 
       const dirName = featureDirName(featureId, opts.title);
-      if (!ID_RE.test(featureId) || featureIdFromDirName(dirName) !== featureId) {
+      // The round-trip is checked beside the grammar, not inside it: the
+      // grammar is a fact about the id, while `featureIdFromDirName` depends on
+      // the TITLE this command is about to slug into the directory name. Only
+      // `new` creates that directory, so only `new` owes that second half.
+      if (!isFeatureId(featureId) || featureIdFromDirName(dirName) !== featureId) {
         return fail(
           json,
           "invalid-option",
-          `'${featureId}' is not a usable feature id. Expected <word>-<number>, e.g. FEAT-101 or BUG-42.`,
+          `'${featureId}' is not a usable feature id. ${FEATURE_ID_RULE}`,
         );
       }
 
@@ -80,8 +79,30 @@ export function registerNew(program: Command): void {
         return;
       }
       const { docsDir } = config;
+      // Before a single file is scaffolded: a docsDir that is not a docs repo is
+      // refused, never written into. `features/<id>/**` lands happily in any
+      // directory, so without this gate `new` reported `ok: true` over a
+      // scaffold that no enumeration downstream will ever see — and a docsDir
+      // that is simply absent escaped as `internal` (the enumeration below
+      // throws) carrying the very sentence `list` and `show` report as
+      // `docs-missing`. See docs-repo-gate.ts's docsRepoReady. `services`, not
+      // `docs`: every id named by --touches/--new-service is a claim about
+      // `services/<id>/`, and the near-miss note below is computed against that
+      // directory, so a run without it is guessing.
+      if (!docsRepoReady(json, docsDir, "services")) return;
 
-      const existing = await resolveFeature(docsDir, featureId, "include");
+      let existing: FeatureEntry | null;
+      try {
+        existing = await resolveFeature(docsDir, featureId, "include");
+      } catch (err) {
+        // The gate above already refused both broken states, so reaching here
+        // means the docs repo went away between that check and this read. Same
+        // breach, same two codes — the alternative is a stack trace under
+        // `internal` that names neither.
+        if (!(err instanceof DocsRepoUnavailableError)) throw err;
+        reportDocsRepoError(json, err);
+        return;
+      }
       if (existing) {
         return fail(
           json,
@@ -195,31 +216,6 @@ async function unknownServiceNotes(docsDir: string, touched: string[]): Promise<
     );
   }
   return notes;
-}
-
-/** Known ids within a small edit distance of `id`, closest first, at most three. */
-function nearestIds(id: string, known: string[]): string[] {
-  const budget = Math.max(1, Math.floor(id.length / 4));
-  return known
-    .map((candidate) => ({ candidate, distance: editDistance(id.toLowerCase(), candidate.toLowerCase()) }))
-    .filter((scored) => scored.distance <= budget)
-    .sort((a, b) => a.distance - b.distance || compareIds(a.candidate, b.candidate))
-    .slice(0, 3)
-    .map((scored) => scored.candidate);
-}
-
-/** Plain Levenshtein — ids are short, and the row-at-a-time form keeps it obvious. */
-function editDistance(a: string, b: string): number {
-  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitution = previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1);
-      current.push(Math.min(previous[j]! + 1, current[j - 1]! + 1, substitution));
-    }
-    previous = current;
-  }
-  return previous[b.length]!;
 }
 
 /* ------------------------------------------------------------------ */

@@ -9,11 +9,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isMap, parse, parseDocument } from "yaml";
-// The decode rule lives with the reads it was written for (fleet-context.ts);
-// importing it back here closes a cycle through repo.ts, which is harmless for
-// the same reason spec.ts↔gherkin.ts is: nothing is used at module scope, so no
-// evaluation order can observe a half-built module.
-import { decodeDocument, NotUtf8DocumentError } from "./fleet-context.js";
+import { decodeDocument, NotUtf8DocumentError } from "./document-bytes.js";
 
 export interface Frontmatter {
   /** True when a terminated `---` block was found, even if it was empty. */

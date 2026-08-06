@@ -26,13 +26,12 @@ import {
 } from "./helpers/harness.js";
 import { listFeatures, listServices, serviceIdFindings } from "../src/core/repo.js";
 import { serviceIdProblem } from "../src/core/ids.js";
+import { decodeDocument, NotUtf8DocumentError } from "../src/core/document-bytes.js";
 import {
   conflictMarkerLines,
-  decodeDocument,
   documentConflictFinding,
   FleetContext,
   landscapeConflictFinding,
-  NotUtf8DocumentError,
 } from "../src/core/fleet-context.js";
 import { parseRequirements, steplessFindings, steplessScenarios } from "../src/core/spec.js";
 import { renderFeature } from "../src/core/gherkin.js";

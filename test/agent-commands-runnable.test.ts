@@ -26,7 +26,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { buildProgram } from "../src/cli.js";
-import { AGENTS_MD, SLASH_COMMANDS } from "../src/core/agent.js";
+import { AGENTS_MD, PROTOCOLS, SLASH_COMMANDS } from "../src/core/agent.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -220,8 +220,16 @@ async function corpus(): Promise<Invocation[]> {
 
   const sources: Array<[string, string[]]> = [
     ["AGENTS.md (src/core/agent.ts)", markdownInvocations(AGENTS_MD)],
+    // Both deliveries, because both are read by an agent and neither is a copy
+    // of the other. PROTOCOLS is what `loam instructions` prints — where the
+    // recipes are. SLASH_COMMANDS is the file on disk, whose spine names
+    // commands too, and whose whole purpose is one `loam instructions …` line
+    // that had better parse.
+    ...Object.entries(PROTOCOLS).map(
+      ([name, body]) => [`/${name} protocol (src/core/agent.ts)`, markdownInvocations(body)] as [string, string[]],
+    ),
     ...Object.entries(SLASH_COMMANDS).map(
-      ([name, body]) => [`/${name} (src/core/agent.ts)`, markdownInvocations(body)] as [string, string[]],
+      ([name, body]) => [`/${name} file (src/core/agent.ts)`, markdownInvocations(body)] as [string, string[]],
     ),
     ...files.map(([where, src]) => [`a message loam prints (${where})`, printedInvocations(src)] as [string, string[]]),
     ...files.map(([where, src]) => [`a next[] step (${where})`, nextCommands(src)] as [string, string[]]),

@@ -41,7 +41,7 @@ import { describe, expect, it } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AGENTS_MD, SLASH_COMMANDS } from "../src/core/agent.js";
+import { AGENTS_MD, PROTOCOLS } from "../src/core/agent.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -321,8 +321,15 @@ async function collect(): Promise<Collected> {
   return { codes, unresolved };
 }
 
-/** The agent-facing corpus: AGENTS.md plus every slash command init lays down. */
-const DOCS = AGENTS_MD + Object.values(SLASH_COMMANDS).join("\n");
+/**
+ * The agent-facing corpus: AGENTS.md plus every workflow protocol.
+ *
+ * `PROTOCOLS`, not `SLASH_COMMANDS`: the generated file is a pointer at
+ * `loam instructions`, and the codes live in the protocol it points at. Reading
+ * the pointer here would grade the whole vocabulary as undocumented while every
+ * code was in fact one command away.
+ */
+const DOCS = AGENTS_MD + Object.values(PROTOCOLS).join("\n");
 
 describe("the code vocabulary does not drift from the docs", () => {
   it("every stable code emitted in src/ is documented, backticked, in AGENTS.md or a slash command", async () => {

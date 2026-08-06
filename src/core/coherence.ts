@@ -284,7 +284,6 @@ export async function featureCoherence(
       });
     }
   }
-  const declaredOps = new Set([...reqOps.values()].flat());
 
   // Living specs also govern: an edge calling a pre-existing endpoint is coherent if the
   // target's living spec.md declares the op — the feature need not restate the requirement.
@@ -450,7 +449,15 @@ export async function featureCoherence(
         issues.push({ severity: "error", code: "c4-api.op-undefined", message: `${svcOf(r.source)} calls '${r.op}' on ${target}, but ${target}'s OpenAPI does not define it (contract broken)` });
       }
     }
-    if (!declaredOps.has(r.op) && !(await governedByLivingSpec(target, r.op))) {
+    // Governed by THIS target's requirements, not by anybody's. An operationId
+    // is unique only inside one contract, so the fleet-wide set this used to
+    // ask meant a `getStatus` governed in service A silenced the question for
+    // service B's entirely unrelated `getStatus` — the warning went quiet for
+    // the edge that needed it, and only in repos where some other service
+    // happened to reuse the name. The living half on the same line has always
+    // joined per service (`governedByLivingSpec(target, …)`); this is the delta
+    // half asking it the same way.
+    if (!(reqOps.get(target) ?? []).includes(r.op) && !(await governedByLivingSpec(target, r.op))) {
       issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
     }
     // Lifecycle: this NEW tagged edge builds consumption on an operation the
@@ -535,18 +542,36 @@ export async function unknownDeltaServices(
   // only diagnosable against the ids that DO exist.
   const closeTo =
     docsRepoState(docsDir).kind === "ok" ? (await listServices(docsDir, context)).map((s) => s.id) : [];
-  return unknown.map((svc) => {
-    const close = closeIds(svc, closeTo);
-    return {
-      severity: "error",
-      code: "delta.service-unknown",
-      subject: svc,
-      message:
-        `specs/${svc}/ addresses a service that does not exist: there is no services/${svc}/ and this feature's ` +
-        `delta.likec4 does not introduce one — archiving would create it out of the typo.` +
-        (close.length > 0 ? ` Did you mean: ${close.join(", ")}?` : " `loam list services` shows what exists."),
-    };
-  });
+  return unknown.map((svc) => deltaServiceUnknownFinding(svc, closeTo));
+}
+
+/**
+ * The finding itself, for the two gates that reach this conclusion by different
+ * routes.
+ *
+ * `archive` gets there through `unknownDeltaServices` above; `validate` gets
+ * there through its own enumeration, because it suspends the question on an
+ * unreadable delta rather than returning early on it, and that difference is
+ * deliberate. What must NOT differ is the sentence: the two were spelled out
+ * word for word in two files, so a reworded hint in one of them would have made
+ * `loam validate` and `loam archive` describe the same typo differently, on the
+ * same code, in the same repo.
+ *
+ * `knownIds` is the fleet's real service ids — already enumerated by the caller,
+ * which is also the caller's chance to skip the enumeration entirely when there
+ * is nothing to diagnose.
+ */
+export function deltaServiceUnknownFinding(svc: string, knownIds: string[]): Finding {
+  const close = closeIds(svc, knownIds);
+  return {
+    severity: "error",
+    code: "delta.service-unknown",
+    subject: svc,
+    message:
+      `specs/${svc}/ addresses a service that does not exist: there is no services/${svc}/ and this feature's ` +
+      `delta.likec4 does not introduce one — archiving would create it out of the typo.` +
+      (close.length > 0 ? ` Did you mean: ${close.join(", ")}?` : " `loam list services` shows what exists."),
+  };
 }
 
 /**

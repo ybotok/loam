@@ -7,8 +7,9 @@
  * it introduces an identity or operation the latter already refers to.
  */
 import { existsSync } from "node:fs";
+import { inOrder } from "./concurrency.js";
 import { FleetContext } from "./fleet-context.js";
-import { serviceOf } from "./likec4.js";
+import { serviceResolver } from "./likec4.js";
 import { operations } from "./openapi.js";
 import {
   SPEC_AXES,
@@ -101,17 +102,44 @@ function reqKeys(requirement: Pick<Requirement, "id" | "name">): string[] {
   ];
 }
 
-function reqIndexKey(service: string, axis: string, identity: string): string {
-  return `${service}\0${axis}\0${identity}`;
+/**
+ * WHERE a collision happens, kept as fields rather than as a string.
+ *
+ * An index needs one scalar per entry to hash on, so the fields get NUL-joined
+ * into a key — but the conflict records want those fields back, and splitting
+ * the key apart again means asserting the pieces back into their types. That
+ * assertion is a claim about data loam does not own: a service directory or a
+ * requirement name containing a NUL would hand `axis` a fragment of an identity
+ * with nothing to notice. Carrying the structured value beside the owner set
+ * means the key is only ever a key, and the record is read, not reconstructed.
+ */
+interface ReqAt {
+  service: string;
+  axis: SpecAxis["file"];
+  identity: string;
 }
 
-function opIndexKey(service: string, operationId: string): string {
-  return `${service}\0${operationId}`;
+interface OpAt {
+  service: string;
+  operationId: string;
 }
 
-function addOwner(index: Map<string, Set<string>>, key: string, feature: string): void {
-  const owners = index.get(key) ?? new Set<string>();
-  owners.add(feature);
+interface Owners<T> {
+  readonly at: T;
+  readonly features: Set<string>;
+}
+
+function reqIndexKey(at: ReqAt): string {
+  return `${at.service}\0${at.axis}\0${at.identity}`;
+}
+
+function opIndexKey(at: OpAt): string {
+  return `${at.service}\0${at.operationId}`;
+}
+
+function addOwner<T>(index: Map<string, Owners<T>>, key: string, at: T, feature: string): void {
+  const owners = index.get(key) ?? { at, features: new Set<string>() };
+  owners.features.add(feature);
   index.set(key, owners);
 }
 
@@ -196,9 +224,10 @@ async function readFacts(
   // flight — so the graph disagreeing with the validator about the same pair of
   // features was the graph being wrong, not quiet.
   //
-  // Endpoints resolve through `serviceOf` — the element's `metadata { service }`
-  // binding, title as fallback — the same join every other check uses, so
-  // renaming a box in a diagram cannot silently unhook it here either.
+  // Endpoints resolve through `serviceResolver` — the element's
+  // `metadata { service }` binding, title as fallback — the same join every
+  // other check uses, so renaming a box in a diagram cannot silently unhook it
+  // here either.
   const deltaPath = featurePaths(feature.dir).delta;
   if (existsSync(deltaPath)) {
     const doc = await context.loadLikeC4(deltaPath);
@@ -206,9 +235,12 @@ async function readFacts(
     // `loam validate` owns that diagnosis (`delta.invalid`); inventing edges out
     // of a half-read document would be worse than the silence.
     if (doc.errors.length === 0) {
+      // One resolver for the whole delta: `serviceOf` rebuilds its id map on
+      // every call, and this loop asks once per edge.
+      const svcOf = serviceResolver(doc.elements);
       for (const rel of doc.relationships) {
         if (rel.op === undefined) continue;
-        const service = serviceOf(doc.elements, rel.target);
+        const service = svcOf(rel.target);
         if ((await living(service)).has(rel.op)) continue;
         requiredOperations.push({ service, operationId: rel.op });
       }
@@ -323,29 +355,38 @@ export async function analyzeDependencies(
   context = new FleetContext(),
 ): Promise<DependencyGraph> {
   const features = await listFeatures(docsDir, {}, context);
-  const facts = await Promise.all(features.map((feature) => readFacts(docsDir, feature, context)));
-  const requirementOwners = new Map<string, Set<string>>();
+  // Bounded, not `Promise.all`: `readFacts` loads the feature's delta.likec4,
+  // and each of those is a whole Langium workspace held open until the read
+  // finishes — the same resource `validate --all` rations for the same measured
+  // reason (see core/concurrency.ts). This module fanned out over every active
+  // feature at once, and it is not only `loam dependencies` that pays: the fleet
+  // form of `loam status` calls in here too. `inOrder` returns results in input
+  // order, so the graph, the conflict list and their ordering are unchanged.
+  const facts = await inOrder(features, (feature) => readFacts(docsDir, feature, context));
+  const requirementOwners = new Map<string, Owners<ReqAt>>();
   // The second index over the SAME identity: who MODIFIES or REMOVES it. Only
   // the first index existed, so the graph could see "two features add the same
   // requirement" and was blind to "two features rewrite the same requirement" —
   // the collision that actually happens on a fleet, and the one whose loser
   // loses their whole authored text without a word from any command.
-  const changedOwners = new Map<string, Set<string>>();
-  const operationOwners = new Map<string, Set<string>>();
+  const changedOwners = new Map<string, Owners<ReqAt>>();
+  const operationOwners = new Map<string, Owners<OpAt>>();
 
   for (const fact of facts) {
     for (const added of fact.addedRequirements) {
       for (const identity of reqKeys(added.requirement)) {
-        addOwner(requirementOwners, reqIndexKey(added.service, added.axis, identity), fact.feature.id);
+        const at: ReqAt = { service: added.service, axis: added.axis, identity };
+        addOwner(requirementOwners, reqIndexKey(at), at, fact.feature.id);
       }
     }
     for (const changed of fact.changedRequirements) {
       for (const identity of reqKeys(changed.requirement)) {
-        addOwner(changedOwners, reqIndexKey(changed.service, changed.axis, identity), fact.feature.id);
+        const at: ReqAt = { service: changed.service, axis: changed.axis, identity };
+        addOwner(changedOwners, reqIndexKey(at), at, fact.feature.id);
       }
     }
     for (const operation of fact.introducedOperations) {
-      addOwner(operationOwners, opIndexKey(operation.service, operation.operationId), fact.feature.id);
+      addOwner(operationOwners, opIndexKey(operation), operation, fact.feature.id);
     }
   }
 
@@ -353,23 +394,15 @@ export async function analyzeDependencies(
   for (const fact of facts) {
     for (const changed of fact.changedRequirements) {
       for (const identity of reqKeys(changed.requirement)) {
-        for (const owner of requirementOwners.get(reqIndexKey(changed.service, changed.axis, identity)) ?? []) {
-          appendReason(edgeMap, fact.feature.id, owner, {
-            kind: "requirement",
-            service: changed.service,
-            axis: changed.axis,
-            identity,
-          });
+        const at: ReqAt = { service: changed.service, axis: changed.axis, identity };
+        for (const owner of requirementOwners.get(reqIndexKey(at))?.features ?? []) {
+          appendReason(edgeMap, fact.feature.id, owner, { kind: "requirement", ...at });
         }
       }
     }
     for (const required of fact.requiredOperations) {
-      for (const owner of operationOwners.get(opIndexKey(required.service, required.operationId)) ?? []) {
-        appendReason(edgeMap, fact.feature.id, owner, {
-          kind: "operation",
-          service: required.service,
-          operationId: required.operationId,
-        });
+      for (const owner of operationOwners.get(opIndexKey(required))?.features ?? []) {
+        appendReason(edgeMap, fact.feature.id, owner, { kind: "operation", ...required });
       }
     }
   }
@@ -383,30 +416,28 @@ export async function analyzeDependencies(
     [requirementOwners, "added"],
     [changedOwners, "changed"],
   ] as const) {
-    for (const [key, owners] of index) {
-      if (owners.size < 2) continue;
-      const [service, axis, identity] = key.split("\0") as [string, SpecAxis["file"], string];
+    for (const { at, features } of index.values()) {
+      if (features.size < 2) continue;
       conflicts.push({
         kind: "requirement",
         change,
-        service,
-        axis,
-        identity,
-        features: [...owners].sort(compareIds),
+        service: at.service,
+        axis: at.axis,
+        identity: at.identity,
+        features: [...features].sort(compareIds),
       });
     }
   }
-  for (const [key, owners] of operationOwners) {
-    if (owners.size < 2) continue;
-    const [service, identity] = key.split("\0") as [string, string];
+  for (const { at, features } of operationOwners.values()) {
+    if (features.size < 2) continue;
     conflicts.push({
       kind: "operation",
       // Two features DEFINING the same operationId — the only way an operation
       // collides, since removals address a living slot rather than claim one.
       change: "added",
-      service,
-      identity,
-      features: [...owners].sort(compareIds),
+      service: at.service,
+      identity: at.operationId,
+      features: [...features].sort(compareIds),
     });
   }
   conflicts.sort((a, b) =>

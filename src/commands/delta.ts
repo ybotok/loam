@@ -6,7 +6,12 @@ import { loadConfig } from "../core/config.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../core/likec4.js";
-import { operations, type Operation } from "../core/openapi.js";
+import { readOpenapi, type Operation } from "../core/openapi.js";
+// The summary walk below descends four levels into a document nobody has
+// validated, and `isRecord` is what it asks at each step: a cast there would
+// assert a shape the parser never promised, and a sequence or a scalar in any of
+// those slots would be indexed as a mapping.
+import { isRecord } from "../core/records.js";
 import {
   DocsRepoUnavailableError,
   compareIds,
@@ -14,6 +19,7 @@ import {
   featureSpecPaths,
   listServices,
   missingFeatureMessage,
+  nearestIds,
   resolveFeature,
 } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
@@ -50,6 +56,23 @@ interface ApiChange {
   summary: string | null;
   /** `x-loam-remove: true` — this operation is being retired, not added. */
   remove: boolean;
+}
+
+/**
+ * The contract axis of the brief: the operations, and whether the document they
+ * came from could be read at all.
+ *
+ * The two have to travel together. A feature `openapi.yaml` that does not parse
+ * yields zero operations, which is the same answer as a delta that genuinely
+ * changes no endpoints — and this projection is a task brief, so "no contract
+ * work here" over a YAML error is the vacuously-green trap the architecture
+ * axis already guards against.
+ */
+interface ApiSlice {
+  changes: ApiChange[];
+  unreadable: boolean;
+  /** The parser's own message, when there is one to quote back. */
+  error?: string;
 }
 
 export function registerDelta(program: Command): void {
@@ -170,7 +193,13 @@ export function registerDelta(program: Command): void {
       // `ok` stays true under --json: the command ran); the exit code is what
       // stops a pipeline from building on it, so it is set BEFORE the format
       // fork — the guard is about the delta, not about how it is rendered.
-      if (arch.errors.length > 0) process.exitCode = 1;
+      //
+      // The contract axis fails the same way and now earns the same guard: an
+      // openapi.yaml that does not parse projected as an empty operation list,
+      // and nothing upstream catches it either — `loam validate` grades
+      // `openapi.invalid` on LIVING service contracts only, never on a
+      // feature's delta.
+      if (arch.errors.length > 0 || api.unreadable) process.exitCode = 1;
 
       if (json) {
         const reqJson = (r: Requirement): Record<string, unknown> => ({
@@ -195,7 +224,16 @@ export function registerDelta(program: Command): void {
           // integration/ops tests, and a consumer must not have to parse prose
           // to tell the two apart.
           archRequirements: archReqs.map(reqJson),
-          api,
+          api: api.changes,
+          // `api` stays exactly the operations array it has always been — a
+          // consumer indexing it must not have to learn a new shape — so the
+          // readability of the document rides alongside as its own key,
+          // spelled the way `loam show` already spells it for a living
+          // contract. Additive, which the envelope permits (core/json.ts).
+          openapi: {
+            unreadable: api.unreadable,
+            ...(api.error === undefined ? {} : { error: api.error }),
+          },
           architecture: arch,
         });
         return;
@@ -233,31 +271,6 @@ function introducedServices(doc: LoadedDoc | null, featureId: string): string[] 
   return doc.elements.filter((e: Elem) => e.tags.includes(featureId)).map(elementService);
 }
 
-/** Known ids within a small edit distance of `id`, closest first, at most three. */
-function nearestIds(id: string, known: string[]): string[] {
-  const budget = Math.max(1, Math.floor(id.length / 4));
-  return known
-    .map((candidate) => ({ candidate, distance: editDistance(id.toLowerCase(), candidate.toLowerCase()) }))
-    .filter((scored) => scored.distance <= budget)
-    .sort((a, b) => a.distance - b.distance || compareIds(a.candidate, b.candidate))
-    .slice(0, 3)
-    .map((scored) => scored.candidate);
-}
-
-/** Plain Levenshtein — ids are short, and the row-at-a-time form keeps it obvious. */
-function editDistance(a: string, b: string): number {
-  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitution = previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1);
-      current.push(Math.min(previous[j]! + 1, current[j - 1]! + 1, substitution));
-    }
-    previous = current;
-  }
-  return previous[b.length]!;
-}
-
 /**
  * The feature's OpenAPI delta for one service, as slots rather than names.
  *
@@ -268,34 +281,49 @@ function editDistance(a: string, b: string): number {
  * already resolved: a second read of the same document, never a second opinion
  * about what an operation IS.
  */
-async function apiChanges(openapiPath: string): Promise<ApiChange[]> {
-  if (!existsSync(openapiPath)) return [];
-  const ops = await operations(openapiPath);
-  if (ops.length === 0) return [];
+async function apiChanges(openapiPath: string): Promise<ApiSlice> {
+  if (!existsSync(openapiPath)) return { changes: [], unreadable: false };
+  // `readOpenapi`, not `operations`: the operation list alone cannot tell a
+  // contract that defines nothing from one that could not be read, and this is
+  // the command whose output IS the implementation task.
+  const api = await readOpenapi(openapiPath);
+  if (api.unreadable) {
+    return { changes: [], unreadable: true, ...(api.error === undefined ? {} : { error: api.error }) };
+  }
+  const ops = api.ops;
+  if (ops.length === 0) return { changes: [], unreadable: false };
   let doc: unknown;
   try {
     doc = parseYaml(await readFile(openapiPath, "utf8"));
   } catch {
-    // Unreadable is impossible here (ops came back non-empty), but a summary is
-    // decoration and must never be the reason a task brief fails to print.
+    // Unreadable is impossible here (the reader above said otherwise), but a
+    // summary is decoration and must never be the reason a task brief fails to
+    // print.
     doc = null;
   }
   const summaryOf = (op: Operation): string | null => {
-    const paths = (doc as { paths?: Record<string, unknown> } | null)?.paths;
-    const item = paths?.[op.path] as Record<string, unknown> | undefined;
-    const entry = item?.[op.method] as Record<string, unknown> | undefined;
-    const summary = entry?.["summary"];
+    if (!isRecord(doc)) return null;
+    const paths = doc["paths"];
+    if (!isRecord(paths)) return null;
+    const item = paths[op.path];
+    if (!isRecord(item)) return null;
+    const entry = item[op.method];
+    if (!isRecord(entry)) return null;
+    const summary = entry["summary"];
     return typeof summary === "string" && summary.length > 0 ? summary : null;
   };
-  return ops
-    .map((op): ApiChange => ({
-      path: op.path,
-      method: op.method.toUpperCase(),
-      operationId: op.id,
-      summary: summaryOf(op),
-      remove: op.remove,
-    }))
-    .sort((a, b) => compareIds(a.path, b.path) || compareIds(a.method, b.method));
+  return {
+    changes: ops
+      .map((op): ApiChange => ({
+        path: op.path,
+        method: op.method.toUpperCase(),
+        operationId: op.id,
+        summary: summaryOf(op),
+        remove: op.remove,
+      }))
+      .sort((a, b) => compareIds(a.path, b.path) || compareIds(a.method, b.method)),
+    unreadable: false,
+  };
 }
 
 /** The feature's tagged edges around one service, plus whether the service is new. */
@@ -368,13 +396,23 @@ function printRequirements(reqs: Requirement[], label: string): void {
   }
 }
 
-function printApi(api: ApiChange[]): void {
-  if (api.length === 0) {
+function printApi(api: ApiSlice): void {
+  if (api.unreadable) {
+    // Worded like `loam show`'s answer for the same failure on a living
+    // contract, and deliberately WITHOUT a "run `loam validate`" hint: validate
+    // grades `openapi.invalid` on living service contracts only, so it has
+    // nothing to say about this file and sending the reader there is a dead end.
+    console.log("API: openapi.yaml does not parse");
+    if (api.error !== undefined) console.log(`  ${api.error}`);
+    console.log();
+    return;
+  }
+  if (api.changes.length === 0) {
     console.log("API: (the openapi delta defines no operations)\n");
     return;
   }
   console.log("API (this feature's openapi.yaml for the service):");
-  for (const op of api) {
+  for (const op of api.changes) {
     const marker = op.remove ? "REMOVE " : "";
     console.log(
       `  ${marker}${op.method} ${op.path}  ${op.operationId}${op.summary === null ? "" : ` — ${op.summary}`}`,

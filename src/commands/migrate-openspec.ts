@@ -5,18 +5,20 @@ import type { Command } from "commander";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { findConfigPath, parseConfig } from "../core/config.js";
 import { DOCS_SUBDIRS, docsRepoFiles } from "../core/docs.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
 import { serviceIdProblem } from "../core/ids.js";
 import { fail, emitJson, type ErrorCode } from "../core/json.js";
 import {
   createOpenSpecMappingSkeleton,
   inventoryOpenSpec,
+  isOpenSpecArtifactDisposition,
   OpenSpecRootError,
   type OpenSpecInventory,
   type OpenSpecArtifactDisposition,
   type OpenSpecMapping,
   type OpenSpecMappingSkeleton,
 } from "../core/openspec-inventory.js";
+import { asRecord, dictionary, ownValue } from "../core/records.js";
 import {
   parseRequirements,
   requirementIdProblems,
@@ -175,26 +177,21 @@ function reportCommandError(json: boolean, error: unknown): void {
   throw error;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function dictionary<T>(): Record<string, T> {
-  return Object.create(null) as Record<string, T>;
-}
-
-function ownValue<T>(record: Record<string, T>, key: string): T | undefined {
-  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+/**
+ * `Array.isArray` narrows an `unknown` to `any[]`, so the element check below it
+ * proved nothing to tsc and the elements had to be asserted back to `string` at
+ * the point of use. One predicate makes the narrowing carry the check.
+ */
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function stringList(value: unknown, label: string): string[] {
   if (typeof value === "string") return value.trim() === "" ? [] : [value.trim()];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+  if (!isStringArray(value)) {
     throw new OpenSpecCommandError("invalid-option", `${label} must be a string or an array of service ids.`);
   }
-  return [...new Set(value.map((item) => (item as string).trim()).filter(Boolean))];
+  return [...new Set(value.map((item) => item.trim()).filter(Boolean))];
 }
 
 /**
@@ -353,7 +350,11 @@ async function readMapping(path: string): Promise<OpenSpecMapping> {
       renames[key] = requirementId.trim();
     }
   }
-  const artifacts = dictionary<OpenSpecArtifactDisposition>();
+  // Recorded as written. Naming the disposition union here only meant asserting
+  // an unreviewed string into it: `mapping.invalid-artifact-disposition` is what
+  // actually grades this value, and it has to see what the human typed to be
+  // able to name it back to them.
+  const artifacts = dictionary<string>();
   if (document.artifacts !== undefined) {
     const artifactsNode = asRecord(document.artifacts);
     if (artifactsNode === null) {
@@ -366,7 +367,7 @@ async function readMapping(path: string): Promise<OpenSpecMapping> {
       if (typeof disposition !== "string") {
         throw new OpenSpecCommandError("invalid-option", `artifacts.${artifactPath}.disposition must be a string or null.`);
       }
-      artifacts[artifactPath] = disposition as OpenSpecArtifactDisposition;
+      artifacts[artifactPath] = disposition;
     }
   }
   return { source, capabilities, changes, renames, artifacts };
@@ -515,7 +516,12 @@ function normalizedMapping(inventory: OpenSpecInventory, mapping: OpenSpecMappin
       decision.change,
       {
         feature: ownValue(mapping.changes, decision.change)?.feature ?? null,
-        title: ownValue(mapping.changes, decision.change)?.title ?? decision.title,
+        // The decision's title, which is the mapping's own title trimmed.
+        // `readMapping` trims `feature` but not `title`, and materialization
+        // writes the trimmed one into the frontmatter, the H1 and the directory
+        // slug — so recording the raw one made the plan disagree with the files
+        // beside it about what the feature is called.
+        title: decision.title,
       },
     ])),
     renames: Object.fromEntries(
@@ -672,8 +678,19 @@ async function planMigrationWrites(
   mapping: OpenSpecMapping,
   target: string,
 ): Promise<{ livingWrites: PlannedWrite[]; activeWrites: PlannedWrite[]; legacyWrites: PlannedWrite[] }> {
-  const livingWrites = await materializeLivingSpecs(inventory, mapping, target);
-  const activeWrites = await materializeActiveChanges(inventory, mapping, target);
+  // One reading of the living corpus for both materializers. They each read and
+  // parsed the whole of it independently, which is twice the work and, worse,
+  // two readings: a rename resolved against one of them was written beside a
+  // living spec built from the other.
+  const livingByCapability = new Map<string, Requirement[]>();
+  for (const capability of inventory.living.capabilities) {
+    livingByCapability.set(
+      capability.id,
+      parseRequirements(await readSourceArtifact(inventory.root, capability.files[0]!)),
+    );
+  }
+  const livingWrites = await materializeLivingSpecs(inventory, mapping, target, livingByCapability);
+  const activeWrites = await materializeActiveChanges(inventory, mapping, target, livingByCapability);
   const legacyWrites = await copyLivingTree(inventory, target);
   assertDistinctPlannedPaths([...livingWrites, ...activeWrites, ...legacyWrites]);
   return { livingWrites, activeWrites, legacyWrites };
@@ -738,6 +755,7 @@ async function materializeLivingSpecs(
   inventory: OpenSpecInventory,
   mapping: OpenSpecMapping,
   target: string,
+  livingByCapability: ReadonlyMap<string, Requirement[]>,
 ): Promise<PlannedWrite[]> {
   const byService = new Map<string, Requirement[]>();
   const renameIds = new Map(
@@ -748,14 +766,13 @@ async function materializeLivingSpecs(
   for (const capability of inventory.living.capabilities) {
     const selected = ownValue(mapping.capabilities, capability.id);
     if (selected === undefined) continue; // readiness prevents this on --apply
-    const raw = await readSourceArtifact(inventory.root, capability.files[0]!);
-    const requirements = parseRequirements(raw);
-    for (const parsed of requirements) {
+    for (const parsed of livingByCapability.get(capability.id) ?? []) {
       const renamedId = renameIds.get(`${capability.id}\0${parsed.name}`);
       const requirement = renamedId === undefined ? parsed : { ...parsed, id: renamedId };
-      const services = selected.services.length === 1
-        ? selected.services
-        : ownValue(selected.requirementServices, requirement.name) ?? [];
+      // The one spelling of the routing rule. Written out again here, it drifted
+      // from the copy the delta side uses, so a split capability could route a
+      // living requirement and its own delta to different services.
+      const services = selectedServices(mapping, capability.id, requirement.name);
       for (const service of services) {
         const existing = byService.get(service) ?? [];
         const identity = requirement.id === undefined ? `heading '${requirement.name}'` : `Requirement-ID '${requirement.id}'`;
@@ -847,15 +864,9 @@ async function materializeActiveChanges(
   inventory: OpenSpecInventory,
   mapping: OpenSpecMapping,
   target: string,
+  livingByCapability: ReadonlyMap<string, Requirement[]>,
 ): Promise<PlannedWrite[]> {
   const writes: PlannedWrite[] = [];
-  const livingByCapability = new Map<string, Requirement[]>();
-  for (const capability of inventory.living.capabilities) {
-    livingByCapability.set(
-      capability.id,
-      parseRequirements(await readSourceArtifact(inventory.root, capability.files[0]!)),
-    );
-  }
   const inventoryArtifactsByPath = new Map(inventory.artifacts.map((artifact) => [artifact.path, artifact]));
 
   for (const change of inventory.changes.active) {
@@ -880,6 +891,12 @@ async function materializeActiveChanges(
       if (artifact?.changeId !== change.id) continue;
       const disposition = ownValue(mapping.artifacts, artifactDecision.path);
       if (disposition === undefined) continue; // readiness prevents this on --apply
+      // The mapping holds the authored string; everything below compares it
+      // against disposition literals, so this is where the value has to become
+      // one of them or stop being routed. `mapping.invalid-artifact-disposition`
+      // already refuses an unknown one, so readiness prevents this too — but a
+      // silent skip is the right failure for a value nothing here can act on.
+      if (!isOpenSpecArtifactDisposition(disposition)) continue;
       authored.push({
         path: artifactDecision.path,
         kind: artifactDecision.kind,

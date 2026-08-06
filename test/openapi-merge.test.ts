@@ -198,6 +198,100 @@ paths:
     expect(cleaned.paths["/ghost"]).toBeUndefined();
   });
 
+  it("keeps the author's comments and anchors when another method is a plain scalar", () => {
+    // The strip has to run — `/ghost` carries a marker — and the document also
+    // spells a method as a scalar. Demanding that every method be a map node
+    // sent this whole document down the rewrite-from-the-resolved-tree branch,
+    // and these are the bytes archive installs as the living contract: the
+    // comment, the anchor and `~` all died for a node the in-place branch would
+    // never have touched, since a scalar is neither a removal marker nor a pin.
+    const feature = `openapi: 3.1.0
+info: { title: new-service, version: "1" }
+x-ok: &ok { "200": { description: ok } }
+paths:
+  /ghost:
+    post:
+      operationId: ghostOp
+      x-loam-remove: true
+  /health:
+    # liveness only — readiness lives on the mesh sidecar
+    get: ~
+    post:
+      operationId: ping
+      x-loam-based-on: deadbeef
+      responses: *ok
+`;
+
+    const text = stripOpenapiRemovalMarkers(feature, "new-service");
+    const cleaned = parse(text);
+
+    expect(text).toContain("# liveness only — readiness lives on the mesh sidecar");
+    expect(text).toContain("get: ~");
+    expect(text).toContain("responses: *ok");
+    // Everything the strip owes the living contract still happened.
+    expect(text).not.toContain("x-loam-remove");
+    expect(text).not.toContain("x-loam-based-on");
+    expect(cleaned.paths["/ghost"]).toBeUndefined();
+    expect(cleaned.paths["/health"].get).toBeNull();
+    expect(cleaned.paths["/health"].post.responses["200"].description).toBe("ok");
+  });
+
+  it("falls back to the resolved tree when an operation is a YAML alias", () => {
+    // An alias is the one node kind that resolves to a mapping without being a
+    // map, so `deleteIn` walking to its pin threw out of archive as `internal`,
+    // and there is no way to strip the pin off one use of an anchor and not the
+    // rest. Losing the formatting is what not shipping the marker costs here.
+    const feature = `openapi: 3.1.0
+x-ping: &ping
+  operationId: ping
+  x-loam-based-on: deadbeef
+  responses: {}
+paths:
+  /ghost:
+    post:
+      operationId: ghostOp
+      x-loam-remove: true
+  /health:
+    get: *ping
+`;
+
+    const text = stripOpenapiRemovalMarkers(feature, "new-service");
+    const cleaned = parse(text);
+
+    // Expanded where the alias stood, which is the safe branch's signature.
+    expect(text).not.toContain("get: *ping");
+    expect(text).not.toContain("x-loam-remove");
+    expect(cleaned.paths["/ghost"]).toBeUndefined();
+    expect(cleaned.paths["/health"].get.operationId).toBe("ping");
+    expect(cleaned.paths["/health"].get["x-loam-based-on"]).toBeUndefined();
+  });
+
+  it("falls back to the resolved tree when a method's own KEY is an alias", () => {
+    // The degenerate form of the same question, pinned because the obvious
+    // narrowing — refuse in-place editing for method nodes that are aliases —
+    // passes this document as editable and then crashes on it: `deleteIn`
+    // cannot find a key spelled as an alias, so it reports the node missing
+    // exactly as it does for the aliased operation above. What the in-place
+    // branch actually needs is to REACH every mapping it has to edit.
+    const feature = `k: &getKey get
+paths:
+  /ghost:
+    post:
+      operationId: ghostOp
+      x-loam-remove: true
+  /health:
+    *getKey : { operationId: ping, x-loam-based-on: deadbeef }
+`;
+
+    const text = stripOpenapiRemovalMarkers(feature, "new-service");
+    const cleaned = parse(text);
+
+    expect(text).not.toContain("x-loam-remove");
+    expect(text).not.toContain("x-loam-based-on");
+    expect(cleaned.paths["/ghost"]).toBeUndefined();
+    expect(cleaned.paths["/health"].get.operationId).toBe("ping");
+  });
+
   it("uses a typed error contract for an unreadable document", () => {
     expect(() => mergeOpenapiPaths(LIVING, "paths: [", "pets")).toThrowError(OpenapiMergeError);
     try {

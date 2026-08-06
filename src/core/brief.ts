@@ -329,7 +329,7 @@ export interface FrontmatterBrief {
   why: string;
 }
 
-export const FRONTMATTER_BRIEF: FrontmatterBrief = {
+const FRONTMATTER_BRIEF: FrontmatterBrief = {
   fields: {
     service: "the directory this file lives under, exactly. A mismatch is an error (`frontmatter.field-mismatch`).",
     status:
@@ -351,7 +351,7 @@ export const FRONTMATTER_BRIEF: FrontmatterBrief = {
  * The two invocations a baseline meets. `<id>` is a placeholder for the service
  * id — the JSON contract keeps it symbolic, the text renderer substitutes it.
  */
-export const VIA_SERVICE = "loam validate --service <id>";
+const VIA_SERVICE = "loam validate --service <id>";
 export const VIA_ALL = "loam validate --all";
 
 export interface BriefCheck {
@@ -677,7 +677,7 @@ export interface Brief {
   rule: string;
 }
 
-export const NEVER_OVERWRITE =
+const NEVER_OVERWRITE =
   "Do not overwrite an artifact that already exists. Read it, diff your findings against it, and report what disagrees — a document somebody wrote is evidence, and replacing it destroys the only copy of what they knew.";
 
 /** Assemble the brief for one service. Reads the docs repo; writes nothing. */

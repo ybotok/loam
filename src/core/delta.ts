@@ -423,6 +423,12 @@ export async function deltaShapeIssues(
           const idMatches = livingById.get(r.id) ?? [];
           const nameMatches = livingByName.get(r.name) ?? [];
           const nameSelectsOther = nameMatches.some((candidate) => candidate.id !== r.id);
+          // The second disjunct is defensive rather than reachable: a living
+          // requirement under this heading that the ID did NOT select must carry
+          // some other ID, which is what `nameSelectsOther` already says. It is
+          // kept because it states the rule the reader is being told — ID and
+          // heading must select the same identity — without depending on that
+          // derivation holding after the next edit.
           if (nameSelectsOther || (idMatches.length === 0 && nameMatches.length > 0)) {
             issues.push({
               severity: "error",
@@ -434,8 +440,20 @@ export async function deltaShapeIssues(
           }
           // A differing heading is the explicit loam rename mechanism: the
           // stable ID selects the old requirement, MODIFIED supplies its new name.
-          if (idMatches.length === 1) {
-            checkBaseline(r, idMatches[0]!);
+          //
+          // Total in the ID, deliberately: an ID that matches SEVERAL living
+          // requirements has already been refused as
+          // `delta.living-requirement-id-invalid` (severity error, so archive is
+          // gated either way), and the living document is where it gets fixed.
+          // Falling through instead added `delta.modified-unknown` — "does not
+          // exist … Did you mean ADDED?" — beside it, which is both false and
+          // the more actionable-sounding of the two, and it sends the author to
+          // edit the delta over a problem that is not in the delta. There is no
+          // baseline to check against an ambiguous selection, so the pin is
+          // simply not graded until the ambiguity is gone.
+          if (idMatches.length > 0) {
+            const selected = idMatches.length === 1 ? idMatches[0] : undefined;
+            if (selected !== undefined) checkBaseline(r, selected);
             continue;
           }
         } else if (livingNames.has(r.name)) {

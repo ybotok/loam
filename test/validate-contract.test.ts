@@ -281,6 +281,32 @@ describe("--json findings", () => {
     });
   });
 
+  it("an operation whose only requirement is REMOVED grades ungoverned, not covered", async () => {
+    // A REMOVED requirement is on its way out together with the operations it
+    // names, so it governs nothing — the position `governedOps` and
+    // `spec-api.op-undefined` already took, and the `api.covered` join did not.
+    // The result was the worst possible reading: the one operation about to be
+    // left without a requirement was the one the report certified as covered.
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = files[`services/${SVC}/spec.md`]!.replace(
+      "## Requirements",
+      "## REMOVED Requirements",
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      const t: Target = JSON.parse(res.stdout).targets[0];
+      const f = t.findings.find((x) => x.code === "api.ungoverned")!;
+      expect(f.severity).toBe("warn");
+      expect(f.message).toContain("authorizePayment");
+      expect(codes(t)).not.toContain("api.covered");
+      // Warn-only, deliberately: what changed is what the report SAYS about
+      // this service, not whether it passes. A fleet mid-retirement must not go
+      // red for a requirement somebody correctly marked REMOVED.
+      expect(res.code).toBe(0);
+      expect(t.valid).toBe(true);
+    });
+  });
+
   it("codes a broken C4 model and carries the parser errors as details", async () => {
     const files = coherentFixture();
     files[`services/${SVC}/model.likec4`] =

@@ -12,6 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AGENTS_MD } from "./agent.js";
+import { AGENTS_FILENAME } from "./repo.js";
 
 /**
  * Top-level layout of the shared docs repo, and part of its identity rather
@@ -156,7 +157,7 @@ export function docsRepoFiles(opts: DocsRepoFileOptions = {}): Array<[string, st
   return [
     // The process contract lives with the docs it describes, so an agent handed
     // only the docs repo still knows the cycle.
-    ["AGENTS.md", AGENTS_MD],
+    [AGENTS_FILENAME, AGENTS_MD],
     [join("architecture", "landscape.likec4"), `${preamble}${LANDSCAPE_STUB}`],
     ["loam.json", DOCS_SELF_CONFIG],
   ];

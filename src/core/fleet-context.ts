@@ -12,11 +12,14 @@
  * (which `readFile(path, "utf8")` silently turns into U+FFFD, so a UTF-16
  * spec.md parses as zero requirements and grades green), and git conflict
  * markers left in a living document (which parse as prose, and which the next
- * `loam archive` rewrites away). One place, so no reader can forget.
+ * `loam archive` rewrites away). One place, so no reader can forget. The
+ * decode itself lives in `document-bytes.ts`, a leaf: the parsers that read a
+ * single file without an index owe the same rule, and must not have to import
+ * this module — and the fleet it pulls in behind it — to obey it.
  */
-import { isUtf8 } from "node:buffer";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { decodeDocument } from "./document-bytes.js";
 import { loadFile, type LoadedDoc } from "./likec4.js";
 import type { Finding } from "./report.js";
 import {
@@ -31,7 +34,6 @@ import {
   type FeatureEntry,
   type ServiceEntry,
 } from "./repo.js";
-import { featureSpecPaths, servicePaths } from "./repo.js";
 import { parseRequirements, type Requirement } from "./spec.js";
 
 export interface FleetContextStats {
@@ -51,60 +53,6 @@ function key(path: string): string {
 /* ------------------------------------------------------------------ */
 /* What a read must never swallow                                      */
 /* ------------------------------------------------------------------ */
-
-/**
- * A document loam was about to parse that is not UTF-8 text.
- *
- * Thrown rather than returned, and named as the file rather than as an empty
- * document, because every parser in the codebase reads "no requirements, no
- * frontmatter" as a legitimate state — a fresh baseline looks exactly like it.
- * A `spec.md` saved as UTF-16 (PowerShell's `>` writes UTF-16LE by default)
- * therefore validated green, with every requirement in it invisible.
- *
- * `path` is spelled the way Node spells it on an ErrnoException so that
- * validate's per-target guard names the file without knowing this type; the
- * write path refuses the same way for the same reason (staging.ts's
- * NotUtf8Error), and that message is about what a rewrite would destroy, which
- * is not what a reader needs to hear.
- */
-export class NotUtf8DocumentError extends Error {
-  override readonly name = "NotUtf8DocumentError";
-
-  constructor(
-    readonly path: string,
-    reason: string,
-  ) {
-    super(
-      `${path} is not a UTF-8 text document — ${reason}. Read as UTF-8 its requirements, frontmatter and headings ` +
-        `all come out absent rather than wrong, so the file grades as an empty baseline instead of an unreadable one. ` +
-        `Nothing here was checked. Re-save it as UTF-8 (PowerShell's \`>\` and \`Out-File\` write UTF-16 unless told ` +
-        `otherwise: use \`Out-File -Encoding utf8\`), then re-run.`,
-    );
-  }
-}
-
-/**
- * Decode a document loam is about to parse, or refuse naming it.
- *
- * Two tests, because one is not enough. `isUtf8` catches the byte sequences
- * that cannot be UTF-8 at all — which is what a byte-order mark makes UTF-16
- * into, and PowerShell writes one. Without a BOM, UTF-16LE of ASCII is a
- * sequence of valid UTF-8 bytes: every other byte is NUL, which decodes to
- * U+0000 and nothing complains. That file parsed as zero requirements and no
- * frontmatter, and validated green. A NUL in a markdown document loam owns has
- * no legitimate spelling, so it is the second test.
- */
-export function decodeDocument(bytes: Buffer, path: string): string {
-  if (!isUtf8(bytes)) throw new NotUtf8DocumentError(path, "its bytes are not a valid UTF-8 sequence");
-  const text = bytes.toString("utf8");
-  if (text.includes("\u0000")) {
-    throw new NotUtf8DocumentError(
-      path,
-      "it holds NUL characters, which no markdown document does — almost always UTF-16 saved without a byte-order mark",
-    );
-  }
-  return text;
-}
 
 /**
  * The three-way merge left its markers in the file — 1-based line numbers.
@@ -292,20 +240,17 @@ export class FleetContext {
     return (await this.readOpenapi(path)).ops.map((op) => op.id);
   }
 
-  async serviceOperationIds(docsDir: string, service: string, featureDir?: string): Promise<string[]> {
-    const ids = new Set(
-      (await this.operations(servicePaths(docsDir, service).openapi))
-        .filter((op) => !op.remove)
-        .map((op) => op.id),
-    );
-    if (featureDir !== undefined) {
-      for (const op of await this.operations(featureSpecPaths(featureDir, service).openapi)) {
-        if (op.remove) ids.delete(op.id);
-        else ids.add(op.id);
-      }
-    }
-    return [...ids];
-  }
+  /*
+   * Deliberately no `serviceOperationIds` here. The living-plus-feature union is
+   * a RULE — every removal applied before any upsert — not a read, and a second
+   * copy of a rule is a second chance to spell it differently. This one did: it
+   * interleaved removals with upserts, so a relocated operation answered
+   * "defined" through `archive` (no context) and "gone" through `validate` and
+   * `status` (context), or the reverse, depending on the order the feature's
+   * YAML happened to spell the two slots in. `core/openapi.ts` owns the rule and
+   * threads a context through the reads underneath it, which is the only part
+   * this class was ever needed for.
+   */
 
   loadLikeC4(path: string): Promise<LoadedDoc> {
     const k = key(path);

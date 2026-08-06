@@ -15,11 +15,14 @@
  *    them;
  *  - an `x-loam-remove` written at PATH level, published into the fleet's living
  *    contract with no warning and invisible to every detector afterwards;
+ *  - a docs repo whose services are mounted by symlink — a layout loam follows
+ *    everywhere else — locked out of retrying its own interrupted archive, so
+ *    that a repairable half-merge became a permanent one;
  *  - the closing "complete + current" line printed over a fleet the same archive
  *    had just made red.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readOpenapi } from "../src/core/openapi.js";
@@ -514,6 +517,104 @@ describe("a commit killed between two renames", () => {
       );
       // The pre-images are still there to repair from.
       expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/architecture/landscape.likec4"))).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A docs repo composed of symlinks                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Move `services/<service>/` out to a sibling checkout and mount it back by
+ * symlink — how a worktree, a submodule, or one service's directory shared
+ * between two checkouts actually arrives. loam follows these links rather than
+ * refusing them (core/repo.ts's `entryIs` says why in full), so every write-path
+ * question asked about a file under one has to be answerable too.
+ */
+async function mountServiceFromSibling(p: Project, service: string): Promise<string> {
+  const mounted = join(p.docsDir, "services", service);
+  const checkout = join(p.docsDir, "..", "checkouts", service);
+  await mkdir(dirname(checkout), { recursive: true });
+  await rename(mounted, checkout);
+  await symlink(checkout, mounted, "dir");
+  return checkout;
+}
+
+/** The snapshot an ACTIVE (not yet archived) feature directory carries. */
+function activeManifestPath(p: Project, dirName: string): string {
+  return join(p.docsDir, "features", dirName, SNAPSHOT_DIR, SNAPSHOT_MANIFEST);
+}
+
+describe("a docs repo whose services are mounted by symlink", () => {
+  it("can retry an archive that died mid-commit over a mounted service", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      await mountServiceFromSibling(p, "payment-service");
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      const spec = join(p.docsDir, "services/payment-service/spec.md");
+      const living = await readFile(spec);
+
+      // What a run killed before its first rename leaves behind: a snapshot
+      // naming a file that lives on the far side of the mount, and living docs
+      // that still say exactly what its pre-image does.
+      const first = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
+      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", first);
+      const manifest = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
+      expect(manifest.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
+
+      // The retry. Resolving that row through the realpath check refused it —
+      // the mount leaves the docs repo — so this threw `SnapshotClobberError`
+      // for as long as the service stayed mounted: `archive` could never run
+      // again, the operator was told an intact snapshot was unreadable, and the
+      // half-merge it is the only record of could never be repaired.
+      const second = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
+      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", second);
+      const rewritten = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
+      expect(rewritten.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
+      expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still refuses a manifest row spelled as a path the docs repo does not own", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const checkout = await mountServiceFromSibling(p, "payment-service");
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      const spec = join(p.docsDir, "services/payment-service/spec.md");
+      const staged = await stageWrites([planWrite(spec, "# rewritten\n")]);
+      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", staged);
+      const manifestFile = activeManifestPath(p, "FEAT-1-split");
+      const original = JSON.parse(await readFile(manifestFile, "utf8")) as Manifest;
+
+      // Following the mount is not the same as accepting any spelling: the first
+      // two of these name the very file the mount reaches, and are refused
+      // anyway, because the rule is about what the manifest is allowed to SAY.
+      const spellings = [
+        "../checkouts/payment-service/spec.md",
+        join(checkout, "spec.md"),
+        "services\\payment-service\\spec.md",
+      ];
+      for (const spelling of spellings) {
+        await writeFile(
+          manifestFile,
+          JSON.stringify({ ...original, files: original.files.map((f) => ({ ...f, path: spelling })) }, null, 2) + "\n",
+          "utf8",
+        );
+        const retry = await stageWrites([planWrite(spec, "# rewritten again\n")]);
+        const rejection: unknown = await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", retry).then(
+          () => undefined,
+          (err: unknown) => err,
+        );
+        expect(rejection).toBeInstanceOf(SnapshotClobberError);
+        expect((rejection as Error).message).toContain(spelling);
+        // The refusal kept the pre-images it exists to keep.
+        expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
+      }
     } finally {
       await p.destroy();
     }

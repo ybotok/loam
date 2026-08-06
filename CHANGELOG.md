@@ -2,6 +2,53 @@
 
 All notable project changes are recorded here. The format follows Keep a Changelog, and release versions follow Semantic Versioning.
 
+## [Unreleased]
+
+Two new commands, a change to what `loam init` writes into a generated file, and a code-quality pass over `src/` with the defects it turned up. The refactoring half is invisible by construction; what follows is only the part a user can observe.
+
+### Added
+
+- **`loam explore [<service>...]`** — read the fleet around a change nobody has written down yet, and write nothing. It answers the one question `loam new` takes as an argument: which services a feature touches. For each seed it reports the ring one hop out in the fleet map, each service's maturity rung and living operations, who already calls whom, the active features already covering the same services, and the literal `loam new` line the seeds imply. `--op <operationId>` seeds from an operation when you know the call but not who owns it; `--as <FEAT>` names the feature in the suggested line. A seed naming no `services/<id>/` is reported with its near-misses rather than refused — a feature may be introducing that service, and a typo looks identical until you read the list. The neighbours are deliberately **not** folded into the suggested command: loam knows those services are connected, not whether you change them.
+- **`loam instructions [<workflow>] [args...]`** — print one of the six workflow protocols (`loam-adopt`, `loam-feature`, `loam-implement`, `loam-check`, `loam-verify`, `loam-ship`) with `$1`, `$2` filled in from the arguments given. With no argument it lists them. It is the only command that reads no `loam.json` and no docs repo, deliberately: `loam-adopt`'s own first step is to run `loam init` when there is no config, so it cannot be the step that requires one.
+- **[WORKFLOW.md](WORKFLOW.md)** — the working protocol as a document: the artifact graph and its five derived states, what actually gates and what only advises, the six workflows, how an agent drives the cycle from `--json`, and why there is no task-list artifact.
+
+### Changed — what `loam init` writes into a command or skill file
+
+- **A generated file is now a pointer at `loam instructions`, not a copy of the protocol.** It carries the workflow's purpose and its spine — the verbs, in order — and defers this release's flags, finding codes and fix tables to the binary; a fresh `.claude/commands/` drops from about 53 KB to about 11 KB, and the finding-code tables move with it. The protocol itself is unchanged and complete; only its delivery moved. The reason is that the two go stale in opposite directions and only one is fixable: loam never regenerates a generated file (your edits outrank the template, and that is not changing), so a protocol copied into a repository will eventually describe a different loam with total confidence, while a pointer cannot. `doctor.agent-files-stale` still reports a file whose version stamp has fallen behind, and now has almost nothing to be wrong about.
+- **Nothing rewrites an existing file.** A repository scaffolded by an earlier loam keeps exactly the files it was given, full protocol text and all — re-running `loam init` over it leaves them byte-unchanged. The version stamp is how you tell, and `loam doctor` raises `doctor.agent-files-stale` against them only once this binary's stamp is ahead of theirs. To take the new form, delete the files and re-run `loam init`.
+- Both new commands reuse the existing refusal codes (`invalid-option`, `unknown-target`). No stable code was added, changed or removed.
+- **The feature-id grammar has one home.** It was spelled privately in `loam new` and again in the OpenSpec migration; `core/ids.ts` owns it now, so an id one command accepts cannot be an id the other refuses. The only user-visible edge is wording: `migrate-openspec`'s `mapping.feature-id-invalid` message now ends with the same "e.g. FEAT-101 or BUG-42" example every other refusal gives. The code is unchanged.
+
+### Fixed — commands that wrote or attested on evidence they had not checked
+
+- **`archive` no longer installs an unreadable feature contract as the living one.** A feature `openapi.yaml` that does not parse as an OpenAPI document was planned verbatim into `services/<svc>/openapi.yaml` and reported `ok: true`; every other command reads `readOpenapi`'s `unreadable` flag, and the one that writes was the one that did not. It now refuses with `merge-failed`, naming the file. The same code now answers when the contract is being created rather than merged — that case used to escape as `internal`.
+- **`verify --record` no longer attests when it could not check the report.** The committed-report binding check tested for git's exit code 1 and nothing else, so a `git diff` killed by a signal — a CI timeout, the OOM killer, a fork failure — skipped the check and wrote the attestation anyway. A run that cannot reach an exit status is now a refusal that says git could not be run to completion.
+- **An interrupted `archive` can be retried on a docs repo composed of symlinks.** Checking whether the snapshot was stale resolved the manifest's paths through a symlink test meant for writes, so a `services/<svc>/` mounted from a sibling checkout — a layout every walk of the repo follows on purpose — turned every retry into a permanent refusal. That check only reads a file and compares a digest; containment is now judged without resolving the mount. `unarchive`, which writes the pre-image back, deliberately keeps the stricter test.
+- **A malformed `.loam-before/manifest.json` or `.loam-lock` is answered, not assumed.** Both were read through a cast: well-formed JSON that was not an object slipped past as "a different loam", and a bare `null` threw a `TypeError` out of the refusal itself. They now answer `commit-interrupted` and `docs-busy` respectively — the codes that case always deserved.
+- **A `spec.md` whose bytes are UTF-16LE is refused on the write path.** The write path's UTF-8 guard was a weaker copy of the read path's and missed exactly the file the read path had been hardened against: such a document parsed as zero requirements, so a merge computed over an empty baseline and wrote that back.
+
+### Fixed — user errors reported as `internal`
+
+- **`list`, `show` and `validate` report `repository-unavailable`** where a filesystem failure carries no path — a directory where `spec.md` belongs reports EISDIR with no `path`, which defeated the guard. `status` had this fix; the other three copies of the same catch block did not.
+- **`loam.json` that cannot be read reports `config-invalid`.** The read sat one line above its own `try`, so a config file that was a directory, or carried a restrictive permission bit, crashed every command in the CLI.
+- **`loam new` refuses instead of scaffolding into a directory that is not a docs repo**, and **`loam adopt` refuses (`docs-missing`)** instead of briefing an agent to write a baseline into a docs repo that does not exist. Both previously exited 0.
+
+### Fixed — checks that answered differently depending on where they were asked
+
+- **A relocated operation grades the same under `validate`, `status` and `archive`.** `FleetContext` carried a second implementation of `serviceOperationIds` that interleaved removals with upserts, so an operation removed at one path and defined at another answered "undefined" or "defined" depending on which the author spelled first — and `spec-api.op-undefined` is a gating error.
+- **`c4.op-ungoverned` joins per service.** Operation ids are unique only within a contract, so an operation governed on one service suppressed the warning for an unrelated service that shared its name.
+- **`api.covered` no longer counts a REMOVED requirement as governing.** An operation whose only governing requirement was removed now reports `api.ungoverned` (a warning; nothing about gating or exit codes changes).
+- **`loam status` (fleet form) reports `blocked` for a repo holding an interrupted commit journal**, agreeing with the per-feature form, which already did. It previously said `done` and "ship it" over a tree the other form called blocked.
+- **`loam delta` exits 1 when the feature's `openapi.yaml` does not parse**, matching the rule the architecture axis already had, and its `--json` payload carries an `openapi` key saying so. An unparseable contract used to project as "no operations".
+
+### Fixed — deletion that reached outside the repository
+
+- **`loam gherkin` orphan cleanup no longer follows a symlinked directory out of the repo.** Enumeration follows symlinks by design, so a planted `<gherkinDir>/loam/sub -> /outside` produced orphan paths that `unlink` resolved and deleted elsewhere. A symlinked `.feature` sitting directly in `loam/` is still removed — the link goes, its target survives — which is the distinction the guard now draws.
+
+### Changed — internal structure
+
+No behaviour depends on this, and it is recorded because the next contributor will notice it: the eight runtime import cycles in `src/core/` are gone, five helper modules were extracted from the modules that happened to hold them (`document-bytes`, `records`, `steps`, `concurrency`, and the docs-repo gate), and the duplicated spellings of six shared rules now have one home each. `docs/CODE-STYLE.md` records the conventions and the defect behind each one.
+
 ## [0.1.0-beta.1] - 2026-08-06
 
 The first published release, and a prerelease on purpose: it ships under the `beta` dist-tag, not `latest`. This entry covers the pre-publication hardening pass. Most of it is not new capability — it is the difference between a command that reports a problem and one that was quietly blind to it, and in four places it is the difference between an undo that works and one that certifies text nobody wrote. Grouped by what a user would notice.

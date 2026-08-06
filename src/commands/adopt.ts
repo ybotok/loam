@@ -14,9 +14,11 @@ import { existsSync } from "node:fs";
 import { closeIds } from "../core/arch.js";
 import { loadConfig } from "../core/config.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/json.js";
 import { DocsRepoUnavailableError, listServices, servicePaths } from "../core/repo.js";
+import { SEVERITY_MARK } from "../core/report.js";
 import { serviceBrief, VIA_ALL, type Brief, type BriefCheck, type BriefTarget } from "../core/brief.js";
+import { docsRepoReady } from "./docs-repo-gate.js";
 
 interface AdoptOptions {
   service?: string;
@@ -88,10 +90,21 @@ export function registerAdopt(program: Command): void {
         reportNoConfig(json);
         return;
       }
+      // This command writes nothing, but it briefs an agent to write a whole
+      // baseline — so a docsDir that does not exist is not a harmless read: it
+      // hands over eight target paths under a directory nobody has, at exit 0,
+      // with the near-miss warning below silently switched off (listServices
+      // throws, `invocationWarnings` swallows it and returns nothing). The same
+      // refusal every enumerating command owes; see docs-repo-gate.ts.
+      //
+      // `docs`, not `services`: a docs repo that has no services/ yet is exactly
+      // the repo adopt exists to fill, and refusing there would refuse the
+      // command's own first use.
+      if (!docsRepoReady(json, config.docsDir, "docs")) return;
 
       const service = opts.service ?? config.service;
       if (service === undefined) {
-        fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+        fail(json, "invalid-option", NO_SERVICE_MESSAGE);
         return;
       }
       // The id becomes `services/<id>/` in a shared repo, so it goes through the
@@ -181,7 +194,7 @@ function render(b: Brief, warnings: string[]): void {
 }
 
 function printCheck(c: BriefCheck): void {
-  console.log(`    ${c.severity === "error" ? "✗" : "⚠"} ${c.code}`);
+  console.log(`    ${SEVERITY_MARK[c.severity]} ${c.code}`);
   console.log(wrap(c.what, "        "));
 }
 

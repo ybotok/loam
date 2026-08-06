@@ -12,6 +12,8 @@ npm run test:package
 
 The one-shot `npm run setup` command performs installation, build, and a CLI smoke check. Keep changes scoped, add tests for behavior changes, and do not commit generated `dist/`, coverage, local `loam.json`, pilot fleet data, or pilot outputs containing internal paths.
 
+`docs/CODE-STYLE.md` records the conventions the compiler and linter cannot enforce, and the defect behind each one. Read it before a first change to `src/`.
+
 Pull requests should explain the user-visible contract being changed, the failure mode being prevented, and the verification performed. Machine-facing CLI changes must preserve the documented JSON envelope and stable error codes or explicitly describe a versioned contract change.
 
 ## Releases

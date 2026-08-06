@@ -342,11 +342,18 @@ describe("E2 C4→API: every tagged edge's op must be defined by the TARGET serv
     metadata { op 'createSplit' }
   }`);
     const issues = await coherenceOf(files);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]!.severity).toBe("error");
-    expect(issues[0]!.message).toContain("createSplit");
-    expect(issues[0]!.message).toContain("payment-service");
-    expect(issues[0]!.message).toContain("contract");
+    // Two issues, and the second one is the point of the reversal: the feature's
+    // spec delta governs createSplit under payment-split-service, but the edge now
+    // targets payment-service. `c4.op-ungoverned` joins per service, so it fires
+    // here — an operationId governed in one contract says nothing about another's.
+    expect(issues).toHaveLength(2);
+    expect(warns(issues).map((i) => i.code)).toEqual(["c4.op-ungoverned"]);
+    const errs = errors(issues);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.code).toBe("c4-api.op-undefined");
+    expect(errs[0]!.message).toContain("createSplit");
+    expect(errs[0]!.message).toContain("payment-service");
+    expect(errs[0]!.message).toContain("contract");
   });
 
   it("target lookup is keyed by element TITLE: specs under the element id do not satisfy the contract", async () => {

@@ -27,7 +27,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
-import { AGENTS_MD, SLASH_COMMANDS } from "../src/core/agent.js";
+import { AGENTS_MD, PROTOCOLS } from "../src/core/agent.js";
 import { UNCHECKED, VALIDATE_CHECKS } from "../src/core/brief.js";
 import { loadFile } from "../src/core/likec4.js";
 
@@ -199,7 +199,7 @@ describe("the agent contract teaches the multi-repo forms", () => {
   });
 
   it("/loam-verify records with --service, in the service's own repo", () => {
-    const verify = SLASH_COMMANDS["loam-verify"]!;
+    const verify = PROTOCOLS["loam-verify"]!;
     expect(verify).toMatch(/loam verify \$1 --service <id> --results report\.json --record answers\.json/);
     expect(verify).toMatch(/in each affected service's own repository/i);
     for (const code of ["record-federated", "record-unreadable", "service-mismatch", "repository-unavailable"]) {
@@ -211,7 +211,7 @@ describe("the agent contract teaches the multi-repo forms", () => {
     // The one legal mention of the bare form is the prohibition itself, which
     // says "Never" — a recipe line that merely omits --service is the bug.
     const offenders: string[] = [];
-    for (const [name, body] of Object.entries(SLASH_COMMANDS)) {
+    for (const [name, body] of Object.entries(PROTOCOLS)) {
       for (const line of body.split("\n")) {
         if (!/loam verify \$1[^\n]*--record/.test(line)) continue;
         if (line.includes("--service") || /never/i.test(line)) continue;
@@ -232,7 +232,7 @@ describe("the agent contract teaches the multi-repo forms", () => {
   });
 
   it("/loam-adopt closes on the fleet-level run, not only the per-service one", () => {
-    const adopt = SLASH_COMMANDS["loam-adopt"]!;
+    const adopt = PROTOCOLS["loam-adopt"]!;
     expect(adopt).toContain("loam validate --service $1 --json");
     expect(adopt).toContain("loam validate --all --json");
     // and it wires the repo before briefing anything
@@ -291,7 +291,7 @@ describe("the code vocabulary reaches AGENTS.md itself", () => {
   it("the ordering commands are on the agent surface, next to the findings that need them", () => {
     expect(AGENTS_MD).toContain("loam dependencies");
     expect(AGENTS_MD).toContain("loam doctor");
-    const check = SLASH_COMMANDS["loam-check"]!;
+    const check = PROTOCOLS["loam-check"]!;
     // every "another feature in flight" finding points at the command that
     // computes the order, instead of leaving it to be worked out per finding
     for (const code of ["delta.modified-pending", "delta.added-conflict", "delta.modified-conflict"]) {
@@ -305,7 +305,7 @@ describe("the code vocabulary reaches AGENTS.md itself", () => {
     // It used to be documented as "one fleet-level summary line, not per-service
     // findings", which is the opposite of what validate emits today.
     expect(AGENTS_MD).not.toContain("one fleet-level summary line, not per-service findings");
-    expect(SLASH_COMMANDS["loam-check"]).not.toContain(
+    expect(PROTOCOLS["loam-check"]).not.toContain(
       "one fleet-level summary line, not per-service findings",
     );
     expect(AGENTS_MD).toMatch(/per-service[\s\S]{0,40}`sources\.unverifiable-from-here`/);
@@ -313,7 +313,7 @@ describe("the code vocabulary reaches AGENTS.md itself", () => {
 
   it("the vouch-written fields are listed completely, sources_files included", () => {
     expect(AGENTS_MD).toContain("sources_files");
-    expect(SLASH_COMMANDS["loam-adopt"]).toContain("sources_files");
+    expect(PROTOCOLS["loam-adopt"]).toContain("sources_files");
   });
 });
 

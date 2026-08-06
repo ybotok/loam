@@ -36,7 +36,7 @@ const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/;
 
 /** Prose form of the rule, shown verbatim in every refusal so the fix is obvious. */
-export const SERVICE_ID_RULE =
+const SERVICE_ID_RULE =
   "a service id must start with a letter or digit and contain only letters, digits, '.', '_' or '-' " +
   "(no slashes, no '..', no spaces) — it becomes the services/<id>/ directory name";
 
@@ -88,11 +88,6 @@ export function serviceIdProblem(id: unknown, label = "--service"): string | nul
   return null;
 }
 
-/** True when `id` is a usable service id. */
-export function isServiceId(id: unknown): id is string {
-  return serviceIdProblem(id) === null;
-}
-
 /**
  * Assert that `id` may be used as a `services/<id>/` directory name. Throws
  * InvalidIdError; commands catch it and report `invalid-option`, because a bad
@@ -101,4 +96,41 @@ export function isServiceId(id: unknown): id is string {
 export function assertServiceId(id: unknown, label = "--service"): asserts id is string {
   const problem = serviceIdProblem(id, label);
   if (problem !== null) throw new InvalidIdError(typeof id === "string" ? id : String(id), problem);
+}
+
+/**
+ * Feature ids are `<word>-<number>`: the id has to survive being read back off
+ * the directory name (`FEAT-101-payment-splitting` -> `FEAT-101`), or the
+ * feature would answer to a name it was never given.
+ *
+ * Here for the same reason the service grammar is — this was spelled twice,
+ * privately, in `commands/new.ts` and `core/openspec-inventory.ts`, and
+ * docs/DESIGN.md rule 7 recorded the pair as a hazard rather than a fact. The
+ * third caller is what made it one: `loam explore --as <FEAT>` interpolates its
+ * argument into a `loam new` line that loam PRINTS for an agent to run, so
+ * without this check `explore` cheerfully handed back a command `new` refuses.
+ * A guard test catches that class only for literal source strings — a command
+ * assembled at runtime from argv is invisible to it — which is exactly why the
+ * grammar has to be shared rather than re-derived by whoever needs it next.
+ */
+const FEATURE_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+/** Prose form, shown verbatim in every refusal so the fix is obvious. */
+export const FEATURE_ID_RULE = "Expected <word>-<number>, e.g. FEAT-101 or BUG-42.";
+
+export function isFeatureId(id: unknown): id is string {
+  return typeof id === "string" && FEATURE_ID.test(id);
+}
+
+/**
+ * Why `id` is not a usable feature id, or null when it is — the `serviceIdProblem`
+ * shape, so a caller already collecting findings reports the sentence a refusal
+ * would print.
+ */
+export function featureIdProblem(id: unknown, label = "feature id"): string | null {
+  if (!isFeatureId(id)) {
+    const shown = typeof id === "string" ? `'${id}'` : String(id);
+    return `${shown} is not a usable ${label}. ${FEATURE_ID_RULE}`;
+  }
+  return null;
 }

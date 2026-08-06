@@ -24,7 +24,7 @@
  * guard (`covers.unknown`, warn); the emitters live with the other validate
  * checks, this module owns only the grammar and the matching.
  */
-import { elementService, serviceOf, type Elem, type Rel } from "./likec4.js";
+import { elementService, serviceResolver, type Elem, type Rel } from "./likec4.js";
 import type { HealthIds } from "./health.js";
 
 export type CoversEntry =
@@ -61,9 +61,36 @@ function namesElement(name: string, e: Elem): boolean {
   return e.id === name || elementService(e) === name;
 }
 
+/**
+ * One `id -> service` resolver per document, not one per lookup.
+ *
+ * `serviceOf` builds a fresh id map on every call, and this axis calls it twice
+ * for every relationship in scope — inside loops that already run over every
+ * relationship a service can see. `serviceResolver`'s own doc says it is "built
+ * once per document and shared"; this is where the Covers axis keeps that
+ * promise, since `coversEdge` is exported and its callers hold only the element
+ * array.
+ *
+ * A module-level cache is normally the wrong shape here, because a command runs
+ * against whatever directory it was invoked in. This one is safe: the key is the
+ * per-invocation `Elem[]` a parse produced, its value is a pure function of that
+ * key alone, and nothing in it is derived from the working directory — so two
+ * runs can never see each other's answer, and the entry dies with the document.
+ * Nothing mutates an `Elem[]` after parse.
+ */
+const RESOLVERS = new WeakMap<Elem[], (id: string) => string>();
+
+function resolverFor(elements: Elem[]): (id: string) => string {
+  const cached = RESOLVERS.get(elements);
+  if (cached !== undefined) return cached;
+  const resolver = serviceResolver(elements);
+  RESOLVERS.set(elements, resolver);
+  return resolver;
+}
+
 /** Does an edge entry's side name this relationship endpoint? */
 function namesEndpoint(name: string, endpointId: string, elements: Elem[]): boolean {
-  return endpointId === name || serviceOf(elements, endpointId) === name;
+  return endpointId === name || resolverFor(elements)(endpointId) === name;
 }
 
 /** Does a Covers entry match this element? (Only element entries can.) */

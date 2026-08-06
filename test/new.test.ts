@@ -371,6 +371,27 @@ describe("--json contract and failures", () => {
     expect(JSON.parse(res.stdout).error.code).toBe("no-config");
   });
 
+  it("refuses a docsDir that is not a docs repo instead of scaffolding into it", async () => {
+    // `makeProject` rather than `withProject`: that helper lays down the
+    // `services/` floor every other test in this file needs, and its absence IS
+    // the case. `features/<id>/**` lands happily in any directory, so before
+    // the gate `new` reported ok over a scaffold no enumeration downstream will
+    // ever see — and every id passed to --touches/--new-service is a claim
+    // about `services/<id>/`, so a run without that directory is guessing.
+    const p = await makeProject({});
+    try {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("services-missing");
+      expect(json.error.message).toContain("no services/ directory");
+      expect(p.exists("features"), "the refusal must come before the first write").toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("writes nothing when the id is rejected", async () => {
     await withProject({}, async (p) => {
       await runLoam(p.workDir, "new", "nonsense");

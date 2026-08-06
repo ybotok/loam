@@ -5,3 +5,6 @@ coverage/
 .DS_Store
 # local pointer at a docs repo (the README "Try it" block writes one here)
 loam.json
+# per-machine tool permissions, not project configuration — the agents/ and
+# skills/ beside it ARE shared, which is why this is excluded by name
+.claude/settings.local.json

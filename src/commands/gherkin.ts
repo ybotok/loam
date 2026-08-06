@@ -23,12 +23,12 @@
  * from anywhere else that repo is somebody else's.
  */
 import type { Command } from "commander";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
-import { emitJson, emitJsonError, fail, reportNoConfig } from "../core/json.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
+import { emitJson, emitJsonError, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/json.js";
 import {
   featureSpecPaths,
   listFeatures,
@@ -49,7 +49,7 @@ import {
   type StampedFeature,
 } from "../core/gherkin.js";
 import { LOAM_VERSION } from "../core/version.js";
-import { resolveInside, UnsafePathError } from "../core/path-safety.js";
+import { isPathInside, resolveInside, UnsafePathError } from "../core/path-safety.js";
 
 interface GherkinOptions {
   service?: string;
@@ -78,7 +78,7 @@ export function registerGherkin(program: Command): void {
       }
       const service = opts.service ?? config.service;
       if (service === undefined) {
-        return fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+        return fail(json, "invalid-option", NO_SERVICE_MESSAGE);
       }
       // The emission writes into the repo loam is standing in, so it can only
       // run where that repo is this service's — vouch's refusal, verbatim logic.
@@ -113,6 +113,20 @@ export function registerGherkin(program: Command): void {
       }
       const rel = (abs: string): string => relative(repoDir, abs).split(/[\\/]/).join("/");
 
+      // The scope is one value, not a mode with an id lying beside it that only
+      // one of the modes ever fills in: the emission tag, the orphan filter,
+      // the overwrite rule and the conflict refusal all want the feature id
+      // exactly when the run is a feature run. A union states that; two
+      // variables could only be asserted to agree.
+      type Scope = { mode: "living" } | { mode: "feature"; featureId: string };
+      const feature =
+        featureArg === undefined ? null : await resolveFeature(config.docsDir, featureArg, "exclude");
+      if (featureArg !== undefined && feature === null) {
+        return fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureArg));
+      }
+      const scope: Scope =
+        feature === null ? { mode: "living" } : { mode: "feature", featureId: feature.id };
+
       // The requirement set, by scope. Feature mode takes ADDED and MODIFIED —
       // a BASE requirement is the living state quoted, a REMOVED one is being
       // retired, and neither is behaviour anybody is about to test. Living mode
@@ -124,19 +138,11 @@ export function registerGherkin(program: Command): void {
       // a destructive one — an empty plan makes every existing .feature under
       // loam/ an orphan, and a living run DELETES its orphans. The whole
       // generated suite would go because a docs file was written by PowerShell.
-      let mode: "feature" | "living" = "living";
-      let featureId: string | undefined;
       const byAxis: Array<{ axis: SpecAxis; reqs: Requirement[] }> = [];
       const readSpec = async (path: string): Promise<Requirement[]> =>
         parseRequirements(decodeDocument(await readFile(path), path));
       try {
-        if (featureArg !== undefined) {
-          const feature = await resolveFeature(config.docsDir, featureArg, "exclude");
-          if (!feature) {
-            return fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureArg));
-          }
-          mode = "feature";
-          featureId = feature.id;
+        if (feature !== null) {
           const paths = featureSpecPaths(feature.dir, service);
           for (const axis of SPEC_AXES) {
             const path = paths[axis.key];
@@ -167,7 +173,11 @@ export function registerGherkin(program: Command): void {
 
       // `service` is not decoration: it salts every `@loam-digest-…` stamp, and
       // it is the same string `loam verify` files the matching claims under.
-      const plan = planEmission(byAxis, { service, featureTag: featureId, version: LOAM_VERSION });
+      const plan = planEmission(byAxis, {
+        service,
+        featureTag: scope.mode === "feature" ? scope.featureId : undefined,
+        version: LOAM_VERSION,
+      });
 
       // Orphans of THIS scope, inside loam/ and nowhere else. Feature mode owns
       // only its own emissions: stamped files carrying this feature's tag whose
@@ -181,13 +191,43 @@ export function registerGherkin(program: Command): void {
       // deletion and replacement, and feature mode has to recognise another
       // feature's in-flight file to refuse overwriting it.
       const activeIds = new Set((await listFeatures(config.docsDir)).map((f) => f.id));
+      // "Inside loam/" has to hold after the links are resolved, not merely in
+      // the spelling of the path. `featureFilesUnder` FOLLOWS symlinks and
+      // recurses with the LINK's path, so a planted `<gherkinDir>/loam/sub ->
+      // /outside` hands back candidates that read as ours while `unlink`
+      // resolves them and destroys files that were never in this repo. Planned
+      // names are flat, so nothing nested is ever spared by `planned.has(...)`,
+      // and deletion is the one irreversible thing this command does: a
+      // candidate is an orphan only when its CONTAINING directory really
+      // resolves inside the owned root. The write path below refuses the same
+      // attack for the same reason.
+      //
+      // The candidate FILE is deliberately NOT resolved. A symlinked .feature
+      // sitting directly in loam/ is loam's to remove — unlinking it takes the
+      // link and leaves its target alone — so only the directory chain has to
+      // be ours.
+      const realOrNull = (p: string): string | null => {
+        try {
+          return realpathSync(p);
+        } catch {
+          return null;
+        }
+      };
+      // A root that does not resolve — absent, dangling, or vanished mid-run —
+      // proves nothing about what lives beneath it, so nothing is collected.
+      // Leaving an orphan behind is self-repairing (`loam validate` grades it
+      // `gherkin.orphaned` and the next run removes it); a deletion taken on an
+      // unproven path is not.
+      const rootReal = realOrNull(root);
       const orphans: string[] = [];
-      if (existsSync(root)) {
+      if (rootReal !== null) {
         for (const abs of await featureFilesUnder(root)) {
           if (planned.has(relative(root, abs).split(/[\\/]/).join("/"))) continue;
+          const holder = realOrNull(dirname(abs));
+          if (holder === null || !isPathInside(rootReal, holder)) continue;
           const stamped = parseStampedFeature(await readFile(abs, "utf8"));
-          if (mode === "feature") {
-            if (stamped !== null && stamped.tags.includes(featureId!)) orphans.push(abs);
+          if (scope.mode === "feature") {
+            if (stamped !== null && stamped.tags.includes(scope.featureId)) orphans.push(abs);
           } else {
             if (stamped !== null && stamped.tags.some((t) => activeIds.has(t))) continue;
             orphans.push(abs);
@@ -214,10 +254,19 @@ export function registerGherkin(program: Command): void {
       // can write is right here (the file holds ONE feature's delta), so the
       // run refuses and names the owner: the two features have to be sequenced,
       // or the requirement renamed.
-      type Action = "written" | "replaced" | "kept" | "conflict";
-      const actions: Array<
-        PlannedFeature & { path: string; action: Action; kept?: StampedFeature; owners?: string[] }
-      > = [];
+      //
+      // The row's shape follows its action instead of carrying every field any
+      // action might want: only a kept or a conflicting row has read the file
+      // that is already there, and only a conflicting one has owners. Held as
+      // one flat row with optional fields, every reader below had to assert
+      // what the writer three lines up already knew.
+      type Emission = PlannedFeature & { path: string };
+      type ActionRow =
+        | (Emission & { action: "written" | "replaced" })
+        | (Emission & { action: "kept"; kept: StampedFeature })
+        | (Emission & { action: "conflict"; kept: StampedFeature; owners: string[] });
+      type Action = ActionRow["action"];
+      const actions: ActionRow[] = [];
       for (const f of plan) {
         let path: string;
         try {
@@ -238,18 +287,18 @@ export function registerGherkin(program: Command): void {
           continue;
         }
         const existing = parseStampedFeature(await readFile(path, "utf8"));
-        if (mode === "living") {
+        if (scope.mode === "living") {
           if (existing !== null && existing.tags.some((t) => activeIds.has(t))) {
             actions.push({ ...f, path, action: "kept", kept: existing });
             continue;
           }
-        } else {
-          const owners =
-            existing === null
-              ? []
-              : existing.tags.filter((t) => t !== featureId && activeIds.has(t));
+        } else if (existing !== null) {
+          // An unstamped file is nobody's delta — it owns nothing, so it is
+          // replaced like any other, which is what the empty owner list used
+          // to say the long way round.
+          const owners = existing.tags.filter((t) => t !== scope.featureId && activeIds.has(t));
           if (owners.length > 0) {
-            actions.push({ ...f, path, action: "conflict", kept: existing!, owners });
+            actions.push({ ...f, path, action: "conflict", kept: existing, owners });
             continue;
           }
         }
@@ -258,27 +307,34 @@ export function registerGherkin(program: Command): void {
 
       // All or nothing: one conflicting file refuses the whole emission, so a
       // half-written suite can never be the state an agent has to reason about.
-      const conflicts = actions.filter((a) => a.action === "conflict");
-      if (conflicts.length > 0) {
-        const detail = conflicts
-          .map((c) => `${rel(c.path)} is @${c.owners!.join(" @")} (requirement '${c.requirement.name}')`)
-          .join("; ");
-        const message =
-          `Cannot emit gherkin for ${featureId}: ${conflicts.length} file(s) belong to another feature still in flight — ${detail}. ` +
-          `A .feature file carries one feature's delta; overwriting would revert that feature's wording and destroy the digest stamps \`loam verify --results\` matches on. ` +
-          `Archive (or abandon) the owning feature first, or rename the requirement in ${featureId}'s delta so the two stop sharing a file name.`;
-        if (json) {
-          emitJsonError("gherkin-conflict", message, {
-            conflicts: conflicts.map((c) => ({
-              path: rel(c.path),
-              action: "conflict",
-              requirement: c.requirement.name,
-              inFlight: c.owners,
-            })),
-          });
-          return;
+      // Only a feature run can conflict — living mode keeps the in-flight file
+      // rather than refusing — and standing inside that scope is also how the
+      // message names the feature without asserting there is one.
+      if (scope.mode === "feature") {
+        const conflicts = actions.filter(
+          (a): a is Extract<ActionRow, { action: "conflict" }> => a.action === "conflict",
+        );
+        if (conflicts.length > 0) {
+          const detail = conflicts
+            .map((c) => `${rel(c.path)} is @${c.owners.join(" @")} (requirement '${c.requirement.name}')`)
+            .join("; ");
+          const message =
+            `Cannot emit gherkin for ${scope.featureId}: ${conflicts.length} file(s) belong to another feature still in flight — ${detail}. ` +
+            `A .feature file carries one feature's delta; overwriting would revert that feature's wording and destroy the digest stamps \`loam verify --results\` matches on. ` +
+            `Archive (or abandon) the owning feature first, or rename the requirement in ${scope.featureId}'s delta so the two stop sharing a file name.`;
+          if (json) {
+            emitJsonError("gherkin-conflict", message, {
+              conflicts: conflicts.map((c) => ({
+                path: rel(c.path),
+                action: "conflict",
+                requirement: c.requirement.name,
+                inFlight: c.owners,
+              })),
+            });
+            return;
+          }
+          return fail(json, "gherkin-conflict", message);
         }
-        return fail(json, "gherkin-conflict", message);
       }
 
       const writes = actions.filter((a) => a.action !== "kept");
@@ -294,8 +350,8 @@ export function registerGherkin(program: Command): void {
 
       if (json) {
         emitJson({
-          mode,
-          ...(featureId === undefined ? {} : { feature: featureId }),
+          mode: scope.mode,
+          ...(scope.mode === "feature" ? { feature: scope.featureId } : {}),
           service,
           root: rel(root),
           written: !dryRun,
@@ -306,10 +362,10 @@ export function registerGherkin(program: Command): void {
             requirement: a.requirement.name,
             // A kept file's numbers describe what STAYS on disk (the in-flight
             // emission), not the emission that was withheld.
-            scenarios: a.action === "kept" ? a.kept!.scenarios.length : a.digests.length,
-            digests: a.action === "kept" ? a.kept!.scenarios.map((s) => s.digest) : a.digests,
+            scenarios: a.action === "kept" ? a.kept.scenarios.length : a.digests.length,
+            digests: a.action === "kept" ? a.kept.scenarios.map((s) => s.digest) : a.digests,
             ...(a.action === "kept"
-              ? { inFlight: a.kept!.tags.filter((t) => activeIds.has(t)) }
+              ? { inFlight: a.kept.tags.filter((t) => activeIds.has(t)) }
               : { stepless: a.stepless }),
           })),
           deleted: orphans.map(rel),
@@ -317,12 +373,13 @@ export function registerGherkin(program: Command): void {
         return;
       }
 
-      const head = mode === "feature" ? `${featureId} · ${service}` : `${service} (living suite)`;
+      const head =
+        scope.mode === "feature" ? `${scope.featureId} · ${service}` : `${service} (living suite)`;
       console.log(`gherkin ${head} → ${rel(root)}/${dryRun ? "  (dry run)" : ""}\n`);
       if (actions.length === 0) {
         console.log(
-          mode === "feature"
-            ? `  ${featureId} has no ADDED or MODIFIED requirements for ${service} — nothing to emit.`
+          scope.mode === "feature"
+            ? `  ${scope.featureId} has no ADDED or MODIFIED requirements for ${service} — nothing to emit.`
             : `  the living specs hold no requirements for ${service} — nothing to emit.`,
         );
       }
@@ -336,7 +393,7 @@ export function registerGherkin(program: Command): void {
       };
       for (const a of actions) {
         if (a.action === "kept") {
-          const owners = a.kept!.tags.filter((t) => activeIds.has(t));
+          const owners = a.kept.tags.filter((t) => activeIds.has(t));
           console.log(
             `  keep     ${a.fileName}  —  ${a.requirement.name}  (in flight: @${owners.join(" @")} — \`loam gherkin ${owners[0]}\` regenerates it)`,
           );

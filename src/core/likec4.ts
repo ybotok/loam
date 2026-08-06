@@ -209,7 +209,12 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
   // LoadedDoc instead of being written out-of-band to stderr.
   const likec4 = await LikeC4.fromSource(src, { logger: false });
   try {
-    const errors = (likec4.getErrors() as LikeC4Error[]) ?? [];
+    // Assigned, not cast: LikeC4 declares `getErrors()` as a non-nullable array
+    // whose element type is structurally wider than ours, so the compiler can
+    // check the shape here. The cast was the only thing standing between a
+    // dependency renaming `message` and a build that still succeeded — and the
+    // `?? []` it carried could never fire.
+    const errors: LikeC4Error[] = likec4.getErrors();
     if (errors.length > 0) {
       return { errors, elements: [], relationships: [] };
     }

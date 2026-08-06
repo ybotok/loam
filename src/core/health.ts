@@ -29,7 +29,7 @@ export interface HealthIds {
   alerts: string[];
 }
 
-export const NO_HEALTH_IDS: HealthIds = { slis: [], alerts: [] };
+const NO_HEALTH_IDS: HealthIds = { slis: [], alerts: [] };
 
 /** The read of one health.yaml: its declared ids, and whether the file could be read at all. */
 export interface HealthFile {
@@ -56,11 +56,6 @@ export async function readHealth(healthPath: string): Promise<HealthFile> {
   }
   const top = doc as Record<string, unknown>;
   return { ids: { slis: idsOf(top["slis"]), alerts: idsOf(top["alerts"]) }, unreadable: false };
-}
-
-/** The ids alone — for callers whose question is coverage, not readability. */
-export async function readHealthIds(healthPath: string): Promise<HealthIds> {
-  return (await readHealth(healthPath)).ids;
 }
 
 /** The ids a `slis:` / `alerts:` sequence declares — deduped, document order. */

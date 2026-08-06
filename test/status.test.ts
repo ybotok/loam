@@ -29,6 +29,7 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
+import { COMMIT_INTENT } from "../src/core/staging.js";
 import { ARTIFACT_STATUSES } from "../src/core/status.js";
 import { buildVerification, featureChecklist, renderVerification, type Answer } from "../src/core/verify.js";
 
@@ -561,6 +562,81 @@ describe("the fleet payload", () => {
     const run = await runLoam(p.workDir, "status", "--service", "nope", "--json");
     expect(run.code).toBe(1);
     expect(JSON.parse(run.stdout).error.code).toBe("unknown-service");
+    await p.destroy();
+  });
+});
+
+/**
+ * The journal `loam archive` writes before its first swap, as a killed run
+ * leaves it: version 1, a command, a restore direction, and the files whose
+ * bytes are now of unknown provenance. Written by hand rather than by killing a
+ * real commit because the question under test is what `status` READS off it —
+ * write-path-integrity.test.ts owns the other half, that archive puts it there
+ * and repairs from it.
+ */
+const INTERRUPTED_ARCHIVE = {
+  version: 1,
+  command: "archive",
+  restore: "before",
+  pid: 4242,
+  host: "build-box",
+  at: "2026-08-01T10:00:00.000Z",
+  feature: "FEAT-1",
+  moveFrom: FEAT_DIR,
+  moveTo: "features/archive/FEAT-1-split",
+  files: [{ path: "services/payment-service/spec.md", before: null, after: null }],
+};
+
+describe("an interrupted commit outranks every other answer", () => {
+  it("stages every feature `blocked` and leads with the repair, in both forms", async () => {
+    const p = await makeProject(coherentFixture());
+    // Without the journal this repository is finished and its one step is "ship
+    // it" — which is precisely the answer a half-written commit must not be
+    // allowed to give, in either form.
+    await recordVerification(p, "FEAT-1");
+    expect((await statusJson(p, "FEAT-1")).feature.stage).toBe("done");
+    expect((await statusJson(p)).features[0].stage).toBe("done");
+
+    await p.write(COMMIT_INTENT, JSON.stringify(INTERRUPTED_ARCHIVE, null, 2) + "\n");
+
+    const feature = await statusJson(p, "FEAT-1");
+    expect(feature.feature.stage).toBe("blocked");
+    expect((feature.next as NextStep[])[0]!.code).toBe("next.recover-commit");
+    expect((feature.next as NextStep[])[0]!.command).toBe("loam archive FEAT-1");
+    expect(feature.interrupted).toMatchObject({ command: "archive", feature: "FEAT-1", unreadable: false });
+
+    // The fleet form is the one that used to disagree: it read presence only,
+    // saw every artifact on disk, and answered `done` over the same repo.
+    const fleet = await statusJson(p);
+    expect(fleet.features[0].stage).toBe("blocked");
+    expect((fleet.next as NextStep[])[0]!.code).toBe("next.recover-commit");
+    expect(codes(fleet.next)).not.toContain("next.archive");
+    // `blocked` with no blocker named: the repository is what the work waits
+    // on, and the recover step above already says so. Keying this sentence off
+    // the stage alone printed "FEAT-1 is waiting on ."
+    const line = (fleet.next as NextStep[]).find((s) => s.code === "next.feature")!;
+    expect(line.statement).toBe("FEAT-1 is at 'blocked'.");
+    await p.destroy();
+  });
+
+  it("reports who and when as null when the journal omits them, rather than dropping the keys", async () => {
+    const p = await makeProject(coherentFixture());
+    // A journal that parses — `readCommitIntent` validates only the fields a
+    // repair needs — and carries none of the three labels a reader places the
+    // crash against. `JSON.stringify` drops an undefined value, so an uncoerced
+    // field left `--json` with no field at all and printed the word "undefined"
+    // at a human.
+    await p.write(
+      COMMIT_INTENT,
+      JSON.stringify({ ...INTERRUPTED_ARCHIVE, host: undefined, pid: undefined, at: undefined }, null, 2) + "\n",
+    );
+
+    const payload = await statusJson(p, "FEAT-1");
+    expect(payload.interrupted).toMatchObject({ command: "archive", host: null, pid: null, at: null });
+    expect(Object.keys(payload.interrupted)).toEqual(expect.arrayContaining(["host", "pid", "at"]));
+
+    const run = await runLoam(p.workDir, "status", "FEAT-1");
+    expect(run.stdout).not.toContain("pid undefined");
     await p.destroy();
   });
 });

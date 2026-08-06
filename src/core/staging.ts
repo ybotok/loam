@@ -13,6 +13,14 @@ import { link, mkdir, open, readdir, readFile, rename, rm, rmdir, unlink, writeF
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { repoPath } from "./json.js";
+import { resolvePortableFileInsideLexically, UnsafePathError } from "./path-safety.js";
+// Every `isRecord` below guards a record loam itself wrote and is reading back
+// — the lock, the snapshot manifest — whose fields are asked for on the very
+// next line, inside a REFUSAL path. `JSON.parse` answers with any JSON value,
+// not with an object, and that is where a thrown `TypeError` costs the most: it
+// does not make the command fail safely, it replaces a designed refusal with
+// `internal`.
+import { isRecord } from "./records.js";
 
 /**
  * A planned file write — the merge is computed fully before anything touches
@@ -87,30 +95,66 @@ export interface StagedWrite {
 /* ------------------------------------------------------------------ */
 
 /**
- * A file loam must PARSE, whose bytes are not UTF-8.
+ * A file loam must PARSE that does not decode as the UTF-8 text loam owns.
  *
  * Commands map this to `merge-failed`: nothing was written, the file is named,
  * and re-saving it as UTF-8 makes the command work. The read-only migration
  * ingest already refuses non-UTF-8 input outright (openspec-inventory.ts) —
  * the destructive path has strictly more to lose, so it refuses the same way
  * rather than substituting U+FFFD and rewriting the file over the author.
+ *
+ * `reason` says what the bytes actually ARE, because the two ways a document
+ * fails this test destroy different things: one substitutes bytes, the other
+ * erases the whole document's meaning. A reader told the wrong one goes looking
+ * in the wrong place. The advice that follows is the same either way, so it is
+ * spelled once, here.
  */
 export class NotUtf8Error extends Error {
   override readonly name = "NotUtf8Error";
 
-  constructor(readonly path: string) {
-    super(
-      `${path} is not valid UTF-8 — loam parses this file as text and writes it back, which would replace every ` +
-        `undecodable byte with U+FFFD, in the living document AND in the undo snapshot. Nothing was written. ` +
-        `Re-save it as UTF-8, then re-run.`,
-    );
+  constructor(
+    readonly path: string,
+    reason: string,
+  ) {
+    super(`${path} ${reason} Nothing was written. Re-save it as UTF-8, then re-run.`);
   }
 }
 
-/** Decode bytes a parser is about to be handed, or refuse naming the file. */
-export function decodeUtf8(bytes: Buffer, path: string): string {
-  if (!isUtf8(bytes)) throw new NotUtf8Error(path);
-  return bytes.toString("utf8");
+/**
+ * Decode bytes a parser is about to be handed, or refuse naming the file.
+ *
+ * Two tests, the same two the read path makes (document-bytes.ts's
+ * `decodeDocument`), because this side has strictly more to lose by missing
+ * either. `isUtf8` catches the byte sequences that cannot be UTF-8 at all —
+ * which is what a byte-order mark makes UTF-16 into. Without a BOM, UTF-16LE of
+ * ASCII is a sequence of perfectly VALID UTF-8 bytes: every other byte is NUL,
+ * so `isUtf8` says yes, the file decodes with a U+0000 between every character,
+ * and every parser loam owns reads its requirements, frontmatter and headings
+ * as absent rather than as unreadable. On the read path that is a document
+ * graded green while nothing in it was checked; here it is worse, because
+ * `archive` merges against that empty baseline and writes the result back — the
+ * author's requirements are not mis-read, they are gone, and the undo snapshot
+ * records the same emptiness as the pre-image.
+ */
+function decodeUtf8(bytes: Buffer, path: string): string {
+  if (!isUtf8(bytes)) {
+    throw new NotUtf8Error(
+      path,
+      `is not valid UTF-8 — loam parses this file as text and writes it back, which would replace every ` +
+        `undecodable byte with U+FFFD, in the living document AND in the undo snapshot.`,
+    );
+  }
+  const text = bytes.toString("utf8");
+  if (text.includes("\u0000")) {
+    throw new NotUtf8Error(
+      path,
+      `holds NUL characters, which no document loam owns does — almost always UTF-16 saved without a byte-order ` +
+        `mark. Its bytes are valid UTF-8, so it decodes without complaint into text whose requirements, ` +
+        `frontmatter and headings all parse as ABSENT: the merge would compute over an empty baseline and write ` +
+        `that back, taking every requirement in the file with it.`,
+    );
+  }
+  return text;
 }
 
 /** Read a file loam is going to parse. The only supported way to turn a docs file into a string. */
@@ -121,6 +165,15 @@ export async function readUtf8(path: string): Promise<string> {
 /** Same bytes? Absence is its own value: a file that is gone is not a file that is empty. */
 function sameBytes(a: Buffer | null, b: Buffer | null): boolean {
   return a === null || b === null ? a === b : a.equals(b);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reading loam's own records back off the disk                        */
+/* ------------------------------------------------------------------ */
+
+/** The one spelling of a sha256 loam wrote, for reading one back out of a record. */
+function isDigest(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -204,14 +257,20 @@ export async function acquireDocsLock(docsDir: string): Promise<() => Promise<vo
 
 /** Remove a lock whose holder is a dead process on this same host. Returns whether it did. */
 async function breakStaleLock(path: string): Promise<boolean> {
-  let holder: { pid?: unknown; host?: unknown };
+  let holder: unknown;
   try {
-    holder = JSON.parse(await readFile(path, "utf8")) as { pid?: unknown; host?: unknown };
+    holder = JSON.parse(await readFile(path, "utf8"));
   } catch {
     // Unreadable or not ours to interpret — treat it as held. A lock file we
     // cannot understand is the one case where guessing is worst.
     return false;
   }
+  // A lock file holding `null` (or a bare string, or an array) is JSON this
+  // parses and nothing else understands. Treat it as held, exactly as an
+  // unparseable one is: the dereference below used to run outside the try and
+  // threw out of `acquireDocsLock`, replacing the `docs-busy` refusal — the
+  // designed answer — with an `internal` envelope.
+  if (!isRecord(holder)) return false;
   if (holder.host !== hostname() || typeof holder.pid !== "number") return false;
   try {
     // Signal 0 asks "does this pid exist" without delivering anything. EPERM
@@ -560,16 +619,38 @@ async function assertSnapshotReplaceable(dir: string, docsDir: string): Promise<
   } catch {
     throw new SnapshotClobberError(dir, `${SNAPSHOT_MANIFEST} cannot be read, so nothing can say whether it is stale`);
   }
-  const parsed = manifest as Partial<SnapshotManifest>;
-  if (parsed.version !== SNAPSHOT_VERSION || !Array.isArray(parsed.files)) {
+  // The cast that used to stand here asserted the shape rather than checking
+  // it: well-formed JSON that is not an object answered `undefined` to every
+  // field below and slipped through as "a different loam", and a bare `null`
+  // threw a TypeError out of the refusal itself. Both left this directory —
+  // which may hold the only copies of what the living docs said — one step from
+  // being replaced, without the staleness question ever having been asked.
+  if (!isRecord(manifest)) {
+    throw new SnapshotClobberError(dir, `${SNAPSHOT_MANIFEST} cannot be read, so nothing can say whether it is stale`);
+  }
+  if (manifest.version !== SNAPSHOT_VERSION || !Array.isArray(manifest.files)) {
     throw new SnapshotClobberError(dir, `it was written by a different loam and cannot be checked against the living docs`);
   }
+  // `Array.isArray` narrows to `any[]`; naming the element type here is what
+  // keeps that `any` from spreading past the one row being read.
+  const rows: unknown[] = manifest.files;
   const landed: string[] = [];
-  for (const entry of parsed.files) {
-    if (typeof entry?.path !== "string") {
+  for (const row of rows) {
+    const entry = readSnapshotClaim(row);
+    if (entry === null) {
       throw new SnapshotClobberError(dir, `${SNAPSHOT_MANIFEST} is malformed, so nothing can say whether it is stale`);
     }
-    const target = join(docsDir, ...entry.path.split("/"));
+    let target: string;
+    try {
+      // These paths are data, and they are the ones this function goes and
+      // reads. They name living documents, so containment is lexical: a docs
+      // repo may legitimately mount a service directory through a symlink, and
+      // `unarchive` resolves the same field the same way before it writes back.
+      target = resolvePortableFileInsideLexically(docsDir, entry.path, `snapshot path '${entry.path}'`);
+    } catch (err) {
+      if (!(err instanceof UnsafePathError)) throw err;
+      throw new SnapshotClobberError(dir, `${message(err)}, so nothing can say whether it is stale`);
+    }
     const now = existsSync(target) ? sha256(await readFile(target)) : null;
     // `existed: false` means archive created the file, so "nothing landed"
     // means it is still absent.
@@ -577,6 +658,32 @@ async function assertSnapshotReplaceable(dir: string, docsDir: string): Promise<
     if (!untouched) landed.push(entry.path);
   }
   if (landed.length > 0) throw new SnapshotClobberError(dir, `${landed.length} file(s) already carry that merge: ${landed.join(", ")}`);
+}
+
+/**
+ * One manifest row read back as the record `writeSnapshot` wrote, or null when
+ * the file does not actually say.
+ *
+ * Only the three fields the staleness question consumes are checked, and every
+ * one of them is checked, because an unchecked field does not read as missing
+ * here — it reads as an ANSWER. An `existed` that is not a boolean is falsy, and
+ * a `false` claim is graded by asking whether the file is ABSENT: a manifest
+ * recording a pre-image for a file that has since been deleted therefore graded
+ * as stale bookkeeping and was cleared, taking the only copy of that pre-image
+ * with it. A `before` of the wrong type equals no digest at all, so the opposite
+ * row accuses an untouched file of carrying a merge. Both are confident answers
+ * to a question the manifest could not answer.
+ *
+ * `unarchive` asks a stricter version of the same question of the same file
+ * (`after`, `archivedAt`, the feature name, no duplicates) because it is about
+ * to write THROUGH it; that check stays where it is, with its own refusals.
+ */
+function readSnapshotClaim(value: unknown): { path: string; existed: boolean; before: string | null } | null {
+  if (!isRecord(value)) return null;
+  const { path, existed, before } = value;
+  if (typeof path !== "string" || typeof existed !== "boolean") return null;
+  if (existed) return isDigest(before) ? { path, existed, before } : null;
+  return before === null ? { path, existed, before } : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -602,7 +709,7 @@ async function assertSnapshotReplaceable(dir: string, docsDir: string): Promise<
  * commit window it does not exist.
  */
 export const COMMIT_INTENT = ".loam-commit";
-export const COMMIT_INTENT_VERSION = 1;
+const COMMIT_INTENT_VERSION = 1;
 
 export interface CommitIntentFile {
   /** Docs-repo-relative path, forward slashes. */
@@ -741,7 +848,7 @@ export async function readCommitIntent(docsDir: string): Promise<CommitIntent | 
 }
 
 function isDigestOrNull(value: unknown): boolean {
-  return value === null || (typeof value === "string" && /^[0-9a-f]{64}$/.test(value));
+  return value === null || isDigest(value);
 }
 
 /**
@@ -910,12 +1017,16 @@ export async function scanWritePathResidue(docsDir: string): Promise<WritePathRe
 
 /** Does the lock name a pid on THIS host that no longer exists? Read-only twin of breakStaleLock. */
 async function lockIsStale(path: string): Promise<boolean> {
-  let holder: { pid?: unknown; host?: unknown };
+  let holder: unknown;
   try {
-    holder = JSON.parse(await readFile(path, "utf8")) as { pid?: unknown; host?: unknown };
+    holder = JSON.parse(await readFile(path, "utf8"));
   } catch {
     return false;
   }
+  // Same shape guard as `breakStaleLock`, for the same reason: this one is read
+  // by `doctor`, which must be able to describe a broken repo without becoming
+  // the next thing that breaks.
+  if (!isRecord(holder)) return false;
   if (holder.host !== hostname() || typeof holder.pid !== "number") return false;
   try {
     process.kill(holder.pid, 0);

@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseCoversEntry, closeIds } from "../src/core/arch.js";
-import { readHealthIds } from "../src/core/health.js";
+import { readHealth, type HealthFile } from "../src/core/health.js";
 import { parseRequirements } from "../src/core/spec.js";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 
@@ -117,31 +117,47 @@ describe("Covers: parsing (spec.ts)", () => {
 /* The health.yaml reader                                              */
 /* ------------------------------------------------------------------ */
 
-describe("readHealthIds (core/health.ts)", () => {
-  async function readOf(content: string | null): Promise<{ slis: string[]; alerts: string[] }> {
+describe("readHealth (core/health.ts)", () => {
+  async function readOf(content: string | null): Promise<HealthFile> {
     const dir = await makeTmpDir();
     const path = join(dir, "health.yaml");
     if (content !== null) await writeFile(path, content, "utf8");
-    return readHealthIds(path);
+    return readHealth(path);
   }
 
   it("reads sli and alert names from the recognized keys", async () => {
-    const ids = await readOf(
+    const health = await readOf(
       "slis:\n  - name: availability\n    slo: 0.999\n  - name: latency\nalerts:\n  - name: err_rate\n    expr: x > 1\n",
     );
-    expect(ids).toEqual({ slis: ["availability", "latency"], alerts: ["err_rate"] });
+    expect(health.ids).toEqual({ slis: ["availability", "latency"], alerts: ["err_rate"] });
+    expect(health.unreadable).toBe(false);
   });
 
   it("takes a plain string entry as its own id, and `id` when there is no name", async () => {
-    const ids = await readOf("alerts:\n  - err_rate\n  - id: burn_rate\n");
-    expect(ids.alerts).toEqual(["err_rate", "burn_rate"]);
+    const health = await readOf("alerts:\n  - err_rate\n  - id: burn_rate\n");
+    expect(health.ids.alerts).toEqual(["err_rate", "burn_rate"]);
   });
 
-  it("a missing, unparseable or unrecognizable health.yaml yields no ids — and so no findings", async () => {
-    expect(await readOf(null)).toEqual({ slis: [], alerts: [] });
-    expect(await readOf("foo: [unclosed\n  bar: ::::\n")).toEqual({ slis: [], alerts: [] });
-    expect(await readOf("checks:\n  liveness: GET /health\n")).toEqual({ slis: [], alerts: [] });
-    expect(await readOf("slis: not-a-list\nalerts: 3\n")).toEqual({ slis: [], alerts: [] });
+  it("a missing or unrecognizable health.yaml yields no ids — and so no findings", async () => {
+    // Absence and "declares nothing loam reads" are the same answer on purpose:
+    // neither may manufacture an obligation, and neither is a breach.
+    for (const content of [null, "checks:\n  liveness: GET /health\n", "slis: not-a-list\nalerts: 3\n"]) {
+      expect(await readOf(content)).toEqual({ ids: { slis: [], alerts: [] }, unreadable: false });
+    }
+  });
+
+  it("a file that exists but cannot be read reports unknown ids, not empty ones", async () => {
+    // The distinction the ids alone cannot carry, and the reason validate can
+    // say `health.invalid` instead of turning every `Covers: alert:` into a
+    // false typo report.
+    const broken = await readOf("foo: [unclosed\n  bar: ::::\n");
+    expect(broken.ids).toEqual({ slis: [], alerts: [] });
+    expect(broken.unreadable).toBe(true);
+    expect(broken.error).toBeTruthy();
+
+    const sequence = await readOf("- not\n- a\n- mapping\n");
+    expect(sequence.unreadable).toBe(true);
+    expect(sequence.error).toBe("document is not a YAML mapping");
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   CONFIG_FILENAME,
   findConfigPath,
@@ -11,7 +11,7 @@ import {
 } from "../core/config.js";
 import { emitJson, fail } from "../core/json.js";
 import { plannedDocsFiles, scaffoldDocs } from "../core/docs.js";
-import { docsRepoState, listServices } from "../core/repo.js";
+import { agentsPath, docsRepoState, listServices } from "../core/repo.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
 import {
   AGENT_TOOLS,
@@ -92,7 +92,7 @@ function storedDocsDir(raw: string): string {
  * `../docs`) look like a join and adopt the service repo as the fleet.
  */
 function isDocsRepo(dir: string): boolean {
-  return docsRepoState(dir).kind === "ok" && existsSync(join(dir, "AGENTS.md"));
+  return docsRepoState(dir).kind === "ok" && existsSync(agentsPath(dir));
 }
 
 export function registerInit(program: Command): void {

@@ -30,6 +30,8 @@ import { registerVerify } from "../../src/commands/verify.js";
 import { registerVouch } from "../../src/commands/vouch.js";
 import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
+import { registerExplore } from "../../src/commands/explore.js";
+import { registerInstructions } from "../../src/commands/instructions.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js";
 import { parseRequirements, requirementDigest } from "../../src/core/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi-merge.js";
@@ -188,6 +190,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerInit(program);
     registerAdopt(program);
     registerList(program);
+    registerExplore(program);
     registerNew(program);
     registerShow(program);
     registerStatus(program);
@@ -201,6 +204,7 @@ export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult
     registerVouch(program);
     registerDoctor(program);
     registerDependencies(program);
+    registerInstructions(program);
     registerMigrateOpenSpec(program);
     await program.parseAsync(["node", "loam", ...args]);
   } finally {

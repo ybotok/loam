@@ -1,13 +1,15 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
+import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import { listField, readFrontmatter, stringField } from "../core/frontmatter.js";
 import { loadFile, serviceResolver, type Elem } from "../core/likec4.js";
 import { readOpenapi } from "../core/openapi.js";
 import {
   DocsRepoUnavailableError,
+  countMarkdown,
   featurePaths,
   featureSpecPaths,
   landscapePath,
@@ -17,7 +19,8 @@ import {
   type FeatureEntry,
 } from "../core/repo.js";
 import { parseRequirements, type Requirement } from "../core/spec.js";
-import { docsRepoReady, reportDocsRepoError } from "./validate.js";
+import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
+import { plural } from "./format.js";
 
 type TargetType = "service" | "feature";
 
@@ -53,20 +56,26 @@ export function registerShow(program: Command): void {
       // services/ is missing, and if the target turns out to be a service the
       // enumeration below refuses with `services-missing` anyway.
       if (!docsRepoReady(json, docsDir, "docs")) return;
+      // One read index for the invocation. Deciding the target is a service
+      // enumerates the fleet, and so does resolving the landscape's edges to the
+      // services that own them — `loam show <service>` walked services/ twice for
+      // one answer. The context memoises only within this invocation, so a later
+      // run still sees whatever is on disk then.
+      const context = new FleetContext();
 
       try {
         // A feature id is distinctive (FEAT-101); a service name is arbitrary. When
         // both could match, the feature wins and --type forces the other reading.
         const feature =
-          forced === "service" ? null : await resolveFeature(docsDir, target, "include");
+          forced === "service" ? null : await resolveFeature(docsDir, target, "include", context);
         if (feature) {
           await showFeature(docsDir, feature, json);
           return;
         }
         const isService =
-          forced !== "feature" && (await listServices(docsDir)).some((s) => s.id === target);
+          forced !== "feature" && (await listServices(docsDir, context)).some((s) => s.id === target);
         if (isService) {
-          await showService(docsDir, target, json);
+          await showService(docsDir, target, json, context);
           return;
         }
 
@@ -80,15 +89,7 @@ export function registerShow(program: Command): void {
         // An artifact that exists but cannot be read used to escape as a stack
         // trace (`internal` in --json), naming nothing. `show` reads one target,
         // so it has nothing to fall back on — but it can at least say WHICH file.
-        const path = (err as NodeJS.ErrnoException).path;
-        if (path === undefined) throw err;
-        fail(
-          json,
-          "repository-unavailable",
-          `${path} could not be read, so '${target}' cannot be shown. ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        reportRepositoryUnavailable(json, err, `'${target}' cannot be shown`, docsDir);
       }
     });
 }
@@ -103,7 +104,12 @@ interface Edge {
   title: string | null;
 }
 
-async function showService(docsDir: string, id: string, json: boolean): Promise<void> {
+async function showService(
+  docsDir: string,
+  id: string,
+  json: boolean,
+  context: FleetContext,
+): Promise<void> {
   const paths = servicePaths(docsDir, id);
   const has = {
     model: existsSync(paths.model),
@@ -123,7 +129,7 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
     : { errors: [], elements: [], relationships: [] };
   const reqs = has.spec ? parseRequirements(await readFile(paths.spec, "utf8")) : [];
   const archReqs = has.archSpec ? parseRequirements(await readFile(paths.archSpec, "utf8")) : [];
-  const adrs = await countAdrs(paths.adrsDir);
+  const adrs = await countMarkdown(paths.adrsDir);
   // `readOpenapi`, not `operationIds`: a contract that exists but does not parse
   // came back from operationIds as an EMPTY operation list, indistinguishable
   // from a service with no endpoints. `show` is what a reader opens to find out
@@ -145,7 +151,7 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
   const governs = (op: string): string[] =>
     reqs.filter((r) => r.operations.includes(op)).map((r) => r.name);
 
-  const { inbound, outbound } = await landscapeEdges(docsDir, id);
+  const { inbound, outbound } = await landscapeEdges(docsDir, id, context);
 
   const requirementJson = (r: Requirement): Record<string, unknown> => ({
     id: r.id,
@@ -199,24 +205,24 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
   const modelNote =
     model.errors.length > 0
       ? `${model.errors.length} error(s)`
-      : `${count(model.elements.length, "element")} · ${count(model.relationships.length, "relationship")}`;
+      : `${plural(model.elements.length, "element")} · ${plural(model.relationships.length, "relationship")}`;
   console.log(`    ${mark(has.model)} model.likec4    ${has.model ? modelNote : ""}`.trimEnd());
   const specNote = (rs: Requirement[]): string =>
-    `${count(rs.length, "requirement")} · ${count(scenarioCount(rs), "scenario")}`;
+    `${plural(rs.length, "requirement")} · ${plural(scenarioCount(rs), "scenario")}`;
   console.log(`    ${mark(has.spec)} spec.md         ${has.spec ? specNote(reqs) : ""}`.trimEnd());
   console.log(
     `    ${mark(has.archSpec)} arch.spec.md    ${has.archSpec ? specNote(archReqs) : ""}`.trimEnd(),
   );
-  const apiNote = api.unreadable ? "does not parse" : count(ops.length, "operation");
+  const apiNote = api.unreadable ? "does not parse" : plural(ops.length, "operation");
   console.log(`    ${mark(has.openapi)} openapi.yaml    ${has.openapi ? apiNote : ""}`.trimEnd());
   console.log(`    ${mark(has.runbook)} runbook.md`);
   console.log(`    ${mark(has.health)} health.yaml`);
-  console.log(`    ${mark(adrs > 0)} adrs/           ${adrs > 0 ? count(adrs, "decision") : ""}`.trimEnd());
+  console.log(`    ${mark(adrs > 0)} adrs/           ${adrs > 0 ? plural(adrs, "decision") : ""}`.trimEnd());
 
   const requirementLine = (r: Requirement): string => {
     const govern = r.operations.length > 0 ? `  → ${r.operations.join(", ")}` : "";
     const covers = r.covers.length > 0 ? `  covers ${r.covers.join(", ")}` : "";
-    return `    ${r.name}  (${count(r.scenarios.length, "scenario")})${govern}${covers}`;
+    return `    ${r.name}  (${plural(r.scenarios.length, "scenario")})${govern}${covers}`;
   };
   if (reqs.length > 0) {
     console.log("\n  requirements");
@@ -256,6 +262,7 @@ async function showService(docsDir: string, id: string, json: boolean): Promise<
 async function landscapeEdges(
   docsDir: string,
   service: string,
+  context: FleetContext,
 ): Promise<{ inbound: Edge[]; outbound: Edge[] }> {
   const path = landscapePath(docsDir);
   if (!existsSync(path)) return { inbound: [], outbound: [] };
@@ -264,7 +271,7 @@ async function landscapeEdges(
   // Edges are filed under the service an element is BOUND to, not under what the
   // box is titled — otherwise renaming a box empties this list without a word —
   // and an edge into a modelled container belongs to the service that owns it.
-  const known = new Set((await listServices(docsDir)).map((s) => s.id));
+  const known = new Set((await listServices(docsDir, context)).map((s) => s.id));
   const svcOf = serviceResolver(land.elements, known);
 
   const inbound: Edge[] = [];
@@ -332,7 +339,7 @@ async function showFeature(docsDir: string, feature: FeatureEntry, json: boolean
   const deltaNote =
     delta.errors.length > 0
       ? `${delta.errors.length} error(s)`
-      : `${count(taggedEls.length, "element")} · ${count(taggedRels.length, "relationship")} tagged ${feature.id}`;
+      : `${plural(taggedEls.length, "element")} · ${plural(taggedRels.length, "relationship")} tagged ${feature.id}`;
   console.log(`    ${mark(feature.has.delta)} delta.likec4  ${feature.has.delta ? deltaNote : ""}`.trimEnd());
 
   if (services.length > 0) {
@@ -357,17 +364,6 @@ async function showFeature(docsDir: string, feature: FeatureEntry, json: boolean
 /** "-" for absent, matching `list`: ✗ is the error glyph here, and a missing runbook is not an error. */
 function mark(present: boolean): string {
   return present ? "✓" : "-";
-}
-
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
-}
-
-/** ADRs are markdown files under adrs/ — the same rule `list` counts by. */
-async function countAdrs(dir: string): Promise<number> {
-  if (!existsSync(dir)) return 0;
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => e.isFile() && e.name.endsWith(".md")).length;
 }
 
 function scenarioCount(reqs: Requirement[]): number {

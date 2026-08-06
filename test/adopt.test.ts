@@ -318,20 +318,37 @@ describe("what happens next, and what will never happen", () => {
 });
 
 describe("the slash command that drives it", () => {
-  it("is laid down by init and runs the real flow: brief, write, validate, hand to a human", async () => {
+  it("is laid down by init and points at the protocol that ships with the binary", async () => {
     const dir = await makeTmpDir("loam-adopt-cmd-");
     cleanups.push(() => rm(dir, { recursive: true, force: true }));
     // `--create`: `--docs` joins an existing docs repo, and ./d does not exist.
     await runLoam(dir, "init", "--docs", "./d", "--create");
-    const body = await readFile(join(dir, ".claude", "commands", "loam-adopt.md"), "utf8");
-    expect(body).toContain("loam adopt --service");
-    expect(body).toContain("loam validate --service");
-    expect(body).toContain("loam vouch --service");
+    const file = await readFile(join(dir, ".claude", "commands", "loam-adopt.md"), "utf8");
+    // The file is a pointer, so what it owes is the pointer and the spine — not
+    // this release's flags, which are the part that goes stale in a repository
+    // scaffolded once and never regenerated.
+    expect(file).toContain("loam instructions loam-adopt $1");
+    expect(file).toContain("status: draft");
+    expect(file).toContain("sources");
+  });
+
+  it("and that protocol is reachable from the binary, with the flow intact", async () => {
+    const dir = await makeTmpDir("loam-adopt-protocol-");
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    // Deliberately NOT wired: `loam instructions` is the one command that reads
+    // nothing, because loam-adopt's own first step is to run `loam init` when
+    // there is no config. A protocol reachable only from a configured repo
+    // would be unreachable exactly when it is first needed.
+    const res = await runLoam(dir, "instructions", "loam-adopt", SVC);
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain(`loam adopt --service ${SVC}`);
+    expect(res.out).toContain(`loam validate --service ${SVC}`);
+    expect(res.out).toContain(`loam vouch --service ${SVC}`);
     // the two instructions that make the difference between a baseline and a fiction
-    expect(body).toContain("sources");
-    expect(body).toContain("status: draft");
+    expect(res.out).toContain("sources");
+    expect(res.out).toContain("status: draft");
     // and the fleet-level run that catches a landscape edit which never landed
-    expect(body).toContain("loam validate --all --json");
+    expect(res.out).toContain("loam validate --all --json");
   });
 });
 
@@ -358,6 +375,29 @@ describe("the machine contract", () => {
     const res = await runLoam(dir, "adopt", "--service", SVC, "--json");
     expect(res.code).toBe(1);
     expect(JSON.parse(res.stdout).error.code).toBe("no-config");
+  });
+
+  it("refuses a docs repo that does not exist, rather than briefing a baseline into it", async () => {
+    // Writing nothing is exactly why this stayed quiet. The brief is an
+    // instruction to WRITE, so a docsDir nobody has is not a harmless read: it
+    // handed over eight target paths under a directory that is not there, at
+    // exit 0, with the near-miss warning silently switched off — `listServices`
+    // throws and the warning collector swallows it.
+    //
+    // It gates on `docs`, not `services`: a docs repo whose `services/` is
+    // still empty is the repo adopt exists to fill, and it is what every other
+    // fixture in this file is.
+    const p = await project({}, { service: SVC });
+    await rm(p.docsDir, { recursive: true, force: true });
+    const res = await runLoam(p.workDir, "adopt", "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("docs-missing");
+    expect(json.error.message).toContain(p.docsDir);
+    // No brief alongside the refusal: "here is the work" over a repo that is
+    // not there is the answer this exists to replace.
+    expect(json.targets).toBeUndefined();
   });
 
   it("prints the same brief in prose when there is no --json", async () => {

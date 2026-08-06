@@ -4,8 +4,9 @@ import { access, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./config.js";
 import { LOAM_VERSION } from "./version.js";
-import { docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
+import { agentsPath, docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
 import { loadFile } from "./likec4.js";
+import { conflictMarkerLines } from "./fleet-context.js";
 import { AGENT_TOOLS, DELIVERIES, plannedCommandFiles, type Delivery } from "./agent.js";
 import {
   agentsStaleFinding,
@@ -147,24 +148,6 @@ async function canAccess(path: string, mode: number): Promise<boolean> {
 }
 
 /**
- * The three-way merge left its markers in the file. Checked BEFORE the parser,
- * because a conflicted landscape does parse sometimes — both sides of a
- * conflict can be syntactically valid LikeC4 — and "your map contains two
- * halves of two different maps" is a more useful sentence than any parser
- * error. This is the failure mode of onboarding a fleet: ten people adopt ten
- * services into one landscape.likec4 in the same week.
- */
-const CONFLICT_MARKERS = ["<<<<<<<", "=======", ">>>>>>>"];
-
-function conflictMarkerLines(source: string): number[] {
-  const out: number[] = [];
-  source.split(/\r?\n/).forEach((line, i) => {
-    if (CONFLICT_MARKERS.some((m) => line.startsWith(m))) out.push(i + 1);
-  });
-  return out;
-}
-
-/**
  * Read the landscape, don't just stat it. `doctor` reported `landscape: yes`
  * for a file full of conflict markers — the check answered "is there a file",
  * which is not the question anyone runs doctor to ask.
@@ -183,6 +166,18 @@ async function inspectLandscape(path: string, findings: DoctorFinding[]): Promis
     return;
   }
 
+  // The three-way merge left its markers in the file. Checked BEFORE the
+  // parser, because a conflicted landscape does parse sometimes — both sides of
+  // a conflict can be syntactically valid LikeC4 — and "your map contains two
+  // halves of two different maps" is a more useful sentence than any parser
+  // error. This is the failure mode of onboarding a fleet: ten people adopt ten
+  // services into one landscape.likec4 in the same week.
+  //
+  // The scan itself is fleet-context's, which is where the same rule already
+  // grades every other document loam reads. doctor kept a second copy of it,
+  // and a second copy of a rule is a second chance to spell it differently;
+  // what doctor owns is what a conflicted landscape COSTS, which is the finding
+  // below and not the search.
   const conflicted = conflictMarkerLines(source);
   if (conflicted.length > 0) {
     findings.push({
@@ -288,22 +283,27 @@ async function staleAgentFiles(
   repoRoot: string,
   planned: Array<{ path: string }>,
 ): Promise<string[]> {
-  const stale: string[] = [];
-  for (const file of planned) {
+  // Read them together rather than one after another. `planned` is bounded by
+  // the tool registry — every delivery of every tool loam knows, a couple of
+  // hundred small files — so there is nothing here worth a concurrency cap, and
+  // `Promise.all` preserves input order, which is the only property the caller
+  // asks of the list it gets back.
+  const graded = await Promise.all(planned.map(async (file): Promise<string | null> => {
     let text: string;
     try {
       text = await readFile(file.path, "utf8");
     } catch {
       // Unreadable is not stale: it is either the missing-file finding above or
       // a permissions problem, and neither is answered by editing a stamp.
-      continue;
+      return null;
     }
     const stamp = agentsStampVersion(text);
     if (stamp === null || versionTrails(stamp, LOAM_VERSION)) {
-      stale.push(relative(repoRoot, file.path).split(/[\\/]/).join("/"));
+      return relative(repoRoot, file.path).split(/[\\/]/).join("/");
     }
-  }
-  return stale;
+    return null;
+  }));
+  return graded.filter((p) => p !== null);
 }
 
 /**
@@ -378,7 +378,7 @@ async function inspectAgentSurface(
   // AGENTS.md lives in the DOCS repo, not here: it travels with the thing it
   // describes. The comparison is `agentsStaleFinding`'s, not a second copy of
   // it — doctor only adds the `fix` column its own findings owe the reader.
-  const agentsFile = docsDir === null ? null : join(docsDir, "AGENTS.md");
+  const agentsFile = docsDir === null ? null : agentsPath(docsDir);
   let agentsText: string | null = null;
   if (agentsFile !== null) {
     try {
@@ -599,12 +599,18 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
 
   let services: Awaited<ReturnType<typeof listServices>> = [];
   let activeFeatures: Awaited<ReturnType<typeof listFeatures>> = [];
+  // Whether the fleet was actually READ, which is a narrower question than
+  // whether reading it was attempted — hence set inside the try and not from
+  // the guard, so an enumeration that threw leaves this false alongside its own
+  // `doctor.inventory-unreadable`.
+  let inventoried = false;
   if (docsDir !== null && readable && servicesDir) {
     try {
       [services, activeFeatures] = await Promise.all([
         listServices(docsDir),
         listFeatures(docsDir),
       ]);
+      inventoried = true;
     } catch (error) {
       findings.push({
         severity: "warning",
@@ -628,7 +634,15 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
       message: "loam.json has no service binding; service-repo checks need `service`.",
       fix: `Run \`loam init --docs ${inspected.config?.docsDirAsWritten ?? "<dir>"} --service <id>\` here.`,
     });
-  } else if (currentService.status === "unknown") {
+  } else if (currentService.status === "unknown" && inventoried) {
+    // Only when there was an inventory to be absent from. This finding is a
+    // claim about a fleet that was read; with no docsDir, an unreadable one, or
+    // an enumeration that threw, `services` is empty for a reason that has
+    // nothing to do with `service`, and doctor pointed the reader at the one
+    // config field that was fine while the blocker it had already filed named
+    // the real one. `currentService.status` still reports `unknown` — the
+    // envelope describes what loam could and could not match, and an unread
+    // fleet matches nothing.
     findings.push({
       severity: "warning",
       code: "doctor.service-unknown",

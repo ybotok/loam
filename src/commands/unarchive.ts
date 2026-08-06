@@ -20,7 +20,8 @@ import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { resolveInside, resolvePortableFileInside } from "../core/path-safety.js";
-import { featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
+import { isRecord } from "../core/records.js";
+import { archiveDir as archiveRoot, featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import { sayRecovery } from "./archive.js";
 import {
   acquireDocsLock,
@@ -126,7 +127,7 @@ async function unarchiveLocked(
   if (recovered !== null && !json) sayRecovery(recovered);
 
   const featuresDir = featuresRoot(docsDir);
-  const archiveDir = join(featuresDir, "archive");
+  const archiveDir = archiveRoot(docsDir);
 
   const feature = await resolveFeature(docsDir, featureId, "only");
   if (!feature) {
@@ -339,6 +340,15 @@ async function readManifest(
       if (seen.has(raw.path)) return null;
       seen.add(raw.path);
 
+      // The realpath test stays on this side, and it is not negotiable: this
+      // path is WRITTEN through. A symlink that leaves the repo is
+      // indistinguishable, lexically, from a service directory the operator
+      // mounted on purpose — `escape/owned.txt` and `services/<svc>/spec.md`
+      // are both "inside docsDir" until something resolves them — so the only
+      // check that can refuse the first is the one that also refuses the
+      // second. Restoring is the write; `staging.ts` only reads and compares a
+      // digest, which is why its resolution of this same field can be lexical
+      // and this one cannot.
       const target = resolvePortableFileInside(docsDir, raw.path, `snapshot path '${raw.path}'`);
       let snapshot: string | null = null;
       const snapshotRel = `${SNAPSHOT_DIR}/files/${raw.path}`;
@@ -369,10 +379,6 @@ async function readManifest(
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isCanonicalIsoDate(value: string): boolean {

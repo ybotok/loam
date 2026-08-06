@@ -28,7 +28,7 @@ import {
   type Frontmatter,
 } from "./frontmatter.js";
 import type { Finding } from "./report.js";
-import { featurePaths, servicePaths } from "./repo.js";
+import { featurePaths, servicePaths, SPEC_AXES } from "./repo.js";
 import { isPathInside, resolveInside } from "./path-safety.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
@@ -52,11 +52,10 @@ export async function serviceProvenance(
   const findings: Finding[] = [];
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
   // spec.md's frontmatter conventions exactly, so the checks are one loop —
-  // only the label tells a reader which file moved.
-  for (const { path, file } of [
-    { path: paths.spec, file: "spec.md" },
-    { path: paths.archSpec, file: "arch.spec.md" },
-  ]) {
+  // only the label tells a reader which file moved. The pair comes from
+  // SPEC_AXES rather than being respelled, so a third axis is graded here the
+  // day it is declared instead of the day somebody notices.
+  for (const { path, file } of SPEC_AXES.map((axis) => ({ path: paths[axis.key], file: axis.file }))) {
     if (!existsSync(path)) continue;
     const raw = await readFile(path, "utf8");
     const fm = parseFrontmatter(raw);
@@ -341,12 +340,27 @@ function contentFindings(fm: Frontmatter, raw: string, service: string, label: s
   ];
 }
 
+/**
+ * The local calendar day, for the two commands that date a stamp. A vouch or a
+ * verification record is a person saying "today I read this", so it is their
+ * date, not UTC's — `toISOString` files an evening in the Americas under
+ * tomorrow. It sits here because this module already owns the stamp vocabulary
+ * the date is written into.
+ */
+export function today(now: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* The content digest                                                  */
 /* ------------------------------------------------------------------ */
 
 /** How much of the sha256 is written into the document. */
 const DIGEST_LENGTH = 16;
+
+/** How many source files the digest reads at once — see `sourcesDigest`. */
+const DIGEST_READ_BATCH = 32;
 
 export interface SourcesDigest extends SourcesExpansion {
   /** The stamp that goes in `sources_digest`. */
@@ -413,10 +427,25 @@ export async function sourcesDigest(repoDir: string, sources: string[]): Promise
   const { found, skipped } = await collectSources(repoDir, sources);
   const outer = createHash("sha256");
   const index: SourceIndexEntry[] = [];
-  for (const file of found) {
-    const content = createHash("sha256").update(await readFile(file.abs)).digest("hex");
-    outer.update(`${file.rel}\0${content}\n`);
-    index.push({ path: file.rel, sha: content.slice(0, DIGEST_LENGTH) });
+  // Read in fixed batches, hash in array order. `found` is already sorted and
+  // every file's own sha depends on nothing but its own bytes, so the sequence
+  // fed to `outer` — and therefore the digest — is unchanged by construction;
+  // only the waiting overlaps. A `sources: [src/]` over a real service repo is
+  // thousands of files, and one-await-per-file spent nearly all of its time
+  // idle. The batch is bounded rather than a single `Promise.all` over the
+  // whole list because an unbounded fan-out over a source tree runs the process
+  // out of file descriptors, which would turn a stamp into an EMFILE.
+  for (let start = 0; start < found.length; start += DIGEST_READ_BATCH) {
+    const hashed = await Promise.all(
+      found.slice(start, start + DIGEST_READ_BATCH).map(async (file) => ({
+        rel: file.rel,
+        content: createHash("sha256").update(await readFile(file.abs)).digest("hex"),
+      })),
+    );
+    for (const { rel, content } of hashed) {
+      outer.update(`${rel}\0${content}\n`);
+      index.push({ path: rel, sha: content.slice(0, DIGEST_LENGTH) });
+    }
   }
   // `empty` is deliberately not set here: it is a sentence about a named
   // document, and a digest has no name to put in it. Callers that need it say

@@ -10,6 +10,16 @@
 
 export type Severity = "ok" | "warn" | "error";
 
+/**
+ * The glyph each severity is printed with. Five sites had written it out
+ * themselves — four as a two-armed ternary that spelled `error` and let
+ * everything else fall to ⚠ — and a reader who learns the marks from one
+ * command's output has to be able to read them in the next. It lives beside
+ * `Severity` because it is a fact about the union, not about any one renderer;
+ * `TextHint.marker` above already describes it as "the ✓/⚠/✗ marker".
+ */
+export const SEVERITY_MARK: Record<Severity, string> = { ok: "✓", warn: "⚠", error: "✗" };
+
 /** How the text renderer should lay a finding out. The JSON contract ignores this. */
 export interface TextHint {
   /** Leading spaces. Default 0. */

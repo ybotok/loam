@@ -179,6 +179,30 @@ describe("--json contract", () => {
       expect(json.requirements).toHaveLength(1); // the requirement half stays usable
     });
   });
+
+  it("an openapi.yaml that does not parse exits 1 and reports the failure under its own key", async () => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"] =
+      'openapi: 3.1.0\ninfo:\n  title: payment-split-service\n  version: "1.0"\npaths:\n  /splits: {\n';
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json");
+      // The contract axis falls into the same vacuously-green trap the
+      // architecture axis is already guarded against: an unreadable document
+      // projects as zero operations, which is exactly what a delta that changes
+      // no endpoints projects as — and this payload IS the implementation task,
+      // so "no contract work here" over a YAML error is work silently dropped.
+      // Nothing upstream catches it either: `loam validate` grades
+      // `openapi.invalid` on LIVING service contracts only.
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(true); // the command ran; the exit code carries the failure
+      // `api` keeps the shape a consumer already indexes — the readability of
+      // the document rides alongside it rather than inside it.
+      expect(json.api).toEqual([]);
+      expect(json.openapi.unreadable).toBe(true);
+      expect(typeof json.openapi.error).toBe("string");
+    });
+  });
 });
 
 describe("text output", () => {

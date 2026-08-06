@@ -300,6 +300,16 @@ export async function operationIds(openapiPath: string, context?: FleetContext):
  * depending on which path sorted first in the YAML, and the requirement
  * governing it was reported undefined (`spec-api.op-undefined`) on exactly one
  * of the two spellings of the same change.
+ *
+ * A context is threaded into the READS and never asked for the answer. It used
+ * to own a second copy of this function, and that copy interleaved removals
+ * with upserts — the exact bug the paragraph above describes as fixed. So the
+ * commands that pass a context (`validate`, `status`) and the one that does not
+ * (`archive`) disagreed about whether a relocated operation still existed, and
+ * `spec-api.op-undefined` — an error that gates archive — fired or not
+ * depending on which path key the author happened to type first. Memoising is
+ * the context's job; the ordering rule is this function's, and there is one of
+ * it.
  */
 export async function serviceOperationIds(
   docsDir: string,
@@ -307,12 +317,15 @@ export async function serviceOperationIds(
   featureDir?: string,
   context?: FleetContext,
 ): Promise<string[]> {
-  if (context !== undefined) return context.serviceOperationIds(docsDir, service, featureDir);
   const ids = new Set(
-    (await operations(servicePaths(docsDir, service).openapi)).filter((op) => !op.remove).map((op) => op.id),
+    (await operations(servicePaths(docsDir, service).openapi, context)).filter((op) => !op.remove).map((op) => op.id),
   );
-  if (featureDir) {
-    const featOps = await operations(featureSpecPaths(featureDir, service).openapi);
+  // Absence is `undefined`, the shape the optional parameter declares. The
+  // truthiness test also read "" as "no feature", which is a caller mistake
+  // worth surfacing rather than answering as though the feature carried no
+  // contract delta.
+  if (featureDir !== undefined) {
+    const featOps = await operations(featureSpecPaths(featureDir, service).openapi, context);
     for (const op of featOps) if (op.remove) ids.delete(op.id);
     for (const op of featOps) if (!op.remove) ids.add(op.id);
   }

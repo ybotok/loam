@@ -11,7 +11,7 @@ import type { Command } from "commander";
 import { loadConfig } from "../core/config.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { findingJson } from "../core/report.js";
+import { findingJson, SEVERITY_MARK } from "../core/report.js";
 import {
   DocsRepoUnavailableError,
   featureCandidates,
@@ -28,7 +28,7 @@ import {
   type NextStep,
   type VerificationState,
 } from "../core/status.js";
-import { docsRepoReady, reportDocsRepoError } from "./validate.js";
+import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 
 interface StatusOptions {
   json?: boolean;
@@ -51,7 +51,7 @@ export function registerStatus(program: Command): void {
       }
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as a repo
-      // with nothing in it — the doctrine validate.ts's docsRepoReady exists
+      // with nothing in it — the doctrine docs-repo-gate.ts's docsRepoReady exists
       // for. `status` counts services, so it needs services/ in both modes.
       if (!docsRepoReady(json, docsDir, "services")) return;
       const context = new FleetContext();
@@ -120,28 +120,14 @@ export function registerStatus(program: Command): void {
         // `internal` envelope that names nothing: the projection is
         // all-or-nothing (a status missing one artifact reads as a feature that
         // does not owe it), so the honest answer is a refusal naming the path.
-        //
-        // A filesystem failure is recognised by its errno, NOT by carrying a
-        // `path`. Node reports EISDIR from `read()` with no path at all — the
-        // directory opened, the read failed — so the whole point of this branch
-        // was defeated by the commonest way a malformed docs repo breaks: one
-        // directory where a file belongs killed BOTH forms of status with a bare
-        // `internal: EISDIR`, naming neither the file nor the feature. Anything
-        // without an errno is a real bug and still escapes.
-        const e = err as NodeJS.ErrnoException;
-        if (e.path === undefined && typeof e.errno !== "number") throw err;
-        const why = err instanceof Error ? err.message : String(err);
-        fail(
+        // The errno-vs-path reading this branch depends on — the reason one
+        // directory where a file belongs used to kill BOTH forms of status —
+        // now lives once, with its reasoning, on the shared helper.
+        reportRepositoryUnavailable(
           json,
-          "repository-unavailable",
-          e.path !== undefined
-            ? `${e.path} could not be read, so the status of ${scope} would be missing an artifact. ${why}`
-            : // Naming the target's own directory here would be a guess, and a
-              // guess that is wrong precisely when it matters: one malformed
-              // feature makes every OTHER feature's status fail too, and each
-              // would have accused its own files. Say what is known instead.
-              `A file under ${docsDir} could not be read, so the status of ${scope} would be missing an artifact. ${why}. ` +
-              `The failure named no path — that is how Node reports a directory sitting where a file belongs.`,
+          err,
+          `the status of ${scope} would be missing an artifact`,
+          docsDir,
         );
       }
       // No exit code is set on any path above that succeeded, deliberately.
@@ -291,7 +277,7 @@ function printFeature(r: FeatureStatusReport, ambiguous: string[]): void {
   if (r.checks.issues.length > 0) {
     console.log("\n  findings");
     for (const issue of r.checks.issues) {
-      console.log(`    ${issue.severity === "error" ? "✗" : "⚠"} ${issue.code}: ${issue.message}`);
+      console.log(`    ${SEVERITY_MARK[issue.severity]} ${issue.code}: ${issue.message}`);
     }
   }
 

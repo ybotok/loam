@@ -34,7 +34,8 @@ import { resolve } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { resolvePortableFileInside } from "../core/path-safety.js";
-import { featuresDir, resolveFeature } from "../core/repo.js";
+import { today } from "../core/provenance.js";
+import { missingFeatureMessage, resolveFeature } from "../core/repo.js";
 import { contestedDigests, readCucumberReport, runnerAnswers, type ReportScenario } from "../core/results.js";
 import {
   attestedNotice,
@@ -58,6 +59,7 @@ import {
   type Verification,
   type VerifyNotice,
 } from "../core/verify.js";
+import { plural } from "./format.js";
 
 interface VerifyOptions {
   record?: string;
@@ -134,7 +136,11 @@ export function registerVerify(program: Command): void {
       // reading back, and it travelled into the archive with everything else.
       const feature = await resolveFeature(docsDir, featureId, "include");
       if (!feature) {
-        return fail(json, "unknown-target", `No feature '${featureId}' under ${featuresDir(docsDir)}.`);
+        // repo.ts's sentence, not a second copy of it. Resolving with "include"
+        // means the archived branch inside it cannot fire here — an archived
+        // feature resolves — so the text is exactly what it was; what changes is
+        // that a reworded miss message can no longer leave this one behind.
+        return fail(json, "unknown-target", await missingFeatureMessage(docsDir, featureId));
       }
 
       // Before anything else: a verification.yaml that exists but will not read
@@ -867,8 +873,19 @@ async function validateServiceEvidence(
     // carry has to match the commit being attested, like any other file the
     // evidence rests on.
     const clean = await git(repoDir, ["diff", "--quiet", commit, "--", report.path]);
-    if (clean.code === 1) {
-      return `The test report '${report.path}' is committed to this repository and differs from ${commit.slice(0, 12)} — commit it or attest the commit it belongs to.`;
+    if (clean.code !== 0) {
+      // Only `1` is git ANSWERING — "that file differs". Every other non-zero
+      // code is git failing to answer at all: no git on PATH, a fork that never
+      // happened, a child killed by a CI timeout or the OOM killer. Testing for
+      // `1` alone made those silently pass the check, so the one run that most
+      // needs the binding — the one where the machine is falling over — is the
+      // one that would mint an attestation whose report was never bound to the
+      // commit. An unanswered check is not a passed one, so the unknown refuses
+      // on the same terms as the known, and `clean.stderr` carries whatever
+      // account of itself the child managed to leave.
+      return clean.code === 1
+        ? `The test report '${report.path}' is committed to this repository and differs from ${commit.slice(0, 12)} — commit it or attest the commit it belongs to.`
+        : `Cannot tell whether the test report '${report.path}' is bound to ${commit.slice(0, 12)} — git could not be run to completion: ${clean.stderr || "git diff failed"}`;
     }
   }
   for (const answer of answers) {
@@ -942,6 +959,13 @@ async function committedFile(repoDir: string, commit: string, path: string): Pro
 }
 
 interface GitResult {
+  /**
+   * Git's own exit status, or `-1` for "git could not be run to completion" —
+   * no git on PATH, a spawn failure, or a child killed by a signal. Callers
+   * read specific meaning into small numbers (`1` from `git diff --quiet` is
+   * "that file differs"), so a run that never reached an exit status must not
+   * borrow one of them.
+   */
   code: number;
   stdout: string;
   stderr: string;
@@ -951,9 +975,19 @@ function git(repoDir: string, args: string[]): Promise<GitResult> {
   return new Promise((done) => {
     execFile("git", ["-C", repoDir, ...args], { encoding: "utf8" }, (error, stdout, stderr) => {
       done({
-        code: error === null ? 0 : ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1),
+        // `error.code` is an exit status only when it is a number: a spawn
+        // failure reports an errno string ("ENOENT") and a signal-killed child
+        // reports none at all. Folding those onto 1 would state that `git diff`
+        // found a difference — a Ctrl-C or an OOM kill during
+        // `loam verify --record` would read as an uncommitted edit and refuse
+        // a sound attestation. -1 is not a status git assigns, so both diff
+        // sites fall to their stderr-carrying arm and say what happened.
+        code: error === null ? 0 : typeof error.code === "number" ? error.code : -1,
         stdout,
-        stderr: stderr.trim(),
+        // A child that never ran writes nothing to stderr, so its only account
+        // of itself is on the error; without this the refusal would name no
+        // cause at all.
+        stderr: stderr.trim() || (error === null ? "" : error.message),
       });
     });
   });
@@ -973,18 +1007,4 @@ async function repositoryCommit(repoDir: string): Promise<CommitResult> {
     return { ok: false, message: `Git returned an invalid HEAD commit '${commit}'.` };
   }
   return { ok: true, commit };
-}
-
-/**
- * The local calendar day, like `vouch`: a record is somebody saying "today I
- * looked", and `toISOString` files an evening in the Americas under tomorrow.
- */
-function today(now: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

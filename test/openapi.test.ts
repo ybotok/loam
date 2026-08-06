@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { FleetContext } from "../src/core/fleet-context.js";
 import { operationIds, operations, readOpenapi, serviceOperationIds } from "../src/core/openapi.js";
 import {
   FEATURE_DELTA,
@@ -543,35 +544,53 @@ ${paths}`;
     );
   });
 
+  // Both spellings of the relocation, asked both ways loam asks it: `archive`
+  // passes no context, `validate` and `status` pass one. The context axis is
+  // here because a FleetContext used to answer this question itself, with
+  // removals interleaved with upserts, so the two call paths disagreed about
+  // whether `movedOp` still existed — and `spec-api.op-undefined`, which gates
+  // archive, fired on one of them. Without this loop the context path can drift
+  // back out of agreement silently.
   for (const markerFirst of [true, false]) {
-    it(`answers the same for a relocation with the marker ${markerFirst ? "before" : "after"} the new slot`, async () => {
-      // Removals used to be applied interleaved with upserts, one operation at
-      // a time, so the same change spelled in the other order answered "gone"
-      // instead of "defined" — and the requirement governing it was reported
-      // undefined on exactly one of the two spellings.
-      const marker = `  /old:
+    for (const withContext of [false, true]) {
+      const how = withContext ? "through a FleetContext" : "with no context";
+      it(`answers the same ${how} for a relocation with the marker ${markerFirst ? "before" : "after"} the new slot`, async () => {
+        // Removals used to be applied interleaved with upserts, one operation at
+        // a time, so the same change spelled in the other order answered "gone"
+        // instead of "defined" — and the requirement governing it was reported
+        // undefined on exactly one of the two spellings.
+        const marker = `  /old:
     post:
       operationId: movedOp
       x-loam-remove: true
 `;
-      const upsert = `  /new:
+        const upsert = `  /new:
     post:
       operationId: movedOp
       responses: { "200": { description: OK } }
 `;
-      await withDir(
-        {
-          "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", ["movedOp"]),
-          "docs/features/FEAT-9-x/specs/payment-service/openapi.yaml":
-            `openapi: 3.1.0\npaths:\n${markerFirst ? marker + upsert : upsert + marker}`,
-        },
-        async (root) => {
-          const docsDir = join(root, "docs");
-          const ids = await serviceOperationIds(docsDir, "payment-service", join(docsDir, "features", "FEAT-9-x"));
-          expect([...ids].sort()).toEqual(["movedOp"]);
-        },
-      );
-    });
+        await withDir(
+          {
+            "docs/services/payment-service/openapi.yaml": openapiWith("payment-service", ["movedOp"]),
+            "docs/features/FEAT-9-x/specs/payment-service/openapi.yaml":
+              `openapi: 3.1.0\npaths:\n${markerFirst ? marker + upsert : upsert + marker}`,
+          },
+          async (root) => {
+            const docsDir = join(root, "docs");
+            // Built inside the fixture's lifetime: a context memoises by
+            // resolved path, and each case gets its own throwaway directory.
+            const context = withContext ? new FleetContext() : undefined;
+            const ids = await serviceOperationIds(
+              docsDir,
+              "payment-service",
+              join(docsDir, "features", "FEAT-9-x"),
+              context,
+            );
+            expect([...ids].sort()).toEqual(["movedOp"]);
+          },
+        );
+      });
+    }
   }
 
   it("a feature-only service (brand-new API) yields exactly the feature's ids", async () => {

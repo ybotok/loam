@@ -114,6 +114,7 @@ import {
   listFeatures,
   listServices,
   servicePaths,
+  SPEC_AXES,
   type FeatureEntry,
   type ServiceEntry,
 } from "./repo.js";
@@ -363,9 +364,21 @@ async function readInterruptedCommit(docsDir: string): Promise<InterruptedCommit
   return {
     command: intent.command,
     feature: intent.feature,
-    host: intent.host,
-    pid: intent.pid,
-    at: intent.at,
+    // Coerced here rather than trusted. `readCommitIntent` validates exactly the
+    // fields a REPAIR needs — the version, the command, the restore direction,
+    // the feature, the two move paths and the file digests — so `host`, `pid`
+    // and `at` arrive as whatever the journal happened to hold, `undefined`
+    // included. That is worse than null in both renderings: `JSON.stringify`
+    // drops an undefined value's key entirely, so `--json` loses the field
+    // instead of reporting it empty, and the two human lines print
+    // "(undefined, pid undefined, undefined)". These three are the label a
+    // person places the crash against and nothing branches on them, so the
+    // coercion belongs at this boundary — widening the validator would change
+    // which journals `archive` and `unarchive` agree to repair, which is a
+    // decision about somebody's half-written docs, not about a label.
+    host: typeof intent.host === "string" ? intent.host : null,
+    pid: typeof intent.pid === "number" ? intent.pid : null,
+    at: typeof intent.at === "string" ? intent.at : null,
     files: intent.files.map((f) => f.path),
     unreadable: false,
     // The recovering command is the interrupted one re-run: it repairs first,
@@ -445,7 +458,7 @@ export async function featureStatus(
     services,
     blocking,
     verification,
-    await contractsInFlight(docsDir, feature.id, context),
+    contractsHeldElsewhere(await contractOwners(docsDir, context), feature.id),
     governs,
   );
   const artifacts =
@@ -726,11 +739,20 @@ function fileState(
  * docs already carry the contract, or another feature in flight brings it — the
  * same softening coherence applies with its `*-pending` codes, where an
  * operation "defined by another feature still in flight" is an ordering fact
- * and not a hole. And one way to owe nothing at all: a service with no living
- * contract that this feature sends no operation to. A UI or a worker nobody
- * calls has no API to write down, which is the reading `validate` and `list`
- * already take — demanding one from a brand-new one of those would be loam
- * telling an author to invent a contract.
+ * and not a hole. And one way to owe nothing at all: a service that ALREADY
+ * EXISTS under `services/`, has no living contract, and that this feature sends
+ * no operation to. A UI or a worker nobody calls has no API to write down,
+ * which is the reading `validate` and `list` already take — demanding one from
+ * an adopted service of that shape would be loam telling an author to invent a
+ * contract.
+ *
+ * That last exemption is deliberately withheld from a service the living docs
+ * have never heard of. A feature that introduces a service and sends it no
+ * operation still owes the file, because nothing else in the repository will
+ * ever describe its surface, and `c4-api.op-undefined` fires on an op-tagged
+ * delta edge whether or not any `Operations:` line was written — so answering
+ * "none owed" there printed `(not written — none owed)` in the same payload as
+ * an error about that very file.
  */
 function owesContract(
   docsDir: string,
@@ -744,20 +766,47 @@ function owesContract(
 }
 
 /**
- * Services some OTHER active feature already carries an `openapi.yaml` for.
+ * Which features in flight carry an `openapi.yaml` for which service — one
+ * enumeration of the whole index, service by service.
+ *
+ * The owners are recorded as feature IDS rather than directories because that
+ * is the comparison {@link contractsHeldElsewhere} makes: two directories that
+ * spell the same id are one feature as far as this question goes, and an index
+ * keyed by directory would let a duplicated id answer "somebody else has it"
+ * about its own twin.
+ *
  * Enumeration only — the feature list and its `specs/` subdirectories are
  * already in the request-scoped index by the time anything asks.
  */
-async function contractsInFlight(
-  docsDir: string,
-  self: string,
-  context: FleetContext,
-): Promise<Set<string>> {
-  const out = new Set<string>();
+async function contractOwners(docsDir: string, context: FleetContext): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
   for (const f of await listFeatures(docsDir, {}, context)) {
-    if (f.id === self) continue;
     for (const svc of f.services) {
-      if (existsSync(featureSpecPaths(f.dir, svc).openapi)) out.add(svc);
+      if (!existsSync(featureSpecPaths(f.dir, svc).openapi)) continue;
+      const owners = out.get(svc);
+      if (owners === undefined) out.set(svc, new Set([f.id]));
+      else owners.add(f.id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Services some OTHER active feature already carries an `openapi.yaml` for.
+ *
+ * Derived from the shared index rather than re-walked, because the answer for
+ * feature A and the answer for feature B are two readings of one enumeration:
+ * asking it once per feature made the fleet form pay F²·S `existsSync` calls
+ * over the two quantities that actually grow.
+ */
+function contractsHeldElsewhere(owners: ReadonlyMap<string, ReadonlySet<string>>, self: string): Set<string> {
+  const out = new Set<string>();
+  for (const [svc, ids] of owners) {
+    for (const id of ids) {
+      if (id !== self) {
+        out.add(svc);
+        break;
+      }
     }
   }
   return out;
@@ -767,11 +816,19 @@ async function contractsInFlight(
  * The record's own rung. `stale` and `unreadable` are `draft` because both mean
  * the file on disk is the thing to fix; unconfirmed claims are `ready` because
  * the file is fine and the answer lives in the code.
+ *
+ * All four states are spelled, `recorded` included, so the `never` below fails
+ * the build rather than the reader: a fifth record state added to
+ * {@link VerificationState} would otherwise fall through into the last branch
+ * and be graded by `fullyVerified` alone — silently answering `ready` about a
+ * record whose new state nobody here has decided a rung for.
  */
 function verificationStatus(v: VerificationState): ArtifactStatus {
   if (v.state === "absent") return "missing";
   if (v.state === "unreadable" || v.state === "stale") return "draft";
-  return fullyVerified(v) ? "done" : "ready";
+  if (v.state === "recorded") return fullyVerified(v) ? "done" : "ready";
+  const unreachable: never = v.state;
+  throw new Error(`verificationStatus: no rung for verification state '${String(unreachable)}'`);
 }
 
 /**
@@ -904,8 +961,12 @@ function featureNext(
         code: "next.author-openapi",
         // Not "the service is not in the living docs": a service adopted
         // without a contract is the commoner case, and that wording sent a
-        // reader looking for a directory that was right there.
-        statement: `Write ${api.path} — nothing gives ${svc} a living openapi.yaml, so this feature is the only thing that can define the operations it governs.`,
+        // reader looking for a directory that was right there. And not "the
+        // operations it governs" either — this step also fires for a service
+        // the feature INTRODUCES, where owesContract asks nothing about
+        // operations and the delta may tag none, so naming them promised the
+        // author a list they would go looking for and not find.
+        statement: `Write ${api.path} — nothing gives ${svc} a living openapi.yaml, so this feature is the only thing that can write down its API surface.`,
         command: `loam delta ${id} --service ${svc} --json`,
         artifact: "openapi",
         service: svc,
@@ -1153,10 +1214,13 @@ async function scanDeltas(
   const out: DeltaScan[] = [];
   for (const svc of services) {
     const p = featureSpecPaths(feature.dir, svc);
-    for (const [file, label] of [
-      [p.spec, `${svc}: requirements`],
-      [p.archSpec, `${svc}: arch requirements`],
-    ] as const) {
+    // SPEC_AXES already carries the prose name of each axis — "requirements"
+    // and "arch requirements" are its `label`s verbatim — so the pair is read
+    // from there rather than spelled again, and a service's status can never
+    // walk a different set of spec files than its validation does.
+    for (const [file, label] of SPEC_AXES.map(
+      (axis) => [p[axis.key], `${svc}: ${axis.label}`] as const,
+    )) {
       if (!existsSync(file)) continue;
       const reqs = await context.readRequirements(file);
       out.push({
@@ -1203,10 +1267,16 @@ export async function fleetStatus(
   const graph = await analyzeDependencies(docsDir, undefined, context);
   const entries = await listFeatures(docsDir, {}, context);
   const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.includes(narrowed));
+  // Once for the fleet, not once per feature: which features hold a contract
+  // for which service is one fact about the repository, and every feature below
+  // reads its own row out of it. Built over the UNNARROWED list on purpose — a
+  // `--service` view still has to know that a feature outside it discharges the
+  // contract, or the narrowing would invent an obligation.
+  const owners = await contractOwners(docsDir, context);
 
   const features = await Promise.all(
-    inScope.map(async (f) =>
-      fleetFeature(docsDir, f, graph, await contractsInFlight(docsDir, f.id, context), context),
+    inScope.map((f) =>
+      fleetFeature(docsDir, f, graph, contractsHeldElsewhere(owners, f.id), context, interrupted),
     ),
   );
   features.sort((a, b) => compareIds(a.id, b.id));
@@ -1242,6 +1312,7 @@ async function fleetFeature(
   graph: DependencyGraph,
   contracted: ReadonlySet<string>,
   context: FleetContext,
+  interrupted: InterruptedCommit | null,
 ): Promise<FleetFeatureState> {
   const paths = featurePaths(feature.dir);
   const missing: string[] = [];
@@ -1267,14 +1338,24 @@ async function fleetFeature(
   // No `draft` here, ever: that verdict needs the coherence run this form
   // refuses to pay for, and inferring it from presence alone would be a second
   // opinion about validity — the one thing status must never invent.
+  //
+  // The interrupted commit leads, exactly as it does in the feature form: every
+  // presence test below is a question about files a killed `archive` may have
+  // half-written, so answering `done` from them is a claim about bytes nobody
+  // has established. Without this the two forms contradicted each other over
+  // one repository — `loam status --json` said `done` and offered "ship it"
+  // while `loam status <FEAT>` said `blocked` — and the module header's rule is
+  // that this projection is never greener than the gates.
   const stage: ArtifactStatus =
-    missing.length > 0
-      ? "missing"
-      : blockedBy.length > 0
-        ? "blocked"
-        : fullyVerified(verification)
-          ? "done"
-          : "ready";
+    interrupted !== null
+      ? "blocked"
+      : missing.length > 0
+        ? "missing"
+        : blockedBy.length > 0
+          ? "blocked"
+          : fullyVerified(verification)
+            ? "done"
+            : "ready";
 
   return {
     id: feature.id,
@@ -1372,7 +1453,13 @@ function fleetNext(
     steps.push({
       code: "next.feature",
       statement:
-        f.stage === "blocked"
+        // The list, not the stage, is what this sentence names. `blocked` has
+        // two causes now — another feature in flight, and an interrupted commit
+        // that stalls the whole repository — and the second one names no
+        // feature, so keying off the stage alone printed "FEAT-1 is waiting
+        // on ." The recover step above already says what the repository is
+        // waiting on.
+        f.stage === "blocked" && f.blockedBy.length > 0
           ? `${f.id} is waiting on ${f.blockedBy.join(", ")}.`
           : `${f.id} is at '${f.stage}'${f.missing.length > 0 ? ` — missing ${f.missing.join(", ")}` : ""}.`,
       command: `loam status ${f.id} --json`,

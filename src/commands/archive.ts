@@ -44,10 +44,10 @@ import {
   type ScannedRel,
 } from "../core/likec4.js";
 import {
+  archiveDir as archiveRoot,
   featurePaths,
   featureSpecPaths,
   featureSpecServices,
-  featuresDir as featuresRoot,
   landscapePath as landscapeFile,
   missingFeatureMessage,
   resolveFeature,
@@ -62,7 +62,7 @@ import {
   type OpenapiMergeResult,
 } from "../core/openapi-merge.js";
 import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
-import { findingJson, type Finding } from "../core/report.js";
+import { findingJson, SEVERITY_MARK, type Finding } from "../core/report.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -119,6 +119,13 @@ export function registerArchive(program: Command): void {
 function archiveErrorCode(err: unknown): ErrorCode {
   if (err instanceof ArchiveFailure) return err.code;
   if (err instanceof NotUtf8Error) return "merge-failed";
+  // The merge branch wraps its own call and re-throws as merge-failed; the
+  // create branch (`stripOpenapiRemovalMarkers`) does not, so one unreadable
+  // feature contract answered merge-failed or `internal` depending on whether
+  // the service already had a living openapi.yaml. The code answers "can I
+  // trust the repo?", and that answer does not turn on which side of the merge
+  // the document sat on.
+  if (err instanceof OpenapiMergeError) return "merge-failed";
   if (err instanceof InterruptedCommitError) return "commit-interrupted";
   return "internal";
 }
@@ -210,7 +217,6 @@ async function archiveLocked(
   const recovered = await recoverInterruptedCommit(config.docsDir);
   if (recovered !== null && !json) sayRecovery(recovered);
 
-  const featuresDir = featuresRoot(config.docsDir);
   const feature = await resolveFeature(config.docsDir, featureId, "exclude");
   if (!feature) {
     fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureId));
@@ -274,14 +280,14 @@ async function archiveLocked(
       return;
     }
     console.error(`${msg}:`);
-    for (const i of issues) console.error(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+    for (const i of issues) console.error(`  ${SEVERITY_MARK[i.severity]} ${i.message}`);
     console.error(`\nFix the gating issues (advisory warnings never block), or re-run with --approve to override them (may corrupt the living docs).`);
     process.exitCode = 1;
     return;
   }
   if (gating.length > 0) {
     say(`⚠ archiving despite ${gating.length} gating issue(s) (--approve):`);
-    for (const i of gating) say(`  ${i.severity === "error" ? "✗" : "⚠"} ${i.message}`);
+    for (const i of gating) say(`  ${SEVERITY_MARK[i.severity]} ${i.message}`);
     say();
   }
   if (advisory.length > 0) {
@@ -365,7 +371,7 @@ async function archiveLocked(
 
   // Pre-flight: the archive destination must be free, or the final move would fail
   // after the living docs were already rewritten.
-  const archiveDir = join(featuresDir, "archive");
+  const archiveDir = archiveRoot(config.docsDir);
   const archiveDest = join(archiveDir, dirName);
   if (existsSync(archiveDest)) {
     fail(json, "archive-exists", `archive ${id} — BLOCKED: features/archive/${dirName} already exists. Remove or rename it, then re-run.`);
@@ -443,6 +449,20 @@ async function archiveLocked(
     const featText = await readUtf8(featOpenapi);
     const livingOpenapi = servicePaths(config.docsDir, svc).openapi;
     const featDoc = await readOpenapi(featOpenapi);
+    // Every other reader of this flag suspends its own judgement when it is set
+    // — validate grades `openapi.invalid`, show and status print that the file
+    // does not parse. Archive was the only one that never looked, and it is the
+    // command that WRITES: a feature openapi.yaml holding a sequence instead of
+    // a mapping was planned verbatim into services/<svc>/openapi.yaml, `ok:
+    // true`, printing `created ()` because the reader saw no operations in it.
+    // A document loam cannot read is one it cannot merge, and that is the same
+    // answer as any other merge it could not compute: nothing is written.
+    if (featDoc.unreadable) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `feature openapi ${repoPath(config.docsDir, featOpenapi)} for ${svc} does not read as an OpenAPI document (${featDoc.error ?? "not a YAML mapping"}) — the API axis cannot be merged; fix the file, or delete it if this feature has no contract delta`,
+      );
+    }
     const ops = featDoc.ops.filter((op) => !op.remove).map((op) => op.id);
     // An `x-loam-remove: true` written at PATH level retires nothing: the marker
     // addresses one operation, and beside the methods there is no operation for
@@ -581,7 +601,6 @@ async function archiveLocked(
     (svc) => !existsSync(servicePaths(config.docsDir, svc).dir),
   );
   for (const svc of newServices) {
-    if (existsSync(servicePaths(config.docsDir, svc).model)) continue;
     // Two shapes of the same debt: a service with a requirement delta gets its
     // directory from this merge, one that arrives only in the landscape gets no
     // directory at all — and `validate --all` fails the second harder

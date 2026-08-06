@@ -16,7 +16,13 @@ import { readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
-import { AGENT_TOOLS, AGENTS_MD, SLASH_COMMANDS as COMMAND_BODIES } from "../src/core/agent.js";
+import {
+  AGENT_TOOLS,
+  AGENTS_MD,
+  PROTOCOLS as COMMAND_BODIES,
+  SLASH_COMMANDS as COMMAND_FILES,
+} from "../src/core/agent.js";
+import { buildProgram } from "../src/cli.js";
 import {
   agentsStaleFinding,
   agentsStampLine,
@@ -266,7 +272,7 @@ describe("multi-tool command generation (init --tools)", () => {
     // would silently re-spell every already-initialized repo as unscaffolded.
     // The literal prefix pins the on-disk contract, not the derivation.
     expect(
-      COMMAND_BODIES["loam-adopt"]!.startsWith(
+      COMMAND_FILES["loam-adopt"]!.startsWith(
         "---\n" +
           "description: Adopt a service — write its baseline docs from its code, as draft, then validate\n" +
           "argument-hint: <service-id>\n" +
@@ -336,7 +342,7 @@ describe("multi-tool command generation (init --tools)", () => {
       );
       // the body after the frontmatter is claude's body after ITS frontmatter
       const body = (s: string): string => s.slice(s.indexOf("\n---\n\n") + "\n---\n\n".length);
-      expect(body(skill), `${id} skill body`).toBe(body(COMMAND_BODIES["loam-check"]!));
+      expect(body(skill), `${id} skill body`).toBe(body(COMMAND_FILES["loam-check"]!));
     }
   });
 
@@ -353,10 +359,16 @@ describe("multi-tool command generation (init --tools)", () => {
     expect(res.out).toContain("skills:    cursor, gemini");
   });
 
-  it("no --tools in a bare repo is the old behavior byte-for-byte: claude only, the exported bodies exactly", async () => {
+  // NOT "the old behavior byte-for-byte", which this test was called and could
+  // never check: both sides derive from the same emitter, so a change to what
+  // loam writes moves them together and the assertion holds either way. What it
+  // does pin is real and worth keeping — `init` and the export agree, and no
+  // tool appears that nobody asked for — but the historical bytes are pinned by
+  // the wrapper-prefix test above, which asserts a literal.
+  it("no --tools in a bare repo is claude only, and the files match the export exactly", async () => {
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create");
-    for (const [name, content] of Object.entries(COMMAND_BODIES)) {
+    for (const [name, content] of Object.entries(COMMAND_FILES)) {
       expect(await readFile(join(dir, ".claude", "commands", `${name}.md`), "utf8")).toBe(content);
     }
     for (const other of [".cursor", ".gemini", ".github", ".opencode", ".clinerules"]) {
@@ -499,12 +511,40 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
     const commandsDir = new URL("../src/commands/", import.meta.url);
     const files = (await readdir(commandsDir)).filter((f) => f.endsWith(".ts"));
     expect(files.length).toBeGreaterThan(0);
+    let registrations = 0;
     for (const f of files) {
       const src = await readFile(new URL(f, commandsDir), "utf8");
+      // Registrations, not files — counted per `.command(`, because a module is
+      // allowed to declare more than one (migrate-openspec.ts registers both
+      // `audit-openspec` and `migrate-openspec`) and a per-file tally would
+      // silently owe the program a command it never counted.
+      //
+      // `commands/` also holds shared policy that registers nothing — the
+      // docs-repo refusals every reading command owes (docs-repo-gate.ts) live
+      // here rather than in core because they call `fail` and decide how the
+      // process ends. A module that declares no `.command(` declares no flags
+      // either, so the claim does not reach it.
+      const declared = src.match(/\.command\(/g)?.length ?? 0;
+      if (declared === 0) continue;
+      registrations += declared;
       expect(src, `${f} registers no --json flag — the AGENTS.md claim is now false`).toContain(
         '.option("--json"',
       );
     }
+    // The floor is the CLI itself, not a number written down here. The old
+    // `toBeGreaterThan(0)` was satisfied by any single surviving match, so the
+    // accommodation above became a hole: a command module that stopped matching
+    // `.command(` — a registration moved behind a helper, a builder, a differently
+    // spelled call — simply dropped out of the scan, took its `--json` obligation
+    // with it, and this test stayed green while the AGENTS.md sentence went false.
+    // buildProgram() is the list of commands loam actually ships (that is why
+    // src/cli.ts exports it), so every one of them must have been one of the
+    // registrations read above — no file skipped by name, and none skipped by
+    // accident either.
+    expect(
+      registrations,
+      "a command loam registers was not seen by the `.command(` scan — the --json claim is unchecked for it",
+    ).toBe(buildProgram().commands.length);
   });
 
   it("teaches the real usage-error contract: with --json even parser errors arrive as the envelope", () => {

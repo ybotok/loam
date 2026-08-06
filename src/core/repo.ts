@@ -98,6 +98,45 @@ function tokenize(s: string): (string | number)[] {
 }
 
 /**
+ * Known ids within a small edit distance of `id`, closest first, at most three.
+ *
+ * The did-you-mean hint for a name somebody typed: `loam new --touches` and
+ * `loam delta <svc>` answer the same mistake, and each carried its own copy of
+ * these twenty-four lines. It belongs here because the ids being scored are
+ * this module's ids — service directory names, feature ids — and because
+ * `compareIds` right above is the tiebreak that keeps the list deterministic
+ * when two candidates score equally. Not in `core/ids.ts`: `compareIds` lives
+ * here and repo.ts imports ids.js, so putting it there would close a cycle.
+ *
+ * `arch.ts`'s `closeIds` looks similar and is not: substring and prefix, capped
+ * at five, answering "which element could this be" rather than "did you
+ * misspell a directory". Two rules, two homes.
+ */
+export function nearestIds(id: string, known: string[]): string[] {
+  const budget = Math.max(1, Math.floor(id.length / 4));
+  return known
+    .map((candidate) => ({ candidate, distance: editDistance(id.toLowerCase(), candidate.toLowerCase()) }))
+    .filter((scored) => scored.distance <= budget)
+    .sort((a, b) => a.distance - b.distance || compareIds(a.candidate, b.candidate))
+    .slice(0, 3)
+    .map((scored) => scored.candidate);
+}
+
+/** Plain Levenshtein — ids are short, and the row-at-a-time form keeps it obvious. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current.push(Math.min(previous[j]! + 1, current[j - 1]! + 1, substitution));
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
+}
+
+/**
  * Feature id from a directory name: everything up to and including the first
  * number run (`FEAT-101-payment-splitting` -> `FEAT-101`). A name with no
  * `<word>-<number>` head is its own id. Quirk: a dated slug keeps only its first
@@ -191,6 +230,38 @@ export function landscapePath(docsDir: string): string {
 
 export function featuresDir(docsDir: string): string {
   return join(docsDir, "features");
+}
+
+/**
+ * The agent contract's filename, and where it sits in a docs repo.
+ *
+ * Both spellings are exported because the two questions are different: `init`,
+ * `doctor` and `validate` want a path under a docsDir they already hold, while
+ * `docs.ts` builds the scaffold as `[relative path, bytes]` pairs and needs the
+ * bare name. Four modules spelled the literal out for themselves, and one of
+ * them — `init` — uses it to decide whether a directory IS a docs repo at all,
+ * so a rename that reached three of the four would leave `init` recognising a
+ * file nothing else writes any more.
+ *
+ * `openspec-inventory.ts`'s "AGENTS.md" is deliberately NOT this constant: it
+ * names a file in a foreign OpenSpec tree that happens to share the name.
+ */
+export const AGENTS_FILENAME = "AGENTS.md";
+
+export function agentsPath(docsDir: string): string {
+  return join(docsDir, AGENTS_FILENAME);
+}
+
+/**
+ * Where shipped features live. `features/archive/` is spelled here and nowhere
+ * else for the same reason every other artifact path is: `archive` and
+ * `unarchive` move directories in and out of it, and a layout string that two
+ * commands re-derive is a layout two commands can disagree about. The
+ * `features/archive/…` strings in refusal PROSE are not this path — they are
+ * what a reader types into `ls`, and they stay spelled out.
+ */
+export function archiveDir(docsDir: string): string {
+  return join(featuresDir(docsDir), ARCHIVE_DIR);
 }
 
 /* ------------------------------------------------------------------ */
@@ -321,7 +392,15 @@ async function subdirs(dir: string): Promise<string[]> {
     .sort(compareIds);
 }
 
-async function countMarkdown(dir: string): Promise<number> {
+/**
+ * Markdown files sitting directly in `dir` — the ADR count, and the only place
+ * that rule is spelled. Exported because `show` kept a second copy that tested
+ * `Dirent.isFile()` itself: always false for a symlink, whatever it points at,
+ * so a docs repo composed of symlinks (the layout `entryIs` above exists to
+ * support) had `loam list` and `loam show` reporting different ADR counts for
+ * the same service. One rule, one answer.
+ */
+export async function countMarkdown(dir: string): Promise<number> {
   if (!existsSync(dir)) return 0;
   const entries = await readdir(dir, { withFileTypes: true });
   return entries.filter((e) => e.name.endsWith(".md") && entryIs(dir, e, "file")).length;

@@ -30,8 +30,8 @@ import {
   parseStampedFeature,
   renderFeature,
   scenarioDigest,
-  stepFromLine,
 } from "../src/core/gherkin.js";
+import { stepFromLine } from "../src/core/steps.js";
 import { parseRequirements } from "../src/core/spec.js";
 import { scenarioBodyHash } from "../src/core/verify.js";
 import { LOAM_VERSION } from "../src/core/version.js";
@@ -414,6 +414,31 @@ describe("the loam/ ownership boundary", () => {
     expect(await readWork(p, "features/loam/notes.md")).toBe("not a feature file\n");
     expect(await readWork(p, "features/handwritten.feature")).toBe("Feature: mine, outside loam/\n");
     expect(await readWork(p, "sentinel.txt")).toBe("untouched\n");
+  });
+
+  it("a symlinked DIRECTORY under loam/ is not loam's to empty — the sweep leaves what it holds alone", async () => {
+    // "Inside loam/" has to hold after the links are resolved, not merely in
+    // the spelling of the path. The walk follows links and recurses with the
+    // LINK's path, so this file came back spelled as though it lived in loam/;
+    // planned names are flat, so nothing nested is ever spared as planned; and
+    // `unlink` resolves the link — which put an irreversible deletion outside
+    // the repo entirely, on a file nobody in this repo ever wrote.
+    const p = await project(
+      { "services/payment-service/spec.md": LIVING_SPEC },
+      { service: "payment-service" },
+    );
+    const outside = join(p.workDir, "..", "outside");
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, "stray.feature"), "Feature: not loam's\n", "utf8");
+    await mkdir(join(p.workDir, "features", "loam"), { recursive: true });
+    await symlink(outside, join(p.workDir, "features", "loam", "sub"));
+
+    const res = await runLoam(p.workDir, "gherkin", "--json");
+    expect(res.code).toBe(0);
+    expect(JSON.parse(res.stdout).deleted).toEqual([]);
+    expect(await readFile(join(outside, "stray.feature"), "utf8")).toBe("Feature: not loam's\n");
+    // The emission itself is unaffected: only the deletion is held back.
+    expect(existsSync(join(p.workDir, "features/loam/authorize-a-payment.feature"))).toBe(true);
   });
 
   it("feature regeneration owns only its own tag: renames are cleaned up, other features' files stay", async () => {

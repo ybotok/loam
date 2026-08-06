@@ -23,7 +23,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/fleet-context.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
 import { InvalidIdError, assertServiceId } from "../core/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
 import {
@@ -55,6 +55,7 @@ import {
   pinOpenapiOperations,
   type OpenapiPinPlan,
 } from "../core/openapi-merge.js";
+import { plural } from "./format.js";
 
 interface RebaseOptions {
   service?: string;
@@ -483,8 +484,4 @@ function applyEdits(raw: string, edits: LineEdit[]): string {
     }
   }
   return lines.map((line) => line.text + line.eol).join("");
-}
-
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }

@@ -206,9 +206,17 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
 export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfig | null> {
   const p = findConfigPath(cwd);
   if (p === null) return null;
-  const raw = await readFile(p, "utf8");
   try {
-    return parseConfig(raw, dirname(p));
+    // The read belongs INSIDE the try: `existsSync` only says the name is
+    // taken, not that it names a file this process can read. A loam.json that
+    // is a directory (EISDIR), one whose permissions refuse us (EACCES), or one
+    // deleted between the search and the read (ENOENT) all fail here rather
+    // than in `parseConfig` — and read outside, each of them escaped every
+    // command as an `internal` crash carrying a bare errno. Caught here they
+    // join the same "exists but cannot be believed" arm the parse failures
+    // already take, so `reportNoConfig` re-checks the path and answers the
+    // designed `config-invalid` (or `no-config` if the file really has gone).
+    return parseConfig(await readFile(p, "utf8"), dirname(p));
   } catch (err) {
     // An unreadable config must not crash the CLI with a stack trace: report it and
     // treat it as absent — commands fail with their normal hint, and `loam init`

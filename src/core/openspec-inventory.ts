@@ -5,6 +5,8 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { asRecord, dictionary, ownValue } from "./records.js";
+import { FEATURE_ID_RULE, isFeatureId } from "./ids.js";
 import { compareIds } from "./repo.js";
 import {
   isRequirementsHeading,
@@ -124,7 +126,15 @@ export interface OpenSpecMapping {
   capabilities: Record<string, OpenSpecCapabilityMapping>;
   changes: Record<string, OpenSpecChangeMapping>;
   renames: Record<string, string>;
-  artifacts: Record<string, OpenSpecArtifactDisposition>;
+  /**
+   * Whatever a human wrote, not what the type wishes they had written. Declaring
+   * this as the disposition union meant the parser had to assert its way into
+   * it, so an unrecognised disposition arrived typed as a valid one and only
+   * `mapping.invalid-artifact-disposition` — a check downstream of the parse —
+   * stood between it and code comparing it against a literal. The union is
+   * recovered where it is needed, through `isOpenSpecArtifactDisposition`.
+   */
+  artifacts: Record<string, string>;
 }
 
 export interface OpenSpecMappingIssue {
@@ -174,20 +184,34 @@ export type OpenSpecArtifactKind =
   | "custom-schema"
   | "schema-template"
   | "other";
-export type OpenSpecArtifactDisposition =
-  | "translate-project-context"
-  | "record-external-planning-root"
-  | "remove-after-cutover"
-  | "map-requirements"
-  | "review-as-service-adr"
-  | "translate-change-metadata"
-  | "convert-to-intent"
-  | "preserve-as-legacy-checklist"
-  | "review-as-feature-adr"
-  | "map-delta"
-  | "review-custom-workflow"
-  | "retain-read-only"
-  | "manual-review";
+/**
+ * The dispositions as values, not only as a type, because a mapping file names
+ * one as a plain string and the parse boundary has to be able to ask whether
+ * that string is one of these. A hand-written second spelling of the same list
+ * is how a disposition added here would go on being unrecognised where it is
+ * read from somebody else's YAML.
+ */
+export const OPENSPEC_ARTIFACT_DISPOSITIONS = [
+  "translate-project-context",
+  "record-external-planning-root",
+  "remove-after-cutover",
+  "map-requirements",
+  "review-as-service-adr",
+  "translate-change-metadata",
+  "convert-to-intent",
+  "preserve-as-legacy-checklist",
+  "review-as-feature-adr",
+  "map-delta",
+  "review-custom-workflow",
+  "retain-read-only",
+  "manual-review",
+] as const;
+export type OpenSpecArtifactDisposition = (typeof OPENSPEC_ARTIFACT_DISPOSITIONS)[number];
+
+/** Whether an authored string names a disposition this codebase actually defines. */
+export function isOpenSpecArtifactDisposition(value: string): value is OpenSpecArtifactDisposition {
+  return (OPENSPEC_ARTIFACT_DISPOSITIONS as readonly string[]).includes(value);
+}
 
 export interface OpenSpecArtifact {
   /** Workspace-relative, so store metadata outside openspec/ remains representable. */
@@ -203,7 +227,12 @@ export interface OpenSpecArtifactDecision {
   path: string;
   kind: "proposal" | "tasks" | "change-design";
   suggestedDisposition: OpenSpecArtifactDisposition;
-  disposition: OpenSpecArtifactDisposition | null;
+  /**
+   * What the mapping selected, verbatim. This is the field the invalid-value
+   * report is written from, so it has to be able to hold the invalid value —
+   * narrowing it to the union would only mean asserting one back into it.
+   */
+  disposition: string | null;
   status: "needsDisposition" | "mapped";
 }
 
@@ -445,18 +474,13 @@ async function isSymbolicLink(path: string): Promise<boolean> {
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function dictionary<T>(): Record<string, T> {
-  return Object.create(null) as Record<string, T>;
-}
-
-function ownValue<T>(record: Record<string, T>, key: string): T | undefined {
-  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+/**
+ * `Array.isArray` narrows an `unknown` to `any[]`, which is how a checked
+ * element type went on being asserted back in a line later. Deciding both
+ * halves in one predicate makes the narrowing carry the check.
+ */
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 async function yamlRecord(path: string): Promise<Record<string, unknown>> {
@@ -674,6 +698,14 @@ function inspectChangeShape(
   }
 }
 
+/**
+ * The parsed requirements come back with the counts because both callers wanted
+ * them and each opened the file a second time to get its own copy — two reads
+ * of the same bytes per spec.md, and two readings of it: the counts came from
+ * this parse while the requirement names, and the living corpus every rename is
+ * resolved against, came from the other. A file edited mid-audit could be
+ * counted from one of them and routed from the other.
+ */
 async function inspectSpecFile(
   root: string,
   absolute: string,
@@ -682,7 +714,7 @@ async function inspectSpecFile(
   mapping: OpenSpecMapping,
   renamed: OpenSpecRenamedUsage[],
   unsupported: OpenSpecUnsupportedShape[],
-): Promise<{ path: string; counts: OpenSpecCounts }> {
+): Promise<{ path: string; counts: OpenSpecCounts; requirements: ReturnType<typeof parseRequirements> }> {
   const path = portable(root, absolute);
   const raw = await readFile(absolute, "utf8");
   const requirements = parseRequirements(raw);
@@ -723,7 +755,7 @@ async function inspectSpecFile(
     renamed.push(...usages);
     inspectChangeShape(path, raw, changeScope, usages, unsupported);
   }
-  return { path, counts };
+  return { path, counts, requirements };
 }
 
 async function inspectConfig(
@@ -814,8 +846,8 @@ async function inspectChangeMetadata(
       invalid("goal must be a non-empty string when present.");
     }
     if ("affected_areas" in metadata
-      && (!Array.isArray(metadata.affected_areas)
-        || metadata.affected_areas.some((value) => typeof value !== "string" || value.length === 0))) {
+      && (!isStringArray(metadata.affected_areas)
+        || metadata.affected_areas.some((value) => value.length === 0))) {
       invalid("affected_areas must be an array of non-empty strings when present.");
     }
     if ("initiative" in metadata) {
@@ -936,23 +968,20 @@ function validArtifactSchema(document: Record<string, unknown>): boolean {
       || typeof artifact.template !== "string"
       || artifact.template.length === 0
       || ("instruction" in artifact && typeof artifact.instruction !== "string")
-      || ("requires" in artifact
-        && (!Array.isArray(artifact.requires)
-          || artifact.requires.some((dependency) => typeof dependency !== "string")))) {
+      || ("requires" in artifact && !isStringArray(artifact.requires))) {
       return false;
     }
     artifacts.push({
       id: artifact.id,
-      requires: Array.isArray(artifact.requires) ? artifact.requires as string[] : [],
+      requires: isStringArray(artifact.requires) ? artifact.requires : [],
     });
   }
 
   if ("apply" in document) {
     const apply = asRecord(document.apply);
     if (apply === null
-      || !Array.isArray(apply.requires)
+      || !isStringArray(apply.requires)
       || apply.requires.length === 0
-      || apply.requires.some((dependency) => typeof dependency !== "string")
       || ("tracks" in apply && apply.tracks !== null && typeof apply.tracks !== "string")
       || ("instruction" in apply && typeof apply.instruction !== "string")) {
       return false;
@@ -1025,11 +1054,12 @@ async function inventoryChanges(
     for (const specFile of specFiles) {
       const inspected = await inspectSpecFile(root, specFile, "change", scope, mapping, renamed, unsupported);
       files.push(inspected.path);
-      const parsed = parseRequirements(await readFile(specFile, "utf8"));
       specs.push({
         capability: portable(specRoot, dirname(specFile)),
         path: inspected.path,
-        requirementNames: [...new Set(parsed.filter((item) => item.kind !== "BASE").map((item) => item.name))].sort(compareIds),
+        requirementNames: [...new Set(
+          inspected.requirements.filter((item) => item.kind !== "BASE").map((item) => item.name),
+        )].sort(compareIds),
         ...inspected.counts,
       });
       addCounts(counts, inspected.counts);
@@ -1138,8 +1168,6 @@ function sortIssues(issues: OpenSpecUnsupportedShape[]): void {
   issues.sort((a, b) => compareIds(a.path, b.path) || compareIds(a.code, b.code));
 }
 
-const LOAM_FEATURE_ID_RE = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
-
 function titleFromChangeId(id: string): string {
   const words = id.split(/[-_]+/).filter(Boolean);
   const text = words.join(" ");
@@ -1194,7 +1222,13 @@ export function createOpenSpecMappingSkeleton(inventory: OpenSpecInventory): Ope
           from: rename.from,
           to: rename.to,
           existingRequirementId: rename.existingRequirementId,
-          requirementId: rename.status === "mapped" ? rename.existingRequirementId : null,
+          // The identity the inventory settled on, which is the field the
+          // skeleton is asking a human to fill in. `existingRequirementId` is
+          // the living source's own id and happens to equal it on the only path
+          // that reaches here today — but a caller that audits WITH a mapping
+          // would have a settled id and no existing one, and the skeleton would
+          // hand that decision back as unmade.
+          requirementId: rename.requirementId,
         }]),
     ),
     artifacts: Object.fromEntries(inventory.artifactDecisions.map((decision) => [
@@ -1298,7 +1332,7 @@ export async function inventoryOpenSpec(
   for (const specFile of livingFiles) {
     const id = portable(specsRoot, dirname(specFile));
     const inspected = await inspectSpecFile(root, specFile, "living", null, mapping, renamed, blockers);
-    livingRequirements.set(id, parseRequirements(await readFile(specFile, "utf8")));
+    livingRequirements.set(id, inspected.requirements);
     const capability = { id, files: [inspected.path], ...inspected.counts };
     capabilities.push(capability);
     addCounts(livingCounts, inspected.counts);
@@ -1575,11 +1609,11 @@ export async function inventoryOpenSpec(
         message: `Active change '${change.id}' needs a non-empty title.`,
       });
     }
-    if (feature !== null && !LOAM_FEATURE_ID_RE.test(feature)) {
+    if (feature !== null && !isFeatureId(feature)) {
       mappingIssues.push({
         code: "mapping.feature-id-invalid",
         key: change.id,
-        message: `Active change '${change.id}' maps to invalid loam feature id '${feature}'. Expected <word>-<number>.`,
+        message: `Active change '${change.id}' maps to invalid loam feature id '${feature}'. ${FEATURE_ID_RULE}`,
       });
     }
     return {
@@ -1593,7 +1627,7 @@ export async function inventoryOpenSpec(
   });
   const featureOwners = new Map<string, string[]>();
   for (const decision of changeDecisions) {
-    if (decision.feature === null || !LOAM_FEATURE_ID_RE.test(decision.feature)) continue;
+    if (decision.feature === null || !isFeatureId(decision.feature)) continue;
     const key = decision.feature.toLowerCase();
     const owners = featureOwners.get(key) ?? [];
     owners.push(decision.change);
@@ -1789,7 +1823,10 @@ export async function inventoryOpenSpec(
       };
     });
   const artifactPaths = new Set(artifactDecisions.map((decision) => decision.path));
-  const dispositionsByKind: Record<OpenSpecArtifactDecision["kind"], Set<OpenSpecArtifactDisposition>> = {
+  // Sets of plain strings: the question being asked is "is this authored value
+  // one of the ones this kind accepts", and a set of the union could not be
+  // asked it without an assertion putting the answer back where it started.
+  const dispositionsByKind: Record<OpenSpecArtifactDecision["kind"], ReadonlySet<string>> = {
     proposal: new Set(["convert-to-intent", "retain-read-only", "manual-review"]),
     tasks: new Set(["preserve-as-legacy-checklist", "retain-read-only", "manual-review"]),
     "change-design": new Set(["review-as-feature-adr", "retain-read-only", "manual-review"]),

@@ -148,7 +148,15 @@ export function fail(json: boolean, code: ErrorCode, message: string): void {
 }
 
 /** The message every command prints when there is no loam.json. */
-export const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` first.";
+const NO_CONFIG_MESSAGE = "No loam.json found. Run `loam init --docs <dir>` first.";
+
+/**
+ * The message the service-scoped commands print when neither `--service` nor
+ * loam.json names one. Four commands ask the same question and owe the same two
+ * answers, and a fifth would have been written by hand. `loam delta` keeps its
+ * own longer sentence on purpose — it can say which feature was being read.
+ */
+export const NO_SERVICE_MESSAGE = "No service. Pass --service <id> or set it in loam.json.";
 
 /**
  * Report "no config" in whichever mode the caller is in — distinguishing a

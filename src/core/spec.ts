@@ -7,8 +7,8 @@
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { decodeDocument } from "./fleet-context.js";
-import { scenarioGherkin } from "./gherkin.js";
+import { decodeDocument } from "./document-bytes.js";
+import { scenarioGherkin } from "./steps.js";
 import type { Finding } from "./report.js";
 
 export type DeltaKind = "ADDED" | "MODIFIED" | "REMOVED" | "BASE";
@@ -199,7 +199,7 @@ export function requirementDigest(requirement: Requirement): string {
  * match that also hit `## Requirements Extra`. Full-line match on a trimmed
  * heading, with KIND_RE's case and interior-whitespace tolerance.
  */
-export const REQUIREMENTS_SECTION_RE = /^##\s+Requirements\s*$/i;
+const REQUIREMENTS_SECTION_RE = /^##\s+Requirements\s*$/i;
 
 /** Is this H2 heading line (as sectionHeadings/`Requirement.section` spell it) the `## Requirements` heading? */
 export function isRequirementsHeading(heading: string): boolean {

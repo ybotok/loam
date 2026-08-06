@@ -1,16 +1,14 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { cpus } from "node:os";
-import { join } from "node:path";
 import { agentsStaleFinding } from "../core/agents-stamp.js";
+import { inOrder } from "../core/concurrency.js";
 import { loadConfig } from "../core/config.js";
 import { listField, readFrontmatter } from "../core/frontmatter.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/json.js";
 import {
   elementService,
   loadFile,
-  serviceOf,
   serviceResolver,
   type Elem,
   type LikeC4Error,
@@ -19,6 +17,7 @@ import {
 } from "../core/likec4.js";
 import {
   DocsRepoUnavailableError,
+  agentsPath as agentsFile,
   docsRepoState,
   featurePaths,
   featureSpecPaths,
@@ -30,15 +29,16 @@ import {
   resolveFeature,
   serviceIdFindings,
   servicePaths,
+  SPEC_AXES,
   type FeatureEntry,
 } from "../core/repo.js";
 import {
   countSeverity,
   reportValid,
+  SEVERITY_MARK,
   targetJson,
   targetValid,
   type Finding,
-  type Severity,
   type TargetReport,
 } from "../core/report.js";
 import {
@@ -49,7 +49,7 @@ import {
   type Requirement,
 } from "../core/spec.js";
 import { readOpenapi } from "../core/openapi.js";
-import { featureCoherence } from "../core/coherence.js";
+import { deltaServiceUnknownFinding, featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/issue.js";
 import {
   emptySourcesMessage,
@@ -78,6 +78,12 @@ import {
   documentConflictFinding,
   landscapeConflictFinding,
 } from "../core/fleet-context.js";
+import {
+  docsRepoReady,
+  reportDocsRepoError,
+  reportRepositoryUnavailable,
+} from "./docs-repo-gate.js";
+import { plural } from "./format.js";
 
 interface ValidateOptions {
   service?: string;
@@ -86,65 +92,6 @@ interface ValidateOptions {
   strict?: boolean;
   errorsOnly?: boolean;
   json?: boolean;
-}
-
-/**
- * The refusal every READ command owes a `docsDir` that is not a docs repo.
- *
- * It is not a formality. `validate --all` and `list` used to answer a docsDir
- * that does not exist with a green report over zero services, which is the one
- * output a fleet gate must never produce: "nothing is wrong" and "I could not
- * look" are opposite facts, and in CI the first one merges. The two codes are
- * kept apart because the fixes point in different directions — a wrong path in
- * loam.json versus a docs repo that was never cloned or scaffolded — exactly
- * the way `no-config` and `config-invalid` are kept apart.
- *
- * "Zero services" stays reachable, and only from a REAL docs repo whose
- * `services/` is empty: that is a legitimate state (before the first
- * `loam adopt`) and it must keep exiting 0.
- *
- * `need` says how much of a docs repo this particular run has to have. A run
- * that only reads features genuinely does not need `services/` — repo.ts takes
- * the same position for `listFeatures` — and refusing there would turn one
- * diagnosis into two contradictory ones. A run that enumerates services needs
- * the directory that IS the list of services.
- *
- * It lives in validate.ts because validate is the fleet gate this doctrine is
- * about; `list` and `show` import it rather than growing two more copies that
- * could drift into three different sentences for one fact.
- */
-export function docsRepoReady(json: boolean, docsDir: string, need: "docs" | "services"): boolean {
-  const state = docsRepoState(docsDir);
-  if (state.kind === "ok" || (state.kind === "no-services" && need === "docs")) return true;
-  if (state.kind === "missing") {
-    fail(
-      json,
-      "docs-missing",
-      `The configured docs repo does not exist: ${state.path}. ` +
-        "Fix `docsDir` in loam.json, clone the docs repo there, " +
-        "or run `loam init --docs <dir> --create` to make a new one.",
-    );
-    return false;
-  }
-  fail(
-    json,
-    "services-missing",
-    `${state.path} is not a docs repo — it has no services/ directory. ` +
-      "Point `docsDir` in loam.json at the shared docs repo, " +
-      "or run `loam init --docs <dir> --create` to make one.",
-  );
-  return false;
-}
-
-/**
- * The same refusal, reached the other way: `listServices`/`listFeatures` throw
- * `DocsRepoUnavailableError` when the repo goes away mid-run (or when a caller
- * reaches enumeration without passing the gate above). Mapping it back onto the
- * same two codes keeps one breach spelled one way, instead of surfacing as the
- * `internal` catch-all in cli.ts.
- */
-export function reportDocsRepoError(json: boolean, err: DocsRepoUnavailableError): void {
-  fail(json, err.state.kind === "missing" ? "docs-missing" : "services-missing", err.message);
 }
 
 export function registerValidate(program: Command): void {
@@ -206,7 +153,7 @@ export function registerValidate(program: Command): void {
           // a fresh LikeC4 workspace per call, and paying that per service makes
           // the fleet's main CI command O(services) re-parses of the same file.
           const lp = landscapeFile(docsDir);
-          const land = existsSync(lp) ? await fleet.loadLikeC4(lp) : null;
+          const land = existsSync(lp) ? await readLandscape(() => fleet.loadLikeC4(lp)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
           targets.push(await validateLandscape(docsDir, land, fleet));
@@ -217,7 +164,7 @@ export function registerValidate(program: Command): void {
           // binary means agents are branching on tables the binary no longer
           // honours. It grades the repo, not any service, so it rides on the
           // landscape target.
-          const agentsPath = join(docsDir, "AGENTS.md");
+          const agentsPath = agentsFile(docsDir);
           const agents = agentsStaleFinding(
             existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
             LOAM_VERSION,
@@ -295,7 +242,7 @@ export function registerValidate(program: Command): void {
         } else {
           const service = opts.service ?? config.service;
           if (!service) {
-            fail(json, "invalid-option", "No service. Pass --service <id> or set it in loam.json.");
+            fail(json, "invalid-option", NO_SERVICE_MESSAGE);
             return;
           }
           targets.push(
@@ -323,14 +270,11 @@ export function registerValidate(program: Command): void {
         // that are fine. Say which file, and refuse; the one thing that must
         // not happen is a stack trace on stdout's sibling stream and an
         // `internal` envelope that names nothing.
-        const path = (err as NodeJS.ErrnoException).path;
-        if (path === undefined) throw err;
-        fail(
+        reportRepositoryUnavailable(
           json,
-          "repository-unavailable",
-          `${path} could not be read, so the service list itself is unknown and nothing was validated. ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          err,
+          "the service list itself is unknown and nothing was validated",
+          docsDir,
         );
         return;
       }
@@ -378,45 +322,21 @@ export function registerValidate(program: Command): void {
 }
 
 /**
- * How many targets `--all` may have in flight at once.
+ * The rollup `--json` carries and the `--all` footer prints.
  *
- * Capped as well as scaled: each in-flight target holds a whole LikeC4/Langium
- * workspace, so a 64-core box would open sixty-four of them at once and buy
- * memory pressure rather than throughput (peak RSS on an 80-service fleet:
- * 385 MB serial, ~500 MB pooled).
- *
- * Do not quote a speedup for this. The measured cost of `--all` is CPU inside
- * the Langium parse, which one thread cannot divide however the loop is
- * shaped; what the pool overlaps is the I/O half — the spec, contract and
- * health reads around each parse. On an 80-service fleet it measures as a wash
- * (11–13 s either way, on a box that was itself loaded). The number that moves
- * this command is workspaces per run, not awaits per loop.
+ * Four named fields rather than a `Record<string, number>`: the keys ARE the
+ * contract, and under an index signature every read of them was an assertion
+ * (`s.errors!`) that tsc could not check — rename one and the compiler stayed
+ * quiet while the footer printed `undefined errors`.
  */
-const TARGET_CONCURRENCY = Math.max(1, Math.min(cpus().length, 8));
-
-/**
- * Run `work` over `items` with a bounded number in flight, returning the
- * results in INPUT order.
- *
- * The order is the contract, not an accident: the text report and the `--json`
- * envelope are diffed between runs and between machines, so a concurrent run
- * has to be byte-identical to the serial one for the same input. That is why
- * results are written by index — nothing is appended as it finishes, and a slow
- * service cannot reorder the fleet around it.
- */
-async function inOrder<T, R>(items: readonly T[], work: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
-  let next = 0;
-  const workers = Math.min(TARGET_CONCURRENCY, items.length);
-  await Promise.all(
-    Array.from({ length: workers }, async () => {
-      for (let i = next++; i < items.length; i = next++) out[i] = await work(items[i]!);
-    }),
-  );
-  return out;
+interface ValidateSummary {
+  services: number;
+  features: number;
+  errors: number;
+  warnings: number;
 }
 
-function summary(targets: TargetReport[]): Record<string, number> {
+function summary(targets: TargetReport[]): ValidateSummary {
   return {
     services: targets.filter((t) => t.kind === "service").length,
     features: targets.filter((t) => t.kind === "feature").length,
@@ -526,6 +446,58 @@ const ACTOR_KINDS = new Set(["person", "actor", "user"]);
 const EXTERNAL_TAG = "external";
 
 /**
+ * A landscape that could not be READ, shaped as one that did not PARSE.
+ *
+ * The landscape is the one artifact no target owns: it is read once for the
+ * whole run and it is graded on a target of its own, which runs OUTSIDE
+ * `guarded`. So a landscape.likec4 that is a directory, or that carries a
+ * permission bit this process cannot open, escaped every per-target catch and
+ * became the whole run's `repository-unavailable` — one file, and a fleet gate
+ * that said nothing about the ninety-nine services that are fine. A DANGLING
+ * symlink is not one of those shapes and never was: every read of the file is
+ * gated on an `existsSync` that follows the link, so a broken one resolves as
+ * `landscape.missing` long before anything opens it.
+ *
+ * What this contains is the FLEET-level reads, and only those: the `--all`
+ * preload, and both reads inside `validateLandscape` — the conflict-marker
+ * `readFile` and the parse. `loam validate --service <id>` and
+ * `loam validate --feature <id>` hand in no preloaded doc, so `validateService`
+ * and `validateFeature` open the same file again on demand, unwrapped and
+ * INSIDE `guarded`: an EISDIR there is still reported as `service.unreadable`
+ * or `feature.unreadable`, which files the fleet map's failure against the one
+ * target the caller happened to name. That is the wrong subject on a finding
+ * that does at least carry the offending path, and it costs those runs nothing
+ * further — they grade a single target either way, so there is no report left
+ * unwritten — which is why the remainder was left for the change that gives the
+ * landscape one load path instead of three.
+ *
+ * `guarded` is deliberately NOT widened to cover the landscape target instead.
+ * Its code ternary knows only services and features, so it would file the fleet
+ * map's failure as `feature.unreadable`; and a guarded failure yields no
+ * document, so all N services would go on to re-open the same broken file
+ * inside their own guards and emit N copies of it. Containing the IO here needs
+ * no new code and no new sentence: "could not be read" and "did not parse" have
+ * the same consequence — nothing may be concluded from this file — and
+ * `landscape.invalid` is already how that is said.
+ */
+function unreadableLandscape(err: unknown): LoadedDoc {
+  return {
+    errors: [{ message: err instanceof Error ? err.message : String(err) }],
+    elements: [],
+    relationships: [],
+  };
+}
+
+/** One landscape load, answering with `unreadableLandscape` rather than throwing. */
+async function readLandscape(load: () => Promise<LoadedDoc>): Promise<LoadedDoc> {
+  try {
+    return await load();
+  } catch (err) {
+    return unreadableLandscape(err);
+  }
+}
+
+/**
  * The fleet cross-check: `services/` and the landscape both claim to name the
  * fleet, and nothing used to compare them. A directory nobody drew and an element
  * with nothing behind it were equally invisible.
@@ -595,16 +567,25 @@ async function validateLandscape(
   // Read plainly rather than through FleetContext: this target runs outside
   // `guarded`, and a document refused for its encoding would surface here as
   // the whole run's `repository-unavailable` instead of one finding.
-  const conflict = landscapeConflictFinding(
-    "architecture/landscape.likec4",
-    await readFile(path, "utf8"),
-  );
-  if (conflict !== null) {
-    findings.push(conflict);
-    return report;
+  //
+  // Both reads are contained for that same reason — see `unreadableLandscape`.
+  // The conflict-marker read is the FIRST touch of the file, so it is the one
+  // that fails when the file cannot be opened at all, and it runs before
+  // `preloaded ??` can spare it.
+  let land: LoadedDoc;
+  try {
+    const conflict = landscapeConflictFinding(
+      "architecture/landscape.likec4",
+      await readFile(path, "utf8"),
+    );
+    if (conflict !== null) {
+      findings.push(conflict);
+      return report;
+    }
+    land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
+  } catch (err) {
+    land = unreadableLandscape(err);
   }
-
-  const land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
   if (land.errors.length > 0) {
     // Nothing may be concluded from a document that did not parse — in particular
     // not that every service is unmodelled.
@@ -891,6 +872,18 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
     });
   }
 
+  // The requirements that still govern anything. A REMOVED requirement is on
+  // its way out together with the operations it names: it makes no claim on the
+  // contract and governs nothing once the retiring feature archives — the same
+  // position coherence.ts takes on the delta side.
+  //
+  // Spelled once because it was spelled three times and dropped on the fourth:
+  // `governedOps` filtered, `spec-api.op-undefined` filtered, and the
+  // `api.covered` join did not — so an operation whose only requirement was
+  // REMOVED counted as governed, and the one operation about to be left without
+  // a requirement was the one the report called covered.
+  const livingReqs = reqs.filter((r) => r.kind !== "REMOVED");
+
   // API coverage: every operation in openapi.yaml is governed by a requirement.
   const api = await readOpenapi(paths.openapi, fleet);
   const removeMarkers = api.ops.filter((o) => o.remove);
@@ -912,7 +905,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
       : land.relationships.filter((r) => r.op !== undefined && landSvcOf!(r.target) === service);
   // The other half of the evidence a contract is owed: the living spec's own
   // `Operations:` lines. A requirement on its way out governs nothing.
-  const governedOps = reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations);
+  const governedOps = livingReqs.flatMap((r) => r.operations);
   /** No contract to read: deleted, renamed, or never written. */
   const contractMissing = !existsSync(paths.openapi);
   if (contractMissing) {
@@ -1013,8 +1006,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
     // green forever, and every downstream join through that id silently empty.
     // Same code and severity as the feature-scope check on purpose: one breach,
     // one name, wherever it is found.
-    for (const r of reqs) {
-      if (r.kind === "REMOVED") continue;
+    for (const r of livingReqs) {
       for (const op of r.operations) {
         if (defined.has(op)) continue;
         const close = closeIds(op, ops);
@@ -1029,7 +1021,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
       }
     }
     if (ops.length > 0) {
-    const governed = new Set(reqs.flatMap((r) => r.operations));
+    const governed = new Set(livingReqs.flatMap((r) => r.operations));
     const orphans = ops.filter((op) => !governed.has(op));
     if (orphans.length === 0) {
       findings.push({
@@ -1446,18 +1438,9 @@ async function validateFeature(
     unknownServices.length > 0 && docsRepoState(docsDir).kind === "ok"
       ? (await listServices(docsDir, fleet)).map((s) => s.id)
       : [];
-  for (const svc of unknownServices) {
-    const close = closeIds(svc, closeTo);
-    findings.push({
-      severity: "error",
-      code: "delta.service-unknown",
-      subject: svc,
-      message:
-        `specs/${svc}/ addresses a service that does not exist: there is no services/${svc}/ and this feature's ` +
-        `delta.likec4 does not introduce one — archiving would create it out of the typo.` +
-        (close.length > 0 ? ` Did you mean: ${close.join(", ")}?` : " `loam list services` shows what exists."),
-    });
-  }
+  // The finding is coherence.ts's — the same words archive refuses with, because
+  // it is the same conclusion about the same directory.
+  for (const svc of unknownServices) findings.push(deltaServiceUnknownFinding(svc, closeTo));
 
   // Requirement coverage across every per-service delta — the business spec and
   // the arch spec through the same check — and collect scenario text.
@@ -1495,15 +1478,24 @@ async function validateFeature(
     }
   }
 
+  // The delta's own element→service resolver, built once for the whole feature.
+  // `serviceOf` is a one-shot wrapper that rebuilds its index on every call, and
+  // the two loops below ask it up to five times per tagged edge — so a delta
+  // over a large model paid for one Map of every element per question asked.
+  // Identical answers by construction: `serviceOf(elements, id)` IS
+  // `serviceResolver(elements)(id)`, and nothing reassigns `elements` after the
+  // delta parse.
+  const svcOf = serviceResolver(elements);
+
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
   for (const r of taggedRels) {
-    const target = serviceOf(elements, r.target);
+    const target = svcOf(r.target);
     const covered = edgeCovered(target, r.title, scenarioText);
     findings.push({
       severity: covered ? "ok" : "warn",
       code: covered ? "archedge.covered" : "archedge.uncovered",
       subject: target,
-      message: `${serviceOf(elements, r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
+      message: `${svcOf(r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
       text: { indent: 4, header: "arch-edge coverage (heuristic):" },
     });
   }
@@ -1579,13 +1571,13 @@ async function validateFeature(
     });
   }
   for (const r of taggedRels) {
-    if (baseEdges.has(edgeKey(serviceOf(elements, r.source), serviceOf(elements, r.target)))) continue;
+    if (baseEdges.has(edgeKey(svcOf(r.source), svcOf(r.target)))) continue;
     if (activeCovers.some((c) => coversEdge(c, r, elements))) continue;
     findings.push({
       severity: "warn",
       code: "c4.uncovered",
-      subject: serviceOf(elements, r.target),
-      message: `delta adds edge ${serviceOf(elements, r.source)} → ${serviceOf(elements, r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
+      subject: svcOf(r.target),
+      message: `delta adds edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
     });
   }
 
@@ -1673,8 +1665,6 @@ function coverageFinding(label: string, reqs: Requirement[]): Finding {
 /* Text renderer                                                       */
 /* ------------------------------------------------------------------ */
 
-const MARKER: Record<Severity, string> = { ok: "✓", warn: "⚠", error: "✗" };
-
 /**
  * `--errors-only` is a RENDERING lever, the way `--strict` is an exit-code
  * lever: neither changes the report, and the `--json` payload is unaffected by
@@ -1705,7 +1695,7 @@ function renderText(
       // onto stderr meant a piped stdout silently lost them from the middle of
       // the report and 2>&1 could reorder it; the exit code carries failure,
       // and stderr stays reserved for refusals (the fail() path).
-      const marker = hint.marker === false ? "" : `${MARKER[f.severity]} `;
+      const marker = hint.marker === false ? "" : `${SEVERITY_MARK[f.severity]} `;
       console.log(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}`);
       for (const d of f.details ?? []) console.log(`    ${hint.detailPrefix ?? ""}${d}`);
     }
@@ -1721,10 +1711,9 @@ function renderText(
     return;
   }
   const s = summary(targets);
-  const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? "" : "s"}`;
   console.log(
-    `\n${plural(s.services!, "service")}, ${plural(s.features!, "feature")} — ` +
-      `${plural(s.errors!, "error")}, ${plural(s.warnings!, "warning")}`,
+    `\n${plural(s.services, "service")}, ${plural(s.features, "feature")} — ` +
+      `${plural(s.errors, "error")}, ${plural(s.warnings, "warning")}`,
   );
   // One line for the whole fleet, never one per service: honest about the blind
   // spot without drowning the report in a hundred copies of it.
@@ -1767,10 +1756,10 @@ async function sourceScopeFindings(
 ): Promise<Finding[]> {
   const paths = servicePaths(docsDir, service);
   const out: Finding[] = [];
-  for (const { path, file } of [
-    { path: paths.spec, file: "spec.md" },
-    { path: paths.archSpec, file: "arch.spec.md" },
-  ]) {
+  // The axis pair is SPEC_AXES', not this function's: `serviceProvenance` grades
+  // the same two files from the same list, and a scope check that walked a
+  // shorter list than the grading would go quiet on the axis it forgot.
+  for (const { path, file } of SPEC_AXES.map((axis) => ({ path: paths[axis.key], file: axis.file }))) {
     if (!existsSync(path)) continue;
     const sources = listField(await readFrontmatter(path), "sources");
     if (sources.length === 0) continue;

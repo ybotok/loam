@@ -92,6 +92,66 @@ export function resolvePortableFileInside(root: string, candidate: string, label
   return resolveInside(root, candidate, label);
 }
 
+/**
+ * The same portable spelling rules, with containment judged LEXICALLY — for a
+ * path that names a file the docs repo itself mounts.
+ *
+ * Every spelling defence above is kept, and for its reason: a snapshot manifest
+ * is loam's own file, but a corrupted or hostile one could carry `..` segments,
+ * an absolute path or a `C:\` spelling, and what comes out of this join is a
+ * path a caller then goes and reads.
+ *
+ * What is deliberately not applied is the realpath test. Composing a docs repo
+ * out of symlinks — a worktree, a submodule, one service's directory shared
+ * between two checkouts — is a supported layout that every walk of the repo
+ * FOLLOWS rather than refuses (repo.ts's `entryIs` says so in full), and that
+ * `archive` already writes through: its living-document writes are planned from
+ * `servicePaths()` and never see this file. With the realpath test in force on
+ * the manifest's `path` field, a `services/<svc>/` mounted that way made an
+ * interrupted archive permanently unrepairable — the retry was told the
+ * snapshot could not be read when it was perfectly intact, and the half-merge it
+ * was the only record of could never be repaired.
+ *
+ * This is only ever safe on a READ. A symlink that leaves the repo is
+ * lexically indistinguishable from a service directory the operator mounted on
+ * purpose — `escape/owned.txt` and `services/<svc>/spec.md` are both "inside
+ * docsDir" until something resolves them — so the realpath test is the only
+ * check that can refuse the first, at the price of also refusing the second.
+ * A caller that goes on to WRITE through the path must pay that price and use
+ * `resolvePortableFileInside`; `unarchive` does, and says so where it does.
+ * A caller that only reads a file and compares a digest it never discloses
+ * gains nothing from refusing, and loses the operator's ability to repair an
+ * interrupted archive.
+ */
+export function resolvePortableFileInsideLexically(root: string, candidate: string, label = "path"): string {
+  if (candidate.length === 0) {
+    throw new UnsafePathError(candidate, `${label} must not be empty`);
+  }
+  if (candidate.includes("\\")) {
+    throw new UnsafePathError(candidate, `${label} must use forward slashes`);
+  }
+  const parts = candidate.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new UnsafePathError(candidate, `${label} must be a canonical relative file path`);
+  }
+  // win32.isAbsolute is intentional even on POSIX, for the reason `resolveInside`
+  // gives: a snapshot travels with its feature directory between operating
+  // systems, and `C:\...` must never turn into an innocuous relative filename
+  // merely because the question was asked on Linux.
+  if (isAbsolute(candidate) || win32.isAbsolute(candidate)) {
+    throw new UnsafePathError(candidate, `${label} must be relative to its owning directory`);
+  }
+  const rootAbs = resolve(root);
+  const target = resolve(rootAbs, ...parts);
+  // Already implied by the segment test above, and asked anyway: this line is
+  // the containment claim itself, so a later loosening of the spelling rules
+  // cannot quietly stop making it.
+  if (!isPathInside(rootAbs, target)) {
+    throw new UnsafePathError(candidate, `${label} resolves outside its owning directory`);
+  }
+  return target;
+}
+
 /** Find the closest lexically contained path that exists, including symlinks. */
 function nearestExisting(target: string, root: string): string {
   let current = target;

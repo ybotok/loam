@@ -7,7 +7,7 @@ import {
 } from "../core/dependencies.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { resolveFeature } from "../core/repo.js";
+import { missingFeatureMessage, resolveFeature } from "../core/repo.js";
 
 interface DependenciesOptions {
   json?: boolean;
@@ -32,7 +32,12 @@ export function registerDependencies(program: Command): void {
         ? null
         : await resolveFeature(config.docsDir, featureArg, "exclude", context);
       if (featureArg !== undefined && feature === null) {
-        fail(json, "unknown-target", `No active feature '${featureArg}' in ${config.docsDir}.`);
+        // The shared miss message rather than a local one: this command resolves
+        // in `exclude` mode, so the commonest miss is an id that HAS shipped, and
+        // "no active feature" leaves the reader to discover that themselves. The
+        // helper reuses the context already built above, so saying so costs one
+        // enumeration this invocation has already paid for.
+        fail(json, "unknown-target", await missingFeatureMessage(config.docsDir, featureArg, context));
         return;
       }
 
