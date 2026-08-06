@@ -17,7 +17,7 @@
  * it costs, measured: ~12s for `validate --all` on an idle box, ~30s with the
  * cores saturated, and 65-77s when the whole suite is running beside it. Those
  * numbers are the machine, not a regression — the same fixture on 4d8cb4b (the
- * commit before the ANALYSIS-5 campaign) measures 11.9s against 12.1s today,
+ * commit before the hardening campaign) measures 11.9s against 12.1s today,
  * so the earlier "~4s on a dev laptop" in this header described hardware this
  * one is not.
  *

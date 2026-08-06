@@ -88,8 +88,8 @@ async function recordVerification(
     id: c.id,
     verdict,
     evidence: verdict === "confirmed" ? ["src/split.ts:12"] : [],
-    // This helper exists to model a COMPLETE verification, and under Р13(b)
-    // that means a green run: a scenario claim answered by an agent reads as
+    // This helper exists to model a COMPLETE verification, and that means a
+    // green run: a scenario claim answered by an agent reads as
     // `attested`, never `verified`, so the feature would never reach `done`.
     answered_by: "runner",
   }));

@@ -268,7 +268,7 @@ describe("status is never greener than the gates on the same tree", () => {
     const v = await verdicts(p);
 
     expectAgreesWithGates(v, "agent-attested record");
-    // Р13(b): the fallback stays, and it is VISIBLE. `verified` is verify's own
+    // The fallback stays, and it is VISIBLE. `verified` is verify's own
     // three-valued verdict, read from its exported helper rather than
     // re-derived here, so status inherits the meaning instead of forking it.
     expect(v.status.verification.verdict).toBe("attested");

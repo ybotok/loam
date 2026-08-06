@@ -865,7 +865,7 @@ describe("reading the verification back", () => {
     expect((await checklist(p)).verified).toBe(false);
     await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
     const after = await checklist(p);
-    // Р13(b): confirmAll answers as an agent, so every claim is confirmed but
+    // confirmAll answers as an agent, so every claim is confirmed but
     // the scenario claim rests on nobody's test run — attested, not verified.
     expect(after.verified).toBe(false);
     expect(after.verdict).toBe("attested");

@@ -467,8 +467,8 @@ ${DELTA}`;
     const projectInventory = await inventoryOpenSpec(project.root);
     // No missing-spec blocker is invented — that is what this test is about.
     // But a workspace where loam read no living spec and no active change is
-    // not `ready` either: reporting ready over content nobody read is how the
-    // whole corpus went missing in А1.
+    // not `ready` either: reporting ready over content nobody read is how a
+    // whole corpus goes missing behind a green verdict.
     expect(codesOf(projectInventory.unsupported)).not.toContain("openspec.specs-missing");
     expect(codesOf(projectInventory.unsupported)).toEqual(["openspec.workspace-empty"]);
     expect(projectInventory).toMatchObject({ ready: false, mechanicallyCompatible: false });

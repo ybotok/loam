@@ -591,7 +591,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   // What a killed writer left behind. Read from `scanWritePathResidue`, whose
   // spellings of `.loam-lock` / `.loam-commit` / the temp-file pattern are
   // staging's own — doctor grades, it does not re-spell. This is the surface
-  // ANALYSIS-5 §3.5 found reporting `healthy: true` over half-merged docs.
+  // that used to report `healthy: true` over half-merged docs.
   const writePath = docsDir !== null && exists && readable
     ? await scanWritePathResidue(docsDir)
     : null;
