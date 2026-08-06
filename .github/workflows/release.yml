@@ -68,6 +68,22 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      # `registry-url` always makes setup-node write an auth-token line into the
+      # npmrc it points npm at. There is no token here by design, so the line
+      # expands to an empty value — and npm reads "a credential is configured",
+      # never exchanges the OIDC token for a registry one, and publishes
+      # unauthenticated. The registry answers that with 404 rather than 403, so
+      # it reads as a missing package instead of a missing credential. Strip the
+      # line and npm reaches for OIDC, which is the only credential this job has.
+      - name: Leave npm no empty credential to mistake for a real one
+        run: |
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          if [ -f "$npmrc" ]; then
+            sed -i '/_authToken/d' "$npmrc"
+            echo "stripped the auth-token line from $npmrc"
+          else
+            echo "no npmrc at $npmrc"
+          fi
       - name: Download the gated publication candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
