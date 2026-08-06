@@ -129,17 +129,23 @@ for (const path of requiredPackageFiles) {
   check(manifest.files?.includes(path), `tarball allow-list includes ${path}`);
 }
 
-const slug = options.fixtureReady ? "fixture/loam" : repositorySlug(manifest.repository);
+// The fixture waives the requirement that a canonical repository be CONFIGURED.
+// It cannot waive which repository the manifest names, so the runner cross-check
+// below reads the manifest's own slug and never the placeholder: comparing
+// `fixture/loam` against GITHUB_REPOSITORY failed in every repository that ran
+// the self-test, which is every repository this workflow can run in.
+const manifestSlug = repositorySlug(manifest.repository);
+const slug = manifestSlug ?? (options.fixtureReady ? "fixture/loam" : null);
 check(
   slug !== null,
-  options.fixtureReady ? "fixture overrides the external repository prerequisite" : "package repository is an exact GitHub URL",
+  manifestSlug !== null ? "package repository is an exact GitHub URL" : "fixture overrides the external repository prerequisite",
   "package.repository is missing or is not an exact https://github.com/<owner>/<repo>[.git] URL; configure it only after the canonical repository is known",
 );
-if (slug && process.env.GITHUB_REPOSITORY) {
+if (manifestSlug && process.env.GITHUB_REPOSITORY) {
   check(
-    slug === process.env.GITHUB_REPOSITORY,
+    manifestSlug === process.env.GITHUB_REPOSITORY,
     "package repository matches GITHUB_REPOSITORY case-sensitively",
-    `package.repository resolves to ${slug}, but the workflow runs in ${process.env.GITHUB_REPOSITORY}`,
+    `package.repository resolves to ${manifestSlug}, but the workflow runs in ${process.env.GITHUB_REPOSITORY}`,
   );
 }
 
