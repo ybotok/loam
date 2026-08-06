@@ -4,7 +4,7 @@
 
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
-[![CI](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml)
+[![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 <!-- once published: [![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam) -->
 
 > **Pre-release: `0.1.0-beta.1`.** Every command below is implemented and covered by tests; the package is not on npm yet. See [Status](#status).
@@ -38,7 +38,7 @@ A per-repo dev dependency works the same way: `npm i -D @ybotok/loam`, then `npx
 Until the package is published ([Status](#status)), install from a clone:
 
 ```bash
-git clone https://github.com/SergeyPentsov/loam.git && cd loam
+git clone https://github.com/ybotok/loam.git && cd loam
 ./scripts/setup.sh --link     # checks node >= 22.22.3, npm ci, build, smoke-test, npm link
 ```
 

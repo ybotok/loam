@@ -5,11 +5,11 @@
   "author": "spentsov",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SergeyPentsov/loam.git"
+    "url": "git+https://github.com/ybotok/loam.git"
   },
-  "homepage": "https://github.com/SergeyPentsov/loam#readme",
+  "homepage": "https://github.com/ybotok/loam#readme",
   "bugs": {
-    "url": "https://github.com/SergeyPentsov/loam/issues"
+    "url": "https://github.com/ybotok/loam/issues"
   },
   "keywords": [
     "architecture",
