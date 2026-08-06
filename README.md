@@ -4,14 +4,58 @@
 
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
-![tests](https://img.shields.io/badge/tests-1704%20passing-brightgreen.svg)
-<!-- once published: [![CI](https://github.com/OWNER/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/loam/actions/workflows/ci.yml) -->
+[![CI](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml)
+<!-- once published: [![npm](https://img.shields.io/npm/v/@spentsov/loam.svg)](https://www.npmjs.com/package/@spentsov/loam) -->
+
+> **Pre-release: `0.1.0-beta.1`.** Every command below is implemented and covered by tests; the package is not on npm yet. See [Status](#status).
 
 `loam` gets a service's documentation and C4 architecture written **from its code**, then lets you drive cross-service features top-down: you author a **C4 delta**, `loam` projects it onto each affected service as concrete work, and `loam gherkin` turns the spec's scenarios into real, digest-stamped Gherkin `.feature` files — the acceptance skeleton that drives TDD, kept honest by `loam validate` reporting when the spec moves under it.
+
+## Contents
+
+- [Why](#why) · [Install](#install) · [Quick start](#quick-start) · [loam vs OpenSpec](#loam-vs-openspec)
+- [Day zero: onboarding a fleet](#day-zero-onboarding-a-fleet) · [Two flows](#two-flows) · [Principles](#principles)
+- [Commands](#commands) · [Command notes](#command-notes) · [Working with AI agents](#working-with-ai-agents) · [Fleet scale](#fleet-scale)
+- [Docs](#docs) · [Development](#development) · [Status](#status) · [Contributing](#contributing) · [Security](#security) · [License](#license)
 
 ## Why
 
 Spec-driven development tools treat specs as business-analyst-level documents in a single repo: there is no architecture layer, and a business-simple feature can span many services (e.g. 7 new + 4 changed). C4 diagrams, Gherkin and specs end up as disconnected documents that drift apart quietly. `loam` ties them with one feature-ID spine and makes C4 the center. And because a business spec will never mention the transactional outbox, architecture gets its own requirement axis — `arch.spec.md`, whose `Covers:` lines tie outbox/retry/alert obligations to the C4 elements and health signals they exercise, with coverage derived mechanically rather than trusted.
+
+## Install
+
+**Node ≥ 22.22.3** (the `engines` floor in `package.json`) is the only prerequisite — loam is self-contained. C4 modeling uses **[LikeC4](https://likec4.dev)** (pinned exact), a bundled npm dependency (TypeScript-native, in-process): no JVM, no external CLI.
+
+```bash
+npm install -g @spentsov/loam
+loam --version && loam doctor
+```
+
+A per-repo dev dependency works the same way: `npm i -D @spentsov/loam`, then `npx loam …`.
+
+Until the package is published ([Status](#status)), install from a clone:
+
+```bash
+git clone https://github.com/SergeyPentsov/loam.git && cd loam
+./scripts/setup.sh --link     # checks node >= 22.22.3, npm ci, build, smoke-test, npm link
+```
+
+Drop `--link` to build without a global `loam`; on Windows run `npm ci && npm run build` by hand.
+
+## Quick start
+
+The repo ships a small example fleet under [`examples/docs/`](examples/docs) — two services, one feature in flight. From a clone, point a throwaway `loam.json` at it and run the real commands (the file is untracked; delete it when done):
+
+```bash
+echo '{ "docsDir": "examples/docs" }' > loam.json   # relative, resolved against this file
+npm run dev -- list                          # what the fleet looks like
+npm run dev -- validate --all                # the CI gate: 0 errors, 3 deliberate warnings
+npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
+```
+
+`test/examples.test.ts` pins these exact outcomes, so the example cannot drift from the code.
+
+To wire loam into your own repositories, start at [Day zero](#day-zero-onboarding-a-fleet).
 
 ## loam vs OpenSpec
 
@@ -27,26 +71,6 @@ loam reads the core of [OpenSpec](https://github.com/Fission-AI/OpenSpec)'s requ
 | Entry curve | minutes | you learn LikeC4 + frontmatter + the operationId spine first |
 
 Honest boundary: for a single repo without cross-service contracts, OpenSpec is simpler *and sufficient*. The full comparison — including what loam deliberately refuses to borrow — is in [COMPARISON.md](COMPARISON.md); migration is covered by [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md).
-
-## Quick start
-
-```bash
-git clone <this repo> && cd loam
-./scripts/setup.sh          # checks node >= 22.22.3, npm ci, build, smoke-test
-```
-
-(`./scripts/setup.sh --link` also `npm link`s a global `loam`; on Windows run `npm ci && npm run build` by hand.)
-
-The repo ships a small example fleet under [`examples/docs/`](examples/docs) — two services, one feature in flight. Point a throwaway `loam.json` at it and run the real commands (the file is untracked; delete it when done):
-
-```bash
-echo '{ "docsDir": "examples/docs" }' > loam.json   # relative, resolved against this file
-npm run dev -- list                          # what the fleet looks like
-npm run dev -- validate --all                # the CI gate: 0 errors, 3 deliberate warnings
-npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
-```
-
-`test/examples.test.ts` pins these exact outcomes, so the example cannot drift from the code.
 
 ## Day zero: onboarding a fleet
 
@@ -110,26 +134,48 @@ The same split runs the done-check. `verify` cannot compare a generated model to
 
 | Command | What it does |
 |---|---|
-| `loam init --docs <dir> [--service <id>]` | Bind this repository to the single shared docs repo: write a committed local `loam.json`, plus `AGENTS.md` and, for every AI tool it detects in this repo, both a slash command and an Agent Skill per workflow (`--tools <ids>\|all` overrides the scan; `--no-commands` / `--no-skills` drop one delivery). `--docs` **joins** an existing docs repo; `--create` is required to make a new one, so a mistyped path cannot scaffold a second source of truth. `--service <id>` is what a **service** repo needs: it is the binding `vouch`, `gherkin` and `verify --service` require before they will speak for that service. `docsDir` is stored exactly as you typed it and resolved against `loam.json`, so a relative `../docs-repo` works on every clone — and `--docs` wins only when you actually pass it, so a re-run in a wired repo keeps the pointer its committed `loam.json` already spells, `--create` included (`docsDirSource: "flag" \| "config" \| "default"` in `--json` says which). |
+| `loam init --docs <dir> [--service <id>]` | Bind this repository to the single shared docs repo: write a committed local `loam.json`, plus `AGENTS.md` and, for every AI tool it detects here, a slash command and an Agent Skill per workflow. |
 | `loam list [services\|features]` | What is in the docs repo, and what is missing from it. |
-| `loam status [<FEAT>]` | Where the work stands and what to do next — the question an agent has when it joins a repo halfway or loses its session. Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry a stable code plus the literal command. It is a **projection over the two gates**, taking the union of what `validate --feature` errors on and what `archive` refuses to merge, so it may be redder than either and is never greener than both. Derived every run from the files; there is no state file to go stale. Writes nothing. |
+| `loam status [<FEAT>]` | Where the work stands and what to do next, as a projection over the two gates. Derived every run; writes nothing. |
 | `loam doctor` | Read-only preflight for runtime, config, docs-repo access, fleet roots, counts, and the current service binding. Blockers exit 1; incomplete optional bindings stay warnings. |
 | `loam dependencies [<FEAT>]` | Derive the active-feature dependency graph and same-identity conflicts from requirement deltas and OpenAPI operationIds. Optional focus includes transitive prerequisites. |
-| `loam new <FEAT> --title <t>` | Scaffold a feature: intent, C4 delta, a requirement delta per service. The scaffold passes `loam validate --feature` with **zero errors**; the one warning left standing is the `owner` you have to fill in yourself, and a requirements-only feature deletes the scaffolded `delta.likec4`. |
+| `loam new <FEAT> --title <t>` | Scaffold a feature: intent, C4 delta, a requirement delta per service. |
 | `loam show <service\|FEAT>` | Everything loam knows about one service or feature. |
-| `loam adopt --service <id>` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, the checks that follow — and the ones that do not exist. Writes nothing. |
-| `loam delta <FEAT> [--service <id>]` | Project a feature onto one service: the intent, its requirement deltas with every requirement body and every Given/When/Then line reproduced verbatim, the endpoints it adds or retires, and the edges around it. Output doubles as a coding-agent task. |
-| `loam gherkin [<FEAT>] [--service <id>]` | Emit spec scenarios as Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` — a feature's changed requirements, or (without a feature) the full living suite. Deterministic, digest-stamped, regeneration-owned; run in the service's own repo. |
-| `loam rebase <FEAT> [--service <id>]` | Pin the feature to the living versions it was written against: `Based-On:` on every MODIFIED/REMOVED requirement, `x-loam-based-on` on every operation in the contract delta. On the requirement axis that stops a second feature rewriting the same requirement from landing on top of the first in silence; on the contract axis it also marks the rest of the delta as **quotation** — an openapi.yaml is a complete document, so without the pin the merge upserts operations you only restated and reverts whatever landed on them. `--dry-run` shows what would be pinned. Restamping is the last step of resolving a collision, not the resolution — the output says which pins moved. |
+| `loam adopt --service <id>` | Brief an agent to write this service's baseline into the docs repo as `draft`. Writes nothing. |
+| `loam delta <FEAT> [--service <id>]` | Project a feature onto one service: the intent, its requirement deltas with every requirement body and every Given/When/Then line reproduced verbatim, the endpoints it adds or retires, and the edges around it. The output doubles as a coding-agent task. |
+| `loam gherkin [<FEAT>] [--service <id>]` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/`. |
+| `loam rebase <FEAT> [--service <id>]` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--dry-run` shows what would be pinned. |
 | `loam validate [<id>] [--all]` | Validate one service or feature, or the whole fleet in one run (CI gate). `--strict` exits 1 on warnings too. |
-| `loam verify <FEAT> [--service <id>]` | The done-check: derive a checklist of the feature's own promises. `--results <report.json>` answers the scenario claims from a cucumber JSON run — digest-matched, so only a green run confirms one, and the record writes down which file it read (path, sha256, mtime); `--record <answers.json>` takes the agent's answers, refusing anything unevidenced, and a scenario claim answered that way makes the record `attested` rather than `verified`. A cross-service feature is recorded **once per service repo** with `--service <id>`, each run adding its own commit-bound attestation to one shared record; the `--service`-less `--record` form writes the whole record from one place and is refused (`record-federated`) once anyone else has attested. |
+| `loam verify <FEAT> [--service <id>]` | The done-check: derive a checklist of the feature's own promises, and record the answers with their evidence. |
 | `loam vouch --service <id>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. Run in the service's own repo. |
 | `loam archive <FEAT>` | Merge a shipped feature into the living specs, API and landscape; gated on gating coherence issues. `--dry-run` prints the plan and writes nothing. |
-| `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. It refuses rather than guesses — `snapshot-stale` when a merged file moved since (`--force` says that was meant), and `snapshot-corrupt` when a pre-image no longer hashes to what the archive recorded for it, which `--force` deliberately does **not** override: the damage there is to the undo itself. |
-| `loam audit-openspec <root>` | Read-only inventory of an OpenSpec checkout/workspace/Store checkout: capabilities, active and archived changes, counts, RENAMED and unsupported shapes, and every capability→service decision still needing a human. Writes nothing; `--write-mapping <path>` emits the decision skeleton you fill in. |
-| `loam migrate-openspec <root> --map <path>` | Validate a completed mapping against a re-read of the source, and with `--apply --target <empty-dir>` materialize **staged migration docs** into a separate directory. `--map` is required — there is no one-shot form. Dry-run is the default. |
+| `loam unarchive <FEAT>` | Take that back: restore the living docs from the snapshot archive left behind, and re-open the feature. |
+| `loam audit-openspec <root>` | Read-only inventory of an OpenSpec checkout/workspace/Store checkout. Writes nothing; `--write-mapping <path>` emits the decision skeleton you fill in. |
+| `loam migrate-openspec <root> --map <path>` | Validate a completed mapping against a re-read of the source, and materialize staged migration docs. Dry-run is the default. |
 
 Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op-undefined`, `coherence.ok` …) so an agent branches on the code, not on prose. The envelope keeps three different questions apart — `ok` (the command ran), `valid` (the docs pass), `verified` (every claim is confirmed **and** every scenario claim came from a test run; `verdict` carries the third state, `attested`, for a record whose scenarios rest on an agent's word).
+
+### Command notes
+
+**`loam init`** — `--docs` **joins** an existing docs repo; `--create` is required to make a new one, so a mistyped path cannot scaffold a second source of truth. `--service <id>` is what a **service** repo needs: it is the binding `vouch`, `gherkin` and `verify --service` require before they will speak for that service. `--tools <ids>|all` overrides the tool scan; `--no-commands` / `--no-skills` drop one delivery. `docsDir` is stored exactly as you typed it and resolved against `loam.json`, so a relative `../docs-repo` works on every clone — and `--docs` wins only when you actually pass it, so a re-run in a wired repo keeps the pointer its committed `loam.json` already spells, `--create` included (`docsDirSource: "flag" | "config" | "default"` in `--json` says which).
+
+**`loam status`** — the question an agent has when it joins a repo halfway or loses its session. Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry a stable code plus the literal command. It takes the union of what `validate --feature` errors on and what `archive` refuses to merge, so it may be redder than either and is never greener than both. There is no state file to go stale.
+
+**`loam new`** — the scaffold passes `loam validate --feature` with **zero errors**; the one warning left standing is the `owner` you have to fill in yourself, and a requirements-only feature deletes the scaffolded `delta.likec4`.
+
+**`loam adopt`** — the brief names the target paths, the grammar of each, what the landscape already says, the checks that follow, and the ones that do not exist.
+
+**`loam gherkin`** — a feature's changed requirements, or (without a feature) the full living suite. Deterministic, digest-stamped, regeneration-owned; run in the service's own repo.
+
+**`loam rebase`** — writes `Based-On:` on every MODIFIED/REMOVED requirement and `x-loam-based-on` on every operation in the contract delta. On the requirement axis that stops a second feature rewriting the same requirement from landing on top of the first in silence; on the contract axis it also marks the rest of the delta as **quotation** — an `openapi.yaml` is a complete document, so without the pin the merge upserts operations you only restated and reverts whatever landed on them. Restamping is the last step of resolving a collision, not the resolution — the output says which pins moved.
+
+**`loam verify`** — `--results <report.json>` answers the scenario claims from a cucumber JSON run, digest-matched, so only a green run confirms one, and the record writes down which file it read (path, sha256, mtime). `--record <answers.json>` takes the agent's answers, refusing anything unevidenced, and a scenario claim answered that way makes the record `attested` rather than `verified`. A cross-service feature is recorded **once per service repo** with `--service <id>`, each run adding its own commit-bound attestation to one shared record; the `--service`-less `--record` form writes the whole record from one place and is refused (`record-federated`) once anyone else has attested.
+
+**`loam unarchive`** — it refuses rather than guesses: `snapshot-stale` when a merged file moved since (`--force` says that was meant), and `snapshot-corrupt` when a pre-image no longer hashes to what the archive recorded for it, which `--force` deliberately does **not** override — the damage there is to the undo itself.
+
+**`loam audit-openspec` / `loam migrate-openspec`** — the audit reports capabilities, active and archived changes, counts, RENAMED and unsupported shapes, and every capability→service decision still needing a human. The migration validates your completed mapping against a re-read of the source, and with `--apply --target <empty-dir>` materializes **staged migration docs** into a separate directory. `--map` is required — there is no one-shot form.
+
+### How `archive` protects the source of truth
 
 `archive` is the one command that rewrites the source of truth, so it takes an advisory lock on the docs repo for the whole plan-and-commit (a second one refuses with `docs-busy` rather than interleaving), computes the whole merge before touching disk, commits each file through a temp-file rename after re-checking the bytes it read, and rolls back what it already swapped if any part fails. It also records the bytes it overwrote inside the archived feature — with a digest of each pre-image, so `unarchive` can tell an intact one from an edited one — which is what makes `unarchive` an undo rather than a guess. A process **killed mid-commit** is covered too: an intent journal (`.loam-commit`) is fsynced before the first swap, and the next `archive`/`unarchive` recovers from it under the lock, putting half-written files back from the snapshot, or refusing with `commit-interrupted` when a file has been edited since. `loam doctor` reports that state rather than calling the repo healthy. loam's docs files must be **UTF-8**: undecodable bytes refuse the merge (`merge-failed`, naming the file) instead of being rewritten as U+FFFD, and a non-UTF-8 `openapi.yaml` grades `openapi.invalid`. **`verify` does not gate `archive`** — coherence gates because loam *computed* it; a verdict is somebody's word about code loam never read, and a gate in front of shipping only teaches everyone that the cheapest way past it is to say yes.
 
@@ -147,38 +193,46 @@ Which tools is detected from the repo: `init` scans for the dot-directories of t
 
 One docs repo, a hundred services, many teams: the docs repo bootstraps itself with `loam init --docs . --create`, ownership is CODEOWNERS, `vouch` and `archive` land through reviewed PRs, provenance runs in each service repo's own CI, and `loam list --json` grades every service on a presence-honest maturity ladder (`empty → partial → documented → sourced → vouched`). The full operating model — including `loam.json` per repo, the federated verification record, the per-service CI summary contract and the one-landscape decision — is in [SCHEMA.md](SCHEMA.md).
 
-The shape that has been measured, on a generated 120-service fleet with 400 and 800 op-linked landscape edges (compiled binary, 8-core laptop, wall clock including Node startup): `loam list --json` **1.1–1.5 s**, and `loam validate --service <id> --json` — the command each service repo's CI runs — **1.4–1.6 s** at either edge count. The fleet gate is the outlier: `loam validate --all --json` over the same 120 services takes **~30 s**, because it parses a fresh LikeC4 workspace per service rather than sharing one. That is a known cost, not a mystery; it is the docs repo's own CI job and it is not on anybody's inner loop.
+The shape that has been measured, on a generated 120-service fleet with 400 and 800 op-linked landscape edges (built CLI, 8-core laptop, idle, wall clock including Node startup): `loam list` **~0.5 s**, `loam status` **~0.2 s**, and `loam validate --service <id>` — the command each service repo's CI runs — **~0.6 s**. The fleet gate is the outlier: `loam validate --all` over the same 120 services takes **~13–14 s**, because it parses a fresh LikeC4 workspace per service rather than sharing one. That cost is fixed and linear in the number of services, and it is CPU inside the model construction, not I/O — bounded concurrency measurably does not help. It is the docs repo's own CI job and it is not on anybody's inner loop; on a machine whose cores are already busy, expect meaningfully more. `test/scale.test.ts` gates the shape as a blowup alarm, so an accidental per-service re-parse cannot land silently.
 
 ## Docs
 
 - [SCHEMA.md](SCHEMA.md) — the docs-repo layout, each artifact's grammar, and the decisions behind them: the coherence rules, how `archive` writes and `unarchive` undoes, operating at fleet scale.
 - [COMPARISON.md](COMPARISON.md) — loam vs OpenSpec, honestly: six axes, when OpenSpec is enough, what loam refuses to borrow.
 - [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) — moving an OpenSpec repo onto loam: what maps, what is lost, what must be added.
+- [CHANGELOG.md](CHANGELOG.md) — what changed, release by release.
 
-## Prerequisites
-
-- **Node ≥ 22.22.3** (the `engines` floor in `package.json`; `scripts/setup.sh` checks it). That's it — loam is self-contained. C4 modeling uses **[LikeC4](https://likec4.dev)** (pinned exact), a bundled npm dependency (TypeScript-native, in-process): no JVM, no external CLI.
-
-## Dev
+## Development
 
 ```bash
 npm run setup              # or: npm ci && npm run build
 npm run dev -- --help      # run the CLI from source
 npm run lint
 npm run typecheck
-npm test                   # vitest, 1704 tests across 64 files
+npm test                   # vitest
 npm run test:coverage      # full src/**/*.ts coverage with enforced thresholds
 npm run test:package       # clean, pack, install the tarball, run its loam binary
-# optional, against the exact upstream checkout named above (the flag matters:
-# --baseline defaults to canary, and the sweep refuses a checkout at any other HEAD):
+# optional, against the exact upstream checkout named in "loam vs OpenSpec" (the
+# flag matters: --baseline defaults to canary, and the sweep refuses a checkout
+# at any other HEAD):
 npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest, including the pilot harness.
 
 ## Status
 
 Every command in the table is implemented, `verify --results` included — the generated suite's cucumber report feeds the done-check, closing the TDD loop mechanically. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` compose, UI-prototype generation.
 
-The release-candidate manifest is `@spentsov/loam@0.1.0-beta.1`: the unscoped `loam` name is already an unrelated GDAL wrapper, while `spentsov` is the author identity in this repository's git history. The registry currently has no package at that scoped name, but absence does **not** prove scope ownership; publishing still requires an npm account that controls `@spentsov`. Until that is confirmed, use the repository setup above rather than treating the package as published.
+The release-candidate manifest is `@spentsov/loam@0.1.0-beta.1`: the unscoped `loam` name is already an unrelated GDAL wrapper, while `spentsov` is the author identity in this repository's git history. The registry currently has no package at that scoped name, but absence does **not** prove scope ownership; publishing still requires an npm account that controls `@spentsov`. Until that is confirmed, use the clone install above rather than treating the package as published.
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the local loop (`lint`, `typecheck`, `test:coverage`) and what a reviewable change looks like here.
+
+## Security
+
+Please do not report a suspected vulnerability in a public issue. [SECURITY.md](SECURITY.md) has the private route and what to include.
 
 ## License
 

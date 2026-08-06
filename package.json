@@ -3,6 +3,14 @@
   "version": "0.1.0-beta.1",
   "description": "Architecture-first spec framework for microservice fleets: reverse-engineer service docs from code, drive cross-service features from C4 deltas.",
   "author": "spentsov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SergeyPentsov/loam.git"
+  },
+  "homepage": "https://github.com/SergeyPentsov/loam#readme",
+  "bugs": {
+    "url": "https://github.com/SergeyPentsov/loam/issues"
+  },
   "keywords": [
     "architecture",
     "c4",
