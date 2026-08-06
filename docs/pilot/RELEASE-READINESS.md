@@ -8,7 +8,7 @@ These cannot be inferred or created safely from this workspace and must be compl
 
 - choose the canonical public GitHub repository, then set `package.repository` to its exact case-sensitive URL; this workspace currently has no remote, so no URL has been invented;
 - enable private vulnerability reporting (or document another durable private route) and replace the temporary reporting instructions in `SECURITY.md`;
-- confirm control of the `@spentsov` npm scope and the intended package name;
+- confirm control of the `@ybotok` npm scope and the intended package name;
 - create/protect the GitHub `npm-production` environment and require appropriate reviewers;
 - configure npm trusted publishing for the exact owner/repository, workflow filename `release.yml`, and environment `npm-production`;
 - protect release tags and restrict creation of `v*` tags to release maintainers;

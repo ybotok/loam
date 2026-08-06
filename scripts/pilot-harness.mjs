@@ -379,7 +379,7 @@ if (install.status !== 0) {
   process.stderr.write(install.stderr ?? "");
   throw new Error(`isolated candidate install failed with ${install.error?.message ?? install.signal ?? install.status}`);
 }
-const installedPackageRoot = resolve(installDir, "node_modules", "@spentsov", "loam");
+const installedPackageRoot = resolve(installDir, "node_modules", "@ybotok", "loam");
 const installedManifest = JSON.parse(await readFile(resolve(installedPackageRoot, "package.json"), "utf8"));
 if (installedManifest.name !== artifact.package
   || installedManifest.version !== artifact.version

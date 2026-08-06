@@ -105,7 +105,7 @@ const workflowText = await readFile(join(root, ".github", "workflows", "release.
 const workflow = parse(workflowText);
 const versionMatch = typeof manifest.version === "string" ? manifest.version.match(SEMVER) : null;
 
-check(manifest.name === "@spentsov/loam", "package identity is @spentsov/loam");
+check(manifest.name === "@ybotok/loam", "package identity is @ybotok/loam");
 check(Boolean(versionMatch), "package version is canonical semver", `package version is not canonical semver: ${manifest.version}`);
 check(manifest.engines?.node === ">=22.22.3", "package engine matches the direct dependency floor");
 check(manifest.publishConfig?.access === "public", "scoped package is explicitly public");

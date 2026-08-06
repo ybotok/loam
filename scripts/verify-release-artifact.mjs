@@ -73,14 +73,14 @@ function distTag(version) {
 const directory = resolve(options.dir);
 const artifact = JSON.parse(await readFile(resolve(directory, "release-manifest.json"), "utf8"));
 if (artifact.schemaVersion !== "1.0") throw new Error("unsupported release manifest schema");
-if (artifact.package !== "@spentsov/loam") throw new Error(`unexpected release package ${artifact.package ?? "(missing)"}`);
+if (artifact.package !== "@ybotok/loam") throw new Error(`unexpected release package ${artifact.package ?? "(missing)"}`);
 if (typeof artifact.filename !== "string" || artifact.filename.includes("/") || artifact.filename.includes("\\")) {
   throw new Error("release manifest has an unsafe tarball filename");
 }
 if (!SEMVER.test(artifact.version) || options.tag !== `v${artifact.version}`) {
   throw new Error(`tag ${options.tag} does not match artifact version v${artifact.version}`);
 }
-const expectedFilename = `spentsov-loam-${artifact.version}.tgz`;
+const expectedFilename = `ybotok-loam-${artifact.version}.tgz`;
 if (artifact.filename !== expectedFilename) {
   throw new Error(`release filename ${artifact.filename} does not match canonical ${expectedFilename}`);
 }

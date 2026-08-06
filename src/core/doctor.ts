@@ -33,7 +33,7 @@ export interface DoctorFinding {
 export interface DoctorReport {
   healthy: boolean;
   runtime: {
-    package: "@spentsov/loam";
+    package: "@ybotok/loam";
     version: string;
     node: string;
     platform: NodeJS.Platform;
@@ -650,7 +650,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   return {
     healthy: !findings.some((finding) => finding.severity === "blocker"),
     runtime: {
-      package: "@spentsov/loam",
+      package: "@ybotok/loam",
       version: LOAM_VERSION,
       node: process.version,
       platform: process.platform,

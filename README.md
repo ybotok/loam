@@ -5,7 +5,7 @@
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
 [![CI](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/SergeyPentsov/loam/actions/workflows/ci.yml)
-<!-- once published: [![npm](https://img.shields.io/npm/v/@spentsov/loam.svg)](https://www.npmjs.com/package/@spentsov/loam) -->
+<!-- once published: [![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam) -->
 
 > **Pre-release: `0.1.0-beta.1`.** Every command below is implemented and covered by tests; the package is not on npm yet. See [Status](#status).
 
@@ -27,13 +27,13 @@ Spec-driven development tools treat specs as business-analyst-level documents: t
 **Node ≥ 22.22.3** (the `engines` floor in `package.json`) is the only prerequisite for everything loam derives from the docs repo. C4 modeling uses **[LikeC4](https://likec4.dev)** (pinned exact), an ordinary npm runtime dependency loaded in-process (TypeScript-native): no JVM, no external CLI. The one outside binary loam ever calls is **`git`**, and only inside a service repo — `verify --service` binds each attestation to that repo's HEAD and refuses (`repository-unavailable`) without one, while `vouch`'s source digest asks `git check-ignore` and treats an absent git as "nothing is ignored" rather than failing.
 
 ```bash
-npm install -g @spentsov/loam
+npm install -g @ybotok/loam
 loam --version
 ```
 
 `loam doctor` is the wiring check, not the install check: run where no `loam.json` is in scope, it reports `doctor.config-missing` and exits 1 by design. Save it for after `loam init`.
 
-A per-repo dev dependency works the same way: `npm i -D @spentsov/loam`, then `npx loam …`.
+A per-repo dev dependency works the same way: `npm i -D @ybotok/loam`, then `npx loam …`.
 
 Until the package is published ([Status](#status)), install from a clone:
 
@@ -229,7 +229,7 @@ npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 
 Every command in the table is implemented, `verify --results` included — the generated suite's cucumber report feeds the done-check, closing the TDD loop mechanically. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` **compose**, UI-prototype generation. Composing a `health.yaml` is what is missing, not reading one: `validate` already grades its `slis:`/`alerts:` ids against the living `arch.spec.md`'s `Covers:` lines (`health.uncovered`, `health.invalid`).
 
-The release-candidate manifest is `@spentsov/loam@0.1.0-beta.1`: as of 2026-08-06 the unscoped `loam` name is taken by an unrelated GDAL wrapper, while `spentsov` is the author identity in this repository's git history. The registry had no package at that scoped name when it was last checked, but absence does **not** prove scope ownership; publishing still requires an npm account that controls `@spentsov`. Nothing in this repository can confirm either — both are registry facts, re-check them before tagging. Until then, use the clone install above rather than treating the package as published.
+The release-candidate manifest is `@ybotok/loam@0.1.0-beta.1`: as of 2026-08-06 the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the maintainer's own npm user scope. The registry had no package at that scoped name when it was last checked — a registry fact this repository cannot confirm, so re-check it before tagging. Until it is published, use the clone install above rather than treating the package as published.
 
 ## Contributing
 

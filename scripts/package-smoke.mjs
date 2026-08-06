@@ -171,12 +171,12 @@ try {
   const installedPackageRoot = join(
     installDir,
     "node_modules",
-    "@spentsov",
+    "@ybotok",
     "loam",
   );
   const installedManifest = join(installedPackageRoot, "package.json");
   const manifest = JSON.parse(await readFile(installedManifest, "utf8"));
-  if (manifest.name !== "@spentsov/loam"
+  if (manifest.name !== "@ybotok/loam"
     || manifest.bin?.loam !== "dist/cli.js"
     || manifest.engines?.node !== ">=22.22.3") {
     throw new Error("installed package identity, engine contract, or loam bin mapping is incorrect");
