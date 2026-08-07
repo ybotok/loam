@@ -628,7 +628,7 @@ describe("a sources list that covers no files", () => {
       )!;
       expect(f.severity).toBe("warn");
 
-      const vouched = await runLoam(p.workDir, "vouch", "--json");
+      const vouched = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(vouched.code).toBe(1);
       const refusal = JSON.parse(vouched.stdout);
       expect(refusal.error.code).toBe("sources-absent");

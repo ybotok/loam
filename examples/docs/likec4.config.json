@@ -1,0 +1,9 @@
+{
+  "name": "fleet",
+  "title": "Fleet landscape",
+  "exclude": [
+    "**/node_modules/**",
+    "services/**",
+    "features/**"
+  ]
+}

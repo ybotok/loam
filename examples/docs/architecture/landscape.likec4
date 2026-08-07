@@ -40,7 +40,16 @@ model {
 
   customer -> checkoutWeb 'Uses'
   checkoutWeb -> paymentService 'Calls'
-  paymentService -> kafka 'Publishes PaymentAuthorized'
+  // The event spine, the async mirror of `metadata { op }`: the name must be a
+  // message payment-service's own asyncapi.yaml declares an `action: send` for,
+  // or `spine.message-undefined` fires. A consumer's edge carries
+  // `metadata { consumes }` instead, and its name has to have a producer
+  // SOMEWHERE in the fleet — the one check no single repository can answer.
+  paymentService -> kafka 'Publishes PaymentAuthorized' {
+    metadata {
+      publishes 'payment.PaymentAuthorized'
+    }
+  }
 }
 
 views {

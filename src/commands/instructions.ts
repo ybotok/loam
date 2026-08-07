@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { PROTOCOLS, WORKFLOWS, protocolFor } from "../core/agent.js";
+import { PROTOCOLS, WORKFLOWS, placeholderProblems, protocolFor } from "../core/agent.js";
 import { emitJson, fail } from "../core/json.js";
 import { LOAM_VERSION } from "../core/version.js";
 
@@ -47,6 +47,21 @@ export function registerInstructions(program: Command): void {
           console.log(`  ${w.name.padEnd(width)}  ${w.description}`);
         }
         console.log(`\nloam instructions <workflow> [args...] prints one, placeholders filled in.`);
+        return;
+      }
+
+      // Before the substitution, not after: a rendered protocol is a page of
+      // instructions an agent acts on, and a `$1` that cannot be a service id
+      // makes every command on that page unrunnable. The refusal reaches the
+      // caller in the same shape a mistyped workflow name does.
+      const problems = placeholderProblems(workflow, args);
+      if (problems !== null) {
+        fail(
+          json,
+          "invalid-option",
+          `${problems.join(" ")} Nothing was printed: every command in the ${workflow} protocol ` +
+            "interpolates that value, so the page would name a target no loam command can accept.",
+        );
         return;
       }
 

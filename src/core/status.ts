@@ -1257,13 +1257,18 @@ function governedServices(scans: DeltaScan[]): ReadonlySet<string> {
  */
 export async function fleetStatus(
   docsDir: string,
-  opts: { service?: string; context?: FleetContext } = {},
+  opts: { service?: string; bound?: string; context?: FleetContext } = {},
 ): Promise<FleetStatusReport> {
   const context = opts.context ?? new FleetContext();
   const interrupted = await readInterruptedCommit(docsDir);
   const narrowed = opts.service;
   const all = await listServices(docsDir, context);
   const services = narrowed === undefined ? all : all.filter((s) => s.id === narrowed);
+  // The service this repository says it IS, when the fleet has never heard of
+  // it. Asked against the UNNARROWED list, because "is it adopted" is a question
+  // about the fleet and not about the view.
+  const unadopted =
+    opts.bound !== undefined && !all.some((s) => s.id === opts.bound) ? opts.bound : null;
   const graph = await analyzeDependencies(docsDir, undefined, context);
   const entries = await listFeatures(docsDir, {}, context);
   const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.includes(narrowed));
@@ -1292,7 +1297,11 @@ export async function fleetStatus(
     features,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),
     service: narrowed ?? null,
-    next: fleetNext(services, features, graph, interrupted),
+    // The binding is passed only when this run was NOT narrowed. `--service X`
+    // is an explicit question about X, and answering it with a step about
+    // whichever service loam.json happens to name would be a different
+    // question's answer at the top of the list.
+    next: fleetNext(services, features, graph, interrupted, narrowed === undefined ? unadopted : null),
   };
 }
 
@@ -1410,8 +1419,31 @@ function fleetNext(
   features: FleetFeatureState[],
   graph: DependencyGraph,
   interrupted: InterruptedCommit | null,
+  unadoptedBinding: string | null,
 ): NextStep[] {
   const steps: NextStep[] = [];
+
+  // The repository this command is standing in names a service the fleet has no
+  // directory for. First, ahead of every other service's partial adoption,
+  // because it is the only step that is about HERE.
+  //
+  // This form used to count the fleet and ignore the binding entirely, so in a
+  // service repo bound to an unadopted service — a freshly wired one, the most
+  // common repo there is — an empty fleet made "every service is written down"
+  // vacuously true and `next.fleet-clean` came out top. `loam doctor` had the
+  // right answer (`doctor.service-unknown`) at the same moment, and the
+  // documented agent loop reads `status`: an agent following it was sent to
+  // start a feature instead of adopting the service under its feet.
+  if (unadoptedBinding !== null) {
+    steps.push({
+      code: "next.adopt-bound",
+      statement:
+        `This repository's loam.json says it is '${unadoptedBinding}', and the fleet has no ` +
+        `services/${unadoptedBinding}/ — nothing about the service you are standing in is written down yet.`,
+      command: `loam adopt --service ${unadoptedBinding} --json`,
+      service: unadoptedBinding,
+    });
+  }
 
   for (const s of services.filter(undocumented)) {
     steps.push({

@@ -294,6 +294,10 @@ function serviceFlags(v: ServiceView): string {
     s.has.spec ? "S" : "-",
     v.archSpec ? "a" : "-",
     s.has.openapi ? "A" : "-",
+    // The async contract, lowercase like the arch spec and for the same reason:
+    // it is optional. A fleet where most services own no topic must not read as
+    // a fleet with a column of gaps in it.
+    s.has.asyncapi ? "e" : "-",
     s.has.runbook ? "R" : "-",
     s.has.health ? "H" : "-",
   ].join(" ");

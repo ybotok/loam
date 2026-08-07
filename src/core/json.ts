@@ -100,6 +100,12 @@ export type ErrorCode =
   | "gherkin-conflict"
   /** `loam vouch` found the spec changed under it between reading and stamping — another vouch or an edit landed first, and nothing was written. */
   | "vouch-raced"
+  /** `loam vouch` with nothing on the other end of stdin and no `--yes`: the stamp is a person's claim, and nobody was asked. */
+  | "vouch-unattended"
+  /** `loam vouch` could not learn who is vouching — git names no `user.email` here, so the stamp would record a claim with nobody behind it. */
+  | "vouch-unattributable"
+  /** `loam vouch` was asked to confirm and the answer was no. Nothing was stamped; this is a successful refusal, not a failure. */
+  | "vouch-declined"
   /** `docsDir` in loam.json points at nothing: the docs repo was never cloned, or the path is wrong. A read command refuses rather than reporting an empty fleet. */
   | "docs-missing"
   /** `docsDir` is a directory but has no `services/`: it is some other directory, most often the service repo itself after a typo. */

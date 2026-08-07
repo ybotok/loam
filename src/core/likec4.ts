@@ -130,6 +130,23 @@ export interface Rel {
   title?: string;
   /** OpenAPI operationId this call uses, from the relationship's `metadata { op '...' }`. */
   op?: string;
+  /**
+   * AsyncAPI message this edge PRODUCES, from `metadata { publishes '...' }`.
+   * Resolved against the edge SOURCE's own contract: a service publishes what it
+   * declares an `action: send` for.
+   */
+  publishes?: string;
+  /**
+   * AsyncAPI message this edge CONSUMES, from `metadata { consumes '...' }`.
+   * Two keys rather than one directional `message`, because the async spine is
+   * not symmetric with the HTTP one: there the PROVIDER owns the contract and
+   * every consumer is checked against it, while here the PRODUCER owns the
+   * message and the consumer lives in another repository entirely. Which side of
+   * an edge owes the declaration has to be readable from the edge itself — the
+   * arrow cannot say it, because a Kafka edge points at the broker from both
+   * ends.
+   */
+  consumes?: string;
   tags: string[];
 }
 
@@ -183,6 +200,8 @@ export function flattenModel(model: ReadableModel): { elements: Elem[]; relation
     // LikeC4 reports an untitled edge as title: null — normalize to the declared `title?: string`.
     title: r.title ?? undefined,
     op: metaKey(r.metadata, "op"),
+    publishes: metaKey(r.metadata, "publishes"),
+    consumes: metaKey(r.metadata, "consumes"),
     tags: [...(r.tags ?? [])],
   }));
   return { elements, relationships };
@@ -233,9 +252,13 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
 }
 
 /**
- * Read one string key out of a LikeC4 `metadata { ... }` block. Two keys carry
- * loam's spines: `op` on a relationship (the OpenAPI operationId it calls) and
- * `service` on an element (the services/<id> directory it stands for). Elements
+ * Read one string key out of a LikeC4 `metadata { ... }` block. Four keys carry
+ * loam's spines: `op` on a relationship (the OpenAPI operationId it calls),
+ * `publishes`/`consumes` on a relationship (the AsyncAPI message it produces or
+ * receives), and `service` on an element (the services/<id> directory it stands
+ * for). Every one of them is read by BOTH model readers — the parsed one here
+ * and the text scanner `scanModel` uses for archive's splice map — because a key
+ * only one of them sees is a key the merge silently drops. Elements
  * with no metadata come back as `{}`, so a missing key is indistinguishable from
  * a missing block — both mean "not bound".
  */
@@ -375,6 +398,10 @@ export interface ScannedRel {
   target: string;
   title?: string;
   op?: string;
+  /** `metadata { publishes '...' }` — see `Rel.publishes`. */
+  publishes?: string;
+  /** `metadata { consumes '...' }` — see `Rel.consumes`. */
+  consumes?: string;
   tags: string[];
   start: number;
   end: number;
@@ -459,6 +486,8 @@ export function scanModel(text: string): ScannedModel | null {
     indent: string;
     title?: string;
     op?: string;
+    publishes?: string;
+    consumes?: string;
     tags: string[];
   }
   const raw: RawRel[] = [];
@@ -557,6 +586,8 @@ export function scanModel(text: string): ScannedModel | null {
           indent: indentOf(stmtStart),
           title,
           op: keyedLiteral("op", bodyFrom, bodyTo),
+          publishes: keyedLiteral("publishes", bodyFrom, bodyTo),
+          consumes: keyedLiteral("consumes", bodyFrom, bodyTo),
           tags,
         });
       }
@@ -602,6 +633,8 @@ export function scanModel(text: string): ScannedModel | null {
     target: resolve(r.tgtLit, r.parent),
     title: r.title,
     op: r.op,
+    publishes: r.publishes,
+    consumes: r.consumes,
     tags: r.tags,
     start: r.start,
     end: r.end,

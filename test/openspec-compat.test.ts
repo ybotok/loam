@@ -591,6 +591,8 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       "text",
       "operations",
       "covers",
+      "publishes",
+      "consumes",
       "scenarios",
       "section",
       // Where the heading was, so `loam rebase` can rewrite one body line by
@@ -601,11 +603,16 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
     ]);
   });
 
-  it("no real OpenSpec file yields operations or covers — `Operations:` and `Covers:` are loam-only lines", () => {
+  it("no real OpenSpec file yields operations, covers or event links — those lines are loam-only", () => {
     for (const file of ALL_FILES) {
       for (const r of parseRequirements(fixture(file))) {
         expect(r.operations).toEqual([]);
         expect(r.covers).toEqual([]);
+        // The event axis joins the same way and inherits the same guarantee: an
+        // adopted OpenSpec corpus carries none of these lines, so learning to
+        // read them cannot change how one word of it parses.
+        expect(r.publishes).toEqual([]);
+        expect(r.consumes).toEqual([]);
       }
     }
   });

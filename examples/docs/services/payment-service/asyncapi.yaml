@@ -1,0 +1,64 @@
+# The async contract — the messages this service puts on the bus.
+#
+# AsyncAPI 3.0 only. Its operations are named top-level objects carrying
+# `action: send|receive`, which is what makes a message's direction legible;
+# 2.x spells the same thing as publish/subscribe under a channel, where the
+# two words are ambiguous about whose perspective they take.
+#
+# loam reads message NAMES and the `action` of the operation carrying them,
+# and nothing else in this file. It never looks inside `payload` — which is
+# what makes swapping JSON Schema for Avro a `schemaFormat` line here rather
+# than a change in loam.
+#
+# The name is the spine: the landscape edge's `metadata { publishes }`, the
+# requirement's `Publishes:` line and `name` below are one name spelled three
+# times, and they must be identical.
+asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    description: Payment lifecycle events, published by the outbox relay
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+
+operations:
+  sendPaymentAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentAuthorized'
+
+components:
+  messages:
+    PaymentAuthorized:
+      # Namespaced by the domain that owns it. One message has exactly one
+      # producer: two services declaring they send this name is
+      # `asyncapi.message-contested`, and then which contract a consumer reads
+      # is a coin flip.
+      name: payment.PaymentAuthorized
+      title: Payment authorized
+      # JSON Schema today, because this fleet runs no schema registry. An Avro
+      # record here later needs a `schemaFormat:` line and no other change:
+      # everything below is opaque to loam.
+      payload:
+        type: object
+        required: [paymentId, amount, currency, authorizedAt]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          amount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          authorizedAt:
+            type: string
+            format: date-time

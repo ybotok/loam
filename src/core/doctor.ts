@@ -6,6 +6,7 @@ import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./con
 import { LOAM_VERSION } from "./version.js";
 import { agentsPath, docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
 import { loadFile } from "./likec4.js";
+import { LIKEC4_PROJECT_CONFIG, LIKEC4_PROJECT_FILENAME } from "./docs.js";
 import { conflictMarkerLines } from "./fleet-context.js";
 import { AGENT_TOOLS, DELIVERIES, plannedCommandFiles, type Delivery } from "./agent.js";
 import {
@@ -588,6 +589,33 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     await inspectLandscape(landscapeFile, findings);
   }
 
+  // The renderer's view of the repo, which is not loam's. loam parses every
+  // `.likec4` file ALONE, so each one declares its own `specification` block and
+  // re-declares whatever elements it names; LikeC4's own workspace loader merges
+  // the whole tree into one model, and those declarations then collide. The
+  // result was two tools disagreeing in the most confusing possible direction:
+  // `loam validate --all` reported zero errors on a tree where `npx likec4
+  // start` — the command loam's own brief recommends — refused to load at all.
+  // `loam init --create` writes the project file that scopes the root project to
+  // the landscape; a docs repo created before it exists has to be told, because
+  // nothing else will ever mention it. A warning, not a blocker: no loam check
+  // reads this file, and a repo without it is only unrenderable.
+  if (docsDir !== null && exists && readable && !existsSync(join(docsDir, LIKEC4_PROJECT_FILENAME))) {
+    findings.push({
+      severity: "warning",
+      code: "doctor.likec4-config-missing",
+      message:
+        `${docsDir}/${LIKEC4_PROJECT_FILENAME} is missing, so this tree is not a loadable LikeC4 workspace — `
+        + "every service model and feature delta declares its own `specification` block, and pointing a "
+        + "renderer at the repo root merges them into one model and reports every declaration as a duplicate.",
+      fix:
+        `Write ${docsDir}/${LIKEC4_PROJECT_FILENAME} with:\n${LIKEC4_PROJECT_CONFIG.trimEnd()}\n`
+        + "That scopes the root project to architecture/, so `npx likec4 start` in the docs repo renders "
+        + "the fleet map. A service model or feature delta is rendered by pointing the renderer at its own "
+        + "directory (`npx likec4 start services/<id>`) — being readable alone is what those files are for.",
+    });
+  }
+
   // What a killed writer left behind. Read from `scanWritePathResidue`, whose
   // spellings of `.loam-lock` / `.loam-commit` / the temp-file pattern are
   // staging's own — doctor grades, it does not re-spell. This is the surface
@@ -627,7 +655,19 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     : services.some((service) => service.id === configuredService)
       ? { configured: configuredService, status: "matched" }
       : { configured: configuredService, status: "unknown" };
-  if (currentService.status === "unbound") {
+  // Standing INSIDE the docs repo, an absent service binding is the correct
+  // state, not a gap: the docs repo is the fleet, it is not any one service, and
+  // the fix this finding prints — `loam init --service <id>` — would bind the
+  // shared repo to one of the services it holds, which is not a thing loam has
+  // a meaning for. doctor already knew where it was standing (it prints the
+  // fleet count two lines up) and reported the warning anyway, so the first
+  // preflight anyone ran in a freshly created docs repo came back yellow with
+  // advice that made it worse. The docs repo's own loam.json is the one that
+  // resolves `docsDir` to the directory holding it — that identity, not a
+  // filename, is the test.
+  const inDocsRepo = configRoot !== undefined && docsDir !== null
+    && resolve(configRoot) === resolve(docsDir);
+  if (currentService.status === "unbound" && !inDocsRepo) {
     findings.push({
       severity: "warning",
       code: "doctor.service-unbound",

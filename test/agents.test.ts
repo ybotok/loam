@@ -338,11 +338,31 @@ describe("multi-tool command generation (init --tools)", () => {
     for (const id of Object.keys(CHECK_FILE)) {
       const skill = await readFile(join(dir, ...CHECK_FILE[id]!.skill), "utf8");
       expect(skill, `${id} skill frontmatter`).toMatch(
-        /^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: Bash\(loam:\*\)\n---\n\n/,
+        /^---\nname: loam-check\ndescription: [^\n]+\nallowed-tools: Bash\(loam [a-z-]+:\*\)(?:, Bash\(loam [a-z-]+:\*\))*\n---\n\n/,
       );
       // the body after the frontmatter is claude's body after ITS frontmatter
       const body = (s: string): string => s.slice(s.indexOf("\n---\n\n") + "\n---\n\n".length);
       expect(body(skill), `${id} skill body`).toBe(body(COMMAND_FILES["loam-check"]!));
+    }
+  });
+
+  it("the pre-approved allowlist names every loam verb EXCEPT vouch", async () => {
+    // `Bash(loam:*)` pre-approved the one command whose output is a claim about
+    // a human act, which handed the agent that wrote a draft the power to
+    // promote its own draft to `verified`. The refusal in commands/vouch.ts is
+    // the other half; this is the half that makes the refusal something a person
+    // sees rather than something an agent routes around.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d", "--create");
+    const skill = await readFile(join(dir, ".claude", "skills", "loam-check", "SKILL.md"), "utf8");
+    const allowed = /^allowed-tools: (.+)$/m.exec(skill)![1]!;
+
+    expect(allowed).not.toContain("Bash(loam:*)");
+    expect(allowed).not.toContain("vouch");
+    // and it is an allowlist worth having: the verbs an agent actually runs are
+    // on it, so this is not "ask about everything" wearing a different hat.
+    for (const verb of ["adopt", "validate", "status", "new", "archive", "verify"]) {
+      expect(allowed, verb).toContain(`Bash(loam ${verb}:*)`);
     }
   });
 
@@ -764,6 +784,37 @@ describe("the version stamp — drift detection, never refresh", () => {
     // the comparison itself: numeric fields, not string order
     expect(versionTrails("0.9.0", "0.10.0")).toBe(true);
     expect(versionTrails("1.0.0", "0.10.0")).toBe(false);
+  });
+
+  it("compares the prerelease line too — that is where a generated file's FORM moves", () => {
+    // The bump this existed for and could not see. 0.1.0-beta.2 is the release
+    // that turned every generated file from embedded protocol text into a
+    // pointer at `loam instructions`, with a CHANGELOG telling readers to delete
+    // the files and re-run `loam init`; comparing the numeric triple alone made
+    // beta.1 and beta.2 indistinguishable, so the one upgrade that most needed
+    // the warning was the one bump shape that could never raise it.
+    expect(versionTrails("0.1.0-beta.1", "0.1.0-beta.2")).toBe(true);
+    expect(versionTrails("0.1.0-beta.2", "0.1.0-beta.1")).toBe(false);
+    expect(versionTrails("0.1.0-beta.2", "0.1.0-beta.2")).toBe(false);
+    // numeric identifiers compare numerically, not as strings
+    expect(versionTrails("0.1.0-beta.9", "0.1.0-beta.10")).toBe(true);
+    // semver's other two rules: a prerelease trails its own final release, and
+    // alphanumeric outranks numeric at the same position
+    expect(versionTrails("0.1.0-beta.2", "0.1.0")).toBe(true);
+    expect(versionTrails("0.1.0", "0.1.0-beta.2")).toBe(false);
+    expect(versionTrails("0.1.0-1", "0.1.0-alpha")).toBe(true);
+    // a longer identifier list outranks a prefix of itself
+    expect(versionTrails("0.1.0-beta", "0.1.0-beta.1")).toBe(true);
+    // and the release triple still wins over any suffix
+    expect(versionTrails("0.1.0", "0.2.0-beta.1")).toBe(true);
+    expect(versionTrails("0.2.0-beta.1", "0.1.0")).toBe(false);
+  });
+
+  it("reports a stale AGENTS.md across a prerelease bump, end to end", () => {
+    const at = (v: string): string => `${agentsStampLine(v)}\nbody\n`;
+    expect(agentsStaleFinding(at("0.1.0-beta.1"), "0.1.0-beta.2")!.message)
+      .toContain("written by loam v0.1.0-beta.1");
+    expect(agentsStaleFinding(at("0.1.0-beta.2"), "0.1.0-beta.2")).toBeNull();
   });
 });
 

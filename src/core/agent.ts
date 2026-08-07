@@ -30,6 +30,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
+import { featureIdProblem, serviceIdProblem } from "./ids.js";
 import { LOAM_VERSION } from "./version.js";
 
 export const AGENTS_MD = `${agentsStampLine(LOAM_VERSION)}
@@ -228,14 +229,27 @@ holds of the new words.
 Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
 until a human has read it. Promoting draft to verified is their call, not yours, and
 it has its own command — \`loam vouch --service <id>\`, run inside that service's repo,
-which stamps the status, the date, both digests and the per-file index
+which stamps the status, the date, the identity (\`vouched_by\`, from git), both digests
+and the per-file index
 (\`sources_files\`, which is what lets a later \`sources.stale\` name the paths that
 moved) together — into the living spec.md
 and, when the service has one, arch.spec.md, in one all-or-nothing run: a file whose
-sources cannot be verified refuses the whole vouch. Never write those five fields by
+sources cannot be verified refuses the whole vouch. Never write those six fields by
 hand: a status with no digest behind it is a claim with nothing behind it. If the
 document changed under vouch between the read and the write, it refuses with
 \`vouch-raced\` and stamps nothing — re-read and re-run.
+
+**\`loam vouch\` is not yours to run**, and it is built so that it cannot be. It is
+the one command whose output is a claim about a HUMAN act — everything else loam
+checks is internal consistency, which fluent prose satisfies on its own — so it
+refuses \`vouch-unattended\` when stdin is not a terminal (and in \`--json\` mode,
+where a question cannot be asked), answers \`vouch-declined\` when the person says
+no, and refuses \`vouch-unattributable\` when git can name nobody, because a stamp
+with no \`vouched_by\` behind it records only that the word was written. \`--yes\`
+exists for a person's own scripted run; typing it on someone's behalf is
+writing their name. The generated command and skill files pre-approve loam's
+read-only and authoring verbs one by one and deliberately not this one: when
+the work is done, hand back and say a vouch is owed.
 
 ## The ID spine
 
@@ -627,6 +641,10 @@ selected that tool. The map of which invocation surfaces what:
   archive/unarchive re-run, which repairs from the pre-image first, under the lock
   — except when the journal itself cannot be read, where it is \`loam doctor\` and
   the repair is a human's comparison against version control. Fleet-wide the rest are
+  \`next.adopt-bound\` (this repository's own loam.json names a service the docs repo
+  has no directory for at all — it outranks every other service's partial adoption,
+  because it is the only step that is about the repo you are standing in, and it is
+  the same state \`loam doctor\` reports as \`doctor.service-unknown\`),
   \`next.adopt\` (a service with no spec.md — nothing about it is written down, so
   no feature can be graded against it), \`next.complete-service\` (a living spec.md
   with no model.likec4 beside it), \`next.feature\` (something is in flight;
@@ -670,7 +688,11 @@ selected that tool. The map of which invocation surfaces what:
   \`api.ungoverned\`, \`api.ops-unlinked\`,
   \`api.requirement-deprecated\`, \`spec-api.op-undefined\` (the living spec's own
   \`Operations:\` lines, not only a delta's), \`spine.landscape-invalid\`, \`spine.op-undefined\`,
-  \`spine.op-link-missing\`, \`spine.op-deprecated\`, and
+  \`spine.op-link-missing\`, \`spine.op-deprecated\`,
+  the async contract axis (AsyncAPI 3): \`service.no-asyncapi\`, \`asyncapi.invalid\`,
+  \`asyncapi.duplicate-message\`, \`spine.message-undefined\`,
+  \`spec-event.message-undefined\`, \`spine.message-unproduced\`,
+  \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.covered\`, and
   the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`. Run inside
   the service's own repo, once a generated suite exists under
   \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
@@ -744,7 +766,15 @@ selected that tool. The map of which invocation surfaces what:
   \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.docs-absolute\`
   (\`docsDir\` stored as an absolute path in a committed loam.json — it resolves
   only on the machine that ran \`loam init\`), \`doctor.inventory-unreadable\`,
-  \`doctor.landscape-missing\`, \`doctor.service-unbound\`, \`doctor.service-unknown\`,
+  \`doctor.landscape-missing\`, \`doctor.service-unbound\` (no \`service\` in loam.json —
+  never raised inside the docs repo itself, where having none is the correct state
+  and binding one would be meaningless), \`doctor.service-unknown\` (loam.json names
+  a service the docs repo has no directory for — the same state \`loam status\`
+  reports as \`next.adopt-bound\`), \`doctor.likec4-config-missing\` (the docs repo
+  has no \`likec4.config.json\`, so pointing LikeC4's own renderer at it fails:
+  loam parses each \`.likec4\` file alone and each declares its own
+  \`specification\` block, so a workspace load merges them and every declaration
+  reads as a duplicate — the \`fix\` field carries the exact file to write),
   and the two about this repo's own generated command and skill files:
   \`doctor.agent-files-missing\` — some of them are absent, because the repo was
   initialized by an older binary or they were deleted — and
@@ -912,7 +942,7 @@ delta did not parse, neither of them "this feature changes nothing there". Branc
 on the exit code before consuming either slice as a task brief.
 
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
-\`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`coherence.ok\`,
+\`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`event.covered\`, \`coherence.ok\`,
 \`landscape.matched\`, \`archedge.covered\`, \`sources.resolved\`, \`sources.current\`,
 \`gherkin.current\`.
 
@@ -1042,6 +1072,14 @@ deliberately — a removal that computes nothing is what version control is for.
  * text per tool would be a second copy of the protocol in all but name; an
  * agent reading the file still sees which argument goes where.
  */
+/**
+ * What a protocol's positional placeholder denotes. `free` is the one that
+ * cannot be checked — `loam-feature`'s `$2` is a human title, and any string is
+ * a legal one — and it is spelled rather than left implicit so a new
+ * placeholder has to state which of the three it is.
+ */
+export type PlaceholderKind = "service" | "feature" | "free";
+
 export interface CommandContent {
   /** Stable command name (`loam-check`) — also the flat file name everywhere. */
   name: string;
@@ -1058,6 +1096,22 @@ export interface CommandContent {
    * once — and the once is a command an agent pastes.
    */
   invocation: string;
+  /**
+   * What `$1`, `$2`, … stand for in `body`, in order — so the substitution can
+   * be checked instead of merely performed.
+   *
+   * `loam instructions loam-adopt "$PWD"` used to render a protocol reading
+   * `services//Users/someone/work/svc/` and `--service /Users/someone/…`: the
+   * placeholder is a service id, the value was an absolute path, and nothing
+   * between the shell and the printed page knew the difference. The commands
+   * downstream all refuse it — `assertServiceId` is one rule in one place, and
+   * it says so well — so a bad brief could never become bad documentation. But
+   * the refusal arrives one step late, after an agent has read a page of
+   * confident instructions built around a value that cannot work, and the
+   * cheapest place to say "that is not a service id" is the command that was
+   * told the argument IS one.
+   */
+  placeholders: readonly PlaceholderKind[];
   /**
    * The verbs, in order, and nothing else. This is the half of the protocol
    * that does not move between releases: a reader with a stale file can still
@@ -1078,6 +1132,7 @@ const COMMANDS: CommandContent[] = [
     purpose:
       "Write one service's baseline documentation into the docs repo from its code, as `draft`. You read the code; loam states the work and checks the result — it never reads the service, so anything you cannot show, do not write.",
     invocation: "loam instructions loam-adopt $1",
+    placeholders: ["service"],
     spine: [
       "wire this repo (`loam init`, then `loam doctor`) if it has no ./loam.json yet",
       "`loam adopt` — the brief: every file to write, the grammar of each, and what the fleet map already says",
@@ -1150,6 +1205,8 @@ behaviour nobody can find is the one failure mode none of loam's checks can catc
     purpose:
       "Start a feature in the docs repo: decide which services it touches, scaffold it, then author the C4 delta and one requirement delta per service. The `--touches` list is the hardest call in the cycle and nothing downstream catches one that is short by a service.",
     invocation: 'loam instructions loam-feature $1 "$2"',
+    // $2 is the feature's human title: any string is a legal one.
+    placeholders: ["feature", "free"],
     spine: [
       "read `AGENTS.md` at the docs repo root — it defines the ID spine everything else depends on",
       "`loam explore` around the services you think are involved: the ring one hop out, and what is already in flight over the same ground",
@@ -1239,6 +1296,7 @@ line, and the OpenAPI \`operationId\` — must match exactly.
     purpose:
       "Build one service's part of a feature, in that service's own repository. The generated Gherkin is the acceptance criterion — it comes before the step definitions, and those come before the code.",
     invocation: "loam instructions loam-implement $1 $2",
+    placeholders: ["feature", "service"],
     spine: [
       "`loam status` — where this feature actually is, and what is owed before you start",
       "`loam delta` — the task: the intent, every requirement verbatim, the endpoints, and the calls in and out",
@@ -1331,6 +1389,10 @@ leave the spec disagreeing with the code.
     // the half of the fix that stops loam printing the broken line in the first
     // place.
     invocation: "loam instructions loam-check",
+    // The one protocol whose body names no placeholder: its target (`--all`, a
+    // feature id, a service id) is spelled inside the `loam validate` line the
+    // agent chooses, not substituted into the page.
+    placeholders: [],
     spine: [
       "`loam validate --all` in the docs repo for the fleet, or `loam validate <target>` for one feature or service",
       "fix every error, and every finding that gates the archive",
@@ -1390,6 +1452,14 @@ and say it.
 | \`spine.op-undefined\` | a landscape edge calls an operation this service's OpenAPI does not define | a broken contract between services — fix the edge or add the endpoint |
 | \`spine.op-link-missing\` (warn) | a landscape "Calls" edge into this service with no \`metadata { op }\` | link it to the operationId |
 | \`spine.op-deprecated\` (warn) | a landscape edge calls an operation this service's OpenAPI marks \`deprecated: true\` — the consumer is standing on a contract being retired | migrate the consumer to the replacement operation; deprecation is the first step of retiring an op, and the op stays defined until a human removes it |
+| \`service.no-asyncapi\` | no asyncapi.yaml, and message link(s) already point into it — a landscape edge's \`metadata { publishes }\` / \`metadata { consumes }\`, or a LIVING requirement's \`Publishes:\` / \`Consumes:\` line. The \`details\` list the stranded message names. Silent when nothing joins into it: an async contract is optional, and most services touch no topic | put the file back — every link the \`details\` name resolves to nothing until it is there |
+| \`asyncapi.invalid\` | asyncapi.yaml exists but does not parse — an unreadable contract proves nothing, so no \`event.*\` or message-spine finding is graded against it | fix the YAML first — the event axis is unchecked until it reads |
+| \`asyncapi.duplicate-message\` (warn) | one message name is declared in two slots — every join on the name (an edge's \`metadata { publishes }\`, a requirement's \`Publishes:\` line) then picks one of them arbitrarily | give each declaration its own name, or factor the second into a \`$ref\` at the first |
+| \`spine.message-undefined\` | a landscape edge \`publishes\`/\`consumes\` a message this service's asyncapi.yaml declares no \`action: send\`/\`receive\` operation for | declare the operation, or correct the edge — the fleet map and the contract disagree about what this service puts on the wire |
+| \`spec-event.message-undefined\` | a LIVING requirement's \`Publishes:\` / \`Consumes:\` line names a message this service's asyncapi.yaml does not declare in that direction | declare it, or correct the line |
+| \`spine.message-unproduced\` | this service consumes a message NO service in the fleet declares an \`action: send\` for. The inverse of \`spine.op-undefined\`, and it has no HTTP analog: on the API axis the provider owns the contract and the check is local, while an event's schema lives in the producer's repo | find the producer and have it declare the message, or correct the name — a consumer joined to nothing reads a payload nothing defines |
+| \`asyncapi.message-contested\` (warn) | two or more services declare they send one message name — every consumer's join picks one of them arbitrarily | namespace the message by its owning domain; one message has one producer, and which contract a consumer reads must not be a coin flip |
+| \`event.messages-unlinked\` (warn) | messages AND requirements exist but zero \`Publishes:\`/\`Consumes:\` lines join them — the event axis is vacuously green | link each requirement to the messages it governs |
 | \`covers.unknown\` (warn) | a \`Covers:\` entry in arch.spec.md resolves to no element, edge, alert or SLI — living and feature deltas alike | fix the id (the message offers close ones); a mistyped entry silently costs the coverage it was written for |
 | \`health.invalid\` (warn) | health.yaml exists but does not parse — alert/SLI ids are unreadable, so \`Covers: alert:/sli:\` entries and health coverage are unchecked (a missing health.yaml is legal and silent; an unreadable one used to masquerade as \`covers.unknown\` typos) | fix the YAML — the health axis resumes once it reads |
 | \`health.uncovered\` (warn) | health.yaml declares an alert or SLI no arch.spec.md requirement covers | write the arch requirement with \`Covers: alert:<id>\` / \`Covers: sli:<id>\` — a signal nothing tests is dashboard decoration |
@@ -1505,6 +1575,7 @@ have read it.
     purpose:
       "Check that the code somebody built is the feature that was designed. loam derives the questions; a test runner and you answer them. loam never reads the service, so a verdict is worth exactly what its evidence is worth.",
     invocation: "loam instructions loam-verify $1",
+    placeholders: ["feature"],
     spine: [
       "`loam verify` — the checklist, derived from the feature's own artifacts",
       "run the generated suite with a JSON report: the scenario claims are the runner's to answer, not yours",
@@ -1612,6 +1683,7 @@ everyone later.
     purpose:
       "Merge a shipped feature into the living specs, API and landscape. This is the one command that rewrites the source of truth, so every step before it exists to make the merge reviewable before it runs.",
     invocation: "loam instructions loam-ship $1",
+    placeholders: ["feature"],
     spine: [
       "confirm the code is actually built and merged — archiving early makes the docs claim something that does not exist",
       "`loam validate --feature $1` must come back valid; if it says nothing pinned the delta, rebase and re-validate first",
@@ -1744,13 +1816,46 @@ export interface AgentTool {
 type CommandEmittingTool = AgentTool & Required<Pick<AgentTool, "path" | "format">>;
 
 /**
- * Pre-approved tools in a generated file's frontmatter, so an agent that honors
- * the field stops asking permission for each `loam` call. It only pre-approves:
- * everything else a command needs (Read, Write, the service's own test runner)
- * stays under the user's normal permission settings, and a tool that does not
- * know the field ignores it.
+ * The loam verbs a generated file pre-approves, so an agent that honors the
+ * field stops asking permission for each call. Everything else a command needs
+ * (Read, Write, the service's own test runner) stays under the user's normal
+ * permission settings, and a tool that does not know the field ignores it.
+ *
+ * Enumerated rather than spelled `Bash(loam:*)`, for one verb's sake. `vouch`
+ * is the only command in loam whose output is a claim about a HUMAN act — a
+ * person read the code and says the document matches it — and a blanket
+ * allowlist pre-approved it, which handed the agent that wrote a draft the
+ * power to promote its own draft to `verified` without anybody being asked.
+ * That inverts the argument loam makes everywhere else: it holds test evidence
+ * to "an agent must not be able to SAY a scenario is tested", and then let one
+ * say a spec matches the code. `vouch` now refuses without a terminal or
+ * `--yes` (commands/vouch.ts) — this list is the other half, so the refusal is
+ * something a person sees rather than something an agent routes around.
+ *
+ * A verb missing from this list is not forbidden, only unapproved: the agent
+ * asks, and the user says yes. That is the correct cost for this one.
  */
-const LOAM_ALLOWED_TOOLS = "Bash(loam:*)";
+const LOAM_ALLOWED_VERBS = [
+  "adopt",
+  "archive",
+  "delta",
+  "dependencies",
+  "doctor",
+  "explore",
+  "gherkin",
+  "init",
+  "instructions",
+  "list",
+  "new",
+  "rebase",
+  "show",
+  "status",
+  "unarchive",
+  "validate",
+  "verify",
+] as const;
+
+const LOAM_ALLOWED_TOOLS = LOAM_ALLOWED_VERBS.map((v) => `Bash(loam ${v}:*)`).join(", ");
 
 /**
  * The Agent Skills convention, which every tool in the registry that reads
@@ -2091,6 +2196,36 @@ export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
 export const PROTOCOLS: Record<string, string> = Object.fromEntries(
   COMMANDS.map((c) => [c.name, c.body]),
 );
+
+/** What each workflow's `$1`, `$2`, … denote — see {@link CommandContent.placeholders}. */
+export const PLACEHOLDERS: Record<string, readonly PlaceholderKind[]> = Object.fromEntries(
+  COMMANDS.map((c) => [c.name, c.placeholders]),
+);
+
+/**
+ * Why the arguments given to `name` cannot be substituted into its protocol, or
+ * null when they can. One sentence per bad argument, already naming the
+ * placeholder it was meant to fill.
+ *
+ * The grammars are `core/ids.ts`'s, never a second copy: a value this accepts
+ * and `loam adopt` refuses would be worse than no check, because the protocol
+ * would still be wrong and now something had approved it. An argument nobody
+ * supplied is not an error — `protocolFor` leaves that placeholder standing on
+ * purpose, so the page reads as "the service id goes here".
+ */
+export function placeholderProblems(name: string, args: readonly string[]): string[] | null {
+  const kinds = PLACEHOLDERS[name];
+  if (kinds === undefined) return null;
+  const problems = kinds.flatMap((kind, i) => {
+    const arg = args[i];
+    if (arg === undefined || arg === "" || kind === "free") return [];
+    const problem = kind === "service"
+      ? serviceIdProblem(arg, `$${i + 1}`)
+      : featureIdProblem(arg, `feature id ($${i + 1})`);
+    return problem === null ? [] : [problem];
+  });
+  return problems.length === 0 ? null : problems;
+}
 
 /** The workflow names, in cycle order — `loam instructions` with no argument lists these. */
 export const WORKFLOWS: ReadonlyArray<Pick<CommandContent, "name" | "description" | "argumentHint">> =

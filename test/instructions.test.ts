@@ -209,3 +209,62 @@ describe("what it reads", () => {
     expect(res.out).toContain("loam init --docs");
   });
 });
+
+/**
+ * It substitutes, and now it checks first.
+ *
+ * `loam instructions loam-adopt "$PWD"` — a shell habit, and one an agent
+ * reaches for — rendered a protocol reading `services//Users/someone/work/svc/`
+ * and `--service /Users/someone/…`, a whole page of confident instructions
+ * built around a value no loam command will accept. The commands downstream all
+ * refuse it, and refuse it well, so a bad brief could never become bad
+ * documentation; the cost was a page of work done against a target that could
+ * not exist, and the cheapest place to say so is the command that was told the
+ * argument IS a service id.
+ */
+describe("the arguments it substitutes have to be the things they stand for", () => {
+  it("refuses a path where a service id belongs, and prints no protocol at all", async () => {
+    const dir = await unwiredDir();
+    const res = await runLoam(dir, "instructions", "loam-adopt", "/Users/someone/work/svc", "--json");
+    expect(res.code).toBe(1);
+    const err = JSON.parse(res.stdout).error;
+    expect(err.code).toBe("invalid-option");
+    // the same sentence `loam adopt` would print — one grammar, in core/ids.ts
+    expect(err.message).toContain("no slashes");
+    expect(err.message).toContain("$1");
+  });
+
+  it("refuses a feature-id placeholder that is not one", async () => {
+    const dir = await unwiredDir();
+    const res = await runLoam(dir, "instructions", "loam-ship", "the payments thing", "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.message).toContain("FEAT-101");
+  });
+
+  it("leaves the free-text placeholder free — a feature title is any string", async () => {
+    const dir = await unwiredDir();
+    const res = await runLoam(dir, "instructions", "loam-feature", "FEAT-101", "Split payments 50/50");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain("Split payments 50/50");
+  });
+
+  it("still leaves an unsupplied placeholder standing", async () => {
+    // The refusal must not have become "you did not pass one": a protocol
+    // printed with `$1` in it reads as "the service id goes here", which is the
+    // whole point of printing it before you know the id.
+    const dir = await unwiredDir();
+    const res = await runLoam(dir, "instructions", "loam-adopt");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain("$1");
+  });
+
+  it("checks the position, not merely the presence: $2 of loam-implement is a service", async () => {
+    const dir = await unwiredDir();
+    const ok = await runLoam(dir, "instructions", "loam-implement", "FEAT-101", "payment-service");
+    expect(ok.code, ok.out).toBe(0);
+
+    const bad = await runLoam(dir, "instructions", "loam-implement", "FEAT-101", "../etc", "--json");
+    expect(bad.code).toBe(1);
+    expect(JSON.parse(bad.stdout).error.message).toContain("$2");
+  });
+});

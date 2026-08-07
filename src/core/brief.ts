@@ -70,7 +70,7 @@ export interface BriefTarget {
 }
 
 /** Where an artifact lives — `repo.ts` spells the filenames, this only points at them. */
-type PathKey = "model" | "spec" | "archSpec" | "openapi" | "adrsDir" | "runbook" | "health";
+type PathKey = "model" | "spec" | "archSpec" | "openapi" | "asyncapi" | "adrsDir" | "runbook" | "health";
 
 /**
  * The LikeC4 identifier the fleet map's element for a service conventionally
@@ -181,8 +181,12 @@ model {
 }
 
 // Views are LikeC4's, not loam's: loam parses this file and computes no view,
-// so nothing below is read by any check. Keep it for 'npx likec4 start', which
-// does render it. Scoped to one service 'include *' is cheap; the same line in
+// so nothing below is read by any check. Keep it for the renderer, which does
+// draw it — 'npx likec4 start services/<id>' from the docs repo, pointed at THIS
+// directory. Not the repo root: every service model declares its own
+// 'specification' block, so the root is scoped to architecture/ (likec4.config.json)
+// and one model at a time is how these files are meant to be read.
+// Scoped to one service 'include *' is cheap; the same line in
 // architecture/landscape.likec4 walks every call in the fleet and takes minutes.
 views {
   view of paymentService {
@@ -281,6 +285,24 @@ Covers: paymentService.db, paymentService -> kafka
       // as well, because an agent reading the shape rules must not re-derive
       // "MISSING" as "write something".
       "If this service exposes no HTTP API, there is no file to write. Do not invent one — an empty or imagined contract is a claim the whole fleet then joins against. `required` above is derived from the fleet map: it is false exactly when the landscape parses and no edge calls an operation on this service, which is the same evidence that keeps `service.no-openapi` quiet.",
+    ],
+  },
+  {
+    artifact: "asyncapi.yaml",
+    key: "asyncapi",
+    // Never required. Unlike the HTTP contract, whose necessity the fleet map
+    // can PROVE (an op-linked edge points here), most services in a legacy fleet
+    // touch no topic at all — and a required artifact nobody owes is how a
+    // whole adoption wave learns to ignore the brief.
+    required: false,
+    purpose: "the async contract — the messages this service puts on and takes off the bus",
+    shape: [
+      "AsyncAPI **3.0** with `channels`, `operations` and `components.messages`. Only 3.0 is read: its operations are named top-level objects carrying `action: send|receive`, which is what makes a message's direction legible. A 2.x document declares no `operations` and reads as a contract with no messages.",
+      "EVERY message carries a `name` (or is declared under the key you intend to reference). That token is the spine: the C4 edge's `metadata { publishes }` / `metadata { consumes }`, the requirement's `Publishes:` / `Consumes:` line and this name are one name spelled three times.",
+      "Namespace the name by the domain that owns it — `payment.PaymentAuthorized`. One message has exactly one producer; two services declaring they send one name is `asyncapi.message-contested`, and then which contract a consumer reads is a coin flip.",
+      "loam reads message names and the `action` of the operation carrying them. **It never looks inside `payload`.** Write the payload as JSON Schema today; if the fleet later adopts Avro, that is a `schemaFormat` line here and nothing in loam changes.",
+      "Keep payloads in `components.schemas` in THIS file rather than `$ref`-ing an external `.avsc`. External references are out of scope for the merge, exactly as on the OpenAPI axis, so a schema in another file will not travel with the message that needs it.",
+      "If this service publishes and consumes nothing, there is no file to write. Do not invent one.",
     ],
   },
   {
@@ -604,7 +626,7 @@ export const UNCHECKED: string[] = [
   // renderer; loam computes none. Saying otherwise taught agents that a views
   // block was owed to loam, and an `include *` over the FLEET map is the one
   // shape that costs minutes rather than milliseconds.
-  "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. loam reads elements and relationships out of the PARSED model and renders nothing, so it computes no view and a model without one is missing nothing loam wants. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start`. Scope them when you do — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
+  "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. loam reads elements and relationships out of the PARSED model and renders nothing, so it computes no view and a model without one is missing nothing loam wants. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start <dir>` pointed at ONE directory — `services/<id>` for a service model, the docs repo root for the fleet map (`likec4.config.json` scopes that root project to `architecture/`). The renderer merges every `.likec4` file it is given into one model, and loam parses each of them alone, so each declares its own `specification` block: point it at a directory holding two of them and every declaration reads as a duplicate. Scope your views too — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
   "Whether the model has exactly ONE top-level element for the service, with its containers nested inside. Five top-level boxes for one service parse, validate and bind exactly as well as one — and then the fleet map, which joins elements to directories, has five candidates for the same service and no way to say which is wrong.",
   "Whether the model is the architecture the code actually has. loam parses model.likec4; it never reads a line of the service.",
   "Whether a requirement is TRUE of the service. `loam validate` checks that a requirement has a scenario, never that either one describes real behaviour.",

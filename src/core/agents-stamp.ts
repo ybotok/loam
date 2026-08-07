@@ -32,26 +32,70 @@ export function agentsStampVersion(text: string): string | null {
   return m !== null && parseVersion(m[1]!) !== null ? m[1]! : null;
 }
 
-/** The leading numeric triple of `X.Y.Z[-anything]`, or null. */
-function parseVersion(v: string): [number, number, number] | null {
-  const m = /^(\d+)\.(\d+)\.(\d+)(?:[-+]|$)/.exec(v);
-  return m === null ? null : [Number(m[1]), Number(m[2]), Number(m[3])];
+/** A version split the way precedence is decided: the triple, then the prerelease identifiers. */
+interface ParsedVersion {
+  release: [number, number, number];
+  /**
+   * The dot-separated identifiers of a `-beta.2` suffix, empty for a final
+   * release. Build metadata (`+sha`) is dropped — semver excludes it from
+   * precedence, and two builds of one version are the same instructions.
+   */
+  pre: string[];
+}
+
+/** `X.Y.Z[-pre][+build]`, or null when the leading triple does not read as numbers. */
+function parseVersion(v: string): ParsedVersion | null {
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v);
+  if (m === null) return null;
+  return {
+    release: [Number(m[1]), Number(m[2]), Number(m[3])],
+    pre: m[4] === undefined ? [] : m[4].split("."),
+  };
 }
 
 /**
- * Does `stamp` name an older version than `binary`? Numeric triples only — a
- * prerelease suffix is ignored, so `1.2.0-beta` neither trails nor outranks
- * `1.2.0`. A stamp NEWER than the binary does not trail either: that is an old
- * binary, not a stale file, and the fix (upgrade loam) is not an AGENTS.md edit.
+ * Semver identifier precedence: numeric identifiers compare numerically and
+ * rank below alphanumeric ones, and a longer identifier list outranks a prefix
+ * of itself. -1 / 0 / 1, so the caller reads like the triple comparison above.
+ */
+function comparePre(a: string[], b: string[]): number {
+  // No prerelease outranks any prerelease — `1.2.0` is newer than `1.2.0-beta.9`
+  // — which is why this cannot be the plain lexicographic walk the identifiers get.
+  if (a.length === 0 || b.length === 0) return a.length === b.length ? 0 : a.length === 0 ? 1 : -1;
+  for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+    const [x, y] = [a[i]!, b[i]!];
+    if (x === y) continue;
+    const [nx, ny] = [/^\d+$/.test(x), /^\d+$/.test(y)];
+    if (nx && ny) return Number(x) < Number(y) ? -1 : 1;
+    if (nx !== ny) return nx ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
+}
+
+/**
+ * Does `stamp` name an older version than `binary`? A stamp NEWER than the
+ * binary does not trail: that is an old binary, not a stale file, and the fix
+ * (upgrade loam) is not an AGENTS.md edit.
+ *
+ * Prerelease identifiers are compared, not ignored, and the difference is the
+ * whole reason this check exists. Comparing the numeric triple alone made
+ * `0.1.0-beta.1` and `0.1.0-beta.2` indistinguishable — and beta.2 is precisely
+ * the release that changed the FORM of every generated file (embedded protocol
+ * text became a pointer at `loam instructions`), with a CHANGELOG telling
+ * readers to delete the files and re-run `loam init`. The one upgrade that most
+ * needed the warning was the one bump shape that could not raise it. A
+ * prerelease line is where a generated file's form actually moves, because that
+ * is what a prerelease is for.
  */
 export function versionTrails(stamp: string, binary: string): boolean {
   const s = parseVersion(stamp);
   const b = parseVersion(binary);
   if (s === null || b === null) return false;
   for (let i = 0; i < 3; i += 1) {
-    if (s[i]! !== b[i]!) return s[i]! < b[i]!;
+    if (s.release[i]! !== b.release[i]!) return s.release[i]! < b.release[i]!;
   }
-  return false;
+  return comparePre(s.pre, b.pre) < 0;
 }
 
 /**

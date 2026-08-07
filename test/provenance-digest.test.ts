@@ -27,7 +27,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, writeFiles, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, makeTmpDir, runLoam, TEST_IDENTITY, writeFiles, type Project } from "./helpers/harness.js";
 import { parseFrontmatter, stringField } from "../src/core/frontmatter.js";
 import { expandSourceFiles, sourcesDigest } from "../src/core/provenance.js";
 import { vouch } from "../src/commands/vouch.js";
@@ -239,12 +239,12 @@ describe("symlinks under a listed directory", () => {
       expect(finding.details).toEqual(["src/external.ts — a symlink whose target is outside this repository"]);
 
       // The person doing the vouching is the one who most needs to know.
-      const vouched = await runLoam(p.workDir, "vouch", "--json");
+      const vouched = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(vouched.code).toBe(0);
       expect(JSON.parse(vouched.stdout).skipped).toEqual([
         { path: "src/external.ts", reason: "a symlink whose target is outside this repository" },
       ]);
-      expect((await runLoam(p.workDir, "vouch")).out).toContain("went unhashed");
+      expect((await runLoam(p.workDir, "vouch", "--yes")).out).toContain("went unhashed");
     } finally {
       await p.destroy();
       await rm(outsideDir, { recursive: true, force: true });
@@ -270,7 +270,7 @@ describe("an expansion that covers nothing", () => {
       expect(expansion.skipped).toEqual([]);
       expect(expansion.empty).toBeDefined();
 
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-absent");
@@ -301,7 +301,7 @@ describe("what sources.stale names", () => {
     files[SPEC] = `---\nservice: ${SVC}\nstatus: draft\nowner: payments-team\nsources:\n  - src/\n---\n\n# ${SVC}\n`;
     const p = await makeProject(files, { service: SVC });
     await writeFiles(p.workDir, repoFiles);
-    const res = await runLoam(p.workDir, "vouch");
+    const res = await runLoam(p.workDir, "vouch", "--yes");
     expect(res.code, res.out).toBe(0);
     return p;
   }
@@ -411,7 +411,7 @@ describe("what sources.stale names", () => {
     try {
       await writeFile(join(p.workDir, "src/a.ts"), "a, edited\n", "utf8");
       expect(await staleFinding(p)).toBeDefined();
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       const codes = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout).targets[0].findings.map(
         (f: { code: string }) => f.code,
       );
@@ -440,8 +440,8 @@ describe("two service repos, one docs repo", () => {
       await writeFiles(webRepo, { "src/checkout.ts": "checkout\n" });
 
       const both = await Promise.all([
-        vouch({ docsDir: p.docsDir, service: SVC, repoDir: paymentRepo, today: "2026-08-04" }),
-        vouch({ docsDir: p.docsDir, service: OTHER, repoDir: webRepo, today: "2026-08-04" }),
+        vouch({ docsDir: p.docsDir, service: SVC, repoDir: paymentRepo, today: "2026-08-04", vouchedBy: TEST_IDENTITY }),
+        vouch({ docsDir: p.docsDir, service: OTHER, repoDir: webRepo, today: "2026-08-04", vouchedBy: TEST_IDENTITY }),
       ]);
       expect(both.map((o) => o.ok)).toEqual([true, true]);
 
@@ -484,7 +484,7 @@ describe("two service repos, one docs repo", () => {
         await writeFile(specPath, theirs, "utf8");
       };
 
-      const result = await vouch({ docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-04" });
+      const result = await vouch({ docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-04", vouchedBy: TEST_IDENTITY });
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.code).toBe("vouch-raced");

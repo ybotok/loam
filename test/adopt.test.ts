@@ -75,6 +75,7 @@ describe("the work it hands over", () => {
       "spec.md",
       "arch.spec.md",
       "openapi.yaml",
+      "asyncapi.yaml",
       "adrs/",
       "runbook.md",
       "health.yaml",

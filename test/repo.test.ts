@@ -152,6 +152,7 @@ describe("listServices", () => {
         "services/full/model.likec4": "model {}\n",
         "services/full/spec.md": "# full\n",
         "services/full/openapi.yaml": "openapi: 3.1.0\n",
+        "services/full/asyncapi.yaml": "asyncapi: 3.0.0\n",
         "services/full/runbook.md": "# runbook\n",
         "services/full/health.yaml": "slo: {}\n",
         "services/bare/spec.md": "# bare\n",
@@ -162,6 +163,7 @@ describe("listServices", () => {
           model: true,
           spec: true,
           openapi: true,
+          asyncapi: true,
           runbook: true,
           health: true,
         });
@@ -169,6 +171,7 @@ describe("listServices", () => {
           model: false,
           spec: true,
           openapi: false,
+          asyncapi: false,
           runbook: false,
           health: false,
         });
@@ -484,6 +487,7 @@ describe("path helpers", () => {
       spec: join("/docs", "services", "payment-service", "spec.md"),
       archSpec: join("/docs", "services", "payment-service", "arch.spec.md"),
       openapi: join("/docs", "services", "payment-service", "openapi.yaml"),
+      asyncapi: join("/docs", "services", "payment-service", "asyncapi.yaml"),
       runbook: join("/docs", "services", "payment-service", "runbook.md"),
       health: join("/docs", "services", "payment-service", "health.yaml"),
       adrsDir: join("/docs", "services", "payment-service", "adrs"),

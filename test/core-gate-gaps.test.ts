@@ -396,7 +396,7 @@ describe("a document that is not UTF-8 text is refused, not read as empty", () =
       const spec = await p.read("services/payment-service/spec.md");
       await writeFile(join(p.docsDir, "services/payment-service/spec.md"), utf16(spec, true));
 
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const err = (JSON.parse(res.stdout) as { error: { code: string; message: string } }).error;
       expect(err.code).toBe("repository-unavailable");
@@ -491,7 +491,7 @@ describe("`this repo` is where loam.json is, not where the caller is standing", 
   it("vouch resolves `sources` against the repo root, from anywhere inside it", async () => {
     const p = await serviceRepo();
     try {
-      const res = await runLoam(join(p.workDir, "src/deep/deeper"), "vouch", "--json");
+      const res = await runLoam(join(p.workDir, "src/deep/deeper"), "vouch", "--yes", "--json");
       expect(res.code).toBe(0);
       const payload = JSON.parse(res.stdout) as {
         status: string;
@@ -512,11 +512,11 @@ describe("`this repo` is where loam.json is, not where the caller is standing", 
   it("vouch stamps the same digest from the root and from a subdirectory", async () => {
     const p = await serviceRepo();
     try {
-      const root = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout) as {
+      const root = JSON.parse((await runLoam(p.workDir, "vouch", "--yes", "--json")).stdout) as {
         sources_digest: string;
       };
       const deep = JSON.parse(
-        (await runLoam(join(p.workDir, "src/deep"), "vouch", "--json")).stdout,
+        (await runLoam(join(p.workDir, "src/deep"), "vouch", "--yes", "--json")).stdout,
       ) as { sources_digest: string };
       expect(deep.sources_digest).toBe(root.sources_digest);
     } finally {
@@ -527,7 +527,7 @@ describe("`this repo` is where loam.json is, not where the caller is standing", 
   it("still refuses to vouch for a service this repo is not", async () => {
     const p = await serviceRepo();
     try {
-      const res = await runLoam(join(p.workDir, "src/deep"), "vouch", "--service", "checkout-web", "--json");
+      const res = await runLoam(join(p.workDir, "src/deep"), "vouch", "--yes", "--service", "checkout-web", "--json");
       expect(res.code).toBe(1);
       expect(res.stdout).toContain("run it there");
     } finally {

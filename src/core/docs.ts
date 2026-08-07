@@ -23,6 +23,17 @@ import { AGENTS_FILENAME } from "./repo.js";
 export const DOCS_SUBDIRS = ["architecture", "services", "features"] as const;
 
 /**
+ * The scaffolded directories that start out empty, and the file that keeps each
+ * of them in version control. See {@link GITKEEP}. Spelled as pairs so the
+ * marker's name is written once — `listServices` and `listFeatures` enumerate
+ * subdirectories only, so a file here is invisible to both.
+ */
+const EMPTY_SUBDIRS = [
+  ["services", ".gitkeep"],
+  ["features", ".gitkeep"],
+] as const;
+
+/**
  * The fleet map, empty but valid.
  *
  * Nobody writes this file automatically — `adopt` deliberately does not touch
@@ -66,8 +77,12 @@ const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears her
 //
 // There is no \`views\` block, on purpose: loam reads the model and never a
 // view, so it would draw nothing. Add views here if you want diagrams, and
-// render them with LikeC4's own tooling (\`npx likec4 start\`) — but scope them,
-// because computing a view is superlinear in the number of edges and an
+// render them with LikeC4's own tooling — \`npx likec4 start\` from the docs
+// repo root, which likec4.config.json scopes to this directory. (A service
+// model or a feature delta renders from its OWN directory, e.g.
+// \`npx likec4 start services/<id>\`: each declares its own \`specification\`
+// block, so the renderer can only be given one of them at a time.) Scope your
+// views, because computing one is superlinear in the number of edges and an
 // \`include *\` over a whole fleet takes minutes.
 
 specification {
@@ -80,6 +95,56 @@ specification {
 model {
 }
 `;
+
+/**
+ * The LikeC4 project file, and the one thing in the docs repo loam writes for a
+ * tool other than itself.
+ *
+ * LikeC4's workspace loader merges EVERY `.likec4` file under a directory tree
+ * into one model. loam's layout is the opposite by design: the landscape,
+ * each `services/<id>/model.likec4` and each `features/<FEAT>/delta.likec4` is
+ * parsed in isolation (`loadSource`, one file, one throwaway workspace), so
+ * every one of them legitimately declares its own `specification { … }` block
+ * and re-declares the elements it needs to talk about. Point the real renderer
+ * at the repository root and those declarations collide: on loam's own
+ * `examples/docs` — four files — `npx likec4 start` reported 16 errors, sixteen
+ * duplicate kinds and names, while `loam validate --all` reported none. Both
+ * were right; only one of them was reading the tree as a workspace.
+ *
+ * So the root is declared as one LikeC4 project holding the landscape, and the
+ * two directories whose files are meant to be read alone are excluded from it.
+ * That makes `npx likec4 start` in the docs repo — the command loam's own docs
+ * have always recommended — render the fleet map instead of failing. A service
+ * model or a feature delta is still rendered by pointing the renderer at its own
+ * directory, which is what parsing them in isolation meant all along.
+ *
+ * `**\/node_modules/**` is repeated because naming `exclude` replaces LikeC4's
+ * default rather than adding to it. loam reads none of this file: it is written
+ * once, never re-read, and a team that wants a different project layout owns it
+ * like every other scaffolded file.
+ */
+export const LIKEC4_PROJECT_FILENAME = "likec4.config.json";
+
+export const LIKEC4_PROJECT_CONFIG = `${JSON.stringify(
+  {
+    name: "fleet",
+    title: "Fleet landscape",
+    exclude: ["**/node_modules/**", "services/**", "features/**"],
+  },
+  null,
+  2,
+)}\n`;
+
+/**
+ * The placeholder that makes an empty scaffolded directory survive a clone.
+ *
+ * git tracks files, not directories, so `services/` and `features/` — created
+ * empty by `loam init --create` — were absent for everyone after the first push:
+ * the person who ran init had a green repo, and the second person to clone it
+ * got `doctor.services-missing`, a BLOCKER, on a repository nobody had touched.
+ * A repo that cannot survive being cloned is not a shared docs repo.
+ */
+const GITKEEP = "";
 
 /**
  * The docs repo's own loam.json. It makes the docs repo self-describing: a
@@ -160,6 +225,10 @@ export function docsRepoFiles(opts: DocsRepoFileOptions = {}): Array<[string, st
     [AGENTS_FILENAME, AGENTS_MD],
     [join("architecture", "landscape.likec4"), `${preamble}${LANDSCAPE_STUB}`],
     ["loam.json", DOCS_SELF_CONFIG],
+    [LIKEC4_PROJECT_FILENAME, LIKEC4_PROJECT_CONFIG],
+    // The two directories git would otherwise drop on the way to the next
+    // clone. `architecture/` needs none — the landscape above is in it.
+    ...EMPTY_SUBDIRS.map(([dir, keep]) => [join(dir, keep), GITKEEP] as [string, string]),
   ];
 }
 

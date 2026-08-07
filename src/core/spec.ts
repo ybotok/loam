@@ -56,6 +56,20 @@ export interface Requirement {
    * grammar's sake, meaningful in arch.spec.md.
    */
   covers: string[];
+  /**
+   * AsyncAPI message names this requirement governs on the PRODUCING side, from
+   * a `Publishes:` line — the event-axis analog of `Operations:`.
+   *
+   * Two lines rather than one, because the async spine is directional in a way
+   * the HTTP one is not: `Publishes:` resolves against this service's OWN
+   * contract, while `Consumes:` names a message another service declares, and
+   * only a fleet-wide view can say whether anybody does. Grading them alike
+   * would either excuse a typo in a producer or point a consumer's error at the
+   * wrong repository.
+   */
+  publishes: string[];
+  /** AsyncAPI message names this requirement consumes, from a `Consumes:` line. See `publishes`. */
+  consumes: string[];
   scenarios: Scenario[];
   /**
    * The H2 heading of its SOURCE DOCUMENT this requirement was parsed under,
@@ -362,7 +376,18 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const mr = REQ_RE.exec(line);
     if (mr) {
-      req = { kind, name: mr[1]!, text: [], operations: [], covers: [], scenarios: [], section, line: index + 1 };
+      req = {
+        kind,
+        name: mr[1]!,
+        text: [],
+        operations: [],
+        covers: [],
+        publishes: [],
+        consumes: [],
+        scenarios: [],
+        section,
+        line: index + 1,
+      };
       out.push(req);
       scn = null;
       continue;
@@ -392,6 +417,17 @@ export function parseRequirements(md: string): Requirement[] {
       // drift apart in how they read a repeated line.
       const mc = /^\s*Covers?:\s*(.+?)\s*$/i.exec(line);
       if (mc) req.covers = mc[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      // The event axis, same grammar and the same keep-last quirk again. Note
+      // what is NOT happening here: the line stays in `req.text` like every
+      // other body line (the push above is unconditional), so it round-trips
+      // through `serializeRequirements` and rides inside `requirementDigest`
+      // exactly as `Operations:` does. That is what makes this parse purely
+      // additive — no living document's digest moves, and no `Based-On:` pin
+      // goes stale because loam learned to read one more line.
+      const mp = /^\s*Publishes?:\s*(.+?)\s*$/i.exec(line);
+      if (mp) req.publishes = mp[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      const mcon = /^\s*Consumes?:\s*(.+?)\s*$/i.exec(line);
+      if (mcon) req.consumes = mcon[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }
 

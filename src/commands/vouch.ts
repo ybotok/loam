@@ -11,6 +11,19 @@
  * matches the code, one the code has moved out from under, and one whose own
  * prose changed after the stamp.
  *
+ * "Records a person" was, for two releases, a thing this file said and did not
+ * do. There was no `vouched_by`, no identity of any kind and no interactive
+ * gate, so an agent could run it twice unattended and stamp `verified` both
+ * times — while the skill files loam generates pre-approved `Bash(loam:*)`,
+ * which meant the agent that wrote the draft was permitted to promote it. Three
+ * things close that, and none of them is a signature: the stamp carries git's
+ * `user.email` (`vouched_by`), the run refuses without a terminal or an explicit
+ * `--yes`, and the generated allowlist names loam's read-only and authoring
+ * verbs one by one instead of all of them (core/agent.ts). What that buys is
+ * attribution and a deliberate act, not proof — git config is a text file. A
+ * reviewer can now ask a named person what they read, which is the question
+ * `status: verified` was silently answering with nobody.
+ *
  * The stamp is only worth what it claims, so vouch refuses everything it cannot
  * actually verify — a frontmatter block that will not parse (whose fields
  * nobody can read, and whose rewrite would lose the author's lines), a spec
@@ -26,6 +39,7 @@
  */
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 import { loadConfig } from "../core/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
@@ -33,6 +47,7 @@ import {
   contentDigest,
   emptySourcesMessage,
   encodeSourceIndex,
+  gitIdentity,
   missingSources,
   patternSources,
   sourcesDigest,
@@ -55,6 +70,7 @@ import {
 
 interface VouchOptions {
   service?: string;
+  yes?: boolean;
   json?: boolean;
 }
 
@@ -65,6 +81,13 @@ export interface VouchRequest {
   repoDir: string;
   /** The date to stamp. Injected rather than read off the clock, so it can be pinned. */
   today: string;
+  /**
+   * Who is vouching, as `vouched_by` is stamped — git's identity for `repoDir`.
+   * Injected for the same reason `today` is: this function must be reproducible
+   * from its arguments, and the resolution (and its refusal) belongs to the
+   * command that can talk to a person about it.
+   */
+  vouchedBy: string;
 }
 
 /** One spec-axis file's share of a successful vouch. */
@@ -94,6 +117,8 @@ export type VouchOutcome =
       ok: true;
       status: "verified";
       lastVerified: string;
+      /** The identity stamped into every file this vouch touched. */
+      vouchedBy: string;
       /**
        * Every spec-axis file stamped. Named, not ordered: spec.md is required
        * for a vouch to happen at all, and arch.spec.md is the only other file
@@ -132,6 +157,10 @@ export function registerVouch(program: Command): void {
       "Vouch for a service's living specs: stamp spec.md, and arch.spec.md when present, verified against the code they describe",
     )
     .option("--service <id>", "service to vouch for (defaults to the configured service)")
+    .option(
+      "--yes",
+      "skip the confirmation — required when stdin is not a terminal, and still records `vouched_by`",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: VouchOptions) => {
       const json = opts.json === true;
@@ -158,9 +187,68 @@ export function registerVouch(program: Command): void {
         );
       }
 
+      // The repo root, not the cwd — see the comment on `repoDir` below; the
+      // identity has to be asked of the same directory the sources resolve in,
+      // or a subdirectory with its own git config would answer for it.
+      const repoDir = config.root ?? process.cwd();
+
+      // Who. Before any reading, because a run that cannot name a person has
+      // nothing to offer at the end of it and should not spend a digest finding
+      // that out.
+      const vouchedBy = await gitIdentity(repoDir);
+      if (vouchedBy === null) {
+        return fail(
+          json,
+          "vouch-unattributable",
+          `Cannot vouch for '${service}': git names no \`user.email\` in ${repoDir}, so the stamp would ` +
+            "record a claim with nobody behind it — which is the one thing `status: verified` must not mean. " +
+            "Set it (`git config user.email you@example.com`) and re-run.",
+        );
+      }
+
+      // Whether a person is actually here. `vouch` is the only command in loam
+      // whose output is a claim about a HUMAN act — every other check is
+      // internal consistency, which fluent prose satisfies — and it used to run
+      // unattended, unattributed, twice in a row, stamping `verified` both
+      // times. Meanwhile the generated skill files pre-approved `Bash(loam:*)`,
+      // so the same agent that wrote the draft was permitted to promote it.
+      // That inverts loam's own argument about test evidence: an agent must not
+      // be able to SAY a scenario is tested, and it must not be able to say a
+      // spec matches the code either. The allowlist no longer covers this
+      // command (core/agent.ts), and nothing but a terminal or an explicit
+      // `--yes` gets past here.
+      if (opts.yes !== true) {
+        if (process.stdin.isTTY !== true) {
+          return fail(
+            json,
+            "vouch-unattended",
+            `Cannot vouch for '${service}' with nothing on the other end of stdin: this command records that ` +
+              "a PERSON read the code and says the document matches it, and nobody was asked. Run it from a " +
+              "terminal, or pass --yes to state that you are standing behind it anyway — `vouched_by` records " +
+              `${vouchedBy} either way.`,
+          );
+        }
+        // `--json` and a prompt do not compose: the envelope is one JSON
+        // document on stdout, and a question printed beside it is not parseable
+        // by the consumer that asked for it. A JSON caller is a program, so it
+        // gets the same answer a pipe does — say so with --yes.
+        if (json) {
+          return fail(
+            json,
+            "vouch-unattended",
+            `Cannot vouch for '${service}' in --json mode without --yes: the confirmation is a question for a ` +
+              "person, and it cannot be asked on a stream whose whole contract is one JSON document.",
+          );
+        }
+        if (!(await confirmVouch(service, vouchedBy, config.docsDir))) {
+          return fail(json, "vouch-declined", `Nothing was stamped for '${service}'.`);
+        }
+      }
+
       const outcome = await vouch({
         docsDir: config.docsDir,
         service,
+        vouchedBy,
         // The repo root, not the cwd. `sources:` are spelled relative to the
         // repository — that is what they mean in the frontmatter and what
         // `loam validate` resolves them against — so vouching from a
@@ -168,7 +256,7 @@ export function registerVouch(program: Command): void {
         // (`sources-path-missing`) and refuse the stamp. `config.root` is the
         // directory loam.json was found in, which is the only definition of
         // "this repo" that does not move with the caller.
-        repoDir: config.root ?? process.cwd(),
+        repoDir,
         today: today(new Date()),
       });
       if (!outcome.ok) return fail(json, outcome.code, outcome.message);
@@ -180,6 +268,7 @@ export function registerVouch(program: Command): void {
           path: repoPath(config.docsDir, spec.path),
           status: outcome.status,
           last_verified: outcome.lastVerified,
+          vouched_by: outcome.vouchedBy,
           sources: spec.sources,
           sources_digest: spec.digest,
           content_digest: spec.contentDigest,
@@ -209,6 +298,7 @@ export function registerVouch(program: Command): void {
         console.log(`${i > 0 ? "\n" : ""}${service} vouched — ${repoPath(config.docsDir, s.path)}\n`);
         console.log(`  status          ${outcome.status}`);
         console.log(`  last_verified   ${outcome.lastVerified}`);
+        console.log(`  vouched_by      ${outcome.vouchedBy}`);
         console.log(
           `  sources_digest  ${s.digest}  (${plural(s.files, "file")} from ${plural(s.sources.length, "source")})`,
         );
@@ -225,6 +315,32 @@ export function registerVouch(program: Command): void {
         `\n\`loam validate\` will now say when that code moves out from under the spec — or when the spec moves under its own stamp.`,
       );
     });
+}
+
+/**
+ * Ask, on a terminal, and answer only on an explicit yes.
+ *
+ * The question states what is about to be claimed rather than asking for
+ * assent to a verb: "vouch?" invites a reflex, and the whole value of this
+ * command is that the reflex is the thing being interrupted. Default is no —
+ * a bare Enter, a closed stdin and a Ctrl-C all mean the same thing, because
+ * the only answer that may stamp a document is one somebody typed.
+ */
+async function confirmVouch(service: string, vouchedBy: string, docsDir: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log(
+      `\nVouching for '${service}' records that YOU read the code and say ` +
+        `${docsDir}/services/${service}/ describes it.\n` +
+        `It will be stamped \`status: verified\`, \`vouched_by: ${vouchedBy}\`.\n` +
+        "loam has not checked this and cannot: every other check it runs is internal " +
+        "consistency, which well-written prose satisfies on its own.\n",
+    );
+    const answer = await rl.question("Have you read the code? [y/N] ");
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
 }
 
 /**
@@ -269,8 +385,8 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   }
   const verified: VerifiedSpec[] = [specVerified, ...(archVerified === null ? [] : [archVerified])];
 
-  const specPlan = planStamp(specVerified, req.today);
-  const archPlan = archVerified === null ? null : planStamp(archVerified, req.today);
+  const specPlan = planStamp(specVerified, req);
+  const archPlan = archVerified === null ? null : planStamp(archVerified, req);
   const writes: PlannedWrite[] = [specPlan.write, ...(archPlan === null ? [] : [archPlan.write])];
 
   // Commit through archive's stage-and-swap machinery (core/staging.ts) rather
@@ -343,6 +459,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
     ok: true,
     status: "verified",
     lastVerified: req.today,
+    vouchedBy: req.vouchedBy,
     stamped: { spec: specPlan.stamped, archSpec: archPlan === null ? null : archPlan.stamped },
   };
 }
@@ -353,7 +470,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
  * same computation — the report must describe the file that was actually
  * written, not a second guess at it.
  */
-function planStamp(v: VerifiedSpec, lastVerified: string): { write: PlannedWrite; stamped: StampedSpec } {
+function planStamp(v: VerifiedSpec, req: VouchRequest): { write: PlannedWrite; stamped: StampedSpec } {
   // Two passes on purpose: `content_digest` hashes the body BELOW the
   // frontmatter, and withFrontmatterFields promises that body byte-identical —
   // so hashing after the first stamp and writing the hash in a second one
@@ -361,7 +478,12 @@ function planStamp(v: VerifiedSpec, lastVerified: string): { write: PlannedWrite
   // takes the same road and refreshes every field, this one included.
   const restamped = withFrontmatterFields(v.raw, {
     status: "verified",
-    last_verified: lastVerified,
+    last_verified: req.today,
+    // WHO, beside when. Without it `status: verified` recorded that the word
+    // had been written and nothing about who wrote it, so a vouch and an
+    // agent's own draft left the same trace in the document — the one
+    // distinction this command exists to make.
+    vouched_by: req.vouchedBy,
     sources_digest: v.digest,
     // Beside the digest, what it was taken over. `sources_digest` alone can
     // only ever say THAT the code moved; the next `loam validate` reads this
