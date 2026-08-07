@@ -22,6 +22,14 @@ export interface ServiceArtifacts {
   model: boolean;
   spec: boolean;
   openapi: boolean;
+  /**
+   * The async contract (AsyncAPI 3). Presence-tracked only, like `runbook` and
+   * `health` — deliberately NOT part of the maturity ladder (core/maturity.ts),
+   * whose `documented` rung is the model/spec/openapi triple. Adding a fourth
+   * required artifact would demote every already-`documented` service in the
+   * fleet on upgrade, without one byte of their files changing.
+   */
+  asyncapi: boolean;
   runbook: boolean;
   health: boolean;
 }
@@ -157,6 +165,8 @@ export interface ServicePaths {
   spec: string;
   archSpec: string;
   openapi: string;
+  /** The async contract — the event axis's sibling of `openapi`. */
+  asyncapi: string;
   runbook: string;
   health: string;
   adrsDir: string;
@@ -170,6 +180,7 @@ export function servicePaths(docsDir: string, service: string): ServicePaths {
     spec: join(dir, "spec.md"),
     archSpec: join(dir, "arch.spec.md"),
     openapi: join(dir, "openapi.yaml"),
+    asyncapi: join(dir, "asyncapi.yaml"),
     runbook: join(dir, "runbook.md"),
     health: join(dir, "health.yaml"),
     adrsDir: join(dir, "adrs"),
@@ -433,6 +444,7 @@ export async function listServices(docsDir: string, context?: FleetContext): Pro
           model: existsSync(p.model),
           spec: existsSync(p.spec),
           openapi: existsSync(p.openapi),
+          asyncapi: existsSync(p.asyncapi),
           runbook: existsSync(p.runbook),
           health: existsSync(p.health),
         },

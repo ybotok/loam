@@ -27,7 +27,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { coherentFixture, makeProject, runLoam, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
+import { Readable } from "node:stream";
+import { coherentFixture, makeProject, runLoam, TEST_IDENTITY, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
 import { parseFrontmatter, stringField, listField } from "../src/core/frontmatter.js";
 import { vouch } from "../src/commands/vouch.js";
 
@@ -114,7 +115,7 @@ const CODE = { "src/payment.ts": "export const authorize = () => true;\n" };
 describe("what vouch stamps", () => {
   it("writes status, the date and a digest of the sources in one pass", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch");
+      const res = await runLoam(p.workDir, "vouch", "--yes");
       expect(res.code).toBe(0);
 
       const fm = parseFrontmatter(await p.read(SPEC));
@@ -126,7 +127,7 @@ describe("what vouch stamps", () => {
 
   it("leaves the body byte-identical — a vouch is a claim about the document, not an edit of it", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       const after = await p.read(SPEC);
       expect(after.endsWith(BODY)).toBe(true);
     });
@@ -134,7 +135,7 @@ describe("what vouch stamps", () => {
 
   it("keeps the frontmatter that was already there instead of rewriting the header", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       const fm = parseFrontmatter(await p.read(SPEC));
       expect(stringField(fm, "service")).toBe(SVC);
       expect(stringField(fm, "owner")).toBe("payments-team");
@@ -149,6 +150,7 @@ describe("what vouch stamps", () => {
         service: SVC,
         repoDir: p.workDir,
         today: "2020-01-02",
+        vouchedBy: TEST_IDENTITY,
       });
       expect(out.ok).toBe(true);
       expect(stringField(parseFrontmatter(await p.read(SPEC)), "last_verified")).toBe("2020-01-02");
@@ -157,7 +159,7 @@ describe("what vouch stamps", () => {
 
   it("is idempotent while the code sits still — vouching twice writes the same bytes", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      const req = { docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-03" };
+      const req = { docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-03", vouchedBy: TEST_IDENTITY };
       await vouch(req);
       const once = await p.read(SPEC);
       await vouch(req);
@@ -169,7 +171,7 @@ describe("what vouch stamps", () => {
     // `status: draft` with no `last_verified` is the state `adopt` leaves behind:
     // the fields have to be created, not just updated.
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/payment.ts`, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       const fm = parseFrontmatter(await p.read(SPEC));
       expect(stringField(fm, "status")).toBe("verified");
       expect(stringField(fm, "sources_digest")).toMatch(/^[0-9a-f]{16}$/);
@@ -180,7 +182,7 @@ describe("what vouch stamps", () => {
 describe("what vouch refuses", () => {
   it("refuses a spec that names no sources — there is nothing to vouch it against", async () => {
     await withRepo(`service: ${SVC}\nstatus: draft`, CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(false);
@@ -190,7 +192,7 @@ describe("what vouch refuses", () => {
 
   it("refuses when a listed source is gone — stamping would vouch for code that is not there", async () => {
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/gone.ts`, CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-path-missing");
@@ -202,7 +204,7 @@ describe("what vouch refuses", () => {
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - ../outside.ts`, CODE, async (p) => {
       await writeFile(join(p.workDir, "..", "outside.ts"), "// external\n", "utf8");
       const before = await p.read(SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-path-missing");
@@ -217,7 +219,7 @@ describe("what vouch refuses", () => {
     // the run, before any existence check can mislabel it.
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/**/*.java`, CODE, async (p) => {
       const before = await p.read(SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-path-missing");
@@ -236,7 +238,7 @@ describe("what vouch refuses", () => {
       `service: ${SVC}\nstatus: draft\nsources:\n  - src/empty/`,
       { ...CODE, "src/empty/.gitkeep": "" },
       async (p) => {
-        const res = await runLoam(p.workDir, "vouch", "--json");
+        const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
         expect(res.code).toBe(1);
         expect(JSON.parse(res.stdout).error.code).toBe("sources-absent");
       },
@@ -248,7 +250,7 @@ describe("what vouch refuses", () => {
       ONE_SOURCE,
       CODE,
       async (p) => {
-        const res = await runLoam(p.workDir, "vouch", "--service", SVC, "--json");
+        const res = await runLoam(p.workDir, "vouch", "--yes", "--service", SVC, "--json");
         expect(res.code).toBe(1);
         const json = JSON.parse(res.stdout);
         expect(json.error.code).toBe("invalid-option");
@@ -263,7 +265,7 @@ describe("what vouch refuses", () => {
       ONE_SOURCE,
       CODE,
       async (p) => {
-        const res = await runLoam(p.workDir, "vouch", "--json");
+        const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
         expect(res.code).toBe(1);
         expect(JSON.parse(res.stdout).error.code).toBe("unknown-target");
       },
@@ -274,7 +276,7 @@ describe("what vouch refuses", () => {
   it("writes nothing when it refuses — a failed vouch must not leave a half-stamp", async () => {
     await withRepo(`service: ${SVC}\nstatus: draft\nsources:\n  - src/gone.ts`, CODE, async (p) => {
       const before = await p.read(SPEC);
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       expect(await p.read(SPEC)).toBe(before);
     });
   });
@@ -287,7 +289,7 @@ describe("what vouch refuses", () => {
     // that got through would silently discard every line the author wrote.
     await withRepo(`service: [unclosed\nsources:\n  - src/payment.ts`, CODE, async (p) => {
       const before = await p.read(SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(false);
@@ -303,7 +305,7 @@ describe("what vouch refuses", () => {
 describe("the content digest (the stamp covers the words, not just the code)", () => {
   it("stamps content_digest with the documented recipe: sha256 of the body below the closing '---', first 16 hex", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       // BODY is byte-for-byte what follows the closing fence line — the vouch
       // rewrites only the header, so the digest recipe is pinnable from here.
       const expected = createHash("sha256").update(BODY, "utf8").digest("hex").slice(0, 16);
@@ -320,7 +322,7 @@ describe("the content digest (the stamp covers the words, not just the code)", (
     const p = await makeProject(files);
     try {
       await writeFiles(p.workDir, CODE);
-      const out = await vouch({ docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-03" });
+      const out = await vouch({ docsDir: p.docsDir, service: SVC, repoDir: p.workDir, today: "2026-08-03", vouchedBy: TEST_IDENTITY });
       expect(out.ok).toBe(true);
       await p.write(SPEC, (await p.read(SPEC)) + "\nThe service SHALL also do a thing nobody vouched for.\n");
 
@@ -349,7 +351,7 @@ describe("the content digest (the stamp covers the words, not just the code)", (
 
   it("a frontmatter-only edit does not fire it — vouch itself rewrites the header, so the header cannot count", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       const stamped = await p.read(SPEC);
       await p.write(SPEC, stamped.replace("owner: payments-team", "owner: platform-team"));
       const codes = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout).targets[0].findings.map(
@@ -365,10 +367,10 @@ describe("the content digest (the stamp covers the words, not just the code)", (
         const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
         return json.targets[0].findings.map((f: { code: string }) => f.code);
       };
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       await p.write(SPEC, (await p.read(SPEC)) + "\nAn edit the vouch never saw.\n");
       expect(await codes()).toContain("content.stale");
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       expect(await codes()).not.toContain("content.stale");
     });
   });
@@ -382,14 +384,14 @@ describe("the loop it closes", () => {
         return json.targets[0].findings.map((f: { code: string }) => f.code);
       };
       expect(await codes()).toContain("sources.unvouched");
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       expect(await codes()).toContain("sources.current");
     });
   });
 
   it("goes stale again the moment the code it vouched for changes", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       await writeFile(join(p.workDir, "src/payment.ts"), "export const authorize = () => false;\n", "utf8");
 
       const res = await runLoam(p.workDir, "validate", "--json");
@@ -451,7 +453,7 @@ Covers: paymentService.api
 
   it("stamps both files in one run, each against its own sources, bodies byte-identical", async () => {
     await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch");
+      const res = await runLoam(p.workDir, "vouch", "--yes");
       expect(res.code).toBe(0);
       for (const rel of [SPEC, ARCH_SPEC]) {
         const fm = parseFrontmatter(await p.read(rel));
@@ -475,7 +477,7 @@ Covers: paymentService.api
     await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
       const before = await codesOf(p);
       expect(before.filter((c) => c === "sources.unvouched")).toHaveLength(2);
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       const after = await codesOf(p);
       expect(after.filter((c) => c === "sources.current")).toHaveLength(2);
       expect(after).not.toContain("sources.unvouched");
@@ -484,11 +486,11 @@ Covers: paymentService.api
 
   it("a re-vouch clears content.stale for both files at once", async () => {
     await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
-      await runLoam(p.workDir, "vouch");
+      await runLoam(p.workDir, "vouch", "--yes");
       await p.write(SPEC, (await p.read(SPEC)) + "\nAn edit the vouch never saw.\n");
       await p.write(ARCH_SPEC, (await p.read(ARCH_SPEC)) + "\nAn arch edit the vouch never saw.\n");
       expect((await codesOf(p)).filter((c) => c === "content.stale")).toHaveLength(2);
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       expect(await codesOf(p)).not.toContain("content.stale");
     });
   });
@@ -496,7 +498,7 @@ Covers: paymentService.api
   it("an arch.spec.md that names no sources refuses the whole vouch, naming the file", async () => {
     await withPair(`service: ${SVC}\nstatus: draft\nowner: payments-team`, PAIR_CODE, async (p) => {
       const specBefore = await p.read(SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-absent");
@@ -511,7 +513,7 @@ Covers: paymentService.api
     await withPair(fm, PAIR_CODE, async (p) => {
       const specBefore = await p.read(SPEC);
       const archBefore = await p.read(ARCH_SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-path-missing");
@@ -526,7 +528,7 @@ Covers: paymentService.api
     await withPair(`service: [unclosed\nsources:\n  - src/outbox.ts`, PAIR_CODE, async (p) => {
       const specBefore = await p.read(SPEC);
       const archBefore = await p.read(ARCH_SPEC);
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.error.code).toBe("sources-absent");
@@ -549,7 +551,7 @@ Covers: paymentService.api
           throw new Error("injected: the second swap failed");
         }
       };
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       fsFault.onRename = undefined;
 
       expect(res.code).toBe(1);
@@ -561,7 +563,7 @@ Covers: paymentService.api
       // arch.spec.md never stamped, no temp files left behind.
       expect(await treeHashes(p.docsDir)).toEqual(before);
       // And after the rolled-back failure a plain re-run simply works.
-      expect((await runLoam(p.workDir, "vouch")).code).toBe(0);
+      expect((await runLoam(p.workDir, "vouch", "--yes")).code).toBe(0);
       expect(stringField(parseFrontmatter(await p.read(ARCH_SPEC)), "status")).toBe("verified");
     });
   });
@@ -581,7 +583,7 @@ Covers: paymentService.api
           throw new Error("injected: rollback blocked");
         }
       };
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       fsFault.onRename = undefined;
 
       expect(res.code).toBe(1);
@@ -600,7 +602,7 @@ Covers: paymentService.api
 
   it("the payload reports the second axis under archSpec, digests as written", async () => {
     await withPair(ARCH_SOURCED, PAIR_CODE, async (p) => {
-      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout);
+      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--yes", "--json")).stdout);
       expect(json.ok).toBe(true);
       // spec.md keeps the shape it always had...
       expect(json.path).toBe(`services/${SVC}/spec.md`);
@@ -617,7 +619,7 @@ Covers: paymentService.api
 
   it("archSpec is null when the service has no arch.spec.md — absent, not forgotten", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout);
+      const json = JSON.parse((await runLoam(p.workDir, "vouch", "--yes", "--json")).stdout);
       expect(json.ok).toBe(true);
       expect(json.archSpec).toBeNull();
     });
@@ -627,7 +629,7 @@ Covers: paymentService.api
 describe("the machine contract", () => {
   it("reports what it stamped, so a caller need not re-read the file", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch", "--json");
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(true);
@@ -649,7 +651,7 @@ describe("the machine contract", () => {
       `service: ${SVC}\nstatus: draft\nsources:\n  - src/`,
       { "src/a.ts": "a\n", "src/nested/b.ts": "b\n" },
       async (p) => {
-        const json = JSON.parse((await runLoam(p.workDir, "vouch", "--json")).stdout);
+        const json = JSON.parse((await runLoam(p.workDir, "vouch", "--yes", "--json")).stdout);
         expect(json.files).toBe(2);
       },
     );
@@ -657,7 +659,7 @@ describe("the machine contract", () => {
 
   it("says so in prose when there is no --json, and names the file it stamped", async () => {
     await withRepo(ONE_SOURCE, CODE, async (p) => {
-      const res = await runLoam(p.workDir, "vouch");
+      const res = await runLoam(p.workDir, "vouch", "--yes");
       expect(res.out).toContain(SVC);
       expect(res.out).toContain("verified");
       expect(res.out).toContain("spec.md");
@@ -665,5 +667,160 @@ describe("the machine contract", () => {
       const digest = stringField(parseFrontmatter(await readFile(join(p.docsDir, SPEC), "utf8")), "sources_digest")!;
       expect(res.out).toContain(digest);
     });
+  });
+});
+
+/**
+ * The half of vouch that is not about digests at all.
+ *
+ * For two releases this file's own docblock called vouch "the one command that
+ * records a person" and it recorded none: no identity, no interactive gate,
+ * nothing. Run twice in a row from a script it stamped `verified` both times —
+ * while the skill files loam generates pre-approved `Bash(loam:*)`, so the agent
+ * that wrote the draft was permitted to promote it. Every test below fails
+ * against that binary, and each pins one of the three things that closed it.
+ */
+describe("a vouch is somebody's claim, and loam makes it be one", () => {
+  it("refuses to stamp with nothing on the other end of stdin", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      // No --yes, and the test process's stdin is not a terminal — which is
+      // exactly the shape a scripted or agent-driven run has.
+      const res = await runLoam(p.workDir, "vouch", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("vouch-unattended");
+      // and it refuses BEFORE writing: the document is untouched.
+      expect(stringField(parseFrontmatter(await p.read(SPEC)), "status")).toBe("draft");
+    });
+  });
+
+  it("refuses in --json mode even from a terminal — a question cannot be asked on that stream", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      const stdin = process.stdin as unknown as { isTTY?: boolean };
+      const was = stdin.isTTY;
+      stdin.isTTY = true;
+      try {
+        const res = await runLoam(p.workDir, "vouch", "--json");
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("vouch-unattended");
+      } finally {
+        stdin.isTTY = was;
+      }
+    });
+  });
+
+  it("stamps who vouched, not only that somebody did", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout).vouched_by).toBe(TEST_IDENTITY);
+      // In the document, beside the status it qualifies — that is the whole
+      // point: `verified` with nobody's name against it says only that the word
+      // was written.
+      const fm = parseFrontmatter(await p.read(SPEC));
+      expect(stringField(fm, "status")).toBe("verified");
+      expect(stringField(fm, "vouched_by")).toBe(TEST_IDENTITY);
+    });
+  });
+
+  it("stamps the identity into arch.spec.md too — one act, one name across every file it touched", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      await p.write(`services/${SVC}/arch.spec.md`, `---\nservice: ${SVC}\nstatus: draft\nsources:\n  - src/payment.ts\n---\n\n# arch\n`);
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
+      expect(res.code).toBe(0);
+      const arch = parseFrontmatter(await p.read(`services/${SVC}/arch.spec.md`));
+      expect(stringField(arch, "vouched_by")).toBe(TEST_IDENTITY);
+    });
+  });
+
+  it("refuses when git can name nobody, rather than stamping an anonymous claim", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      // The harness pins GIT_COMMITTER_* so the stamp is the same everywhere;
+      // clearing them (and pointing HOME/config discovery at nothing) is how a
+      // container with no git identity looks.
+      const env = { ...process.env };
+      for (const k of ["GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL"]) {
+        delete process.env[k];
+      }
+      process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+      process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+      try {
+        const res = await runLoam(p.workDir, "vouch", "--yes", "--json");
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("vouch-unattributable");
+        expect(stringField(parseFrontmatter(await p.read(SPEC)), "status")).toBe("draft");
+      } finally {
+        for (const k of ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"]) delete process.env[k];
+        Object.assign(process.env, env);
+      }
+    });
+  });
+
+  it("a re-vouch refreshes the name, so the stamp always says who stands behind it NOW", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      await runLoam(p.workDir, "vouch", "--yes");
+      process.env.GIT_COMMITTER_NAME = "Second Reader";
+      process.env.GIT_COMMITTER_EMAIL = "second@example.test";
+      try {
+        await runLoam(p.workDir, "vouch", "--yes");
+        expect(stringField(parseFrontmatter(await p.read(SPEC)), "vouched_by"))
+          .toBe("Second Reader <second@example.test>");
+      } finally {
+        process.env.GIT_COMMITTER_NAME = "Test Voucher";
+        process.env.GIT_COMMITTER_EMAIL = "voucher@example.test";
+      }
+    });
+  });
+});
+
+/**
+ * The terminal path, which is the one a person actually takes.
+ *
+ * `--yes` is the escape hatch; the prompt is the default, and an untested
+ * prompt is how a command that hangs forever ships. `process.stdin` is swapped
+ * for a readable that says it is a TTY, so both answers are reachable in-process.
+ */
+describe("the confirmation, on a terminal", () => {
+  /** Run `loam vouch` with `answer` typed at the prompt. */
+  async function withTypedAnswer(p: Project, answer: string): Promise<{ code: number; out: string }> {
+    const real = Object.getOwnPropertyDescriptor(process, "stdin")!;
+    const fake = Readable.from([`${answer}\n`]) as Readable & { isTTY?: boolean };
+    fake.isTTY = true;
+    Object.defineProperty(process, "stdin", { configurable: true, get: () => fake });
+    // readline echoes the `[y/N]` prompt straight to the real stdout, past the
+    // console capture — swallowed here so a passing run is quiet. The sentence
+    // ABOVE the prompt is a console.log, so the assertions still see it.
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      return await runLoam(p.workDir, "vouch");
+    } finally {
+      process.stdout.write = write;
+      Object.defineProperty(process, "stdin", real);
+    }
+  }
+
+  it("stamps on an explicit yes, and says what is being claimed before asking", async () => {
+    await withRepo(ONE_SOURCE, CODE, async (p) => {
+      const res = await withTypedAnswer(p, "y");
+      expect(res.code, res.out).toBe(0);
+      // the question names the act, the service and the identity that will be
+      // recorded — not "vouch? [y/N]", which invites the reflex this interrupts
+      expect(res.out).toContain("YOU read the code");
+      expect(res.out).toContain(TEST_IDENTITY);
+      const fm = parseFrontmatter(await p.read(SPEC));
+      expect(stringField(fm, "status")).toBe("verified");
+      expect(stringField(fm, "vouched_by")).toBe(TEST_IDENTITY);
+    });
+  });
+
+  it("writes nothing on anything else — the default is no", async () => {
+    for (const answer of ["", "n", "sure"]) {
+      await withRepo(ONE_SOURCE, CODE, async (p) => {
+        const res = await withTypedAnswer(p, answer);
+        expect(res.code, `answer ${JSON.stringify(answer)}`).toBe(1);
+        expect(res.out).toContain("Nothing was stamped");
+        expect(stringField(parseFrontmatter(await p.read(SPEC)), "status")).toBe("draft");
+      });
+    }
   });
 });

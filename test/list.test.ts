@@ -73,9 +73,10 @@ describe("text output", () => {
       const res = await runLoam(p.workDir, "list", "services");
       const full = res.out.split("\n").find((l) => l.includes("payment-service"))!;
       const bare = res.out.split("\n").find((l) => l.includes("checkout-web"))!;
-      // arch.spec.md sits between spec and api, lowercase because it is optional
-      expect(full).toContain("M S - A R H");
-      expect(bare).toContain("- S - - - -");
+      // arch.spec.md sits between spec and api, lowercase because it is optional;
+      // the async contract follows the API for the same reason, in the same case
+      expect(full).toContain("M S - A - R H");
+      expect(bare).toContain("- S - - - - -");
     });
   });
 
@@ -386,7 +387,15 @@ describe("--json contract", () => {
       expect(svc).toEqual({
         id: "payment-service",
         path: "services/payment-service",
-        has: { model: true, spec: true, archSpec: false, openapi: true, runbook: true, health: true },
+        has: {
+          model: true,
+          spec: true,
+          archSpec: false,
+          openapi: true,
+          asyncapi: false,
+          runbook: true,
+          health: true,
+        },
         adrs: 1,
         status: null,
         // every artifact, no sources: presence says documented, nothing more

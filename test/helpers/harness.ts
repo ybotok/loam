@@ -36,6 +36,20 @@ import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js"
 import { parseRequirements, requirementDigest } from "../../src/core/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi-merge.js";
 
+/**
+ * The identity `loam vouch` stamps in tests.
+ *
+ * `gitIdentity` reads GIT_COMMITTER_* ahead of `git config`, exactly as git
+ * itself does, so pinning them here makes the stamp the same on a laptop with a
+ * global git identity, on a CI runner with none, and inside a container. It is
+ * set once at import rather than per run because it is a constant, not state:
+ * nothing mutates it, and no test wants a different one — the two that care
+ * about a MISSING identity clear it themselves and put it back.
+ */
+export const TEST_IDENTITY = "Test Voucher <voucher@example.test>";
+process.env.GIT_COMMITTER_NAME = "Test Voucher";
+process.env.GIT_COMMITTER_EMAIL = "voucher@example.test";
+
 export interface RunResult {
   /** process.exitCode after the command (0 if it never set one). */
   code: number;

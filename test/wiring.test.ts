@@ -27,8 +27,10 @@ import {
   saveConfig,
 } from "../src/core/config.js";
 import { diagnose } from "../src/core/doctor.js";
-import { scaffoldDocs } from "../src/core/docs.js";
+import { DOCS_SUBDIRS, scaffoldDocs } from "../src/core/docs.js";
+import { listFeatures, listServices } from "../src/core/repo.js";
 import { loadFile } from "../src/core/likec4.js";
+import { LikeC4 } from "likec4";
 import { makeTmpDir, runLoam, writeFiles } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -383,6 +385,122 @@ describe("scaffoldDocs writes a fleet map the parser accepts", () => {
     expect(second.created).toEqual([]);
     expect(await readFile(landscape, "utf8")).toContain("// ours");
     expect(await readFile(join(docs, "loam.json"), "utf8")).toContain('"./"');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 8b. the scaffold survives a clone, and a renderer can read it        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Two ways a freshly created docs repo was not yet a repository anyone else
+ * could use.
+ *
+ * The first is git's oldest gotcha: `services/` and `features/` are created
+ * empty, git tracks files and not directories, so after the first push neither
+ * existed for anybody who cloned. A missing `services/` is a BLOCKER in doctor,
+ * not a warning — so the second person to touch the repo got a red preflight on
+ * a repository the first person left green.
+ *
+ * The second is that the tree was not a loadable LikeC4 workspace at all. loam
+ * parses every `.likec4` file alone, so each declares its own `specification`
+ * block and re-declares the elements it names; LikeC4's own loader merges the
+ * whole tree into one model, and pointing `npx likec4 start` at the repo root —
+ * which loam's own brief recommends — reported every declaration as a
+ * duplicate. On loam's four-file `examples/docs`: 16 errors from the renderer,
+ * 0 from `loam validate --all`.
+ */
+describe("a scaffolded docs repo survives being cloned and rendered", () => {
+  it("keeps the empty directories in version control", async () => {
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+
+    expect(existsSync(join(docs, "services", ".gitkeep"))).toBe(true);
+    expect(existsSync(join(docs, "features", ".gitkeep"))).toBe(true);
+    // and the marker is invisible to the enumerations, which walk subdirectories
+    expect(await listServices(docs)).toEqual([]);
+    expect(await listFeatures(docs)).toEqual([]);
+  });
+
+  it("declares one LikeC4 project scoped to the landscape", async () => {
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+
+    const config = await readJson(join(docs, "likec4.config.json")) as {
+      name: string;
+      exclude: string[];
+    };
+    expect(config.name).toBe("fleet");
+    // Every directory in which loam expects a SECOND .likec4 file has to be out
+    // of the root project, or the merge that project performs is the bug.
+    expect(config.exclude).toContain("services/**");
+    expect(config.exclude).toContain("features/**");
+    // naming `exclude` replaces LikeC4's default rather than adding to it
+    expect(config.exclude).toContain("**/node_modules/**");
+  });
+
+  it("excludes every directory loam writes a .likec4 into, landscape aside", async () => {
+    // The invariant, asked of the layout rather than of a list written twice:
+    // architecture/ holds the one file the root project is FOR, and anything
+    // else loam models has to be excluded from it.
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+    const { exclude } = await readJson(join(docs, "likec4.config.json")) as { exclude: string[] };
+
+    for (const dir of DOCS_SUBDIRS) {
+      const excluded = exclude.includes(`${dir}/**`);
+      expect(excluded, `${dir}/ must ${dir === "architecture" ? "not " : ""}be excluded`)
+        .toBe(dir !== "architecture");
+    }
+  });
+
+  it("loads as ONE workspace under LikeC4's real loader, where it used not to", async () => {
+    // The proof, taken from the tool that reports the bug rather than from the
+    // shape of the config file. Two services whose models legitimately declare
+    // the same element kinds and re-declare a shared broker — the ordinary case,
+    // not a contrived one — plus the landscape that names them both.
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+    const model = (id: string, el: string): string =>
+      `specification {\n  element softwareSystem\n  element container\n}\n\n` +
+      `model {\n  ${el} = softwareSystem '${id}' {\n    metadata { service '${id}' }\n  }\n` +
+      `  kafka = softwareSystem 'Kafka'\n  ${el} -> kafka 'Publishes'\n}\n`;
+    await writeFiles(docs, {
+      "services/svc-a/model.likec4": model("svc-a", "svcA"),
+      "services/svc-b/model.likec4": model("svc-b", "svcB"),
+    });
+
+    const load = async (): Promise<number> => {
+      const lc4 = await LikeC4.fromWorkspace(docs, { logger: false, throwIfInvalid: false });
+      return lc4.getErrors().length;
+    };
+
+    expect(await load()).toBe(0);
+
+    // and without the project file it is the tree that shipped: every
+    // `specification` block and every re-declared element read as a duplicate.
+    await rm(join(docs, "likec4.config.json"));
+    expect(await load()).toBeGreaterThan(0);
+  });
+
+  it("doctor names the missing project file, with the bytes to write, on a repo that predates it", async () => {
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+    await rm(join(docs, "likec4.config.json"));
+    const work = await tmp();
+    await writeFile(join(work, "loam.json"), JSON.stringify({ docsDir: docs }), "utf8");
+
+    const finding = (await diagnose(work)).findings.find((f) => f.code === "doctor.likec4-config-missing");
+    expect(finding).toBeDefined();
+    expect(finding!.severity).toBe("warning");
+    // the fix is the file itself, not a description of it
+    expect(finding!.fix).toContain('"name": "fleet"');
+    expect(finding!.fix).toContain('"services/**"');
+
+    // and it is quiet once the file is back
+    await scaffoldDocs(docs);
+    expect((await diagnose(work)).findings.map((f) => f.code))
+      .not.toContain("doctor.likec4-config-missing");
   });
 });
 

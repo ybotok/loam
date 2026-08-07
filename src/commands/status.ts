@@ -60,7 +60,15 @@ export function registerStatus(program: Command): void {
 
       try {
         if (featureArg === undefined) {
-          const report = await fleetStatus(docsDir, { service: opts.service, context });
+          // `bound` is what THIS repo says it is, which is a different fact from
+          // `--service` (which narrows the view). Passing it is what lets the
+          // fleet form notice that the repository it is standing in has never
+          // been adopted — the one thing a fleet count cannot see.
+          const report = await fleetStatus(docsDir, {
+            service: opts.service,
+            bound: config.service,
+            context,
+          });
           // A `--service` that names nothing is refused rather than answered
           // with an empty fleet: "no services and no features" and "you
           // misspelled it" are opposite facts, and only one of them is worth

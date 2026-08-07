@@ -691,6 +691,77 @@ async function gitIgnoredPaths(repoDir: string, rels: string[]): Promise<Set<str
   });
 }
 
+/**
+ * Who git says is working in this repository — `Name <email>`, or null when git
+ * cannot answer.
+ *
+ * This is the only identity loam has, and it is deliberately a weak one: git
+ * config is a text file anybody can edit, so `vouched_by` is a name, not a
+ * signature, and it proves nothing cryptographically. What it does is make the
+ * claim ATTRIBUTABLE — a `status: verified` with nobody's name against it says
+ * only that some process wrote the word, which is exactly the state that let a
+ * vouch be indistinguishable from an agent's own draft. A reviewer reading the
+ * frontmatter, or `git log` on the docs repo, can now ask a specific person what
+ * they read. Signing is the real answer and it is not this one; nothing here
+ * pretends otherwise.
+ *
+ * `user.email` is what is required — it is the field git itself refuses to
+ * commit without, so a repository where a person has ever committed has one —
+ * and `user.name` rides along when it is set.
+ */
+export async function gitIdentity(repoDir: string): Promise<string | null> {
+  // The environment first, because that is git's own precedence: GIT_COMMITTER_*
+  // overrides `user.*` for the identity git records, and GIT_AUTHOR_* behind it.
+  // Reading them is loam agreeing with git rather than inventing a second rule —
+  // and it is the only identity a CI job or a container has, where there is no
+  // `user.email` anywhere and running `git config --global` first would be a
+  // step nobody documents.
+  const fromEnv = identity(
+    process.env.GIT_COMMITTER_NAME ?? process.env.GIT_AUTHOR_NAME,
+    process.env.GIT_COMMITTER_EMAIL ?? process.env.GIT_AUTHOR_EMAIL,
+  );
+  if (fromEnv !== null) return fromEnv;
+  const [name, email] = await Promise.all([
+    gitConfig(repoDir, "user.name"),
+    gitConfig(repoDir, "user.email"),
+  ]);
+  return identity(name ?? undefined, email ?? undefined);
+}
+
+/** `Name <email>`, or the bare email, or null — the one spelling of the stamp. */
+function identity(name: string | undefined, email: string | undefined): string | null {
+  const e = email?.trim();
+  if (e === undefined || e === "") return null;
+  const n = name?.trim();
+  return n === undefined || n === "" ? e : `${n} <${e}>`;
+}
+
+/**
+ * One `git config --get` value, or null for every way it can fail to be one:
+ * unset (exit 1), not a repository, git not installed, a timeout. The caller
+ * distinguishes none of them, and should not — they all mean "git will not tell
+ * us who this is", and the fix is the same sentence in each case.
+ */
+async function gitConfig(repoDir: string, key: string): Promise<string | null> {
+  return new Promise<string | null>((done) => {
+    const child = spawn("git", ["config", "--get", key], {
+      cwd: repoDir,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: GIT_TIMEOUT_MS,
+    });
+    let out = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      out += chunk;
+    });
+    child.on("error", () => done(null));
+    child.on("close", (code) => {
+      const value = out.trim();
+      done(code === 0 && value !== "" ? value : null);
+    });
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* The per-file index: what `sources.stale` names                      */
 /* ------------------------------------------------------------------ */

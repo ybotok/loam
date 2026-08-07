@@ -65,7 +65,13 @@ model {
       metadata { service 'payment-service' }
     }
     worker = container 'payment-worker' {
-      it -> kafka 'Publishes PaymentAuthorized'
+      // Nested, it-sourced, AND carrying the event spine's metadata — the two
+      // model stages have to agree about publishes exactly as they do about op,
+      // or the async axis reads one thing in validate and another in the splice
+      // map archive merges with.
+      it -> kafka 'Publishes PaymentAuthorized' {
+        metadata { publishes 'payment.PaymentAuthorized' }
+      }
     }
     db = database 'payment-db' {
       #critical
@@ -99,6 +105,9 @@ model {
     metadata { op 'postEntry' }
   }
   ledger -> kafka
+  kafka -> ledger.api 'PaymentAuthorized' {
+    metadata { consumes 'payment.PaymentAuthorized' }
+  }
 }
 `;
 
@@ -161,21 +170,25 @@ describe("parsedModel and computedModel agree on everything loam reads", () => {
     expect(el("ledger.api")?.id).toBe("ledger.api");
   });
 
-  it("agrees relationship by relationship: endpoints, title, op, tags", async () => {
+  it("agrees relationship by relationship: endpoints, title, op, publishes, consumes, tags", async () => {
     const { parsed, computed } = await rich();
     const key = (d: LoadedDoc) =>
       [...d.relationships]
-        .map((r) => `${r.source}->${r.target}|${r.title ?? ""}|${r.op ?? ""}|${r.tags.join(",")}`)
+        .map(
+          (r) =>
+            `${r.source}->${r.target}|${r.title ?? ""}|${r.op ?? ""}|${r.publishes ?? ""}|${r.consumes ?? ""}|${r.tags.join(",")}`,
+        )
         .sort();
     expect(key(parsed)).toEqual(key(computed));
     expect(key(parsed)).toEqual([
-      "checkoutWeb->paymentService.api|Captures|capturePayment|",
-      "checkoutWeb.ui->paymentService.api|Authorizes|authorizePayment|critical",
-      "customer->checkoutWeb.ui|Uses||",
-      "ledger->kafka|||",
-      "paymentService.api->ledger.api|Posts entries|postEntry|",
-      "paymentService.api->paymentService.db|Reads and writes||",
-      "paymentService.worker->kafka|Publishes PaymentAuthorized||",
+      "checkoutWeb->paymentService.api|Captures|capturePayment|||",
+      "checkoutWeb.ui->paymentService.api|Authorizes|authorizePayment|||critical",
+      "customer->checkoutWeb.ui|Uses||||",
+      "kafka->ledger.api|PaymentAuthorized|||payment.PaymentAuthorized|",
+      "ledger->kafka|||||",
+      "paymentService.api->ledger.api|Posts entries|postEntry|||",
+      "paymentService.api->paymentService.db|Reads and writes||||",
+      "paymentService.worker->kafka|Publishes PaymentAuthorized||payment.PaymentAuthorized||",
     ]);
   });
 
@@ -196,7 +209,7 @@ describe("parsedModel and computedModel agree on everything loam reads", () => {
       expect(pairs).not.toContain("checkoutWeb.ui->paymentService");
       expect(pairs).not.toContain("customer->checkoutWeb");
       expect(pairs).not.toContain("paymentService->ledger");
-      expect(doc.relationships).toHaveLength(7);
+      expect(doc.relationships).toHaveLength(8);
     }
   });
 

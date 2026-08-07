@@ -19,6 +19,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { readAsyncapi, type AsyncapiDoc } from "./asyncapi.js";
 import { decodeDocument } from "./document-bytes.js";
 import { loadFile, type LoadedDoc } from "./likec4.js";
 import type { Finding } from "./report.js";
@@ -43,6 +44,14 @@ export interface FleetContextStats {
   textReads: number;
   requirementParses: number;
   openapiParses: number;
+  /**
+   * Reads of a service's `asyncapi.yaml`. Counted separately because this axis
+   * is the one that makes a per-service run read the whole fleet: "does anybody
+   * publish this message" has no local answer, so `spine.message-unproduced`
+   * walks every service's contract. The memo is what keeps that one walk per
+   * command instead of one per consuming edge.
+   */
+  asyncapiParses: number;
   likec4Loads: number;
 }
 
@@ -125,6 +134,7 @@ export class FleetContext {
   private readonly texts = new Map<string, Promise<string>>();
   private readonly requirements = new Map<string, Promise<Requirement[]>>();
   private readonly openapis = new Map<string, Promise<OpenapiDoc>>();
+  private readonly asyncapis = new Map<string, Promise<AsyncapiDoc>>();
   private readonly likec4 = new Map<string, Promise<LoadedDoc>>();
 
   private readonly counts: FleetContextStats = {
@@ -134,6 +144,7 @@ export class FleetContext {
     textReads: 0,
     requirementParses: 0,
     openapiParses: 0,
+    asyncapiParses: 0,
     likec4Loads: 0,
   };
 
@@ -228,6 +239,17 @@ export class FleetContext {
       this.counts.openapiParses += 1;
       pending = readOpenapi(path);
       this.openapis.set(k, pending);
+    }
+    return pending;
+  }
+
+  readAsyncapi(path: string): Promise<AsyncapiDoc> {
+    const k = key(path);
+    let pending = this.asyncapis.get(k);
+    if (pending === undefined) {
+      this.counts.asyncapiParses += 1;
+      pending = readAsyncapi(path);
+      this.asyncapis.set(k, pending);
     }
     return pending;
   }
