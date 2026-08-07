@@ -4,7 +4,9 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
-Two new commands, a change to what `loam init` writes into a generated file, and a code-quality pass over `src/` with the defects it turned up. The refactoring half is invisible by construction; what follows is only the part a user can observe.
+## [0.1.0-beta.2] - 2026-08-07
+
+Still a prerelease, still under the `beta` dist-tag: the 5–10 service pilot has not run yet, and this release changes what `loam init` leaves in a repository, which is exactly the kind of thing a pilot is for. Two new commands, that change to the generated files, and a code-quality pass over `src/` with the defects it turned up. The refactoring half is invisible by construction; what follows is only the part a user can observe.
 
 ### Added
 
