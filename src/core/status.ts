@@ -1271,7 +1271,7 @@ export async function fleetStatus(
     opts.bound !== undefined && !all.some((s) => s.id === opts.bound) ? opts.bound : null;
   const graph = await analyzeDependencies(docsDir, undefined, context);
   const entries = await listFeatures(docsDir, {}, context);
-  const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.includes(narrowed));
+  const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.some((s) => s === narrowed));
   // Once for the fleet, not once per feature: which features hold a contract
   // for which service is one fact about the repository, and every feature below
   // reads its own row out of it. Built over the UNNARROWED list on purpose — a

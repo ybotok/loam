@@ -12,7 +12,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "./document/frontmatter.js";
 import type { FleetContext } from "./fleet-context.js";
-import { serviceIdProblem } from "./kernel/ids.js";
+import { rawServiceId, serviceIdProblem, type RawServiceId } from "./kernel/ids.js";
 import type { Finding } from "./vocabulary/report.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
@@ -75,7 +75,7 @@ export interface FeatureEntry {
   dir: string;
   archived: boolean;
   /** Services this feature carries a delta for, from specs/<svc>/. */
-  services: string[];
+  services: RawServiceId[];
   has: { intent: boolean; delta: boolean };
 }
 
@@ -421,9 +421,9 @@ export async function countMarkdown(dir: string): Promise<number> {
 export async function featureSpecServices(
   featureDir: string,
   context?: FleetContext,
-): Promise<string[]> {
+): Promise<RawServiceId[]> {
   if (context !== undefined) return context.featureSpecServices(featureDir);
-  return subdirs(featurePaths(featureDir).specsDir);
+  return (await subdirs(featurePaths(featureDir).specsDir)).map(rawServiceId);
 }
 
 /** Every service in the docs repo, ordered by id. */
@@ -497,7 +497,7 @@ async function readFeature(dir: string, dirName: string, archived: boolean): Pro
     dirName,
     dir,
     archived,
-    services: await subdirs(p.specsDir),
+    services: (await subdirs(p.specsDir)).map(rawServiceId),
     has: { intent: existsSync(p.intent), delta: existsSync(p.delta) },
   };
 }
