@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 import { AGENTS_MD, PROTOCOLS } from "../src/core/agent.js";
 import { UNCHECKED, VALIDATE_CHECKS } from "../src/core/brief.js";
-import { loadFile } from "../src/core/likec4.js";
+import { loadFile } from "../src/core/c4/likec4.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SVC = "payment-service";
@@ -583,7 +583,7 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     // Derived from the source, not from a hand list: a new refusal code in
     // verify.ts fails here until SCHEMA explains it.
     const schema = await readRepo("SCHEMA.md");
-    const json = await readRepo("src/core/json.ts");
+    const json = await readRepo("src/core/envelope/json.ts");
     const union = new Set(
       [...json.matchAll(/^\s*\|\s*"([a-z][a-z0-9-]*)"/gm)].map((m) => m[1]!),
     );

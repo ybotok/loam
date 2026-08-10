@@ -10,7 +10,7 @@ import {
 } from "./openapi.js";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
-import { isRecord } from "./records.js";
+import { isRecord } from "./kernel/records.js";
 
 /**
  * What a feature's operation IS, relative to the living contract — the one

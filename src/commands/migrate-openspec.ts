@@ -3,11 +3,11 @@ import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from "node
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Command } from "commander";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { findConfigPath, parseConfig } from "../core/config.js";
+import { findConfigPath, parseConfig } from "../core/envelope/config.js";
 import { DOCS_SUBDIRS, docsRepoFiles } from "../core/docs.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
-import { serviceIdProblem } from "../core/ids.js";
-import { fail, emitJson, type ErrorCode } from "../core/json.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
+import { serviceIdProblem } from "../core/kernel/ids.js";
+import { fail, emitJson, type ErrorCode } from "../core/envelope/json.js";
 import {
   createOpenSpecMappingSkeleton,
   inventoryOpenSpec,
@@ -18,13 +18,13 @@ import {
   type OpenSpecMapping,
   type OpenSpecMappingSkeleton,
 } from "../core/openspec-inventory.js";
-import { asRecord, dictionary, ownValue } from "../core/records.js";
+import { asRecord, dictionary, ownValue } from "../core/kernel/records.js";
 import {
   parseRequirements,
   requirementIdProblems,
   serializeRequirements,
   type Requirement,
-} from "../core/spec.js";
+} from "../core/document/spec.js";
 import {
   message,
   planWrite,

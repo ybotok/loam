@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
-import type { Issue } from "./issue.js";
+import type { Issue } from "./vocabulary/issue.js";
 import {
   featureSpecPaths,
   featureSpecServices,
@@ -38,7 +38,7 @@ import {
   requirementIdProblems,
   sectionHeadings,
   type Requirement,
-} from "./spec.js";
+} from "./document/spec.js";
 import type { FleetContext } from "./fleet-context.js";
 
 /**

@@ -1,9 +1,9 @@
 import type { Command } from "commander";
-import { loadConfig } from "../core/config.js";
+import { loadConfig } from "../core/envelope/config.js";
 import { explore, type Exploration, type ExploreService } from "../core/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { assertServiceId, featureIdProblem, InvalidIdError } from "../core/ids.js";
+import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
+import { assertServiceId, featureIdProblem, InvalidIdError } from "../core/kernel/ids.js";
 import { DocsRepoUnavailableError } from "../core/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";
@@ -54,7 +54,7 @@ export function registerExplore(program: Command): void {
       // something loam rejects, which is the one thing the printed-command
       // guard exists to prevent and the one shape it cannot see, because it
       // reads literal source strings and this line is assembled from argv.
-      // Same grammar as `new`'s, from core/ids.ts, so the two cannot disagree.
+      // Same grammar as `new`'s, from core/kernel/ids.ts, so the two cannot disagree.
       if (opts.as !== undefined) {
         const problem = featureIdProblem(opts.as, "feature id for --as");
         if (problem !== null) {

@@ -33,7 +33,7 @@ import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { coherentFixture, makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
 import { deltaShapeIssues } from "../src/core/delta.js";
-import type { Issue } from "../src/core/issue.js";
+import type { Issue } from "../src/core/vocabulary/issue.js";
 
 const SVC = "payment-service";
 

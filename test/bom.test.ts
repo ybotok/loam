@@ -22,7 +22,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
-import { parseRequirements } from "../src/core/spec.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 
 /** Written escaped: a literal U+FEFF in this source would itself be invisible. */
 const BOM = "\uFEFF";

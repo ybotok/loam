@@ -1,5 +1,5 @@
 /**
- * Deep unit invariants for src/core/likec4.ts (loadFile).
+ * Deep unit invariants for src/core/c4/likec4.ts (loadFile).
  *
  * loadFile is the single door through which every command (validate, delta,
  * archive, coherence) sees a .likec4 document, so this file pins its contract:
@@ -20,7 +20,7 @@ import {
   serviceOf,
   type Elem,
   type LoadedDoc,
-} from "../src/core/likec4.js";
+} from "../src/core/c4/likec4.js";
 import { makeTmpDir, writeFiles, LANDSCAPE, FEATURE_DELTA } from "./helpers/harness.js";
 
 const tmpDirs: string[] = [];

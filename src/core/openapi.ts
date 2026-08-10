@@ -18,7 +18,7 @@ export const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", 
 
 /**
  * The baseline marker: which living version of this operation a FEATURE delta
- * was written against. Same idea as a requirement's `Based-On:` (core/spec.ts),
+ * was written against. Same idea as a requirement's `Based-On:` (core/document/spec.ts),
  * in the vendor-extension shape this axis already uses for `x-loam-remove`.
  *
  * This axis needs it MORE than the requirement axis does, because a feature's

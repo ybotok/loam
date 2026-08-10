@@ -10,10 +10,10 @@
 import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { listField, readFrontmatter, stringField } from "./frontmatter.js";
+import { listField, readFrontmatter, stringField } from "./document/frontmatter.js";
 import type { FleetContext } from "./fleet-context.js";
-import { serviceIdProblem } from "./ids.js";
-import type { Finding } from "./report.js";
+import { serviceIdProblem } from "./kernel/ids.js";
+import type { Finding } from "./vocabulary/report.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";
@@ -24,7 +24,7 @@ export interface ServiceArtifacts {
   openapi: boolean;
   /**
    * The async contract (AsyncAPI 3). Presence-tracked only, like `runbook` and
-   * `health` — deliberately NOT part of the maturity ladder (core/maturity.ts),
+   * `health` — deliberately NOT part of the maturity ladder (core/vocabulary/maturity.ts),
    * whose `documented` rung is the model/spec/openapi triple. Adding a fourth
    * required artifact would demote every already-`documented` service in the
    * fleet on upgrade, without one byte of their files changing.
@@ -113,7 +113,7 @@ function tokenize(s: string): (string | number)[] {
  * these twenty-four lines. It belongs here because the ids being scored are
  * this module's ids — service directory names, feature ids — and because
  * `compareIds` right above is the tiebreak that keeps the list deterministic
- * when two candidates score equally. Not in `core/ids.ts`: `compareIds` lives
+ * when two candidates score equally. Not in `core/kernel/ids.ts`: `compareIds` lives
  * here and repo.ts imports ids.js, so putting it there would close a cycle.
  *
  * `arch.ts`'s `closeIds` looks similar and is not: substring and prefix, capped

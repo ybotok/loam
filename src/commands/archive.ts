@@ -2,9 +2,9 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
-import { gatesArchive, type Issue } from "../core/issue.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
+import { gatesArchive, type Issue } from "../core/vocabulary/issue.js";
 import {
   acquireDocsLock,
   clearCommitIntent,
@@ -42,7 +42,7 @@ import {
   type ScannedElement,
   type ScannedModel,
   type ScannedRel,
-} from "../core/likec4.js";
+} from "../core/c4/likec4.js";
 import {
   archiveDir as archiveRoot,
   featurePaths,
@@ -62,7 +62,7 @@ import {
   type OpenapiMergeResult,
 } from "../core/openapi-merge.js";
 import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
-import { findingJson, SEVERITY_MARK, type Finding } from "../core/report.js";
+import { findingJson, SEVERITY_MARK, type Finding } from "../core/vocabulary/report.js";
 import {
   parseRequirements,
   serializeRequirements,
@@ -71,7 +71,7 @@ import {
   sectionHeadings,
   splitRequirementsSection,
   type Requirement,
-} from "../core/spec.js";
+} from "../core/document/spec.js";
 
 interface ArchiveOptions {
   approve?: boolean;

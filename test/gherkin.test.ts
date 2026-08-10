@@ -31,8 +31,8 @@ import {
   renderFeature,
   scenarioDigest,
 } from "../src/core/gherkin.js";
-import { stepFromLine } from "../src/core/steps.js";
-import { parseRequirements } from "../src/core/spec.js";
+import { stepFromLine } from "../src/core/vocabulary/steps.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 import { scenarioBodyHash } from "../src/core/verify.js";
 import { LOAM_VERSION } from "../src/core/version.js";
 

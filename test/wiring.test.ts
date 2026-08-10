@@ -25,11 +25,11 @@ import {
   loadConfig,
   parseConfig,
   saveConfig,
-} from "../src/core/config.js";
+} from "../src/core/envelope/config.js";
 import { diagnose } from "../src/core/doctor.js";
 import { DOCS_SUBDIRS, scaffoldDocs } from "../src/core/docs.js";
 import { listFeatures, listServices } from "../src/core/repo.js";
-import { loadFile } from "../src/core/likec4.js";
+import { loadFile } from "../src/core/c4/likec4.js";
 import { LikeC4 } from "likec4";
 import { makeTmpDir, runLoam, writeFiles } from "./helpers/harness.js";
 

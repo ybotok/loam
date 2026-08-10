@@ -24,12 +24,12 @@
  */
 import { existsSync } from "node:fs";
 import { FleetContext } from "./fleet-context.js";
-import { serviceResolver, type Elem, type Rel } from "./likec4.js";
+import { serviceResolver, type Elem, type Rel } from "./c4/likec4.js";
 import {
   maturityGaps,
   serviceMaturity,
   type Maturity,
-} from "./maturity.js";
+} from "./vocabulary/maturity.js";
 import {
   compareIds,
   landscapePath,

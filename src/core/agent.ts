@@ -30,7 +30,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
-import { featureIdProblem, serviceIdProblem } from "./ids.js";
+import { featureIdProblem, serviceIdProblem } from "./kernel/ids.js";
 import { LOAM_VERSION } from "./version.js";
 
 export const AGENTS_MD = `${agentsStampLine(LOAM_VERSION)}
@@ -2260,7 +2260,7 @@ export const PLACEHOLDERS: Record<string, readonly PlaceholderKind[]> = Object.f
  * null when they can. One sentence per bad argument, already naming the
  * placeholder it was meant to fill.
  *
- * The grammars are `core/ids.ts`'s, never a second copy: a value this accepts
+ * The grammars are `core/kernel/ids.ts`'s, never a second copy: a value this accepts
  * and `loam adopt` refuses would be worse than no check, because the protocol
  * would still be wrong and now something had approved it. An argument nobody
  * supplied is not an error — `protocolFor` leaves that placeholder standing on

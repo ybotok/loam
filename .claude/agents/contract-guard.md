@@ -1,6 +1,6 @@
 ---
 name: contract-guard
-description: Check a diff against loam's frozen CLI contract — command names, flags, exit codes, the --json envelope, and stable error/issue code strings. Use before committing or opening a PR, and whenever a change touches src/commands/, src/core/json.ts, src/core/issue.ts, or src/core/agent.ts. Returns a ranked list of contract breaches with the CHANGELOG line each one requires.
+description: Check a diff against loam's frozen CLI contract — command names, flags, exit codes, the --json envelope, and stable error/issue code strings. Use before committing or opening a PR, and whenever a change touches src/commands/, src/core/envelope/json.ts, src/core/vocabulary/issue.ts, or src/core/agent.ts. Returns a ranked list of contract breaches with the CHANGELOG line each one requires.
 tools: Bash, Read, Grep, Glob
 model: opus
 ---
@@ -19,10 +19,10 @@ change needs no CHANGELOG line. A *renamed flag* still does.
 
 1. **Command names and flags** — every `.command(`, `.option(`, `.argument(` in `src/commands/`.
 2. **Exit codes** — `0` success, `1` refusal or gating error.
-3. **The `--json` envelope** — `contractVersion`, `ok`, `error.code` (`src/core/json.ts`). Adding
+3. **The `--json` envelope** — `contractVersion`, `ok`, `error.code` (`src/core/envelope/json.ts`). Adding
    a payload key is additive and allowed. Changing, removing or renaming one is a breach.
-4. **Stable code strings** — the `ErrorCode` union in `src/core/json.ts` and the `IssueCode`
-   family in `src/core/issue.ts`. Prose is free to change; codes are not.
+4. **Stable code strings** — the `ErrorCode` union in `src/core/envelope/json.ts` and the `IssueCode`
+   family in `src/core/vocabulary/issue.ts`. Prose is free to change; codes are not.
 
 ## Method
 

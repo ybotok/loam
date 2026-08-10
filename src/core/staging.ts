@@ -12,15 +12,15 @@ import { existsSync } from "node:fs";
 import { link, mkdir, open, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { repoPath } from "./json.js";
-import { resolvePortableFileInsideLexically, UnsafePathError } from "./path-safety.js";
+import { repoPath } from "./envelope/json.js";
+import { resolvePortableFileInsideLexically, UnsafePathError } from "./kernel/path-safety.js";
 // Every `isRecord` below guards a record loam itself wrote and is reading back
 // — the lock, the snapshot manifest — whose fields are asked for on the very
 // next line, inside a REFUSAL path. `JSON.parse` answers with any JSON value,
 // not with an object, and that is where a thrown `TypeError` costs the most: it
 // does not make the command fail safely, it replaces a designed refusal with
 // `internal`.
-import { isRecord } from "./records.js";
+import { isRecord } from "./kernel/records.js";
 
 /**
  * A planned file write — the merge is computed fully before anything touches

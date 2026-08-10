@@ -21,7 +21,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { join } from "node:path";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { parseRequirements } from "../src/core/spec.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 import {
   coherentFixture,
   makeProject,

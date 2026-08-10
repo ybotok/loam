@@ -238,7 +238,7 @@ describe("the per-service view", () => {
       const fromExplore = (explore.services as ExploredService[]).map(rung);
       const fromList = (list.services as ExploredService[]).map(rung);
 
-      // Parity IS the reason core/maturity.ts was extracted from list.ts: the
+      // Parity IS the reason core/vocabulary/maturity.ts was extracted from list.ts: the
       // rung is a fleet dial, `list` prints it per service and `explore` prints
       // it for a service somebody is about to build against, and a dial with two
       // readings is not a dial.
@@ -519,7 +519,7 @@ describe("refusals", () => {
         expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
       }
 
-      // The grammar is `new`'s own, from core/ids.ts, so an id one command
+      // The grammar is `new`'s own, from core/kernel/ids.ts, so an id one command
       // accepts is accepted by the other. A second spelling here would drift.
       const ok = await runLoam(p.workDir, "explore", SVC, "--as", "BUG-42", "--json");
       expect(ok.code, ok.out).toBe(0);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadSource } from "../src/core/likec4.js";
+import { loadSource } from "../src/core/c4/likec4.js";
 
 const VALID = `specification {
   element system

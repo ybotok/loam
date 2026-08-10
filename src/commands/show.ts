@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadConfig } from "../core/config.js";
+import { loadConfig } from "../core/envelope/config.js";
 import { FleetContext } from "../core/fleet-context.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
-import { listField, readFrontmatter, stringField } from "../core/frontmatter.js";
-import { loadFile, serviceResolver, type Elem } from "../core/likec4.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
+import { listField, readFrontmatter, stringField } from "../core/document/frontmatter.js";
+import { loadFile, serviceResolver, type Elem } from "../core/c4/likec4.js";
 import { readOpenapi } from "../core/openapi.js";
 import {
   DocsRepoUnavailableError,
@@ -18,7 +18,7 @@ import {
   servicePaths,
   type FeatureEntry,
 } from "../core/repo.js";
-import { parseRequirements, type Requirement } from "../core/spec.js";
+import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";
 

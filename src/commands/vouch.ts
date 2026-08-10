@@ -40,9 +40,9 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { loadConfig } from "../core/config.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
-import { listField, parseFrontmatter, withFrontmatterFields } from "../core/frontmatter.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
+import { listField, parseFrontmatter, withFrontmatterFields } from "../core/document/frontmatter.js";
 import {
   contentDigest,
   emptySourcesMessage,

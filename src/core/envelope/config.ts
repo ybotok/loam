@@ -1,8 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, parse as parsePath, resolve } from "node:path";
-import { resolveInside } from "./path-safety.js";
-import { serviceIdProblem } from "./ids.js";
+import { resolveInside } from "../kernel/path-safety.js";
+import { serviceIdProblem } from "../kernel/ids.js";
 
 /** Local config, committed at the root of a service repo (or the docs repo itself). */
 export const CONFIG_FILENAME = "loam.json";

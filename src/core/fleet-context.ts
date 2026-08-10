@@ -20,9 +20,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readAsyncapi, type AsyncapiDoc } from "./asyncapi.js";
-import { decodeDocument } from "./document-bytes.js";
-import { loadFile, type LoadedDoc } from "./likec4.js";
-import type { Finding } from "./report.js";
+import { decodeDocument } from "./kernel/document-bytes.js";
+import { loadFile, type LoadedDoc } from "./c4/likec4.js";
+import type { Finding } from "./vocabulary/report.js";
 import {
   readOpenapi,
   type OpenapiDoc,
@@ -35,7 +35,7 @@ import {
   type FeatureEntry,
   type ServiceEntry,
 } from "./repo.js";
-import { parseRequirements, type Requirement } from "./spec.js";
+import { parseRequirements, type Requirement } from "./document/spec.js";
 
 export interface FleetContextStats {
   serviceEnumerations: number;

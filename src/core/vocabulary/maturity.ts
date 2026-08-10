@@ -4,14 +4,14 @@
  *
  * This lived inside `commands/list.ts` while `list` was the only caller. It
  * moved here when `explore` needed the same answer, because the alternative is
- * the failure `core/ids.ts` already records for the service-id grammar: a
+ * the failure `core/kernel/ids.ts` already records for the service-id grammar: a
  * second, subtly different copy, so two commands grade the same directory
  * differently and nobody can tell which one is lying. The rung is a fleet dial
  * — `list` prints it per service and in a rollup, `explore` prints it for a
  * service somebody is about to build against — and a dial with two readings is
  * not a dial.
  */
-import type { ServiceEntry } from "./repo.js";
+import type { ServiceEntry } from "../repo.js";
 
 /** The ladder, in order. Each rung stands on every rung below it. */
 export const MATURITY_LADDER = ["empty", "partial", "documented", "sourced", "vouched"] as const;

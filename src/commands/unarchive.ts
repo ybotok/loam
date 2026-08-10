@@ -17,10 +17,10 @@ import type { Command } from "commander";
 import { existsSync, lstatSync } from "node:fs";
 import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/json.js";
-import { resolveInside, resolvePortableFileInside } from "../core/path-safety.js";
-import { isRecord } from "../core/records.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
+import { resolveInside, resolvePortableFileInside } from "../core/kernel/path-safety.js";
+import { isRecord } from "../core/kernel/records.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot, resolveFeature } from "../core/repo.js";
 import { sayRecovery } from "./archive.js";
 import {

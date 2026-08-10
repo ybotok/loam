@@ -1,5 +1,5 @@
 /**
- * Tests for frontmatter and provenance (src/core/frontmatter.ts + the checks in
+ * Tests for frontmatter and provenance (src/core/document/frontmatter.ts + the checks in
  * src/commands/validate.ts).
  *
  * When an LLM writes the docs, coherence alone is a closed-world property: the
@@ -30,7 +30,7 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
-import { parseFrontmatter, listField, stringField } from "../src/core/frontmatter.js";
+import { parseFrontmatter, listField, stringField } from "../src/core/document/frontmatter.js";
 import { contentDigest, patternSources, sourcesDigest } from "../src/core/provenance.js";
 
 const SVC = "payment-service";

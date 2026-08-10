@@ -1,8 +1,8 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { loadConfig } from "../core/config.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
-import { loadFile, serviceResolver } from "../core/likec4.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
+import { loadFile, serviceResolver } from "../core/c4/likec4.js";
 import {
   MATURITY_LADDER,
   maturityGaps,
@@ -10,7 +10,7 @@ import {
   serviceMaturity,
   type Maturity,
   type MaturityInput,
-} from "../core/maturity.js";
+} from "../core/vocabulary/maturity.js";
 import {
   DocsRepoUnavailableError,
   compareIds,
@@ -132,7 +132,7 @@ export function registerList(program: Command): void {
 /* ------------------------------------------------------------------ */
 
 /**
- * The graded view: the rung's own inputs (core/maturity.ts) plus the one fact
+ * The graded view: the rung's own inputs (core/vocabulary/maturity.ts) plus the one fact
  * only this command knows — whether anyone standing here could check the
  * service's `sources`, which needs loam.json's binding, not the directory.
  */

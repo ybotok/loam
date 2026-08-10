@@ -2,10 +2,10 @@ import type { Command } from "commander";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { loadConfig } from "../core/config.js";
-import { FEATURE_ID_RULE, InvalidIdError, assertServiceId, isFeatureId } from "../core/ids.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
-import { UnsafePathError, resolveInside } from "../core/path-safety.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { FEATURE_ID_RULE, InvalidIdError, assertServiceId, isFeatureId } from "../core/kernel/ids.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
+import { UnsafePathError, resolveInside } from "../core/kernel/path-safety.js";
 import {
   DocsRepoUnavailableError,
   featureIdFromDirName,
@@ -56,7 +56,7 @@ export function registerNew(program: Command): void {
       // Service ids are validated BEFORE the config is even loaded, and long
       // before anything is written: every one of them is interpolated into
       // `specs/<id>/` under the new feature directory, so `--touches ../../x`
-      // was a writer pointed outside the docs repo. One grammar (core/ids.ts),
+      // was a writer pointed outside the docs repo. One grammar (core/kernel/ids.ts),
       // the same one adopt/init/vouch refuse on, so a service that is legal to
       // create is legal to name here and nowhere the two disagree.
       for (const [label, ids] of [
@@ -397,7 +397,7 @@ The service SHALL <observable behaviour, testable without reading the code>.
  * requirements or the scaffold would ship a requirement nobody wrote — the
  * headings are therefore indented inside an HTML comment, which puts them past
  * the line-anchored `## ADDED Requirements` / `### Requirement:` patterns
- * core/spec.ts matches on. Copy the block out of the comment and unindent it.
+ * core/document/spec.ts matches on. Copy the block out of the comment and unindent it.
  */
 function archSpecTemplate(featureId: string, service: string): string {
   return `# ${service} — architecture requirement delta for ${featureId}

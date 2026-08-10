@@ -21,7 +21,7 @@ import { registerDependencies } from "./commands/dependencies.js";
 import { registerExplore } from "./commands/explore.js";
 import { registerInstructions } from "./commands/instructions.js";
 import { registerMigrateOpenSpec } from "./commands/migrate-openspec.js";
-import { emitJsonError } from "./core/json.js";
+import { emitJsonError } from "./core/envelope/json.js";
 import { LOAM_VERSION } from "./core/version.js";
 
 /**

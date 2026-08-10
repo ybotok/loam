@@ -26,10 +26,10 @@ import {
   FEATURE_STATUSES,
   SERVICE_STATUSES,
   type Frontmatter,
-} from "./frontmatter.js";
-import type { Finding } from "./report.js";
+} from "./document/frontmatter.js";
+import type { Finding } from "./vocabulary/report.js";
 import { featurePaths, servicePaths, SPEC_AXES } from "./repo.js";
-import { isPathInside, resolveInside } from "./path-safety.js";
+import { isPathInside, resolveInside } from "./kernel/path-safety.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
 const EXPECTED = ["owner"] as const;

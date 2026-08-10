@@ -7,9 +7,9 @@
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { decodeDocument } from "./document-bytes.js";
-import { scenarioGherkin } from "./steps.js";
-import type { Finding } from "./report.js";
+import { decodeDocument } from "../kernel/document-bytes.js";
+import { scenarioGherkin } from "../vocabulary/steps.js";
+import type { Finding } from "../vocabulary/report.js";
 
 export type DeltaKind = "ADDED" | "MODIFIED" | "REMOVED" | "BASE";
 
@@ -52,7 +52,7 @@ export interface Requirement {
    * What this requirement's scenarios exercise, from a `Covers:` line — the
    * architecture analog of `Operations:`. Entries are C4 element ids, edges
    * (`source -> target`), or health signals (`alert:<id>` / `sli:<id>`);
-   * core/arch.ts owns the grammar and the resolution. Parsed everywhere for one
+   * core/c4/arch.ts owns the grammar and the resolution. Parsed everywhere for one
    * grammar's sake, meaningful in arch.spec.md.
    */
   covers: string[];

@@ -18,14 +18,14 @@
  *   paymentService -> kafka         an edge — each side resolved the same way,
  *                                   against the declared relationships;
  *   alert:<id> / sli:<id>           a health signal — ids `health.yaml`
- *                                   declares (core/health.ts).
+ *                                   declares (core/vocabulary/health.ts).
  *
  * Resolution never reads code. An entry that resolves to nothing is the typo
  * guard (`covers.unknown`, warn); the emitters live with the other validate
  * checks, this module owns only the grammar and the matching.
  */
 import { elementService, serviceResolver, type Elem, type Rel } from "./likec4.js";
-import type { HealthIds } from "./health.js";
+import type { HealthIds } from "../vocabulary/health.js";
 
 export type CoversEntry =
   | { form: "element"; id: string; raw: string }

@@ -26,13 +26,13 @@
 import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { parseRequirements, type Requirement } from "./spec.js";
-import { scenarioGherkin } from "./steps.js";
+import { parseRequirements, type Requirement } from "./document/spec.js";
+import { scenarioGherkin } from "./vocabulary/steps.js";
 import { listFeatures, servicePaths, SPEC_AXES, type SpecAxis } from "./repo.js";
 import type { FleetContext } from "./fleet-context.js";
-import type { Finding } from "./report.js";
+import type { Finding } from "./vocabulary/report.js";
 import { scenarioBodyHash, type ScenarioAxis } from "./verify.js";
-import { resolveInside, UnsafePathError } from "./path-safety.js";
+import { resolveInside, UnsafePathError } from "./kernel/path-safety.js";
 
 /** Where Gherkin lives in a service repo when loam.json does not say. */
 const DEFAULT_GHERKIN_DIR = "features";

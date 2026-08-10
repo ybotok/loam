@@ -6,7 +6,7 @@ import {
   parseRequirements,
   requirementIdProblems,
   serializeRequirements,
-} from "../src/core/spec.js";
+} from "../src/core/document/spec.js";
 import { featureChecklist } from "../src/core/verify.js";
 import {
   LIVING_SPEC,
