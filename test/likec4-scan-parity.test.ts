@@ -19,7 +19,9 @@
  * pin is what tells us when that stops being true.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { loadSource, maskSource, scanModel, type LoadedDoc, type ScannedModel } from "../src/core/c4/likec4.js";
+import { loadSource, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { maskSource } from "../src/core/c4/source-mask.js";
+import { scanModel, type ScannedModel } from "../src/core/c4/source-scan.js";
 
 /**
  * One source that stresses everything the scanner claims to read like the

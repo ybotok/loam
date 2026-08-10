@@ -1,7 +1,7 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 308,
-    "src/commands/archive.ts": 1496,
+    "src/commands/archive.ts": 1492,
     "src/commands/delta.ts": 450,
     "src/commands/gherkin.ts": 423,
     "src/commands/init.ts": 309,
@@ -18,7 +18,6 @@
     "src/core/agent.ts": 2387,
     "src/core/asyncapi.ts": 312,
     "src/core/brief.ts": 1041,
-    "src/core/c4/likec4.ts": 646,
     "src/core/coherence.ts": 645,
     "src/core/delta.ts": 535,
     "src/core/dependencies.ts": 482,

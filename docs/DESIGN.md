@@ -70,7 +70,7 @@ five, which most of them will once the 300-line limit splits the large modules.
 | `core/kernel/` | `ids` `path-safety` `records` `document-bytes` `concurrency` | nothing |
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
 | `core/envelope/` | `json` `config` | kernel |
-| `core/c4/` | `likec4` `arch` | — |
+| `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
 | `core/document/` | `frontmatter` `spec` | kernel, vocabulary |
 | `core/agent/` | `agent` `agents-stamp` `version` | kernel |
 | `core/repo/` | `repo` | document, kernel |
@@ -162,9 +162,11 @@ layout differs, and that part is already isolated.
    `commands/list.ts` while `list` was the only caller and moved to `core/vocabulary/maturity.ts` the day
    `explore` needed the same rung — a dial with two readings is not a dial, and `core/kernel/ids.ts`
    already records what the second copy of a shared rule cost last time. The second:
-   `core/c4/likec4.ts` exports a source scanner whose only consumer in `src/` is
-   `commands/archive.ts`. The scanner was extracted so it could be unit-tested; the splicer that
-   uses it was not, and therefore cannot be.
+   `core/c4/source-scan.ts` and `core/c4/source-mask.ts` are a source scanner whose only consumer
+   in `src/` is `commands/archive.ts`. The scanner was extracted so it could be unit-tested; the
+   splicer that uses it was not, and therefore cannot be. They became their own modules when the
+   300-line limit reached `likec4.ts` — the seam was already drawn in that file as a banner
+   comment, and the parsed view now sits at 284 lines with nothing text-level in it.
 9. **No interface with one implementation.** `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/`
    returns zero. Keep it zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
