@@ -625,7 +625,7 @@ async function validateLandscape(
   // edge join uses — so "modelled" here and "inbound edge" in the spine check
   // can never disagree about what an element stands for.
   const landSvcOf = serviceResolver(land.elements, services);
-  const modelled = new Set(land.elements.map((e) => landSvcOf(e.id)));
+  const modelled: ReadonlySet<string> = new Set(land.elements.map((e) => landSvcOf(e.id)));
 
   // Two boxes standing for one service directory. Every join in loam is
   // `element -> service`, computed by picking the FIRST element that resolves —
@@ -1613,7 +1613,7 @@ async function validateFeature(
   // services/ at all (repo.ts takes the same position), where enumerating is a
   // refusal, not an answer.
   const featureServices = await featureSpecServices(featureDir, fleet);
-  const introduces = new Set(taggedEls.map(elementService));
+  const introduces: ReadonlySet<string> = new Set(taggedEls.map(elementService));
   const deltaReadable = deltaDoc === undefined || deltaDoc.errors.length === 0;
   const unknownServices = deltaReadable
     ? featureServices.filter(

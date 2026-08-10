@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
+import { declaredService, type DeclaredService } from "../kernel/ids.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -19,7 +20,7 @@ export interface Elem {
    * `metadata { service '...' }`. Absent on the elements nobody has bound —
    * see `elementService` for the fallback.
    */
-  service?: string;
+  service?: DeclaredService;
   tags: string[];
 }
 
@@ -32,8 +33,8 @@ export interface Elem {
  * means renaming a box in a diagram silently unlinks it from its service, and
  * every check that joined the two just stops finding anything.
  */
-export function elementService(e: Elem): string {
-  return e.service ?? e.title;
+export function elementService(e: Elem): DeclaredService {
+  return e.service ?? declaredService(e.title);
 }
 
 /**
@@ -76,13 +77,13 @@ function ancestorIds(id: string): string[] {
 export function serviceResolver(
   elements: Elem[],
   known?: ReadonlySet<string>,
-): (id: string) => string {
+): (id: string) => DeclaredService {
   const byId = new Map(elements.map((e) => [e.id, e]));
-  const memo = new Map<string, string>();
-  return (id: string): string => {
+  const memo = new Map<string, DeclaredService>();
+  return (id: string): DeclaredService => {
     const hit = memo.get(id);
     if (hit !== undefined) return hit;
-    let answer: string | undefined;
+    let answer: DeclaredService | undefined;
     for (const candidate of ancestorIds(id)) {
       const e = byId.get(candidate);
       if (e?.service !== undefined) {
@@ -94,14 +95,14 @@ export function serviceResolver(
       for (const candidate of ancestorIds(id)) {
         const e = byId.get(candidate);
         if (e !== undefined && known.has(e.title)) {
-          answer = e.title;
+          answer = declaredService(e.title);
           break;
         }
       }
     }
     if (answer === undefined) {
       const self = byId.get(id);
-      answer = self ? elementService(self) : id;
+      answer = self ? elementService(self) : declaredService(id);
     }
     memo.set(id, answer);
     return answer;
@@ -119,7 +120,7 @@ export function serviceResolver(
  * own title. Callers with a single document and no repository in hand omit it
  * and keep the pre-existing behaviour.
  */
-export function serviceOf(elements: Elem[], id: string, known?: ReadonlySet<string>): string {
+export function serviceOf(elements: Elem[], id: string, known?: ReadonlySet<string>): DeclaredService {
   return serviceResolver(elements, known)(id);
 }
 
@@ -186,14 +187,20 @@ export interface ReadableModel {
 
 /** Flatten a LikeC4 model into loam's neutral `Elem`/`Rel` view. */
 export function flattenModel(model: ReadableModel): { elements: Elem[]; relationships: Rel[] } {
-  const elements: Elem[] = [...model.elements()].map((e) => ({
-    id: e.id,
-    kind: e.kind,
-    title: e.title,
-    description: descText(e.description),
-    service: metaKey(e.metadata, "service"),
-    tags: [...(e.tags ?? [])],
-  }));
+  const elements: Elem[] = [...model.elements()].map((e) => {
+    // The one crossing between LikeC4's parse output and loam's type system:
+    // a `metadata { service '...' }` binding is text somebody wrote, and this
+    // is where it acquires a type that says so.
+    const bound = metaKey(e.metadata, "service");
+    return {
+      id: e.id,
+      kind: e.kind,
+      title: e.title,
+      description: descText(e.description),
+      ...(bound === undefined ? {} : { service: declaredService(bound) }),
+      tags: [...(e.tags ?? [])],
+    };
+  });
   const relationships: Rel[] = [...model.relationships()].map((r) => ({
     source: r.source.id,
     target: r.target.id,
