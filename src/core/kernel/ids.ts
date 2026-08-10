@@ -75,19 +75,6 @@ export type ServiceId = RawServiceId & { readonly [checked]: true };
  */
 export type DeclaredService = string & { readonly [provenance]: "document" };
 
-/** What `servicePaths` accepts: a name whose provenance is the repository. */
-export type PathableService = RawServiceId;
-
-/**
- * Any service name, whatever its provenance. For the membership containers that
- * are legitimately probed with all three — `services.has(elementTitle)` asks
- * "does this document name a directory we have?", which is a real question.
- * Note what it costs: iterating such a container yields `AnyServiceName`, so the
- * compiler will refuse to path-join the result until somebody re-parses it. That
- * is the trade, not a defect.
- */
-export type AnyServiceName = RawServiceId | DeclaredService;
-
 /** The one grammar: alphanumeric head, then alphanumerics, dot, underscore, hyphen. */
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -229,22 +216,6 @@ export function rawServiceId(dirName: string): RawServiceId {
  */
 export function declaredService(text: string): DeclaredService {
   return text as DeclaredService;
-}
-
-/**
- * Value equality across provenances — "does this name a document asserted name
- * that directory?".
- *
- * This exists because comparing a `DeclaredService` with a `RawServiceId` is
- * exactly the TS2367 the brands are meant to raise, and at a handful of sites
- * the crossing is the whole point of the comparison. Routing them through a
- * named function is what keeps the crossing greppable. Its body needs no cast:
- * both parameters are the same union, so `===` is legal inside. It refuses a
- * plain `string`, which is deliberate — every comparand must say where it came
- * from.
- */
-export function sameService(a: AnyServiceName, b: AnyServiceName): boolean {
-  return a === b;
 }
 
 /**

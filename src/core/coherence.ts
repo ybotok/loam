@@ -481,7 +481,7 @@ export async function featureCoherence(
 
   // W3: a new service should carry a requirement delta.
   for (const e of taggedEls) {
-    const svc = elementService(e);
+    const svc: string = elementService(e);
     if (e.kind === "softwareSystem" && !svcNames.some((n) => n === svc)) {
       issues.push({ severity: "warn", code: "service.no-requirement-delta", message: `new service ${svc} has no requirement delta under specs/` });
     }
@@ -530,7 +530,7 @@ export async function unknownDeltaServices(
   }
   if (delta !== undefined && delta.errors.length > 0) return [];
 
-  const introduces = new Set(
+  const introduces: ReadonlySet<string> = new Set(
     (delta?.elements ?? []).filter((e) => e.tags.includes(featureId)).map(elementService),
   );
   const unknown = (await featureSpecServices(featureDir, context)).filter(
