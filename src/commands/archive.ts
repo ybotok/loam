@@ -605,7 +605,7 @@ async function archiveLocked(
     // directory from this merge, one that arrives only in the landscape gets no
     // directory at all — and `validate --all` fails the second harder
     // (`landscape.service-unmodelled` names the binding with nothing behind it).
-    const creates = deltaServices.includes(svc)
+    const creates = deltaServices.some((d) => d === svc)
       ? `this archive creates services/${svc}/, but nothing writes services/${svc}/model.likec4`
       : `this archive puts '${svc}' in the landscape, but the fleet has no services/${svc}/ at all`;
     planWarns.push({

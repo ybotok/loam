@@ -159,7 +159,7 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
   }
   const { id } = feature;
 
-  if (opts.service !== undefined && !feature.services.includes(opts.service)) {
+  if (opts.service !== undefined && !feature.services.some((s) => s === opts.service)) {
     // The refusal names the choices, the way `loam delta`'s does: a typo must
     // never be indistinguishable from a feature with nothing to pin.
     return fail(

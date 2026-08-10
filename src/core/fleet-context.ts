@@ -28,6 +28,7 @@ import {
   type OpenapiDoc,
   type Operation,
 } from "./openapi.js";
+import type { RawServiceId } from "./kernel/ids.js";
 import {
   featureSpecServices,
   listFeatures,
@@ -130,7 +131,7 @@ export function landscapeConflictFinding(label: string, text: string): Finding |
 export class FleetContext {
   private readonly services = new Map<string, Promise<ServiceEntry[]>>();
   private readonly features = new Map<string, Promise<FeatureEntry[]>>();
-  private readonly featureServices = new Map<string, Promise<string[]>>();
+  private readonly featureServices = new Map<string, Promise<RawServiceId[]>>();
   private readonly texts = new Map<string, Promise<string>>();
   private readonly requirements = new Map<string, Promise<Requirement[]>>();
   private readonly openapis = new Map<string, Promise<OpenapiDoc>>();
@@ -185,7 +186,7 @@ export class FleetContext {
     return pending;
   }
 
-  featureSpecServices(featureDir: string): Promise<string[]> {
+  featureSpecServices(featureDir: string): Promise<RawServiceId[]> {
     const k = key(featureDir);
     let pending = this.featureServices.get(k);
     if (pending === undefined) {
