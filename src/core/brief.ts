@@ -339,6 +339,102 @@ Covers: paymentService.db, paymentService -> kafka
 ];
 
 /* ------------------------------------------------------------------ */
+/* The walk — what to read, in what order, and where each finding lands */
+/* ------------------------------------------------------------------ */
+
+export interface WalkStop {
+  /** What to open, named as a thing to go and find rather than a file name. */
+  where: string;
+  /** What to take out of it. */
+  find: string;
+  /** The artifacts this stop feeds, by `artifact` name from `targets[]`. */
+  lands: string[];
+}
+
+/**
+ * The architecture walk: the order a service is read in, and what each stop is
+ * for.
+ *
+ * The brief said "read the code: entry points, HTTP routes and handlers,
+ * published events, config, deploy manifests, tests" — one sentence, six nouns,
+ * no order and no landing site. What came back matched the sentence: the HTTP
+ * surface documented well, because it is the noun an agent recognises fastest,
+ * and the scheduler, the consumer group and the outbox missing entirely. Not
+ * because they were judged unimportant — because nothing said to go and look,
+ * and every check loam owns is computed from what was written rather than from
+ * what is there. `UNCHECKED` has said COMPLETENESS is unverifiable since the
+ * beginning; that is an argument for stating the sweep, not for leaving it
+ * implied.
+ *
+ * The order is deliberate and it is not the order a reader browses in. Stops 1
+ * and 2 fix the SHAPE of the service — which processes exist at all — before
+ * any surface is enumerated, because an agent that starts at the HTTP routes
+ * has already concluded the service is an API by the time it meets the
+ * scheduler. Everything after them is one surface each.
+ *
+ * `lands` names artifacts rather than describing them, because the two lists
+ * are joined: test/agent-contract.test.ts requires every name here to be a
+ * target the same brief hands over, so a stop can never feed a file nobody was
+ * asked to write.
+ */
+export const WALK: WalkStop[] = [
+  {
+    where: "the build and dependency manifests — pom.xml, build.gradle, package.json, go.mod, requirements.txt, and whatever the repo's own README calls the build",
+    find: "what this service is built from, and every client library it links against. A broker client, an HTTP client, a database driver: each one is a dependency that has to appear as an edge or a container later, and this list is the only place they are all named at once.",
+    lands: ["model.likec4", "runbook.md"],
+  },
+  {
+    where: "the entry points — main/Application/server bootstrap, the DI or module wiring, and anything the deploy manifests actually start",
+    find: "how many PROCESSES this service is, and what each one is. An API, a worker, a scheduler, a consumer — a service that is three of those and documented as one is the most common way a baseline is wrong, and it is wrong in a shape no later check can see.",
+    lands: ["model.likec4"],
+  },
+  {
+    where: "the HTTP surface — every route, controller, handler and middleware, counted",
+    find: "the operation set, in full. Count them before you write, and say the count in the hand-back: `api.ungoverned` can tell you an operation you WROTE has no requirement, and nothing at all can tell you about the twelve you never wrote down.",
+    lands: ["openapi.yaml", "spec.md"],
+  },
+  {
+    where: "the message surface — producers, consumers, listener annotations, topic and queue names, the outbox table and its relay",
+    find: "every message this service puts on and takes off the bus, with its direction. The direction is the half that gets lost: a consumer documented as a producer is a contract the whole fleet then joins against backwards.",
+    lands: ["asyncapi.yaml", "landscape.likec4"],
+  },
+  {
+    where: "the scheduled and background work — cron entries, timers, retry loops, reconcilers, migrations that run at boot",
+    find: "behaviour no request ever triggers. It has requirements like anything else, and it is invisible to every surface above — which is why a baseline written from routes alone describes a service that does half of what it does.",
+    lands: ["spec.md", "arch.spec.md"],
+  },
+  {
+    where: "the state — datastores, caches, buckets, and the schema or migration directory that says what is in them",
+    find: "what this service OWNS versus what it borrows. Ownership is the fact the C4 is for, and it is the one nobody can reconstruct later from the code without re-reading all of it.",
+    lands: ["model.likec4"],
+  },
+  {
+    where: "the outbound calls — HTTP clients, generated stubs, gRPC channels, and the config that says which host each one points at",
+    find: "who this service calls, and which operation each call names. These become the fleet map's edges; an edge missing here is a dependency the fleet cannot see, and `loam explore` will under-report the blast radius of every future change to the callee.",
+    lands: ["landscape.likec4"],
+  },
+  {
+    where: "the runtime — config and env vars, deploy manifests, pipelines, alert rules, dashboards",
+    find: "how it is run and what pages whom. Alerts are the honest source for health.yaml: an SLO nobody agreed to is invention, but an alert that already fires is a fact somebody wrote down.",
+    lands: ["runbook.md", "health.yaml"],
+  },
+  {
+    where: "the tests, integration ones first",
+    find: "the behaviours somebody already thought worth pinning, in Given/When/Then form before you write a line. A test suite is the only part of a legacy service that states intent rather than mechanism.",
+    lands: ["spec.md", "arch.spec.md"],
+  },
+];
+
+/**
+ * The stop that closes the walk. Separate from `WALK` because it is not a place
+ * to go — it is the question asked once the walking is done, and the only
+ * defence against a sweep that felt thorough because the parts it covered were
+ * covered well.
+ */
+export const WALK_CLOSE =
+  "Then list the directories you did NOT open, and say why for each. `loam validate --service <id>`, run inside the service's own repo, reports the same list back as `sources.unwalked` — it compares your `sources` against the files git tracks. A directory you deliberately skipped is a sentence in the hand-back; a directory you skipped without noticing is the gap this walk exists to find.";
+
+/* ------------------------------------------------------------------ */
 /* The frontmatter                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -572,6 +668,12 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_SERVICE,
     what: "`sources` with no digest — nobody has vouched for the document yet. Expected on a fresh baseline; only a human closes it",
   },
+  {
+    code: "sources.unwalked",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "`sources` leaves whole top-level paths of the service repo untouched — the finding names them (checked when loam runs inside the service's repo, against the files git tracks). It grades the WALK, not the writing: the only completeness signal loam can compute, because it is the only one that compares the document against the repository rather than against itself",
+  },
   // sources.stale, sources.current and content.stale are deliberately absent:
   // all three compare against digests `loam vouch` stamps, and a fresh baseline
   // has no stamp to compare — the table lists what a baseline can actually meet.
@@ -627,6 +729,13 @@ export const UNCHECKED: string[] = [
   // block was owed to loam, and an `include *` over the FLEET map is the one
   // shape that costs minutes rather than milliseconds.
   "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. loam reads elements and relationships out of the PARSED model and renders nothing, so it computes no view and a model without one is missing nothing loam wants. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start <dir>` pointed at ONE directory — `services/<id>` for a service model, the docs repo root for the fleet map (`likec4.config.json` scopes that root project to `architecture/`). The renderer merges every `.likec4` file it is given into one model, and loam parses each of them alone, so each declares its own `specification` block: point it at a directory holding two of them and every declaration reads as a duplicate. Scope your views too — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
+  // The readability half of the entry above. They are separate entries because
+  // the failures are: one is a view that takes minutes to compute, the other is
+  // a view that computes instantly and cannot be read. A fleet acquires the
+  // second one the day its second service starts publishing, and every service
+  // after that makes it worse by exactly one edge — which is why it arrives as
+  // a surprise on a map that was fine last quarter.
+  "Whether the fleet map is LEGIBLE — nothing in loam draws it, so nothing in loam notices. The shape that goes first is a shared broker: Kafka, a bus, a gateway, drawn as ONE element, is the node every service in the fleet points at, and a view over it is a star with sixty spokes. Model the TOPIC rather than the broker — `paymentEvents = topic 'payment.events'` nested inside the broker's element, with the edges pointing at `kafka.paymentEvents` — and one hub of degree sixty becomes twelve of degree five, which is also the truer model: the contract a producer and a consumer share is the topic, never the broker. Declare `element topic { #external, style { shape queue } }` in the `specification` block and give the nested elements that kind: LikeC4 does not inherit tags, so a topic under an `#external` broker is NOT external itself and `loam validate --all` asks for a `services/payment.events/` nobody owes (`landscape.service-undocumented`). Then scope the views, which is where the rest of the legibility lives: `exclude element.tag = #external` keeps the fleet overview to the calls between our own services, and a second view over the broker draws the event spine on its own.",
   "Whether the model has exactly ONE top-level element for the service, with its containers nested inside. Five top-level boxes for one service parse, validate and bind exactly as well as one — and then the fleet map, which joins elements to directories, has five candidates for the same service and no way to say which is wrong.",
   "Whether the model is the architecture the code actually has. loam parses model.likec4; it never reads a line of the service.",
   "Whether a requirement is TRUE of the service. `loam validate` checks that a requirement has a scenario, never that either one describes real behaviour.",
@@ -691,6 +800,10 @@ export interface Brief {
   /** Repo-relative path of services/<id>/. */
   path: string;
   targets: BriefTarget[];
+  /** The order to read the service in, and what each stop feeds. */
+  walk: WalkStop[];
+  /** The question the walk ends on — see `WALK_CLOSE`. */
+  walkClose: string;
   landscape: LandscapeContext;
   frontmatter: FrontmatterBrief;
   checks: BriefCheck[];
@@ -747,6 +860,8 @@ export async function serviceBrief(docsDir: string, service: string): Promise<Br
     docsDir,
     path: rel(paths.dir),
     targets,
+    walk: WALK,
+    walkClose: WALK_CLOSE,
     landscape,
     frontmatter: FRONTMATTER_BRIEF,
     checks: VALIDATE_CHECKS,

@@ -15,6 +15,17 @@ specification {
   // THIS document for the merged landscape to parse (archive refuses otherwise).
   element container
   element person
+  // A topic is an element, and the kind carries #external rather than each
+  // instance doing it: LikeC4 does NOT inherit tags, so a topic nested inside
+  // the #external broker is not external itself, and `loam validate --all`
+  // would ask for a services/payment.events/ nobody owes
+  // (`landscape.service-undocumented`).
+  element topic {
+    #external
+    style {
+      shape queue
+    }
+  }
   tag external
 }
 
@@ -36,6 +47,12 @@ model {
     // Not one of ours: no services/kafka/ is expected, and none is asked for.
     #external
     description 'Event backbone'
+    // Edges point HERE, not at the broker. Two producers make no difference;
+    // sixty do — a broker drawn as one element is the node every service in the
+    // fleet points at, and a view over it is a star nobody can read. The topic
+    // is also the truer target: what a producer and a consumer share is the
+    // channel, never the server it happens to live on.
+    paymentEvents = topic 'payment.events'
   }
 
   customer -> checkoutWeb 'Uses'
@@ -45,15 +62,27 @@ model {
   // or `spine.message-undefined` fires. A consumer's edge carries
   // `metadata { consumes }` instead, and its name has to have a producer
   // SOMEWHERE in the fleet — the one check no single repository can answer.
-  paymentService -> kafka 'Publishes PaymentAuthorized' {
+  paymentService -> kafka.paymentEvents 'Publishes PaymentAuthorized' {
     metadata {
       publishes 'payment.PaymentAuthorized'
     }
   }
 }
 
+// Views are LikeC4's renderer's, never loam's — nothing below is read by any
+// check. Two of them rather than one `include *`, because at fleet scale a
+// single view holding every call is both the slow one to compute and the one
+// nobody can read: the synchronous map and the event spine answer different
+// questions and belong on different pages.
 views {
   view landscape {
+    title 'Fleet — calls between our own services'
     include *
+    exclude element.tag = #external
+  }
+
+  view events {
+    title 'Fleet — the event spine'
+    include kafka, kafka.*, * -> kafka.*, kafka.* -> *
   }
 }

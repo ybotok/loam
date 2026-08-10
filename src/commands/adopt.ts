@@ -141,6 +141,10 @@ function render(b: Brief, warnings: string[]): void {
   }
   console.log(wrap(b.rule, "  "));
 
+  // Before the artifact table, because the table is the output and this is the
+  // input: an agent that meets the file list first starts writing files.
+  printWalk(b);
+
   console.log("\n  artifacts\n");
   const width = Math.max(...b.targets.map((t) => t.artifact.length));
   for (const t of b.targets) {
@@ -191,6 +195,29 @@ function render(b: Brief, warnings: string[]): void {
       "    ",
     ),
   );
+}
+
+/**
+ * The walk, numbered. The numbers are the point: an unordered list of nine
+ * places to look reads as nine optional suggestions, and the two stops that fix
+ * what the service IS have to happen before the surfaces are enumerated.
+ */
+function printWalk(b: Brief): void {
+  console.log("\n  read the code in this order — nothing below is written from anything else\n");
+  for (const [i, stop] of b.walk.entries()) {
+    // The hang is explicit rather than derived: `wrap` infers one from a leading
+    // `- `, and a numbered stop whose second line starts at the number's own
+    // column reads as the next stop — which for a list whose ORDER is the point
+    // is the one misreading that costs something.
+    console.log(wrap(`${String(i + 1)}. ${stop.where}`, "    ", 88, "       "));
+    // Two more columns than the stop it belongs to: where-to-look and
+    // what-to-take are different sentences, and at one indent the second reads
+    // as a continuation of the first.
+    console.log(wrap(stop.find, "         "));
+    console.log(`         → ${stop.lands.join(", ")}`);
+    console.log("");
+  }
+  console.log(wrap(b.walkClose, "    "));
 }
 
 function printCheck(c: BriefCheck): void {
@@ -257,8 +284,8 @@ function printLandscape(b: Brief): void {
  * Wrap prose so the brief is readable in a terminal. Continuation lines are
  * indented past the marker, so a wrapped bullet cannot be misread as two.
  */
-function wrap(text: string, indent: string, width = 88): string {
-  const hang = /^\s*-\s/.test(text) ? `${indent}  ` : indent;
+function wrap(text: string, indent: string, width = 88, hangIndent?: string): string {
+  const hang = hangIndent ?? (/^\s*-\s/.test(text) ? `${indent}  ` : indent);
   const out: string[] = [];
   let line = indent;
   let pad = indent;

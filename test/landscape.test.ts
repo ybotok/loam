@@ -188,6 +188,72 @@ describe("a landscape element with no service directory", () => {
     });
   });
 
+  /**
+   * The fact the topic-per-channel convention rests on, pinned because the
+   * convention is documented in three places (the adopt brief's unchecked list,
+   * AGENTS.md, SCHEMA.md) and all three would become wrong together if this
+   * moved.
+   *
+   * `#external` on the broker does NOT reach the topics nested inside it —
+   * LikeC4 has no tag inheritance, and `drawn` only skips descendants of an
+   * element that stands for a SERVICE, which an external broker by definition
+   * does not. So a fleet that splits its broker into topics to keep the map
+   * readable gets one warning per topic asking for a services/ directory nobody
+   * owes, unless the tag is carried by the KIND.
+   */
+  it("still asks about a topic nested in an #external broker — LikeC4 inherits no tags", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  paymentService = softwareSystem '${SVC}'
+  kafka = softwareSystem 'kafka' {
+    #external
+    paymentEvents = container 'payment.events'
+  }`),
+      [`services/${SVC}/model.likec4`]: serviceModel(SVC),
+    };
+    await withProject(files, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
+      expect(code).toBe(0);
+      const f = landscapeTarget(targets)!.findings.find((x) => x.code === "landscape.service-undocumented")!;
+      expect(f.subject).toBe("payment.events");
+    });
+  });
+
+  it("is silent when the topic KIND carries the tag — the one spelling that scales", async () => {
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element topic {
+    #external
+    style {
+      shape queue
+    }
+  }
+  tag external
+}
+
+model {
+  paymentService = softwareSystem '${SVC}'
+  kafka = softwareSystem 'kafka' {
+    #external
+    paymentEvents = topic 'payment.events'
+    orderEvents = topic 'order.events'
+  }
+
+  paymentService -> kafka.paymentEvents 'Publishes'
+}
+`,
+      [`services/${SVC}/model.likec4`]: serviceModel(SVC),
+    };
+    await withProject(files, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
+      expect(code).toBe(0);
+      expect(codesIn(targets)).not.toContain("landscape.service-undocumented");
+      // And the edge into the topic still resolves as an edge into the fleet:
+      // the service side of it is modelled, so nothing reads as unmapped.
+      expect(codesIn(targets)).not.toContain("landscape.service-unmodelled");
+    });
+  });
+
   it("says nothing about a person — an actor is never a service directory", async () => {
     const files = {
       "architecture/landscape.likec4": landscape(`  customer = person 'Customer'

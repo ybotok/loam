@@ -239,7 +239,11 @@ async function sourceFindings(
   // an unvouched service is exactly where a reader is about to decide the
   // sources list is honest.
   const { digest, files, index, skipped } = await sourcesDigest(repoDir, sources);
-  const findings: Finding[] = [resolved, ...skippedFindings(skipped, label)];
+  const findings: Finding[] = [
+    resolved,
+    ...skippedFindings(skipped, label),
+    ...(await walkFindings(repoDir, files, label)),
+  ];
 
   // The paths are there; the question staleness answers is whether what is AT
   // them is still what somebody read.
@@ -285,6 +289,108 @@ async function sourceFindings(
       text: { detailPrefix: "- " },
     },
   ];
+}
+
+/** The first path segment — the top-level directory, or a root file's own name. */
+function topLevel(path: string): string {
+  const cut = path.indexOf("/");
+  return cut === -1 ? path : path.slice(0, cut);
+}
+
+/**
+ * Was the service WALKED, or only the part somebody wrote about?
+ *
+ * Every other check loam owns is computed from the documents, so a corpus can
+ * agree with itself perfectly while describing a third of a service — the
+ * failure `UNCHECKED` names as COMPLETENESS and then, correctly, declines to
+ * grade. This is the one measurement that escapes that circle, because it
+ * compares the document's `sources` against the REPOSITORY: a top-level path
+ * git tracks and no source reaches into is a part of the service nobody opened.
+ *
+ * git is the denominator on purpose. The alternative is walking the tree and
+ * excluding what does not look like source, which means a hand-maintained list
+ * of build directories that is wrong for the first language nobody thought of —
+ * and a check that is wrong for a whole ecosystem is a warning that ecosystem
+ * learns to ignore. `git ls-files` already answers "what does this repository
+ * consider its own", it is the author's own answer, and `node_modules` and
+ * `target/` fall out of it for free. Where git cannot answer — not a
+ * repository, not installed, a timeout — there is no denominator and therefore
+ * no finding: proving nothing and saying nothing is the same doctrine
+ * `sources.unverifiable-from-here` follows.
+ *
+ * TOP-LEVEL granularity, not a percentage threshold. A ratio needs a line
+ * drawn somewhere, and an invented threshold is exactly the number this
+ * codebase refuses to write into other people's dashboards; a named directory
+ * needs no threshold and is answerable — either it holds nothing this document
+ * owes, and the hand-back says so in one sentence, or the walk stopped early.
+ * The ratio still rides along in the message as a dial, where it informs
+ * without grading.
+ */
+async function walkFindings(repoDir: string, covered: string[], label: string): Promise<Finding[]> {
+  const tracked = await gitTrackedFiles(repoDir);
+  if (tracked === null || tracked.length === 0) return [];
+
+  // The honest intersection, not "every file under a directory somebody
+  // touched": reading one file in src/ does not make the other four hundred
+  // read, and a coverage number that says it does is worse than none.
+  const coveredSet = new Set(covered);
+  const hit = tracked.filter((p) => coveredSet.has(p)).length;
+  const ratio = `${String(hit)} of ${String(tracked.length)} tracked file(s)`;
+
+  const touched = new Set(covered.map(topLevel));
+  const untouched = [...new Set(tracked.map(topLevel))].filter((t) => !touched.has(t)).sort();
+  if (untouched.length === 0) {
+    return [
+      {
+        severity: "ok",
+        code: "sources.walked",
+        message: `${label}: sources reach into every top-level path this repository tracks (${ratio})`,
+      },
+    ];
+  }
+  return [
+    {
+      severity: "warn",
+      code: "sources.unwalked",
+      message:
+        `${label}: sources cover ${ratio}, and ${String(untouched.length)} top-level path(s) were never opened. ` +
+        `Either they hold nothing this document owes — say which, and why, in the hand-back — or the walk stopped early ` +
+        `and the baseline describes part of a service.`,
+      details: untouched,
+      text: { detailPrefix: "- " },
+    },
+  ];
+}
+
+/**
+ * What this repository considers its own, as repo-relative paths — or null for
+ * every way git can decline to say: not a repository, not installed, a timeout,
+ * a non-zero exit. The caller distinguishes none of them, exactly as
+ * `gitConfig` does not, because they all mean the same thing: there is no
+ * denominator here, so there is nothing to report.
+ *
+ * `-z` rather than the default line output: git QUOTES paths containing spaces
+ * or non-ASCII bytes when it is writing lines, so a service with one such file
+ * would have had a phantom top-level directory named `"src` in its untouched
+ * list.
+ */
+async function gitTrackedFiles(repoDir: string): Promise<string[] | null> {
+  return new Promise<string[] | null>((done) => {
+    const child = spawn("git", ["ls-files", "-z", "--cached", "--exclude-standard"], {
+      cwd: repoDir,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: GIT_TIMEOUT_MS,
+    });
+    let out = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      out += chunk;
+    });
+    child.on("error", () => done(null));
+    child.on("close", (code) => {
+      done(code === 0 ? out.split("\0").filter((p) => p !== "") : null);
+    });
+  });
 }
 
 /**
