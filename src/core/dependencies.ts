@@ -7,9 +7,9 @@
  * it introduces an identity or operation the latter already refers to.
  */
 import { existsSync } from "node:fs";
-import { inOrder } from "./concurrency.js";
+import { inOrder } from "./kernel/concurrency.js";
 import { FleetContext } from "./fleet-context.js";
-import { serviceResolver } from "./likec4.js";
+import { serviceResolver } from "./c4/likec4.js";
 import { operations } from "./openapi.js";
 import {
   SPEC_AXES,
@@ -21,7 +21,7 @@ import {
   type FeatureEntry,
   type SpecAxis,
 } from "./repo.js";
-import type { Requirement } from "./spec.js";
+import type { Requirement } from "./document/spec.js";
 
 export type DependencyReason =
   | {
@@ -358,7 +358,7 @@ export async function analyzeDependencies(
   // Bounded, not `Promise.all`: `readFacts` loads the feature's delta.likec4,
   // and each of those is a whole Langium workspace held open until the read
   // finishes — the same resource `validate --all` rations for the same measured
-  // reason (see core/concurrency.ts). This module fanned out over every active
+  // reason (see core/kernel/concurrency.ts). This module fanned out over every active
   // feature at once, and it is not only `loam dependencies` that pays: the fleet
   // form of `loam status` calls in here too. `inOrder` returns results in input
   // order, so the graph, the conflict list and their ordering are unchanged.

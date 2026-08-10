@@ -1,6 +1,6 @@
 /**
  * Smoke parity between the TWO readers of the same LikeC4 grammar living in
- * src/core/likec4.ts: the semantic layer (loadSource — Langium parses and
+ * src/core/c4/likec4.ts: the semantic layer (loadSource — Langium parses and
  * computes the model) and the text layer (scanModel/maskSource — the splice
  * map `loam archive` merges the landscape with).
  *
@@ -19,7 +19,7 @@
  * pin is what tells us when that stops being true.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { loadSource, maskSource, scanModel, type LoadedDoc, type ScannedModel } from "../src/core/likec4.js";
+import { loadSource, maskSource, scanModel, type LoadedDoc, type ScannedModel } from "../src/core/c4/likec4.js";
 
 /**
  * One source that stresses everything the scanner claims to read like the

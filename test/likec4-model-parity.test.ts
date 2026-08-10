@@ -1,6 +1,6 @@
 /**
  * Parity between LikeC4's two model stages, over exactly the fields
- * src/core/likec4.ts reads.
+ * src/core/c4/likec4.ts reads.
  *
  * `loadSource` used to call `computedModel()`, which computes every VIEW in the
  * document — work loam throws away, because it renders nothing (brief.ts says
@@ -23,7 +23,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { LikeC4 } from "likec4";
-import { flattenModel, loadSource, serviceOf, type LoadedDoc } from "../src/core/likec4.js";
+import { flattenModel, loadSource, serviceOf, type LoadedDoc } from "../src/core/c4/likec4.js";
 
 /**
  * Everything loam's adapter reads, in one document: nested/dotted container

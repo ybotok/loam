@@ -8,10 +8,10 @@
  * on a successful run — see `registerStatus`.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../core/config.js";
+import { loadConfig } from "../core/envelope/config.js";
 import { FleetContext } from "../core/fleet-context.js";
-import { emitJson, fail, reportNoConfig } from "../core/json.js";
-import { findingJson, SEVERITY_MARK } from "../core/report.js";
+import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
+import { findingJson, SEVERITY_MARK } from "../core/vocabulary/report.js";
 import {
   DocsRepoUnavailableError,
   featureCandidates,

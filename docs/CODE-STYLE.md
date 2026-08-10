@@ -101,7 +101,7 @@ shortcut, it is the point at which the compiler stops helping and nobody notices
 snapshot manifest was read through such a cast: well-formed JSON that was not an object answered
 `undefined` to every field and slipped through as "a different loam", and a bare `null` threw a
 `TypeError` out of the refusal itself — in a code path guarding the only surviving copy of what
-the living docs said. `core/records.ts` holds the shared `isRecord`; use it, then check each
+the living docs said. `core/kernel/records.ts` holds the shared `isRecord`; use it, then check each
 field you are about to read.
 
 **A type predicate carries its proof.** `function isFoo(v: unknown): v is Foo` must check every
@@ -164,7 +164,7 @@ command in the CLI rather than as the designed `config-invalid`.
 ## Async
 
 **No `await` in a loop over independent work** — `Promise.all`, capped when the work touches the
-filesystem or spawns processes. `core/concurrency.ts` holds the pool and the measurement that
+filesystem or spawns processes. `core/kernel/concurrency.ts` holds the pool and the measurement that
 justifies its size; use it rather than an uncapped fan-out, because each in-flight feature can
 hold a whole Langium workspace.
 
@@ -180,7 +180,7 @@ initialiser runs. They are also a design statement — that two modules are real
 runtime cycles this repo carried all traced to the same cause: a leaf-shaped helper living inside
 a heavy module. `decodeDocument` sat in `fleet-context.ts`, which loads the whole fleet, so every
 module that only wanted to turn bytes into a string imported the fleet loader. Moving it to
-`core/document-bytes.ts` — a leaf whose only import is `node:buffer` — removed six of them.
+`core/kernel/document-bytes.ts` — a leaf whose only import is `node:buffer` — removed six of them.
 
 When you reach for a helper and find it in a module far heavier than the helper, that is the
 signal. Move the helper out; do not import the weight.

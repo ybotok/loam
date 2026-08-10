@@ -1,6 +1,6 @@
 /**
  * Integration invariants for `loam init`, `loam delta`, `loam adopt`, and config
- * handling (src/commands/init.ts, delta.ts, adopt.ts, src/core/config.ts,
+ * handling (src/commands/init.ts, delta.ts, adopt.ts, src/core/envelope/config.ts,
  * src/core/docs.ts).
  *
  * Families:

@@ -18,26 +18,26 @@
     "src/core/agent.ts": 2387,
     "src/core/asyncapi.ts": 312,
     "src/core/brief.ts": 1041,
+    "src/core/c4/likec4.ts": 646,
     "src/core/coherence.ts": 645,
     "src/core/delta.ts": 535,
     "src/core/dependencies.ts": 482,
     "src/core/doctor.ts": 728,
+    "src/core/document/spec.ts": 594,
     "src/core/explore.ts": 373,
     "src/core/gherkin.ts": 533,
-    "src/core/likec4.ts": 646,
     "src/core/openapi-merge.ts": 643,
     "src/core/openapi.ts": 333,
     "src/core/openspec-inventory.ts": 1919,
     "src/core/provenance.ts": 1019,
     "src/core/repo.ts": 627,
-    "src/core/spec.ts": 594,
     "src/core/staging.ts": 1056,
     "src/core/status.ts": 1530,
     "src/core/verify.ts": 1088
   },
   "packageFiles": {
     "src/commands": 21,
-    "src/core": 38
+    "src/core": 22
   },
   "functionParams": {
     "src/commands/archive.ts": {

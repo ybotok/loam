@@ -8,12 +8,12 @@ import {
   type Elem,
   type LoadedDoc,
   type Rel,
-} from "./likec4.js";
-import { closeIds } from "./arch.js";
+} from "./c4/likec4.js";
+import { closeIds } from "./c4/arch.js";
 import { deltaShapeIssues } from "./delta.js";
-import type { Issue } from "./issue.js";
-import { repoPath } from "./json.js";
-import type { Finding } from "./report.js";
+import type { Issue } from "./vocabulary/issue.js";
+import { repoPath } from "./envelope/json.js";
+import type { Finding } from "./vocabulary/report.js";
 import {
   docsRepoState,
   featurePaths,
@@ -25,7 +25,7 @@ import {
   servicePaths,
   SPEC_AXES,
 } from "./repo.js";
-import { parseRequirements, type Requirement } from "./spec.js";
+import { parseRequirements, type Requirement } from "./document/spec.js";
 import {
   OPENAPI_BASELINE_KEY,
   OPERATION_DIGEST_LENGTH,
@@ -41,7 +41,7 @@ import {
   type FleetContext,
 } from "./fleet-context.js";
 
-export type { Issue, IssueCode } from "./issue.js";
+export type { Issue, IssueCode } from "./vocabulary/issue.js";
 
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),

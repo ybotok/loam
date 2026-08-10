@@ -5,8 +5,8 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { asRecord, dictionary, ownValue } from "./records.js";
-import { FEATURE_ID_RULE, isFeatureId } from "./ids.js";
+import { asRecord, dictionary, ownValue } from "./kernel/records.js";
+import { FEATURE_ID_RULE, isFeatureId } from "./kernel/ids.js";
 import { compareIds } from "./repo.js";
 import {
   isRequirementsHeading,
@@ -15,7 +15,7 @@ import {
   requirementIdDeclarations,
   requirementIdProblems,
   sectionHeadings,
-} from "./spec.js";
+} from "./document/spec.js";
 
 /** Released behavior and the newer upstream snapshot used as a compatibility canary. */
 export const OPENSPEC_BASELINES = Object.freeze({

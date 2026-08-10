@@ -47,7 +47,7 @@ the part that matters, and that part is yours:
   predicate that checks less than it claims. Optional fields that are really a variant.
 - **Errors.** Matching on `err.message` instead of a code. An empty `catch {}` with no comment
   naming which absence it means. A validator that fails open.
-- **Async.** `await` in a loop over independent work — `src/core/concurrency.ts` holds the pool
+- **Async.** `await` in a loop over independent work — `src/core/kernel/concurrency.ts` holds the pool
   and the measurement justifying its cap. A sequential loop that is load-bearing but does not say
   so. A floating promise.
 - **Layering.** `console.*`, `process.exit` or `process.argv` in `src/core/` (except `json.ts`,

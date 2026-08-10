@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isMap, parse, parseDocument } from "yaml";
-import { decodeDocument, NotUtf8DocumentError } from "./document-bytes.js";
+import { decodeDocument, NotUtf8DocumentError } from "../kernel/document-bytes.js";
 
 export interface Frontmatter {
   /** True when a terminated `---` block was found, even if it was empty. */

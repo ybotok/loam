@@ -29,7 +29,7 @@ Ask: could a caller distinguish this case by the payload instead? If yes, do tha
    Follow the neighbouring entries' voice.
 
 2. **Emit it** from the command or check. Refusals go through `fail(json, code, message)`
-   (`src/core/json.ts`); findings carry `code` on the `Finding`/`Issue`.
+   (`src/core/envelope/json.ts`); findings carry `code` on the `Finding`/`Issue`.
 
 3. **Document it in the agent surface.** `test/codes-drift.test.ts` requires every stable code to
    appear in `AGENTS_MD` and/or the slash-command bodies in `src/core/agent.ts`. This is not

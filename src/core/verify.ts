@@ -40,11 +40,11 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
-import { elementService, loadFile, serviceOf, type Elem } from "./likec4.js";
+import { elementService, loadFile, serviceOf, type Elem } from "./c4/likec4.js";
 import { operationIds, operations } from "./openapi.js";
-import { isRecord } from "./records.js";
+import { isRecord } from "./kernel/records.js";
 import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo.js";
-import { parseRequirements } from "./spec.js";
+import { parseRequirements } from "./document/spec.js";
 
 /**
  * What a claim is about. The order is the order the checklist comes back in,

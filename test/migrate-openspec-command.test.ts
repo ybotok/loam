@@ -720,7 +720,7 @@ describe("OpenSpec audit and mapping-driven migration commands", () => {
     // trailing-dot test and Windows device names. Two copies is how the grammar
     // drifted apart: for a while migrate was the STRICTER of the two, so the
     // primary authoring path (`--service`, `--touches`, `adopt`) accepted ids a
-    // migration refused. src/core/ids.ts owns the rule now; migrate keeps its
+    // migration refused. src/core/kernel/ids.ts owns the rule now; migrate keeps its
     // own refusal shape (`invalid-option`, never an Issue).
     const fixture = await workspace({
       "config.yaml": "schema: spec-driven\n",

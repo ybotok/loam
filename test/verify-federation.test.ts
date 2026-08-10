@@ -44,7 +44,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { parseStampedFeature, scenarioDigest, slugOf } from "../src/core/gherkin.js";
-import { parseRequirements } from "../src/core/spec.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 
 const FEAT = "FEAT-1";
 const DIR = "features/FEAT-1-split";

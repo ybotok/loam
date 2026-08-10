@@ -1,5 +1,5 @@
 /**
- * Frontmatter fence detection (src/core/frontmatter.ts `bounds`).
+ * Frontmatter fence detection (src/core/document/frontmatter.ts `bounds`).
  *
  * The fences used to be substrings: any first line starting `---` opened a
  * block, and the first `\n---` anywhere closed one. So `--- title` was read as
@@ -16,7 +16,7 @@
  * the command-level BOM story lives in bom.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter, stringField, withFrontmatterFields } from "../src/core/frontmatter.js";
+import { parseFrontmatter, stringField, withFrontmatterFields } from "../src/core/document/frontmatter.js";
 
 /** Written escaped: a literal U+FEFF in this source would itself be invisible. */
 const BOM = "﻿";

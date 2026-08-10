@@ -13,7 +13,7 @@
  * how this process ends, and core modules compute answers rather than end
  * processes.
  */
-import { fail } from "../core/json.js";
+import { fail } from "../core/envelope/json.js";
 import { docsRepoState, type DocsRepoUnavailableError } from "../core/repo.js";
 
 /**

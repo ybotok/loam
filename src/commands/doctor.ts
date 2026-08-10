@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { diagnose, type DoctorReport } from "../core/doctor.js";
-import { emitJson } from "../core/json.js";
+import { emitJson } from "../core/envelope/json.js";
 
 interface DoctorOptions {
   json?: boolean;

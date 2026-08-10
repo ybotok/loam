@@ -37,7 +37,7 @@ import {
   treeHashes,
   type Project,
 } from "./helpers/harness.js";
-import { loadFile } from "../src/core/likec4.js";
+import { loadFile } from "../src/core/c4/likec4.js";
 
 const SVC = "payment-service";
 

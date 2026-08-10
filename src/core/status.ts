@@ -102,10 +102,10 @@ import { join } from "node:path";
 import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "./coherence.js";
 import { analyzeDependencies, type DependencyGraph } from "./dependencies.js";
 import { FleetContext } from "./fleet-context.js";
-import { gatesArchive, type Issue } from "./issue.js";
-import { repoPath } from "./json.js";
+import { gatesArchive, type Issue } from "./vocabulary/issue.js";
+import { repoPath } from "./envelope/json.js";
 import { featureProvenance } from "./provenance.js";
-import type { Finding } from "./report.js";
+import type { Finding } from "./vocabulary/report.js";
 import {
   compareIds,
   featurePaths,
@@ -118,7 +118,7 @@ import {
   type FeatureEntry,
   type ServiceEntry,
 } from "./repo.js";
-import { requirementsMissingScenarios, type Requirement } from "./spec.js";
+import { requirementsMissingScenarios, type Requirement } from "./document/spec.js";
 import { COMMIT_INTENT, readCommitIntent } from "./staging.js";
 import {
   attestedNotice,

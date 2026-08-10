@@ -2,10 +2,10 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { agentsStaleFinding } from "../core/agents-stamp.js";
-import { inOrder } from "../core/concurrency.js";
-import { loadConfig } from "../core/config.js";
-import { listField, readFrontmatter } from "../core/frontmatter.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/json.js";
+import { inOrder } from "../core/kernel/concurrency.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { listField, readFrontmatter } from "../core/document/frontmatter.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
 import {
   elementService,
   loadFile,
@@ -14,7 +14,7 @@ import {
   type LikeC4Error,
   type LoadedDoc,
   type Rel,
-} from "../core/likec4.js";
+} from "../core/c4/likec4.js";
 import {
   DocsRepoUnavailableError,
   agentsPath as agentsFile,
@@ -40,18 +40,18 @@ import {
   targetValid,
   type Finding,
   type TargetReport,
-} from "../core/report.js";
+} from "../core/vocabulary/report.js";
 import {
   parseRequirements,
   requirementIdProblems,
   requirementsMissingScenarios,
   steplessFindings,
   type Requirement,
-} from "../core/spec.js";
+} from "../core/document/spec.js";
 import { readOpenapi } from "../core/openapi.js";
 import { producersByMessage, readAsyncapi, slotsOf } from "../core/asyncapi.js";
 import { deltaServiceUnknownFinding, featureCoherence } from "../core/coherence.js";
-import { gatesArchive } from "../core/issue.js";
+import { gatesArchive } from "../core/vocabulary/issue.js";
 import {
   emptySourcesMessage,
   expandSourceFiles,
@@ -70,9 +70,9 @@ import {
   parseCoversEntry,
   type CoverageScope,
   type CoversEntry,
-} from "../core/arch.js";
+} from "../core/c4/arch.js";
 import { gherkinFindings } from "../core/gherkin.js";
-import { readHealth } from "../core/health.js";
+import { readHealth } from "../core/vocabulary/health.js";
 import { LOAM_VERSION } from "../core/version.js";
 import {
   FleetContext,
@@ -1477,7 +1477,7 @@ function requirementIdFindings(reqs: Requirement[], where: string, subject: stri
 }
 
 /**
- * The two list lines of the requirement grammar, exactly as core/spec.ts spells
+ * The two list lines of the requirement grammar, exactly as core/document/spec.ts spells
  * them (mirrored here, not exported from there, because the parser's grammar is
  * its own; a drift shows up as this check counting differently than the parser
  * assigns). A SECOND matching line in one requirement body REPLACES the first —

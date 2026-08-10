@@ -66,10 +66,10 @@ implementation details:
 
 - **Command names and flags.** An agent somewhere has `loam validate --all` in a script.
 - **Exit codes.** `0` success, `1` refusal or gating error.
-- **The `--json` envelope.** `contractVersion`, `ok`, and `error.code` (`src/core/json.ts`).
+- **The `--json` envelope.** `contractVersion`, `ok`, and `error.code` (`src/core/envelope/json.ts`).
   Adding a payload key is additive and allowed; changing or removing one is not.
-- **Every stable code string** — the `ErrorCode` union in `src/core/json.ts` and the `IssueCode`
-  family in `src/core/issue.ts`. Prose may be reworded freely. Codes may not.
+- **Every stable code string** — the `ErrorCode` union in `src/core/envelope/json.ts` and the `IssueCode`
+  family in `src/core/vocabulary/issue.ts`. Prose may be reworded freely. Codes may not.
 
 Changing any of these means a CHANGELOG entry describing the change in the terms a user would
 notice. Two tests exist to stop this drifting silently:
@@ -90,12 +90,12 @@ src/core/         everything else: a 7-level DAG with zero import cycles
 
 - **`core/` must not print.** No `console.*`, no `process.exit`, no `process.argv`. A core module
   that prints cannot be reused by a second command or tested without capturing stdout. The one
-  deliberate exception is `core/json.ts`, which *is* the output layer.
+  deliberate exception is `core/envelope/json.ts`, which *is* the output layer.
 - **`core/` must never import from `commands/`.**
 - **Keep the cycle count at zero.** It is currently zero and that is load-bearing: a cycle makes
   module-evaluation order decide behaviour. When a helper you need lives in a module far heavier
   than the helper, move the helper out rather than importing the weight — that is how
-  `core/document-bytes.ts`, `core/records.ts` and `core/steps.ts` came to exist.
+  `core/kernel/document-bytes.ts`, `core/kernel/records.ts` and `core/vocabulary/steps.ts` came to exist.
 - **Both directories are trees of packages** under the five-file limit. Sub-packages carry no
   meaning the compiler checks — `../c4/likec4.js` is exactly as legal as `./likec4.js` — so the
   package graph has its own acyclicity obligation that `import/no-cycle` cannot see. Run

@@ -2,16 +2,16 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
-import { loadConfig } from "../core/config.js";
-import { InvalidIdError, assertServiceId } from "../core/ids.js";
-import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../core/json.js";
-import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../core/likec4.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
+import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
+import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../core/c4/likec4.js";
 import { readOpenapi, type Operation } from "../core/openapi.js";
 // The summary walk below descends four levels into a document nobody has
 // validated, and `isRecord` is what it asks at each step: a cast there would
 // assert a shape the parser never promised, and a sequence or a scalar in any of
 // those slots would be indexed as a mapping.
-import { isRecord } from "../core/records.js";
+import { isRecord } from "../core/kernel/records.js";
 import {
   DocsRepoUnavailableError,
   compareIds,
@@ -22,7 +22,7 @@ import {
   nearestIds,
   resolveFeature,
 } from "../core/repo.js";
-import { parseRequirements, type Requirement } from "../core/spec.js";
+import { parseRequirements, type Requirement } from "../core/document/spec.js";
 
 interface DeltaOptions {
   service?: string;
@@ -92,7 +92,7 @@ export function registerDelta(program: Command): void {
 
       // The id grammar first, and on the RAW argument: `--service ../../etc`
       // reaches `featureSpecPaths` and reads from outside the feature directory.
-      // One grammar for the whole tool (core/ids.ts).
+      // One grammar for the whole tool (core/kernel/ids.ts).
       if (opts.service !== undefined) {
         try {
           assertServiceId(opts.service, "--service");
@@ -229,7 +229,7 @@ export function registerDelta(program: Command): void {
           // consumer indexing it must not have to learn a new shape — so the
           // readability of the document rides alongside as its own key,
           // spelled the way `loam show` already spells it for a living
-          // contract. Additive, which the envelope permits (core/json.ts).
+          // contract. Additive, which the envelope permits (core/envelope/json.ts).
           openapi: {
             unreadable: api.unreadable,
             ...(api.error === undefined ? {} : { error: api.error }),

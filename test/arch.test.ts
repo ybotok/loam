@@ -12,9 +12,9 @@
 import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseCoversEntry, closeIds } from "../src/core/arch.js";
-import { readHealth, type HealthFile } from "../src/core/health.js";
-import { parseRequirements } from "../src/core/spec.js";
+import { parseCoversEntry, closeIds } from "../src/core/c4/arch.js";
+import { readHealth, type HealthFile } from "../src/core/vocabulary/health.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 
 async function withProject(
@@ -117,7 +117,7 @@ describe("Covers: parsing (spec.ts)", () => {
 /* The health.yaml reader                                              */
 /* ------------------------------------------------------------------ */
 
-describe("readHealth (core/health.ts)", () => {
+describe("readHealth (core/vocabulary/health.ts)", () => {
   async function readOf(content: string | null): Promise<HealthFile> {
     const dir = await makeTmpDir();
     const path = join(dir, "health.yaml");

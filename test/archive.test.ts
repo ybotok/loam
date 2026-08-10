@@ -29,8 +29,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import { parse } from "yaml";
-import { loadFile, type LoadedDoc } from "../src/core/likec4.js";
-import { parseRequirements } from "../src/core/spec.js";
+import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { parseRequirements } from "../src/core/document/spec.js";
 import {
   coherentFixture,
   makeProject,

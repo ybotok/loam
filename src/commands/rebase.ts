@@ -22,10 +22,10 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadConfig } from "../core/config.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
-import { InvalidIdError, assertServiceId } from "../core/ids.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../core/json.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
+import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import {
   compareIds,
   featureSpecPaths,
@@ -49,7 +49,7 @@ import {
   readRequirementsDocument,
   requirementDigest,
   type Requirement,
-} from "../core/spec.js";
+} from "../core/document/spec.js";
 import {
   OpenapiMergeError,
   pinOpenapiOperations,
@@ -119,7 +119,7 @@ export function registerRebase(program: Command): void {
       }
 
       // The id grammar on the RAW argument, before it reaches a path join —
-      // one grammar for the whole tool (core/ids.ts).
+      // one grammar for the whole tool (core/kernel/ids.ts).
       if (opts.service !== undefined) {
         try {
           assertServiceId(opts.service, "--service");
@@ -318,7 +318,7 @@ async function planAxis(
   for (const r of reqs) {
     if (r.kind !== "MODIFIED" && r.kind !== "REMOVED") continue;
     // Every requirement parsed from a document carries its heading line
-    // (core/spec.ts). One built in memory has no document to write into, and
+    // (core/document/spec.ts). One built in memory has no document to write into, and
     // there is nothing truthful to report about pinning it.
     const line = r.line;
     if (line === undefined) continue;
@@ -395,7 +395,7 @@ async function planOpenapi(docsDir: string, service: string, openapiPath: string
 
 /**
  * The living requirement a delta requirement addresses — the merge's own
- * resolution order (core/spec.ts `applyRequirementDelta`), so a pin is taken
+ * resolution order (core/document/spec.ts `applyRequirementDelta`), so a pin is taken
  * over exactly the requirement archive would rewrite: the stable ID when the
  * delta carries one, the exact heading otherwise, and the FIRST match either
  * way (duplicates are refused upstream by `delta.living-duplicate-requirement`).
@@ -421,7 +421,7 @@ interface LineEdit {
  * Where this requirement's `Based-On:` line goes, and whether it replaces one.
  *
  * `headingLine` is 1-based and `text` captures every body line after it
- * contiguously (core/spec.ts), so body line `i` is the 0-based document line
+ * contiguously (core/document/spec.ts), so body line `i` is the 0-based document line
  * `headingLine + i` — no rescan of the document, and no second opinion about
  * where a requirement begins. A new pin lands directly under `Requirement-ID:`
  * when there is one, matching what `serializeRequirements` writes, and

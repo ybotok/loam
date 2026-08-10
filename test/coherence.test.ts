@@ -12,7 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { featureCoherence, type Issue } from "../src/core/coherence.js";
-import { gatesArchive } from "../src/core/issue.js";
+import { gatesArchive } from "../src/core/vocabulary/issue.js";
 import {
   coherentFixture,
   makeProject,

@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for src/core/spec.ts:
+ * Deep invariant tests for src/core/document/spec.ts:
  *   parseRequirements / requirementsMissingScenarios / serializeRequirements / applyRequirementDelta
  *
  * Tests assert DESIRED behavior per SCHEMA.md ("Living spec vs delta") and the module
@@ -16,7 +16,7 @@ import {
   sectionHeadings,
   type Requirement,
   type DeltaKind,
-} from "../src/core/spec.js";
+} from "../src/core/document/spec.js";
 
 /** Written escaped: a literal U+FEFF in this source would itself be invisible. */
 const BOM = "\uFEFF";

@@ -26,9 +26,9 @@ import type { Command } from "commander";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { decodeDocument, NotUtf8DocumentError } from "../core/document-bytes.js";
-import { emitJson, emitJsonError, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/json.js";
+import { loadConfig } from "../core/envelope/config.js";
+import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
+import { emitJson, emitJsonError, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
 import {
   featureSpecPaths,
   listFeatures,
@@ -38,7 +38,7 @@ import {
   SPEC_AXES,
   type SpecAxis,
 } from "../core/repo.js";
-import { parseRequirements, type Requirement } from "../core/spec.js";
+import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import {
   axisLabel,
   featureFilesUnder,
@@ -49,7 +49,7 @@ import {
   type StampedFeature,
 } from "../core/gherkin.js";
 import { LOAM_VERSION } from "../core/version.js";
-import { isPathInside, resolveInside, UnsafePathError } from "../core/path-safety.js";
+import { isPathInside, resolveInside, UnsafePathError } from "../core/kernel/path-safety.js";
 
 interface GherkinOptions {
   service?: string;

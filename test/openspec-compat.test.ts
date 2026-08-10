@@ -1,7 +1,7 @@
 /**
- * Format-compatibility tests for src/core/spec.ts against REAL OpenSpec markdown.
+ * Format-compatibility tests for src/core/document/spec.ts against REAL OpenSpec markdown.
  *
- * src/core/spec.ts reimplements OpenSpec's requirement format from the outside. This
+ * src/core/document/spec.ts reimplements OpenSpec's requirement format from the outside. This
  * file is the routine-CI evidence for that claim: it runs our parser over seven
  * representative verbatim spec files vendored from Fission-AI/OpenSpec (see
  * test/fixtures/openspec/README.md for provenance) and pins what we actually do with
@@ -101,7 +101,7 @@ import {
   KIND_RE,
   sectionHeadings,
   type DeltaKind,
-} from "../src/core/spec.js";
+} from "../src/core/document/spec.js";
 // For the RENAMED-section shape check only: the parse gap it closes is pinned in
 // this file, so the check that makes the gap loud is pinned beside it.
 import { join } from "node:path";

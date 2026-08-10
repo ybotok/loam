@@ -28,7 +28,7 @@ import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, TEST_IDENTITY, writeFiles, type Project } from "./helpers/harness.js";
-import { parseFrontmatter, stringField } from "../src/core/frontmatter.js";
+import { parseFrontmatter, stringField } from "../src/core/document/frontmatter.js";
 import { expandSourceFiles, sourcesDigest } from "../src/core/provenance.js";
 import { vouch } from "../src/commands/vouch.js";
 

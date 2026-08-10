@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { makeTmpDir, runLoam } from "./helpers/harness.js";
 import { AGENT_TOOLS, detectAgentTools, plannedCommandFiles } from "../src/core/agent.js";
-import { parseConfig } from "../src/core/config.js";
+import { parseConfig } from "../src/core/envelope/config.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
