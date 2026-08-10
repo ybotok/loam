@@ -3,7 +3,7 @@ import { loadConfig } from "../core/envelope/config.js";
 import { explore, type Exploration, type ExploreService } from "../core/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
-import { assertServiceId, featureIdProblem, InvalidIdError } from "../core/kernel/ids.js";
+import { featureIdProblem, parseServiceIds } from "../core/kernel/ids.js";
 import { DocsRepoUnavailableError } from "../core/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";
@@ -82,11 +82,9 @@ export function registerExplore(program: Command): void {
       // A seed naming a service that does not EXIST is fine and reported as
       // `unknown` — the feature may be introducing it — but one that could not
       // be a service directory at all is a typo, not an intention.
-      try {
-        for (const id of services) assertServiceId(id, "service");
-      } catch (err) {
-        if (!(err instanceof InvalidIdError)) throw err;
-        fail(json, "invalid-option", err.message);
+      const seeds = parseServiceIds(services, "service");
+      if (!seeds.ok) {
+        fail(json, "invalid-option", seeds.problem);
         return;
       }
 
@@ -104,7 +102,7 @@ export function registerExplore(program: Command): void {
       try {
         const result = await explore({
           docsDir,
-          services,
+          services: seeds.ids,
           operations,
           featureId: opts.as ?? PLACEHOLDER,
           context: new FleetContext(),

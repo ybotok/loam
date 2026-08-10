@@ -36,7 +36,7 @@ export interface ServiceArtifacts {
 
 export interface ServiceEntry {
   /** Canonical service id — the directory name under services/. */
-  id: string;
+  id: RawServiceId;
   /** Absolute path to services/<id>/. */
   dir: string;
   has: ServiceArtifacts;
@@ -437,7 +437,7 @@ export async function listServices(docsDir: string, context?: FleetContext): Pro
       const fm = await readFrontmatter(p.spec);
       const idProblem = serviceIdProblem(id, "directory name");
       return {
-        id,
+        id: rawServiceId(id),
         dir: p.dir,
         ...(idProblem === null ? {} : { idProblem }),
         has: {

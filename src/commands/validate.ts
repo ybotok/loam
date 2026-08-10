@@ -599,7 +599,7 @@ async function validateLandscape(
     return report;
   }
 
-  const services = new Set(entries.map((s) => s.id));
+  const services: ReadonlySet<string> = new Set(entries.map((s) => s.id));
   // Depth is not a fact about a service. This used to keep only top-level
   // elements (`!e.id.includes(".")`), which ordinary C4 breaks the moment it
   // groups services under a parent: every nested element was thrown away, so a

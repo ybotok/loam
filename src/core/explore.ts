@@ -136,8 +136,8 @@ export interface Exploration {
 
 export interface ExploreRequest {
   docsDir: string;
-  /** Service ids to explore around. */
-  services: string[];
+  /** Service ids to explore around. Checked at the command boundary. */
+  services: ServiceEntry["id"][];
   /** operationIds to explore around; each resolves to the service that defines it. */
   operations: string[];
   /** Placeholder feature id for the suggested command line. */
@@ -153,8 +153,8 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   const { docsDir, featureId } = req;
   const context = req.context ?? new FleetContext();
   const entries = await context.listServices(docsDir);
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  const known = new Set(byId.keys());
+  const byId = new Map<string, ServiceEntry>(entries.map((e) => [e.id, e]));
+  const known: ReadonlySet<string> = new Set(byId.keys());
 
   const landPath = landscapePath(docsDir);
   const present = existsSync(landPath);
@@ -170,7 +170,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
 
   // Operation seeds resolve through the living contracts, not the map: the map
   // says who CALLS an operation, and the question here is who DEFINES it.
-  const opSeeds: string[] = [];
+  const opSeeds: ServiceEntry["id"][] = [];
   const unresolvedOperations: string[] = [];
   for (const op of req.operations) {
     const owner = await operationOwner(docsDir, entries, op, context);
@@ -194,7 +194,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   // parser happened to yield last. That is a field whose value depends on the
   // order lines appear in a `.likec4` file, which is the kind of answer that
   // reads as derived and is not.
-  const seedSet = new Set(seeds);
+  const seedSet = new Set<string>(seeds);
   const callsSeed = new Set<string>();
   const calledBySeed = new Set<string>();
   for (const r of relationships) {
@@ -304,7 +304,7 @@ async function describe(req: DescribeRequest): Promise<ExploreService> {
     };
   }
 
-  const archSpec = existsSync(servicePaths(docsDir, id).archSpec);
+  const archSpec = existsSync(servicePaths(docsDir, entry.id).archSpec);
   // Positive evidence only, and the rule is `list`'s verbatim: an inbound edge
   // carrying an operation is proof somebody calls this service, while a
   // landscape that is absent or does not parse proves nothing about who calls
@@ -318,7 +318,7 @@ async function describe(req: DescribeRequest): Promise<ExploreService> {
   // parse comes back from the id list as an EMPTY set, indistinguishable from a
   // service with no endpoints — and "this service offers nothing" is the worst
   // possible lie to tell somebody deciding whether to call it.
-  const api = await req.context.readOpenapi(servicePaths(docsDir, id).openapi);
+  const api = await req.context.readOpenapi(servicePaths(docsDir, entry.id).openapi);
   const operations = api.ops.filter((o) => !o.remove).map((o) => o.id);
 
   return {
@@ -350,7 +350,7 @@ async function operationOwner(
   entries: ServiceEntry[],
   op: string,
   context: FleetContext,
-): Promise<string | null> {
+): Promise<ServiceEntry["id"] | null> {
   for (const entry of entries) {
     if (!entry.has.openapi) continue;
     const api = await context.readOpenapi(servicePaths(docsDir, entry.id).openapi);
