@@ -16,19 +16,28 @@ No — but the tree does not show you why, and that gap is the real finding.
   `buildProgram().commands.length` rather than counting registrations.
 - `src/commands/` (21 files: 19 command modules + `format.ts` + `docs-repo-gate.ts`) owns the
   printing and the exit codes.
-- `src/core/` (37 modules) imports `commander` zero times, never imports `commands/`, and holds
+- `src/core/` (38 modules) imports `commander` zero times, never imports `commands/`, and holds
   four `console` calls in total — three in `core/json.ts`, which *is* the envelope emitter, and
   one stray in `core/config.ts:224`.
-- Those 37 modules form a value-import DAG **seven levels deep with zero cycles**.
+- Those 38 modules form a value-import DAG **seven levels deep with zero cycles**.
 
-So the layering is true. Nothing in the repository expresses or enforces it. `docs/CODE-STYLE.md`
-states it in prose; no tool reads prose. The cost of "true but unexpressed" is not that a reader
+So the layering is true. For a long time nothing in the repository expressed it: `docs/CODE-STYLE.md`
+stated it in prose, and no tool reads prose. The cost of "true but unexpressed" is not that a reader
 is confused — it is that the next violation lands silently, exactly as `config.ts:224` did, and
 the eight import cycles the CHANGELOG records removing can come back the same way.
 
-Folders would not close that gap. A lint flag and two greps would.
+This section used to end "folders would not close that gap; a lint flag and two greps would." The
+flag and the greps are still the sharper tools — but they check that the layering *holds*, and say
+nothing about what the layering *is*. Rule 21's packages answer that second question, and
+`scripts/package-graph.mjs` is what keeps the answer honest, because a directory tree is a claim
+the compiler does not check.
 
 ## The layers
+
+> **In flight.** The counts below describe the flat layout as measured before rule 21 landed.
+> The layers themselves are not changing — rule 21 makes them visible in `ls` instead of only in
+> this table. Where a count here disagrees with the tree, the tree is right and this table is the
+> next thing to fix; `scripts/package-graph.mjs` prints the current one.
 
 | Layer | Modules | Job |
 |---|---|---|
@@ -48,6 +57,51 @@ Inside `core/`, the DAG levels are a real division of labour:
 | L4 | `fleet-context` `verify` `openapi-merge` | Whole-fleet caching and evidence |
 | L5 | `coherence` `gherkin` `dependencies` `doctor` `explore` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L6 | `results` `status` | Aggregate answers for a feature or a fleet |
+
+## The target package layout
+
+Rule 21's five-file limit needs a destination for every module, and the destination has to be
+decided before the moving starts — a package invented one file at a time ends up as `shared/`.
+These are the subjects. Each becomes a directory; each nests further the moment its own files pass
+five, which most of them will once the 300-line limit splits the large modules.
+
+| Package | Holds | Depends on |
+|---|---|---|
+| `core/kernel/` | `ids` `path-safety` `records` `document-bytes` `concurrency` | nothing |
+| `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
+| `core/envelope/` | `json` `config` | kernel |
+| `core/c4/` | `likec4` `arch` | — |
+| `core/document/` | `frontmatter` `spec` | kernel, vocabulary |
+| `core/agent/` | `agent` `agents-stamp` `version` | kernel |
+| `core/repo/` | `repo` | document, kernel |
+| `core/api/` | `openapi` `asyncapi` `openapi-merge` | repo, kernel |
+| `core/fleet/` | `fleet-context` `verify` | api, repo, c4, document, kernel |
+| `core/feature/` | `delta` `staging` `provenance` `docs` `brief` | repo, document, envelope, agent, c4, kernel |
+| `core/openspec/` | `openspec-inventory` | repo, document, kernel |
+| `core/checks/` | `coherence` `dependencies` `gherkin` `explore` `doctor` | everything above |
+| `core/answer/` | `status` `results` | checks, and everything above |
+
+The order of the rows is the dependency order, and every edge points up it. That is not a
+coincidence — the subjects were derived from the seven DAG levels this document already measured,
+which is why a grouping exists at all: a tree whose packages do not follow its levels has no
+acyclic grouping to find.
+
+**The obligation caught a real cycle in the first draft of this table.** `fleet-context` looked
+like it belonged with `repo` — it is the read model's cache, and `repo` is the read model. But
+`openapi` and `asyncapi` both import `repo`, and `fleet-context` imports both, so `repo/` and
+`api/` would have pointed at each other while every *file* stayed perfectly acyclic and
+`import/no-cycle` stayed silent. `fleet-context` is L4 and `repo` is L2; grouping them was grouping
+two levels because they share a noun. It has its own package with `verify`, the other L4 module,
+and the graph is acyclic again. This is exactly the failure the old rule 21 predicted, and the
+reason `npm run arch:graph` runs before a move rather than after.
+
+Two rules bind while this is in flight:
+
+1. **Never move a module without running `npm run arch:graph` on the result.** The check is a
+   second, and the failure it catches is invisible to every other tool in the repo.
+2. **A package under the limit is not finished.** `kernel/` holds exactly five files, so the next
+   primitive forces the question "which two subjects are in here?" — which is the limit working,
+   not the limit obstructing.
 
 ## Bounded contexts: there is one
 
@@ -116,7 +170,9 @@ layout differs, and that part is already isolated.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
     13 exported classes: 12 typed errors and `FleetContext`.
 11. **No barrel or index re-export files.** None exist. They would make rule 4 unenforceable by
-    hiding the real edge behind a re-export.
+    hiding the real edge behind a re-export — and under rule 21 they would also defeat the
+    package graph, since every import would point at a directory instead of at the module it
+    actually needs. A package is a place files live, never a thing you import.
 12. **A `FleetContext` method may memoise; it may never compute.** `fleet-context.ts` carries a
     tombstone comment for the time `serviceOperationIds` broke this: the class's copy interleaved
     removals with upserts, so `archive` (no context) and `validate`/`status` (context) disagreed
@@ -132,10 +188,14 @@ layout differs, and that part is already isolated.
 
 ### Types and values
 
-15. **Four or more same-typed parameters → options object.** The codebase already does this where
-    arity hurt (`vouch(req: VouchRequest)`, `validateService(check: ServiceCheck)`). Seventeen
-    functions currently have a run of three; they are grandfathered. This rule binds new code and
-    the two four-string runs named in the table below.
+15. **At most four parameters — function, method or constructor.** Not "four of the same type",
+    and not a review preference: `test/code-limits.test.ts` counts them across `src/` and `test/`.
+    A fifth parameter means the callee is taking a record it has not named yet; name it. The
+    codebase already does this where arity hurt (`vouch(req: VouchRequest)`,
+    `validateService(check: ServiceCheck)`).
+
+    The count is the ceiling, not the target. Two same-typed parameters in a row is already a
+    swap waiting to happen — see rules 16 and 17 for the two forms it has actually taken here.
 16. **Two exported functions in one module that take the same parameter types must take them in
     the same order.** Today `pinOpenapiOperations(featureText, livingText, service)` and
     `mergeOpenapiPaths(livingText, featureText, service)` are reversed. Both documents parse, so a
@@ -143,13 +203,26 @@ layout differs, and that part is already isolated.
     which `archive` then writes over the service's living `openapi.yaml`.
 17. **A function needing `featureDir` and `featureId` takes the `FeatureEntry`.** `core/repo.ts`
     already defines it, and derives the id from the dir — so passing both passes a fact and its
-    own derivation, representably inconsistent. This is the exception to rule 15: take the entry,
-    not an options object.
-18. **No branded or nominal string types for `service`, `featureId`, `docsDir` or paths.**
-    `core/repo.ts`'s `listServices` deliberately returns ids that *failed* `serviceIdProblem`,
-    reporting the failure as a field, because `loam list` must show you the badly-named directory
-    that exists. A brand meaning "this passed validation" would need a knowingly false cast at
-    exactly that point. Rules 15–17 buy the same protection for a fraction of the edits.
+    own derivation, representably inconsistent. Note what this is *not*: when rule 15 sends you
+    looking for a record, take the entry that already exists rather than inventing an options
+    object that holds the same two fields loosely.
+18. **A validated identifier or path carries a branded type; a raw one carries the raw type.**
+    `ServiceId`, `FeatureId`, `DocsDir` and the path types are `string & { readonly [brand]: … }`,
+    constructible only through the smart constructor that validates. `docs/CODE-STYLE.md` holds
+    the shape and the four rules that make a brand worth its annotations.
+
+    This rule used to say the opposite, and the objection it rested on is real and is what the
+    two-type split answers: `core/repo.ts`'s `listServices` deliberately returns ids that *failed*
+    `serviceIdProblem`, reporting the failure as a field, because `loam list` must show you the
+    badly-named directory that exists on disk. Under a single brand meaning "this passed
+    validation", that one line would need a knowingly false cast — and a brand with one false cast
+    is not enforcing anything at the other call sites. So the raw form is its own type
+    (`RawServiceId`), `listServices` returns *that*, and the validating parse is the only bridge
+    between them. The badly-named directory is now unable to reach a path join by accident, which
+    is the whole point; rule 6 stops being a convention somebody has to remember at six command
+    boundaries.
+
+    Cost, so nobody re-opens this without knowing it: roughly 230 annotation sites, paid once.
 19. **Expected outcomes are return values; exceptions are for the unexpected.** Already the house
     style. `loadConfig` returning `null` while printing the reason is the one place it half-holds.
 20. **Every `child_process` call carries a timeout.** `core/provenance.ts` uses `spawn` with a
@@ -158,15 +231,33 @@ layout differs, and that part is already isolated.
 
 ### What not to do
 
-21. **Do not subdivide `src/core/` into subject folders.** ~90 core→core, 127 commands→core and
-    ~100 test→src import statements would be rewritten, `git blame` breaks on 35 files whose value
-    is in their comments, and it replaces a zero-cycle file graph with a group graph that has
-    cycles. Directories are not checked by the compiler: `../c4/likec4.js` is exactly as legal as
-    `./likec4.js`. Before adopting any grouping, show that the group graph is acyclic —
-    `import/no-cycle` will not see it for you.
-22. **Do not move to workspaces or `packages/`.** That layout tracks how many artifacts you
-    publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it. It is also
-    the one option here that is not cheaply reversible.
+21. **`src/` is a tree of packages, each at most five files.** A directory over five files splits
+    along a subject seam; sub-directories are packages in their own right and do not count toward
+    their parent's five. `test/code-limits.test.ts` counts this.
+
+    This rule used to say "do not subdivide `src/core/`", and everything it warned about is still
+    true — it is now a cost accepted with eyes open, and a set of obligations rather than a veto:
+
+    - **Prove the group graph is acyclic before adopting a grouping.** Directories are not checked
+      by the compiler: `../c4/likec4.js` is exactly as legal as `./likec4.js`, so
+      `import/no-cycle` sees the *file* graph and will never tell you the *package* graph has a
+      cycle. A grouping that puts two mutually-referencing subjects in different packages is a
+      design claim the tree cannot hold. Check it with `scripts/package-graph.mjs`, which reports
+      the package-level cycles, and make the check part of the move.
+    - **`git mv`, in a commit that does nothing else.** The old rule's sharpest objection was
+      `git blame` breaking on 35 files whose value is in their comments. Rename detection survives
+      a pure move and does not survive a move mixed with edits. Split *or* move in one commit,
+      never both.
+    - **The import rewrite is mechanical and total** — ~90 core→core, ~127 commands→core and ~117
+      test→src statements. Rewrite them with a script and let `npm run typecheck` be the proof,
+      not a reading.
+
+    What the tree buys for that: `ls src/core` used to answer "38 modules" and nothing else. The
+    seven-level DAG in the table above was true, measured, and invisible.
+22. **Do not move to workspaces or `packages/`.** "Package" in rule 21 means a directory, and
+    nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how
+    many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
+    it. It is also the one option here that is not cheaply reversible.
 23. **Do not vertical-slice by command.** `core/json.ts` is imported by every command module but
     one; `core/config.ts` and `core/repo.ts` by 16 each. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
@@ -192,9 +283,19 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 | Audit the six `serviceResolver` calls that omit `known` | Without it the resolver's last rung can resolve a container id to a service that never existed, so group-by-service joins find nothing | 6 sites to decide, plus a comment at each deliberate omission. Not confirmed against a fixture — audit before fixing | **Worth considering** |
 | Fix `core/config.ts:224` | Restores rule 1 to exceptionless | Three options: delete the `console.error` (1–3 lines, check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in an `.oxlintrc.json` override (4 lines, two visible exceptions instead of one invisible) | **Your call** — all three are defensible; leaving it undecided is not |
 | Split `commands/validate.ts`'s rule functions into core | Nothing yet | ~1300 lines relocated. `core/status.ts` already needs these answers and does *not* re-derive them — it calls into core. Everything with two callers is already there | **Not worth it** until `loam status --service` exists |
-| Subdivide `src/core/` into folders | Seeing the layer in `ls` | See rule 21 | **Not worth it** |
-| Brand `ServiceId` / `FeatureId` / `DocsDir` | Compile-time swap protection | ~230 annotation sites, and at least one required cast would be knowingly false (rule 18). No swap bug has ever shipped here — `git log -S` across the whole history finds none | **Not worth it.** Rules 15–17 buy the same protection for ~60 edits |
 | A shared `withDocsRepo(…)` command frame | Removes a repeated 9–11 line prelude | ~0.5% of the command layer, and everything the frame must parameterise is the part that differs: four distinct consequence sentences, a conditional gate level, and `validate`'s per-target catch. Tests assert stdout, so the change would be invisible to the suite | **Not worth it.** The defect class that actually bit — four drifting errno readings — is already fixed by `docs-repo-gate.ts` |
+
+### Reopened and decided the other way
+
+Two rows above used to read **Not worth it**. They were reversed on 2026-08-10 by a standards
+decision — the four limits in `docs/CODE-STYLE.md` — not by new measurement. The measurement was
+right; it is the trade that changed. Both are recorded here rather than deleted, because the cost
+each one names is the cost now being paid, and the next reader deserves to know it was foreseen.
+
+| Change | Was | Now |
+|---|---|---|
+| Subdivide `src/core/` into folders | *Not worth it* — buys "seeing the layer in `ls`" for ~300 rewritten imports, `git blame` broken on 35 comment-heavy files, and a group graph that may have cycles where the file graph has none | **Rule 21.** The rewrite is scripted and `typecheck` proves it; `git mv` in a move-only commit answers `git blame`; the group graph is proved acyclic by `scripts/package-graph.mjs` before the move, which is the obligation the old row was right to demand |
+| Brand `ServiceId` / `FeatureId` / `DocsDir` | *Not worth it* — ~230 annotation sites, one required cast would be knowingly false, and `git log -S` across the whole history finds no swap bug that ever shipped | **Rule 18.** The false cast is answered by making the raw form its own type instead of casting it. "No swap bug has shipped" remains true and remains the honest argument against; the counter-argument is that rule 6 currently rests on six command boundaries each remembering to call `assertServiceId`, and `validate` already forgot |
 
 ## What enforces what
 
@@ -214,6 +315,12 @@ test.
 **A test can hold what lint cannot.** `test/codes-drift.test.ts` is the precedent: it
 static-analyses `src/` from inside vitest with a recursive `readdir`, so it is layout-agnostic.
 
+- Rules 15 and 21 — `test/code-limits.test.ts`, live. It walks `src/` and `test/`, counts lines
+  per file, parameters per function and files per directory, and compares against
+  `test/code-limits-baseline.json`. The baseline lists what was already over a limit when the
+  limits landed and may only shrink: an entry the file no longer needs fails the test, so the
+  list cannot silently become the permanent state. Being layout-agnostic matters more here than
+  anywhere else — this test has to keep working while rule 21 moves every file it reads.
 - Rule 6 — assert `loam validate --service ../../etc` exits `invalid-option`.
 - Rule 7 — assert the feature-id regex source appears once across `src/`.
 - Rule 12 — generalise the `for (const withContext of [false, true])` loop in
@@ -222,10 +329,16 @@ static-analyses `src/` from inside vitest with a recursive `readdir`, so it is l
   currently a comment.
 - Rule 20 — grep for `execFile(` / `spawn(` without a `timeout`.
 
-**tsc holds rules 15–17 for free** once applied: an options object or a `FeatureEntry` parameter
-makes every stale call site a compile error. That is why they are worth more than a brand — the
-same compile-time enforcement, without asserting an invariant the code deliberately violates.
+**tsc holds rules 16–18 for free** once applied: an options object, a `FeatureEntry` parameter or
+a branded id makes every stale call site a compile error. Rule 18's brands are the strongest form
+of this — a `string` no longer fits where a `ServiceId` is wanted — and the reason the count of
+annotation sites is a one-time cost rather than an ongoing one.
 
-**Review convention only, and that is fine:** rules 8, 9, 13, and 21–25. They are decisions, not
+**A script holds the one thing neither can see.** `scripts/package-graph.mjs` builds the
+package-level import graph and reports its cycles. `import/no-cycle` reads the file graph and is
+blind to a cycle that exists only between directories, so rule 21's acyclicity obligation is this
+script or it is nothing.
+
+**Review convention only, and that is fine:** rules 8, 9, 13, and 22–25. They are decisions, not
 properties. Writing them down is what makes the next "should we restructure?" a five-minute
 conversation instead of a five-day one.

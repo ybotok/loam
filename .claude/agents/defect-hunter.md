@@ -30,6 +30,15 @@ Prioritise these — each has shipped in this codebase before:
   anticipated answers `undefined` to every field and slips through as something benign.
 - **Path handling that resolves differently than the caller assumes** — symlink following where
   containment was meant, or containment where a supported layout was meant.
+- **A split that took the code and left the invariant.** `src/` is being reshaped under a
+  300-line and 5-file limit, which makes this the live class: a guard whose two halves now sit in
+  different modules and no longer run in sequence; a WHY comment stranded beside the caller while
+  the line it described moved; a helper duplicated during a move instead of imported, so the next
+  fix lands in one copy. `git log --diff-filter=R --stat -M` finds the recent moves; diff the two
+  sides rather than reading either alone.
+- **A brand that is not enforcing what it claims.** `as ServiceId` somewhere other than the smart
+  constructor, or a value that reached a branded parameter without being parsed. The type says
+  validated; trace whether anything actually validated it.
 
 ## Discipline
 

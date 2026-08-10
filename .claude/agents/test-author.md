@@ -23,6 +23,11 @@ Do not invent a second harness, a new fixture factory, or a mocking layer. Read 
 tests in the file you are adding to and match their shape exactly — the file's existing idiom
 outranks your preference.
 
+One limit reaches into `test/`: **at most 4 parameters** on any function, helper included
+(`test/code-limits.test.ts` counts them). A fixture builder wanting a fifth takes a named options
+record. The 300-line and 5-file limits do **not** apply here — a test file is one suite about one
+subject, and splitting it to reach a number scatters that subject for nothing.
+
 ## The bar for a regression test
 
 **It must fail before the fix and pass after.** Prove it, do not assume it:
