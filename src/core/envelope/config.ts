@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, parse as parsePath, resolve } from "node:path";
 import { resolveInside } from "../kernel/path-safety.js";
-import { serviceIdProblem } from "../kernel/ids.js";
+import { parseServiceId, type ServiceId } from "../kernel/ids.js";
 
 /** Local config, committed at the root of a service repo (or the docs repo itself). */
 export const CONFIG_FILENAME = "loam.json";
@@ -10,8 +10,15 @@ export const CONFIG_FILENAME = "loam.json";
 export interface LoamConfig {
   /** Path to the single shared docs repo (the source of truth). Absolute or relative to the config file. */
   docsDir: string;
-  /** Canonical id of the service in the current repo, if this is a service repo. */
-  service?: string;
+  /**
+   * Canonical id of the service in the current repo, if this is a service repo.
+   *
+   * Branded because `parseConfig` below is the one place that checks it, so
+   * every command reading `config.service` is reading a name that has already
+   * passed the grammar — which is why the config arm of
+   * `opts.service ?? config.service` needs no second parse.
+   */
+  service?: ServiceId;
   /**
    * Where Gherkin lives in this service repo, relative to the repo root
    * (default "features" — the cucumber convention). `loam gherkin` writes only
@@ -161,9 +168,19 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
   // Same discipline as docsDir: a malformed fact refuses the whole config
   // rather than being silently defaulted over — `5` or `""` here is a typo,
   // and defaulting would send generated files somewhere nobody chose.
+  // `parseServiceId` rather than a bare check: the same call both refuses the
+  // malformed value and produces the branded one below, so there is no window
+  // in which a checked name is still typed as an unchecked string. It takes a
+  // `string`, hence the shape guard first — the id grammar's own message is
+  // about spelling, and `5` is not a spelling.
+  let service: ServiceId | undefined;
   if (record.service !== undefined) {
-    const problem = serviceIdProblem(record.service, '"service"');
-    if (problem !== null) throw new ConfigError("service", `${file}: ${problem}`);
+    if (typeof record.service !== "string") {
+      throw new ConfigError("service", `${file}: "service" must be a string.`);
+    }
+    const parsed = parseServiceId(record.service, '"service"');
+    if (!parsed.ok) throw new ConfigError("service", `${file}: ${parsed.problem}`);
+    service = parsed.id;
   }
   if (record.gherkinDir !== undefined
     && (typeof record.gherkinDir !== "string" || record.gherkinDir === "")) {
@@ -195,7 +212,7 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     // Resolved here, against the file's own directory, so the doc comment on
     // `docsDir` is true no matter where a caller later resolves the path from.
     docsDir: resolve(configDir, record.docsDir),
-    ...(record.service === undefined ? {} : { service: record.service as string }),
+    ...(service === undefined ? {} : { service }),
     ...(record.gherkinDir === undefined ? {} : { gherkinDir: record.gherkinDir as string }),
     ...(record.agentTools === undefined ? {} : { agentTools: record.agentTools as string[] }),
     root: resolve(configDir),
