@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { agentsStaleFinding } from "../core/agents-stamp.js";
 import { inOrder } from "../core/kernel/concurrency.js";
+import type { RawServiceId } from "../core/kernel/ids.js";
+import { resolveServiceTarget } from "../core/repo/service-target.js";
 import { loadConfig } from "../core/envelope/config.js";
 import { listField, readFrontmatter } from "../core/document/frontmatter.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
@@ -144,6 +146,12 @@ export function registerValidate(program: Command): void {
       const repoOf = (service: string): string | undefined =>
         config.service === service ? process.cwd() : undefined;
 
+      /** One service target, from a name the enumeration or the grammar approved. */
+      const serviceTarget = (id: RawServiceId): Promise<TargetReport> =>
+        guarded({ kind: "service", id }, () =>
+          validateService({ docsDir, service: id, repoDir: repoOf(id), gherkinDir: config.gherkinDir, fleet }),
+        );
+
       const targets: TargetReport[] = [];
       /** What the positional argument turned out to name, for the JSON payload. */
       let resolvedKind: "service" | "feature" | undefined;
@@ -228,17 +236,9 @@ export function registerValidate(program: Command): void {
               return;
             }
             resolvedKind = "service";
-            targets.push(
-              await guarded({ kind: "service", id: target }, () =>
-                validateService({
-                  docsDir,
-                  service: target,
-                  repoDir: repoOf(target),
-                  gherkinDir: config.gherkinDir,
-                  fleet,
-                }),
-              ),
-            );
+            const resolved = await resolveServiceTarget(docsDir, target, "target", fleet);
+            if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
+            targets.push(await serviceTarget(resolved.id));
           }
         } else {
           const service = opts.service ?? config.service;
@@ -246,17 +246,9 @@ export function registerValidate(program: Command): void {
             fail(json, "invalid-option", NO_SERVICE_MESSAGE);
             return;
           }
-          targets.push(
-            await guarded({ kind: "service", id: service }, () =>
-              validateService({
-                docsDir,
-                service,
-                repoDir: repoOf(service),
-                gherkinDir: config.gherkinDir,
-                fleet,
-              }),
-            ),
-          );
+          const resolved = await resolveServiceTarget(docsDir, service, "--service", fleet);
+          if (!resolved.ok) return fail(json, "invalid-option", resolved.problem);
+          targets.push(await serviceTarget(resolved.id));
         }
       } catch (err) {
         // The docs repo went away between the gate above and the enumeration.
