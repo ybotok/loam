@@ -35,7 +35,7 @@ import { loadConfig } from "../core/envelope/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
 import { resolvePortableFileInside } from "../core/kernel/path-safety.js";
 import { today } from "../core/provenance.js";
-import { missingFeatureMessage, resolveFeature } from "../core/repo.js";
+import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { contestedDigests, readCucumberReport, runnerAnswers, type ReportScenario } from "../core/results.js";
 import {
   attestedNotice,

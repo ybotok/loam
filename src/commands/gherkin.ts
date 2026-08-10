@@ -37,7 +37,7 @@ import {
   servicePaths,
   SPEC_AXES,
   type SpecAxis,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import {
   axisLabel,

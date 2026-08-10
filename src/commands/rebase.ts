@@ -34,7 +34,7 @@ import {
   servicePaths,
   SPEC_AXES,
   type SpecAxis,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import {
   DocsBusyError,
   acquireDocsLock,

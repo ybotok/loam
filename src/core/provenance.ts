@@ -28,7 +28,7 @@ import {
   type Frontmatter,
 } from "./document/frontmatter.js";
 import type { Finding } from "./vocabulary/report.js";
-import { featurePaths, servicePaths, SPEC_AXES } from "./repo.js";
+import { featurePaths, servicePaths, SPEC_AXES } from "./repo/repo.js";
 import { isPathInside, resolveInside } from "./kernel/path-safety.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */

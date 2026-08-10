@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import type { FleetContext } from "./fleet-context.js";
-import { servicePaths } from "./repo.js";
+import { servicePaths } from "./repo/repo.js";
 
 /**
  * The async contract axis: AsyncAPI 3.0, read the way `core/openapi.ts` reads

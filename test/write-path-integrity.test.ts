@@ -531,7 +531,7 @@ describe("a commit killed between two renames", () => {
  * Move `services/<service>/` out to a sibling checkout and mount it back by
  * symlink — how a worktree, a submodule, or one service's directory shared
  * between two checkouts actually arrives. loam follows these links rather than
- * refusing them (core/repo.ts's `entryIs` says why in full), so every write-path
+ * refusing them (core/repo/repo.ts's `entryIs` says why in full), so every write-path
  * question asked about a file under one has to be answerable too.
  */
 async function mountServiceFromSibling(p: Project, service: string): Promise<string> {

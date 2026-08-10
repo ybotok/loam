@@ -49,7 +49,7 @@ import {
   resolveFeature,
   servicePaths,
   SPEC_AXES,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import { readOpenapi } from "../core/openapi.js";
 import {
   mergeOpenapiPaths,

@@ -17,7 +17,7 @@ import {
   resolveFeature,
   servicePaths,
   type FeatureEntry,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";

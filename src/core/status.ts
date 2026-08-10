@@ -117,7 +117,7 @@ import {
   SPEC_AXES,
   type FeatureEntry,
   type ServiceEntry,
-} from "./repo.js";
+} from "./repo/repo.js";
 import { requirementsMissingScenarios, type Requirement } from "./document/spec.js";
 import { COMMIT_INTENT, readCommitIntent } from "./staging.js";
 import {

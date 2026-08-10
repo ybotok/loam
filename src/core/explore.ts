@@ -36,7 +36,7 @@ import {
   nearestIds,
   servicePaths,
   type ServiceEntry,
-} from "./repo.js";
+} from "./repo/repo.js";
 
 /** One end of a call the fleet map already draws. */
 export interface ExploreEdge {

@@ -35,7 +35,7 @@ import {
   listServices,
   type FeatureEntry,
   type ServiceEntry,
-} from "./repo.js";
+} from "./repo/repo.js";
 import { parseRequirements, type Requirement } from "./document/spec.js";
 
 export interface FleetContextStats {

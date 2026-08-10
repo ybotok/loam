@@ -24,7 +24,7 @@ import {
   listServices,
   servicePaths,
   SPEC_AXES,
-} from "./repo.js";
+} from "./repo/repo.js";
 import { parseRequirements, type Requirement } from "./document/spec.js";
 import {
   OPENAPI_BASELINE_KEY,

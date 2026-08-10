@@ -108,7 +108,7 @@ Two rules bind while this is in flight:
 Every attempt to find a second fails on measurement, not on taste.
 
 `Requirement` (`core/document/spec.ts`) is imported unchanged by more than a dozen modules and translated
-by none — there is no adapter anywhere. Both spec axes (`core/repo.ts` `SPEC_AXES`) use one
+by none — there is no adapter anywhere. Both spec axes (`core/repo/repo.ts` `SPEC_AXES`) use one
 grammar; `core/c4/arch.ts` adds a field parser, not a second requirement model. `FleetContext`
 caches services, features, texts, requirements, OpenAPI documents and LikeC4 models in one object.
 Under a sympathetic subject partition of `core/`, roughly 70% of internal edges cross a boundary,
@@ -203,7 +203,7 @@ layout differs, and that part is already isolated.
     `mergeOpenapiPaths(livingText, featureText, service)` are reversed. Both documents parse, so a
     swap compiles and runs — and `mergeOpenapiPaths` swapped returns the delta as the merged text,
     which `archive` then writes over the service's living `openapi.yaml`.
-17. **A function needing `featureDir` and `featureId` takes the `FeatureEntry`.** `core/repo.ts`
+17. **A function needing `featureDir` and `featureId` takes the `FeatureEntry`.** `core/repo/repo.ts`
     already defines it, and derives the id from the dir — so passing both passes a fact and its
     own derivation, representably inconsistent. Note what this is *not*: when rule 15 sends you
     looking for a record, take the entry that already exists rather than inventing an options
@@ -214,7 +214,7 @@ layout differs, and that part is already isolated.
     the shape and the four rules that make a brand worth its annotations.
 
     This rule used to say the opposite, and the objection it rested on is real and is what the
-    two-type split answers: `core/repo.ts`'s `listServices` deliberately returns ids that *failed*
+    two-type split answers: `core/repo/repo.ts`'s `listServices` deliberately returns ids that *failed*
     `serviceIdProblem`, reporting the failure as a field, because `loam list` must show you the
     badly-named directory that exists on disk. Under a single brand meaning "this passed
     validation", that one line would need a knowingly false cast — and a brand with one false cast
@@ -261,7 +261,7 @@ layout differs, and that part is already isolated.
     many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
     it. It is also the one option here that is not cheaply reversible.
 23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by every command module but
-    one; `core/envelope/config.ts` and `core/repo.ts` by 16 each. Slices would duplicate the hubs or
+    one; `core/envelope/config.ts` and `core/repo/repo.ts` by 16 each. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.
