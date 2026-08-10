@@ -186,6 +186,30 @@ export function parseServiceId(
 }
 
 /**
+ * The plural form, for the two commands that take a LIST of ids.
+ *
+ * It exists because `for (const id of ids) assertServiceId(id)` narrows the
+ * ELEMENT and not the array: the loop leaves `string[]`, so the value that
+ * reaches core is unbranded no matter how thoroughly each item was checked.
+ * That is invisible in review and the compiler is the only thing that sees it.
+ *
+ * Returns the offending value alongside the problem so the caller prints the
+ * same sentence, with the same code, that the element-wise loop printed.
+ */
+export function parseServiceIds(
+  ids: readonly string[],
+  label = "--service",
+): { ok: true; ids: ServiceId[] } | { ok: false; problem: string } {
+  const out: ServiceId[] = [];
+  for (const raw of ids) {
+    const parsed = parseServiceId(raw, label);
+    if (!parsed.ok) return parsed;
+    out.push(parsed.id);
+  }
+  return { ok: true, ids: out };
+}
+
+/**
  * A directory name off `readdir`. Says nothing about whether it is a legal id —
  * that is the point, and `idProblem` is where the answer goes.
  *
