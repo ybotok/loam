@@ -9,6 +9,90 @@ The compiler already enforces the boring half. `strict` and `noUncheckedIndexedA
 `correctness`, plus the import, promise and node plugins, at `--deny-warnings`. Nothing below
 repeats what those catch. What follows is what they cannot see.
 
+## Limits
+
+Four numbers. They are not guidance and they are not a review opinion —
+`test/code-limits.test.ts` counts them on every run of the gate.
+
+| Limit | Applies to | Enforced by |
+|---|---|---|
+| A source file is at most **300 lines** | `src/` | `test/code-limits.test.ts` |
+| A function or method takes at most **4 parameters** | `src/` and `test/` | `test/code-limits.test.ts` |
+| A constructor takes at most **4 parameters** | `src/` and `test/` | `test/code-limits.test.ts` |
+| A package directory holds at most **5 files** | `src/` | `test/code-limits.test.ts` |
+
+A directory over five files splits into sub-packages along a subject seam. Sub-directories are
+packages in their own right and do not count toward their parent's five.
+
+**These limits replaced an earlier rule that said the opposite**, and the replacement is a
+deliberate trade, so the cost that rule was protecting is worth stating rather than forgetting.
+Until this was written, the house rule was "long files are allowed; incoherent ones are not —
+split along a seam that already exists, never to hit a line count." Its reason was sound: a split
+made to satisfy an arithmetic threshold picks the seam the number happens to land on, not the one
+the subject has, and a bad seam costs more than a long file. `git blame` also stops at a move, and
+in this codebase the comments are the documentation.
+
+What the limits buy in exchange: a hard ceiling turns "is this module still one subject?" from a
+judgement made at review time — which is to say, sometimes — into a question the tree asks on
+every commit. `src/core/agent.ts` reached 2,387 lines and `src/commands/validate.ts` 2,001 without
+anybody deciding they should; nothing asked. A ceiling asks.
+
+Both halves of that trade are real, which is why the limits come with an obligation, not just a
+number:
+
+**Split on a seam, and let the limit tell you *when*, never *where*.** A distinct data shape, a
+distinct phase, a distinct document kind. If the only seam you can find is line 300, the module is
+telling you it has one subject that grew too big for one file — find the phase boundary inside it
+and name the halves after the phases. Never `foo-part2.ts`, never `foo-helpers.ts`, never
+`utils.ts`: a file whose name cannot say what is inside it is the failure this rule was traded
+against, arriving anyway.
+
+**Carry the comments with the code they explain.** A WHY comment moves with its line. This is
+where the cost of the trade is actually paid, and it is paid by hand — the comment recording which
+defect a line prevents is worth more than the line.
+
+**A move is a move.** Use `git mv` and keep the split in a commit that does nothing else, so
+rename detection survives and `git log --follow` still reaches the history.
+
+## Value objects
+
+**An identifier or a path that has been validated carries a type that says so.** A validated
+`ServiceId` and an arbitrary `string` are not the same thing, and for years the only difference
+between them here was which line you happened to read. Branded types make it the compiler's
+problem:
+
+```ts
+declare const brand: unique symbol;
+export type ServiceId = string & { readonly [brand]: "ServiceId" };
+
+export function parseServiceId(raw: string): ServiceId | IdProblem { … }
+```
+
+The rules that make a brand worth its annotations:
+
+**One constructor, and it validates.** A brand is only a claim about what has been checked, so a
+value carrying it must be reachable exactly one way — through the smart constructor that did the
+checking. A second construction path, or a cast anywhere outside the constructor module, makes the
+type a comment that the compiler happens to typeset.
+
+**A cast in the constructor is the design; a cast anywhere else is a lie.** The single
+`as ServiceId` lives on the line immediately after the check that earns it.
+
+**Unvalidated input keeps its own type.** `core/repo.ts`'s `listServices` deliberately returns ids
+that *failed* validation, reporting the failure as a field, because `loam list` must show you the
+badly-named directory that exists on disk. That case is not an exception to the brand, it is a
+second type: the raw form is `RawServiceId`, the validated form is `ServiceId`, and the function
+that turns one into the other is the only bridge. A brand that needs a knowingly false cast at one
+call site is not protecting anything at the other two hundred.
+
+**Two or more values that are only ever passed together are one value.** Name the record and take
+it: `vouch(req: VouchRequest)`, `validateService(check: ServiceCheck)`. A function needing
+`featureDir` and `featureId` takes the `FeatureEntry` that already holds both — passing a fact and
+its own derivation makes an inconsistent pair representable.
+
+**A value object is `readonly` and is compared by value.** No methods that mutate, no identity
+comparison. `readonly` in the type; construct a new one rather than editing one in place.
+
 ## Type safety
 
 **`unknown` at the boundary, narrowed once by a validator that actually checks.** Data from
@@ -110,9 +194,15 @@ a `WeakMap` keyed on the per-invocation array, whose value is a pure function of
 holds nothing derived from the working directory. Its comment says exactly that, and a cache whose
 comment cannot say it does not belong.
 
-**Long files are allowed; incoherent ones are not.** A 1,500-line module that is one subject is
-fine. Split along a seam that already exists — a distinct data shape, a distinct phase — never to
-hit a line count.
+**A module is one subject, and at most 300 lines of it.** The subject rule is the one that
+matters; the line count is what makes somebody check. A module that is genuinely one subject and
+has outgrown 300 lines has a phase boundary inside it — find that, split there, and name each
+half after its phase. See **Limits** above for the seam obligation that comes with the number.
+
+**A package is one subject too, and at most five files of it.** The same reasoning one level up:
+`src/core/` held 38 modules in a flat list, so "which of these belong together?" had no answer the
+tree could give. Six files in a directory is the signal to name the two subjects that are actually
+in there.
 
 ## Duplication
 
@@ -143,15 +233,22 @@ it is how the next reader stops looking.
 
 ## Not a finding
 
-Renaming for taste. Splitting a file because it is long. Converting working `interface`s to
-`type`s. Introducing a framework, a DI container, or a dependency. Abstraction with one call site,
-added "for future extensibility". Anything a linter already owns.
+Renaming for taste. Converting working `interface`s to `type`s. Introducing a framework, a DI
+container, or a dependency. Abstraction with one call site, added "for future extensibility".
+Anything a linter already owns — including the four limits, which `test/code-limits.test.ts` owns:
+report a *bad seam*, never the number.
 
 ## Before you send
 
 ```sh
 npm run lint && npm run typecheck && npm test
 ```
+
+`test/code-limits.test.ts` runs inside `npm test` and holds the four limits. A file it names is
+either split or — for pre-existing code you are not touching — already listed in
+`test/code-limits-baseline.json`. **That baseline may only shrink.** Removing the last entry for a
+file is part of the change that fixes it; adding an entry is not a way to land a new violation,
+and the test fails on a stale entry precisely so the list cannot quietly become permanent.
 
 Coverage thresholds are enforced (`npm run test:coverage`): statements 91, branches 82,
 functions 95, lines 93. Do not lower one to land a change, and do not write a test purely to move

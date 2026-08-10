@@ -14,6 +14,30 @@ files. It has no server, no database, no network calls, and three runtime depend
 (`commander`, `likec4`, `yaml`). Delete loam and the documents still make sense — that property is
 the product, and it constrains every design choice below.
 
+## The limits
+
+Three of them are numbers, counted by `test/code-limits.test.ts` on every run of the gate. They
+are not review guidance.
+
+- **300 lines** per source file (`src/`).
+- **4 parameters** per function, method or constructor (`src/` and `test/`).
+- **5 files** per package directory (`src/`). Over five, split along a subject seam; a
+  sub-directory is a package of its own and does not count toward its parent's five.
+
+The fourth is a shape, and tsc holds it rather than the test: **a validated id or path carries a
+branded type**, constructible only through the smart constructor that validates it. Unvalidated
+input keeps its own raw type. Nothing counts this one — a brand either compiles or does not, and
+what no tool can see is whether the cast inside the constructor is the only one.
+
+Pre-existing violations of the three counted limits are listed in
+`test/code-limits-baseline.json`. **That list may only shrink** — the test fails on a new violation
+*and* on a stale entry, so it cannot quietly become the permanent state. Adding an entry is not how
+you land a change.
+
+`docs/CODE-STYLE.md` holds the seam obligation that comes with the line count and the four rules
+that make a brand worth its annotations. Read it before splitting anything: the limit tells you
+*when*, never *where*.
+
 ## The gate
 
 Nothing is done until all of this is green:
@@ -72,13 +96,23 @@ src/core/         everything else: a 7-level DAG with zero import cycles
   module-evaluation order decide behaviour. When a helper you need lives in a module far heavier
   than the helper, move the helper out rather than importing the weight — that is how
   `core/document-bytes.ts`, `core/records.ts` and `core/steps.ts` came to exist.
+- **Both directories are trees of packages** under the five-file limit. Sub-packages carry no
+  meaning the compiler checks — `../c4/likec4.js` is exactly as legal as `./likec4.js` — so the
+  package graph has its own acyclicity obligation that `import/no-cycle` cannot see. Run
+  `node scripts/package-graph.mjs` before and after moving anything between directories.
+- **No barrel or `index.ts` re-exports.** There are none. They would hide the real import edge
+  from the cycle check and make every import point at a directory instead of a module. A package
+  is a place files live, never a thing you import.
 
 ## Standards
 
 - `docs/CODE-STYLE.md` — the conventions the compiler and linter cannot enforce, each with the
-  defect it came from. Read it before a first change to `src/`.
+  defect it came from, plus the four limits and the seam obligation that comes with them. Read it
+  before a first change to `src/`.
 - `docs/DESIGN.md` — module boundaries, what is an abstraction here and what is not, and which
-  restructurings were considered and declined, with the reason.
+  restructurings were considered and declined, with the reason. Two of those rows were reopened
+  and reversed on 2026-08-10; both keep the cost the old verdict named, because that cost is the
+  one now being paid.
 
 ## Comments
 

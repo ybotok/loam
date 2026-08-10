@@ -41,6 +41,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # The package-level import graph. `import/no-cycle` in the lint step reads the
+      # FILE graph and cannot see a cycle that exists only between directories, so
+      # docs/DESIGN.md rule 21's acyclicity obligation has no other check.
+      - run: npm run arch:graph
       - run: npm test
         if: matrix.node-version == '22.22.3'
       - run: npm run test:coverage

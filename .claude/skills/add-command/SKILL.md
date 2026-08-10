@@ -11,8 +11,15 @@ discovering it.
 
 ## Shape
 
-One module per command in `src/commands/`, exporting `registerX(program: Command): void`.
-`src/commands/dependencies.ts` (92 lines) is the smallest complete example — read it first.
+One module per command under `src/commands/`, exporting `registerX(program: Command): void`.
+`dependencies.ts` (92 lines) is the smallest complete example — find it with
+`rg --files -g 'dependencies.ts' src` and read it first. Command modules live in subject packages
+under `src/commands/`, so import paths move; the module names do not.
+
+The limits apply from the first line (`docs/CODE-STYLE.md`): 300 lines, 4 parameters, and at
+most 5 files in the package you put it in. If your package is full, that is the signal to name the
+two subjects in it — see the `split-module` skill, and do the split in its own commit before
+adding the command.
 
 ```ts
 export function registerThing(program: Command): void {
@@ -55,6 +62,10 @@ Then register it in `src/cli.ts` beside the others.
 
 4. **Refusals use an existing stable code** where one fits. If none does, follow the
    `add-error-code` skill — do not invent a code inline.
+
+   A raw argv string that reaches a path join is parsed into its branded type at the command
+   boundary, never passed on as `string` (`docs/DESIGN.md` rules 6 and 18, and the `value-object`
+   skill). This is the boundary the rule exists for: `validate` is the one command that forgot.
 
 5. **Reuse the shared refusal messages** rather than hand-writing the sentence:
    `missingFeatureMessage`, `NO_SERVICE_MESSAGE`, `reportRepositoryUnavailable`. A hand-written

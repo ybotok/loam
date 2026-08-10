@@ -9,10 +9,14 @@ A code is what a machine branches on. Prose around it may be reworded at will; t
 never change once released. Adding one is cheap, changing one is a breaking change — so pick the
 name once, carefully.
 
+> `src/core/` is a tree of subject packages under a five-file limit, so the module paths below are
+> written as module *names*. Locate one with `rg --files -g '<name>.ts' src` rather than assuming a
+> directory. What a code lives in never changes; where that module sits can.
+
 ## Before adding
 
-**Prefer an existing code.** Read the `ErrorCode` union in `src/core/json.ts` and the `IssueCode`
-family in `src/core/issue.ts` in full. A new code is justified only when a caller would need to
+**Prefer an existing code.** Read the `ErrorCode` union in `json.ts` and the `IssueCode`
+family in `issue.ts` in full. A new code is justified only when a caller would need to
 *act differently* than for every existing one. "The message is different" is not a reason — the
 message is already free-form.
 

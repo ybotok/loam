@@ -24,8 +24,39 @@ npm test
 npm run test:coverage
 ```
 
-The full suite is 64 files and takes about two minutes. Do not substitute a subset for the final
+The full suite is 68 files and takes about two minutes. Do not substitute a subset for the final
 run; per-file runs (`npx vitest run test/archive.test.ts`) are for iterating only.
+
+If the diff moved a file between directories, also run:
+
+```bash
+npm run arch:graph
+```
+
+It reports cycles in the **package** graph. `import/no-cycle` reads the file graph and is blind to
+a cycle that exists only between directories, so nothing else in the gate covers this.
+
+## When `code-limits` is what is red
+
+`test/code-limits.test.ts` counts three limits — 300 lines, 4 parameters, 5 files per package —
+against `test/code-limits-baseline.json`. (The fourth house limit, branded ids, is held by tsc and
+never appears here.) It fails three ways, and the fix differs:
+
+- **"New violations"** — split it. Use the `split-module` skill; the limit says *when*, never
+  *where*. Do **not** add the entry to the baseline: that is the one move this whole mechanism
+  exists to make visible.
+- **"Already over the limit and grew"** — an oversized file got bigger. Shrink it back or split
+  it. Raising its baseline number is the same evasion as the previous case.
+- **"Stale baseline entries"** — something was fixed or moved, and the baseline still lists it.
+  This is the good failure. Re-derive rather than hand-edit, then read the diff to confirm entries
+  only disappeared:
+
+  ```bash
+  LOAM_CODE_LIMITS_BASELINE=write npx vitest run test/code-limits.test.ts
+  ```
+
+The baseline may only shrink. If you cannot fix a violation in this change, say so and stop —
+report the red.
 
 ## Enforced thresholds
 

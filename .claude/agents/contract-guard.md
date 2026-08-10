@@ -11,6 +11,12 @@ on. You are read-only. Never edit, never commit.
 loam is published. An agent somewhere has `loam validate --all` in a script and branches on
 `error.code`. These are the contract:
 
+Module paths below are written as names because `src/` is a tree of subject packages being
+reshaped under the five-file limit — locate one with `rg --files -g '<name>.ts' src`. **A file that
+merely moved is not a contract change.** When the diff is large and mostly relocations, separate
+the two before judging: `git --no-pager diff --stat -M` marks renames, and a rename with no content
+change needs no CHANGELOG line. A *renamed flag* still does.
+
 1. **Command names and flags** — every `.command(`, `.option(`, `.argument(` in `src/commands/`.
 2. **Exit codes** — `0` success, `1` refusal or gating error.
 3. **The `--json` envelope** — `contractVersion`, `ok`, `error.code` (`src/core/json.ts`). Adding
