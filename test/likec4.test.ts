@@ -15,12 +15,12 @@ import { join } from "node:path";
 import {
   elementService,
   loadFile,
-  maskSource,
-  scanModel,
   serviceOf,
   type Elem,
   type LoadedDoc,
 } from "../src/core/c4/likec4.js";
+import { maskSource } from "../src/core/c4/source-mask.js";
+import { scanModel } from "../src/core/c4/source-scan.js";
 import { makeTmpDir, writeFiles, LANDSCAPE, FEATURE_DELTA } from "./helpers/harness.js";
 
 const tmpDirs: string[] = [];

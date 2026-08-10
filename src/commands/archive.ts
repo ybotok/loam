@@ -33,16 +33,12 @@ import {
   elementService,
   loadFile,
   loadSource,
-  maskSource,
-  matchBrace,
-  scanModel,
   serviceOf,
   type Elem,
   type Rel,
-  type ScannedElement,
-  type ScannedModel,
-  type ScannedRel,
 } from "../core/c4/likec4.js";
+import { maskSource, matchBrace } from "../core/c4/source-mask.js";
+import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../core/c4/source-scan.js";
 import {
   archiveDir as archiveRoot,
   featurePaths,
