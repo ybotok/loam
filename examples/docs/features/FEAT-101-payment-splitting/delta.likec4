@@ -3,6 +3,10 @@
 specification {
   element softwareSystem
   element container
+  element topic {
+    #external
+  }
+  tag external
   tag FEAT-101
 }
 
@@ -10,7 +14,13 @@ model {
   // existing elements, referenced for context
   checkoutWeb = softwareSystem 'checkout-web'
   paymentService = softwareSystem 'payment-service'
-  kafka = softwareSystem 'kafka'
+  // The broker AND the topic the new edge points at, both already in the
+  // landscape: a delta references the channel, never the server, so the merged
+  // map does not grow one more spoke on a hub.
+  kafka = softwareSystem 'kafka' {
+    #external
+    paymentEvents = topic 'payment.events'
+  }
 
   // new
   paymentSplitService = softwareSystem 'payment-split-service' {
@@ -30,7 +40,7 @@ model {
     #FEAT-101
     metadata { op 'createSplit' }
   }
-  paymentSplitService -> kafka 'Publishes PaymentSplit' { #FEAT-101 }
+  paymentSplitService -> kafka.paymentEvents 'Publishes PaymentSplit' { #FEAT-101 }
 }
 
 views {

@@ -84,6 +84,22 @@ const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears her
 // block, so the renderer can only be given one of them at a time.) Scope your
 // views, because computing one is superlinear in the number of edges and an
 // \`include *\` over a whole fleet takes minutes.
+//
+// One shape is worth getting right before the fleet is drawn: a shared broker.
+// Kafka as a single element becomes the node every service points at, and any
+// view over it is a star nobody can read. Model the TOPIC instead — a \`topic\`
+// nested inside the broker's element, edges pointing at \`kafka.<topic>\` — which
+// splits one hub of degree sixty into a dozen small ones and is the truer model
+// besides. Tag the KIND, not just the broker: LikeC4 does not inherit tags, so a
+// topic under an \`#external\` broker is not external itself and \`validate\` asks
+// for a services/ directory nobody owes.
+//
+//   specification {
+//     element topic {
+//       #external
+//       style { shape queue }
+//     }
+//   }
 
 specification {
   element person

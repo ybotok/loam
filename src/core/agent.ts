@@ -359,6 +359,39 @@ directory nothing draws is an error, and an element with no directory is a warni
 Systems that are not ours — kafka, a payment gateway — carry \`#external\`, which
 says so once and stops the warning for good.
 
+## Drawing a shared broker
+
+A broker drawn as ONE element is the node every service in the fleet points at,
+and any view over it is a star nobody can read. Nothing in loam catches this —
+loam parses the model and renders no view, so the map can be perfectly valid and
+completely illegible. Two habits keep it readable, and both are cheap only
+before the fleet is drawn:
+
+**Model the topic, not the broker.** Nest a topic per channel inside the broker's
+element and point the edges at it — \`paymentService -> kafka.paymentEvents\`, not
+\`paymentService -> kafka\`. One hub of degree sixty becomes twelve of degree
+five, and it is the truer model besides: what a producer and a consumer share is
+the topic, never the broker. Every check joins the same way, because an edge into
+a nested element resolves to the element that owns it. Declare the kind once and
+tag it there —
+
+    specification {
+      element topic {
+        #external
+        style { shape queue }
+      }
+    }
+
+— because **LikeC4 does not inherit tags**: a topic nested inside an \`#external\`
+broker is not external itself, and \`loam validate --all\` will ask for a
+\`services/payment.events/\` nobody owes (\`landscape.service-undocumented\`).
+
+**Scope the views.** \`exclude element.tag = #external\` keeps the fleet overview to
+the calls between our own services; a second view over the broker draws the event
+spine on its own. Views are LikeC4's and loam computes none, so this costs loam
+nothing and is worth doing anyway — an \`include *\` over the whole fleet map is
+also the one view whose computation takes minutes rather than milliseconds.
+
 ## The cycle
 
 0. **Wire the repo** — \`loam init --docs <path-to-docs-repo> --service <id>\` in
@@ -944,7 +977,7 @@ on the exit code before consuming either slice as a task brief.
 Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta.valid\`,
 \`requirements.covered\`, \`api.covered\`, \`spine.resolved\`, \`event.covered\`, \`coherence.ok\`,
 \`landscape.matched\`, \`archedge.covered\`, \`sources.resolved\`, \`sources.current\`,
-\`gherkin.current\`.
+\`sources.walked\`, \`gherkin.current\`.
 
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
 command ran) from \`valid\` (the docs pass). A refusal is \`ok: false\` with a stable
@@ -1135,11 +1168,11 @@ const COMMANDS: CommandContent[] = [
     placeholders: ["service"],
     spine: [
       "wire this repo (`loam init`, then `loam doctor`) if it has no ./loam.json yet",
-      "`loam adopt` — the brief: every file to write, the grammar of each, and what the fleet map already says",
-      "read the code, keeping the list of every path you open — that list becomes `sources`",
+      "`loam adopt` — the brief: the order to read the service in, every file to write, the grammar of each, and what the fleet map already says",
+      "walk the service in the brief's order — shape first, then one surface at a time — keeping the list of every path you open, because that list becomes `sources`",
       "write the artifacts, everything `status: draft`",
       "validate the service, then validate the whole fleet — a baseline that passes one and fails the other is documented and invisible",
-      "hand back with what you could not determine from the code, and let a human vouch",
+      "hand back with what you could not determine from the code, and which directories you never opened, then let a human vouch",
     ],
     body: `Write one service's baseline documentation into the loam docs repo (its path is
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
@@ -1173,24 +1206,43 @@ result. It never reads the service — so anything you cannot show, do not write
      is \`null\` once an element resolves to it, and only then.
    - \`frontmatter\` — what to put in the header of every markdown artifact.
    - \`checks[]\` — what \`loam validate\` will run. \`unchecked[]\` — what it will not.
-2. Read \`AGENTS.md\` at the docs repo root, then read the code: entry points, HTTP
-   routes and handlers, published events, config, deploy manifests, tests.
+2. Read \`AGENTS.md\` at the docs repo root, then walk the service — \`walk[]\` in the
+   same \`adopt\` output is the order, and it is an order, not a menu. Each stop
+   names what to open, what to take from it, and which artifacts it feeds
+   (\`lands\`). The first two stops fix what the service IS — how many processes,
+   built from what — before any surface is enumerated: an agent that opens the
+   HTTP routes first has already decided the service is an API by the time it
+   meets the scheduler, and the consumer group and the outbox never get written
+   down. Do not stop at the surface you recognise fastest.
+   \`walkClose\` is the question that ends it: **list the directories you did not
+   open.** Nothing downstream can find a service you documented a third of —
+   \`api.ungoverned\` grades the operations you WROTE, and is silent about the twelve
+   you never did.
    **Keep a list of every path you actually open.** That list becomes \`sources\` —
    written as files and directories, never glob patterns — and it is the only line
-   tying the document to the repository.
+   tying the document to the repository. Never pad it with paths you did not read:
+   it is a record, and \`loam vouch\` hashes exactly what it names.
 3. Write the artifacts under \`services/$1/\`, in the order the brief lists them, and
    make the landscape edit the brief asks for.
    Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\`,
    \`content_digest\` or \`sources_files\`.
 4. \`loam validate --service $1 --json\`. Fix every error. \`sources.unvouched\` is
    expected on a fresh baseline — it closes when a person vouches, not when you do.
+   \`sources.unwalked\` is the walk graded against the repository: its \`details\` name
+   the top-level paths git tracks and \`sources\` never reached into. Treat each one
+   as a place to go back to, not as a line to silence — the fix is reading it, or
+   one sentence in step 6 saying why this document does not owe it.
 5. \`loam validate --all --json\` in the docs repo. This is the run that grades the
    fleet map: \`landscape.service-unmodelled\` means the element never landed,
    \`landscape.binding-unknown\` / \`landscape.binding-duplicate\` mean it landed wrong,
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
-6. Hand back, and say three things: what you could not determine from the code, what
-   the existing artifacts disagreed with, and which parts you are least sure of.
+6. Hand back, and say four things: what you could not determine from the code, what
+   the existing artifacts disagreed with, which parts you are least sure of, and
+   what you did not open — every path \`sources.unwalked\` named, with one line each
+   on why the baseline does not owe it. That last list is the only account anybody
+   gets of how much of the service was actually read; loam can name the paths, and
+   it can never say whether skipping one was right.
    Then a human runs \`loam vouch --service $1\` in the service's own repo.
 
 Where the code does not say, write that it does not say. A confident sentence about
@@ -1547,6 +1599,7 @@ intent.md, both modes:
 | \`sources.empty\` (warn) | the declared \`sources\` exist but expand to no files at all — an empty directory, or a tree the repository ignores. A digest over nothing reads as current forever | point \`sources\` at the files the document was actually written from; \`loam vouch\` refuses to stamp this state with the same sentence |
 | \`sources.skipped\` (warn) | a path under a listed source was found but NOT hashed: a symlink loam will not follow (its target is outside the repository, dangling, or not a file or directory) — the digest cannot go stale over bytes it never read | not yours to close by editing the document: either the symlink should not be under a listed source, or \`sources\` should name the real path. Report it |
 | \`sources.unvouched\` (warn) | \`sources\` with no \`sources_digest\` — nobody ever stamped it | leave it: vouching is a human's reading, not yours |
+| \`sources.unwalked\` (warn) | \`sources\` leaves whole top-level paths of the service repo untouched — the \`details\` name them, measured against the files git tracks. The one completeness signal loam can compute: every other check compares the documents with each other, and a corpus agrees with itself perfectly while describing a third of a service. Silent where git cannot answer (not a repository, not installed) | open them. Each one is either a part of the service nobody read — go back to the walk \`loam adopt\` printed — or something this document legitimately does not owe, and then say which and why in the hand-back. Do NOT add paths to \`sources\` that you did not read: the list is a record of what was opened, and padding it destroys the only tie the document has to the code |
 | \`content.stale\` (warn) | the spec's body changed since it was vouched — \`status: verified\` is standing over words nobody has read. Unlike \`sources.*\` it needs no service repo, so it fires from the docs repo too | if you edited the doc, that is the point: report it and ask a human to re-vouch. Never revert the doc or touch the digest just to silence it |
 
 \`loam archive\` alone — breaches only the merge computation can see, reported at

@@ -20,7 +20,7 @@ its scenarios exercise, and `loam validate` checks every entry resolves
 The service SHALL write a domain event and the state change it reports in one
 database transaction, published to kafka by an outbox relay — never a dual write.
 
-Covers: paymentService.db, paymentService -> kafka
+Covers: paymentService.db, paymentService -> kafka.paymentEvents
 Publishes: payment.PaymentAuthorized
 
 #### Scenario: Broker down at commit time

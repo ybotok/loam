@@ -12,7 +12,7 @@ it is the example's demonstration of that warning.)
 The service SHALL record a split and its `PaymentSplit` event in one database
 transaction, published to kafka by an outbox relay — never a dual write.
 
-Covers: paymentSplitService, paymentSplitService -> kafka
+Covers: paymentSplitService, paymentSplitService -> kafka.paymentEvents
 
 #### Scenario: Broker down when a split is recorded
 - **Given** a recorded split whose `PaymentSplit` event is still in the outbox

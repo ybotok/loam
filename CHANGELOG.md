@@ -4,6 +4,21 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Added — `loam adopt` states the walk, and `validate` grades it
+
+`adopt` briefed the artifacts to write and said "read the code: entry points, HTTP routes and handlers, published events, config, deploy manifests, tests" — one sentence, six nouns, no order and no landing site. What came back matched the sentence: the HTTP surface documented well, because it is the surface an agent recognises fastest, and the scheduler, the consumer group and the outbox missing entirely.
+
+- **`walk[]` in the brief** — nine ordered stops, each naming what to open, what to take from it, and which artifacts it feeds (`lands`). It rides `--json` as a new key and is printed in the text view before the artifact table. The order is load-bearing and pinned by a test: the two stops that fix what the service *is* — how many processes, built from what — come before any surface is enumerated, because an agent that opens the routes first has decided the service is an API by the time it meets the scheduler.
+- **`sources.unwalked` (warn) / `sources.walked` (ok)** — the walk graded against the repository, reported by `loam validate --service <id>` run inside the service's own repo. It names the top-level paths git tracks that `sources` never reached into, and carries the covered-file count as a dial. This is the only completeness signal loam can compute: every other check compares the documents with each other, and a corpus agrees with itself perfectly while describing a third of a service. `git ls-files` is the denominator on purpose — it is the repository's own answer to "what is mine", so `node_modules/` and `target/` fall out for free rather than through a hand-maintained exclusion list. Where git cannot answer (not a repository, not installed, a timeout) there is no denominator and therefore no finding. There is no threshold and no percentage grade: a named directory is answerable, an invented ratio is not.
+
+Nothing existing changes grade. `sources.unwalked` is new output on repos that were already green, and it is a warning — `--strict` escalates it, the archive gate does not see it.
+
+### Added — how to draw a shared broker, before the fleet map becomes a star
+
+A broker modelled as ONE element is the node every service in the fleet points at: a map that read fine at five services is a star with sixty spokes at sixty, and nothing warns on the way there, because loam parses the model and renders no view. The convention is now written down where it is read — the adopt brief's `unchecked[]`, the generated `AGENTS.md`, the `landscape.likec4` scaffold, `SCHEMA.md`, and `examples/docs/`, which now demonstrates it: nest a `topic` per channel inside the broker's element and point the edges at `kafka.<topic>`, which splits one hub into a dozen small ones and is the truer model besides — what a producer and a consumer share is the channel, never the server.
+
+It is guidance, not a check, and it is on the unchecked list saying so. The one mechanical fact behind it is now pinned by a test: **LikeC4 inherits no tags**, so a topic nested inside an `#external` broker is not external itself and raises `landscape.service-undocumented` asking for a `services/` directory nobody owes. Carry the tag on the kind — `element topic { #external }` — and it is silent. The example also ships the two views this is worth doing for: `exclude element.tag = #external` for the synchronous map, and a second view for the event spine.
+
 ## [0.1.0-beta.3] - 2026-08-08
 
 Still a prerelease under the `beta` dist-tag; the 5–10 service pilot has not run yet. Everything below came out of the first real fleet adoption — two Java Spring Boot services into a fresh docs repo — and every item was reproduced there, not inferred. One breaking change, in `loam vouch`; read that section before upgrading a CI job.

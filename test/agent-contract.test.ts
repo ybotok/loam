@@ -412,6 +412,54 @@ describe("the brief promises only what a check can keep", () => {
     expect(shape.length).toBe(RULE_CODE.length);
   });
 
+  /**
+   * The walk's `lands` and the brief's `targets` are one list seen twice. Left
+   * unjoined, a stop could feed an artifact nobody was asked to write — which is
+   * the same class of defect as a shape rule naming a check that does not exist,
+   * and it fails the same way: silently, in an agent's head, at adoption time.
+   */
+  it("every walk stop lands in an artifact the same brief hands over", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const artifacts = new Set<string>(b.targets.map((t: { artifact: string }) => t.artifact));
+    expect(b.walk.length).toBeGreaterThan(0);
+    for (const stop of b.walk as Array<{ where: string; find: string; lands: string[] }>) {
+      expect(stop.lands.length, `walk stop feeds nothing: ${stop.where}`).toBeGreaterThan(0);
+      for (const artifact of stop.lands) {
+        expect(artifacts.has(artifact), `walk lands in '${artifact}', which is not a target`).toBe(true);
+      }
+    }
+  });
+
+  it("the walk fixes the shape of the service before it enumerates any surface", async () => {
+    // The order is the whole point of stating it: an agent that opens the HTTP
+    // routes first has concluded the service is an API before it meets the
+    // scheduler, and the consumer group never gets written down. If a reorder
+    // is intended, move this assertion deliberately — do not delete it.
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const walk = b.walk as Array<{ where: string }>;
+    const at = (fragment: string): number => walk.findIndex((s) => s.where.includes(fragment));
+    expect(at("entry points")).toBeLessThan(at("HTTP surface"));
+    expect(at("entry points")).toBeLessThan(at("message surface"));
+    expect(at("build and dependency manifests")).toBeLessThan(at("entry points"));
+  });
+
+  it("the brief's walk survives the text view — an agent reading either gets the same order", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const res = await runLoam(p.workDir, "adopt", "--json");
+    expect(res.code).toBe(0);
+    const text = (await runLoam(p.workDir, "adopt")).out;
+    for (const [i, stop] of (b.walk as Array<{ where: string }>).entries()) {
+      expect(text, `walk stop ${String(i + 1)} is missing from the text view`).toContain(
+        stop.where.split(" — ")[0]!,
+      );
+    }
+    // And the close, which is the half that asks for the account of what was skipped.
+    expect(text).toContain("sources.unwalked");
+  });
+
   it("the two rules nothing checks live in unchecked[], and nowhere else", async () => {
     const p = await project({}, { service: SVC });
     const b = await brief(p);

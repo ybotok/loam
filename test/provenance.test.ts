@@ -17,6 +17,7 @@
  *  - the draft/verified inventory in list and show
  */
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdir, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -374,6 +375,97 @@ describe("sources — the tie to the code", () => {
       const codes = findings.map((f: { code: string }) => f.code);
       expect(codes).not.toContain("sources.resolved");
       expect(codes).not.toContain("sources.absent");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* The walk: sources measured against the repository, not the docs    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * `repoProject` with the workdir made into a git repository and every file
+   * tracked. git is the denominator of the walk check, so a fixture that is not
+   * a repository exercises only the silent branch — which is exactly what every
+   * OTHER test in this file is, and why none of them started reporting a
+   * coverage finding when this landed.
+   */
+  async function trackedRepoProject(sources: string, repoFiles: string[]): Promise<Project> {
+    const p = await repoProject(sources, repoFiles);
+    execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+    execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+    return p;
+  }
+
+  const findingsOf = async (p: Project): Promise<Array<{ code: string; severity: string; message: string; details?: string[] }>> =>
+    JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout).targets[0].findings;
+
+  it("names the top-level paths `sources` never reached into", async () => {
+    const p = await trackedRepoProject("sources:\n  - src/payment.ts", [
+      "src/payment.ts",
+      "src/scheduler/reconcile.ts",
+      "deploy/values.yaml",
+      ".github/workflows/ci.yml",
+    ]);
+    try {
+      const f = (await findingsOf(p)).find((x) => x.code === "sources.unwalked");
+      expect(f?.severity).toBe("warn");
+      // Sorted, de-duplicated, and top-level: `src/` is touched even though only
+      // one of its two files was read, because the granularity is the directory.
+      // `loam.json` rides along as a tracked root FILE, which is the same shape.
+      expect(f?.details).toEqual([".github", "deploy", "loam.json"]);
+      // The dial: the honest intersection, not "every file under a touched dir".
+      expect(f?.message).toContain("1 of 5 tracked file(s)");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("confirms the walk when every top-level path is reached — an ok finding, never work", async () => {
+    const p = await trackedRepoProject("sources:\n  - src/\n  - loam.json", [
+      "src/payment.ts",
+      "src/scheduler/reconcile.ts",
+    ]);
+    try {
+      const codes = (await findingsOf(p)).map((x) => x.code);
+      expect(codes).toContain("sources.walked");
+      expect(codes).not.toContain("sources.unwalked");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("says nothing where git cannot answer — no denominator, no finding", async () => {
+    // The same fixture as the first case, minus `git init`. A tree loam cannot
+    // ask git about is not a tree with poor coverage; it is one with none known.
+    const p = await repoProject("sources:\n  - src/payment.ts", [
+      "src/payment.ts",
+      "deploy/values.yaml",
+    ]);
+    try {
+      const codes = (await findingsOf(p)).map((x) => x.code);
+      expect(codes).toContain("sources.resolved");
+      expect(codes).not.toContain("sources.unwalked");
+      expect(codes).not.toContain("sources.walked");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("ignores what the repository itself ignores — a build directory is not unwalked", async () => {
+    const p = await repoProject("sources:\n  - src/payment.ts", [
+      "src/payment.ts",
+      "target/classes/App.class",
+    ]);
+    try {
+      await writeFile(join(p.workDir, ".gitignore"), "target/\nloam.json\n", "utf8");
+      execFileSync("git", ["init", "-q"], { cwd: p.workDir });
+      execFileSync("git", ["add", "-A"], { cwd: p.workDir });
+      const f = (await findingsOf(p)).find((x) => x.code === "sources.unwalked");
+      // `.gitignore` is itself tracked and unread; `target/` is not tracked at
+      // all, and that is the whole reason git is the denominator.
+      expect(f?.details).toEqual([".gitignore"]);
     } finally {
       await p.destroy();
     }
