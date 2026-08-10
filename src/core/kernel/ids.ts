@@ -58,7 +58,7 @@ declare const checked: unique symbol;
 
 /**
  * A directory name read off `services/` or `features/<id>/specs/`. It exists;
- * it may still be an illegal loam id — `core/repo.ts`'s `listServices`
+ * it may still be an illegal loam id — `core/repo/repo.ts`'s `listServices`
  * deliberately returns those, reporting the failure as an `idProblem` field,
  * because `loam list` must show you the badly-named directory that is there.
  */

@@ -7,7 +7,7 @@ import {
 } from "../core/dependencies.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
-import { missingFeatureMessage, resolveFeature } from "../core/repo.js";
+import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 
 interface DependenciesOptions {
   json?: boolean;

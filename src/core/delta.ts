@@ -26,7 +26,7 @@ import {
   servicePaths,
   SPEC_AXES,
   type SpecAxis,
-} from "./repo.js";
+} from "./repo/repo.js";
 import {
   KIND_RE,
   REQUIREMENT_DIGEST_LENGTH,

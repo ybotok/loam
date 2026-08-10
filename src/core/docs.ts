@@ -12,7 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AGENTS_MD } from "./agent.js";
-import { AGENTS_FILENAME } from "./repo.js";
+import { AGENTS_FILENAME } from "./repo/repo.js";
 
 /**
  * Top-level layout of the shared docs repo, and part of its identity rather

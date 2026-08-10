@@ -10,10 +10,10 @@
 import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { listField, readFrontmatter, stringField } from "./document/frontmatter.js";
-import type { FleetContext } from "./fleet-context.js";
-import { rawServiceId, serviceIdProblem, type RawServiceId } from "./kernel/ids.js";
-import type { Finding } from "./vocabulary/report.js";
+import { listField, readFrontmatter, stringField } from "../document/frontmatter.js";
+import type { FleetContext } from "../fleet-context.js";
+import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids.js";
+import type { Finding } from "../vocabulary/report.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 const ARCHIVE_DIR = "archive";

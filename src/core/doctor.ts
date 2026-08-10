@@ -4,7 +4,7 @@ import { access, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./envelope/config.js";
 import { LOAM_VERSION } from "./version.js";
-import { agentsPath, docsRepoState, landscapePath, listFeatures, listServices } from "./repo.js";
+import { agentsPath, docsRepoState, landscapePath, listFeatures, listServices } from "./repo/repo.js";
 import { loadFile } from "./c4/likec4.js";
 import { LIKEC4_PROJECT_CONFIG, LIKEC4_PROJECT_FILENAME } from "./docs.js";
 import { conflictMarkerLines } from "./fleet-context.js";

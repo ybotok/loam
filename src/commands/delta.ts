@@ -21,7 +21,7 @@ import {
   missingFeatureMessage,
   nearestIds,
   resolveFeature,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 
 interface DeltaOptions {

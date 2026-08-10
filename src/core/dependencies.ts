@@ -20,7 +20,7 @@ import {
   servicePaths,
   type FeatureEntry,
   type SpecAxis,
-} from "./repo.js";
+} from "./repo/repo.js";
 import type { Requirement } from "./document/spec.js";
 
 export type DependencyReason =

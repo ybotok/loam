@@ -15,7 +15,7 @@ import { closeIds } from "../core/c4/arch.js";
 import { loadConfig } from "../core/envelope/config.js";
 import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
-import { DocsRepoUnavailableError, listServices, servicePaths } from "../core/repo.js";
+import { DocsRepoUnavailableError, listServices, servicePaths } from "../core/repo/repo.js";
 import { SEVERITY_MARK } from "../core/vocabulary/report.js";
 import { serviceBrief, VIA_ALL, type Brief, type BriefCheck, type BriefTarget } from "../core/brief.js";
 import { docsRepoReady } from "./docs-repo-gate.js";

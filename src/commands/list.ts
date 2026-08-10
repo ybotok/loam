@@ -20,7 +20,7 @@ import {
   servicePaths,
   type FeatureEntry,
   type ServiceEntry,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import {
   featureChecklist,
   readVerification,

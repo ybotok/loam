@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for the docs-repo read model (src/core/repo.ts).
+ * Deep invariant tests for the docs-repo read model (src/core/repo/repo.ts).
  *
  * This module is the single place that knows the docs-repo layout: which
  * directories are services, which are features, where each artifact lives, and
@@ -32,7 +32,7 @@ import {
   listServices,
   resolveFeature,
   servicePaths,
-} from "../src/core/repo.js";
+} from "../src/core/repo/repo.js";
 
 /** Build a throwaway docs repo from relPath → content and hand it to fn. */
 async function withDocs(
@@ -517,7 +517,7 @@ describe("path helpers", () => {
 
   it("the landscape path is spelled once, under architecture/", async () => {
     await withDocs({}, async (docsDir) => {
-      const { landscapePath } = await import("../src/core/repo.js");
+      const { landscapePath } = await import("../src/core/repo/repo.js");
       expect(landscapePath(docsDir)).toBe(join(docsDir, "architecture", "landscape.likec4"));
     });
   });

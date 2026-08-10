@@ -31,7 +31,7 @@ import {
   servicePaths,
   SPEC_AXES,
   type FeatureEntry,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import {
   countSeverity,
   reportValid,

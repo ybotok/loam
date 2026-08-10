@@ -56,7 +56,7 @@ import {
   type SkippedSource,
   type SourceIndexEntry,
 } from "../core/provenance.js";
-import { SPEC_AXES, servicePaths } from "../core/repo.js";
+import { SPEC_AXES, servicePaths } from "../core/repo/repo.js";
 import { plural } from "./format.js";
 import {
   message,

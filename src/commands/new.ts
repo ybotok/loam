@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { loadConfig } from "../core/envelope/config.js";
-import { FEATURE_ID_RULE, InvalidIdError, assertServiceId, isFeatureId } from "../core/kernel/ids.js";
+import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../core/kernel/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../core/kernel/path-safety.js";
 import {
@@ -14,7 +14,7 @@ import {
   nearestIds,
   resolveFeature,
   type FeatureEntry,
-} from "../core/repo.js";
+} from "../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "./docs-repo-gate.js";
 
 interface NewOptions {
@@ -59,19 +59,14 @@ export function registerNew(program: Command): void {
       // was a writer pointed outside the docs repo. One grammar (core/kernel/ids.ts),
       // the same one adopt/init/vouch refuse on, so a service that is legal to
       // create is legal to name here and nowhere the two disagree.
-      for (const [label, ids] of [
-        ["--touches", opts.touches],
-        ["--new-service", opts.newService],
-      ] as const) {
-        for (const id of ids) {
-          try {
-            assertServiceId(id, label);
-          } catch (err) {
-            if (!(err instanceof InvalidIdError)) throw err;
-            return fail(json, "invalid-option", err.message);
-          }
-        }
-      }
+      // The LIST, not each item: a loop narrows the element and leaves the
+      // array unbranded, so what reached the writer below was `string[]` no
+      // matter how thoroughly each id had been checked. --touches first, so the
+      // id reported first is the one it was before.
+      const touches = parseServiceIds(opts.touches, "--touches");
+      if (!touches.ok) return fail(json, "invalid-option", touches.problem);
+      const newServices = parseServiceIds(opts.newService, "--new-service");
+      if (!newServices.ok) return fail(json, "invalid-option", newServices.problem);
 
       const config = await loadConfig();
       if (!config) {
@@ -112,8 +107,8 @@ export function registerNew(program: Command): void {
       }
 
       // A service named both ways is new — that is the more specific claim.
-      const created = new Set(opts.newService);
-      const touched = opts.touches.filter((s) => !created.has(s));
+      const created = new Set(newServices.ids);
+      const touched = touches.ids.filter((s) => !created.has(s));
       const dir = join(featuresDir(docsDir), dirName);
 
       const files: Record<string, string> = {

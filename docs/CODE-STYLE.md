@@ -78,7 +78,7 @@ type a comment that the compiler happens to typeset.
 **A cast in the constructor is the design; a cast anywhere else is a lie.** The single
 `as ServiceId` lives on the line immediately after the check that earns it.
 
-**Unvalidated input keeps its own type.** `core/repo.ts`'s `listServices` deliberately returns ids
+**Unvalidated input keeps its own type.** `core/repo/repo.ts`'s `listServices` deliberately returns ids
 that *failed* validation, reporting the failure as a field, because `loam list` must show you the
 badly-named directory that exists on disk. That case is not an exception to the brand, it is a
 second type: the raw form is `RawServiceId`, the validated form is `ServiceId`, and the function
