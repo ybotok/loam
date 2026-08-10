@@ -4,6 +4,18 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Fixed — `loam validate` resolves a service name before it builds a path
+
+`loam validate --service <name>` and `loam validate <name>` both spelled `<docsDir>/services/<name>/` out of whatever the caller typed, and neither ever checked it. Six commands — `init`, `delta`, `adopt`, `explore`, `rebase`, `new` — guard that argument with the id grammar; `validate` did not, and the two spellings are the same knob into the same call.
+
+`loam validate --service ../../outside/services/x` therefore resolved **above the docs repo**, and where a `spec.md` happened to sit at that path loam opened it, graded it, and reported its frontmatter back through `--json`. Reproduced end to end, including the disclosure. The positional form carries the same reach, and it is the spelling loam's own generated `next` steps print most often.
+
+Both entry points now resolve the name first: **the enumeration answers, and the grammar answers second.** A name that matches a directory under `services/` is used as-is — legal or not, it exists, and joining it lands where the directory is. A name with no directory must pass the id grammar, and then the run continues and grades it `service.unknown` exactly as before, near-miss hints and all. A name that is neither is refused `invalid-option` before any path is built.
+
+That order is the fix, not an implementation detail. `services/Payment Service/` is a directory `loam list` shows, `validate --all` grades, and `service.id-invalid` calls an error nobody can clear without a rename — so it is precisely the directory somebody points `--service` at. Refusing on the grammar alone would have made the one service loam complains about the one service loam cannot look at.
+
+**What a `--json` consumer notices.** For a name that is neither a directory nor a legal id, the envelope changes shape: `ok: true` with `valid: false` and a `targets` array becomes `ok: false` with `error.code: "invalid-option"` and no `targets`. The exit code is `1` either way, so a script keying on the exit code is unaffected; one reading `.valid` or `.targets[0].id` for such an input now reads `undefined`. Every name that used to grade still grades, and nothing that used to be refused changed its code.
+
 ### Added — `loam adopt` states the walk, and `validate` grades it
 
 `adopt` briefed the artifacts to write and said "read the code: entry points, HTTP routes and handlers, published events, config, deploy manifests, tests" — one sentence, six nouns, no order and no landing site. What came back matched the sentence: the HTTP surface documented well, because it is the surface an agent recognises fastest, and the scheduler, the consumer group and the outbox missing entirely.

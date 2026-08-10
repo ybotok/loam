@@ -20,6 +20,7 @@ import {
   makeProject,
   makeTmpDir,
   runLoam,
+  treeHashes,
   LIVING_OPENAPI,
   SERVICE_MODEL,
   type Project,
@@ -573,6 +574,64 @@ describe("text output is unchanged for a single target", () => {
       expect(res.out).toContain("FEAT-1");
       expect(res.out).toContain("✓ delta.likec4 valid");
       expect(res.out).toContain("coherence: ✓ C4 · requirements · OpenAPI agree");
+    });
+  });
+});
+
+/**
+ * The two entry points that reach `servicePaths` with whatever argv held.
+ *
+ * `--service` and the POSITIONAL are the same knob into the same call, and
+ * neither ever passed the id grammar. `--service ../../outside/services/x`
+ * resolved above the docs repo, and where a spec.md happened to sit there loam
+ * opened it, graded it, and reported its frontmatter through `--json`.
+ *
+ * The fix cannot be the grammar alone: `services/Payment Service/` is a
+ * directory `loam list` shows and `validate --all` calls an unfixable error, so
+ * it is precisely the directory somebody points `--service` at. The enumeration
+ * answers first, the grammar second — and the third test here is the one that
+ * would fail if that order were ever reversed.
+ */
+describe("a service name is resolved before it becomes a path", () => {
+  it("refuses a traversal through --service, and writes nothing", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "validate", "--service", "../../etc", "--json");
+      const env = JSON.parse(res.stdout) as { ok: boolean; error?: { code: string }; targets?: unknown };
+      expect(env.ok).toBe(false);
+      expect(env.error?.code).toBe("invalid-option");
+      expect(env.targets, "a refusal carries no targets").toBeUndefined();
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    });
+  });
+
+  it("refuses the same traversal through the POSITIONAL argument", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "../../etc", "--json");
+      const env = JSON.parse(res.stdout) as { ok: boolean; error?: { code: string; message: string } };
+      expect(env.ok).toBe(false);
+      expect(env.error?.code).toBe("invalid-option");
+      // The label names the knob the caller actually turned.
+      expect(env.error?.message).toContain("target");
+    });
+  });
+
+  it("still grades a service directory whose NAME is an illegal id", async () => {
+    const files = { ...coherentFixture(), "services/Bad Name/spec.md": "---\nservice: Bad Name\n---\n# spec\n" };
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "Bad Name", "--json");
+      const env = JSON.parse(res.stdout) as { ok: boolean; targets: { id: string }[] };
+      expect(env.ok, "the directory exists, so it is gradeable").toBe(true);
+      expect(env.targets[0]?.id).toBe("Bad Name");
+    });
+  });
+
+  it("still grades a legal name with no directory, as service.unknown", async () => {
+    await withProject(coherentFixture(), { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "not-adopted-yet", "--json");
+      const env = JSON.parse(res.stdout) as { ok: boolean; targets: { findings: { code: string }[] }[] };
+      expect(env.ok).toBe(true);
+      expect(env.targets[0]?.findings.map((f) => f.code)).toContain("service.unknown");
     });
   });
 });
