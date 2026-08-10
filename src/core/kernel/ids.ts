@@ -25,6 +25,69 @@
  * whichever command happened to think of it.
  */
 
+/* ---------------------------------------------------------------- */
+/* The three provenances a service name can have                     */
+/* ---------------------------------------------------------------- */
+
+/**
+ * A service name is one of three things, and until now all three were `string`.
+ *
+ * The distinction that matters is not "valid" versus "invalid" — it is WHERE the
+ * name came from, because that is what decides whether loam may join it into a
+ * path. A directory name read off disk is safe to join whether or not it is a
+ * legal id: it demonstrably exists, `readdir` just returned it. A name a
+ * *document* asserts is not, because nothing has checked it and `metadata {
+ * service '../../../etc' }` parses in LikeC4 without a single error.
+ *
+ * So `RawServiceId` is the base — a name whose provenance is the repository —
+ * and `ServiceId` is that plus the grammar check, which makes it a SUBTYPE
+ * rather than a sibling. That hierarchy is deliberate and was measured: with
+ * three disjoint brands, `id === dirName`, `Set<RawServiceId>.has(id)` and
+ * `[...ids, ...raws].sort()` all stop compiling, and none of them is a safety
+ * question — they are the ordinary business of comparing a validated id with a
+ * directory that exists. Only `DeclaredService` is disjoint, because only there
+ * is the comparison a real crossing.
+ *
+ * `path.join` is NOT the enforcement point and cannot be made one: node types it
+ * `join(...paths: string[])`, so every brand satisfies it. The guarantee lives
+ * entirely in `servicePaths`' own parameter type, and any code that spells
+ * `services/<svc>/` with a bare join is outside it.
+ */
+declare const provenance: unique symbol;
+declare const checked: unique symbol;
+
+/**
+ * A directory name read off `services/` or `features/<id>/specs/`. It exists;
+ * it may still be an illegal loam id — `core/repo.ts`'s `listServices`
+ * deliberately returns those, reporting the failure as an `idProblem` field,
+ * because `loam list` must show you the badly-named directory that is there.
+ */
+export type RawServiceId = string & { readonly [provenance]: "loam" };
+
+/** A name that passed `serviceIdProblem`. The only form a caller may construct. */
+export type ServiceId = RawServiceId & { readonly [checked]: true };
+
+/**
+ * A name a DOCUMENT asserts — `metadata { service '...' }` in a `.likec4` file,
+ * an element title standing in for one, or an element id. Arbitrary unchecked
+ * text, and disjoint from the two above on purpose: it must not reach a path
+ * join without going through `parseServiceId` first.
+ */
+export type DeclaredService = string & { readonly [provenance]: "document" };
+
+/** What `servicePaths` accepts: a name whose provenance is the repository. */
+export type PathableService = RawServiceId;
+
+/**
+ * Any service name, whatever its provenance. For the membership containers that
+ * are legitimately probed with all three — `services.has(elementTitle)` asks
+ * "does this document name a directory we have?", which is a real question.
+ * Note what it costs: iterating such a container yields `AnyServiceName`, so the
+ * compiler will refuse to path-join the result until somebody re-parses it. That
+ * is the trade, not a defect.
+ */
+export type AnyServiceName = RawServiceId | DeclaredService;
+
 /** The one grammar: alphanumeric head, then alphanumerics, dot, underscore, hyphen. */
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -93,9 +156,71 @@ export function serviceIdProblem(id: unknown, label = "--service"): string | nul
  * InvalidIdError; commands catch it and report `invalid-option`, because a bad
  * id is always something the caller typed, never a state of the repository.
  */
-export function assertServiceId(id: unknown, label = "--service"): asserts id is string {
+export function assertServiceId(id: unknown, label = "--service"): asserts id is ServiceId {
   const problem = serviceIdProblem(id, label);
   if (problem !== null) throw new InvalidIdError(typeof id === "string" ? id : String(id), problem);
+}
+
+/* ---------------------------------------------------------------- */
+/* The three constructors — the only place a brand is asserted       */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The one constructor that validates. It takes a plain `string`, so a
+ * `DeclaredService` flows straight in — a brand is still a string — which is
+ * what makes this the single bridge out of document text.
+ *
+ * The result is a discriminated pair rather than `ServiceId | string`: that
+ * second shape compiles and is unusable, because nothing can narrow it back.
+ * The problem sentence is the one `serviceIdProblem` already produces, so a
+ * caller that is collecting findings prints exactly what a refusal would.
+ */
+export function parseServiceId(
+  raw: string,
+  label = "--service",
+): { ok: true; id: ServiceId } | { ok: false; problem: string } {
+  const problem = serviceIdProblem(raw, label);
+  if (problem !== null) return { ok: false, problem };
+  // The cast, on the line immediately after the check that earns it.
+  return { ok: true, id: raw as ServiceId };
+}
+
+/**
+ * A directory name off `readdir`. Says nothing about whether it is a legal id —
+ * that is the point, and `idProblem` is where the answer goes.
+ *
+ * This is a second cast, and it has to be: `readdir` and `basename` return plain
+ * `string`, and a brand does not survive them. What the rule in
+ * `docs/CODE-STYLE.md` actually buys is that all three casts live in THIS FILE
+ * and nowhere else. A fourth one somewhere in `src/` is a finding, not a shortcut.
+ */
+export function rawServiceId(dirName: string): RawServiceId {
+  return dirName as RawServiceId;
+}
+
+/**
+ * A name a document asserted. Third and last cast, for the crossing between
+ * LikeC4's parse output and loam's type system: `e.service ?? e.title` is a
+ * plain `string` and does not brand itself.
+ */
+export function declaredService(text: string): DeclaredService {
+  return text as DeclaredService;
+}
+
+/**
+ * Value equality across provenances — "does this name a document asserted name
+ * that directory?".
+ *
+ * This exists because comparing a `DeclaredService` with a `RawServiceId` is
+ * exactly the TS2367 the brands are meant to raise, and at a handful of sites
+ * the crossing is the whole point of the comparison. Routing them through a
+ * named function is what keeps the crossing greppable. Its body needs no cast:
+ * both parameters are the same union, so `===` is legal inside. It refuses a
+ * plain `string`, which is deliberate — every comparand must say where it came
+ * from.
+ */
+export function sameService(a: AnyServiceName, b: AnyServiceName): boolean {
+  return a === b;
 }
 
 /**
