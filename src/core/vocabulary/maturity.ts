@@ -11,7 +11,7 @@
  * service somebody is about to build against — and a dial with two readings is
  * not a dial.
  */
-import type { ServiceEntry } from "../repo/repo.js";
+import type { ServiceEntry } from "../repo/entries.js";
 
 /** The ladder, in order. Each rung stands on every rung below it. */
 export const MATURITY_LADDER = ["empty", "partial", "documented", "sourced", "vouched"] as const;

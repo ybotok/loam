@@ -7,17 +7,10 @@ import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.
 import { listField, readFrontmatter, stringField } from "../core/document/frontmatter.js";
 import { loadFile, serviceResolver, type Elem } from "../core/c4/likec4.js";
 import { readOpenapi } from "../core/openapi.js";
-import {
-  DocsRepoUnavailableError,
-  countMarkdown,
-  featurePaths,
-  featureSpecPaths,
-  landscapePath,
-  listServices,
-  resolveFeature,
-  servicePaths,
-  type FeatureEntry,
-} from "../core/repo/repo.js";
+import { type FeatureEntry } from "../core/repo/entries.js";
+import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../core/repo/paths.js";
+import { DocsRepoUnavailableError } from "../core/repo/state.js";
+import { countMarkdown, listServices, resolveFeature } from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";

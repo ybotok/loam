@@ -7,7 +7,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { parse as parseYaml } from "yaml";
 import { asRecord, dictionary, ownValue } from "./kernel/records.js";
 import { FEATURE_ID_RULE, isFeatureId } from "./kernel/ids.js";
-import { compareIds } from "./repo/repo.js";
+import { compareIds } from "./repo/entries.js";
 import {
   isRequirementsHeading,
   parseRequirements,

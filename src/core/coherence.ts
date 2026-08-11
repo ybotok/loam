@@ -14,17 +14,9 @@ import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./vocabulary/issue.js";
 import { repoPath } from "./envelope/json.js";
 import type { Finding } from "./vocabulary/report.js";
-import {
-  docsRepoState,
-  featurePaths,
-  featureSpecPaths,
-  featureSpecServices,
-  landscapePath,
-  listFeatures,
-  listServices,
-  servicePaths,
-  SPEC_AXES,
-} from "./repo/repo.js";
+import { featurePaths, featureSpecPaths, landscapePath, servicePaths, SPEC_AXES } from "./repo/paths.js";
+import { docsRepoState } from "./repo/state.js";
+import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
 import { parseRequirements, type Requirement } from "./document/spec.js";
 import {
   OPENAPI_BASELINE_KEY,

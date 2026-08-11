@@ -12,12 +12,8 @@ import { loadConfig } from "../core/envelope/config.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
 import { findingJson, SEVERITY_MARK } from "../core/vocabulary/report.js";
-import {
-  DocsRepoUnavailableError,
-  featureCandidates,
-  missingFeatureMessage,
-  resolveFeature,
-} from "../core/repo/repo.js";
+import { DocsRepoUnavailableError } from "../core/repo/state.js";
+import { featureCandidates, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import {
   featureStatus,
   fleetStatus,

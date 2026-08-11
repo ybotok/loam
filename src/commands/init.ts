@@ -11,7 +11,9 @@ import {
 } from "../core/envelope/config.js";
 import { emitJson, fail } from "../core/envelope/json.js";
 import { plannedDocsFiles, scaffoldDocs } from "../core/docs.js";
-import { agentsPath, docsRepoState, listServices } from "../core/repo/repo.js";
+import { agentsPath } from "../core/repo/paths.js";
+import { docsRepoState } from "../core/repo/state.js";
+import { listServices } from "../core/repo/repo.js";
 import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
 import {
   AGENT_TOOLS,

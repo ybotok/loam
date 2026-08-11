@@ -23,7 +23,8 @@ import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { elementService, loadFile, serviceResolver, type Elem } from "./c4/likec4.js";
-import { landscapePath, listServices, servicePaths } from "./repo/repo.js";
+import { landscapePath, servicePaths } from "./repo/paths.js";
+import { listServices } from "./repo/repo.js";
 
 /* ------------------------------------------------------------------ */
 /* The artifacts                                                       */

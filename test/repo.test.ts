@@ -19,20 +19,10 @@ import { describe, expect, it } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
-import {
-  DocsRepoUnavailableError,
-  ambiguousFeatureMessage,
-  docsRepoState,
-  featureCandidates,
-  featureIdFromDirName,
-  featurePaths,
-  featureSpecPaths,
-  featureSpecServices,
-  listFeatures,
-  listServices,
-  resolveFeature,
-  servicePaths,
-} from "../src/core/repo/repo.js";
+import { featureIdFromDirName } from "../src/core/repo/entries.js";
+import { featurePaths, featureSpecPaths, servicePaths } from "../src/core/repo/paths.js";
+import { DocsRepoUnavailableError, docsRepoState } from "../src/core/repo/state.js";
+import { ambiguousFeatureMessage, featureCandidates, featureSpecServices, listFeatures, listServices, resolveFeature } from "../src/core/repo/repo.js";
 
 /** Build a throwaway docs repo from relPath → content and hand it to fn. */
 async function withDocs(
@@ -517,7 +507,7 @@ describe("path helpers", () => {
 
   it("the landscape path is spelled once, under architecture/", async () => {
     await withDocs({}, async (docsDir) => {
-      const { landscapePath } = await import("../src/core/repo/repo.js");
+      const { landscapePath } = await import("../src/core/repo/paths.js");
       expect(landscapePath(docsDir)).toBe(join(docsDir, "architecture", "landscape.likec4"));
     });
   });

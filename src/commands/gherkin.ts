@@ -29,15 +29,8 @@ import { dirname, join, relative } from "node:path";
 import { loadConfig } from "../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
 import { emitJson, emitJsonError, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
-import {
-  featureSpecPaths,
-  listFeatures,
-  missingFeatureMessage,
-  resolveFeature,
-  servicePaths,
-  SPEC_AXES,
-  type SpecAxis,
-} from "../core/repo/repo.js";
+import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../core/repo/paths.js";
+import { listFeatures, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 import {
   axisLabel,

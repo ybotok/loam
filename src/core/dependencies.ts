@@ -11,16 +11,9 @@ import { inOrder } from "./kernel/concurrency.js";
 import { FleetContext } from "./fleet-context.js";
 import { serviceResolver } from "./c4/likec4.js";
 import { operations } from "./openapi.js";
-import {
-  SPEC_AXES,
-  compareIds,
-  featurePaths,
-  featureSpecPaths,
-  listFeatures,
-  servicePaths,
-  type FeatureEntry,
-  type SpecAxis,
-} from "./repo/repo.js";
+import { compareIds, type FeatureEntry } from "./repo/entries.js";
+import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "./repo/paths.js";
+import { listFeatures } from "./repo/repo.js";
 import type { Requirement } from "./document/spec.js";
 
 export type DependencyReason =

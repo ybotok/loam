@@ -43,7 +43,8 @@ import { parse, stringify } from "yaml";
 import { elementService, loadFile, serviceOf, type Elem } from "./c4/likec4.js";
 import { operationIds, operations } from "./openapi.js";
 import { isRecord } from "./kernel/records.js";
-import { featurePaths, featureSpecPaths, featureSpecServices, servicePaths } from "./repo/repo.js";
+import { featurePaths, featureSpecPaths, servicePaths } from "./repo/paths.js";
+import { featureSpecServices } from "./repo/repo.js";
 import { parseRequirements } from "./document/spec.js";
 
 /**

@@ -73,7 +73,7 @@ five, which most of them will once the 300-line limit splits the large modules.
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
 | `core/document/` | `frontmatter` `spec` | kernel, vocabulary |
 | `core/agent/` | `agent` `agents-stamp` `version` | kernel |
-| `core/repo/` | `repo` | document, kernel |
+| `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
 | `core/api/` | `openapi` `asyncapi` `openapi-merge` | repo, kernel |
 | `core/fleet/` | `fleet-context` `verify` | api, repo, c4, document, kernel |
 | `core/feature/` | `delta` `staging` `provenance` `docs` `brief` | repo, document, envelope, agent, c4, kernel |

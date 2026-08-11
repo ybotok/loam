@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import type { FleetContext } from "./fleet-context.js";
-import { featureSpecPaths, servicePaths } from "./repo/repo.js";
+import { featureSpecPaths, servicePaths } from "./repo/paths.js";
 
 /**
  * The path-item keys that hold operations. A path item also carries `summary`,

@@ -14,7 +14,7 @@
  * processes.
  */
 import { fail } from "../core/envelope/json.js";
-import { docsRepoState, type DocsRepoUnavailableError } from "../core/repo/repo.js";
+import { docsRepoState, type DocsRepoUnavailableError } from "../core/repo/state.js";
 
 /**
  * The refusal every READ command owes a `docsDir` that is not a docs repo.

@@ -12,16 +12,10 @@ import { readOpenapi, type Operation } from "../core/openapi.js";
 // assert a shape the parser never promised, and a sequence or a scalar in any of
 // those slots would be indexed as a mapping.
 import { isRecord } from "../core/kernel/records.js";
-import {
-  DocsRepoUnavailableError,
-  compareIds,
-  featurePaths,
-  featureSpecPaths,
-  listServices,
-  missingFeatureMessage,
-  nearestIds,
-  resolveFeature,
-} from "../core/repo/repo.js";
+import { compareIds, nearestIds } from "../core/repo/entries.js";
+import { featurePaths, featureSpecPaths } from "../core/repo/paths.js";
+import { DocsRepoUnavailableError } from "../core/repo/state.js";
+import { listServices, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { parseRequirements, type Requirement } from "../core/document/spec.js";
 
 interface DeltaOptions {
