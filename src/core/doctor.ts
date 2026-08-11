@@ -3,20 +3,21 @@ import { constants, existsSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CONFIG_FILENAME, configPath, parseConfig, type LoamConfig } from "./envelope/config.js";
-import { LOAM_VERSION } from "./version.js";
+import { LOAM_VERSION } from "./envelope/version.js";
 import { agentsPath, landscapePath } from "./repo/paths.js";
 import { docsRepoState } from "./repo/state.js";
 import { listFeatures, listServices } from "./repo/repo.js";
 import { loadFile } from "./c4/likec4.js";
 import { LIKEC4_PROJECT_CONFIG, LIKEC4_PROJECT_FILENAME } from "./docs.js";
 import { conflictMarkerLines } from "./fleet-context.js";
-import { AGENT_TOOLS, DELIVERIES, plannedCommandFiles, type Delivery } from "./agent.js";
+import { DELIVERIES, plannedCommandFiles, type Delivery } from "./agent/scaffold.js";
+import { AGENT_TOOLS } from "./agent/tools/registry.js";
 import {
   agentsStaleFinding,
   agentsStampLine,
   agentsStampVersion,
   versionTrails,
-} from "./agents-stamp.js";
+} from "./agent/agents-stamp.js";
 import { scanWritePathResidue, type WritePathResidue } from "./staging.js";
 
 export type DoctorSeverity = "blocker" | "warning";

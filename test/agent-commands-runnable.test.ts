@@ -26,7 +26,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
 import { buildProgram } from "../src/cli.js";
-import { AGENTS_MD, PROTOCOLS, SLASH_COMMANDS } from "../src/core/agent.js";
+import { AGENTS_MD } from "../src/core/agent/agents-md.js";
+import { PROTOCOLS } from "../src/core/agent/protocol.js";
+import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 

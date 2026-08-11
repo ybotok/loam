@@ -1,7 +1,7 @@
 import type { Command } from "commander";
-import { PROTOCOLS, WORKFLOWS, placeholderProblems, protocolFor } from "../core/agent.js";
+import { PROTOCOLS, WORKFLOWS, placeholderProblems, protocolFor } from "../core/agent/protocol.js";
 import { emitJson, fail } from "../core/envelope/json.js";
-import { LOAM_VERSION } from "../core/version.js";
+import { LOAM_VERSION } from "../core/envelope/version.js";
 
 interface InstructionsOptions {
   json?: boolean;

@@ -41,7 +41,7 @@ import {
   type PlannedFeature,
   type StampedFeature,
 } from "../core/gherkin.js";
-import { LOAM_VERSION } from "../core/version.js";
+import { LOAM_VERSION } from "../core/envelope/version.js";
 import { isPathInside, resolveInside, UnsafePathError } from "../core/kernel/path-safety.js";
 
 interface GherkinOptions {

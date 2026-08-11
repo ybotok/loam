@@ -15,13 +15,12 @@
     "src/commands/validate.ts": 1981,
     "src/commands/verify.ts": 1010,
     "src/commands/vouch.ts": 625,
-    "src/core/agent.ts": 2387,
     "src/core/asyncapi.ts": 312,
     "src/core/brief.ts": 1042,
     "src/core/coherence.ts": 637,
     "src/core/delta.ts": 529,
     "src/core/dependencies.ts": 475,
-    "src/core/doctor.ts": 730,
+    "src/core/doctor.ts": 731,
     "src/core/document/spec.ts": 594,
     "src/core/explore.ts": 368,
     "src/core/gherkin.ts": 534,
@@ -35,7 +34,7 @@
   },
   "packageFiles": {
     "src/commands": 21,
-    "src/core": 21
+    "src/core": 18
   },
   "functionParams": {
     "src/commands/archive.ts": {

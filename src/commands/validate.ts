@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { agentsStaleFinding } from "../core/agents-stamp.js";
+import { agentsStaleFinding } from "../core/agent/agents-stamp.js";
 import { inOrder } from "../core/kernel/concurrency.js";
 import type { RawServiceId } from "../core/kernel/ids.js";
 import { resolveServiceTarget } from "../core/repo/service-target.js";
@@ -63,7 +63,7 @@ import {
 } from "../core/c4/arch.js";
 import { gherkinFindings } from "../core/gherkin.js";
 import { readHealth } from "../core/vocabulary/health.js";
-import { LOAM_VERSION } from "../core/version.js";
+import { LOAM_VERSION } from "../core/envelope/version.js";
 import {
   FleetContext,
   documentConflictFinding,

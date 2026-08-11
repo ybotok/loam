@@ -18,7 +18,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { makeTmpDir, runLoam } from "./helpers/harness.js";
-import { AGENT_TOOLS, detectAgentTools, plannedCommandFiles } from "../src/core/agent.js";
+import { detectAgentTools, plannedCommandFiles } from "../src/core/agent/scaffold.js";
+import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
 import { parseConfig } from "../src/core/envelope/config.js";
 
 const cleanups: Array<() => Promise<void>> = [];

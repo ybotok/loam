@@ -16,20 +16,18 @@ import { readFile, readdir, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
-import {
-  AGENT_TOOLS,
-  AGENTS_MD,
-  PROTOCOLS as COMMAND_BODIES,
-  SLASH_COMMANDS as COMMAND_FILES,
-} from "../src/core/agent.js";
+import { AGENTS_MD } from "../src/core/agent/agents-md.js";
+import { PROTOCOLS as COMMAND_BODIES } from "../src/core/agent/protocol.js";
+import { SLASH_COMMANDS as COMMAND_FILES } from "../src/core/agent/scaffold.js";
+import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
 import { buildProgram } from "../src/cli.js";
 import {
   agentsStaleFinding,
   agentsStampLine,
   agentsStampVersion,
   versionTrails,
-} from "../src/core/agents-stamp.js";
-import { LOAM_VERSION } from "../src/core/version.js";
+} from "../src/core/agent/agents-stamp.js";
+import { LOAM_VERSION } from "../src/core/envelope/version.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

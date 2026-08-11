@@ -27,7 +27,8 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
-import { AGENTS_MD, PROTOCOLS } from "../src/core/agent.js";
+import { AGENTS_MD } from "../src/core/agent/agents-md.js";
+import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { UNCHECKED, VALIDATE_CHECKS } from "../src/core/brief.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 

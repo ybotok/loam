@@ -16,8 +16,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { diagnose } from "../src/core/doctor.js";
 import { scaffoldDocs } from "../src/core/docs.js";
-import { agentsStampLine } from "../src/core/agents-stamp.js";
-import { LOAM_VERSION } from "../src/core/version.js";
+import { agentsStampLine } from "../src/core/agent/agents-stamp.js";
+import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
