@@ -30,13 +30,8 @@ import {
   serviceMaturity,
   type Maturity,
 } from "./vocabulary/maturity.js";
-import {
-  compareIds,
-  landscapePath,
-  nearestIds,
-  servicePaths,
-  type ServiceEntry,
-} from "./repo/repo.js";
+import { compareIds, nearestIds, type ServiceEntry } from "./repo/entries.js";
+import { landscapePath, servicePaths } from "./repo/paths.js";
 
 /** One end of a call the fleet map already draws. */
 export interface ExploreEdge {

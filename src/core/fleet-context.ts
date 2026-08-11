@@ -29,13 +29,8 @@ import {
   type Operation,
 } from "./openapi.js";
 import type { RawServiceId } from "./kernel/ids.js";
-import {
-  featureSpecServices,
-  listFeatures,
-  listServices,
-  type FeatureEntry,
-  type ServiceEntry,
-} from "./repo/repo.js";
+import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
+import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
 import { parseRequirements, type Requirement } from "./document/spec.js";
 
 export interface FleetContextStats {

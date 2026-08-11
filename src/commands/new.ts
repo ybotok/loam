@@ -6,15 +6,10 @@ import { loadConfig } from "../core/envelope/config.js";
 import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../core/kernel/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../core/kernel/path-safety.js";
-import {
-  DocsRepoUnavailableError,
-  featureIdFromDirName,
-  featuresDir,
-  listServices,
-  nearestIds,
-  resolveFeature,
-  type FeatureEntry,
-} from "../core/repo/repo.js";
+import { featureIdFromDirName, nearestIds, type FeatureEntry } from "../core/repo/entries.js";
+import { featuresDir } from "../core/repo/paths.js";
+import { DocsRepoUnavailableError } from "../core/repo/state.js";
+import { listServices, resolveFeature } from "../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "./docs-repo-gate.js";
 
 interface NewOptions {

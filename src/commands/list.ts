@@ -11,16 +11,10 @@ import {
   type Maturity,
   type MaturityInput,
 } from "../core/vocabulary/maturity.js";
-import {
-  DocsRepoUnavailableError,
-  compareIds,
-  landscapePath,
-  listFeatures,
-  listServices,
-  servicePaths,
-  type FeatureEntry,
-  type ServiceEntry,
-} from "../core/repo/repo.js";
+import { compareIds, type FeatureEntry, type ServiceEntry } from "../core/repo/entries.js";
+import { landscapePath, servicePaths } from "../core/repo/paths.js";
+import { DocsRepoUnavailableError } from "../core/repo/state.js";
+import { listFeatures, listServices } from "../core/repo/repo.js";
 import {
   featureChecklist,
   readVerification,

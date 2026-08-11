@@ -26,15 +26,9 @@ import { loadConfig } from "../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
 import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
-import {
-  compareIds,
-  featureSpecPaths,
-  missingFeatureMessage,
-  resolveFeature,
-  servicePaths,
-  SPEC_AXES,
-  type SpecAxis,
-} from "../core/repo/repo.js";
+import { compareIds } from "../core/repo/entries.js";
+import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../core/repo/paths.js";
+import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import {
   DocsBusyError,
   acquireDocsLock,

@@ -19,14 +19,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import type { Issue } from "./vocabulary/issue.js";
-import {
-  featureSpecPaths,
-  featureSpecServices,
-  listFeatures,
-  servicePaths,
-  SPEC_AXES,
-  type SpecAxis,
-} from "./repo/repo.js";
+import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "./repo/paths.js";
+import { featureSpecServices, listFeatures } from "./repo/repo.js";
 import {
   KIND_RE,
   REQUIREMENT_DIGEST_LENGTH,

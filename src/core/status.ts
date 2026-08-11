@@ -106,18 +106,9 @@ import { gatesArchive, type Issue } from "./vocabulary/issue.js";
 import { repoPath } from "./envelope/json.js";
 import { featureProvenance } from "./provenance.js";
 import type { Finding } from "./vocabulary/report.js";
-import {
-  compareIds,
-  featurePaths,
-  featureSpecPaths,
-  featureSpecServices,
-  listFeatures,
-  listServices,
-  servicePaths,
-  SPEC_AXES,
-  type FeatureEntry,
-  type ServiceEntry,
-} from "./repo/repo.js";
+import { compareIds, type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
+import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "./repo/paths.js";
+import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
 import { requirementsMissingScenarios, type Requirement } from "./document/spec.js";
 import { COMMIT_INTENT, readCommitIntent } from "./staging.js";
 import {

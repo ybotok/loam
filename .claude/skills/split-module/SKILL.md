@@ -79,6 +79,25 @@ rg -n "from \"[^\"]*<module>\.js\"" src test | wc -l   # call sites that will be
    Then read the diff. Entries should have **disappeared**. If one appeared, you created a
    violation — go back to step 1. If a path merely changed, that is the move and is expected.
 
+   **Splitting a widely-imported module raises some importers' numbers, and that is not a
+   violation — but say which, and by how much.** An importer that needs symbols from two halves
+   now needs two import statements, so it grows by a line. There is no way around it that is not
+   worse: a barrel would hide the edge (rule 11), and squeezing a comment to pay for it is the
+   cosmetics this whole rule exists to prevent. Splitting `repo.ts` cost six importers +1 or +2
+   and saved about sixty lines elsewhere, because multi-line import blocks collapsed. Quote both
+   halves of that trade in the commit; a baseline diff where numbers rise without a stated reason
+   is indistinguishable from one where somebody let a file grow.
+
+7. **Check the dynamic imports by hand.** `await import("…")` takes a string, so neither `tsc` nor
+   an import rewriter that only reads `import … from` will see it. This has now bitten twice in
+   the same test — `test/repo.test.ts` reaches for `landscapePath` that way — and both times the
+   full suite caught in under a second what typecheck could not see at all. That is the argument
+   for running the whole suite on a change that "only moves things".
+
+   ```bash
+   rg -n 'import\(' src test
+   ```
+
 ## What must not change
 
 A split is a refactor: **no behaviour change, no signature change, no "while I'm here" fix.** If

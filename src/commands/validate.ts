@@ -17,23 +17,11 @@ import {
   type LoadedDoc,
   type Rel,
 } from "../core/c4/likec4.js";
-import {
-  DocsRepoUnavailableError,
-  agentsPath as agentsFile,
-  docsRepoState,
-  featurePaths,
-  featureSpecPaths,
-  featureSpecServices,
-  landscapePath as landscapeFile,
-  listFeatures,
-  listServices,
-  missingFeatureMessage,
-  resolveFeature,
-  serviceIdFindings,
-  servicePaths,
-  SPEC_AXES,
-  type FeatureEntry,
-} from "../core/repo/repo.js";
+import { type FeatureEntry } from "../core/repo/entries.js";
+import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
+import { DocsRepoUnavailableError, docsRepoState } from "../core/repo/state.js";
+import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../core/repo/paths.js";
+import { featureSpecServices, listFeatures, listServices, missingFeatureMessage, resolveFeature, serviceIdFindings } from "../core/repo/repo.js";
 import {
   countSeverity,
   reportValid,

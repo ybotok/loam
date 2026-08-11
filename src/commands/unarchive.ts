@@ -21,7 +21,8 @@ import { loadConfig } from "../core/envelope/config.js";
 import { emitJson, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
 import { resolveInside, resolvePortableFileInside } from "../core/kernel/path-safety.js";
 import { isRecord } from "../core/kernel/records.js";
-import { archiveDir as archiveRoot, featuresDir as featuresRoot, resolveFeature } from "../core/repo/repo.js";
+import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../core/repo/paths.js";
+import { resolveFeature } from "../core/repo/repo.js";
 import { sayRecovery } from "./archive.js";
 import {
   acquireDocsLock,

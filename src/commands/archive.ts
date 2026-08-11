@@ -39,17 +39,9 @@ import {
 } from "../core/c4/likec4.js";
 import { maskSource, matchBrace } from "../core/c4/source-mask.js";
 import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../core/c4/source-scan.js";
-import {
-  archiveDir as archiveRoot,
-  featurePaths,
-  featureSpecPaths,
-  featureSpecServices,
-  landscapePath as landscapeFile,
-  missingFeatureMessage,
-  resolveFeature,
-  servicePaths,
-  SPEC_AXES,
-} from "../core/repo/repo.js";
+import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
+import { archiveDir as archiveRoot, landscapePath as landscapeFile } from "../core/repo/paths.js";
+import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { readOpenapi } from "../core/openapi.js";
 import {
   mergeOpenapiPaths,
