@@ -1,5 +1,5 @@
 /**
- * Tests for the sources digest itself (src/core/provenance.ts) — what the walk
+ * Tests for the sources digest itself (src/core/provenance/stamp.ts and walk.ts) — what the walk
  * counts as source, what it refuses to follow, and what the stamp remembers.
  *
  * `sources_digest` is the only mechanical tie between a document and the code
@@ -29,7 +29,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, TEST_IDENTITY, writeFiles, type Project } from "./helpers/harness.js";
 import { parseFrontmatter, stringField } from "../src/core/document/frontmatter.js";
-import { expandSourceFiles, sourcesDigest } from "../src/core/provenance.js";
+import { expandSourceFiles, sourcesDigest } from "../src/core/provenance/stamp.js";
 import { vouch } from "../src/commands/vouch.js";
 
 const run = promisify(execFile);

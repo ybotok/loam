@@ -43,19 +43,17 @@ import { createInterface } from "node:readline/promises";
 import { loadConfig } from "../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
 import { listField, parseFrontmatter, withFrontmatterFields } from "../core/document/frontmatter.js";
+import { gitIdentity } from "../core/provenance/git.js";
+import { missingSources, patternSources, unsafeSources } from "../core/provenance/sources.js";
 import {
   contentDigest,
   emptySourcesMessage,
   encodeSourceIndex,
-  gitIdentity,
-  missingSources,
-  patternSources,
   sourcesDigest,
   today,
-  unsafeSources,
-  type SkippedSource,
   type SourceIndexEntry,
-} from "../core/provenance.js";
+} from "../core/provenance/stamp.js";
+import type { SkippedSource } from "../core/provenance/walk.js";
 import { SPEC_AXES, servicePaths } from "../core/repo/paths.js";
 import { plural } from "./format.js";
 import {
@@ -616,7 +614,7 @@ async function verifySpec(
     // A directory that exists but holds no files — or only ones the walk leaves
     // out: dot-entries, `node_modules`, anything the repository itself ignores.
     // The paths "resolve", but a digest over nothing never changes, so the stamp
-    // would read as current forever. The sentence comes from provenance.ts so
+    // would read as current forever. The sentence comes from provenance/stamp.ts so
     // that `loam validate` can grade the same state in the same words instead of
     // going green on a document this command refuses.
     return { ok: false, code: "sources-absent", message: emptySourcesMessage(label, sources) };

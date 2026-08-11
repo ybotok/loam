@@ -42,15 +42,9 @@ import { readOpenapi } from "../core/openapi.js";
 import { producersByMessage, readAsyncapi, slotsOf } from "../core/asyncapi.js";
 import { deltaServiceUnknownFinding, featureCoherence } from "../core/coherence.js";
 import { gatesArchive } from "../core/vocabulary/issue.js";
-import {
-  emptySourcesMessage,
-  expandSourceFiles,
-  featureProvenance,
-  missingSources,
-  patternSources,
-  serviceProvenance,
-  unsafeSources,
-} from "../core/provenance.js";
+import { featureProvenance, serviceProvenance } from "../core/provenance/findings.js";
+import { missingSources, patternSources, unsafeSources } from "../core/provenance/sources.js";
+import { emptySourcesMessage, expandSourceFiles } from "../core/provenance/stamp.js";
 import {
   closeIds,
   coversCandidates,

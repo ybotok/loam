@@ -38,7 +38,7 @@ export interface Requirement {
    * actually happens: once the first archives it leaves `changes/`, the second
    * goes green again, and its stale text lands on top without a word. This is
    * the pin that closes that window — the same trick as `sources_digest`
-   * (core/provenance.ts), one requirement wide.
+   * (core/provenance/stamp.ts), one requirement wide.
    *
    * Absent on requirements adopted from OpenSpec, which never had the line;
    * those keep the older, weaker protection and are told so once (warn).
@@ -103,7 +103,7 @@ export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 
 /**
  * How much of the sha256 a `Based-On:` line carries — the length
- * `sources_digest` already uses (core/provenance.ts), for one reason a reader
+ * `sources_digest` already uses (core/provenance/stamp.ts), for one reason a reader
  * can hold: every digest loam writes into a document reads the same.
  */
 export const REQUIREMENT_DIGEST_LENGTH = 16;
