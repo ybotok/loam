@@ -12,7 +12,7 @@
  * stamp is a human act, and a hand-curated file silences the warning the same
  * way: by saying, in the stamp, that someone has looked.
  */
-import type { Finding } from "./vocabulary/report.js";
+import type { Finding } from "../vocabulary/report.js";
 
 /** The stamp `loam init` writes at the top of AGENTS.md. */
 export function agentsStampLine(version: string): string {

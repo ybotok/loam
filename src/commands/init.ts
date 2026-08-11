@@ -16,12 +16,12 @@ import { docsRepoState } from "../core/repo/state.js";
 import { listServices } from "../core/repo/repo.js";
 import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
 import {
-  AGENT_TOOLS,
   detectAgentTools,
   plannedCommandFiles,
   scaffoldAgentCommands,
   type Delivery,
-} from "../core/agent.js";
+} from "../core/agent/scaffold.js";
+import { AGENT_TOOLS } from "../core/agent/tools/registry.js";
 
 interface InitOptions {
   docs: string;

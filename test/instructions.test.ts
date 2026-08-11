@@ -20,7 +20,7 @@
  */
 import { describe, expect, it, afterEach } from "vitest";
 import { rm } from "node:fs/promises";
-import { SLASH_COMMANDS } from "../src/core/agent.js";
+import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
 import { makeTmpDir, runLoam } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];

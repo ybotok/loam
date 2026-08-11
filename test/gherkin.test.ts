@@ -34,7 +34,7 @@ import {
 import { stepFromLine } from "../src/core/vocabulary/steps.js";
 import { parseRequirements } from "../src/core/document/spec.js";
 import { scenarioBodyHash } from "../src/core/verify.js";
-import { LOAM_VERSION } from "../src/core/version.js";
+import { LOAM_VERSION } from "../src/core/envelope/version.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

@@ -41,7 +41,8 @@ import { describe, expect, it } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AGENTS_MD, PROTOCOLS } from "../src/core/agent.js";
+import { AGENTS_MD } from "../src/core/agent/agents-md.js";
+import { PROTOCOLS } from "../src/core/agent/protocol.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -242,10 +243,14 @@ async function collect(): Promise<Collected> {
   const codes = new Set<string>();
   const unresolved: string[] = [];
   const sources = new Map<string, { src: string; blank: Mask }>();
+  // The agents-md/ sections and the workflows/ bodies ARE the documentation
+  // corpus — AGENTS_MD and PROTOCOLS below are assembled from them — so
+  // scanning them would let a code count as emitted merely because it is
+  // documented. (The corpus was one file, excluded as `agent.ts`; the split
+  // widened this to the two directories that now hold the prose.)
+  const CORPUS = [join("core", "agent", "agents-md"), join("core", "agent", "workflows")];
   for (const file of await tsFiles(SRC)) {
-    // agent.ts IS the documentation corpus — scanning it would let a code count
-    // as emitted merely because it is documented.
-    if (file.endsWith("agent.ts")) continue;
+    if (CORPUS.some((dir) => relative(SRC, file).startsWith(dir))) continue;
     const src = await readFile(file, "utf8");
     sources.set(file, { src, blank: mask(src) });
   }
