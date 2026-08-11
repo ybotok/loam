@@ -227,7 +227,7 @@ layout differs, and that part is already isolated.
     Cost, so nobody re-opens this without knowing it: roughly 230 annotation sites, paid once.
 19. **Expected outcomes are return values; exceptions are for the unexpected.** Already the house
     style. `loadConfig` returning `null` while printing the reason is the one place it half-holds.
-20. **Every `child_process` call carries a timeout.** `core/provenance.ts` uses `spawn` with a
+20. **Every `child_process` call carries a timeout.** `core/provenance/git.ts` uses `spawn` with a
     10-second cap and a comment saying why. `commands/verify.ts`'s `git()` uses `execFile` with
     neither `timeout` nor `maxBuffer`, on the `loam verify --record` path.
 

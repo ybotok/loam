@@ -104,7 +104,7 @@ import { analyzeDependencies, type DependencyGraph } from "./dependencies.js";
 import { FleetContext } from "./fleet-context.js";
 import { gatesArchive, type Issue } from "./vocabulary/issue.js";
 import { repoPath } from "./envelope/json.js";
-import { featureProvenance } from "./provenance.js";
+import { featureProvenance } from "./provenance/findings.js";
 import type { Finding } from "./vocabulary/report.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
 import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "./repo/paths.js";

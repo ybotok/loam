@@ -31,7 +31,8 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { parseFrontmatter, listField, stringField } from "../src/core/document/frontmatter.js";
-import { contentDigest, patternSources, sourcesDigest } from "../src/core/provenance.js";
+import { patternSources } from "../src/core/provenance/sources.js";
+import { contentDigest, sourcesDigest } from "../src/core/provenance/stamp.js";
 
 const SVC = "payment-service";
 
