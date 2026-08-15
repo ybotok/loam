@@ -1,9 +1,11 @@
 /**
  * Turning a name a caller typed into a name loam may join into a path.
  *
- * `servicePaths(docsDir, name)` spells `<docsDir>/services/<name>/`, so an
- * unchecked `name` is caller-controlled path input. Six commands guard it with
- * `assertServiceId` at their boundary; `validate` never did, and both of its
+ * `servicePaths(docsDir, name)` spells `<docsDir>/services/<name>/`, and its
+ * parameter is `PathableService`: an unchecked name at that call site no
+ * longer compiles, and this module is where a name a caller typed EARNS the
+ * type. The history is why it exists. Six commands guard their argument with
+ * `assertServiceId` at the boundary; `validate` never did, and both of its
  * entry points — `--service <id>` and the positional `<target>` — reached
  * `servicePaths` with whatever argv held. `--service ../../outside/services/x`
  * resolved ABOVE the docs repo, and where a `spec.md` happened to sit there

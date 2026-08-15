@@ -5,10 +5,13 @@
  * This is also the module that carries loam's one path guarantee.
  * `servicePaths(docsDir, service)` spells `<docsDir>/services/<service>/`, so
  * `service` is caller-controlled path input, and `node:path` cannot help:
- * `join(...paths: string[])` accepts every string there is. The guarantee is
- * this function's own parameter type and nothing else — any code that spells
- * `services/<id>/` with a bare join is outside it, and `commands/new.ts` and
- * the openspec migrator both do, held instead by `resolveInside` at the write.
+ * `join(...paths: string[])` accepts every string there is. The guarantee IS
+ * the `PathableService` parameter and nothing else: a name whose provenance is
+ * the repository, unconstructible from document text (kernel/ids.ts holds the
+ * only casts), so an unchecked name at this call site does not compile. Code
+ * that spells `services/<id>/` with a bare join is outside the guarantee —
+ * `commands/new.ts` and the openspec migrator both do, held instead by
+ * `resolveInside` at the write.
  */
 import { join } from "node:path";
 import type { PathableService } from "../kernel/ids.js";

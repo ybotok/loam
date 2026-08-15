@@ -50,8 +50,10 @@
  *
  * `path.join` is NOT the enforcement point and cannot be made one: node types it
  * `join(...paths: string[])`, so every brand satisfies it. The guarantee lives
- * entirely in `servicePaths`' own parameter type, and any code that spells
- * `services/<svc>/` with a bare join is outside it.
+ * in `servicePaths`' own parameter type — `PathableService`, declared below and
+ * demanded by that signature — so a `DeclaredService` at the call site is a
+ * compile error, not a review finding. Code that spells `services/<svc>/` with
+ * a bare join is outside the guarantee; `repo/paths.ts`'s banner names it.
  */
 declare const provenance: unique symbol;
 declare const checked: unique symbol;
