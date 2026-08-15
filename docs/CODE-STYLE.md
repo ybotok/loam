@@ -133,7 +133,7 @@ row shape with four optional fields. Impossible states stopped being constructib
 
 **Exhaustiveness is checked, not assumed.** A `switch` over a closed union ends by assigning to
 `never`, so adding a variant is a compile error rather than a silent fallthrough — but only where
-the fallthrough is genuinely unreachable. `status.ts`'s `verifyStep` ends in a `return []` that is
+the fallthrough is genuinely unreachable. `core/status/verification.ts`'s `verifyStep` ends in a `return []` that is
 a real, correct answer for a confirmed record; a `never` there would throw on every finished
 feature. Check that the branch is dead before you make it fatal.
 

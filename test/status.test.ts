@@ -30,7 +30,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { COMMIT_INTENT } from "../src/core/staging.js";
-import { ARTIFACT_STATUSES } from "../src/core/status.js";
+import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { buildVerification, featureChecklist, renderVerification, type Answer } from "../src/core/verify.js";
 
 const FEAT_DIR = "features/FEAT-1-split";
