@@ -52,7 +52,7 @@ Inside `core/`, the DAG levels are a real division of labour:
 |---|---|---|
 | L0 | `ids` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
 | L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
-| L2 | `repo` (fan-in 29) `json` (22) | The read model over the docs tree; the output envelope |
+| L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
 | L3 | `openapi` `staging` `provenance` `docs` `brief` `delta` `openspec-inventory` `maturity` | Read and write one artifact family |
 | L4 | `fleet-context` `verify` `openapi-merge` | Whole-fleet caching and evidence |
 | L5 | `coherence` `gherkin` `dependencies` `doctor` `explore` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
@@ -109,7 +109,7 @@ Two rules bind while this is in flight:
 Every attempt to find a second fails on measurement, not on taste.
 
 `Requirement` (`core/document/spec.ts`) is imported unchanged by more than a dozen modules and translated
-by none — there is no adapter anywhere. Both spec axes (`core/repo/repo.ts` `SPEC_AXES`) use one
+by none — there is no adapter anywhere. Both spec axes (`core/repo/paths.ts` `SPEC_AXES`) use one
 grammar; `core/c4/arch.ts` adds a field parser, not a second requirement model. `FleetContext`
 caches services, features, texts, requirements, OpenAPI documents and LikeC4 models in one object.
 Under a sympathetic subject partition of `core/`, roughly 70% of internal edges cross a boundary,
@@ -144,8 +144,13 @@ layout differs, and that part is already isolated.
    exception: `unarchive.ts` imports `sayRecovery` from `archive.ts`. A second exception means a
    new shared module, not a second exception.
 6. **A raw string that reaches a path join passes `assertServiceId` at the command boundary.**
-   `new`, `rebase`, `init`, `delta`, `adopt` and `doctor` all guard. `validate` does not — its
-   `--service` argument reaches `servicePaths()` unvalidated.
+   `new`, `rebase`, `init`, `delta`, `adopt` and `explore` guard — `assertServiceId` for a single
+   id, `parseServiceIds` where the flag takes a list. `doctor` reads its id from `loam.json`,
+   which `loadConfig` has already parsed into a `ServiceId`. `validate` — the boundary that
+   historically forgot — now resolves both of its entry points, `--service` and the positional
+   target, through `core/repo/service-target.ts`: the enumeration of `services/` answers first,
+   the grammar second, and a name that is neither refuses before any path is built
+   (`test/validate-contract.test.ts`).
 7. **A shared grammar lives in exactly one module.** `core/kernel/ids.ts` now owns both — the service
    id and the feature id. The feature-id regex used to be spelled twice (`commands/new.ts`,
    `core/openspec-inventory.ts`) and was recorded here as a hazard; the third caller is what
@@ -206,7 +211,7 @@ layout differs, and that part is already isolated.
     `mergeOpenapiPaths(livingText, featureText, service)` are reversed. Both documents parse, so a
     swap compiles and runs — and `mergeOpenapiPaths` swapped returns the delta as the merged text,
     which `archive` then writes over the service's living `openapi.yaml`.
-17. **A function needing `featureDir` and `featureId` takes the `FeatureEntry`.** `core/repo/repo.ts`
+17. **A function needing `featureDir` and `featureId` takes the `FeatureEntry`.** `core/repo/entries.ts`
     already defines it, and derives the id from the dir — so passing both passes a fact and its
     own derivation, representably inconsistent. Note what this is *not*: when rule 15 sends you
     looking for a record, take the entry that already exists rather than inventing an options
@@ -263,8 +268,9 @@ layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how
     many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
     it. It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by every command module but
-    one; `core/envelope/config.ts` and `core/repo/repo.ts` by 16 each. Slices would duplicate the hubs or
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 20 of the 21
+    modules in `commands/` — every one but `format.ts`; `core/envelope/config.ts` and
+    `core/repo/repo.ts` by 17 and 14 of them. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.
@@ -278,7 +284,7 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 | Change | Buys | Costs | Verdict |
 |---|---|---|---|
 | Add `-D import/no-cycle` to the `lint` script | Freezes the zero-cycle property, currently only discipline | One flag; verified exit 0 today | **Do it** — best ratio here |
-| `assertServiceId` in `validate`'s service branches | Closes the only path from an unvalidated argv string to a filesystem path | ~10 lines, one file. Deliberate behaviour change: an existing badly-named service directory would now be refused | **Do it** |
+| `assertServiceId` in `validate`'s service branches | Closes the only path from an unvalidated argv string to a filesystem path | ~10 lines, one file. Deliberate behaviour change: an existing badly-named service directory would now be refused | **Done** — but not as this row planned. `core/repo/service-target.ts` resolves against the enumeration of `services/` first and asks the grammar only for a name no directory matches, so the behaviour change this row predicted deliberately never happened: the badly-named directory keeps grading, because refusing on the grammar would make the one service `validate --all` complains about the one service `validate --service` cannot look at. The third test in `test/validate-contract.test.ts` fails if that order is ever reversed |
 | `timeout` + `maxBuffer` on `commands/verify.ts`'s `execFile` | Closes a hang — a blocking credential helper makes `verify --record` wait forever with no output | One line; `git()` already folds spawn failures to `-1`, so no new branch | **Do it** |
 | Extract `issueFinding(i: Issue): Finding` into `core/vocabulary/issue.ts` | Removes the third copy of the `gatesArchive` defaulting rule, which `archive.ts` documents in prose while re-implementing twice | ~12 lines, 3 call sites. Two are identical; `validate`'s adds a `text` hint on top. Emitted shape unchanged | **Do it** |
 | Options objects for `pinOpenapiOperations` / `mergeOpenapiPaths` | Removes the one swap in the repo that silently corrupts a living document instead of crashing | 2 signatures, 2 production sites, ~30 test sites. Do **not** fix by reordering positionals — that edit is itself compile-clean and wrong | **Do it** |
@@ -300,7 +306,7 @@ each one names is the cost now being paid, and the next reader deserves to know 
 | Change | Was | Now |
 |---|---|---|
 | Subdivide `src/core/` into folders | *Not worth it* — buys "seeing the layer in `ls`" for ~300 rewritten imports, `git blame` broken on 35 comment-heavy files, and a group graph that may have cycles where the file graph has none | **Rule 21.** The rewrite is scripted and `typecheck` proves it; `git mv` in a move-only commit answers `git blame`; the group graph is proved acyclic by `scripts/package-graph.mjs` before the move, which is the obligation the old row was right to demand |
-| Brand `ServiceId` / `FeatureId` / `DocsDir` | *Not worth it* — ~230 annotation sites, one required cast would be knowingly false, and `git log -S` across the whole history finds no swap bug that ever shipped | **Rule 18.** The false cast is answered by making the raw form its own type instead of casting it. "No swap bug has shipped" remains true and remains the honest argument against; the counter-argument is that rule 6 currently rests on six command boundaries each remembering to call `assertServiceId`, and `validate` already forgot |
+| Brand `ServiceId` / `FeatureId` / `DocsDir` | *Not worth it* — ~230 annotation sites, one required cast would be knowingly false, and `git log -S` across the whole history finds no swap bug that ever shipped | **Rule 18.** The false cast is answered by making the raw form its own type instead of casting it. "No swap bug has shipped" remains true and remains the honest argument against; the counter-argument was that rule 6 rested on six command boundaries each remembering to call `assertServiceId`, and `validate` had already forgotten — the gap `core/repo/service-target.ts` has since closed |
 
 ## What enforces what
 
@@ -326,7 +332,9 @@ static-analyses `src/` from inside vitest with a recursive `readdir`, so it is l
   limits landed and may only shrink: an entry the file no longer needs fails the test, so the
   list cannot silently become the permanent state. Being layout-agnostic matters more here than
   anywhere else — this test has to keep working while rule 21 moves every file it reads.
-- Rule 6 — assert `loam validate --service ../../etc` exits `invalid-option`.
+- Rule 6 — `test/validate-contract.test.ts`, live. `loam validate --service ../../etc` exits
+  `invalid-option` through `--service` and the positional target alike, and a `treeHashes`
+  before/after asserts the refusal wrote nothing.
 - Rule 7 — assert the feature-id regex source appears once across `src/`.
 - Rule 12 — generalise the `for (const withContext of [false, true])` loop in
   `test/openapi.test.ts` into a parity suite over the ten context-accepting readers. This is the
