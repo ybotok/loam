@@ -480,6 +480,31 @@ export async function featureCoherence(
     }
   }
 
+  // A tagged element's explicit `metadata { service '<id>' }` binding, held to
+  // the same grammar every `--service` flag is. The binding is the one name the
+  // archive TRUSTS: the landscape merge splices it into the living map
+  // verbatim, and the new-service scan probes `services/<binding>/` with it —
+  // where `metadata { service '../outside-svc' }`, which LikeC4 parses without
+  // a murmur, collapses the probe right out of services/, and the spliced map
+  // fails the very next `validate --all` (`landscape.binding-unknown`).
+  // Explicit bindings only, on purpose: a prose title with no binding is legal
+  // C4, and a title becomes a path only through `specs/<svc>/`, whose own
+  // grammar check (`delta.service-id-invalid`) guards that route.
+  for (const e of taggedEls) {
+    if (e.service === undefined) continue;
+    const problem = serviceIdProblem(e.service, "metadata { service } binding");
+    if (problem === null) continue;
+    issues.push({
+      severity: "error",
+      code: "c4.service-binding-invalid",
+      subject: e.service,
+      message:
+        `'${e.title}' (${e.id}) — ${problem} ` +
+        `\`loam archive\` would splice '${e.service}' into the living landscape.likec4 exactly as written, ` +
+        `and probe services/${e.service}/ with it. Bind the element to the services/<id>/ directory it means.`,
+    });
+  }
+
   return issues;
 }
 

@@ -283,6 +283,30 @@ async function archiveLocked(
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
   const issues = await featureCoherence(config.docsDir, featureDir, id, deltaDoc);
+  // One coherence code is carved out of --approve's reach before the gate
+  // below reads the rest: a tagged element whose explicit `metadata { service }`
+  // binding breaks the id grammar. The landscape merge would splice that name
+  // into the living map verbatim, and the new-service scan would probe
+  // `services/<binding>/` with it — a '../' collapses the probe out of
+  // services/ altogether — so the refusal is a mechanical fact about the path
+  // the name becomes, not a judgment about the feature. Same doctrine as the
+  // illegal-specs-name refusal above; the dry run is gated the same way, and
+  // the --json envelope stays not-coherent with every issue attached, exactly
+  // like the overridable branch below, so a consumer branches on the code and
+  // not on which refusal path fired.
+  const invalidBindings = issues.filter((i) => i.code === "c4.service-binding-invalid");
+  if (invalidBindings.length > 0) {
+    const msg = `archive ${id} — BLOCKED: ${invalidBindings.length} tagged element binding(s) name an illegal service id`;
+    if (json) {
+      refuseJson("not-coherent", msg, issues);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const i of invalidBindings) console.error(`  ✗ ${i.message}`);
+    console.error(`\n--approve does not override this — the merge would write a name loam can never resolve into services/, mechanically.`);
+    process.exitCode = 1;
+    return;
+  }
   const gating = issues.filter(gatesArchive);
   const advisory = issues.filter((i) => !gatesArchive(i));
   if (gating.length > 0 && !opts.approve) {
