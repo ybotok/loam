@@ -25,7 +25,6 @@ import { featureSpecServices, listFeatures, listServices, missingFeatureMessage,
 import {
   countSeverity,
   reportValid,
-  SEVERITY_MARK,
   targetJson,
   targetValid,
   type Finding,
@@ -33,8 +32,6 @@ import {
 } from "../../core/vocabulary/report.js";
 import {
   parseRequirements,
-  requirementIdProblems,
-  requirementsMissingScenarios,
   steplessFindings,
   type Requirement,
 } from "../../core/document/spec.js";
@@ -48,13 +45,9 @@ import { missingSources, patternSources, unsafeSources } from "../../core/proven
 import { emptySourcesMessage, expandSourceFiles } from "../../core/provenance/stamp.js";
 import {
   closeIds,
-  coversCandidates,
   coversEdge,
   coversElement,
-  entryResolves,
-  parseCoversEntry,
   type CoverageScope,
-  type CoversEntry,
 } from "../../core/c4/arch.js";
 import { gherkinFindings } from "../../core/gherkin.js";
 import { readHealth } from "../../core/vocabulary/health.js";
@@ -69,7 +62,22 @@ import {
   reportDocsRepoError,
   reportRepositoryUnavailable,
 } from "../docs-repo-gate.js";
-import { plural } from "../format.js";
+import {
+  ambiguousTarget,
+  capDetails,
+  guarded,
+  renderText,
+  summary,
+  UNVERIFIABLE,
+} from "./report.js";
+import {
+  coverageFinding,
+  coversEntries,
+  coversUnknownFindings,
+  duplicateRequirementFindings,
+  repeatedListLineFindings,
+  requirementIdFindings,
+} from "./requirements.js";
 
 interface ValidateOptions {
   service?: string;
@@ -295,120 +303,6 @@ export function registerValidate(program: Command): void {
         countSeverity(targets, "error") + countSeverity(targets, "warn") > 0;
       if (!valid || strictFailed) process.exitCode = 1;
     });
-}
-
-/**
- * The rollup `--json` carries and the `--all` footer prints.
- *
- * Four named fields rather than a `Record<string, number>`: the keys ARE the
- * contract, and under an index signature every read of them was an assertion
- * (`s.errors!`) that tsc could not check — rename one and the compiler stayed
- * quiet while the footer printed `undefined errors`.
- */
-interface ValidateSummary {
-  services: number;
-  features: number;
-  errors: number;
-  warnings: number;
-}
-
-function summary(targets: TargetReport[]): ValidateSummary {
-  return {
-    services: targets.filter((t) => t.kind === "service").length,
-    features: targets.filter((t) => t.kind === "feature").length,
-    errors: countSeverity(targets, "error"),
-    warnings: countSeverity(targets, "warn"),
-  };
-}
-
-/** The one code the rollup line counts; spelled once so the two cannot drift. */
-const UNVERIFIABLE = "sources.unverifiable-from-here";
-
-/**
- * How many `details` lines any one finding may print before the rest are
- * summarised away.
- *
- * A finding's details are evidence, not a log: LikeC4 reports one syntax error
- * as dozens of cascading diagnostics, and a fleet-sized repo multiplies that by
- * every target that mentions the file. The report is read by a person scrolling
- * a CI log and by an agent with a context window, and neither of them is helped
- * by the four-hundredth copy. The cap is applied to the JSON payload too, on
- * purpose: `--json` is the interface an agent pipes, and an unbounded array is
- * the same denial-of-attention there, just machine-readable.
- */
-const DETAIL_LIMIT = 10;
-
-/** Truncate every finding's details, marking what was dropped so nothing looks complete when it is not. */
-function capDetails(t: TargetReport): TargetReport {
-  return {
-    ...t,
-    findings: t.findings.map((f) => {
-      const details = f.details ?? [];
-      if (details.length <= DETAIL_LIMIT) return f;
-      return {
-        ...f,
-        details: [...details.slice(0, DETAIL_LIMIT), `… (+${details.length - DETAIL_LIMIT} more)`],
-      };
-    }),
-  };
-}
-
-/**
- * One target's checks, with an IO exception turned into a finding ON that
- * target instead of aborting the run.
- *
- * A fleet gate that dies on the first unreadable file reports nothing about the
- * other ninety-nine services — one bad permission bit, one file that is a
- * dangling symlink, and CI's answer to "how is the fleet" becomes a stack
- * trace. The failure is real and it is an error, so the run still exits 1; what
- * changes is that everything else is still graded, and the finding names the
- * service and the path instead of arriving as the `internal` catch-all.
- */
-async function guarded(
-  target: { kind: "service" | "feature"; id: string },
-  run: () => Promise<TargetReport>,
-): Promise<TargetReport> {
-  try {
-    return await run();
-  } catch (err) {
-    // A docs repo that vanished mid-run is not one target's problem — it is the
-    // whole run's, and the action's own catch reports it.
-    if (err instanceof DocsRepoUnavailableError) throw err;
-    const path = (err as NodeJS.ErrnoException).path;
-    const reason = err instanceof Error ? err.message : String(err);
-    return {
-      kind: target.kind,
-      id: target.id,
-      findings: [
-        {
-          severity: "error",
-          code: target.kind === "service" ? "service.unreadable" : "feature.unreadable",
-          subject: target.id,
-          message:
-            `${target.id}: ${path === undefined ? "an artifact" : path} could not be read — ` +
-            `nothing about this ${target.kind} was checked. ${reason}`,
-        },
-      ],
-    };
-  }
-}
-
-/**
- * `target.ambiguous` — the positional named a service AND a feature. The tie is
- * still broken the way it always was (the feature wins), because changing which
- * one is picked would silently re-target every script that relies on it; what
- * is new is that the run says which reading it took and how to force the other.
- */
-function ambiguousTarget(arg: string, chosen: "service" | "feature"): Finding {
-  const other = chosen === "feature" ? "service" : "feature";
-  return {
-    severity: "warn",
-    code: "target.ambiguous",
-    subject: arg,
-    message:
-      `'${arg}' names both a service and a feature — validated as the ${chosen}. ` +
-      `Pass --${other} ${arg} for the other reading.`,
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -1404,140 +1298,6 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
   return report;
 }
 
-/** The parsed Covers entries of every requirement that will live (REMOVED covers nothing). */
-function coversEntries(reqs: Requirement[]): CoversEntry[] {
-  return reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.covers.map(parseCoversEntry));
-}
-
-/**
- * `spec.duplicate-requirement` — two `### Requirement:` blocks with one name in
- * one LIVING document. Nothing else catches it, and the merge algebra
- * (applyRequirementDelta) matches by name and edits only the FIRST match: a
- * later archive rewrites one copy and the other survives as a stale snapshot
- * of whatever the requirement used to say. Per file on purpose — spec.md and
- * arch.spec.md are separate requirement namespaces (their merges never cross
- * files), so one name appearing in both is legal and unflagged.
- */
-function duplicateRequirementFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
-  const counts = new Map<string, number>();
-  for (const r of reqs) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
-  return [...counts]
-    .filter(([, n]) => n > 1)
-    .map(([name, n]) => ({
-      severity: "error" as const,
-      code: "spec.duplicate-requirement",
-      subject,
-      message: `${where}: requirement '${name}' is defined ${n} times — a merge edits only the first, every other copy lives on stale; keep exactly one`,
-    }));
-}
-
-/** Stable IDs are optional, but once authored they must select exactly one requirement. */
-function requirementIdFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
-  return requirementIdProblems(reqs).map((problem) => {
-    if (problem.kind === "invalid") {
-      return {
-        severity: "error" as const,
-        code: "spec.requirement-id-invalid",
-        subject,
-        message: `${where}: requirement '${problem.requirement}' has invalid Requirement-ID '${problem.value}' — use 1-128 characters matching [A-Za-z][A-Za-z0-9._-]*`,
-      };
-    }
-    if (problem.kind === "repeated") {
-      return {
-        severity: "error" as const,
-        code: "spec.requirement-id-repeated",
-        subject,
-        message: `${where}: requirement '${problem.requirement}' declares Requirement-ID ${problem.values.length} times — identity must be declared exactly once`,
-      };
-    }
-    return {
-      severity: "error" as const,
-      code: "spec.requirement-id-duplicate",
-      subject,
-      message: `${where}: Requirement-ID '${problem.id}' is shared by ${problem.requirements.map((name) => `'${name}'`).join(", ")} — one ID may identify only one requirement`,
-    };
-  });
-}
-
-/**
- * The two list lines of the requirement grammar, exactly as core/document/spec.ts spells
- * them (mirrored here, not exported from there, because the parser's grammar is
- * its own; a drift shows up as this check counting differently than the parser
- * assigns). A SECOND matching line in one requirement body REPLACES the first —
- * assignment, not append, the documented keep-last quirk — so the author's
- * "long list in two lines" pattern silently loses its first line.
- */
-const OPERATIONS_LINE_RE = /^\s*Operations?:\s*(.+?)\s*$/i;
-const COVERS_LINE_RE = /^\s*Covers?:\s*(.+?)\s*$/i;
-
-/**
- * `spec.repeated-operations` / `spec.repeated-covers` — warn on the silent
- * loss, keep the keep-last semantics (changing them would re-read every spec
- * in the fleet). Scenario bodies never count: the parser only assigns from the
- * requirement's own body lines, and `Requirement.text` is exactly those.
- * REMOVED requirements are exempt the way coversEntries exempts them — content
- * on its way out obliges nothing.
- */
-function repeatedListLineFindings(reqs: Requirement[], where: string, subject: string): Finding[] {
-  const out: Finding[] = [];
-  for (const r of reqs) {
-    if (r.kind === "REMOVED") continue;
-    for (const { re, label, code } of [
-      { re: OPERATIONS_LINE_RE, label: "Operations:", code: "spec.repeated-operations" },
-      { re: COVERS_LINE_RE, label: "Covers:", code: "spec.repeated-covers" },
-    ]) {
-      const n = r.text.filter((line) => re.test(line)).length;
-      if (n < 2) continue;
-      out.push({
-        severity: "warn",
-        code,
-        subject,
-        message: `${where}: requirement '${r.name}' has ${n} '${label}' lines — the last REPLACES the others (assignment, not append), the earlier list is silently lost; merge them into one comma-separated line`,
-      });
-    }
-  }
-  return out;
-}
-
-/**
- * `covers.unknown` — the typo guard on the Covers: line. Warn, not error: the
- * axis is advisory end to end, and a wrong id already costs its author the
- * coverage they wrote the line for. The hint offers only real ids (closeIds's
- * rule), and says where resolution looked when there is nothing close.
- * `healthUnreadable` mutes the alert:/sli: forms only: against a health.yaml
- * nobody could read, "did you mean" is a false diagnosis of a typo —
- * health.invalid (emitted by the service target) is the honest one.
- */
-function coversUnknownFindings(
-  reqs: Requirement[],
-  where: string,
-  subject: string,
-  scope: CoverageScope,
-  healthUnreadable = false,
-): Finding[] {
-  const out: Finding[] = [];
-  for (const r of reqs) {
-    if (r.kind === "REMOVED") continue;
-    for (const raw of r.covers) {
-      const entry = parseCoversEntry(raw);
-      if (healthUnreadable && (entry.form === "alert" || entry.form === "sli")) continue;
-      if (entryResolves(entry, scope)) continue;
-      const close = coversCandidates(entry, scope);
-      out.push({
-        severity: "warn",
-        code: "covers.unknown",
-        subject,
-        message:
-          `${where}: requirement '${r.name}' — Covers: '${raw}' resolves to nothing` +
-          (close.length > 0
-            ? `. Did you mean: ${close.join(", ")}?`
-            : " in the model, the landscape or health.yaml"),
-      });
-    }
-  }
-  return out;
-}
-
 async function validateFeature(
   docsDir: string,
   feature: FeatureEntry,
@@ -1822,90 +1582,6 @@ async function validateFeature(
 
   return { kind: "feature", id: featureId, findings };
 }
-
-function coverageFinding(label: string, reqs: Requirement[]): Finding {
-  const missing = requirementsMissingScenarios(reqs);
-  if (missing.length === 0) {
-    return {
-      severity: "ok",
-      code: "requirements.covered",
-      message: `${label} covered (${reqs.length} requirement${reqs.length === 1 ? "" : "s"}, all with scenarios)`,
-    };
-  }
-  return {
-    severity: "error",
-    code: "requirements.missing-scenarios",
-    message: `${label}: ${missing.length} requirement(s) without a scenario`,
-    details: missing.map((r) => r.name),
-    text: { detailPrefix: "- " },
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Text renderer                                                       */
-/* ------------------------------------------------------------------ */
-
-/**
- * `--errors-only` is a RENDERING lever, the way `--strict` is an exit-code
- * lever: neither changes the report, and the `--json` payload is unaffected by
- * both. On a fleet of a hundred services the clean run prints several hundred
- * `ok` confirmations, and the two warnings that matter are somewhere inside it;
- * anyone reading a CI log wants the exceptions, and anyone auditing wants all
- * of it. Both are available, from the same run, and neither is the default.
- */
-function renderText(
-  targets: TargetReport[],
-  all: boolean,
-  unverifiable: number,
-  errorsOnly: boolean,
-): void {
-  for (const t of targets) {
-    const shown = errorsOnly ? t.findings.filter((f) => f.severity !== "ok") : t.findings;
-    if (shown.length === 0) continue;
-    // A feature announces itself; a service's findings already carry its name.
-    if (t.kind === "feature") console.log(t.id);
-    let header: string | undefined;
-    for (const f of shown) {
-      const hint = f.text ?? {};
-      if (hint.header && hint.header !== header) {
-        header = hint.header;
-        console.log(`  ${header}`);
-      }
-      // The whole report goes to stdout, in document order. Splitting errors
-      // onto stderr meant a piped stdout silently lost them from the middle of
-      // the report and 2>&1 could reorder it; the exit code carries failure,
-      // and stderr stays reserved for refusals (the fail() path).
-      const marker = hint.marker === false ? "" : `${SEVERITY_MARK[f.severity]} `;
-      console.log(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}`);
-      for (const d of f.details ?? []) console.log(`    ${hint.detailPrefix ?? ""}${d}`);
-    }
-  }
-
-  if (!all) {
-    // Without the --all footer there would be nothing at all to print for a
-    // clean single target under --errors-only — and silence is the one output
-    // that must never mean "checked, fine".
-    if (errorsOnly && targets.every((t) => t.findings.every((f) => f.severity === "ok"))) {
-      console.log(`${targets.map((t) => t.id).join(", ")}: no errors or warnings`);
-    }
-    return;
-  }
-  const s = summary(targets);
-  console.log(
-    `\n${plural(s.services, "service")}, ${plural(s.features, "feature")} — ` +
-      `${plural(s.errors, "error")}, ${plural(s.warnings, "warning")}`,
-  );
-  // One line for the whole fleet, never one per service: honest about the blind
-  // spot without drowning the report in a hundred copies of it.
-  if (unverifiable > 0) {
-    const whose = unverifiable === 1 ? "1 service's" : `${unverifiable} services'`;
-    console.log(
-      `⚠ sources.unverifiable-from-here: ${whose} sources can only be checked from their own repos`,
-    );
-  }
-}
-
-/* ------------------------------------------------------------------ */
 
 /**
  * The two things a `sources` list can be that `serviceProvenance` cannot say.
