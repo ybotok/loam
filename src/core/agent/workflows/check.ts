@@ -128,6 +128,7 @@ what lets a feature ship:
 | \`openapi.remove-op-consumed\` | the feature retires an operation the LIVING fleet still consumes — a landscape edge's \`metadata { op }\`, or another service's living requirement naming it | fix the consumer in the same feature (redirect the edge, retire its requirement), or archive with \`--approve\` if the consumer is already gone in code |
 | \`c4.op-ungoverned\` (warn) | an operation is called but no requirement governs it | write the requirement |
 | \`c4.op-link-missing\` (warn) | a "Calls" edge in the delta with no \`metadata { op }\` | link it to the operationId |
+| \`c4.service-binding-invalid\` | a tagged element's explicit \`metadata { service }\` binding is not a legal \`services/<id>/\` name (a space, a \`../\`, a Windows-reserved stem) — archive would splice the name into the living landscape verbatim, and a \`../\` collapses its \`services/\` probe out of the docs repo | fix the binding to the directory the element means; \`--approve\` does not override this one — the path the name becomes is mechanical, not a judgment call |
 | \`api.op-unconsumed\` (warn) | an added operation no edge consumes | model the caller, or say why it is provider-only |
 | \`service.no-requirement-delta\` (warn) | a new service with no spec delta | write \`specs/<svc>/spec.md\` |
 | \`archedge.uncovered\` (warn) | no scenario names a tagged edge (a heuristic) | write the scenario, or say why the edge needs none |

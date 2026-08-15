@@ -60,6 +60,8 @@ export type IssueCode =
   | "service.no-requirement-delta"
   /** W4 — a "Calls" edge carries no operation link */
   | "c4.op-link-missing"
+  /** a tagged element's explicit `metadata { service }` binding breaks the service-id grammar — the merge would splice the name into the living landscape verbatim, and probe services/<id>/ with it; never overridable, the path is a mechanical fact */
+  | "c4.service-binding-invalid"
   /* --- delta shape: does the diff apply to the living spec it claims to change? --- */
   /** a heading that nearly matches the delta grammar — its requirements merge as nothing */
   | "delta.unknown-section"

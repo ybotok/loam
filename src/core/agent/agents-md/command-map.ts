@@ -122,6 +122,10 @@ selected that tool. The map of which invocation surfaces what:
   \`services/<svc>/\` no loam command can address),
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
+  \`c4.service-binding-invalid\` (a tagged element's explicit
+  \`metadata { service }\` binding that is not a legal service id — archive
+  refuses it too, and \`--approve\` does not override: the merge would splice
+  the name into the living landscape verbatim),
   \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,
   \`spec.repeated-operations\` / \`spec.repeated-covers\` (on the feature's own
   spec deltas — same silent-line-loss check as service scope),

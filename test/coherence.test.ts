@@ -646,6 +646,70 @@ describe("W3: tagged new softwareSystem needs a specs/<title>/ dir", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* c4.service-binding-invalid: an explicit binding must be a legal id  */
+/* ------------------------------------------------------------------ */
+
+describe("c4.service-binding-invalid: a tagged element's explicit binding must be a legal service id", () => {
+  it("metadata { service '../outside-svc' } is an ERROR that gates archive", async () => {
+    // The hole this pins: the binding parsed cleanly in LikeC4, W3 was the only
+    // voice (a warn), and archive spliced '../outside-svc' into the living
+    // landscape while its services/ probe collapsed out of the docs repo.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  outside = softwareSystem 'Outside Payments' {
+    #FEAT-1
+    metadata { service '../outside-svc' }
+  }`),
+    });
+    const invalid = issues.filter((i) => i.code === "c4.service-binding-invalid");
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]!.severity).toBe("error");
+    expect(invalid[0]!.subject).toBe("../outside-svc");
+    expect(invalid[0]!.message).toContain("metadata { service } binding");
+    expect(invalid[0]!.message).toContain("splice");
+    expect(gatesArchive(invalid[0]!)).toBe(true);
+  });
+
+  it("a prose TITLE that is not a legal id, with no binding, stays legal C4", async () => {
+    // Explicit bindings only, by design: a title becomes a path only through
+    // specs/<svc>/, and delta.service-id-invalid guards that route. Parsing
+    // titles here would make ordinary diagram prose an error.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  gateway = softwareSystem 'Payment Gateway' {
+    #FEAT-1
+  }`),
+    });
+    expect(issues.filter((i) => i.code === "c4.service-binding-invalid")).toEqual([]);
+    // W3 still speaks — the new service has no requirement delta — but as the
+    // warn it always was, never an error.
+    expect(errors(issues)).toEqual([]);
+  });
+
+  it("loam validate --feature carries the finding and exits 1", async () => {
+    const p = await makeProject({
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      [`${FEATURE_REL}/intent.md`]: "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Outside\n",
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  outside = softwareSystem 'Outside Payments' {
+    #FEAT-1
+    metadata { service '../outside-svc' }
+  }`),
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      const findings = (JSON.parse(res.stdout).targets as Array<{ findings: Array<{ code: string; severity: string; gates?: boolean }> }>)
+        .flatMap((t) => t.findings)
+        .filter((f) => f.code === "c4.service-binding-invalid");
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.severity).toBe("error");
+      expect(findings[0]!.gates).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* Broken or missing inputs                                            */
 /* ------------------------------------------------------------------ */
 

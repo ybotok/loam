@@ -3385,3 +3385,82 @@ The service SHALL hold the payment.
     }
   });
 });
+
+describe("a tagged element whose explicit binding is an illegal id blocks archive, --approve and all", () => {
+  // The hole this pins, reproduced end to end before the fix: the binding
+  // parsed cleanly, validate had nothing but the W3 warn, and archive exited 0
+  // having spliced '../outside-svc' into the living landscape — whose very
+  // next validate --all then failed on landscape.binding-unknown, while the
+  // newServices existsSync probe had collapsed services/../outside-svc right
+  // out of the docs repo.
+  function outsideBindingFixture(): Record<string, string> {
+    return {
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "features/FEAT-8-outside/intent.md": "---\nfeature: FEAT-8\nstatus: proposed\n---\n\n# Outside\n",
+      "features/FEAT-8-outside/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-8
+}
+
+model {
+  outside = softwareSystem 'Outside Payments' {
+    #FEAT-8
+    metadata { service '../outside-svc' }
+  }
+}
+`,
+    };
+  }
+
+  it("refuses before the plan: exit 1, the living landscape never sees the name", async () => {
+    const p = await makeProject(outsideBindingFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-8");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(res.out).toContain("illegal service id");
+      expect(await p.read(LANDSCAPE_REL)).toBe(LANDSCAPE);
+      expect(await p.read(LANDSCAPE_REL)).not.toContain("outside-svc");
+      expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve does not pierce it, and --dry-run is refused the same way", async () => {
+    const p = await makeProject(outsideBindingFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const approved = await runLoam(p.workDir, "archive", "FEAT-8", "--approve");
+      expect(approved.code).toBe(1);
+      expect(approved.out).toContain("--approve does not override");
+      const dry = await runLoam(p.workDir, "archive", "FEAT-8", "--dry-run");
+      expect(dry.code).toBe(1);
+      expect(dry.out).toContain("BLOCKED");
+      expect(await p.read(LANDSCAPE_REL)).toBe(LANDSCAPE);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--json refuses not-coherent and carries c4.service-binding-invalid in issues[]", async () => {
+    const p = await makeProject(outsideBindingFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-8", "--approve", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("not-coherent");
+      const issues = json.issues as Array<{ code: string; gates: boolean }>;
+      const binding = issues.filter((i) => i.code === "c4.service-binding-invalid");
+      expect(binding).toHaveLength(1);
+      expect(binding[0]!.gates).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
