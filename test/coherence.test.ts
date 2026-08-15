@@ -19,6 +19,7 @@ import {
   pinFor,
   pinOpenapi,
   runLoam,
+  writeFiles,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
   LIVING_OPENAPI,
@@ -385,6 +386,57 @@ describe("E2 C4→API: every tagged edge's op must be defined by the TARGET serv
       [`${FEATURE_REL}/specs/weird-title-svc/openapi.yaml`]: openapiWith("createSplit"),
     });
     expect(issues).toEqual([]);
+  });
+
+  it("a declared target that resolves outside the docs repo is graded as absent, its files unread", async () => {
+    // `metadata { service '../../outside-svc' }` parses in LikeC4 without one
+    // error, and before the enumeration bridge featureCoherence joined it
+    // straight into `services/<target>/`: the living-spec and openapi probes
+    // landed OUTSIDE the docs repo, and whatever sat there graded the edge —
+    // a governing requirement silenced c4.op-ungoverned, a defined operation
+    // silenced c4-api.op-undefined. The bound element is deliberately
+    // untagged, so c4.service-binding-invalid stays out of the picture and
+    // the only guard in play is the target resolution itself.
+    const traversal = delta(`  a = softwareSystem 'caller-svc'
+  b = softwareSystem 'outside' {
+    metadata { service '../../outside-svc' }
+  }
+  a -> b 'Calls hiddenOp' {
+    #FEAT-1
+    metadata { op 'hiddenOp' }
+  }`);
+    const p = await makeProject({ [`${FEATURE_REL}/delta.likec4`]: traversal });
+    try {
+      // A spec governing hiddenOp and an openapi defining it, one level ABOVE
+      // the docs repo — exactly where join(docsDir, "services",
+      // "../../outside-svc") lands. If loam reads either file, the edge grades
+      // coherent and this test fails.
+      await writeFiles(join(p.docsDir, ".."), {
+        "outside-svc/spec.md": specDelta("hiddenOp"),
+        "outside-svc/openapi.yaml": openapiWith("hiddenOp"),
+      });
+      const issues = await featureCoherence(p.docsDir, join(p.docsDir, FEATURE_REL), "FEAT-1");
+      expect(issues.map((i) => i.code).sort()).toEqual(["c4-api.op-undefined", "c4.op-ungoverned"]);
+      // The findings still speak in the document's own words — resolution
+      // failing must not rename what the author wrote.
+      expect(errors(issues)[0]!.message).toContain("../../outside-svc");
+    } finally {
+      await p.destroy();
+    }
+
+    // The control: the same edge aimed at a service that simply does not
+    // exist. A traversal name must be indistinguishable from an absent one.
+    const ghost = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  a = softwareSystem 'caller-svc'
+  b = softwareSystem 'outside' {
+    metadata { service 'ghost-svc' }
+  }
+  a -> b 'Calls hiddenOp' {
+    #FEAT-1
+    metadata { op 'hiddenOp' }
+  }`),
+    });
+    expect(ghost.map((i) => i.code).sort()).toEqual(["c4-api.op-undefined", "c4.op-ungoverned"]);
   });
 
   it("edge op defined in the target's LIVING OpenAPI produces no error", async () => {

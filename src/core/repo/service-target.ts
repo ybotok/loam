@@ -54,3 +54,45 @@ export async function resolveServiceTarget(
   if (entry !== undefined) return { ok: true, id: entry.id };
   return parseServiceId(name, label);
 }
+
+/**
+ * The same resolution for a name a DOCUMENT declared — an edge target's
+ * `metadata { service '…' }` binding, or its title standing in for one — where
+ * the caller needs an answer instead of a refusal: which enumerated directory,
+ * if any, does this text name?
+ *
+ * The enumeration is the fleet's `services/` plus whatever directory names the
+ * caller has already read for itself — a feature's own `specs/<svc>/`, the only
+ * place a service the feature INTRODUCES has a directory at all. There is
+ * deliberately no grammar arm here, in either direction: `services/Payment
+ * Service/` keeps resolving for the banner's reason, and a legal-looking name
+ * that matches no directory has no living file anywhere, so the caller's
+ * business is to grade it absent — never to build a path from it.
+ *
+ * The index is built on the first ask, not at construction: coherence asks per
+ * op-edge and features routinely carry none, so the enumeration only runs once
+ * an answer matters. A repo whose `services/` cannot be enumerated resolves
+ * only the caller's own names — every living probe would have found nothing
+ * there anyway, and `services-missing` is that repository's diagnosis, not
+ * this document's.
+ */
+export function enumeratedServiceIndex(
+  docsDir: string,
+  known: readonly RawServiceId[],
+  fleet?: FleetContext,
+): (name: string) => Promise<RawServiceId | undefined> {
+  let index: Map<string, RawServiceId> | undefined;
+  return async (name: string): Promise<RawServiceId | undefined> => {
+    if (index === undefined) {
+      index = new Map<string, RawServiceId>();
+      for (const id of known) index.set(id, id);
+      try {
+        for (const s of await listServices(docsDir, fleet)) index.set(s.id, s.id);
+      } catch {
+        // The docblock's last paragraph: no enumerable services/ means the
+        // fleet half of the index is empty, not that the question is an error.
+      }
+    }
+    return index.get(name);
+  };
+}
