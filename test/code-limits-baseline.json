@@ -28,12 +28,11 @@
     "src/core/openapi.ts": 333,
     "src/core/openspec-inventory.ts": 1919,
     "src/core/staging.ts": 1056,
-    "src/core/status.ts": 1521,
     "src/core/verify.ts": 1089
   },
   "packageFiles": {
     "src/commands": 21,
-    "src/core": 17
+    "src/core": 16
   },
   "functionParams": {
     "src/commands/validate.ts": {
@@ -61,13 +60,23 @@
     "src/core/staging.ts": {
       "writeSnapshot": 5
     },
-    "src/core/status.ts": {
+    "src/core/status/feature/artifacts.ts": {
       "featureArtifacts": 7,
-      "featureNext": 9,
-      "featureStage": 7,
-      "fileState": 6,
-      "fleetFeature": 6,
-      "fleetNext": 5,
+      "fileState": 6
+    },
+    "src/core/status/feature/feature.ts": {
+      "featureStage": 7
+    },
+    "src/core/status/feature/next.ts": {
+      "featureNext": 9
+    },
+    "src/core/status/fleet/fleet.ts": {
+      "fleetFeature": 6
+    },
+    "src/core/status/fleet/next.ts": {
+      "fleetNext": 5
+    },
+    "src/core/status/verification.ts": {
       "testStep": 5,
       "verifyStep": 5
     },

@@ -203,16 +203,26 @@ interface Invocation {
  * survives: `loam adopt <path> --service <id>` shipped in archive.ts for weeks
  * while doctor.ts's twin was being fixed. A command loam prints is a command
  * loam has, whichever file prints it.
+ *
+ * The walk is recursive because both directories are trees of packages. It
+ * used to stop one level down, which held only while every printing module sat
+ * flat in core/ — the day status's next[] steps moved into core/status/, the
+ * corpus silently lost every command they print, and only the canary assertion
+ * below noticed.
  */
 async function sourceFiles(): Promise<Array<[string, string]>> {
   const dir = new URL(".", `file://${SRC}`);
   const out: Array<[string, string]> = [];
-  for (const sub of ["commands", "core"]) {
-    const here = new URL(`${sub}/`, dir);
-    for (const name of (await readdir(here)).filter((n) => n.endsWith(".ts")).sort()) {
-      out.push([`src/${sub}/${name}`, await readFile(new URL(name, here), "utf8")]);
+  const walk = async (here: URL, label: string): Promise<void> => {
+    const entries = (await readdir(here, { withFileTypes: true })).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
+    for (const entry of entries) {
+      if (entry.isDirectory()) await walk(new URL(`${entry.name}/`, here), `${label}${entry.name}/`);
+      else if (entry.name.endsWith(".ts")) out.push([`${label}${entry.name}`, await readFile(new URL(entry.name, here), "utf8")]);
     }
-  }
+  };
+  for (const sub of ["commands", "core"]) await walk(new URL(`${sub}/`, dir), `src/${sub}/`);
   out.push(["src/cli.ts", await readFile(new URL("cli.ts", dir), "utf8")]);
   return out;
 }

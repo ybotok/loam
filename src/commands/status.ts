@@ -1,6 +1,6 @@
 /**
  * `loam status` — the read-only projection. Nothing here computes anything: the
- * derivation lives in core/status.ts (and, underneath it, in the same coherence
+ * derivation lives in core/status/ (and, underneath it, in the same coherence
  * and verification calls `validate`, `verify` and `archive` make). This file
  * resolves the target, refuses the arguments it cannot honour, and renders.
  *
@@ -14,16 +14,16 @@ import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
 import { findingJson, SEVERITY_MARK } from "../core/vocabulary/report.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { featureCandidates, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
-import {
-  featureStatus,
-  fleetStatus,
-  type ArtifactState,
-  type FeatureStatusReport,
-  type FleetStatusReport,
-  type InterruptedCommit,
-  type NextStep,
-  type VerificationState,
-} from "../core/status.js";
+import { featureStatus } from "../core/status/feature/feature.js";
+import { fleetStatus } from "../core/status/fleet/fleet.js";
+import type {
+  ArtifactState,
+  FeatureStatusReport,
+  FleetStatusReport,
+  InterruptedCommit,
+  NextStep,
+  VerificationState,
+} from "../core/status/report.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 
 interface StatusOptions {

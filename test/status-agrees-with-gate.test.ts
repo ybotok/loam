@@ -39,7 +39,7 @@ import {
   LIVING_SPEC,
   type Project,
 } from "./helpers/harness.js";
-import { FLEET_NEXT_LIMIT } from "../src/core/status.js";
+import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
 import {
   buildVerification,
   featureChecklist,
