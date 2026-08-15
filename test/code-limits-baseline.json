@@ -1,7 +1,7 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 310,
-    "src/commands/archive.ts": 1484,
+    "src/commands/archive.ts": 1527,
     "src/commands/delta.ts": 444,
     "src/commands/gherkin.ts": 416,
     "src/commands/init.ts": 311,
@@ -36,12 +36,6 @@
     "src/core": 17
   },
   "functionParams": {
-    "src/commands/archive.ts": {
-      "<unnamed> #1": 5,
-      "elementSpot": 5,
-      "planLandscapeMerge": 6,
-      "relSpot": 5
-    },
     "src/commands/validate.ts": {
       "coversUnknownFindings": 5
     },
