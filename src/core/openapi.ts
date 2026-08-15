@@ -86,7 +86,7 @@ export function operationDigest(node: unknown): string {
 
 /**
  * What a pin says, from digests alone — the one definition both the gate
- * (core/coherence.ts, which has parsed Operations) and the merge
+ * (core/coherence/coherence.ts, which has parsed Operations) and the merge
  * (core/openapi-merge.ts, which has raw YAML trees) decide by. Two spellings of
  * this rule would eventually disagree about which operations a merge writes,
  * and the disagreement would be invisible until a contract came back wrong.

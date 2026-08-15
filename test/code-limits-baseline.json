@@ -1,7 +1,7 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 312,
-    "src/commands/archive.ts": 892,
+    "src/commands/archive.ts": 893,
     "src/commands/delta.ts": 444,
     "src/commands/gherkin.ts": 416,
     "src/commands/init.ts": 311,
@@ -12,11 +12,11 @@
     "src/commands/show.ts": 373,
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 404,
-    "src/commands/validate.ts": 1984,
+    "src/commands/validate.ts": 1985,
     "src/commands/verify.ts": 1010,
     "src/commands/vouch.ts": 623,
     "src/core/asyncapi.ts": 312,
-    "src/core/coherence.ts": 712,
+    "src/core/coherence/coherence.ts": 537,
     "src/core/delta.ts": 529,
     "src/core/dependencies.ts": 475,
     "src/core/doctor.ts": 731,
@@ -31,7 +31,7 @@
   },
   "packageFiles": {
     "src/commands": 21,
-    "src/core": 15
+    "src/core": 14
   },
   "functionParams": {
     "src/commands/validate.ts": {
@@ -42,8 +42,10 @@
       "report": 6,
       "reportFrozen": 5
     },
-    "src/core/coherence.ts": {
-      "featureCoherence": 5,
+    "src/core/coherence/coherence.ts": {
+      "featureCoherence": 5
+    },
+    "src/core/coherence/living.ts": {
       "unknownDeltaServices": 5
     },
     "src/core/gherkin.ts": {

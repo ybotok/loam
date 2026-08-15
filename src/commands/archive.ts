@@ -43,7 +43,8 @@ import {
   stripOpenapiRemovalMarkers,
   type OpenapiMergeResult,
 } from "../core/openapi-merge.js";
-import { featureCoherence, invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
+import { featureCoherence } from "../core/coherence/coherence.js";
+import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../core/coherence/living.js";
 import { findingJson, SEVERITY_MARK, type Finding } from "../core/vocabulary/report.js";
 import {
   parseRequirements,
@@ -226,7 +227,7 @@ async function archiveLocked(
   // `services/<svc>/<axis>` with it, and the requirements merge would
   // materialise `services/<svc>/` from it — a directory `service.id-invalid`
   // then calls an error on the next `validate --all`, and one no loam command
-  // can address or re-create. The set comes from coherence.ts's
+  // can address or re-create. The set comes from coherence/living.ts's
   // `invalidSpecServiceFindings` — the same function validate reads — so the
   // two gates cannot drift.
   //
@@ -347,7 +348,7 @@ async function archiveLocked(
   // graded this and archive did not, which is the half that costs something:
   // `specs/<svc>/` is what the merge MATERIALISES `services/<svc>/` from, so a
   // one-character slip in `--touches` archived at exit 0 and left the fleet a
-  // living service nobody meant to adopt. The set comes from coherence.ts's
+  // living service nobody meant to adopt. The set comes from coherence/living.ts's
   // `unknownDeltaServices` — the same function validate reads — so the two
   // gates cannot drift into disagreeing about which ids are real.
   //
