@@ -12,7 +12,7 @@
     "src/commands/show.ts": 377,
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 404,
-    "src/commands/validate/validate.ts": 1669,
+    "src/commands/validate/validate.ts": 1412,
     "src/commands/verify.ts": 1010,
     "src/commands/vouch.ts": 627,
     "src/core/asyncapi.ts": 313,

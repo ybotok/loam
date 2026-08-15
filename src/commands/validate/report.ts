@@ -9,6 +9,7 @@
  * copy of either is how a footer starts printing a number its own findings
  * contradict.
  */
+import { type LikeC4Error } from "../../core/c4/likec4.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import {
   countSeverity,
@@ -72,6 +73,21 @@ export function capDetails(t: TargetReport): TargetReport {
       };
     }),
   };
+}
+
+/**
+ * The other half of that: one parser diagnostic as an evidence line. `L12:`
+ * when the parser knew a line, because it lets a reader open the file at the
+ * fault instead of searching for it.
+ *
+ * Three other modules hand-roll this same ternary (`commands/show.ts`,
+ * `commands/delta.ts`, `core/c4/splice/landscape-merge.ts`). It is spelled once
+ * HERE rather than beside `LikeC4Error`, where all four belong, only because
+ * `core/c4/likec4.ts` is nine lines under the file limit and a five-line
+ * helper would leave the next reader no room at all.
+ */
+export function errorText(e: LikeC4Error): string {
+  return typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message;
 }
 
 /**
