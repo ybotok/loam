@@ -12,19 +12,19 @@
  * None of these read the filesystem and none of them print — they take parsed
  * requirements and answer in findings.
  */
-import { type Finding } from "../../core/vocabulary/report.js";
+import { type Finding } from "../../../core/vocabulary/report.js";
 import {
   requirementIdProblems,
   requirementsMissingScenarios,
   type Requirement,
-} from "../../core/document/spec.js";
+} from "../../../core/document/spec.js";
 import {
   coversCandidates,
   entryResolves,
   parseCoversEntry,
   type CoverageScope,
   type CoversEntry,
-} from "../../core/c4/arch.js";
+} from "../../../core/c4/arch.js";
 
 /** The parsed Covers entries of every requirement that will live (REMOVED covers nothing). */
 export function coversEntries(reqs: Requirement[]): CoversEntry[] {

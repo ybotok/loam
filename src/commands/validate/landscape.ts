@@ -20,13 +20,7 @@ import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listServices, serviceIdFindings } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
 import { FleetContext, landscapeConflictFinding } from "../../core/fleet-context.js";
-import { errorText } from "./report.js";
-
-/** C4 kinds that model people. A person is never a service directory. */
-export const ACTOR_KINDS = new Set(["person", "actor", "user"]);
-
-/** Tag marking an element as somebody else's system — undocumented on purpose. */
-export const EXTERNAL_TAG = "external";
+import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "./checks/vocabulary.js";
 
 /**
  * A landscape that could not be READ, shaped as one that did not PARSE.
