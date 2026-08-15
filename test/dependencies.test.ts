@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { analyzeDependencies } from "../src/core/dependencies.js";
-import { makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
+import { FleetContext } from "../src/core/fleet-context.js";
+import { makeProject, runLoam, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -29,6 +32,45 @@ paths:
       responses:
         "200": { description: ok }
 `;
+}
+
+/**
+ * One feature whose only delta edge carries `authorizePayment` onto an element
+ * BOUND to `target` — the `metadata { service '…' }` text a document declares,
+ * which is the string the graph turns into `services/<target>/openapi.yaml` to
+ * ask what the target already provides. The fleet's one real service sits
+ * beside it so the enumeration the resolution goes through is non-empty and
+ * simply does not contain `target`.
+ */
+async function edgeTargeting(target: string): Promise<Project> {
+  const project = await makeProject({
+    "services/payment-service/openapi.yaml": api("authorizePayment"),
+    "features/FEAT-1-consumer/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-1
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  callee = softwareSystem 'callee' {
+    metadata { service '${target}' }
+  }
+
+  checkoutWeb -> callee 'Calls authorizePayment' {
+    #FEAT-1
+    metadata { op 'authorizePayment' }
+  }
+}
+
+views {
+  view feat_1 {
+    include *
+  }
+}
+`,
+  });
+  cleanups.push(() => project.destroy());
+  return project;
 }
 
 async function dependencyProject(): Promise<Project> {
@@ -132,6 +174,52 @@ describe("typed active-feature dependency analyzer", () => {
       }),
     ]));
     expect(graph.conflicts.every((c: { change: string }) => c.change === "changed")).toBe(true);
+  });
+
+  it("a delta target that resolves outside the docs repo is graded as absent, its contract unread", async () => {
+    // `metadata { service '../../outside-svc' }` parses in LikeC4 without one
+    // error, and the graph asks "does the target already provide this op?" by
+    // spelling `services/<target>/openapi.yaml` — so before the enumeration
+    // bridge that probe landed OUTSIDE the docs repo, and a contract sitting
+    // out there answered for a service the fleet does not have. Nothing in the
+    // graph's OUTPUT could show it: the edge is spelled with the declared name
+    // and no feature can own an operation under a name with a slash in it, so
+    // the reachable fact is the read itself.
+    const escaped = await edgeTargeting("../../outside-svc");
+    await writeFiles(join(escaped.docsDir, ".."), {
+      "outside-svc/openapi.yaml": api("authorizePayment"),
+    });
+    // The trap, armed and checked: a typo in the traversal above would leave
+    // every assertion below passing for no reason at all.
+    expect(existsSync(join(escaped.docsDir, "services", "../../outside-svc", "openapi.yaml"))).toBe(true);
+    const before = await treeHashes(join(escaped.docsDir, ".."));
+
+    const context = new FleetContext();
+    const graph = await analyzeDependencies(escaped.docsDir, undefined, context);
+
+    // Not one contract was opened: an unresolvable target never becomes a
+    // path, so there is nothing to read — the outside one least of all. This
+    // counted 1 before the fix, and that 1 was the file above the repo.
+    expect(context.stats().openapiParses).toBe(0);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["FEAT-1"]);
+    expect(graph.edges).toEqual([]);
+
+    // The control: the same edge aimed at a service that simply is not there.
+    // A name that escapes the repo must be indistinguishable from an absent
+    // one, in the graph and in what it cost to build it.
+    const ghostProject = await edgeTargeting("ghost-svc");
+    const ghostContext = new FleetContext();
+    const ghost = await analyzeDependencies(ghostProject.docsDir, undefined, ghostContext);
+
+    expect(ghostContext.stats().openapiParses).toBe(0);
+    expect(graph).toEqual(ghost);
+
+    // And the command itself: same answer, and the tree it was pointed at —
+    // the docs repo AND the directory above it — byte for byte as it was.
+    const result = await runLoam(escaped.workDir, "dependencies", "--json");
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, edges: [], conflicts: [] });
+    expect(await treeHashes(join(escaped.docsDir, ".."))).toEqual(before);
   });
 
   it("fails cleanly for an archived or unknown focus", async () => {
