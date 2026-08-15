@@ -7,7 +7,8 @@
  *  - a dropped id fabricates E1/E2 "not defined in OpenAPI" coherence errors that
  *    gate `loam archive` (src/core/coherence/coherence.ts, the E1/E2 loops);
  *  - a phantom id (false positive) both fabricates "not governed" coverage warnings
- *    (src/commands/validate/validate.ts:70-74) and MASKS genuine contract breaks, because a
+ *    (`api.ungoverned`, src/commands/validate/service/api.ts) and MASKS genuine contract
+ *    breaks, because a
  *    description merely mentioning an op makes it look "available".
  *
  * Decisions documented here (asserted as desired behavior):

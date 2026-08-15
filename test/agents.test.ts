@@ -527,7 +527,13 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
     // the gap. This keeps it a fact: a new command without --json fails here.
     expect(AGENTS_MD).toContain("Every command takes `--json`");
     const commandsDir = new URL("../src/commands/", import.meta.url);
-    const files = (await readdir(commandsDir)).filter((f) => f.endsWith(".ts"));
+    // Recursive, because a command module is allowed to be a package: `validate`
+    // outgrew one file and became `commands/validate/`, and a flat readdir
+    // stopped seeing its registration — the scan lost a command and the count
+    // below is what said so. Any command that splits next is covered already.
+    const files = (await readdir(commandsDir, { recursive: true })).filter((f) =>
+      f.endsWith(".ts"),
+    );
     expect(files.length).toBeGreaterThan(0);
     let registrations = 0;
     for (const f of files) {

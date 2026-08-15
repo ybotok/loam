@@ -1,6 +1,6 @@
 /**
  * Tests for frontmatter and provenance (src/core/document/frontmatter.ts + the checks in
- * src/commands/validate/validate.ts).
+ * src/commands/validate/checks/sources.ts).
  *
  * When an LLM writes the docs, coherence alone is a closed-world property: the
  * corpus can agree with itself perfectly and describe nothing that exists. The
