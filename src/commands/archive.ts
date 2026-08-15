@@ -82,6 +82,15 @@ class ArchiveFailure extends Error {
   }
 }
 
+/**
+ * A landscape merge the splicer could not compute. Every one is mechanical —
+ * the input cannot be spliced as authored, never a judgment `--approve` may
+ * override — and it is thrown at plan time, so nothing has been written.
+ * `archiveErrorCode` owns the mapping to `merge-failed`; the splicer itself
+ * never names a CLI code.
+ */
+class LandscapeSpliceError extends Error {}
+
 export function registerArchive(program: Command): void {
   program
     .command("archive")
@@ -106,6 +115,8 @@ export function registerArchive(program: Command): void {
 
 function archiveErrorCode(err: unknown): ErrorCode {
   if (err instanceof ArchiveFailure) return err.code;
+  // Every splice refusal is the mechanical merge answer — see the class.
+  if (err instanceof LandscapeSpliceError) return "merge-failed";
   if (err instanceof NotUtf8Error) return "merge-failed";
   // The merge branch wraps its own call and re-throws as merge-failed; the
   // create branch (`stripOpenapiRemovalMarkers`) does not, so one unreadable
@@ -553,7 +564,14 @@ async function archiveLocked(
     const newEls = delta.elements.filter((e) => e.tags.includes(id));
     const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
-      const plan = await planLandscapeMerge(landscapePath, deltaLikec4, delta.elements, newEls, newRels, id);
+      const plan = await planLandscapeMerge({
+        landscapeText: await readUtf8(landscapePath),
+        deltaText: await readUtf8(deltaLikec4),
+        deltaElements: delta.elements,
+        newEls,
+        newRels,
+        featureId: id,
+      });
       // A service can arrive on the ARCHITECTURE axis alone: an element this
       // merge ADDS, carrying a `metadata { service }` binding, with no
       // `specs/<svc>/` anywhere in the feature. It is a service the fleet gate
@@ -566,7 +584,7 @@ async function archiveLocked(
       for (const e of plan.addedEls) {
         if (e.service !== undefined) architectureServices.add(e.service);
       }
-      writes.push(...plan.writes);
+      if (plan.content !== null) writes.push(planWrite(landscapePath, plan.content));
       say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
       for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
       for (const r of plan.addedRels) {
@@ -792,9 +810,30 @@ function printPlan(docsDir: string, writes: PlannedWrite[], dirName: string): vo
 /* ------------------------------------------------------------------ */
 
 interface LandscapePlan {
-  writes: PlannedWrite[];
+  /** The merged landscape source, or null when everything was already there. */
+  content: string | null;
   addedEls: Elem[];
   addedRels: Rel[];
+}
+
+/**
+ * Everything the landscape splicer reads, as text and parsed views already in
+ * hand. The merge is a pure text-to-text computation — reading the two files
+ * (and deciding to write the result) stays with the caller, which is also what
+ * keeps the splicer free of the staging layer.
+ */
+interface LandscapeMergeRequest {
+  /** The living landscape.likec4, decoded by the caller's readUtf8. */
+  landscapeText: string;
+  /** delta.likec4 as authored — the bytes the additions are spliced from. */
+  deltaText: string;
+  /** EVERY element the delta declares — the title join and the parent lookup read past the tagged ones. */
+  deltaElements: Elem[];
+  /** The delta's elements tagged with the feature: the candidate additions. */
+  newEls: Elem[];
+  /** The delta's relationships tagged with the feature. */
+  newRels: Rel[];
+  featureId: string;
 }
 
 /**
@@ -832,18 +871,11 @@ interface LandscapePlan {
  * (merge-failed, nothing written — the unparseable-delta discipline) instead
  * of landing in the living docs.
  */
-async function planLandscapeMerge(
-  landscapePath: string,
-  deltaPath: string,
-  deltaElements: Elem[],
-  newEls: Elem[],
-  newRels: Rel[],
-  featureId: string,
-): Promise<LandscapePlan> {
-  const text = await readUtf8(landscapePath);
-  const land = await loadFile(landscapePath);
+async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<LandscapePlan> {
+  const { landscapeText: text, deltaText, deltaElements, newEls, newRels, featureId } = merge;
+  const land = await loadSource(text);
   if (land.errors.length > 0) {
-    throw new ArchiveFailure("merge-failed", `landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
+    throw new LandscapeSpliceError(`landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
   }
   const haveIds = new Set(land.elements.map((e) => e.id));
   // The title join needs the matched element back, not just membership: the
@@ -868,8 +900,7 @@ async function planLandscapeMerge(
       // naming both sides.
       if (e.service !== undefined && sameTitle.every((m) => m.service !== undefined && m.service !== e.service)) {
         const m = sameTitle[0]!;
-        throw new ArchiveFailure(
-          "merge-failed",
+        throw new LandscapeSpliceError(
           `the delta's '${e.id}' (bound to service '${e.service}') shares the title '${e.title}' with '${m.id}' (bound to service '${m.service}') — a title join across services would silently drop the addition; ` +
             `retitle one of them, or reuse the id '${m.id}' if they really are the same element`,
         );
@@ -905,12 +936,11 @@ async function planLandscapeMerge(
     addedRels.push(r);
   }
 
-  if (addedEls.length === 0 && addedRels.length === 0) return { writes: [], addedEls, addedRels };
+  if (addedEls.length === 0 && addedRels.length === 0) return { content: null, addedEls, addedRels };
 
-  const deltaText = await readUtf8(deltaPath);
   const scan = scanModel(deltaText);
   if (scan === null) {
-    throw new ArchiveFailure("merge-failed", "delta.likec4 has no model block — nothing to splice the additions from");
+    throw new LandscapeSpliceError("delta.likec4 has no model block — nothing to splice the additions from");
   }
 
   // Everything below either locates a declaration's authored bytes or refuses.
@@ -945,9 +975,13 @@ async function planLandscapeMerge(
     stmts = livingScan === null ? [] : topStatements(livingScan, bindEls);
   };
   const requireModel = (): ScannedModel => {
-    if (livingScan === null) throw new ArchiveFailure("merge-failed", "landscape.likec4 has no model block");
+    if (livingScan === null) throw new LandscapeSpliceError("landscape.likec4 has no model block");
     return livingScan;
   };
+  // Built fresh at every use, never captured: `content` and `stmts` are rebound
+  // by each rescan, and a region assembled before a splice describes a document
+  // that no longer exists.
+  const modelRegion = (): ModelRegion => ({ text: content, stmts, close: requireModel().close });
   const applyAt = (at: number, insert: string): void => {
     content = content.slice(0, at) + insert + content.slice(at);
     rescan();
@@ -970,14 +1004,12 @@ async function planLandscapeMerge(
     const seen = new Set(livingScan.elements.map((e) => e.id));
     const invisible = land.elements.find((e) => !seen.has(e.id));
     if (invisible !== undefined) {
-      throw new ArchiveFailure(
-        "merge-failed",
+      throw new LandscapeSpliceError(
         `landscape.likec4 declares '${invisible.id}' in a form placement cannot locate — most often two declarations sharing one line; give each its own line, then re-run`,
       );
     }
     if (livingScan.rels.length < land.relationships.length) {
-      throw new ArchiveFailure(
-        "merge-failed",
+      throw new LandscapeSpliceError(
         `landscape.likec4 declares ${land.relationships.length} relationship(s) but placement can locate only ${livingScan.rels.length} — most often two statements sharing one line; give each its own line, then re-run`,
       );
     }
@@ -1003,15 +1035,14 @@ async function planLandscapeMerge(
   for (const e of sortedEls) {
     const src = byId.get(e.id);
     if (src === undefined) {
-      throw new ArchiveFailure(
-        "merge-failed",
+      throw new LandscapeSpliceError(
         `cannot locate '${e.id}' in delta.likec4 — the landscape merge splices authored source, and this declaration was not found`,
       );
     }
     if (rides(src.start, src.end)) continue;
     const dot = e.id.lastIndexOf(".");
     if (dot === -1) {
-      const spot = elementSpot(content, stmts, requireModel().close, e.id, elementService(e));
+      const spot = elementSpot(modelRegion(), e.id, elementService(e));
       applyTop(spot, spliceSource(deltaText, src, featureId, "  "));
       spliced.push({ start: src.start, end: src.end });
       continue;
@@ -1019,8 +1050,7 @@ async function planLandscapeMerge(
     const parentId = e.id.slice(0, dot);
     const parent = livingParentOf(parentId);
     if (parent === null) {
-      throw new ArchiveFailure(
-        "merge-failed",
+      throw new LandscapeSpliceError(
         `'${e.id}' nests under '${parentId}', which is neither in the living landscape nor added by this delta — there is nowhere to insert it`,
       );
     }
@@ -1032,24 +1062,23 @@ async function planLandscapeMerge(
   // Relationships: match each parsed addition back to its statement in the
   // delta source — full identity (endpoints, title, op, tags), consumed one
   // statement per addition so duplicates stay duplicates.
-  const relKeyOf = (source: string, target: string, title?: string, op?: string, tags: string[] = []): string =>
-    JSON.stringify([source, target, title ?? "", op ?? "", [...tags].sort()]);
+  const relKeyOf = (r: { source: string; target: string; title?: string; op?: string; tags: string[] }): string =>
+    JSON.stringify([r.source, r.target, r.title ?? "", r.op ?? "", [...r.tags].sort()]);
   const pool = new Map<string, ScannedRel[]>();
   for (const s of scan.rels) {
-    const k = relKeyOf(s.source, s.target, s.title, s.op, s.tags);
+    const k = relKeyOf(s);
     pool.set(k, [...(pool.get(k) ?? []), s]);
   }
   for (const r of addedRels) {
-    const s = pool.get(relKeyOf(r.source, r.target, r.title, r.op, r.tags))?.shift();
+    const s = pool.get(relKeyOf(r))?.shift();
     if (s === undefined) {
-      throw new ArchiveFailure(
-        "merge-failed",
+      throw new LandscapeSpliceError(
         `cannot locate the '${r.source} -> ${r.target}' relationship in delta.likec4 — the landscape merge splices authored source, and no matching declaration was found`,
       );
     }
     if (rides(s.start, s.end)) continue;
     const key = relSortKey(deltaElements, r);
-    const spot = relSpot(content, stmts, requireModel().close, serviceOf(deltaElements, r.source), key);
+    const spot = relSpot(modelRegion(), serviceOf(deltaElements, r.source), key);
     applyTop(spot, spliceSource(deltaText, s, featureId, "  "));
   }
 
@@ -1063,15 +1092,14 @@ async function planLandscapeMerge(
       .slice(0, 3)
       .map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message))
       .join("; ");
-    throw new ArchiveFailure(
-      "merge-failed",
+    throw new LandscapeSpliceError(
       `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
         `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
         `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
     );
   }
 
-  return { writes: [planWrite(landscapePath, content)], addedEls, addedRels };
+  return { content, addedEls, addedRels };
 }
 
 /**
@@ -1264,6 +1292,19 @@ interface TopStmt {
   end: number;
 }
 
+/**
+ * The living model as placement reads it: the text being spliced into, its
+ * top-level statement layout, and the model block's closing brace. One value
+ * because every spot is computed against all three at the same instant — a
+ * layout paired with text a splice has since moved would place against a
+ * document that no longer exists (see `modelRegion` in planLandscapeMerge).
+ */
+interface ModelRegion {
+  text: string;
+  stmts: TopStmt[];
+  close: number;
+}
+
 /** The model's top-level statements in document order, joined to the parsed elements for services. */
 function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
   const topEls = scan.elements.filter((e) => !e.id.includes("."));
@@ -1320,7 +1361,8 @@ function relSortKey(
  * first — order-DEPENDENT bytes for features touching disjoint services, the
  * exact regime the scheme guarantees.
  */
-function elementSpot(text: string, stmts: TopStmt[], close: number, id: string, service: string): Spot {
+function elementSpot(region: ModelRegion, id: string, service: string): Spot {
+  const { text, stmts, close } = region;
   let anchor: TopStmt | undefined;
   for (const s of stmts) {
     if (s.kind === "element" && s.services.includes(service)) anchor = s;
@@ -1378,7 +1420,8 @@ function relClusterHeads(stmts: TopStmt[]): number[] {
   return heads;
 }
 
-function relSpot(text: string, stmts: TopStmt[], close: number, sourceService: string, key: string): Spot {
+function relSpot(region: ModelRegion, sourceService: string, key: string): Spot {
+  const { text, stmts, close } = region;
   const heads = relClusterHeads(stmts);
   let anchorAt = -1;
   for (let i = 0; i < stmts.length; i += 1) {
