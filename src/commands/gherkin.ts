@@ -145,7 +145,9 @@ export function registerGherkin(program: Command): void {
             byAxis.push({ axis, reqs });
           }
         } else {
-          const paths = servicePaths(config.docsDir, service);
+          // The guard above proved `service` IS `config.service`; only the
+          // latter carries the load-time parse, so it is the pathable spelling.
+          const paths = servicePaths(config.docsDir, config.service);
           if (!existsSync(paths.spec)) {
             return fail(
               json,

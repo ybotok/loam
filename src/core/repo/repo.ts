@@ -89,14 +89,16 @@ export async function featureSpecServices(
 export async function listServices(docsDir: string, context?: FleetContext): Promise<ServiceEntry[]> {
   if (context !== undefined) return context.listServices(docsDir);
   requireDocsRepo(docsDir, ["ok"]);
-  const names = await subdirs(join(docsDir, "services"));
+  // Branded at the readdir, not at the entry: everything below this line —
+  // servicePaths first — deals in names the enumeration produced.
+  const names = (await subdirs(join(docsDir, "services"))).map(rawServiceId);
   return Promise.all(
     names.map(async (id): Promise<ServiceEntry> => {
       const p = servicePaths(docsDir, id);
       const fm = await readFrontmatter(p.spec);
       const idProblem = serviceIdProblem(id, "directory name");
       return {
-        id: rawServiceId(id),
+        id,
         dir: p.dir,
         ...(idProblem === null ? {} : { idProblem }),
         has: {

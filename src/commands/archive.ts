@@ -33,8 +33,8 @@ import { loadFile } from "../core/c4/likec4.js";
 import { LandscapeSpliceError } from "../core/c4/splice/contract.js";
 import { planLandscapeMerge } from "../core/c4/splice/landscape-merge.js";
 import { titleOf } from "../core/c4/splice/placement.js";
-import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
-import { archiveDir as archiveRoot, landscapePath as landscapeFile } from "../core/repo/paths.js";
+import { parseServiceId, type PathableService } from "../core/kernel/ids.js";
+import { archiveDir as archiveRoot, featurePaths, featureSpecPaths, landscapePath as landscapeFile, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { readOpenapi } from "../core/openapi.js";
 import {
@@ -441,7 +441,7 @@ async function archiveLocked(
   const planGates: Issue[] = [];
   const openapiRemovals: Array<{ service: string; operations: string[] }> = [];
   /** Services this feature introduces on the architecture axis alone — filled by the landscape merge below. */
-  const architectureServices = new Set<string>();
+  const architectureServices = new Set<PathableService>();
 
   // 1. Requirements merge — apply ADDED/MODIFIED/REMOVED into each living service
   // spec. ONE code path for the pair of requirement-carrying files: the business
@@ -630,8 +630,14 @@ async function archiveLocked(
       // this very archive had just made red. Read off the ADDED elements, not
       // the tagged ones: an element the living landscape already had is not
       // arriving, and one that is never merged is not there to demand anything.
+      // A binding is document text, which `servicePaths` no longer accepts.
+      // The parse cannot actually filter anything here: an illegal binding is
+      // `c4.service-binding-invalid`, a coherence ERROR `--approve` does not
+      // override, refused before any merge is planned — so the `ok` test only
+      // carries the compiler's proof that document text never reaches a path.
       for (const e of plan.addedEls) {
-        if (e.service !== undefined) architectureServices.add(e.service);
+        const parsed = e.service === undefined ? undefined : parseServiceId(e.service);
+        if (parsed?.ok === true) architectureServices.add(parsed.id);
       }
       if (plan.content !== null) writes.push(planWrite(landscapePath, plan.content));
       say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);

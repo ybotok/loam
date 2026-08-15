@@ -22,6 +22,7 @@ import {
   SERVICE_STATUSES,
   type Frontmatter,
 } from "../document/frontmatter.js";
+import type { PathableService } from "../kernel/ids.js";
 import type { Finding } from "../vocabulary/report.js";
 import { featurePaths, servicePaths, SPEC_AXES } from "../repo/paths.js";
 import { sourceFindings } from "./sources.js";
@@ -41,7 +42,7 @@ export interface ProvenanceOptions {
 
 export async function serviceProvenance(
   docsDir: string,
-  service: string,
+  service: PathableService,
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
   const paths = servicePaths(docsDir, service);

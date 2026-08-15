@@ -8,12 +8,14 @@
  */
 import { existsSync } from "node:fs";
 import { inOrder } from "./kernel/concurrency.js";
+import type { PathableService } from "./kernel/ids.js";
 import { FleetContext } from "./fleet-context.js";
 import { serviceResolver } from "./c4/likec4.js";
 import { operations } from "./openapi.js";
 import { compareIds, type FeatureEntry } from "./repo/entries.js";
 import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "./repo/paths.js";
 import { listFeatures } from "./repo/repo.js";
+import { enumeratedServiceIndex } from "./repo/service-target.js";
 import type { Requirement } from "./document/spec.js";
 
 export type DependencyReason =
@@ -164,7 +166,7 @@ async function readFacts(
    * features: a fleet-wide graph asks about the same ten services N times.
    */
   const livingByService = new Map<string, Set<string>>();
-  const living = async (service: string): Promise<Set<string>> => {
+  const living = async (service: PathableService): Promise<Set<string>> => {
     let ids = livingByService.get(service);
     if (ids === undefined) {
       ids = new Set(
@@ -231,10 +233,17 @@ async function readFacts(
       // One resolver for the whole delta: `serviceOf` rebuilds its id map on
       // every call, and this loop asks once per edge.
       const svcOf = serviceResolver(doc.elements);
+      // The resolver answers with document text and `living` builds a path, so
+      // the name crosses through the enumeration — coherence.ts grades its
+      // edges through the same bridge. A name no enumeration vouches for has
+      // no living contract anywhere: the op is required, exactly what the
+      // probe answered for an absent service.
+      const enumeratedTarget = enumeratedServiceIndex(docsDir, feature.services, context);
       for (const rel of doc.relationships) {
         if (rel.op === undefined) continue;
         const service = svcOf(rel.target);
-        if ((await living(service)).has(rel.op)) continue;
+        const pathable = await enumeratedTarget(service);
+        if (pathable !== undefined && (await living(pathable)).has(rel.op)) continue;
         requiredOperations.push({ service, operationId: rel.op });
       }
     }

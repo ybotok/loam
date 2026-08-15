@@ -5,6 +5,7 @@
  */
 import { existsSync } from "node:fs";
 import type { FleetContext } from "../fleet-context.js";
+import type { PathableService } from "../kernel/ids.js";
 import { featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
 
@@ -39,7 +40,7 @@ import { listFeatures } from "../repo/repo.js";
  */
 export function owesContract(
   docsDir: string,
-  svc: string,
+  svc: PathableService,
   contracted: ReadonlySet<string>,
   governsOperations: boolean,
 ): boolean {

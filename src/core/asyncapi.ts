@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import type { FleetContext } from "./fleet-context.js";
+import type { PathableService } from "./kernel/ids.js";
 import { servicePaths } from "./repo/paths.js";
 
 /**
@@ -295,7 +296,7 @@ export interface FleetProducers {
  */
 export async function producersByMessage(
   docsDir: string,
-  services: readonly string[],
+  services: readonly PathableService[],
   context?: FleetContext,
 ): Promise<FleetProducers> {
   const byMessage = new Map<string, string[]>();

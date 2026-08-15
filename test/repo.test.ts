@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
+import { rawServiceId } from "../src/core/kernel/ids.js";
 import { featureIdFromDirName } from "../src/core/repo/entries.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../src/core/repo/paths.js";
 import { DocsRepoUnavailableError, docsRepoState } from "../src/core/repo/state.js";
@@ -470,7 +471,7 @@ describe("featureSpecServices", () => {
 
 describe("path helpers", () => {
   it("servicePaths spells every living service artifact under services/<id>/", () => {
-    const p = servicePaths("/docs", "payment-service");
+    const p = servicePaths("/docs", rawServiceId("payment-service"));
     expect(p).toEqual({
       dir: join("/docs", "services", "payment-service"),
       model: join("/docs", "services", "payment-service", "model.likec4"),

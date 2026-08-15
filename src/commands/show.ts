@@ -7,6 +7,7 @@ import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.
 import { listField, readFrontmatter, stringField } from "../core/document/frontmatter.js";
 import { loadFile, serviceResolver, type Elem } from "../core/c4/likec4.js";
 import { readOpenapi } from "../core/openapi.js";
+import type { PathableService } from "../core/kernel/ids.js";
 import { type FeatureEntry } from "../core/repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
@@ -65,10 +66,13 @@ export function registerShow(program: Command): void {
           await showFeature(docsDir, feature, json);
           return;
         }
-        const isService =
-          forced !== "feature" && (await listServices(docsDir, context)).some((s) => s.id === target);
-        if (isService) {
-          await showService(docsDir, target, json, context);
+        // The enumeration's own id travels on — `entry.id` rather than the raw
+        // argument (repo/service-target.ts's rule): equal as strings, and only
+        // one of them carries the fact that a readdir produced it.
+        const entry =
+          forced === "feature" ? undefined : (await listServices(docsDir, context)).find((s) => s.id === target);
+        if (entry !== undefined) {
+          await showService(docsDir, entry.id, json, context);
           return;
         }
 
@@ -99,7 +103,7 @@ interface Edge {
 
 async function showService(
   docsDir: string,
-  id: string,
+  id: PathableService,
   json: boolean,
   context: FleetContext,
 ): Promise<void> {

@@ -11,6 +11,7 @@
  * the openspec migrator both do, held instead by `resolveInside` at the write.
  */
 import { join } from "node:path";
+import type { PathableService } from "../kernel/ids.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 export const ARCHIVE_DIR = "archive";
@@ -32,7 +33,7 @@ export interface ServicePaths {
   adrsDir: string;
 }
 
-export function servicePaths(docsDir: string, service: string): ServicePaths {
+export function servicePaths(docsDir: string, service: PathableService): ServicePaths {
   const dir = join(docsDir, "services", service);
   return {
     dir,

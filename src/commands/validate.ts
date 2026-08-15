@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { agentsStaleFinding } from "../core/agent/agents-stamp.js";
 import { inOrder } from "../core/kernel/concurrency.js";
-import type { RawServiceId } from "../core/kernel/ids.js";
+import type { PathableService, RawServiceId } from "../core/kernel/ids.js";
 import { resolveServiceTarget } from "../core/repo/service-target.js";
 import { loadConfig } from "../core/envelope/config.js";
 import { listField, readFrontmatter } from "../core/document/frontmatter.js";
@@ -701,7 +701,7 @@ async function validateLandscape(
  */
 interface ServiceCheck {
   docsDir: string;
-  service: string;
+  service: PathableService;
   /** The service's own repo, when loam is standing in it. Undefined from the docs repo. */
   repoDir?: string;
   /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
@@ -719,6 +719,14 @@ interface ServiceCheck {
 
 async function validateService(check: ServiceCheck): Promise<TargetReport> {
   const { docsDir, service, repoDir, preloaded, gherkinDir, fleet } = check;
+  // The spine and event joins below all ask the landscape's resolver one
+  // question: does this edge's endpoint resolve into the directory being
+  // validated? The resolver answers with DOCUMENT text and `service` is the
+  // repository's own name — disjoint brands, so `===` between them is TS2367.
+  // Widening to `string` is not a cast: membership questions cross the
+  // provenance line through plain-string containers by design (kernel/ids.ts),
+  // and nothing pathable ever comes back out of a comparison.
+  const me: string = service;
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
   const paths = servicePaths(docsDir, service);
@@ -878,7 +886,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
   const inboundOps =
     land === null || land.errors.length > 0
       ? null
-      : land.relationships.filter((r) => r.op !== undefined && landSvcOf!(r.target) === service);
+      : land.relationships.filter((r) => r.op !== undefined && landSvcOf!(r.target) === me);
   // The other half of the evidence a contract is owed: the living spec's own
   // `Operations:` lines. A requirement on its way out governs nothing.
   const governedOps = livingReqs.flatMap((r) => r.operations);
@@ -1075,7 +1083,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
       let checked = 0;
       let broken = 0;
       for (const r of land.relationships) {
-        if (svcOf(r.target) !== service) continue;
+        if (svcOf(r.target) !== me) continue;
         if (r.op !== undefined) {
           // A contract that cannot be read — broken, or not there at all —
           // proves nothing about this edge, neither broken nor resolved.
@@ -1170,10 +1178,10 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
       ? []
       : land.relationships.flatMap((r) => {
           const bound: { direction: "publishes" | "consumes"; message: string; other: string }[] = [];
-          if (r.publishes !== undefined && landSvcOf!(r.source) === service) {
+          if (r.publishes !== undefined && landSvcOf!(r.source) === me) {
             bound.push({ direction: "publishes", message: r.publishes, other: landSvcOf!(r.target) });
           }
-          if (r.consumes !== undefined && landSvcOf!(r.target) === service) {
+          if (r.consumes !== undefined && landSvcOf!(r.target) === me) {
             bound.push({ direction: "consumes", message: r.consumes, other: landSvcOf!(r.source) });
           }
           return bound;
@@ -1617,7 +1625,7 @@ async function validateFeature(
   // Requirement coverage across every per-service delta — the business spec and
   // the arch spec through the same check — and collect scenario text.
   let scenarioText = "";
-  const archDeltas: Array<{ service: string; reqs: Requirement[] }> = [];
+  const archDeltas: Array<{ service: PathableService; reqs: Requirement[] }> = [];
   for (const svc of featureServices) {
     const p = featureSpecPaths(featureDir, svc);
     if (existsSync(p.spec)) {
@@ -1923,7 +1931,7 @@ function renderText(
  */
 async function sourceScopeFindings(
   docsDir: string,
-  service: string,
+  service: PathableService,
   repoDir: string | undefined,
 ): Promise<Finding[]> {
   const paths = servicePaths(docsDir, service);

@@ -24,7 +24,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-bytes.js";
-import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
+import { InvalidIdError, assertServiceId, type PathableService } from "../core/kernel/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import { compareIds } from "../core/repo/entries.js";
 import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../core/repo/paths.js";
@@ -153,7 +153,11 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
   }
   const { id } = feature;
 
-  if (opts.service !== undefined && !feature.services.some((s) => s === opts.service)) {
+  // The enumeration's own id is what travels on when --service names one
+  // (`entry.id` rather than the argument — repo/service-target.ts's rule):
+  // equal as strings, and only one of them was produced by a readdir.
+  const chosen = opts.service === undefined ? undefined : feature.services.find((s) => s === opts.service);
+  if (opts.service !== undefined && chosen === undefined) {
     // The refusal names the choices, the way `loam delta`'s does: a typo must
     // never be indistinguishable from a feature with nothing to pin.
     return fail(
@@ -165,7 +169,7 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
           : ` — it touches: ${[...feature.services].sort(compareIds).join(", ")}.`),
     );
   }
-  const services = (opts.service === undefined ? [...feature.services] : [opts.service]).sort(compareIds);
+  const services = (chosen === undefined ? [...feature.services] : [chosen]).sort(compareIds);
 
   const outcomes: PinOutcome[] = [];
   const writes: PlannedWrite[] = [];
@@ -293,7 +297,7 @@ interface AxisPlan {
 /** Pin every MODIFIED/REMOVED requirement in one delta file against one living document. */
 async function planAxis(
   docsDir: string,
-  service: string,
+  service: PathableService,
   axis: SpecAxis,
   specPath: string,
 ): Promise<AxisPlan> {
@@ -354,7 +358,7 @@ async function planAxis(
  * `unresolved` and correct: there is no living version of an operation at a
  * path the contract does not serve yet.
  */
-async function planOpenapi(docsDir: string, service: string, openapiPath: string): Promise<AxisPlan> {
+async function planOpenapi(docsDir: string, service: PathableService, openapiPath: string): Promise<AxisPlan> {
   const livingPath = servicePaths(docsDir, service).openapi;
   // Decoded, not `readFile(…, "utf8")`, for the requirement axes' reason: a
   // contract read with U+FFFD substituted in defines no operation loam can
