@@ -1,7 +1,7 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 310,
-    "src/commands/archive.ts": 1527,
+    "src/commands/archive.ts": 829,
     "src/commands/delta.ts": 444,
     "src/commands/gherkin.ts": 416,
     "src/commands/init.ts": 311,

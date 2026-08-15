@@ -71,6 +71,7 @@ five, which most of them will once the 300-line limit splits the large modules.
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
 | `core/envelope/` | `json` `config` | kernel |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
+| `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/document/` | `frontmatter` `spec` | kernel, vocabulary |
 | `core/agent/` | `agent` `agents-stamp` `version` | kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
@@ -163,10 +164,12 @@ layout differs, and that part is already isolated.
    `explore` needed the same rung — a dial with two readings is not a dial, and `core/kernel/ids.ts`
    already records what the second copy of a shared rule cost last time. The second:
    `core/c4/source-scan.ts` and `core/c4/source-mask.ts` are a source scanner whose only consumer
-   in `src/` is `commands/archive.ts`. The scanner was extracted so it could be unit-tested; the
-   splicer that uses it was not, and therefore cannot be. They became their own modules when the
-   300-line limit reached `likec4.ts` — the seam was already drawn in that file as a banner
-   comment, and the parsed view now sits at 284 lines with nothing text-level in it.
+   in `src/` is the landscape splicer — which lived in `commands/archive.ts` until 2026-08-16 and
+   is now `core/c4/splice/` (the verdict table's "worth considering" row, done; the unit tests it
+   pays for are still owed). The scanner was extracted so it could be unit-tested, and its two
+   modules date from when the 300-line limit reached `likec4.ts` — the seam was already drawn in
+   that file as a banner comment, and the parsed view now sits at 284 lines with nothing
+   text-level in it.
 9. **No interface with one implementation.** `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/`
    returns zero. Keep it zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
@@ -281,7 +284,7 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 | Options objects for `pinOpenapiOperations` / `mergeOpenapiPaths` | Removes the one swap in the repo that silently corrupts a living document instead of crashing | 2 signatures, 2 production sites, ~30 test sites. Do **not** fix by reordering positionals — that edit is itself compile-clean and wrong | **Do it** |
 | `(docsDir, feature: FeatureEntry)` for the four triple-takers | Makes an inconsistent `(dir, id)` pair unrepresentable | 9 src sites (all already hold an entry) + 11 test sites needing a shared fixture helper — budget the helper | **Do it** |
 | Options objects for `writeSnapshot` / `readManifest` | Kills the only four-way positional swaps, on the undo path. Both also invert the `(docsDir, featureDir)` order every other function uses, and for a feature created without `--title` the swap is invisible in every fixture | 2 signatures, ~8 call sites | **Do it** |
-| Move `archive.ts`'s landscape splicer into `core/` | Un-strands it: the region has zero `console`/`fail`/`emitJson`/`exit` calls and its only escape is a thrown `ArchiveFailure`. Today every placement invariant costs a temp repo and a CLI run | ~695 lines relocated, ~12 imports. Payoff only arrives if you then write the unit tests | **Worth considering** — do it when you want those tests |
+| Move `archive.ts`'s landscape splicer into `core/` | Un-strands it: the region has zero `console`/`fail`/`emitJson`/`exit` calls and its only escape is a thrown error — `LandscapeSpliceError` since 2026-08-16, exactly so the splicer names no CLI code | ~695 lines relocated, ~12 imports. Payoff only arrives if you then write the unit tests | **Done** 2026-08-16 — `core/c4/splice/` (`contract` `landscape-merge` `authored-source` `placement`); the unit tests it pays for are still owed |
 | Audit the six `serviceResolver` calls that omit `known` | Without it the resolver's last rung can resolve a container id to a service that never existed, so group-by-service joins find nothing | 6 sites to decide, plus a comment at each deliberate omission. Not confirmed against a fixture — audit before fixing | **Worth considering** |
 | Fix `core/envelope/config.ts:224` | Restores rule 1 to exceptionless | Three options: delete the `console.error` (1–3 lines, check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in an `.oxlintrc.json` override (4 lines, two visible exceptions instead of one invisible) | **Your call** — all three are defensible; leaving it undecided is not |
 | Split `commands/validate.ts`'s rule functions into core | Nothing yet | ~1300 lines relocated. `core/status.ts` already needs these answers and does *not* re-derive them — it calls into core. Everything with two callers is already there | **Not worth it** until `loam status --service` exists |
