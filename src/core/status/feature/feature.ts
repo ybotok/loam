@@ -152,12 +152,17 @@ async function featureFindings(
     message: i.message,
   }));
   out.push(...(await featureProvenance(feature.dir, feature.id)).filter((f) => f.severity !== "ok"));
-  // The two refusals `archive` makes at PLAN time, from the same functions it
-  // calls. They are not coherence issues — one is about a service id that means
-  // nothing, the other about a LIVING document nobody wrote — so they reach
-  // archive outside `featureCoherence`, and a projection that only inherited
-  // coherence printed "ship it" over both. Errors: each is a refusal, and the
-  // rule this module is held to is one-directional.
+  // The three refusals `archive` makes before its merge plan runs, from the
+  // same functions it calls: a per-service delta addressed to a service that
+  // exists nowhere, a specs/ directory whose NAME the id grammar refuses
+  // (that one is refused before archive plans anything — the name itself is
+  // the path it would become), and a LIVING document still holding git
+  // conflict markers. None are coherence issues — one is about a service id
+  // that means nothing, one about a name that can never be a path, one about
+  // a LIVING document nobody wrote — so they reach archive outside
+  // `featureCoherence`, and a projection that only inherited coherence
+  // printed "ship it" over all three. Errors: each is a refusal, and the rule
+  // this module is held to is one-directional.
   out.push(...(await unknownDeltaServices(docsDir, feature.dir, feature.id, undefined, context)));
   out.push(...(await invalidSpecServiceFindings(feature.dir, context)));
   out.push(...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), context)));

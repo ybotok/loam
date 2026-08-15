@@ -47,10 +47,18 @@ export const JSON_CONTRACT_VERSION = "1.0";
  *
  * The archive group is `loam archive` refusing or failing, and each code is a
  * different answer to "what do I fix, and can I trust the repo?": `not-coherent`
- * is the gate — errors in the FEATURE, fix them or override with `--approve`;
- * `living-outside-requirements` is the one refusal `--approve` does not move —
- * the LIVING spec holds requirements outside `## Requirements`, and the merge
- * would duplicate them, so the fix is in the living docs; `archive-exists` is a
+ * is the gate — issues in the FEATURE, carried in `issues[]`. Most yield to
+ * `--approve`; the ones that do not name an illegal service id — a
+ * `specs/<svc>/` directory name (`delta.service-id-invalid`) or a
+ * `metadata { service }` binding (`c4.service-binding-invalid`) — because the
+ * name IS the path the merge would write, and the fix is a rename, never a
+ * flag. A consumer branches on data, not prose: coherence issues carry the
+ * additive `overridable` key resolved per issue, and a refusal `--approve`
+ * cannot move says "--approve does not override this" in `error.message`;
+ * `living-outside-requirements` is the refusal whose fault is not the
+ * feature's — the LIVING spec holds requirements outside `## Requirements`,
+ * and the merge would duplicate them, so the fix is in the living docs, and
+ * `--approve` does not move it either; `archive-exists` is a
  * destination collision under `features/archive/`; `merge-failed` is a merge
  * that could not be computed or was rolled back — either way the living docs
  * are unchanged; `rollback-incomplete` is the one that demands a human: the

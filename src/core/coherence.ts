@@ -480,17 +480,27 @@ export async function featureCoherence(
     }
   }
 
-  // A tagged element's explicit `metadata { service '<id>' }` binding, held to
-  // the same grammar every `--service` flag is. The binding is the one name the
-  // archive TRUSTS: the landscape merge splices it into the living map
-  // verbatim, and the new-service scan probes `services/<binding>/` with it —
-  // where `metadata { service '../outside-svc' }`, which LikeC4 parses without
-  // a murmur, collapses the probe right out of services/, and the spliced map
-  // fails the very next `validate --all` (`landscape.binding-unknown`).
-  // Explicit bindings only, on purpose: a prose title with no binding is legal
-  // C4, and a title becomes a path only through `specs/<svc>/`, whose own
-  // grammar check (`delta.service-id-invalid`) guards that route.
-  for (const e of taggedEls) {
+  // An explicit `metadata { service '<id>' }` binding, held to the same grammar
+  // every `--service` flag is — on the tagged elements AND everything nested
+  // inside their blocks. The scope is the splice's, not the tag's: the
+  // landscape merge carries a tagged element's authored block over byte for
+  // byte, children included (landscape-merge.ts's rides() exists exactly so a
+  // child travels inside its parent's text), so an untagged container's
+  // binding reaches the living map as surely as its tagged parent's — and
+  // checking only the tagged elements themselves let it ride through unread.
+  // The binding is the one name the archive TRUSTS: the merge splices it into
+  // the living map verbatim, and the new-service scan probes
+  // `services/<binding>/` with it — where `metadata { service '../outside-svc' }`,
+  // which LikeC4 parses without a murmur, collapses the probe right out of
+  // services/, and the spliced map fails the very next `validate --all`
+  // (`landscape.binding-unknown`). Explicit bindings only, on purpose: a prose
+  // title with no binding is legal C4, and a title becomes a path only through
+  // `specs/<svc>/`, whose own grammar check (`delta.service-id-invalid`)
+  // guards that route.
+  const taggedIds = taggedEls.map((el) => el.id);
+  const ridesWithTag = (el: Elem): boolean =>
+    el.tags.includes(featureId) || taggedIds.some((id) => el.id.startsWith(`${id}.`));
+  for (const e of elements.filter(ridesWithTag)) {
     if (e.service === undefined) continue;
     const problem = serviceIdProblem(e.service, "metadata { service } binding");
     if (problem === null) continue;

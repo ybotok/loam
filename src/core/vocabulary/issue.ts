@@ -26,6 +26,22 @@ export function gatesArchive(i: Issue): boolean {
   return i.gates ?? i.severity === "error";
 }
 
+/**
+ * Whether `--approve` can move this issue when it gates. A third axis beside
+ * severity and gating: severity answers "is the DOCUMENT valid", gating
+ * answers "is the MERGE safe", and this one answers whose call the refusal is
+ * — a human's or the grammar's. Almost every gating issue is a judgment about
+ * the feature, which is exactly the judgment `--approve` exists to override;
+ * `c4.service-binding-invalid` is not: the binding IS the path the merge
+ * would write, so no approval changes what would happen, and the fix is the
+ * name, never the flag. `archive` refuses these under the same `not-coherent`
+ * envelope and spells this verdict per issue as the additive `overridable`
+ * key, so a `--json` consumer branches on data rather than on a code list.
+ */
+export function approveOverrides(i: Issue): boolean {
+  return i.code !== "c4.service-binding-invalid";
+}
+
 export type IssueCode =
   /* --- cross-axis: C4 <-> requirements <-> OpenAPI --- */
   /** the architecture axis could not be read at all */
@@ -60,7 +76,7 @@ export type IssueCode =
   | "service.no-requirement-delta"
   /** W4 — a "Calls" edge carries no operation link */
   | "c4.op-link-missing"
-  /** a tagged element's explicit `metadata { service }` binding breaks the service-id grammar — the merge would splice the name into the living landscape verbatim, and probe services/<id>/ with it; never overridable, the path is a mechanical fact */
+  /** an explicit `metadata { service }` binding — a tagged element's, or one riding anywhere inside its authored block — breaks the service-id grammar; the merge would splice the name into the living landscape verbatim, and probe services/<id>/ with it; never overridable, the path is a mechanical fact */
   | "c4.service-binding-invalid"
   /* --- delta shape: does the diff apply to the living spec it claims to change? --- */
   /** a heading that nearly matches the delta grammar — its requirements merge as nothing */
