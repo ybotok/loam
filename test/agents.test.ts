@@ -1,6 +1,6 @@
 /**
  * Tests for the agent contract that `loam init` lays down
- * (src/core/agent.ts, wired through src/core/docs.ts and src/commands/init.ts).
+ * (src/core/agent/, wired through src/core/docs.ts and src/commands/init.ts).
  *
  * The process — new -> delta -> code -> validate -> archive — has so far lived
  * only in the head of whoever built the docs repo. AGENTS.md puts it where the

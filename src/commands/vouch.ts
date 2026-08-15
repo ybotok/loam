@@ -19,7 +19,7 @@
  * things close that, and none of them is a signature: the stamp carries git's
  * `user.email` (`vouched_by`), the run refuses without a terminal or an explicit
  * `--yes`, and the generated allowlist names loam's read-only and authoring
- * verbs one by one instead of all of them (core/agent.ts). What that buys is
+ * verbs one by one instead of all of them (core/agent/tools/dialects.ts). What that buys is
  * attribution and a deliberate act, not proof — git config is a text file. A
  * reviewer can now ask a named person what they read, which is the question
  * `status: verified` was silently answering with nobody.
@@ -215,7 +215,7 @@ export function registerVouch(program: Command): void {
       // That inverts loam's own argument about test evidence: an agent must not
       // be able to SAY a scenario is tested, and it must not be able to say a
       // spec matches the code either. The allowlist no longer covers this
-      // command (core/agent.ts), and nothing but a terminal or an explicit
+      // command (core/agent/tools/dialects.ts), and nothing but a terminal or an explicit
       // `--yes` gets past here.
       if (opts.yes !== true) {
         if (process.stdin.isTTY !== true) {

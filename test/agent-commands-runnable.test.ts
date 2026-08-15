@@ -221,17 +221,17 @@ async function corpus(): Promise<Invocation[]> {
   const files = await sourceFiles();
 
   const sources: Array<[string, string[]]> = [
-    ["AGENTS.md (src/core/agent.ts)", markdownInvocations(AGENTS_MD)],
+    ["AGENTS.md (src/core/agent/agents-md/)", markdownInvocations(AGENTS_MD)],
     // Both deliveries, because both are read by an agent and neither is a copy
     // of the other. PROTOCOLS is what `loam instructions` prints — where the
     // recipes are. SLASH_COMMANDS is the file on disk, whose spine names
     // commands too, and whose whole purpose is one `loam instructions …` line
     // that had better parse.
     ...Object.entries(PROTOCOLS).map(
-      ([name, body]) => [`/${name} protocol (src/core/agent.ts)`, markdownInvocations(body)] as [string, string[]],
+      ([name, body]) => [`/${name} protocol (src/core/agent/workflows/)`, markdownInvocations(body)] as [string, string[]],
     ),
     ...Object.entries(SLASH_COMMANDS).map(
-      ([name, body]) => [`/${name} file (src/core/agent.ts)`, markdownInvocations(body)] as [string, string[]],
+      ([name, body]) => [`/${name} file (src/core/agent/workflows/)`, markdownInvocations(body)] as [string, string[]],
     ),
     ...files.map(([where, src]) => [`a message loam prints (${where})`, printedInvocations(src)] as [string, string[]]),
     ...files.map(([where, src]) => [`a next[] step (${where})`, nextCommands(src)] as [string, string[]]),

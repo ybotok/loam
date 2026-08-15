@@ -1,7 +1,7 @@
 /**
  * Drift guard: every stable code loam emits must appear in the agent-facing
  * docs — the AGENTS.md template and the slash commands `loam init` lays down
- * (src/core/agent.ts).
+ * (src/core/agent/agents-md/ and src/core/agent/workflows/).
  *
  * The codes are the machine contract: prose may change, codes may not, and an
  * agent branches on them. A code that ships undocumented is a branch nobody was
@@ -346,7 +346,7 @@ describe("the code vocabulary does not drift from the docs", () => {
     expect(
       missing,
       `undocumented stable code(s):\n  ${missing.join("\n  ")}\n` +
-        "Document each in AGENTS_MD or the /loam-check table (src/core/agent.ts), " +
+        "Document each in AGENTS_MD (src/core/agent/agents-md/) or the /loam-check table (src/core/agent/workflows/check.ts), " +
         "or add it to INTENTIONALLY_UNDOCUMENTED with a reason.",
     ).toEqual([]);
   });
