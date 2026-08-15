@@ -13,7 +13,9 @@ import { serviceIdProblem } from "../kernel/ids.js";
 import { deltaShapeIssues } from "../delta.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../repo/paths.js";
-import { featureSpecServices, listFeatures, listServices } from "../repo/repo.js";
+import { featureSpecServices, listServices } from "../repo/repo.js";
+import { enumeratedServiceIndex } from "../repo/service-target.js";
+import { activeOpAdditions } from "./pending.js";
 import { parseRequirements, type Requirement } from "../document/spec.js";
 import {
   OPENAPI_BASELINE_KEY,
@@ -414,6 +416,16 @@ export async function featureCoherence(
     return set.has(op);
   };
 
+  // The declared→enumerated bridge for edge TARGETS. `svcOf` answers with
+  // whatever the document wrote — `metadata { service '../../x' }` parses in
+  // LikeC4 without one error — and every living lookup below joins its answer
+  // into `services/<target>/` or `specs/<target>/`. So a target resolves
+  // through the enumerations first (the fleet's `services/` plus this
+  // feature's own `specs/`, where a service it introduces lives), and a name
+  // neither knows skips the lookups — no ops, not governed, not deprecated —
+  // grading exactly as an absent service, spelled with the declared name.
+  const enumeratedTarget = enumeratedServiceIndex(docsDir, svcNames, context);
+
   // E2 / W1 / W4: C4 edges vs API + requirements.
   for (const r of taggedRels) {
     if (r.op === undefined) {
@@ -423,7 +435,8 @@ export async function featureCoherence(
       continue;
     }
     const target = svcOf(r.target);
-    const available = await serviceOperationIds(docsDir, target, featureDir, context);
+    const pathable = await enumeratedTarget(target);
+    const available = pathable === undefined ? [] : await serviceOperationIds(docsDir, pathable, featureDir, context);
     if (removingOps.get(target)?.has(r.op) === true) {
       issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
     } else if (!available.includes(r.op)) {
@@ -442,7 +455,7 @@ export async function featureCoherence(
     // happened to reuse the name. The living half on the same line has always
     // joined per service (`governedByLivingSpec(target, …)`); this is the delta
     // half asking it the same way.
-    if (!(reqOps.get(target) ?? []).includes(r.op) && !(await governedByLivingSpec(target, r.op))) {
+    if (!(reqOps.get(target) ?? []).includes(r.op) && (pathable === undefined || !(await governedByLivingSpec(pathable, r.op)))) {
       issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
     }
     // Lifecycle: this NEW tagged edge builds consumption on an operation the
@@ -451,7 +464,7 @@ export async function featureCoherence(
     // consumption of a dying op deserves an eye before it ships. Quiet when
     // the feature's own openapi delta drops the flag: that state is the fix
     // in progress, not new consumption of a dying op.
-    if ((await deprecatedInLiving(target, r.op)) && !(await undeprecatedByFeature(target, r.op))) {
+    if (pathable !== undefined && (await deprecatedInLiving(pathable, r.op)) && !(await undeprecatedByFeature(pathable, r.op))) {
       issues.push({ severity: "warn", code: "c4-api.op-deprecated", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which ${target}'s living OpenAPI marks deprecated — prefer the replacement operation` });
     }
   }
@@ -508,30 +521,4 @@ export async function featureCoherence(
   }
 
   return issues;
-}
-
-/**
- * (service, operationId) pairs other ACTIVE features' openapi deltas define,
- * mapped to the feature id — the openapi mirror of delta.ts's activeAdditions.
- * Archived features are excluded: their ops are in the living openapi already or
- * gone for good, and neither is "pending". First feature wins a clash — one name
- * to archive first is enough to make progress.
- */
-async function activeOpAdditions(
-  docsDir: string,
-  exclude: string,
-  context?: FleetContext,
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  for (const feature of await listFeatures(docsDir, {}, context)) {
-    if (feature.id === exclude) continue;
-    for (const service of feature.services) {
-      for (const op of await operations(featureSpecPaths(feature.dir, service).openapi, context)) {
-        if (op.remove) continue;
-        const k = `${service} ${op.id}`;
-        if (!map.has(k)) map.set(k, feature.id);
-      }
-    }
-  }
-  return map;
 }
