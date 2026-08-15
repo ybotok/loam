@@ -1,13 +1,13 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { agentsStaleFinding } from "../core/agent/agents-stamp.js";
-import { inOrder } from "../core/kernel/concurrency.js";
-import type { PathableService, RawServiceId } from "../core/kernel/ids.js";
-import { resolveServiceTarget } from "../core/repo/service-target.js";
-import { loadConfig } from "../core/envelope/config.js";
-import { listField, readFrontmatter } from "../core/document/frontmatter.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
+import { agentsStaleFinding } from "../../core/agent/agents-stamp.js";
+import { inOrder } from "../../core/kernel/concurrency.js";
+import type { PathableService, RawServiceId } from "../../core/kernel/ids.js";
+import { resolveServiceTarget } from "../../core/repo/service-target.js";
+import { loadConfig } from "../../core/envelope/config.js";
+import { listField, readFrontmatter } from "../../core/document/frontmatter.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import {
   elementService,
   loadFile,
@@ -16,12 +16,12 @@ import {
   type LikeC4Error,
   type LoadedDoc,
   type Rel,
-} from "../core/c4/likec4.js";
-import { type FeatureEntry } from "../core/repo/entries.js";
-import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
-import { DocsRepoUnavailableError, docsRepoState } from "../core/repo/state.js";
-import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../core/repo/paths.js";
-import { featureSpecServices, listFeatures, listServices, missingFeatureMessage, resolveFeature, serviceIdFindings } from "../core/repo/repo.js";
+} from "../../core/c4/likec4.js";
+import { type FeatureEntry } from "../../core/repo/entries.js";
+import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../../core/repo/paths.js";
+import { DocsRepoUnavailableError, docsRepoState } from "../../core/repo/state.js";
+import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
+import { featureSpecServices, listFeatures, listServices, missingFeatureMessage, resolveFeature, serviceIdFindings } from "../../core/repo/repo.js";
 import {
   countSeverity,
   reportValid,
@@ -30,22 +30,22 @@ import {
   targetValid,
   type Finding,
   type TargetReport,
-} from "../core/vocabulary/report.js";
+} from "../../core/vocabulary/report.js";
 import {
   parseRequirements,
   requirementIdProblems,
   requirementsMissingScenarios,
   steplessFindings,
   type Requirement,
-} from "../core/document/spec.js";
-import { readOpenapi } from "../core/openapi.js";
-import { producersByMessage, readAsyncapi, slotsOf } from "../core/asyncapi.js";
-import { featureCoherence } from "../core/coherence/coherence.js";
-import { deltaServiceUnknownFinding, invalidSpecServiceFindings } from "../core/coherence/living.js";
-import { gatesArchive } from "../core/vocabulary/issue.js";
-import { featureProvenance, serviceProvenance } from "../core/provenance/findings.js";
-import { missingSources, patternSources, unsafeSources } from "../core/provenance/sources.js";
-import { emptySourcesMessage, expandSourceFiles } from "../core/provenance/stamp.js";
+} from "../../core/document/spec.js";
+import { readOpenapi } from "../../core/openapi.js";
+import { producersByMessage, readAsyncapi, slotsOf } from "../../core/asyncapi.js";
+import { featureCoherence } from "../../core/coherence/coherence.js";
+import { deltaServiceUnknownFinding, invalidSpecServiceFindings } from "../../core/coherence/living.js";
+import { gatesArchive } from "../../core/vocabulary/issue.js";
+import { featureProvenance, serviceProvenance } from "../../core/provenance/findings.js";
+import { missingSources, patternSources, unsafeSources } from "../../core/provenance/sources.js";
+import { emptySourcesMessage, expandSourceFiles } from "../../core/provenance/stamp.js";
 import {
   closeIds,
   coversCandidates,
@@ -55,21 +55,21 @@ import {
   parseCoversEntry,
   type CoverageScope,
   type CoversEntry,
-} from "../core/c4/arch.js";
-import { gherkinFindings } from "../core/gherkin.js";
-import { readHealth } from "../core/vocabulary/health.js";
-import { LOAM_VERSION } from "../core/envelope/version.js";
+} from "../../core/c4/arch.js";
+import { gherkinFindings } from "../../core/gherkin.js";
+import { readHealth } from "../../core/vocabulary/health.js";
+import { LOAM_VERSION } from "../../core/envelope/version.js";
 import {
   FleetContext,
   documentConflictFinding,
   landscapeConflictFinding,
-} from "../core/fleet-context.js";
+} from "../../core/fleet-context.js";
 import {
   docsRepoReady,
   reportDocsRepoError,
   reportRepositoryUnavailable,
-} from "./docs-repo-gate.js";
-import { plural } from "./format.js";
+} from "../docs-repo-gate.js";
+import { plural } from "../format.js";
 
 interface ValidateOptions {
   service?: string;

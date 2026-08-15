@@ -13,7 +13,7 @@ import { registerGherkin } from "./commands/gherkin.js";
 import { registerRebase } from "./commands/rebase.js";
 import { registerArchive } from "./commands/archive.js";
 import { registerUnarchive } from "./commands/unarchive.js";
-import { registerValidate } from "./commands/validate.js";
+import { registerValidate } from "./commands/validate/validate.js";
 import { registerVerify } from "./commands/verify.js";
 import { registerVouch } from "./commands/vouch.js";
 import { registerDoctor } from "./commands/doctor.js";

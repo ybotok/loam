@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for `loam validate` (src/commands/validate.ts).
+ * Deep invariant tests for `loam validate` (src/commands/validate/validate.ts).
  *
  * Families:
  *  - service mode: C4 model, requirement coverage, API coverage (warn-only)

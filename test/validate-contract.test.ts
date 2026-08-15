@@ -1,6 +1,6 @@
 /**
  * Tests for `loam validate --all` and `loam validate --json`
- * (src/commands/validate.ts + src/core/vocabulary/report.ts).
+ * (src/commands/validate/validate.ts + src/core/vocabulary/report.ts).
  *
  * --all is the fleet gate: one invocation that CI can hang a check on.
  * --json is the machine contract: stable codes an agent branches on, instead of

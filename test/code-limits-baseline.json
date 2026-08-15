@@ -12,7 +12,7 @@
     "src/commands/show.ts": 377,
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 404,
-    "src/commands/validate.ts": 1993,
+    "src/commands/validate/validate.ts": 1993,
     "src/commands/verify.ts": 1010,
     "src/commands/vouch.ts": 627,
     "src/core/asyncapi.ts": 313,
@@ -30,11 +30,11 @@
     "src/core/verify.ts": 1089
   },
   "packageFiles": {
-    "src/commands": 21,
+    "src/commands": 20,
     "src/core": 14
   },
   "functionParams": {
-    "src/commands/validate.ts": {
+    "src/commands/validate/validate.ts": {
       "coversUnknownFindings": 5
     },
     "src/commands/verify.ts": {
