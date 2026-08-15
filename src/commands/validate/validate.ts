@@ -19,18 +19,16 @@ import { loadConfig } from "../../core/envelope/config.js";
 import { listField, readFrontmatter } from "../../core/document/frontmatter.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import {
-  elementService,
   loadFile,
   serviceResolver,
   type Elem,
   type LoadedDoc,
   type Rel,
 } from "../../core/c4/likec4.js";
-import { type FeatureEntry } from "../../core/repo/entries.js";
-import { featurePaths, featureSpecPaths, servicePaths, SPEC_AXES } from "../../core/repo/paths.js";
-import { DocsRepoUnavailableError, docsRepoState } from "../../core/repo/state.js";
+import { servicePaths, SPEC_AXES } from "../../core/repo/paths.js";
+import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
-import { featureSpecServices, listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
+import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import {
   countSeverity,
   reportValid,
@@ -46,16 +44,11 @@ import {
 } from "../../core/document/spec.js";
 import { readOpenapi } from "../../core/openapi.js";
 import { producersByMessage, readAsyncapi, slotsOf } from "../../core/asyncapi.js";
-import { featureCoherence } from "../../core/coherence/coherence.js";
-import { deltaServiceUnknownFinding, invalidSpecServiceFindings } from "../../core/coherence/living.js";
-import { gatesArchive } from "../../core/vocabulary/issue.js";
-import { featureProvenance, serviceProvenance } from "../../core/provenance/findings.js";
+import { serviceProvenance } from "../../core/provenance/findings.js";
 import { missingSources, patternSources, unsafeSources } from "../../core/provenance/sources.js";
 import { emptySourcesMessage, expandSourceFiles } from "../../core/provenance/stamp.js";
 import {
   closeIds,
-  coversEdge,
-  coversElement,
   type CoverageScope,
 } from "../../core/c4/arch.js";
 import { gherkinFindings } from "../../core/gherkin.js";
@@ -70,21 +63,10 @@ import {
   reportDocsRepoError,
   reportRepositoryUnavailable,
 } from "../docs-repo-gate.js";
-import {
-  ACTOR_KINDS,
-  EXTERNAL_TAG,
-  readLandscape,
-  validateLandscape,
-} from "./landscape.js";
-import {
-  ambiguousTarget,
-  capDetails,
-  errorText,
-  guarded,
-  renderText,
-  summary,
-  UNVERIFIABLE,
-} from "./report.js";
+import { readLandscape, validateLandscape } from "./landscape.js";
+import { validateFeature } from "./feature.js";
+import { ambiguousTarget, capDetails, guarded, renderText, summary } from "./report.js";
+import { errorText, UNVERIFIABLE } from "./checks/vocabulary.js";
 import {
   coverageFinding,
   coversEntries,
@@ -92,7 +74,7 @@ import {
   duplicateRequirementFindings,
   repeatedListLineFindings,
   requirementIdFindings,
-} from "./requirements.js";
+} from "./checks/requirements.js";
 
 interface ValidateOptions {
   service?: string;
@@ -1045,291 +1027,6 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
   return report;
 }
 
-async function validateFeature(
-  docsDir: string,
-  feature: FeatureEntry,
-  preloadedLand?: LoadedDoc | null,
-  fleet?: FleetContext,
-): Promise<TargetReport> {
-  const findings: Finding[] = [];
-  const featureDir = feature.dir;
-  const featureId = feature.id;
-
-  // delta.likec4 parse + collect tagged edges. The loaded doc is kept and
-  // handed to featureCoherence below — loading it is a Langium workspace spin,
-  // and paying it twice per feature was the dominant cost of `validate --all`.
-  let taggedEls: Elem[] = [];
-  let taggedRels: Rel[] = [];
-  let elements: Elem[] = [];
-  let deltaRels: Rel[] = [];
-  let deltaDoc: LoadedDoc | undefined;
-  const deltaPath = featurePaths(featureDir).delta;
-  if (existsSync(deltaPath)) {
-    const res = fleet === undefined ? await loadFile(deltaPath) : await fleet.loadLikeC4(deltaPath);
-    deltaDoc = res;
-    if (res.errors.length > 0) {
-      findings.push({
-        severity: "error",
-        code: "delta.invalid",
-        message: `delta.likec4 has ${res.errors.length} error(s)`,
-        details: res.errors.map(errorText),
-      });
-    } else {
-      elements = res.elements;
-      deltaRels = res.relationships;
-      taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
-      taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
-      findings.push({
-        severity: "ok",
-        code: "delta.valid",
-        message: `delta.likec4 valid (${res.elements.length} elements · ${res.relationships.length} relationships)`,
-      });
-    }
-  }
-
-  findings.push(...(await featureProvenance(featureDir, featureId)));
-
-  // Who this feature is allowed to address. `specs/<svc>/` is what the archive
-  // materialises `services/<svc>/` from, and nothing used to ask whether that
-  // name means anything: one wrong character in `--touches` passed
-  // `validate --all` with zero errors, and archive then created the phantom
-  // directory. A delta may legitimately name a service that does not exist yet
-  // — but only one it INTRODUCES itself, in its own tagged C4. A delta that did
-  // not parse proves neither (`delta.invalid` is that finding), so the question
-  // is suspended there rather than answered by guessing.
-  //
-  // `services/<svc>/` is asked for directly rather than through the
-  // enumeration: `validate --feature` is allowed to run in a docs repo with no
-  // services/ at all (repo.ts takes the same position), where enumerating is a
-  // refusal, not an answer.
-  const featureServices = await featureSpecServices(featureDir, fleet);
-  const introduces: ReadonlySet<string> = new Set(taggedEls.map(elementService));
-  const deltaReadable = deltaDoc === undefined || deltaDoc.errors.length === 0;
-  const unknownServices = deltaReadable
-    ? featureServices.filter(
-        (svc) => !existsSync(servicePaths(docsDir, svc).dir) && !introduces.has(svc),
-      )
-    : [];
-  // The near-miss hint, on the same rule `service.unknown` uses — a typo is
-  // only diagnosable against the ids that DO exist.
-  const closeTo =
-    unknownServices.length > 0 && docsRepoState(docsDir).kind === "ok"
-      ? (await listServices(docsDir, fleet)).map((s) => s.id)
-      : [];
-  // The finding is coherence/living.ts's — the same words archive refuses with,
-  // because it is the same conclusion about the same directory.
-  for (const svc of unknownServices) findings.push(deltaServiceUnknownFinding(svc, closeTo));
-
-  // The grammar half of the same guarantee. `delta.service-unknown` asks whether
-  // the directory names a service anyone knows; this asks whether the NAME could
-  // ever be one. The two are independent on purpose: a tagged element whose
-  // title matches the directory answers the first question, which is exactly how
-  // `specs/Payment Service/` used to validate green and archive into a directory
-  // no loam command can address. Not suspended on an unreadable delta either —
-  // no reading of the architecture axis can make the name legal.
-  findings.push(...(await invalidSpecServiceFindings(featureDir, fleet)));
-
-  // Requirement coverage across every per-service delta — the business spec and
-  // the arch spec through the same check — and collect scenario text.
-  let scenarioText = "";
-  const archDeltas: Array<{ service: PathableService; reqs: Requirement[] }> = [];
-  for (const svc of featureServices) {
-    const p = featureSpecPaths(featureDir, svc);
-    if (existsSync(p.spec)) {
-      const raw = fleet === undefined ? await readFile(p.spec, "utf8") : await fleet.readText(p.spec);
-      scenarioText += "\n" + raw.toLowerCase();
-      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.spec);
-      // Both document-level breaches carry into the living spec through the
-      // merge, so a delta is graded for them exactly as a living document is:
-      // conflict markers merge as prose under someone's requirement, and a
-      // stepless scenario merges as a requirement the coverage rule calls
-      // covered forever after.
-      const conflict = documentConflictFinding(`${svc}: spec.md`, svc, raw);
-      if (conflict !== null) findings.push(conflict);
-      findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: requirements`, svc, reqs));
-      // The keep-last quirk loses lines in a delta exactly as in a living spec
-      // — and a delta's lost Operations: line then merges into the living one.
-      findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
-    }
-    if (existsSync(p.archSpec)) {
-      const raw = fleet === undefined ? await readFile(p.archSpec, "utf8") : await fleet.readText(p.archSpec);
-      scenarioText += "\n" + raw.toLowerCase();
-      const reqs = fleet === undefined ? parseRequirements(raw) : await fleet.readRequirements(p.archSpec);
-      archDeltas.push({ service: svc, reqs });
-      const conflict = documentConflictFinding(`${svc}: arch.spec.md`, svc, raw);
-      if (conflict !== null) findings.push(conflict);
-      findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
-      findings.push(...steplessFindings(`${svc}: arch requirements`, svc, reqs));
-      findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
-    }
-  }
-
-  // The delta's own element→service resolver, built once for the whole feature.
-  // `serviceOf` is a one-shot wrapper that rebuilds its index on every call, and
-  // the two loops below ask it up to five times per tagged edge — so a delta
-  // over a large model paid for one Map of every element per question asked.
-  // Identical answers by construction: `serviceOf(elements, id)` IS
-  // `serviceResolver(elements)(id)`, and nothing reassigns `elements` after the
-  // delta parse.
-  const svcOf = serviceResolver(elements);
-
-  // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
-  for (const r of taggedRels) {
-    const target = svcOf(r.target);
-    const covered = edgeCovered(target, r.title, scenarioText);
-    findings.push({
-      severity: covered ? "ok" : "warn",
-      code: covered ? "archedge.covered" : "archedge.uncovered",
-      subject: target,
-      message: `${svcOf(r.source)} → ${target}  "${r.title ?? ""}"${covered ? "" : "  — no scenario names it"}`,
-      text: { indent: 4, header: "arch-edge coverage (heuristic):" },
-    });
-  }
-
-  // The architecture spec axis, feature scope — the mechanical counterpart of
-  // the heuristic above. Every NEW tagged element and edge in the delta wants a
-  // `Covers:` line in one of the feature's arch.spec.md deltas (c4.uncovered):
-  // this is where agent-built code cuts its corners — the outbox, the retries,
-  // the alerts — because no business scenario was ever going to mention them.
-  // Grouping-only elements follow the landscape checks' exemptions (person
-  // kinds, #external). Warnings, never archive gates; `--strict` escalates.
-  //
-  // Only requirements the archive will MERGE grant coverage here. In a delta,
-  // BASE means "the living state, quoted": it merges nothing, emits no
-  // .feature, and yields no scenario.tested claim — so a Covers: line under a
-  // plain `## Requirements` quote is an obligation that ships nowhere, and
-  // counting it silenced c4.uncovered for free. (The service-scope pass keeps
-  // the unfiltered call: a LIVING spec is legitimately all BASE.)
-  const activeCovers = archDeltas.flatMap(({ reqs }) =>
-    coversEntries(reqs.filter((r) => r.kind === "ADDED" || r.kind === "MODIFIED")),
-  );
-
-  // What the living landscape ALREADY holds. A delta has to re-declare the
-  // elements its new edges attach to, and authors tag those re-declarations
-  // along with everything else — so a requirements-only feature that touches an
-  // existing service was told to write `Covers:` lines for architecture it is
-  // not adding. c4.uncovered is an obligation on NEW architecture; an element
-  // the living landscape already resolves is not new, whatever the tag says.
-  // Loaded lazily: a delta with nothing tagged never pays for the parse.
-  let living: LoadedDoc | null | undefined = preloadedLand;
-  const livingLandscape = async (): Promise<LoadedDoc | null> => {
-    if (living === undefined) {
-      const lp = landscapeFile(docsDir);
-      living = existsSync(lp)
-        ? fleet === undefined
-          ? await loadFile(lp)
-          : await fleet.loadLikeC4(lp)
-        : null;
-    }
-    return living;
-  };
-  const alreadyLiving = async (): Promise<LoadedDoc | null> => {
-    if (taggedEls.length === 0 && taggedRels.length === 0) return null;
-    const doc = await livingLandscape();
-    return doc !== null && doc.errors.length === 0 ? doc : null;
-  };
-  const base = await alreadyLiving();
-  const baseSvcOf = base === null ? null : serviceResolver(base.elements);
-  const baseIds = new Set(base?.elements.map((e) => e.id) ?? []);
-  const baseServices = new Set((base?.elements ?? []).map(elementService));
-  // How a service→service pair is keyed, spelled ONCE. The two sides used to
-  // join with different separators — a NUL where the set was built, a space
-  // where it was queried — so the exemption never matched anything, and every
-  // edge a delta re-declares verbatim (which it must, to attach anything to
-  // it) was reported as new architecture nobody covers. The join is structural
-  // rather than a separator character: the last one was a NUL, and a raw NUL in
-  // a template literal makes the source read as binary to `file` and invisible
-  // to `grep` — which is how a one-character mismatch survived review.
-  const edgeKey = (source: string, target: string): string => JSON.stringify([source, target]);
-  const baseEdges = new Set(
-    (base?.relationships ?? []).map((r) => edgeKey(baseSvcOf!(r.source), baseSvcOf!(r.target))),
-  );
-
-  for (const e of taggedEls) {
-    if (ACTOR_KINDS.has(e.kind.toLowerCase()) || e.tags.includes(EXTERNAL_TAG)) continue;
-    if (baseIds.has(e.id) || baseServices.has(elementService(e))) continue;
-    if (activeCovers.some((c) => coversElement(c, e))) continue;
-    findings.push({
-      severity: "warn",
-      code: "c4.uncovered",
-      subject: elementService(e),
-      message: `delta adds '${e.title}' (${e.id}) but no arch requirement covers it — add 'Covers: ${e.id}' to a specs/<svc>/arch.spec.md delta, or its architectural obligations ship unchecked`,
-    });
-  }
-  for (const r of taggedRels) {
-    if (baseEdges.has(edgeKey(svcOf(r.source), svcOf(r.target)))) continue;
-    if (activeCovers.some((c) => coversEdge(c, r, elements))) continue;
-    findings.push({
-      severity: "warn",
-      code: "c4.uncovered",
-      subject: svcOf(r.target),
-      message: `delta adds edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
-    });
-  }
-
-  // covers.unknown, feature scope. Resolution looks at the delta itself, the
-  // living landscape, the service's own model and its health.yaml — a delta's
-  // arch requirement may cover an element it adds, one that already exists, or
-  // an alert the service declares. The landscape and each model are loaded
-  // lazily, and only when an entry fails against what is already in hand: the
-  // clean path never pays for a workspace spin.
-  if (archDeltas.some(({ reqs }) => coversEntries(reqs).length > 0)) {
-    const land = await livingLandscape();
-    const landParses = land !== null && land.errors.length === 0 ? land : null;
-    const baseElements = [...elements, ...(landParses?.elements ?? [])];
-    const baseRels = [...deltaRels, ...(landParses?.relationships ?? [])];
-    for (const { service: svc, reqs } of archDeltas) {
-      // An unreadable living health.yaml mutes the alert:/sli: entries here
-      // exactly as in service scope — the health.invalid finding itself
-      // belongs to the service target, which owns the file's diagnosis.
-      const health = await readHealth(servicePaths(docsDir, svc).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids };
-      const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable);
-      if (unresolved.length > 0) {
-        const modelPath = servicePaths(docsDir, svc).model;
-        const model = existsSync(modelPath)
-          ? fleet === undefined
-            ? await loadFile(modelPath)
-            : await fleet.loadLikeC4(modelPath)
-          : null;
-        if (model !== null && model.errors.length === 0) {
-          scope = {
-            elements: [...baseElements, ...model.elements],
-            relationships: [...baseRels, ...model.relationships],
-            health: health.ids,
-          };
-        }
-        findings.push(...coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable));
-      }
-    }
-  }
-
-  // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
-  const issues = await featureCoherence(docsDir, featureDir, featureId, deltaDoc, fleet);
-  if (issues.length === 0) {
-    findings.push({
-      severity: "ok",
-      code: "coherence.ok",
-      message: "coherence: ✓ C4 · requirements · OpenAPI agree",
-      text: { indent: 2, marker: false },
-    });
-  } else {
-    for (const i of issues) {
-      findings.push({
-        severity: i.severity,
-        code: i.code,
-        gates: gatesArchive(i),
-        ...(i.subject === undefined ? {} : { subject: i.subject }),
-        message: i.message,
-        text: { indent: 4, header: "coherence:" },
-      });
-    }
-  }
-
-  return { kind: "feature", id: featureId, findings };
-}
-
 /**
  * The two things a `sources` list can be that `serviceProvenance` cannot say.
  *
@@ -1398,15 +1095,6 @@ async function sourceScopeFindings(
     });
   }
   return out;
-}
-
-/** Heuristic: an edge is "covered" if a scenario names the target or a keyword from the edge title. */
-function edgeCovered(target: string, title: string | undefined, scenarioText: string): boolean {
-  if (scenarioText.includes(target.toLowerCase())) return true;
-  for (const token of (title ?? "").split(/[^A-Za-z0-9]+/)) {
-    if (token.length >= 5 && scenarioText.includes(token.toLowerCase())) return true;
-  }
-  return false;
 }
 
 export { targetValid };
