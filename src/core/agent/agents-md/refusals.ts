@@ -178,7 +178,12 @@ before the merge runs, not after.
 
 \`--approve\` overrides the gating issues — only those, and archive prints exactly which
 ones it overrode. It is a human decision, not an agent's: if archive refuses, fix the
-breach or hand it back.
+breach or hand it back. One refusal sits outside its reach, because the damage is
+mechanical rather than a judgment about the feature: \`delta.service-id-invalid\` — a
+\`specs/<svc>/\` directory whose name is not a legal service id. The merge would
+materialise \`services/<svc>/\` out of that name, a directory every loam command then
+refuses to address, so there is nothing a judgment call could accept: rename the
+directory instead.
 
 Breaches only the merge computation itself can see are reported at plan time,
 after the gate. \`living.requirement-outside-requirements\` (error): the LIVING spec

@@ -5,7 +5,7 @@
  * vocabulary it reports in lives in ../report.ts, whose header holds the rules
  * this projection is held to.
  */
-import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "../../coherence.js";
+import { featureCoherence, invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../../coherence.js";
 import { analyzeDependencies } from "../../dependencies.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
@@ -159,6 +159,7 @@ async function featureFindings(
   // coherence printed "ship it" over both. Errors: each is a refusal, and the
   // rule this module is held to is one-directional.
   out.push(...(await unknownDeltaServices(docsDir, feature.dir, feature.id, undefined, context)));
+  out.push(...(await invalidSpecServiceFindings(feature.dir, context)));
   out.push(...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), context)));
   for (const scan of scans) {
     if (scan.bare.length === 0) continue;

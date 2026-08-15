@@ -4,6 +4,14 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Added — `loam archive` refuses an illegal service name before it becomes a directory
+
+A feature's per-service deltas live in `features/<FEAT>/specs/<svc>/`, and that `<svc>` is a directory name somebody typed — but unlike `--service`, nothing ever asked the id grammar about it. `specs/Payment Service/` (with the space) validated green — `✓ Payment Service: requirements covered`, even, because a tagged element whose *title* matched the directory counted as introducing the service — and `loam archive` then exited 0 and materialised `services/Payment Service/`. The very next `loam validate --all` failed it with `service.id-invalid`: a directory loam itself wrote, and one no loam command can address or re-create.
+
+New finding: **`delta.service-id-invalid`** (error), from `loam validate --feature`, `loam status`, and the archive gate, naming the `specs/<svc>/` directory and the exact rule the name breaks — the same sentence `service.id-invalid` uses, Windows-reserved stems (`NUL`) and trailing dots (`payments.`) included. `loam archive` refuses on it before anything joins the name into a path, `--dry-run` included, and **`--approve` does not override it**: which service you meant is a judgment call, but a name the grammar refuses is a directory loam can never address, mechanically. The fix is a rename of the specs/ directory.
+
+**What a `--json` consumer notices.** `loam validate --feature` can now exit 1 on repos that used to pass, with `delta.service-id-invalid` in `findings[]`; `loam archive` refuses with the envelope code `not-coherent` and the finding in `issues[]`. A `services/<bad>/` a previous archive already created is repaired by renaming — the `service.id-invalid` message spells the three places the old name is written.
+
 ### Fixed — `loam validate` resolves a service name before it builds a path
 
 `loam validate --service <name>` and `loam validate <name>` both spelled `<docsDir>/services/<name>/` out of whatever the caller typed, and neither ever checked it. Six commands — `init`, `delta`, `adopt`, `explore`, `rebase`, `new` — guard that argument with the id grammar; `validate` did not, and the two spellings are the same knob into the same call.

@@ -492,6 +492,95 @@ describe("a feature delta must address a service that exists, or one it introduc
   });
 });
 
+describe("a specs/ directory name must be a legal service id, whoever vouches for the service", () => {
+  const base = {
+    "architecture/landscape.likec4": landscape(`  paymentService = softwareSystem 'payment-service' {
+    metadata { service 'payment-service' }
+  }`),
+    ...service("payment-service", "paymentService", ["authorizePayment"]),
+  };
+
+  it("specs/Payment Service/ is an error even when a tagged element's title introduces it", async () => {
+    // The false green this pins: the title fallback made `introduces` contain
+    // 'Payment Service', so delta.service-unknown stayed quiet — and nothing
+    // else ever asked the grammar. validate exited 0 and archive materialised
+    // services/Payment Service/, a directory service.id-invalid then fails.
+    await withProject(
+      {
+        ...base,
+        "features/FEAT-1-space/intent.md": featureIntent(),
+        "features/FEAT-1-space/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-1
+}
+
+model {
+  paymentSvc = softwareSystem 'Payment Service' {
+    #FEAT-1
+  }
+}
+`,
+        "features/FEAT-1-space/specs/Payment Service/spec.md": featureSpec("Payment Service"),
+      },
+      async (p) => {
+        const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+        const [invalid] = byCode(payload(res.stdout), "delta.service-id-invalid");
+        expect(invalid).toBeDefined();
+        expect(invalid!.severity).toBe("error");
+        expect(invalid!.subject).toBe("Payment Service");
+        expect(invalid!.message).toContain("service id must start with");
+        // The two findings are disjoint questions: the title INTRODUCES the
+        // service, so the unknown-service half must stay quiet here.
+        expect(byCode(payload(res.stdout), "delta.service-unknown")).toEqual([]);
+        expect(res.code).toBe(1);
+      },
+    );
+  });
+
+  // The two names below cannot exist on a Windows checkout at all — NUL is a
+  // reserved device, a trailing dot is stripped on create — which is exactly
+  // why the grammar refuses them: a docs repo carrying either works on only
+  // some of the machines that clone it. The fixtures are creatable on POSIX
+  // only, so the pins run there.
+  it.skipIf(process.platform === "win32")("specs/NUL/ trips the Windows-reserved-name branch", async () => {
+    await withProject(
+      {
+        ...base,
+        "features/FEAT-1-nul/intent.md": featureIntent(),
+        "features/FEAT-1-nul/specs/NUL/spec.md": featureSpec("NUL"),
+      },
+      async (p) => {
+        const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+        const [invalid] = byCode(payload(res.stdout), "delta.service-id-invalid");
+        expect(invalid).toBeDefined();
+        expect(invalid!.severity).toBe("error");
+        expect(invalid!.subject).toBe("NUL");
+        expect(invalid!.message).toContain("reserved device name on Windows");
+        expect(res.code).toBe(1);
+      },
+    );
+  });
+
+  it.skipIf(process.platform === "win32")("specs/payments./ trips the trailing-dot branch", async () => {
+    await withProject(
+      {
+        ...base,
+        "features/FEAT-1-dot/intent.md": featureIntent(),
+        "features/FEAT-1-dot/specs/payments./spec.md": featureSpec("payments."),
+      },
+      async (p) => {
+        const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+        const [invalid] = byCode(payload(res.stdout), "delta.service-id-invalid");
+        expect(invalid).toBeDefined();
+        expect(invalid!.severity).toBe("error");
+        expect(invalid!.subject).toBe("payments.");
+        expect(invalid!.message).toContain("may not end with '.'");
+        expect(res.code).toBe(1);
+      },
+    );
+  });
+});
+
 /* ------------------------------------------------------------------ */
 /* 4. c4.uncovered on an edge the delta merely re-declares             */
 /* ------------------------------------------------------------------ */

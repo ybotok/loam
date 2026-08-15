@@ -10,6 +10,7 @@ import {
   type Rel,
 } from "./c4/likec4.js";
 import { closeIds } from "./c4/arch.js";
+import { serviceIdProblem } from "./kernel/ids.js";
 import { deltaShapeIssues } from "./delta.js";
 import type { Issue } from "./vocabulary/issue.js";
 import { repoPath } from "./envelope/json.js";
@@ -564,6 +565,45 @@ export function deltaServiceUnknownFinding(svc: string, knownIds: string[]): Fin
       `delta.likec4 does not introduce one — archiving would create it out of the typo.` +
       (close.length > 0 ? ` Did you mean: ${close.join(", ")}?` : " `loam list services` shows what exists."),
   };
+}
+
+/**
+ * Per-service deltas whose DIRECTORY NAME is not a legal service id at all.
+ *
+ * `specs/<svc>/` is caller-controlled path input exactly as `--service` is:
+ * `featureSpecServices` returns whatever `readdir` found, and nothing between
+ * that readdir and the archive merge ever asked the id grammar about it. So
+ * `specs/Payment Service/` validated green — "requirements covered", even,
+ * because a tagged element whose TITLE matched the directory counted as
+ * introducing the service — and `loam archive` then materialised
+ * `services/Payment Service/`: a directory `service.id-invalid` calls an error
+ * on the very next `validate --all`, and one no loam command can address or
+ * re-create. Both gates read this function for `unknownDeltaServices`' reason:
+ * validate and archive must refuse the same directory with the same sentence.
+ *
+ * NOT suppressed by what the delta introduces, and NOT suspended on
+ * `delta.invalid`: the name is illegal whatever the architecture axis says,
+ * because the name itself is what becomes the path.
+ */
+export async function invalidSpecServiceFindings(
+  featureDir: string,
+  context?: FleetContext,
+): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const svc of await featureSpecServices(featureDir, context)) {
+    const problem = serviceIdProblem(svc, "specs/ directory name");
+    if (problem === null) continue;
+    out.push({
+      severity: "error",
+      code: "delta.service-id-invalid",
+      subject: svc,
+      message:
+        `specs/${svc}/ — ${problem} ` +
+        `\`loam archive\` materialises services/${svc}/ from this directory name, and that directory is one ` +
+        `no loam command can address afterwards (\`service.id-invalid\`). Rename the specs/ directory to a legal id.`,
+    });
+  }
+  return out;
 }
 
 /**
