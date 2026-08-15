@@ -40,7 +40,8 @@ import {
 } from "../core/document/spec.js";
 import { readOpenapi } from "../core/openapi.js";
 import { producersByMessage, readAsyncapi, slotsOf } from "../core/asyncapi.js";
-import { deltaServiceUnknownFinding, featureCoherence, invalidSpecServiceFindings } from "../core/coherence.js";
+import { featureCoherence } from "../core/coherence/coherence.js";
+import { deltaServiceUnknownFinding, invalidSpecServiceFindings } from "../core/coherence/living.js";
 import { gatesArchive } from "../core/vocabulary/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance/findings.js";
 import { missingSources, patternSources, unsafeSources } from "../core/provenance/sources.js";
@@ -850,7 +851,7 @@ async function validateService(check: ServiceCheck): Promise<TargetReport> {
   // The requirements that still govern anything. A REMOVED requirement is on
   // its way out together with the operations it names: it makes no claim on the
   // contract and governs nothing once the retiring feature archives — the same
-  // position coherence.ts takes on the delta side.
+  // position coherence/coherence.ts takes on the delta side.
   //
   // Spelled once because it was spelled three times and dropped on the fourth:
   // `governedOps` filtered, `spec-api.op-undefined` filtered, and the
@@ -1600,8 +1601,8 @@ async function validateFeature(
     unknownServices.length > 0 && docsRepoState(docsDir).kind === "ok"
       ? (await listServices(docsDir, fleet)).map((s) => s.id)
       : [];
-  // The finding is coherence.ts's — the same words archive refuses with, because
-  // it is the same conclusion about the same directory.
+  // The finding is coherence/living.ts's — the same words archive refuses with,
+  // because it is the same conclusion about the same directory.
   for (const svc of unknownServices) findings.push(deltaServiceUnknownFinding(svc, closeTo));
 
   // The grammar half of the same guarantee. `delta.service-unknown` asks whether

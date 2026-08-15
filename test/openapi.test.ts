@@ -5,7 +5,7 @@
  * `Operations:` ↔ OpenAPI `operationId`, SCHEMA.md "API linkage"). Extraction must
  * therefore mirror YAML semantics exactly:
  *  - a dropped id fabricates E1/E2 "not defined in OpenAPI" coherence errors that
- *    gate `loam archive` (src/core/coherence.ts:62,78);
+ *    gate `loam archive` (src/core/coherence/coherence.ts, the E1/E2 loops);
  *  - a phantom id (false positive) both fabricates "not governed" coverage warnings
  *    (src/commands/validate.ts:70-74) and MASKS genuine contract breaks, because a
  *    description merely mentioning an op makes it look "available".

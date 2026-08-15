@@ -157,8 +157,8 @@ async function readFacts(
    * features quoting the same living operation therefore depended on each other
    * in both directions: an invented cycle, an invented conflict, and an ordering
    * for work that had none. `loam validate`'s coherence pass already subtracts
-   * the living contract this way (core/coherence.ts); this is the same
-   * subtraction, so the two cannot disagree about what "new" means.
+   * the living contract this way (core/coherence/coherence.ts); this is the
+   * same subtraction, so the two cannot disagree about what "new" means.
    *
    * Cached per service inside the call and, through the FleetContext, across
    * features: a fleet-wide graph asks about the same ten services N times.

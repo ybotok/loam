@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for src/core/coherence.ts — featureCoherence().
+ * Deep invariant tests for src/core/coherence/coherence.ts — featureCoherence().
  *
  * featureCoherence(docsDir, featureDir, featureId) checks that a feature's three
  * axes agree: C4 delta (architecture) ↔ requirement deltas (behaviour) ↔ OpenAPI
@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { featureCoherence, type Issue } from "../src/core/coherence.js";
+import { featureCoherence, type Issue } from "../src/core/coherence/coherence.js";
 import { gatesArchive } from "../src/core/vocabulary/issue.js";
 import {
   coherentFixture,

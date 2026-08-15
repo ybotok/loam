@@ -5,7 +5,8 @@
  * vocabulary it reports in lives in ../report.ts, whose header holds the rules
  * this projection is held to.
  */
-import { featureCoherence, invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../../coherence.js";
+import { featureCoherence } from "../../coherence/coherence.js";
+import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../../coherence/living.js";
 import { analyzeDependencies } from "../../dependencies.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";

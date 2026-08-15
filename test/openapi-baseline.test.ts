@@ -34,7 +34,7 @@ import {
 } from "../src/core/openapi-merge.js";
 import { operationDigest, operations } from "../src/core/openapi.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
-import { featureCoherence } from "../src/core/coherence.js";
+import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { join } from "node:path";
 import { coherentFixture, makeProject, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
 
