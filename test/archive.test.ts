@@ -3112,11 +3112,15 @@ describe("the machine contract (--json)", () => {
       });
       // The one warning this fixture earns: FEAT-1 brings payment-split-service
       // into existence, and nothing in the merge writes its model.likec4.
+      // `overridable` is the additive per-issue key resolved from issue.ts's
+      // approveOverrides — pinned here so removing or renaming it is a contract
+      // break somebody has to see.
       expect(json.warnings).toEqual([
         {
           severity: "warn",
           code: "service.no-model",
           gates: false,
+          overridable: true,
           subject: "payment-split-service",
           message: expect.stringContaining("services/payment-split-service/model.likec4"),
         },
@@ -3377,6 +3381,10 @@ The service SHALL hold the payment.
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(false);
       expect(json.error.code).toBe("not-coherent");
+      // The no-override verdict must reach a --json consumer too, and for the
+      // Finding path it travels in error.message — the human view was the only
+      // place that said it.
+      expect(json.error.message).toContain("--approve does not override this");
       const codes = (json.issues as Array<{ code: string; gates: boolean }>).map((i) => i.code);
       expect(codes).toContain("delta.service-id-invalid");
       for (const i of json.issues as Array<{ gates: boolean }>) expect(i.gates).toBe(true);
@@ -3459,6 +3467,85 @@ model {
       const binding = issues.filter((i) => i.code === "c4.service-binding-invalid");
       expect(binding).toHaveLength(1);
       expect(binding[0]!.gates).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("an untagged child riding inside a tagged block is held to the binding grammar too", () => {
+  // The bypass this pins, reproduced end to end before the fix: the splice
+  // carries a tagged element's WHOLE authored block (landscape-merge.ts's
+  // rides() exists exactly so a child travels inside its parent's text), so an
+  // untagged container's `metadata { service '../outside-svc' }` reached the
+  // living landscape while the coherence check read only the tagged elements
+  // themselves — validate --feature exit 0, archive exit 0, and the very next
+  // validate --all failed on landscape.binding-unknown.
+  //
+  // The living landscape must declare the child's KIND (container): without it
+  // the merged text fails the splicer's parse net and the defect hides behind
+  // a merge-failed refusal that never lets the binding land.
+  const NESTED_LANDSCAPE = LANDSCAPE.replace(
+    "element softwareSystem",
+    "element softwareSystem\n  element container",
+  );
+  function nestedBindingFixture(): Record<string, string> {
+    return {
+      "architecture/landscape.likec4": NESTED_LANDSCAPE,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "features/FEAT-10-nested/intent.md": "---\nfeature: FEAT-10\nstatus: proposed\n---\n\n# Nested\n",
+      "features/FEAT-10-nested/delta.likec4": `specification {
+  element softwareSystem
+  element container
+  tag FEAT-10
+}
+
+model {
+  outside = softwareSystem 'Outside Payments' {
+    #FEAT-10
+    worker = container 'Worker' {
+      metadata { service '../outside-svc' }
+    }
+  }
+}
+`,
+    };
+  }
+
+  it("refuses before the plan: exit 1, the child's binding never reaches the living landscape", async () => {
+    const p = await makeProject(nestedBindingFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-10");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(res.out).toContain("illegal service id");
+      expect(res.out).toContain("--approve does not override");
+      expect(await p.read(LANDSCAPE_REL)).toBe(NESTED_LANDSCAPE);
+      expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--json refuses not-coherent, says so in error.message, and resolves overridable per issue", async () => {
+    const p = await makeProject(nestedBindingFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-10", "--approve", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("not-coherent");
+      expect(json.error.message).toContain("--approve does not override this");
+      const issues = json.issues as Array<{ code: string; gates: boolean; overridable: boolean }>;
+      const binding = issues.filter((i) => i.code === "c4.service-binding-invalid");
+      expect(binding).toHaveLength(1);
+      expect(binding[0]!.gates).toBe(true);
+      expect(binding[0]!.overridable).toBe(false);
+      // The additive key is resolved on EVERY issue in the envelope, so a
+      // consumer branches on data rather than keeping its own code list.
+      for (const i of issues) expect(typeof i.overridable).toBe("boolean");
     } finally {
       await p.destroy();
     }

@@ -92,6 +92,7 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
         severity: "warn",
         code: "service.no-model",
         gates: false,
+        overridable: true,
         subject: "payment-split-service",
         message: expect.stringContaining("model.likec4"),
       },

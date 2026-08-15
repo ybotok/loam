@@ -166,9 +166,15 @@ export const LOAM_SHIP: CommandContent = {
    under \`features/archive/\`. Success is \`ok: true\`; on \`ok: false\`, branch on
    \`error.code\`:
    - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,
-     each with \`gates\` resolved (advisory warnings do not block). Fix the breaches.
-     \`--approve\` overrides the gating issues and is a human's call to make, not
-     yours: report the breach and stop. \`openapi.remove-marker-path-level\` arrives
+     each with \`gates\` and \`overridable\` resolved (advisory warnings do not block).
+     Fix the breaches. \`--approve\` overrides the gating issues and is a human's
+     call to make, not yours: report the breach and stop. Two codes it does not
+     override even then — \`delta.service-id-invalid\` (a \`specs/<svc>/\` name the
+     id grammar refuses) and \`c4.service-binding-invalid\` (a \`metadata { service }\`
+     binding it refuses, anywhere inside a tagged element's block): each names a
+     path the merge would write mechanically, they arrive with
+     \`overridable: false\`, and the fix is a rename, never the flag.
+     \`openapi.remove-marker-path-level\` arrives
      here too: an \`x-loam-remove\` written beside the methods instead of inside the
      operation retires nothing.
    - \`living-outside-requirements\` — the LIVING spec holds a requirement outside

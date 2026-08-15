@@ -4,7 +4,7 @@ import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../core/envelope/config.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
-import { gatesArchive, type Issue } from "../core/vocabulary/issue.js";
+import { approveOverrides, gatesArchive, type Issue } from "../core/vocabulary/issue.js";
 import {
   acquireDocsLock,
   clearCommitIntent,
@@ -116,14 +116,16 @@ function archiveErrorCode(err: unknown): ErrorCode {
 
 /**
  * An Issue as the `--json` envelope spells it — the Finding shape, minus details.
- * `gates` is always present and already resolved: a consumer must not have to
- * re-implement the severity default to know what blocks archive.
+ * `gates` and `overridable` are always present and already resolved: a consumer
+ * must not have to re-implement the severity default to know what blocks
+ * archive, nor keep a code list to know what `--approve` can move.
  */
 function issueJson(i: Issue): Record<string, unknown> {
   return {
     severity: i.severity,
     code: i.code,
     gates: gatesArchive(i),
+    overridable: approveOverrides(i),
     ...(i.subject === undefined ? {} : { subject: i.subject }),
     message: i.message,
   };
@@ -235,7 +237,7 @@ async function archiveLocked(
   // must never perform.
   const illegalServices = await invalidSpecServiceFindings(featureDir);
   if (illegalServices.length > 0) {
-    const msg = `archive ${id} — BLOCKED: ${illegalServices.length} per-service delta(s) named by an illegal service id`;
+    const msg = `archive ${id} — BLOCKED: ${illegalServices.length} per-service delta(s) named by an illegal service id; --approve does not override this`;
     if (json) {
       refuseFindings("not-coherent", msg, illegalServices);
       return;
@@ -283,27 +285,36 @@ async function archiveLocked(
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
   const issues = await featureCoherence(config.docsDir, featureDir, id, deltaDoc);
-  // One coherence code is carved out of --approve's reach before the gate
-  // below reads the rest: a tagged element whose explicit `metadata { service }`
-  // binding breaks the id grammar. The landscape merge would splice that name
-  // into the living map verbatim, and the new-service scan would probe
-  // `services/<binding>/` with it — a '../' collapses the probe out of
-  // services/ altogether — so the refusal is a mechanical fact about the path
-  // the name becomes, not a judgment about the feature. Same doctrine as the
-  // illegal-specs-name refusal above; the dry run is gated the same way, and
-  // the --json envelope stays not-coherent with every issue attached, exactly
-  // like the overridable branch below, so a consumer branches on the code and
-  // not on which refusal path fired.
-  const invalidBindings = issues.filter((i) => i.code === "c4.service-binding-invalid");
-  if (invalidBindings.length > 0) {
-    const msg = `archive ${id} — BLOCKED: ${invalidBindings.length} tagged element binding(s) name an illegal service id`;
+  // The issues --approve cannot move, carved out before the gate below reads
+  // the rest. The register is issue.ts's `approveOverrides` — the same data
+  // the `overridable` key in the envelope is resolved from — never a code
+  // string spelled here, because two spellings of "what the flag moves" would
+  // drift. Today the register holds one code: a `metadata { service }` binding
+  // the id grammar refuses, anywhere in a tagged element's spliced block. The
+  // landscape merge would splice that name into the living map verbatim, and
+  // the new-service scan would probe `services/<binding>/` with it — a '../'
+  // collapses the probe out of services/ altogether — so the refusal is a
+  // mechanical fact about the path the name becomes, not a judgment about the
+  // feature. Same doctrine as the illegal-specs-name refusal above; the dry
+  // run is gated the same way, and the --json envelope stays not-coherent
+  // with every issue attached, exactly like the overridable branch below, so
+  // a consumer branches on the code and not on which refusal path fired.
+  const nonOverridable = issues.filter((i) => !approveOverrides(i));
+  if (nonOverridable.length > 0) {
+    const msg = `archive ${id} — BLOCKED: ${nonOverridable.length} element binding(s) name an illegal service id; --approve does not override this`;
     if (json) {
       refuseJson("not-coherent", msg, issues);
       return;
     }
     console.error(`${msg}:`);
-    for (const i of invalidBindings) console.error(`  ✗ ${i.message}`);
-    console.error(`\n--approve does not override this — the merge would write a name loam can never resolve into services/, mechanically.`);
+    // The whole list, not just the carve-out: the reader is about to fix the
+    // feature, and the issues --approve COULD have moved are work they still
+    // owe — hiding them here made the second refusal a surprise. The closing
+    // line says which of the marks the flag cannot move.
+    for (const i of issues) console.error(`  ${SEVERITY_MARK[i.severity]} ${i.message}`);
+    console.error(
+      `\nOf these, --approve does not override the ${nonOverridable.length} illegal binding(s) — the merge would write a name loam can never resolve into services/, mechanically. Fix the binding(s); the other issues gate as usual.`,
+    );
     process.exitCode = 1;
     return;
   }

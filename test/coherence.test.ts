@@ -669,6 +669,28 @@ describe("c4.service-binding-invalid: a tagged element's explicit binding must b
     expect(gatesArchive(invalid[0]!)).toBe(true);
   });
 
+  it("an untagged child riding inside a tagged element's block is held to the same grammar", async () => {
+    // The bypass this pins: the landscape merge splices a tagged element's
+    // authored block byte for byte, children included (landscape-merge.ts's
+    // rides() exists exactly so a child travels inside its parent's text), so
+    // an untagged container's binding reaches the living map as surely as its
+    // tagged parent's — and the check used to read only the tagged elements
+    // themselves.
+    const issues = await coherenceOf({
+      [`${FEATURE_REL}/delta.likec4`]: delta(`  outside = softwareSystem 'Outside Payments' {
+    #FEAT-1
+    worker = container 'Worker' {
+      metadata { service '../outside-svc' }
+    }
+  }`),
+    });
+    const invalid = issues.filter((i) => i.code === "c4.service-binding-invalid");
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]!.severity).toBe("error");
+    expect(invalid[0]!.subject).toBe("../outside-svc");
+    expect(gatesArchive(invalid[0]!)).toBe(true);
+  });
+
   it("a prose TITLE that is not a legal id, with no binding, stays legal C4", async () => {
     // Explicit bindings only, by design: a title becomes a path only through
     // specs/<svc>/, and delta.service-id-invalid guards that route. Parsing

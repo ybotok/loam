@@ -182,11 +182,13 @@ breach or hand it back. Two refusals sit outside its reach, because the damage i
 mechanical rather than a judgment about the feature: \`delta.service-id-invalid\` — a
 \`specs/<svc>/\` directory whose name is not a legal service id, which the merge
 would materialise as a \`services/<svc>/\` every loam command then refuses to
-address — and \`c4.service-binding-invalid\` — a tagged element's explicit
-\`metadata { service }\` binding that breaks the same grammar, which the merge would
-splice into the living landscape verbatim (a \`../\` in it even collapses the
-archive's \`services/\` probe out of the docs repo). There is nothing a judgment
-call could accept: rename the directory, or fix the binding, instead.
+address — and \`c4.service-binding-invalid\` — an explicit \`metadata { service }\`
+binding that breaks the same grammar, on a tagged element or anything nested
+inside its block (the merge splices the whole authored block into the living
+landscape verbatim, untagged children included, and a \`../\` in the binding even
+collapses the archive's \`services/\` probe out of the docs repo). There is
+nothing a judgment call could accept: rename the directory, or fix the binding,
+instead.
 
 Breaches only the merge computation itself can see are reported at plan time,
 after the gate. \`living.requirement-outside-requirements\` (error): the LIVING spec
