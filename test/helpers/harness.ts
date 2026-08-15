@@ -25,7 +25,7 @@ import { registerGherkin } from "../../src/commands/gherkin.js";
 import { registerRebase } from "../../src/commands/rebase.js";
 import { registerArchive } from "../../src/commands/archive.js";
 import { registerUnarchive } from "../../src/commands/unarchive.js";
-import { registerValidate } from "../../src/commands/validate.js";
+import { registerValidate } from "../../src/commands/validate/validate.js";
 import { registerVerify } from "../../src/commands/verify.js";
 import { registerVouch } from "../../src/commands/vouch.js";
 import { registerDoctor } from "../../src/commands/doctor.js";
