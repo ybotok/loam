@@ -10,14 +10,14 @@
  * is not caught by anything: the feature validates, archives, and ships with a
  * consumer nobody updated.
  *
- * So this states the work the same way `brief.ts` does. It reads the fleet map
+ * So this states the work the same way `brief/brief.ts` does. It reads the fleet map
  * and the living contracts, reports the ring of services around the seeds, the
  * features already in flight over the same ground, and how far each service's
  * documentation has got — and stops. Which of those neighbours the feature
  * really touches is a judgement about intent, and loam does not make those.
  *
  * The landscape is parsed ONCE for the whole exploration. Per-service reads of
- * it exist (`brief.ts`'s `landscapeContext`) and are correct for one service;
+ * it exist (`brief/landscape.ts`'s `landscapeContext`) and are correct for one service;
  * calling one of those per seed is how `validate --all` came to cost 13 seconds
  * on 120 services, and this command sits in front of authoring, where that is
  * the difference between a habit and a thing people skip.

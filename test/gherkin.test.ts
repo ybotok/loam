@@ -610,8 +610,8 @@ describe("validate: the staleness chain", () => {
    * `readdir(withFileTypes)` never follows a symlink, so `isFile()` was false
    * for a symlinked `.feature` and the whole file was invisible: `loam validate`
    * graded it as nothing at all and `loam gherkin` could never collect it as an
-   * orphan, so it sat in loam/ forever. repo.ts and brief.ts follow links for
-   * the same reason; this walk now does too.
+   * orphan, so it sat in loam/ forever. repo.ts and brief/brief.ts follow links
+   * for the same reason; this walk now does too.
    */
   it("sees a symlinked .feature under loam/ — it grades, and regeneration can remove it", async () => {
     const p = await project(livingFixture(), { service: "payment-service" });

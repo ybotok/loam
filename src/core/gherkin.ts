@@ -482,7 +482,7 @@ export async function gherkinFindings(ctx: {
  * enumeration is part of the output contract, so the order cannot depend on
  * the filesystem's. Dot-entries are skipped, like every other walk in loam.
  *
- * Symlinks are FOLLOWED — repo.ts's `entryIs` and brief.ts's `hasMarkdown` are
+ * Symlinks are FOLLOWED — repo.ts's `entryIs` and brief/brief.ts's `hasMarkdown` are
  * the same rule for the same reason. A `Dirent` from `readdir(withFileTypes)`
  * never follows one, so `isFile()` and `isDirectory()` are both false for a
  * symlinked `.feature`: it was invisible to the orphan scan (`loam gherkin`

@@ -1,5 +1,5 @@
 /**
- * Tests for `loam adopt` (src/commands/adopt.ts, src/core/brief.ts) — the
+ * Tests for `loam adopt` (src/commands/adopt.ts, src/core/brief/) — the
  * bootstrap half of the two flows.
  *
  * `adopt` used to promise an extractor: read the code, emit the C4. That is not
