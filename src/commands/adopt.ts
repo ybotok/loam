@@ -13,7 +13,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { closeIds } from "../core/c4/arch.js";
 import { loadConfig } from "../core/envelope/config.js";
-import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
+import { InvalidIdError, assertServiceId, type PathableService } from "../core/kernel/ids.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
 import { servicePaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
@@ -41,7 +41,7 @@ interface AdoptOptions {
  */
 async function invocationWarnings(
   docsDir: string,
-  service: string,
+  service: PathableService,
   bound: string | undefined,
 ): Promise<string[]> {
   const warnings: string[] = [];

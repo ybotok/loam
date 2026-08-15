@@ -27,6 +27,7 @@ import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseRequirements, type Requirement } from "./document/spec.js";
+import type { PathableService } from "./kernel/ids.js";
 import { scenarioGherkin } from "./vocabulary/steps.js";
 import { servicePaths, SPEC_AXES, type SpecAxis } from "./repo/paths.js";
 import { listFeatures } from "./repo/repo.js";
@@ -364,7 +365,7 @@ export function parseStampedFeature(text: string): StampedFeature | null {
  */
 export async function gherkinFindings(ctx: {
   docsDir: string;
-  service: string;
+  service: PathableService;
   /** The service repo, when loam is standing in it. Undefined disables the chain, like sources.*. */
   repoDir?: string;
   gherkinDir?: string;

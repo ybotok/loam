@@ -75,6 +75,9 @@ export type ServiceId = RawServiceId & { readonly [checked]: true };
  */
 export type DeclaredService = string & { readonly [provenance]: "document" };
 
+/** What `servicePaths` accepts: a name whose provenance is the repository. */
+export type PathableService = RawServiceId;
+
 /** The one grammar: alphanumeric head, then alphanumerics, dot, underscore, hyphen. */
 const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 

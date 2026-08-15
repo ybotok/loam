@@ -53,6 +53,7 @@ import {
   today,
   type SourceIndexEntry,
 } from "../core/provenance/stamp.js";
+import type { PathableService } from "../core/kernel/ids.js";
 import type { SkippedSource } from "../core/provenance/walk.js";
 import { SPEC_AXES, servicePaths } from "../core/repo/paths.js";
 import { plural } from "./format.js";
@@ -74,7 +75,7 @@ interface VouchOptions {
 
 export interface VouchRequest {
   docsDir: string;
-  service: string;
+  service: PathableService;
   /** The service's own repo — what `sources` resolve against. */
   repoDir: string;
   /** The date to stamp. Injected rather than read off the clock, so it can be pinned. */
@@ -245,7 +246,10 @@ export function registerVouch(program: Command): void {
 
       const outcome = await vouch({
         docsDir: config.docsDir,
-        service,
+        // The guard above proved `service` IS `config.service`, and only the
+        // latter carries the parse (`loam.json`'s `service` field is validated
+        // at load). Same string, but only one spelling is pathable.
+        service: config.service,
         vouchedBy,
         // The repo root, not the cwd. `sources:` are spelled relative to the
         // repository — that is what they mean in the frontmatter and what

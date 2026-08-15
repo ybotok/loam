@@ -22,6 +22,7 @@
 import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
+import type { PathableService } from "../kernel/ids.js";
 import { landscapePath, servicePaths } from "../repo/paths.js";
 import { UNCHECKED, VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { landscapeArtifact, landscapeContext, type LandscapeContext } from "./landscape.js";
@@ -173,7 +174,7 @@ const NEVER_OVERWRITE =
   "Do not overwrite an artifact that already exists. Read it, diff your findings against it, and report what disagrees — a document somebody wrote is evidence, and replacing it destroys the only copy of what they knew.";
 
 /** Assemble the brief for one service. Reads the docs repo; writes nothing. */
-export async function serviceBrief(docsDir: string, service: string): Promise<Brief> {
+export async function serviceBrief(docsDir: string, service: PathableService): Promise<Brief> {
   const paths = servicePaths(docsDir, service);
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 

@@ -9,7 +9,7 @@ import {
   type LoadedDoc,
   type Rel,
 } from "../c4/likec4.js";
-import { serviceIdProblem } from "../kernel/ids.js";
+import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
 import { deltaShapeIssues } from "../delta.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../repo/paths.js";
@@ -93,7 +93,7 @@ export async function featureCoherence(
 
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir, context);
-  const reqOps = new Map<string, string[]>();
+  const reqOps = new Map<PathableService, string[]>();
   const removedReqOps = new Map<string, Set<string>>();
   /** Per service: operations this feature genuinely retires (markers minus relocations). */
   const removingOps = new Map<string, Set<string>>();
@@ -275,7 +275,7 @@ export async function featureCoherence(
   // Living specs also govern: an edge calling a pre-existing endpoint is coherent if the
   // target's living spec.md declares the op — the feature need not restate the requirement.
   const livingReqs = new Map<string, Requirement[]>();
-  const livingRequirements = async (service: string): Promise<Requirement[]> => {
+  const livingRequirements = async (service: PathableService): Promise<Requirement[]> => {
     let reqs = livingReqs.get(service);
     if (reqs === undefined) {
       const p = servicePaths(docsDir, service).spec;
@@ -288,7 +288,7 @@ export async function featureCoherence(
     }
     return reqs;
   };
-  const governedByLivingSpec = async (service: string, op: string): Promise<boolean> => {
+  const governedByLivingSpec = async (service: PathableService, op: string): Promise<boolean> => {
     return (await livingRequirements(service)).some((r) => r.operations.includes(op));
   };
 
@@ -327,7 +327,7 @@ export async function featureCoherence(
       .map((r) => `edge ${resolve(r.source)} → ${resolve(r.target)}${r.title === undefined ? "" : ` ("${r.title}")`}`);
   };
   const requirementConsumers = async (service: string, op: string): Promise<string[]> => {
-    let others: string[];
+    let others: PathableService[];
     try {
       others = (await (context === undefined ? listServices(docsDir) : context.listServices(docsDir)))
         .map((s) => s.id)
@@ -389,7 +389,7 @@ export async function featureCoherence(
   // restates the full API, and the question here is whether the fleet as
   // shipped is already retiring the op this feature starts leaning on.
   const livingDeprecated = new Map<string, Set<string>>();
-  const deprecatedInLiving = async (service: string, op: string): Promise<boolean> => {
+  const deprecatedInLiving = async (service: PathableService, op: string): Promise<boolean> => {
     let set = livingDeprecated.get(service);
     if (!set) {
       const list = await operations(servicePaths(docsDir, service).openapi, context);
@@ -406,7 +406,7 @@ export async function featureCoherence(
   // shipping. A delta that restates the op still deprecated — or has no
   // delta for the service at all — keeps the warning.
   const featureUndeprecated = new Map<string, Set<string>>();
-  const undeprecatedByFeature = async (service: string, op: string): Promise<boolean> => {
+  const undeprecatedByFeature = async (service: PathableService, op: string): Promise<boolean> => {
     let set = featureUndeprecated.get(service);
     if (!set) {
       const list = await operations(featureSpecPaths(featureDir, service).openapi, context);
@@ -437,7 +437,7 @@ export async function featureCoherence(
     const target = svcOf(r.target);
     const pathable = await enumeratedTarget(target);
     const available = pathable === undefined ? [] : await serviceOperationIds(docsDir, pathable, featureDir, context);
-    if (removingOps.get(target)?.has(r.op) === true) {
+    if (pathable !== undefined && removingOps.get(pathable)?.has(r.op) === true) {
       issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
     } else if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);
@@ -455,7 +455,7 @@ export async function featureCoherence(
     // happened to reuse the name. The living half on the same line has always
     // joined per service (`governedByLivingSpec(target, …)`); this is the delta
     // half asking it the same way.
-    if (!(reqOps.get(target) ?? []).includes(r.op) && (pathable === undefined || !(await governedByLivingSpec(pathable, r.op)))) {
+    if (pathable === undefined || (!(reqOps.get(pathable) ?? []).includes(r.op) && !(await governedByLivingSpec(pathable, r.op)))) {
       issues.push({ severity: "warn", code: "c4.op-ungoverned", message: `'${r.op}' is called by ${svcOf(r.source)} but no requirement governs it` });
     }
     // Lifecycle: this NEW tagged edge builds consumption on an operation the
