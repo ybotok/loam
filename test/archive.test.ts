@@ -3288,3 +3288,100 @@ The service SHALL do the stranded thing.
     }
   });
 });
+
+describe("a specs/ directory whose name is not a legal service id blocks archive, --approve and all", () => {
+  // The hole this pins, reproduced end to end before the fix: the title
+  // fallback made the delta "introduce" 'Payment Service', validate exited 0,
+  // archive exited 0 and materialised services/Payment Service/ — a directory
+  // service.id-invalid then fails on the next validate --all, and one that no
+  // loam command (archive included) can ever address or re-create.
+  function spaceFixture(): Record<string, string> {
+    return {
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "features/FEAT-9-space/intent.md": "---\nfeature: FEAT-9\nstatus: proposed\n---\n\n# Space\n",
+      "features/FEAT-9-space/delta.likec4": `specification {
+  element softwareSystem
+  tag FEAT-9
+}
+
+model {
+  paymentSvc = softwareSystem 'Payment Service' {
+    #FEAT-9
+  }
+}
+`,
+      "features/FEAT-9-space/specs/Payment Service/spec.md": `# Payment Service — delta for FEAT-9
+
+## ADDED Requirements
+
+### Requirement: Hold the payment
+The service SHALL hold the payment.
+
+#### Scenario: Held
+- **Given** a payment
+- **When** it arrives
+- **Then** it is held
+`,
+    };
+  }
+
+  it("refuses before the plan: exit 1, nothing written, services/Payment Service/ never exists", async () => {
+    const p = await makeProject(spaceFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-9");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(res.out).toContain("illegal service id");
+      expect(p.exists("services/Payment Service")).toBe(false);
+      expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--dry-run is refused too: a plan built on that name describes a forbidden merge", async () => {
+    const p = await makeProject(spaceFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-9", "--dry-run");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("BLOCKED");
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--approve does not pierce it: the refusal is mechanical, not a judgment call", async () => {
+    const p = await makeProject(spaceFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      const res = await runLoam(p.workDir, "archive", "FEAT-9", "--approve");
+      expect(res.code).toBe(1);
+      expect(res.out).toContain("--approve does not override");
+      expect(p.exists("services/Payment Service")).toBe(false);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("--json refuses not-coherent and carries delta.service-id-invalid in issues[]", async () => {
+    const p = await makeProject(spaceFixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-9", "--approve", "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("not-coherent");
+      const codes = (json.issues as Array<{ code: string; gates: boolean }>).map((i) => i.code);
+      expect(codes).toContain("delta.service-id-invalid");
+      for (const i of json.issues as Array<{ gates: boolean }>) expect(i.gates).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});

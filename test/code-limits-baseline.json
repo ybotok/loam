@@ -1,7 +1,7 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 312,
-    "src/commands/archive.ts": 829,
+    "src/commands/archive.ts": 857,
     "src/commands/delta.ts": 444,
     "src/commands/gherkin.ts": 416,
     "src/commands/init.ts": 311,
@@ -12,11 +12,11 @@
     "src/commands/show.ts": 373,
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 404,
-    "src/commands/validate.ts": 1975,
+    "src/commands/validate.ts": 1984,
     "src/commands/verify.ts": 1010,
     "src/commands/vouch.ts": 623,
     "src/core/asyncapi.ts": 312,
-    "src/core/coherence.ts": 637,
+    "src/core/coherence.ts": 677,
     "src/core/delta.ts": 529,
     "src/core/dependencies.ts": 475,
     "src/core/doctor.ts": 731,

@@ -40,7 +40,7 @@ import {
 } from "../core/document/spec.js";
 import { readOpenapi } from "../core/openapi.js";
 import { producersByMessage, readAsyncapi, slotsOf } from "../core/asyncapi.js";
-import { deltaServiceUnknownFinding, featureCoherence } from "../core/coherence.js";
+import { deltaServiceUnknownFinding, featureCoherence, invalidSpecServiceFindings } from "../core/coherence.js";
 import { gatesArchive } from "../core/vocabulary/issue.js";
 import { featureProvenance, serviceProvenance } from "../core/provenance/findings.js";
 import { missingSources, patternSources, unsafeSources } from "../core/provenance/sources.js";
@@ -1603,6 +1603,15 @@ async function validateFeature(
   // The finding is coherence.ts's — the same words archive refuses with, because
   // it is the same conclusion about the same directory.
   for (const svc of unknownServices) findings.push(deltaServiceUnknownFinding(svc, closeTo));
+
+  // The grammar half of the same guarantee. `delta.service-unknown` asks whether
+  // the directory names a service anyone knows; this asks whether the NAME could
+  // ever be one. The two are independent on purpose: a tagged element whose
+  // title matches the directory answers the first question, which is exactly how
+  // `specs/Payment Service/` used to validate green and archive into a directory
+  // no loam command can address. Not suspended on an unreadable delta either —
+  // no reading of the architecture axis can make the name legal.
+  findings.push(...(await invalidSpecServiceFindings(featureDir, fleet)));
 
   // Requirement coverage across every per-service delta — the business spec and
   // the arch spec through the same check — and collect scenario text.

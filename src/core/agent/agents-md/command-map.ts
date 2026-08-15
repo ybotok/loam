@@ -116,7 +116,10 @@ selected that tool. The map of which invocation surfaces what:
   answers to that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
-  \`delta.service-unknown\`,
+  \`delta.service-unknown\`, \`delta.service-id-invalid\` (a \`specs/<svc>/\`
+  directory whose NAME is not a legal service id — archive refuses it too, and
+  \`--approve\` does not override: the merge would materialise a
+  \`services/<svc>/\` no loam command can address),
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
   \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,

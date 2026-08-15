@@ -43,7 +43,7 @@ import {
   stripOpenapiRemovalMarkers,
   type OpenapiMergeResult,
 } from "../core/openapi-merge.js";
-import { featureCoherence, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
+import { featureCoherence, invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../core/coherence.js";
 import { findingJson, SEVERITY_MARK, type Finding } from "../core/vocabulary/report.js";
 import {
   parseRequirements,
@@ -218,6 +218,34 @@ async function archiveLocked(
   const deltaDoc = existsSync(deltaLikec4) ? await loadFile(deltaLikec4) : undefined;
 
   const deltaServices = await featureSpecServices(featureDir);
+
+  // A `specs/<svc>/` whose NAME is not a legal service id, refused before
+  // anything joins that name into a path: the conflict scan below probes
+  // `services/<svc>/<axis>` with it, and the requirements merge would
+  // materialise `services/<svc>/` from it — a directory `service.id-invalid`
+  // then calls an error on the next `validate --all`, and one no loam command
+  // can address or re-create. The set comes from coherence.ts's
+  // `invalidSpecServiceFindings` — the same function validate reads — so the
+  // two gates cannot drift.
+  //
+  // --approve does not apply, exactly as with the conflict-marker refusal
+  // below: --approve overrides judgments about the FEATURE, and a name the id
+  // grammar refuses is a mechanical fact about the path it would become. The
+  // dry run is gated too: a plan built on that name describes a merge loam
+  // must never perform.
+  const illegalServices = await invalidSpecServiceFindings(featureDir);
+  if (illegalServices.length > 0) {
+    const msg = `archive ${id} — BLOCKED: ${illegalServices.length} per-service delta(s) named by an illegal service id`;
+    if (json) {
+      refuseFindings("not-coherent", msg, illegalServices);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const f of illegalServices) console.error(`  ✗ ${f.message}`);
+    console.error(`\n--approve does not override this — the directory the merge would create is one loam can never address, mechanically.`);
+    process.exitCode = 1;
+    return;
+  }
 
   // Git conflict markers in a LIVING document this merge would rewrite, before
   // anything else is asked of it. Both sides of somebody's merge are in the
