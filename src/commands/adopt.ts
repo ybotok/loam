@@ -19,7 +19,9 @@ import { servicePaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { listServices } from "../core/repo/repo.js";
 import { SEVERITY_MARK } from "../core/vocabulary/report.js";
-import { serviceBrief, VIA_ALL, type Brief, type BriefCheck, type BriefTarget } from "../core/brief.js";
+import { serviceBrief, type Brief } from "../core/brief/brief.js";
+import { VIA_ALL, type BriefCheck } from "../core/brief/checks.js";
+import type { BriefTarget } from "../core/brief/targets.js";
 import { docsRepoReady } from "./docs-repo-gate.js";
 
 interface AdoptOptions {
