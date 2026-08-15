@@ -119,7 +119,7 @@ selected that tool. The map of which invocation surfaces what:
   \`delta.service-unknown\`, \`delta.service-id-invalid\` (a \`specs/<svc>/\`
   directory whose NAME is not a legal service id — archive refuses it too, and
   \`--approve\` does not override: the merge would materialise a
-  \`services/<svc>/\` no loam command can address),
+  \`services/<svc>/\` no authoring command can address),
   \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
   \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
   \`c4.service-binding-invalid\` (an explicit \`metadata { service }\` binding
@@ -151,9 +151,11 @@ selected that tool. The map of which invocation surfaces what:
   \`landscape.merge-conflict\`, \`landscape.service-unmodelled\`,
   \`landscape.service-undocumented\`, \`landscape.binding-unknown\`,
   \`landscape.binding-duplicate\`, \`service.id-invalid\` (a \`services/<id>/\`
-  directory no loam command can address — fleet scope only, and graded before
-  the map is opened, so it stands even when the landscape is missing or
-  unreadable), plus a per-service
+  directory every authoring command refuses to address — read commands like
+  \`validate --service\`, \`show\` and \`status\` resolve it against the
+  enumeration and still grade it, so it can be inspected but not changed
+  through loam — fleet scope only, and graded before the map is opened, so it
+  stands even when the landscape is missing or unreadable), plus a per-service
   \`sources.unverifiable-from-here\` (severity \`ok\`, one per service whose
   \`sources\` only its own repo can check — it is a confirmation, not work, and
   the fleet rollup line is derived from those findings), and one check on this very file — \`agents.stale\`

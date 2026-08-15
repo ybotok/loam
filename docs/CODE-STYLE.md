@@ -85,6 +85,14 @@ second type: the raw form is `RawServiceId`, the validated form is `ServiceId`, 
 that turns one into the other is the only bridge. A brand that needs a knowingly false cast at one
 call site is not protecting anything at the other two hundred.
 
+**A name a document asserts is a third provenance, not a raw id.** `metadata { service '…' }` in a
+`.likec4` file parses whatever its author typed, so that text is `DeclaredService` — disjoint from
+both forms above on purpose, because unlike a directory name off `readdir`, nothing has shown it
+exists. It crosses into pathable territory exactly two ways: through `parseServiceId`, or by
+matching a directory the enumeration read off disk (`core/repo/service-target.ts`). And
+`servicePaths` names what it accepts in its own signature — `PathableService`, an alias of
+`RawServiceId` — so a declared name at that call site is a compile error, not a review finding.
+
 **Two or more values that are only ever passed together are one value.** Name the record and take
 it: `vouch(req: VouchRequest)`, `validateService(check: ServiceCheck)`. A function needing
 `featureDir` and `featureId` takes the `FeatureEntry` that already holds both — passing a fact and
