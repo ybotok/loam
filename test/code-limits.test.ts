@@ -21,7 +21,9 @@
  * The reason the whole thing is a test rather than an entry in the `lint`
  * script is the baseline. 34 source files and 27 functions were already over a
  * limit the day the limits landed; lint has no way to say "these, and only
- * these, and only until they shrink". So:
+ * these, and only until they shrink". (All 61 have since been cleared and the
+ * file is empty — the mechanism stays because emptiness is a state a repository
+ * leaves, and the asymmetry below is what makes leaving it visible.) So:
  *
  *   - The SET of entries in test/code-limits-baseline.json must match exactly.
  *     A violation missing from the baseline fails (a new one landed). A
