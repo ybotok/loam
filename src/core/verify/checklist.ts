@@ -26,10 +26,11 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { elementService, loadFile, serviceOf, type Elem } from "../c4/likec4.js";
+import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
+import { enumeratedServiceIds } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
 import { scenarioBodyHash } from "../gherkin/digest.js";
 
@@ -100,6 +101,8 @@ export async function featureChecklist(
   const calls: Claim[] = [];
   const scenarios: Claim[] = [];
 
+  const specServices = await featureSpecServices(featureDir);
+
   // Architecture — what the delta promised the fleet would look like.
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
@@ -116,12 +119,24 @@ export async function featureChecklist(
         const svc = elementService(e);
         exists.push(claim("service.exists", svc, [svc], `service '${svc}' exists`));
       }
+      // The enumerated fleet — `services/` plus this feature's own `specs/`
+      // directories, the only place a service the feature INTRODUCES has a
+      // directory at all — rides into the resolver so a claim about an edge
+      // drawn into a modelled container names the service that owns it. A
+      // claim against a service called "api" that has never existed is one no
+      // evidence in any repository could ever answer, and the fleet half alone
+      // still derived exactly that claim for an introduced service's own
+      // container. Unenumerable services/ degrades to the feature's names.
+      const svcOf = serviceResolver(
+        elements,
+        new Set<string>([...(await enumeratedServiceIds(docsDir)), ...specServices]),
+      );
       for (const r of res.relationships) {
         // Untagged edges are context for the diagram; an edge with no operation
         // names nothing specific enough to look for in the code.
         if (!r.tags.includes(featureId) || r.op === undefined) continue;
-        const from = serviceOf(elements, r.source);
-        const to = serviceOf(elements, r.target);
+        const from = svcOf(r.source);
+        const to = svcOf(r.target);
         calls.push(
           claim("c4.calls", from, [from, to, r.op], `${from} calls '${r.op}' on ${to}`),
         );
@@ -129,7 +144,7 @@ export async function featureChecklist(
     }
   }
 
-  for (const svc of await featureSpecServices(featureDir)) {
+  for (const svc of specServices) {
     const paths = featureSpecPaths(featureDir, svc);
 
     // Contract — only what is NEW. A delta's openapi.yaml is a whole document,

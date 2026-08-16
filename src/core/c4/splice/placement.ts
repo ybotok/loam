@@ -91,6 +91,11 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
       kind: "rel",
       id: "",
       key: relSortKey(els, r),
+      // Deliberately no `known` fleet set here: this resolution only decides
+      // WHERE in the file a statement anchors, both sides of every comparison
+      // resolve through the same call, and the merged document is re-parsed
+      // before anything is written — a wrong grouping is cosmetic, never a
+      // wrong merge.
       services: [serviceOf(els, r.source), serviceOf(els, r.target)],
       start: r.start,
       end: r.end,

@@ -136,8 +136,10 @@ export function registerDelta(program: Command): void {
       // endpoint" was the half of the work the brief left out.
       const api = await apiChanges(specPaths.openapi);
 
-      // C4 architecture slice
-      const arch = archSlice(deltaDoc, service, id);
+      // C4 architecture slice. The fleet union mirrors coherence's: services/
+      // plus the feature's own specs/ names, so the slice and the validator
+      // resolve a container-targeted edge to the same owner.
+      const arch = archSlice(deltaDoc, service, id, new Set([...living, ...featureServices]));
 
       // An unparseable delta.likec4 empties the C4 slice, and a consumer
       // reading this projection as a task brief — the JSON payload and the

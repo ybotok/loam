@@ -43,6 +43,27 @@ export type ServiceTarget =
   | { readonly ok: true; readonly id: RawServiceId }
   | { readonly ok: false; readonly problem: string };
 
+/**
+ * The enumerated service ids, or the empty list when `services/` cannot be
+ * enumerated at all. The swallow is deliberate and spelled ONCE: every
+ * repository-aware resolver wants "which services exist" as context, and an
+ * unenumerable `services/` is that repository's own diagnosis
+ * (`services-missing`), never the asking check's. Six call sites each carried
+ * this try/catch in their own spelling before it lived here — which is exactly
+ * the shape docs/CODE-STYLE.md warns about: an errno fix lands in one copy and
+ * the other five keep the old behaviour.
+ */
+export async function enumeratedServiceIds(
+  docsDir: string,
+  fleet?: FleetContext,
+): Promise<RawServiceId[]> {
+  try {
+    return (await listServices(docsDir, fleet)).map((s) => s.id);
+  } catch {
+    return [];
+  }
+}
+
 export async function resolveServiceTarget(
   docsDir: string,
   name: string,

@@ -163,6 +163,7 @@ export async function validateFeature(
       taggedEls,
       taggedRels,
       archDeltas,
+      featureServices,
       scenarioText,
       preloadedLand,
       fleet,

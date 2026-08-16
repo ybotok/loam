@@ -155,10 +155,16 @@ export interface ArchAxis {
   relationships: Rel[];
   /** The living landscape, or null when the repo has none. */
   land: LoadedDoc | null;
+  /**
+   * The enumerated fleet, for the Covers matcher's endpoint resolution — the
+   * same set the caller's own spine resolution uses, so a `Covers:` line
+   * naming a service matches an edge drawn into that service's container.
+   */
+  known?: ReadonlySet<string>;
 }
 
 export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
-  const { service, paths, archText, archReqs, elements, relationships, land } = axis;
+  const { service, paths, archText, archReqs, elements, relationships, land, known } = axis;
   const findings: Finding[] = [];
 
   // The architecture spec axis — the obligations a business spec never carries
@@ -234,6 +240,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     elements: [...elements, ...(landParses?.elements ?? [])],
     relationships: [...relationships, ...(landParses?.relationships ?? [])],
     health: health.ids,
+    known,
   };
   findings.push(
     ...coversUnknownFindings(archReqs, { where: `${service}: arch.spec.md`, subject: service }, scope, health.unreadable),

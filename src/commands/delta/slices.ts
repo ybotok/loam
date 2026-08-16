@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
-import { elementService, serviceOf, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { elementService, serviceResolver, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
 import { readOpenapi, type Operation } from "../../core/openapi/doc.js";
 import { isRecord } from "../../core/kernel/records.js";
 import { compareIds } from "../../core/repo/entries.js";
@@ -136,7 +136,12 @@ export async function apiChanges(openapiPath: string): Promise<ApiSlice> {
 }
 
 /** The feature's tagged edges around one service, plus whether the service is new. */
-export function archSlice(doc: LoadedDoc | null, service: string, featureId: string): ArchSlice {
+export function archSlice(
+  doc: LoadedDoc | null,
+  service: string,
+  featureId: string,
+  known?: ReadonlySet<string>,
+): ArchSlice {
   const empty: ArchSlice = { isNew: false, inbound: [], outbound: [], errors: [] };
   if (doc === null) return empty;
 
@@ -145,8 +150,14 @@ export function archSlice(doc: LoadedDoc | null, service: string, featureId: str
     return { ...empty, errors: errors.map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message)) };
   }
 
-  // Which service an element stands for is the binding's call, not the title's.
-  const svcOf = (id: string): string => serviceOf(elements, id);
+  // Which service an element stands for is the binding's call, not the title's
+  // — and the enumerated fleet rides in so the slice agrees with `validate`
+  // about an edge drawn into a modelled container. Without it, this projection
+  // told the provider "no inbound calls" and the consumer "you call 'api'" for
+  // the same `checkoutWeb -> paymentService.api` edge the validator was
+  // grading against payment-service — and the brief an agent implements from
+  // must never disagree with the gate it will be checked by.
+  const svcOf = serviceResolver(elements, known);
   const edge = (r: Rel, other: string): Edge => ({
     service: other,
     op: r.op ?? null,

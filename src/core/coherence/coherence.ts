@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
-import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
+import { elementService, loadFile, serviceResolver, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
-import { enumeratedServiceIndex } from "../repo/service-target.js";
+import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
 import { operations, serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
@@ -77,12 +77,21 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
       }
     }
   }
-  // Every axis below joins on the service id, so endpoints resolve through the
-  // element's `metadata { service }` binding — never through what the box is called.
-  const svcOf = (id: string): string => serviceOf(elements, id);
-
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir, context);
+
+  // Every axis below joins on the service id, so endpoints resolve through the
+  // element's `metadata { service }` binding — never through what the box is
+  // called. The enumerated fleet — `services/` plus this feature's own
+  // `specs/` directories, the same union `enumeratedTarget` probes below —
+  // rides into the resolver so a delta that models CONTAINERS joins correctly:
+  // without it, an edge into `payment.api` resolves to a service called "api"
+  // that has never existed, and every check below grades the edge against an
+  // absent service instead of the one that owns the container. An unenumerable
+  // services/ falls back to the feature's own names — every living probe would
+  // have found nothing there anyway.
+  const fleetIds = await enumeratedServiceIds(docsDir, context);
+  const svcOf = serviceResolver(elements, new Set<string>([...fleetIds, ...svcNames]));
   const {
     reqOps, removingOps, featureApiOps,
   } = await declaredByService(scope, svcNames, issues, context);
