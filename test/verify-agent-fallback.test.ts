@@ -35,7 +35,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { scenarioDigest } from "../src/core/gherkin.js";
+import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { contestedDigests } from "../src/core/results.js";
 import { scenarioBodyHash, type Claim as CoreClaim } from "../src/core/verify/checklist.js";

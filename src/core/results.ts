@@ -29,7 +29,7 @@
  * report loam cannot recognize must refuse rather than quietly answer every
  * claim "not found".
  */
-import { DIGEST_TAG_RE, scenarioDigestTag } from "./gherkin.js";
+import { DIGEST_TAG_RE, scenarioDigestTag } from "./gherkin/stamp.js";
 import { isRecord } from "./kernel/records.js";
 import type { Answer } from "./verify/answers.js";
 import type { Claim } from "./verify/checklist.js";

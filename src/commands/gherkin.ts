@@ -33,15 +33,10 @@ import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../cor
 import { listFeatures, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { parseRequirements } from "../core/document/parse.js";
 import { type Requirement } from "../core/document/spec.js";
-import {
-  axisLabel,
-  featureFilesUnder,
-  gherkinRoot,
-  parseStampedFeature,
-  planEmission,
-  type PlannedFeature,
-  type StampedFeature,
-} from "../core/gherkin.js";
+import { axisLabel, planEmission, type PlannedFeature } from "../core/gherkin/emit.js";
+import { parseStampedFeature, type StampedFeature } from "../core/gherkin/read.js";
+import { featureFilesUnder } from "../core/gherkin/stale.js";
+import { gherkinRoot } from "../core/gherkin/stamp.js";
 import { LOAM_VERSION } from "../core/envelope/version.js";
 import { isPathInside, resolveInside, UnsafePathError } from "../core/kernel/path-safety.js";
 

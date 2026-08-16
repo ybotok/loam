@@ -10,7 +10,7 @@ import {
   type Rel,
 } from "../c4/likec4.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
-import { deltaShapeIssues } from "../delta.js";
+import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../repo/paths.js";
 import { featureSpecServices, listServices } from "../repo/repo.js";

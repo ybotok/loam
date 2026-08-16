@@ -101,7 +101,7 @@ import { KIND_RE, type DeltaKind } from "../src/core/document/spec.js";
 // For the RENAMED-section shape check only: the parse gap it closes is pinned in
 // this file, so the check that makes the gap loud is pinned beside it.
 import { join } from "node:path";
-import { deltaShapeIssues } from "../src/core/delta.js";
+import { deltaShapeIssues } from "../src/core/delta/delta.js";
 import { makeProject } from "./helpers/harness.js";
 
 const FIXTURES = fileURLToPath(new URL("./fixtures/openspec/", import.meta.url));

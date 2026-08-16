@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { loadConfig } from "../core/envelope/config.js";
-import { explore, type Exploration, type ExploreService } from "../core/explore.js";
+import { explore, type Exploration, type ExploreService } from "../core/explore/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
 import { featureIdProblem, parseServiceIds } from "../core/kernel/ids.js";

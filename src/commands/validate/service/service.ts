@@ -18,7 +18,7 @@ import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
 import { closeIds } from "../../../core/c4/arch.js";
 import { serviceProvenance } from "../../../core/provenance/findings.js";
-import { gherkinFindings } from "../../../core/gherkin.js";
+import { gherkinFindings } from "../../../core/gherkin/stale.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { errorText } from "../checks/vocabulary.js";
 import { sourceScopeFindings } from "../checks/sources.js";

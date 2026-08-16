@@ -25,12 +25,9 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
-import {
-  gherkinStampLine,
-  parseStampedFeature,
-  renderFeature,
-  scenarioDigest,
-} from "../src/core/gherkin.js";
+import { renderFeature } from "../src/core/gherkin/emit.js";
+import { parseStampedFeature } from "../src/core/gherkin/read.js";
+import { gherkinStampLine, scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { stepFromLine } from "../src/core/vocabulary/steps.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { scenarioBodyHash } from "../src/core/verify/checklist.js";

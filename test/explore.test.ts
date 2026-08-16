@@ -1,6 +1,6 @@
 /**
  * Deep invariant tests for `loam explore` (src/commands/explore.ts, logic in
- * src/core/explore.ts).
+ * src/core/explore/).
  *
  * `explore` runs BEFORE the first document exists. It reads the fleet map and
  * the living contracts around a proposed change and reports the ring of

@@ -36,7 +36,7 @@ import { execFileSync } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
-import { scenarioDigest } from "../src/core/gherkin.js";
+import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
