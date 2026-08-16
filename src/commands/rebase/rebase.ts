@@ -1,0 +1,236 @@
+import type { Command } from "commander";
+import { existsSync } from "node:fs";
+import { loadConfig } from "../../core/envelope/config.js";
+import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
+import { InvalidIdError, assertServiceId } from "../../core/kernel/ids.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { compareIds } from "../../core/repo/entries.js";
+import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";
+import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
+import { message, rollbackStaged, stageWrites, swapStaged } from "../../core/staging/commit.js";
+import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
+import { type PlannedWrite } from "../../core/staging/writes.js";
+import { plural } from "../policy/format.js";
+import { planAxis, planOpenapi, type PinOutcome } from "./plan.js";
+
+/**
+ * `loam rebase` — pin a feature's MODIFIED/REMOVED requirements to the living
+ * text they are written against.
+ *
+ * The counterpart to `loam vouch`: vouch stamps a digest of the CODE a living
+ * spec was written from, this stamps a digest of the LIVING REQUIREMENT a delta
+ * was written from. Both exist so a later `loam validate` can tell "still true"
+ * from "something moved underneath", and both are worth exactly what they claim
+ * — so this command computes every pin from what is on disk right now and never
+ * invents one for a requirement that addresses nothing living.
+ *
+ * It is the fix `delta.baseline-stale` sends people to, which is why the
+ * rewrite is line SURGERY rather than a reserialize: a delta document is
+ * authored prose — section headings, comments, the order the author chose — and
+ * `serializeRequirements` would flatten all of it into a bare requirement run.
+ * One line changes per requirement; every other byte is copied.
+ *
+ * Restamping is the LAST step of resolving a collision, never the resolution
+ * itself: a pin says "I read this version", so running it without re-reading
+ * makes it a lie with a digest on it. The output says so on the way out.
+ */
+
+interface RebaseOptions {
+  service?: string;
+  json?: boolean;
+  dryRun?: boolean;
+}
+
+/** What happened to one pin. */
+
+export function registerRebase(program: Command): void {
+  program
+    .command("rebase")
+    .argument("<featureId>", "feature id, e.g. FEAT-101")
+    .description("Pin a feature's MODIFIED/REMOVED requirements to the living text they are written against")
+    .option("--service <id>", "restrict to one service (default: every service the feature touches)")
+    .option("--dry-run", "print what would be pinned and write nothing")
+    .option("--json", "emit the machine contract instead of the human view")
+    .action(async (featureId: string, opts: RebaseOptions) => {
+      const json = opts.json === true;
+      const config = await loadConfig();
+      if (!config) {
+        reportNoConfig(json);
+        return;
+      }
+
+      // The id grammar on the RAW argument, before it reaches a path join —
+      // one grammar for the whole tool (core/kernel/ids.ts).
+      if (opts.service !== undefined) {
+        try {
+          assertServiceId(opts.service, "--service");
+        } catch (err) {
+          if (!(err instanceof InvalidIdError)) throw err;
+          return fail(json, "invalid-option", err.message);
+        }
+      }
+
+      // The living specs must not move between the read that computes a pin and
+      // the write that records it: a digest taken over a document an archive
+      // replaced a millisecond later is precisely the false "I read this" the
+      // pin exists to make impossible. One writer per docs repo, refusing
+      // rather than queueing, exactly as archive takes it.
+      let release: () => Promise<void>;
+      try {
+        release = await acquireDocsLock(config.docsDir);
+      } catch (err) {
+        if (!(err instanceof DocsBusyError)) throw err;
+        return fail(json, "docs-busy", err.message);
+      }
+      try {
+        await rebaseLocked(config.docsDir, featureId, opts);
+      } finally {
+        await release();
+      }
+    });
+}
+
+async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOptions): Promise<void> {
+  const json = opts.json === true;
+  const dryRun = opts.dryRun === true;
+
+  const feature = await resolveFeature(docsDir, featureId, "exclude");
+  if (!feature) {
+    return fail(json, "unknown-target", await missingFeatureMessage(docsDir, featureId));
+  }
+  const { id } = feature;
+
+  // The enumeration's own id is what travels on when --service names one
+  // (`entry.id` rather than the argument — repo/service-target.ts's rule):
+  // equal as strings, and only one of them was produced by a readdir.
+  const chosen = opts.service === undefined ? undefined : feature.services.find((s) => s === opts.service);
+  if (opts.service !== undefined && chosen === undefined) {
+    // The refusal names the choices, the way `loam delta`'s does: a typo must
+    // never be indistinguishable from a feature with nothing to pin.
+    return fail(
+      json,
+      "unknown-target",
+      `${id} carries no requirement delta for '${opts.service}'` +
+        (feature.services.length === 0
+          ? " — it touches no service at all."
+          : ` — it touches: ${[...feature.services].sort(compareIds).join(", ")}.`),
+    );
+  }
+  const services = (chosen === undefined ? [...feature.services] : [chosen]).sort(compareIds);
+
+  const outcomes: PinOutcome[] = [];
+  const writes: PlannedWrite[] = [];
+  try {
+    for (const service of services) {
+      for (const axis of SPEC_AXES) {
+        const specPath = featureSpecPaths(feature.dir, service)[axis.key];
+        if (!existsSync(specPath)) continue;
+        const planned = await planAxis(docsDir, service, axis, specPath);
+        outcomes.push(...planned.outcomes);
+        if (planned.content !== null) writes.push({ path: specPath, content: planned.content });
+      }
+      // The contract axis. It needs the pin more than the requirement axes do:
+      // a requirement delta spells only the requirements it changes, while an
+      // openapi delta is a COMPLETE document and spells the whole contract.
+      const openapiPath = featureSpecPaths(feature.dir, service).openapi;
+      if (existsSync(openapiPath)) {
+        const planned = await planOpenapi(docsDir, service, openapiPath);
+        outcomes.push(...planned.outcomes);
+        if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof NotUtf8DocumentError)) throw err;
+    // A pin is a claim about text somebody read. Over a document loam could not
+    // decode it would be a digest of mojibake with loam's name on it — the
+    // precise false claim this command exists to prevent — and the next archive
+    // would land a stale delta over living text on the strength of it. So it
+    // refuses by name and writes nothing, exactly as `loam archive` refuses a
+    // merge it could not read, under archive's code. The refusal is here, in
+    // the PLAN, so it lands before stageWrites: no file is touched, and a
+    // feature spanning four services does not get two of them pinned.
+    return fail(json, "merge-failed", `rebase ${id} failed — nothing was pinned: ${err.message}`);
+  }
+
+  if (!dryRun && writes.length > 0) {
+    // Staged and swapped like every other multi-file write in loam
+    // (core/staging.ts): a feature spanning four services is one act, and a
+    // full disk between its second and third file must not leave two of them
+    // pinned to a reading the other two never saw.
+    const staged = await stageWrites(writes);
+    try {
+      await swapStaged(staged);
+    } catch (err) {
+      const failures = await rollbackStaged(staged);
+      return fail(
+        json,
+        failures.length === 0 ? "merge-failed" : "rollback-incomplete",
+        failures.length === 0
+          ? `rebase ${id} failed and was rolled back — nothing was pinned: ${message(err)}`
+          : `rebase ${id} failed and the rollback did not complete; these files are in an unknown state: ${failures.join(", ")} — ${message(err)}`,
+      );
+    }
+  }
+
+  const changed = outcomes.filter((o) => o.status === "pinned" || o.status === "repinned");
+  const unresolved = outcomes.filter((o) => o.status === "unresolved");
+
+  if (json) {
+    emitJson({
+      feature: id,
+      services,
+      dryRun,
+      pins: outcomes,
+      written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
+    });
+    return;
+  }
+
+  if (outcomes.length === 0) {
+    console.log(
+      `${id}: nothing to pin — a baseline only means something for a requirement or an operation that already exists.`,
+    );
+    return;
+  }
+
+  console.log(`${id}${dryRun ? " (dry run)" : ""}\n`);
+  for (const o of outcomes) {
+    const what = `${o.service}/${o.file}  ${o.kind} ${o.target}`;
+    if (o.status === "unresolved") {
+      console.log(`  · ${what} — not in the living docs yet, nothing to pin`);
+    } else if (o.status === "unwritable") {
+      console.log(`  ! ${what} — written as a YAML alias; loam will not stamp through a shared anchor`);
+    } else if (o.status === "unchanged") {
+      console.log(`  = ${what} — already ${o.to}`);
+    } else if (o.status === "pinned") {
+      console.log(`  + ${what} — pinned ${o.to}`);
+    } else {
+      console.log(`  ~ ${what} — ${o.from} → ${o.to}`);
+    }
+  }
+
+  if (changed.length === 0) {
+    console.log(`\nNothing to write: every pin already names the living version.`);
+  } else if (dryRun) {
+    console.log(`\n${plural(changed.length, "pin")} would be written. Nothing was written.`);
+  } else {
+    console.log(`\n${plural(changed.length, "pin")} written across ${plural(writes.length, "file")}.`);
+    // The one sentence that keeps this command honest. A pin is a claim about
+    // what its author read, and a `repinned` line means the living text moved
+    // under a delta that still says what it said before — restamping does not
+    // fold in the change it just stopped reporting.
+    const repinned = changed.filter((o) => o.status === "repinned");
+    if (repinned.length > 0) {
+      console.log(
+        `\n⚠ ${plural(repinned.length, "pin")} moved since this delta was written. A pin records what you read — ` +
+          `re-read those living requirements and operations and fold in what you still mean, or the next archive lands your version over theirs with loam's blessing.`,
+      );
+    }
+  }
+  if (unresolved.length > 0) {
+    console.log(
+      `\n${plural(unresolved.length, "item")} could not be pinned because the living docs do not have them yet — ` +
+        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it.`,
+    );
+  }
+}
