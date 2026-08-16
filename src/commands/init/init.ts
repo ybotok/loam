@@ -8,20 +8,20 @@ import {
   localConfigPath,
   saveConfig,
   type LoamConfig,
-} from "../core/envelope/config.js";
-import { emitJson, fail } from "../core/envelope/json.js";
-import { plannedDocsFiles, scaffoldDocs } from "../core/docs.js";
-import { agentsPath } from "../core/repo/paths.js";
-import { docsRepoState } from "../core/repo/state.js";
-import { listServices } from "../core/repo/repo.js";
-import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
+} from "../../core/envelope/config.js";
+import { emitJson, fail } from "../../core/envelope/json.js";
+import { plannedDocsFiles, scaffoldDocs } from "../../core/docs.js";
+import { docsRepoState } from "../../core/repo/state.js";
+import { listServices } from "../../core/repo/repo.js";
+import { InvalidIdError, assertServiceId } from "../../core/kernel/ids.js";
 import {
   detectAgentTools,
   plannedCommandFiles,
   scaffoldAgentCommands,
   type Delivery,
-} from "../core/agent/scaffold.js";
-import { AGENT_TOOLS } from "../core/agent/tools/registry.js";
+} from "../../core/agent/scaffold.js";
+import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
+import { isDocsRepo, resolveTools, storedDocsDir } from "./options.js";
 
 interface InitOptions {
   docs: string;
@@ -37,64 +37,6 @@ interface InitOptions {
   /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = autodetect. */
   tools?: string;
   json?: boolean;
-}
-
-/**
- * Resolve --tools to registry ids, or null after reporting the refusal. The
- * default (the cwd scan) lives at the call site, not in commander, so an
- * explicit `--tools` is distinguishable from none — which is what lets both the
- * autodetection fallback and the `--no-*` contradiction be decided instead of
- * silently arbitrated.
- */
-function resolveTools(raw: string, json: boolean): string[] | null {
-  const supported = Object.keys(AGENT_TOOLS);
-  if (raw === "all") return supported;
-  const ids = [...new Set(raw.split(",").map((t) => t.trim()).filter((t) => t !== ""))];
-  const unknown = ids.filter((t) => !(t in AGENT_TOOLS));
-  if (ids.length === 0 || unknown.length > 0) {
-    fail(
-      json,
-      "invalid-option",
-      (ids.length === 0
-        ? "--tools names no tool."
-        : `--tools does not recognize: ${unknown.join(", ")}.`) +
-        ` Supported: ${supported.join(", ")} — or "all".`,
-    );
-    return null;
-  }
-  return ids;
-}
-
-/**
- * `--docs` exactly as the caller wrote it, with separators normalised.
- *
- * Stored verbatim on purpose. `init` used to resolve it and write the absolute
- * result, which meant a committed loam.json named a directory that existed on
- * one laptop: every teammate who cloned the service repo got a docsDir under
- * someone else's home directory, and `loam list` reported an empty fleet
- * instead of saying so. `loadConfig` resolves relative paths against the config
- * file's own directory, so `../docs` keeps meaning "next to this repo" wherever
- * the pair is checked out. An absolute `--docs` is still stored absolute — that
- * is the caller's explicit choice, and `loam doctor` warns about it.
- *
- * Backslashes become forward slashes so a config written on Windows resolves on
- * POSIX; a trailing separator is dropped so the stored spelling is stable.
- */
-function storedDocsDir(raw: string): string {
-  const slashed = raw.split("\\").join("/");
-  if (slashed.length <= 1) return slashed;
-  const trimmed = slashed.replace(/\/+$/, "");
-  return trimmed === "" ? "/" : trimmed;
-}
-
-/**
- * Does this directory already hold a docs repo? `services/` plus `AGENTS.md` —
- * the two things every docs repo has and no service repo does. The pair is the
- * whole point: a single marker would make `init --docs ../srv` (a typo for
- * `../docs`) look like a join and adopt the service repo as the fleet.
- */
-function isDocsRepo(dir: string): boolean {
-  return docsRepoState(dir).kind === "ok" && existsSync(agentsPath(dir));
 }
 
 export function registerInit(program: Command): void {

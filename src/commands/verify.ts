@@ -42,7 +42,7 @@ import { buildFederatedVerification, buildVerification, type DiscardedAnswer } f
 import { featureChecklist, type Checklist, type Claim } from "../core/verify/checklist.js";
 import { readVerificationState, writeVerification } from "../core/verify/file.js";
 import { attestedNotice, tallyAnswers, tallyRecord, type AnsweredClaim, type ConsumedReport, type Verification, type VerifyNotice, verificationPath, verificationVerdict } from "../core/verify/record.js";
-import { plural } from "./format.js";
+import { plural } from "./policy/format.js";
 
 interface VerifyOptions {
   record?: string;

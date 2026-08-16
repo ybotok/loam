@@ -56,7 +56,7 @@ import {
 import type { PathableService } from "../core/kernel/ids.js";
 import type { SkippedSource } from "../core/provenance/walk.js";
 import { SPEC_AXES, servicePaths } from "../core/repo/paths.js";
-import { plural } from "./format.js";
+import { plural } from "./policy/format.js";
 import { message, rollbackStaged, stageWrites, swapStaged } from "../core/staging/commit.js";
 import { NotUtf8Error, readUtf8, type PlannedWrite } from "../core/staging/writes.js";
 

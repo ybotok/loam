@@ -33,7 +33,7 @@ import {
   docsRepoReady,
   reportDocsRepoError,
   reportRepositoryUnavailable,
-} from "../docs-repo-gate.js";
+} from "../policy/gate.js";
 import { readLandscape, validateLandscape } from "./landscape.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";

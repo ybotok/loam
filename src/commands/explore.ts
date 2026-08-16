@@ -5,8 +5,8 @@ import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
 import { featureIdProblem, parseServiceIds } from "../core/kernel/ids.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
-import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
-import { plural } from "./format.js";
+import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./policy/gate.js";
+import { plural } from "./policy/format.js";
 
 /**
  * The feature id in the suggested command line when `--as` did not say.
