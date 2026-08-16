@@ -101,12 +101,12 @@ export const WALK: WalkStop[] = [
   },
   {
     where: "the outbound calls — HTTP clients, generated stubs, gRPC channels, and the config that says which host each one points at",
-    find: "who this service calls, and which operation each call names. These become the fleet map's edges; an edge missing here is a dependency the fleet cannot see, and `loam explore` will under-report the blast radius of every future change to the callee.",
+    find: "who this service calls, and which operation each call names. These become the fleet map's edges; an edge missing here is a dependency the fleet cannot see, and `loam explore` will under-report the blast radius of every future change to the callee. An edge that only configuration attests is PROVISIONAL until the runtime stop: hold it until the deploy manifests confirm nothing switches that client off.",
     lands: ["landscape.likec4"],
   },
   {
     where: "the runtime — config and env vars, deploy manifests, pipelines, alert rules, dashboards",
-    find: "how it is run and what pages whom. Alerts are the honest source for health.yaml: an SLO nobody agreed to is invention, but an alert that already fires is a fact somebody wrote down.",
+    find: "how it is run and what pages whom. Alerts are the honest source for health.yaml: an SLO nobody agreed to is invention, but an alert that already fires is a fact somebody wrote down. Deployment manifests OVERRIDE configuration files, and they usually live in another repository — go and find them before any dependency that only configuration attests goes in the model, and check for an environment variable that disables the feature. A capability switched off at deploy time is not a dependency, however completely the config wires it: delete its edge and container, and record it in runbook.md's 'configured but not a dependency, and why' list. A manifest read from another repository is named in the runbook's prose — never in `sources`, which may only hold paths of this service's own repository.",
     lands: ["runbook.md", "health.yaml"],
   },
   {

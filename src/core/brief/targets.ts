@@ -233,6 +233,7 @@ Covers: paymentService.db, paymentService -> kafka
     shape: [
       "Frontmatter, then how it is deployed and configured, what it depends on, and what to do about the failures that actually happen.",
       "Written from what is in the repo (pipelines, manifests, alert definitions). Whoever carries the pager verifies it; leave `status: draft` until they have.",
+      "A 'configured but not a dependency, and why' list: every capability the configuration wires up that the deploy manifest switches off. Without it, the next reader re-derives the dependency from the config and re-adds what the manifest already removed.",
     ],
   },
   {
