@@ -11,7 +11,7 @@
 import { type Requirement } from "../document/spec.js";
 import { scenarioGherkin } from "../vocabulary/steps.js";
 import { type SpecAxis } from "../repo/paths.js";
-import { type ScenarioAxis } from "../verify/checklist.js";
+import { type ScenarioAxis } from "./digest.js";
 import { gherkinStampLine, scenarioDigest, scenarioDigestTag } from "./stamp.js";
 
 /** The axis label the machine contract speaks. */
