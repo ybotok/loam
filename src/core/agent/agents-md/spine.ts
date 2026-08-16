@@ -64,8 +64,10 @@ loam's blessing. There is no automatic three-way merge and there will not be one
 requirement prose does not merge, people do.
 
 A delta adopted from OpenSpec has no such line and gets a warning
-(\`delta.baseline-missing\`), never a refusal — an entire migrated corpus that
-cannot archive is not a safety property.
+(\`delta.baseline-missing\`) — one that GATES the archive: unpinned is exactly
+the shape that reverts someone else's landed change at exit 0. A migrated
+corpus is not stranded by this: \`loam rebase <FEAT>\` pins every delta in one
+command, and a human's \`--approve\` archives unpinned when the loss is meant.
 
 ### The same pin on the contract axis — and why it matters more there
 

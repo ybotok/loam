@@ -30,7 +30,7 @@ import { verificationStatus } from "../verification.js";
  * any single artifact `draft`, because guessing which file to blame is how a
  * reader gets sent to edit the wrong one.
  */
-function faultedArtifact(code: string): ArtifactId | null {
+function faultedArtifact(code: string, subject?: string): ArtifactId | null {
   if (code === "delta.invalid" || code === "delta.nothing-tagged") return "delta";
   if (code.startsWith("c4-api.") || code.startsWith("c4.")) return "delta";
   if (code.startsWith("openapi.")) return "openapi";
@@ -40,6 +40,13 @@ function faultedArtifact(code: string): ArtifactId | null {
   // delta. Both name exactly one file, so both may turn a row `draft`.
   if (code.startsWith("frontmatter.")) return "intent";
   if (code === "requirements.missing-scenarios") return "spec";
+  // The authoring gate names exactly one file per finding too — leaving these
+  // unmapped had the table calling intent.md `done` ("nothing is owed here")
+  // while the archive exited 1 because it says nothing. A placeholder finding
+  // carries its service when the text sits in a per-service spec delta, and
+  // no subject when it is the C4 delta's scaffolded description.
+  if (code === "intent.empty") return "intent";
+  if (code === "scaffold.placeholder") return subject === undefined ? "delta" : "spec";
   return null;
 }
 
@@ -69,7 +76,7 @@ export function featureArtifacts(
   const { blocking, verification, contracted, governs } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
-  const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code), subject: f.subject }));
+  const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
   const faulted = (id: ArtifactId, service: string | null): boolean =>
     faults.some((f) => f.artifact === id && (service === null || f.subject === service));
 

@@ -253,16 +253,21 @@ The service SHALL do it differently.
   });
 });
 
-describe("a missing pin is advisory — an adopted corpus still archives", () => {
-  it("warns, names the value to write, and does NOT gate", async () => {
+describe("a missing pin is a warning that GATES — unpinned is the silent-rollback shape", () => {
+  it("warns, names the value to write, and gates the archive", async () => {
     const issues = await shapeIssues({
       [`services/${SVC}/spec.md`]: LIVING,
       [`features/FEAT-1-x/specs/${SVC}/spec.md`]: modified("The service SHALL do it differently."),
     });
     const [issue, ...rest] = only(issues, "delta.baseline-missing");
     expect(rest).toEqual([]);
+    // Warn, not error: the document is legal (an adopted corpus never had the
+    // line), so `loam validate` stays green. Gating, because the merge is not
+    // safe: an unpinned MODIFIED replaces whatever landed in between, which is
+    // exactly the loss the pin exists to prevent. `--approve` remains the way
+    // to say the unpinned merge is meant.
     expect(issue!.severity).toBe("warn");
-    expect(gatesArchive(issue!)).toBe(false);
+    expect(gatesArchive(issue!)).toBe(true);
     // The fix is one command, and the value is in the message so an agent does
     // not have to go compute a digest to follow the advice.
     expect(issue!.message).toContain("loam rebase FEAT-1");
@@ -430,12 +435,30 @@ describe("two features rewriting one requirement", () => {
     }
   });
 
-  it("without pins the loss is silent, which is what the pins are for", async () => {
+  it("without pins the archive refuses — the silent rollback needs a human's --approve now", async () => {
+    // This used to be the loss itself: both unpinned archives exited 0 and the
+    // second reverted the first with `+0 ~1 -0` and nobody told. The gate turns
+    // that into a refusal at the FIRST unpinned archive; the rollback can still
+    // be chosen, but only by name, with the flag whose help text says "may
+    // corrupt the living docs".
     const p = await twoFeatures(false);
     try {
-      expect((await runLoam(p.workDir, "archive", "FEAT-2")).code).toBe(0);
-      const archived = await runLoam(p.workDir, "archive", "FEAT-3");
-      expect(archived.code).toBe(0);
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-2", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        issues: Array<{ code: string; gates: boolean; overridable: boolean }>;
+      };
+      expect(refusal.issues).toContainEqual(
+        expect.objectContaining({ code: "delta.baseline-missing", gates: true, overridable: true }),
+      );
+      // Nothing was merged by the refused run.
+      expect(await p.read(`services/${SVC}/spec.md`)).not.toContain("refund it");
+
+      // The deliberate path: --approve archives both, and the second DOES
+      // revert the first — that loss is now a choice somebody made twice, not
+      // a default nobody saw.
+      expect((await runLoam(p.workDir, "archive", "FEAT-2", "--approve")).code).toBe(0);
+      expect((await runLoam(p.workDir, "archive", "FEAT-3", "--approve")).code).toBe(0);
       const living = await p.read(`services/${SVC}/spec.md`);
       expect(living).toContain("within 30 minutes");
       expect(living).not.toContain("refund it");

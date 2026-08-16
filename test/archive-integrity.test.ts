@@ -25,7 +25,7 @@ import { parse } from "yaml";
 import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
 import { DOCS_LOCK } from "../src/core/staging/lock.js";
 import { registerArchive } from "../src/commands/archive/archive.js";
-import { coherentFixture, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, pinFor, pinOpenapi, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
 const fsFault = vi.hoisted(() => ({
   onRename: undefined as undefined | ((from: string, to: string) => void),
@@ -179,11 +179,17 @@ function fleetFixture(landscape = FLEET_LANDSCAPE): Record<string, string> {
 /** A feature that retires capturePayment: REMOVED requirement + removal marker. */
 function retireCapture(): Record<string, string> {
   return {
+    // The REMOVED requirement carries a Based-On pin because delta.baseline-missing
+    // now gates archive: an unpinned removal cannot prove the living text it deletes
+    // is the text it was written against. The x-loam-remove marker below needs no
+    // x-loam-based-on — a marker asserts a slot rather than restating an operation,
+    // and the remove-target checks guard it instead.
     "features/FEAT-50-retire-capture/specs/payment-service/spec.md": `# payment-service — delta for FEAT-50
 
 ## REMOVED Requirements
 
 ### Requirement: Capture a payment
+Based-On: ${pinFor(PAYMENT_SPEC, "Capture a payment")}
 
 Operations: capturePayment
 `,
@@ -193,6 +199,12 @@ paths:
     post:
       operationId: capturePayment
       x-loam-remove: true
+`,
+    // intent.empty now gates archive, and a missing intent.md gates identically
+    // to a scaffold-only one — so the fixture states its Why in one line of prose.
+    "features/FEAT-50-retire-capture/intent.md": `# Retire capture
+
+The capturePayment operation is being retired from payment-service.
 `,
   };
 }
@@ -311,6 +323,12 @@ x-read: &read
 paths:
   /payments: *read
 `,
+      // intent.empty gates archive now; the aliased delta needs no baseline pin
+      // because GET /payments is a slot the living contract does not serve yet.
+      "features/FEAT-60-list/intent.md": `# List payments
+
+payment-service gains a read endpoint over its payments.
+`,
     });
     try {
       const before = await livingOps(p, "payment-service");
@@ -399,6 +417,12 @@ paths:
     post:
       operationId: ${op}
       responses: { "201": { description: created } }
+`,
+    // intent.empty gates archive now. No baseline pins are due: the requirement
+    // is ADDED and the operation's slot is new to the living contract.
+    [`features/${id}-work/intent.md`]: `# ${id}
+
+${service} gains the ${op} operation.
 `,
   });
   return {
@@ -635,6 +659,13 @@ function relocateCapture(markerFirst: boolean): Record<string, string> {
   return {
     "features/FEAT-80-move/specs/payment-service/openapi.yaml":
       `openapi: 3.1.0\npaths:\n${markerFirst ? marker + upsert : upsert + marker}`,
+    // intent.empty gates archive now. No x-loam-based-on pins are due here: the
+    // removal marker asserts a slot rather than restating an operation, and the
+    // new definition sits at a path the living contract does not serve yet.
+    "features/FEAT-80-move/intent.md": `# Move capture
+
+capturePayment moves to a per-payment path.
+`,
   };
 }
 
@@ -809,17 +840,28 @@ The service SHALL refuse to cancel a dispatched order.
 `;
 
   const modifyCancel = {
+    // delta.baseline-missing gates archive now, so the MODIFIED requirement pins
+    // the living text it was written against. Both twinSpec variants spell the
+    // FIRST 'Cancel an order' identically, and the first is what the merge (and
+    // the pin check) selects — so one pin serves both tests, and in the twins
+    // test the gate is still the duplicate-heading error, not the pin.
     "features/FEAT-90-cancel/specs/order-service/spec.md": `# order-service — delta for FEAT-90
 
 ## MODIFIED Requirements
 
 ### Requirement: Cancel an order
+Based-On: ${pinFor(twinSpec("Refuse to cancel a dispatched order"), "Cancel an order")}
 The service SHALL cancel an order before dispatch, refunding any hold.
 
 #### Scenario: Cancelled in time
 - **Given** an undispatched order
 - **When** cancellation is requested
 - **Then** it is cancelled and the hold is released
+`,
+    // intent.empty gates archive now; one line of prose states the Why.
+    "features/FEAT-90-cancel/intent.md": `# Refund the hold on cancellation
+
+Cancelling an order must release any payment hold it took.
 `,
   };
 
@@ -913,23 +955,7 @@ describe("archive does not claim the docs are complete when they are not", () =>
 /* ------------------------------------------------------------------ */
 
 describe("two features changing one living requirement", () => {
-  function contested(): Record<string, string> {
-    const delta = (id: string, wording: string): Record<string, string> => ({
-      [`features/${id}-cancel/specs/order-service/spec.md`]: `# order-service — delta for ${id}
-
-## MODIFIED Requirements
-
-### Requirement: Cancel an order
-${wording}
-
-#### Scenario: Cancelled in time
-- **Given** an undispatched order
-- **When** cancellation is requested
-- **Then** it is cancelled
-`,
-    });
-    return {
-      "services/order-service/spec.md": `---
+  const CANCEL_LIVING = `---
 service: order-service
 status: verified
 ---
@@ -945,7 +971,34 @@ The service SHALL cancel an order before dispatch.
 - **Given** an undispatched order
 - **When** cancellation is requested
 - **Then** it is cancelled
+`;
+
+  function contested(): Record<string, string> {
+    // Both deltas pin against the SAME living text (delta.baseline-missing gates
+    // archive now), and both state their Why (intent.empty gates too). That is
+    // exactly the contested shape: each pin is honest, so only the archive order
+    // decides whose text stands — which is what delta.modified-conflict names.
+    const delta = (id: string, wording: string): Record<string, string> => ({
+      [`features/${id}-cancel/specs/order-service/spec.md`]: `# order-service — delta for ${id}
+
+## MODIFIED Requirements
+
+### Requirement: Cancel an order
+Based-On: ${pinFor(CANCEL_LIVING, "Cancel an order")}
+${wording}
+
+#### Scenario: Cancelled in time
+- **Given** an undispatched order
+- **When** cancellation is requested
+- **Then** it is cancelled
 `,
+      [`features/${id}-cancel/intent.md`]: `# ${id}
+
+${id} rewrites how order-service cancels an order.
+`,
+    });
+    return {
+      "services/order-service/spec.md": CANCEL_LIVING,
       ...delta("FEAT-101", "The service SHALL cancel an order before dispatch, refunding any hold."),
       ...delta("FEAT-102", "The service SHALL cancel an order before dispatch, notifying the warehouse."),
     };
@@ -988,6 +1041,11 @@ The service SHALL cancel an order before dispatch.
     try {
       expect((await runLoam(p.workDir, "archive", "FEAT-101")).code).toBe(0);
       expect(await p.read("services/order-service/spec.md")).toContain("refunding any hold");
+      // FEAT-101's archive moved the living text, so FEAT-102's pin is now stale
+      // and delta.baseline-stale gates its archive. Rebasing re-pins it against
+      // what landed — the deliberate step the pin exists to force on the second
+      // author — and only then does the second delta apply cleanly.
+      expect((await runLoam(p.workDir, "rebase", "FEAT-102")).code).toBe(0);
       const res = await runLoam(p.workDir, "archive", "FEAT-102", "--json");
       expect(res.code).toBe(0);
       const living = await p.read("services/order-service/spec.md");
@@ -1007,9 +1065,7 @@ The service SHALL cancel an order before dispatch.
 
 describe("merge details that used to pass in silence", () => {
   it("reports a path-level key the delta overwrites", async () => {
-    const p = await makeProject({
-      ...fleetFixture(),
-      "services/payment-service/openapi.yaml": `openapi: 3.1.0
+    const livingWithParams = `openapi: 3.1.0
 info: { title: payment-service, version: "1.0" }
 paths:
   /payments:
@@ -1022,17 +1078,32 @@ paths:
     post:
       operationId: capturePayment
       responses: { "200": { description: ok } }
-`,
+`;
+    const p = await makeProject({
+      ...fleetFixture(),
+      "services/payment-service/openapi.yaml": livingWithParams,
       // The delta restates /payments with a SHORTER parameters list. The
       // difference check skipped every non-method key, so the shared header
-      // parameter vanished from every operation on the path, silently.
-      "features/FEAT-81-params/specs/payment-service/openapi.yaml": `openapi: 3.1.0
+      // parameter vanished from every operation on the path, silently. The
+      // restated operation is pinned (openapi.baseline-missing gates archive
+      // now), and the pin changes nothing here: path-level keys have no
+      // per-operation slot to hang a pin on, which is exactly why the wholesale
+      // upsert below still deserves its warning.
+      "features/FEAT-81-params/specs/payment-service/openapi.yaml": pinOpenapi(
+        `openapi: 3.1.0
 paths:
   /payments:
     parameters: []
     post:
       operationId: authorizePayment
       responses: { "200": { description: ok } }
+`,
+        livingWithParams,
+      ),
+      // intent.empty gates archive now; one line of prose states the Why.
+      "features/FEAT-81-params/intent.md": `# Drop the tenant header
+
+The /payments path stops requiring the X-Tenant header.
 `,
     });
     try {

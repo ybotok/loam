@@ -39,6 +39,14 @@ export interface Declared {
   anonymousMarkers: Map<string, boolean>;
   /** The operationIds genuinely NEW to their service across the whole feature. */
   featureApiOps: Set<string>;
+  /**
+   * Services whose FEATURE openapi.yaml exists but does not parse. Every check
+   * that joins on the feature contract must suspend itself for these — an
+   * unreadable document yields the same empty op set as an absent one, and
+   * grading against that emptiness produced false errors pointing everywhere
+   * but at the broken file.
+   */
+  unreadableApis: Set<string>;
 }
 
 /** The three facts this walk needs about the feature it is reading. */
@@ -64,6 +72,7 @@ export async function declaredByService(
     /** Per service: does the feature contract carry a marker with no operationId? */
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
+    const unreadableApis = new Set<string>();
     for (const svc of svcNames) {
       const paths = featureSpecPaths(featureDir, svc);
       if (existsSync(paths.spec)) {
@@ -81,6 +90,24 @@ export async function declaredByService(
       // Only operations genuinely NEW to this service count as feature-added: authors
       // restate the full living API in the delta file (it is a complete document, not a patch).
       const featDoc = await readOpenapi(paths.openapi, context);
+      // A feature contract that EXISTS but does not read is a broken document,
+      // not an empty one — the living-side `openapi.invalid` discipline
+      // (validate/service/api.ts), applied to the delta. Before this check,
+      // `validate --feature` said nothing about the file at all: the empty
+      // parse silently skipped every baseline pin and removal marker in it,
+      // and E1 graded requirements against a contract that was never read.
+      // The rest of this service's contract-axis checks are suspended — every
+      // one of them would be an opinion about a document nobody could open.
+      if (featDoc.unreadable) {
+        unreadableApis.add(svc);
+        issues.push({
+          severity: "error",
+          code: "openapi.invalid",
+          subject: svc,
+          message: `${svc}: this feature's openapi.yaml does not parse${featDoc.error === undefined ? "" : ` (${featDoc.error})`} — the contract axis is unchecked and the merge would have nothing true to write. Fix the YAML first.`,
+        });
+        continue;
+      }
       const featOps = featDoc.ops;
       const removals = featOps.filter((op) => op.remove);
       // A relocation — same operationId, removal marker on the old slot, upsert
@@ -165,11 +192,19 @@ export async function declaredByService(
         }
       }
       if (unpinned > 0) {
+        // A warning that GATES archive, same doctrine as `delta.baseline-missing`
+        // (delta/select.ts): the document is legal, but an unpinned quote is
+        // exactly the shape that reverts another feature's landed change at exit
+        // 0, and only counts operations whose slot the living contract already
+        // has — a genuinely new operation never trips it. `loam rebase` pins a
+        // whole service in one command; `--approve` says the unpinned merge is
+        // meant.
         issues.push({
           severity: "warn",
+          gates: true,
           code: "openapi.baseline-missing",
           subject: svc,
-          message: `${svc}: ${unpinned} operation(s) in this feature's openapi.yaml carry no ${OPENAPI_BASELINE_KEY}, so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`.`,
+          message: `${svc}: ${unpinned} operation(s) in this feature's openapi.yaml carry no ${OPENAPI_BASELINE_KEY}, so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`, or archive with --approve to merge unpinned deliberately.`,
         });
       }
 
@@ -215,6 +250,9 @@ export async function declaredByService(
       }
     }
     for (const [svc, required] of removedReqOps) {
+      // The markers live in the unreadable file — "no matching marker" would
+      // be a claim about a document nobody could open.
+      if (unreadableApis.has(svc)) continue;
       const marked = allMarkerIds.get(svc) ?? new Set<string>();
       for (const op of required) {
         if (marked.has(op)) continue;
@@ -233,5 +271,5 @@ export async function declaredByService(
         });
       }
     }
-  return { reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps };
+  return { reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps, unreadableApis };
 }

@@ -10,6 +10,7 @@ import {
   LIVING_SPEC,
   coherentFixture,
   makeProject,
+  pinFor,
   runLoam,
   type Project,
 } from "./helpers/harness.js";
@@ -233,14 +234,20 @@ describe("verification and archive integration", () => {
   });
 
   it("archives a stable-ID MODIFIED rename into one living requirement", async () => {
+    // Archive now gates on delta.baseline-missing and intent.empty, so this
+    // fixture pins its MODIFIED requirement against the living text (computed
+    // via pinFor for deterministic bytes) and gives intent.md real prose —
+    // otherwise the exit-0 assertion would be testing the override, not the merge.
+    const livingSpec = requirement("Authorize payment", ID);
+    const delta = requirement("Authorize card payment", ID, "## MODIFIED Requirements").replace(
+      `Requirement-ID: ${ID}\n`,
+      `Requirement-ID: ${ID}\nBased-On: ${pinFor(livingSpec, "Authorize payment")}\n`,
+    );
     const p = await project({
-      [`services/${SVC}/spec.md`]: requirement("Authorize payment", ID),
-      "features/FEAT-9-rename/intent.md": "# Rename authorization\n",
-      "features/FEAT-9-rename/specs/payment-service/spec.md": requirement(
-        "Authorize card payment",
-        ID,
-        "## MODIFIED Requirements",
-      ),
+      [`services/${SVC}/spec.md`]: livingSpec,
+      "features/FEAT-9-rename/intent.md":
+        "# Rename authorization\n\nCall the requirement what the card networks call it.\n",
+      "features/FEAT-9-rename/specs/payment-service/spec.md": delta,
     });
     const result = await runLoam(p.workDir, "archive", "FEAT-9");
     expect(result.code, result.out).toBe(0);

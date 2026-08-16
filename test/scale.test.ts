@@ -255,7 +255,25 @@ Covers: ${ident(source)} -> ${ident(target)}
 - **When** ${svc(source)} retries it
 - **Then** ${svc(target)} returns the original result and does nothing twice
 `;
+  // featureCoherence now gates on an unwritten intent (intent.empty), so each
+  // generated feature states its Why in one authored sentence. Without this the
+  // ten features would add ten warnings the construction does not predict, and
+  // the derived counts below would stop being derived. The frontmatter is
+  // complete on purpose: an intent that EXISTS is graded by featureProvenance,
+  // and a missing header or owner would trade the ten intent.empty warnings for
+  // ten frontmatter ones.
+  const featIntent = `---
+feature: ${id}
+status: proposed
+owner: fleet-team
+---
+
+# ${id}
+
+Let ${svc(source)} call featOp_${i} on ${svc(target)} so the synthetic call chain gains one operation.
+`;
   return {
+    [`features/${id}-scale/intent.md`]: featIntent,
     [`features/${id}-scale/delta.likec4`]: delta,
     [`features/${id}-scale/specs/${svc(target)}/spec.md`]: featSpec,
     [`features/${id}-scale/specs/${svc(target)}/arch.spec.md`]: featArchSpec,

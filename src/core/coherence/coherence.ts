@@ -10,6 +10,7 @@ import { operations, serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
+import { authoringIssues } from "./authoring/scaffold.js";
 
 export type { Issue, IssueCode } from "../vocabulary/issue.js";
 
@@ -92,8 +93,25 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // have found nothing there anyway.
   const fleetIds = await enumeratedServiceIds(docsDir, context);
   const svcOf = serviceResolver(elements, new Set<string>([...fleetIds, ...svcNames]));
+
+  // Which elements the landscape merge would SPLICE: the tagged ones and
+  // everything nested inside their blocks. Defined here because two checks
+  // share it — the scaffold gate just below, and the binding-grammar check
+  // near the end of this function — and the merge carries a tagged element's
+  // authored block over byte for byte, children included, so a scope narrower
+  // than the splice lets a nested child's text ride through unread.
+  const taggedIds = taggedEls.map((el) => el.id);
+  const ridesWithTag = (el: Elem): boolean =>
+    el.tags.includes(featureId) || taggedIds.some((id) => el.id.startsWith(`${id}.`));
+
+  // The scaffold gate: placeholder text and an unwritten intent are legal
+  // documents whose merge would publish content nobody authored — the exact
+  // template strings `loam new` wrote (authoring/scaffold.ts owns the list).
+  issues.push(
+    ...(await authoringIssues({ featureDir, featureId, splicedEls: elements.filter(ridesWithTag), svcNames, context })),
+  );
   const {
-    reqOps, removingOps, featureApiOps,
+    reqOps, removingOps, featureApiOps, unreadableApis,
   } = await declaredByService(scope, svcNames, issues, context);
   const {
     governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
@@ -114,6 +132,11 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
 
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {
+    // The union below reads the feature's own contract; unreadable means the
+    // op may well be defined in the file nobody could open, and `op-undefined`
+    // would point the author at the requirement when the truth is the YAML.
+    // `openapi.invalid` (declared.ts) already gates; one breach, one finding.
+    if (unreadableApis.has(svc)) continue;
     const available = await serviceOperationIds(docsDir, svc, featureDir, context);
     for (const op of ops) {
       if (available.includes(op)) continue;
@@ -178,8 +201,21 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     }
     const target = svcOf(r.target);
     const pathable = await enumeratedTarget(target);
-    const available = pathable === undefined ? [] : await serviceOperationIds(docsDir, pathable, featureDir, context);
-    if (pathable !== undefined && removingOps.get(pathable)?.has(r.op) === true) {
+    // Same suspension as E1, but only for the verdicts that READ a contract:
+    // does the op exist, is it being removed, is it deprecated (whose
+    // un-deprecation escape reads the feature contract too). Each of those
+    // would be an opinion about a file nobody could open. The governance
+    // question below is deliberately NOT suspended — it joins the edge against
+    // requirement documents alone, so the broken YAML could never change its
+    // answer, and silencing it deferred a real warning for no reason.
+    const contractUnreadable = pathable !== undefined && unreadableApis.has(pathable);
+    const available =
+      pathable === undefined || contractUnreadable
+        ? []
+        : await serviceOperationIds(docsDir, pathable, featureDir, context);
+    if (contractUnreadable) {
+      // openapi.invalid (declared.ts) already gates; one breach, one finding.
+    } else if (pathable !== undefined && removingOps.get(pathable)?.has(r.op) === true) {
       issues.push({ severity: "error", code: "c4-api.op-removing", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which this feature removes from ${target}` });
     } else if (!available.includes(r.op)) {
       const other = await definedElsewhere(target, r.op);
@@ -206,7 +242,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     // consumption of a dying op deserves an eye before it ships. Quiet when
     // the feature's own openapi delta drops the flag: that state is the fix
     // in progress, not new consumption of a dying op.
-    if (pathable !== undefined && (await deprecatedInLiving(pathable, r.op)) && !(await undeprecatedByFeature(pathable, r.op))) {
+    if (!contractUnreadable && pathable !== undefined && (await deprecatedInLiving(pathable, r.op)) && !(await undeprecatedByFeature(pathable, r.op))) {
       issues.push({ severity: "warn", code: "c4-api.op-deprecated", message: `${svcOf(r.source)} builds new consumption on '${r.op}', which ${target}'s living OpenAPI marks deprecated — prefer the replacement operation` });
     }
   }
@@ -243,10 +279,8 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // (`landscape.binding-unknown`). Explicit bindings only, on purpose: a prose
   // title with no binding is legal C4, and a title becomes a path only through
   // `specs/<svc>/`, whose own grammar check (`delta.service-id-invalid`)
-  // guards that route.
-  const taggedIds = taggedEls.map((el) => el.id);
-  const ridesWithTag = (el: Elem): boolean =>
-    el.tags.includes(featureId) || taggedIds.some((id) => el.id.startsWith(`${id}.`));
+  // guards that route. `ridesWithTag` itself is defined up beside the scaffold
+  // gate, which shares the splice's scope for the same reason.
   for (const e of elements.filter(ridesWithTag)) {
     if (e.service === undefined) continue;
     const problem = serviceIdProblem(e.service, "metadata { service } binding");

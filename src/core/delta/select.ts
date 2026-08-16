@@ -43,9 +43,13 @@ export async function selectionIssues(
    * A digest of what the author read closes that by not depending on
    * timing at all. Stale is an ERROR and gates, because there is no reading
    * of a stale delta under which the merge is what its author meant.
-   * Missing is a warning and does not: a delta adopted from OpenSpec never
-   * had the line, and refusing to archive an entire migrated corpus is not
-   * a safety property, it is an outage.
+   * Missing is a warning that GATES: the document is legal — a delta
+   * adopted from OpenSpec never had the line — but an unpinned MODIFIED or
+   * REMOVED is exactly the timing hole the pin exists to close, and letting
+   * it through archived the silent rollback at exit 0. The migrated corpus
+   * is why this stays a warning rather than an error, and why the refusal
+   * is not an outage: `loam rebase <feat>` pins every delta in one command,
+   * and `--approve` remains the way to say the unpinned merge is meant.
    */
   const checkBaseline = (r: Requirement, selected: Requirement): void => {
     // A pin the document pass already refused is not also stale: that would
@@ -57,9 +61,10 @@ export async function selectionIssues(
     if (r.basedOn === undefined) {
       issues.push({
         severity: "warn",
+        gates: true,
         code: "delta.baseline-missing",
         subject: service,
-        message: `${where}: ${r.kind} requirement '${r.name}' carries no Based-On, so nothing can say whether the living text moved since this delta was written. Run \`loam rebase ${featureId}\` to pin it (Based-On: ${current}).`,
+        message: `${where}: ${r.kind} requirement '${r.name}' carries no Based-On, so nothing can say whether the living text moved since this delta was written — merging it would replace whatever landed in between. Run \`loam rebase ${featureId}\` to pin it (Based-On: ${current}), or archive with --approve to merge unpinned deliberately.`,
       });
       return;
     }

@@ -823,12 +823,36 @@ describe("the version stamp — drift detection, never refresh", () => {
 });
 
 describe("the documented cycle actually runs", () => {
-  it("new -> validate -> delta -> archive works end to end as AGENTS.md describes it", async () => {
+  it("new -> author -> validate -> delta -> archive works end to end as AGENTS.md describes it", async () => {
     const dir = await throwawayDir();
     await runLoam(dir, "init", "--docs", "./d", "--create");
 
     const created = await runLoam(dir, "new", "FEAT-1", "--title", "Split", "--new-service", "svc-a");
     expect(created.code).toBe(0);
+
+    // The cycle's step 4 is AUTHORING, and it is gated, not advisory: the
+    // scaffold as written must never archive. This is the regression the
+    // placeholder gate exists for — the unauthored scaffold used to fold a
+    // literal `TODO — name the behaviour` requirement into the living spec at
+    // exit 0.
+    const unauthored = await runLoam(dir, "archive", "FEAT-1");
+    expect(unauthored.code).toBe(1);
+    expect(existsSync(join(dir, "d", "services", "svc-a"))).toBe(false);
+
+    const feat = join(dir, "d", "features", "FEAT-1-split");
+    await writeFile(
+      join(feat, "intent.md"),
+      `---\nfeature: FEAT-1\ntitle: Split\nstatus: proposed\n---\n\n# Split\n\n## Why\n\nPayments arrive as one amount and need to land on several ledgers.\n\n## Scope\n\nsvc-a only.\n`,
+    );
+    const delta = await readFile(join(feat, "delta.likec4"), "utf8");
+    await writeFile(
+      join(feat, "delta.likec4"),
+      delta.replace("TODO — what this service owns", "Owns payment splitting"),
+    );
+    await writeFile(
+      join(feat, "specs", "svc-a", "spec.md"),
+      `# svc-a — requirement delta for FEAT-1\n\n## ADDED Requirements\n\n### Requirement: Split a payment\nRequirement-ID: FEAT-1.svc-a.split\n\nThe service SHALL split a payment across ledgers.\n\n#### Scenario: Even split\n- **Given** a payment of 10\n- **When** it is split two ways\n- **Then** each ledger records 5\n`,
+    );
 
     const validated = await runLoam(dir, "validate", "--feature", "FEAT-1");
     expect(validated.code).toBe(0);
@@ -840,6 +864,8 @@ describe("the documented cycle actually runs", () => {
     const shipped = await runLoam(dir, "archive", "FEAT-1");
     expect(shipped.code).toBe(0);
     expect(existsSync(join(dir, "d", "features", "archive", "FEAT-1-split"))).toBe(true);
-    expect(existsSync(join(dir, "d", "services", "svc-a", "spec.md"))).toBe(true);
+    const living = await readFile(join(dir, "d", "services", "svc-a", "spec.md"), "utf8");
+    expect(living).toContain("Split a payment");
+    expect(living).not.toContain("TODO");
   });
 });

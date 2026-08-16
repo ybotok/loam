@@ -9,6 +9,17 @@
  * file stops parsing.
  */
 import { stringify as stringifyYaml } from "yaml";
+import {
+  ARCH_REQUIREMENT_SENTINEL,
+  ARCH_SHALL_SENTINEL,
+  REQUIREMENT_SENTINEL,
+  SCENARIO_SENTINEL,
+  SERVICE_DESCRIPTION_SENTINEL,
+  GIVEN_SENTINEL,
+  SHALL_SENTINEL,
+  THEN_SENTINEL,
+  WHEN_SENTINEL,
+} from "../../core/coherence/authoring/sentinels.js";
 
 function identifier(name: string, taken: Set<string>): string {
   const parts = name.split(/[^A-Za-z0-9]+/).filter((p) => p.length > 0);
@@ -94,7 +105,10 @@ export function deltaTemplate(featureId: string, touched: string[], created: str
     for (const [id, name] of createdIds) {
       lines.push(`  ${id} = softwareSystem '${name}' {`);
       lines.push(`    #${featureId}`);
-      lines.push(`    description 'TODO — what this service owns'`);
+      // Interpolated from sentinels.ts, never spelled here: the placeholder
+      // gate refuses this exact string at archive, and a second spelling is
+      // how a template rewording silently retires the check that guards it.
+      lines.push(`    description '${SERVICE_DESCRIPTION_SENTINEL}'`);
       lines.push("  }");
     }
     lines.push("");
@@ -138,30 +152,49 @@ views {
 `;
 }
 
+/**
+ * The business axis, scaffolded with its example INSIDE the comment — the same
+ * mechanism as `archSpecTemplate` below, for the same reason: this template
+ * used to ship a live `### Requirement: TODO — name the behaviour` that
+ * parsed as a real requirement, validated clean, and archived a literal TODO
+ * into the living spec at exit 0. The indented headings sit past the
+ * line-anchored patterns core/document/parse.ts matches on, so the scaffold
+ * declares nothing until a person copies the block out and writes over the
+ * fill-ins — and `scaffold.placeholder` gates the archive if the fill-ins
+ * survive the copy.
+ *
+ * No nested HTML comments: the `Operations:` guidance that used to be its own
+ * comment lives in this one's prose, because an inner `-->` would end the
+ * outer comment early and re-expose the example to the parser.
+ */
 export function specTemplate(featureId: string, service: string): string {
   return `# ${service} — requirement delta for ${featureId}
 
 <!-- Sections: ADDED / MODIFIED / REMOVED. Delete the ones you do not need.
      A MODIFIED requirement carries its full new text, not a diff.
-     Every requirement needs at least one scenario — \`loam validate\` gates on it. -->
+     Every requirement needs at least one scenario — \`loam validate\` gates on it.
 
-## ADDED Requirements
+     An \`Operations:\` body line names the operationIds the requirement
+     governs. \`loam validate\` checks each one against the service's OpenAPI,
+     and \`loam archive\` refuses to merge a requirement that governs an
+     operation nobody defines — add the line once the contract exists.
 
-### Requirement: TODO — name the behaviour
-Requirement-ID: ${featureId}.${service}.requirement
+     Copy the block below out of this comment, unindent it, and replace the
+     TODOs and every <angle-bracket> fill-in — \`loam archive\` refuses the
+     scaffold's own wording (\`scaffold.placeholder\`):
 
-The service SHALL <observable behaviour, testable without reading the code>.
+    ## ADDED Requirements
 
-<!-- Operations: createSplit
-     The operationIds this requirement governs. \`loam validate\` checks each one
-     against the service's OpenAPI, and \`loam archive\` refuses to merge a
-     requirement that governs an operation nobody defines. Uncomment when the
-     contract exists. -->
+    ### Requirement: ${REQUIREMENT_SENTINEL}
+    Requirement-ID: ${featureId}.${service}.requirement
 
-#### Scenario: TODO — name the case
-- **Given** <the starting state>
-- **When** <the trigger>
-- **Then** <the observable outcome>
+    The service SHALL ${SHALL_SENTINEL}.
+
+    #### Scenario: ${SCENARIO_SENTINEL}
+    - **Given** ${GIVEN_SENTINEL}
+    - **When** ${WHEN_SENTINEL}
+    - **Then** ${THEN_SENTINEL}
+-->
 `;
 }
 
@@ -196,17 +229,17 @@ export function archSpecTemplate(featureId: string, service: string): string {
 
     ## ADDED Requirements
 
-    ### Requirement: TODO — name the architectural obligation
+    ### Requirement: ${ARCH_REQUIREMENT_SENTINEL}
     Requirement-ID: ${featureId}.${service}.arch
 
-    The service SHALL <the operational/integration behaviour, observable in test>.
+    The service SHALL ${ARCH_SHALL_SENTINEL}.
 
     Covers: ${service}
 
-    #### Scenario: TODO — name the case
-    - **Given** <the starting state>
-    - **When** <the trigger>
-    - **Then** <the observable outcome>
+    #### Scenario: ${SCENARIO_SENTINEL}
+    - **Given** ${GIVEN_SENTINEL}
+    - **When** ${WHEN_SENTINEL}
+    - **Then** ${THEN_SENTINEL}
 -->
 `;
 }

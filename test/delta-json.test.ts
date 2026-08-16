@@ -191,8 +191,10 @@ describe("--json contract", () => {
       // projects as zero operations, which is exactly what a delta that changes
       // no endpoints projects as — and this payload IS the implementation task,
       // so "no contract work here" over a YAML error is work silently dropped.
-      // Nothing upstream catches it either: `loam validate` grades
-      // `openapi.invalid` on LIVING service contracts only.
+      // Upstream now catches it too — `loam validate --feature` grades
+      // `openapi.invalid` on a feature's own contract, and archive refuses on
+      // it — but this guard stays its own: `loam delta` is consumed by agents
+      // that never ran validate, so the exit code must carry the failure itself.
       expect(res.code).toBe(1);
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(true); // the command ran; the exit code carries the failure

@@ -20,6 +20,8 @@ import {
   makeProject,
   runLoam,
   treeHashes,
+  pinFor,
+  pinOpenapi,
   LANDSCAPE,
   LIVING_OPENAPI,
   LIVING_SPEC,
@@ -62,6 +64,7 @@ const THREE_SWAP_SPEC_DELTA = `# payment-service — delta for FEAT-30
 ## MODIFIED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_SPEC, "Authorize a payment")}
 The service SHALL authorize a payment within 2 seconds.
 
 Operations: authorizePayment
@@ -135,7 +138,18 @@ function threeSwapFixture(): Record<string, string> {
     "services/payment-service/openapi.yaml": LIVING_OPENAPI,
     "features/FEAT-30-capture/delta.likec4": THREE_SWAP_C4_DELTA,
     "features/FEAT-30-capture/specs/payment-service/spec.md": THREE_SWAP_SPEC_DELTA,
-    "features/FEAT-30-capture/specs/payment-service/openapi.yaml": THREE_SWAP_OPENAPI_DELTA,
+    // The restated authorizePayment must carry its x-loam-based-on pin (and the
+    // MODIFIED requirement above its Based-On:) or the baseline-missing gates
+    // now stop the archive at coherence — before the commit phase these tests
+    // exist to fault. Pins are computed, not hard-coded, so the fixture stays
+    // byte-deterministic and the pre/post treeHashes comparisons stay honest.
+    "features/FEAT-30-capture/specs/payment-service/openapi.yaml": pinOpenapi(
+      THREE_SWAP_OPENAPI_DELTA,
+      LIVING_OPENAPI,
+    ),
+    // One line of real prose: the intent.empty gate would otherwise refuse the
+    // archive before any swap is planned.
+    "features/FEAT-30-capture/intent.md": `---\nfeature: FEAT-30\nstatus: proposed\n---\n\n# Capture payments\n\nLet an authorized payment be captured exactly once.\n`,
   };
 }
 
