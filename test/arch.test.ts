@@ -384,6 +384,118 @@ Covers: alert:err_rate
 });
 
 /* ------------------------------------------------------------------ */
+/* health.dependency-unmodelled — service scope                        */
+/* ------------------------------------------------------------------ */
+
+describe("health.dependency-unmodelled", () => {
+  /**
+   * A model exercising all three names an element answers to: `kafka` by its
+   * likec4 id (and title), `category-store` by a nested container's title,
+   * `xm-ms-config` by an explicit metadata binding on a box titled otherwise.
+   */
+  const MODELLED = `specification {
+  element softwareSystem
+  element container
+  element database
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    api = container 'api'
+    store = database 'category-store'
+    api -> store 'reads'
+  }
+  kafka = softwareSystem 'kafka'
+  cfg = softwareSystem 'Config Service' {
+    metadata { service 'xm-ms-config' }
+  }
+  paymentService.api -> kafka 'publishes'
+}
+`;
+
+  it("stays quiet when every dependency resolves — element id, nested title, or binding", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = MODELLED;
+    files["services/payment-service/health.yaml"] =
+      "dependencies:\n  - id: kafka\n  - id: category-store\n  - id: xm-ms-config\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(res.code).toBe(0);
+      expect(ofCode(findings(res.stdout), "health.dependency-unmodelled")).toEqual([]);
+    });
+  });
+
+  it("warns per unresolvable id, offering close ones", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = MODELLED;
+    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: consul\n  - id: kafk\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(res.code).toBe(0); // warn-only — the axis is advisory end to end
+      const fs = ofCode(findings(res.stdout), "health.dependency-unmodelled");
+      expect(fs).toHaveLength(2);
+      expect(fs[0]!.severity).toBe("warn");
+      expect(fs[0]!.message).toContain("'consul'");
+      expect(fs[0]!.message).toContain("answers to that name");
+      expect(fs[1]!.message).toContain("Did you mean: kafka");
+    });
+  });
+
+  it("a landscape-only element does NOT satisfy the join — the model is the set to reconcile", async () => {
+    // The design decision this suite exists to pin (rule E-1): once a private
+    // datastore moves inside its service, the landscape carries only what
+    // crosses the boundary — so reconciling against it would go quiet exactly
+    // where the on-call file lies. The service model carries everything the
+    // service touches, and zookeeper modelled ONLY in the landscape is a
+    // dependency this service's own model still owes.
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = MODELLED;
+    files["architecture/landscape.likec4"] = `specification {
+  element softwareSystem
+  tag external
+}
+
+model {
+  paymentService = softwareSystem 'payment-service'
+  zookeeper = softwareSystem 'zookeeper' {
+    #external
+  }
+  paymentService -> zookeeper 'locks'
+}
+`;
+    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: zookeeper\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const fs = ofCode(findings(res.stdout), "health.dependency-unmodelled");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.message).toContain("'zookeeper'");
+    });
+  });
+
+  it("is muted when health.yaml is unreadable — no claims on bad data", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = MODELLED;
+    files["services/payment-service/health.yaml"] = "dependencies: [unclosed\n  x: ::::\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(ofCode(findings(res.stdout), "health.dependency-unmodelled")).toEqual([]);
+      expect(ofCode(findings(res.stdout), "health.invalid")).toHaveLength(1);
+    });
+  });
+
+  it("is muted when the model is absent — the wrong file's breakage must not manufacture warns", async () => {
+    const files = coherentFixture();
+    delete files["services/payment-service/model.likec4"];
+    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: kafka\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(ofCode(findings(res.stdout), "health.dependency-unmodelled")).toEqual([]);
+      expect(ofCode(findings(res.stdout), "service.no-model")).toHaveLength(1);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* c4.uncovered — feature scope                                        */
 /* ------------------------------------------------------------------ */
 

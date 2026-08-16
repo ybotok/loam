@@ -1,9 +1,14 @@
-# Service health model. Targets are authored; dependency graph comes from C4 (landscape).
-# planned: `loam health` composes these across the fleet -> cascade / blast-radius.
+# Service health model. Targets are authored; the dependency graph comes from
+# C4 — this service's own model.likec4, which carries everything the service
+# touches. planned: `loam health` composes these across the fleet -> cascade /
+# blast-radius.
 #
-# `loam validate` reads the `name` of each SLI and alert, and nothing else here:
-# every declared id wants a covering requirement in arch.spec.md (a `Covers:`
-# sli:<name> / alert:<name> entry), or `health.uncovered` says nothing tests it.
+# `loam validate` reads only ids here: the `name` of each SLI and alert (every
+# declared id wants a covering requirement in arch.spec.md, or
+# `health.uncovered` says nothing tests it), and each dependency's `service:`
+# id, which must resolve in model.likec4 (`health.dependency-unmodelled`
+# otherwise). A dependency a feature in flight introduces arrives with that
+# feature — it is not a dependency of the living service yet.
 service: payment-service
 status: draft
 slis:
@@ -23,5 +28,3 @@ checks:
 dependencies:
   - service: kafka
     criticality: critical        # kafka down -> payment-service unhealthy
-  - service: payment-split-service
-    criticality: degradable      # split unavailable -> fall back to single payee

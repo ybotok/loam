@@ -27,6 +27,7 @@ import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
 import { FleetContext, documentConflictFinding } from "../../../core/fleet-context.js";
+import { healthDependencyFindings } from "../checks/health-deps.js";
 import {
   coverageFinding,
   coversEntries,
@@ -252,6 +253,9 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
       });
     }
   }
+  // The other direction health.yaml is read in: its dependencies must be the
+  // model's dependencies. `deps` is already muted on an unreadable file above.
+  findings.push(...healthDependencyFindings({ service, dependencies: deps, elements }));
 
   return findings;
 }

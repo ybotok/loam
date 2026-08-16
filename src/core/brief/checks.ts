@@ -182,6 +182,12 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     what: "an alert or SLI declared in health.yaml that no arch.spec.md requirement covers — expected until the arch spec is written; each one is a signal nothing tests",
   },
   {
+    code: "health.dependency-unmodelled",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a health.yaml `dependencies:` id that nothing in this service's OWN model.likec4 answers to (element id, `metadata { service }` binding, or title) — the model carries everything the service touches, private stores included as nested containers, and the on-call file must name the same world",
+  },
+  {
     code: "frontmatter.malformed",
     severity: "error",
     via: VIA_SERVICE,
