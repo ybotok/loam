@@ -267,9 +267,17 @@ describe("migrating an OpenSpec repo, by the doc's own table", () => {
       //  - api.ops-unlinked — "until requirements carry Operations: lines, the
       //    API axis is unchecked and loam validate says so per service";
       //  - api.ungoverned — the same debt seen from the operations' side;
+      //  - openapi.response-undescribed — OpenSpec never carried response
+      //    schemas, so the carried-over contract genuinely has none; the warn
+      //    is the honest post-migration state, naming the fill-in work;
       //  - sources.absent — frontmatter added, `sources:` still to be filled in.
       const warns = findings.filter((f) => f.severity === "warn").map((f) => f.code);
-      expect(warns.sort()).toEqual(["api.ops-unlinked", "api.ungoverned", "sources.absent"]);
+      expect(warns.sort()).toEqual([
+        "api.ops-unlinked",
+        "api.ungoverned",
+        "openapi.response-undescribed",
+        "sources.absent",
+      ]);
       // The landscape element and the carried-over `## Requirements` satisfy
       // the checks the doc names as errors when absent.
       const codes = findings.map((f) => f.code);

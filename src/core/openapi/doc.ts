@@ -10,6 +10,7 @@
  * merge need it.
  */
 import { isUtf8 } from "node:buffer";
+import { danglingRefs, responseUndescribed } from "./depth.js";
 import { operationBaselineOf, operationDigest } from "./digest.js";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -56,6 +57,13 @@ export interface Operation {
    * (the merge strips it), and an adopted contract never had one.
    */
   basedOn?: string;
+  /**
+   * Present when no response declares content with a schema while at least one
+   * should carry a body (`depth.ts`). Set only when true, so the many callers
+   * that compare operations structurally never see the field on a described
+   * contract.
+   */
+  undescribed?: true;
 }
 
 /** A `x-loam-remove: true` marker with no usable operationId — a slot named but no operation named. */
@@ -103,6 +111,8 @@ export interface OpenapiDoc {
   unreadable: boolean;
   /** The parser's own message, when there is one to quote back. */
   error?: string;
+  /** Internal `#/` refs that resolve to nothing in this document (`depth.ts`). */
+  danglingRefs: string[];
 }
 
 /**
@@ -152,8 +162,11 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
   if (doc !== null && (typeof doc !== "object" || Array.isArray(doc))) {
     return { ...empty(), unreadable: true, error: "document is not a YAML mapping" };
   }
+  // Refs are probed over the WHOLE document: a schema in `components` that
+  // `$ref`s a neighbour nobody wrote is exactly as broken as one under a path.
+  const refs = danglingRefs(doc);
   const paths = (doc as { paths?: unknown } | null)?.paths;
-  if (!paths || typeof paths !== "object") return empty();
+  if (!paths || typeof paths !== "object") return { ...empty(), danglingRefs: refs };
   const ops: Operation[] = [];
   const anonymousRemovals: AnonymousRemoval[] = [];
   const pathLevelRemovals: string[] = [];
@@ -180,15 +193,23 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
         method,
         digest: operationDigest(op),
         ...(basedOn === undefined ? {} : { basedOn }),
+        ...(responseUndescribed(op) ? { undescribed: true as const } : {}),
       });
     }
   }
   const duplicateIds = [...seen].filter(([, n]) => n > 1).map(([id]) => id);
-  return { ops, duplicateIds, anonymousRemovals, pathLevelRemovals, unreadable: false };
+  return { ops, duplicateIds, anonymousRemovals, pathLevelRemovals, unreadable: false, danglingRefs: refs };
 }
 
 function empty(): OpenapiDoc {
-  return { ops: [], duplicateIds: [], anonymousRemovals: [], pathLevelRemovals: [], unreadable: false };
+  return {
+    ops: [],
+    duplicateIds: [],
+    anonymousRemovals: [],
+    pathLevelRemovals: [],
+    unreadable: false,
+    danglingRefs: [],
+  };
 }
 
 /** The operations alone — for every caller whose own finding already covers the unreadable case. */

@@ -185,7 +185,7 @@ Covers: paymentService.db, paymentService -> kafka
     shape: [
       "OpenAPI 3.x with a `paths` map.",
       "EVERY operation carries an `operationId`. That token is the spine: the C4 edge's `metadata { op }`, the requirement's `Operations:` line and this `operationId` are one name spelled three times, and they must be identical.",
-      "loam reads operationIds and nothing else in this file. The schemas are for humans, codegen and review — they are not checked, so getting them wrong is invisible here and expensive later.",
+      "loam reads operationIds, and probes the rest by PRESENCE only: an operation whose responses declare no schema warns (`openapi.response-undescribed`), an internal `$ref` to nothing warns (`openapi.ref-unresolved`). What a declared schema SAYS is still never checked — the schemas are for humans, codegen and review, so getting them wrong is invisible here and expensive later.",
       "Document the endpoints that exist. An operation the fleet already calls (see `landscape.expects`) must be in here, or the contract breaks the moment this lands.",
       // The instruction the brief was missing, and the one that matters most:
       // it used to mark this artifact required unconditionally, in capitals,
@@ -209,7 +209,7 @@ Covers: paymentService.db, paymentService -> kafka
       "AsyncAPI **3.0** with `channels`, `operations` and `components.messages`. Only 3.0 is read: its operations are named top-level objects carrying `action: send|receive`, which is what makes a message's direction legible. A 2.x document declares no `operations` and reads as a contract with no messages.",
       "EVERY message carries a `name` (or is declared under the key you intend to reference). That token is the spine: the C4 edge's `metadata { publishes }` / `metadata { consumes }`, the requirement's `Publishes:` / `Consumes:` line and this name are one name spelled three times.",
       "Namespace the name by the domain that owns it — `payment.PaymentAuthorized`. One message has exactly one producer; two services declaring they send one name is `asyncapi.message-contested`, and then which contract a consumer reads is a coin flip.",
-      "loam reads message names and the `action` of the operation carrying them. **It never looks inside `payload`.** Write the payload as JSON Schema today; if the fleet later adopts Avro, that is a `schemaFormat` line here and nothing in loam changes.",
+      "loam reads message names and the `action` of the operation carrying them. **It never joins on anything inside `payload`** — the one look inside is a presence probe: a payload declaring no shape at all warns (`asyncapi.payload-undescribed`), and a payload with a non-JSON `schemaFormat` is skipped outright. Write the payload as JSON Schema today; if the fleet later adopts Avro, that is a `schemaFormat` line here and nothing in loam changes.",
       "Keep payloads in `components.schemas` in THIS file rather than `$ref`-ing an external `.avsc`. External references are out of scope for the merge, exactly as on the OpenAPI axis, so a schema in another file will not travel with the message that needs it.",
       "If this service publishes and consumes nothing, there is no file to write. Do not invent one.",
     ],

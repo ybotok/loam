@@ -1539,3 +1539,56 @@ Covers: paymentService.api
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* contract depth on the API axis                                      */
+/* ------------------------------------------------------------------ */
+
+describe("contract depth on the API axis", () => {
+  it("warns openapi.response-undescribed on a description-only response; --strict escalates", async () => {
+    const files = coherentFixture();
+    // The canonical fixture minus its schema — exactly the thinnest contract
+    // that parses, which used to validate as cleanly as a complete one.
+    files["services/payment-service/openapi.yaml"] = LIVING_OPENAPI.slice(
+      0,
+      LIVING_OPENAPI.indexOf("          content:"),
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "openapi.response-undescribed",
+      );
+      expect(f).toBeDefined();
+      expect(f.severity).toBe("warn");
+      expect(f.message).toContain("authorizePayment");
+
+      const strict = await runLoam(p.workDir, "validate", "--strict");
+      expect(strict.code).toBe(1);
+    });
+  });
+
+  it("warns openapi.ref-unresolved with the pointer in details — and not response-undescribed", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/openapi.yaml"] = LIVING_OPENAPI.replace(
+      `              schema:
+                type: object
+                properties:
+                  status:
+                    type: string`,
+      `              schema:
+                $ref: '#/components/schemas/AuthResult'`,
+    );
+    await withProject(files, { service: SVC }, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--json");
+      expect(res.code).toBe(0);
+      const findings = JSON.parse(res.stdout).targets[0].findings as { code: string; details?: string[] }[];
+      const f = findings.find((x) => x.code === "openapi.ref-unresolved");
+      expect(f).toBeDefined();
+      expect(f!.details).toEqual(["#/components/schemas/AuthResult"]);
+      // A $ref IS a declared response shape — the dangling pointer is this
+      // finding's subject, not response-undescribed's.
+      expect(findings.some((x) => x.code === "openapi.response-undescribed")).toBe(false);
+    });
+  });
+});
