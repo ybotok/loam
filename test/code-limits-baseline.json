@@ -1,15 +1,10 @@
 {
   "fileLines": {
     "src/commands/archive.ts": 873,
-    "src/commands/gherkin.ts": 414,
-    "src/commands/new.ts": 446,
-    "src/commands/rebase.ts": 472,
-    "src/commands/unarchive.ts": 389,
-    "src/commands/verify.ts": 993,
-    "src/commands/vouch.ts": 620
+    "src/commands/verify.ts": 993
   },
   "packageFiles": {
-    "src/commands": 11
+    "src/commands": 6
   },
   "functionParams": {
     "src/commands/validate/checks/requirements.ts": {

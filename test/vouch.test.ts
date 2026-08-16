@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { coherentFixture, makeProject, runLoam, TEST_IDENTITY, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
 import { parseFrontmatter, stringField, listField } from "../src/core/document/frontmatter.js";
-import { vouch } from "../src/commands/vouch.js";
+import { vouch } from "../src/commands/vouch/run.js";
 
 /**
  * Fault injection for the commit phase (the passthrough-wrapper pattern from
