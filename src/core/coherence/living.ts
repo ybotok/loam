@@ -56,9 +56,9 @@ export async function unknownDeltaServices(
   docsDir: string,
   featureDir: string,
   featureId: string,
-  preloadedDelta?: LoadedDoc,
-  context?: FleetContext,
+  loaded: { preloadedDelta?: LoadedDoc; context?: FleetContext } = {},
 ): Promise<Finding[]> {
+  const { preloadedDelta, context } = loaded;
   const deltaPath = featurePaths(featureDir).delta;
   let delta: LoadedDoc | undefined;
   if (existsSync(deltaPath)) {

@@ -188,7 +188,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       // belongs to the service target, which owns the file's diagnosis.
       const health = await readHealth(servicePaths(docsDir, svc).health);
       let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids };
-      const unresolved = coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable);
+      const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = servicePaths(docsDir, svc).model;
         const model = existsSync(modelPath)
@@ -203,7 +203,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
             health: health.ids,
           };
         }
-        findings.push(...coversUnknownFindings(reqs, `${svc}: arch.spec.md`, svc, scope, health.unreadable));
+        findings.push(...coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable));
       }
     }
   }

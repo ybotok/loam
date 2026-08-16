@@ -204,7 +204,7 @@ export async function gate(
   // meant is a judgment about the FEATURE. A feature that genuinely introduces
   // one has a better escape hatch than --approve anyway — tag its element in
   // delta.likec4, which is also what makes the fleet map true afterwards.
-  const unknownServices = await unknownDeltaServices(config.docsDir, featureDir, id, deltaDoc);
+  const unknownServices = await unknownDeltaServices(config.docsDir, featureDir, id, { preloadedDelta: deltaDoc });
   if (unknownServices.length > 0 && !opts.approve) {
     const msg = `archive ${id} — BLOCKED: ${unknownServices.length} per-service delta(s) address a service that does not exist`;
     if (json) {

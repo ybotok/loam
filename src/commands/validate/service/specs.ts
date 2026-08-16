@@ -204,7 +204,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     health: health.ids,
   };
   findings.push(
-    ...coversUnknownFindings(archReqs, `${service}: arch.spec.md`, service, scope, health.unreadable),
+    ...coversUnknownFindings(archReqs, { where: `${service}: arch.spec.md`, subject: service }, scope, health.unreadable),
   );
   const activeCovers = coversEntries(archReqs);
   for (const { form, ids } of [

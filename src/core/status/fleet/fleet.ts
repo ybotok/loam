@@ -65,7 +65,12 @@ export async function fleetStatus(
 
   const features = await Promise.all(
     inScope.map((f) =>
-      fleetFeature(docsDir, f, graph, contractsHeldElsewhere(owners, f.id), context, interrupted),
+      fleetFeature(docsDir, f, {
+        graph,
+        contracted: contractsHeldElsewhere(owners, f.id),
+        context,
+        interrupted,
+      }),
     ),
   );
   features.sort((a, b) => compareIds(a.id, b.id));
@@ -85,18 +90,25 @@ export async function fleetStatus(
     // is an explicit question about X, and answering it with a step about
     // whichever service loam.json happens to name would be a different
     // question's answer at the top of the list.
-    next: fleetNext(services, features, graph, interrupted, narrowed === undefined ? unadopted : null),
+    next: fleetNext({ services, features, graph, interrupted }, narrowed === undefined ? unadopted : null),
   };
+}
+
+/** What a feature's fleet row needs about the fleet AROUND it. */
+interface FleetView {
+  graph: DependencyGraph;
+  /** Operations some other feature's contract already holds. */
+  contracted: ReadonlySet<string>;
+  context: FleetContext;
+  interrupted: InterruptedCommit | null;
 }
 
 async function fleetFeature(
   docsDir: string,
   feature: FeatureEntry,
-  graph: DependencyGraph,
-  contracted: ReadonlySet<string>,
-  context: FleetContext,
-  interrupted: InterruptedCommit | null,
+  view: FleetView,
 ): Promise<FleetFeatureState> {
+  const { graph, contracted, context, interrupted } = view;
   const paths = featurePaths(feature.dir);
   const missing: string[] = [];
   if (!existsSync(paths.intent)) missing.push("intent");

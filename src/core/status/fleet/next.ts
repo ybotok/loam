@@ -50,13 +50,16 @@ export const FLEET_NEXT_LIMIT = 10;
  * once named the command CI runs. This form grades nothing; the least it can do
  * is say where grading happens.
  */
-export function fleetNext(
-  services: ServiceEntry[],
-  features: FleetFeatureState[],
-  graph: DependencyGraph,
-  interrupted: InterruptedCommit | null,
-  unadoptedBinding: string | null,
-): NextStep[] {
+/** The whole fleet as the next-step walk reads it. */
+export interface Fleet {
+  services: ServiceEntry[];
+  features: FleetFeatureState[];
+  graph: DependencyGraph;
+  interrupted: InterruptedCommit | null;
+}
+
+export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextStep[] {
+  const { services, features, graph, interrupted } = fleet;
   const steps: NextStep[] = [];
 
   // The repository this command is standing in names a service the fleet has no

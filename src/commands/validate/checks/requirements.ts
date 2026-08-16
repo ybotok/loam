@@ -127,13 +127,19 @@ export function repeatedListLineFindings(reqs: Requirement[], where: string, sub
  * nobody could read, "did you mean" is a false diagnosis of a typo —
  * health.invalid (emitted by the service target) is the honest one.
  */
+/** Which document is being graded, and under whose name the finding is filed. */
+export interface CoverageTarget {
+  where: string;
+  subject: string;
+}
+
 export function coversUnknownFindings(
   reqs: Requirement[],
-  where: string,
-  subject: string,
+  target: CoverageTarget,
   scope: CoverageScope,
   healthUnreadable = false,
 ): Finding[] {
+  const { where, subject } = target;
   const out: Finding[] = [];
   for (const r of reqs) {
     if (r.kind === "REMOVED") continue;

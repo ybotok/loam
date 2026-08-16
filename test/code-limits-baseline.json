@@ -1,47 +1,5 @@
 {
   "fileLines": {},
   "packageFiles": {},
-  "functionParams": {
-    "src/commands/validate/checks/requirements.ts": {
-      "coversUnknownFindings": 5
-    },
-    "src/commands/verify/record.ts": {
-      "record": 5
-    },
-    "src/core/coherence/living.ts": {
-      "unknownDeltaServices": 5
-    },
-    "src/core/gherkin/emit.ts": {
-      "renderFeature": 5
-    },
-    "src/core/staging/snapshot.ts": {
-      "writeSnapshot": 5
-    },
-    "src/core/status/feature/artifacts.ts": {
-      "featureArtifacts": 7,
-      "fileState": 6
-    },
-    "src/core/status/feature/feature.ts": {
-      "featureStage": 7
-    },
-    "src/core/status/feature/next.ts": {
-      "featureNext": 9
-    },
-    "src/core/status/fleet/fleet.ts": {
-      "fleetFeature": 6
-    },
-    "src/core/status/fleet/next.ts": {
-      "fleetNext": 5
-    },
-    "src/core/status/verification.ts": {
-      "testStep": 5,
-      "verifyStep": 5
-    },
-    "src/core/verify/build.ts": {
-      "buildFederatedVerification": 7
-    },
-    "test/verify.test.ts": {
-      "digestOf": 5
-    }
-  }
+  "functionParams": {}
 }

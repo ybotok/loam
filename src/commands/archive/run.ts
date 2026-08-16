@@ -128,7 +128,7 @@ export async function archiveLocked(
   let snapshot = false;
   let createdArchiveDir: string | undefined;
   try {
-    await writeSnapshot(featureDir, config.docsDir, id, dirName, staged);
+    await writeSnapshot(featureDir, config.docsDir, { featureId: id, dirName }, staged);
     snapshot = true;
     // The journal, fsynced, BEFORE the first rename: swapStaged is N renames and
     // only each one of them is atomic, so a kill between two used to leave a

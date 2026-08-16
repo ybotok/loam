@@ -107,7 +107,15 @@ async function confirmAll(p: Project, feature = FEAT): Promise<string> {
 /* --- the runner's side: cucumber reports ---------------------------- */
 
 /** The digest the emitter stamps for scenario `sc` of requirement `req` in a spec source. */
-function digestOf(spec: string, req = 0, sc = 0, axis: "business" | "arch" = "business", service = SPLIT): string {
+/** Which scenario of which requirement, and on which axis. */
+interface At {
+  req?: number;
+  sc?: number;
+  axis?: "business" | "arch";
+}
+
+function digestOf(spec: string, at: At = {}, service = SPLIT): string {
+  const { req = 0, sc = 0, axis = "business" } = at;
   return scenarioDigest(service, parseRequirements(spec)[req]!.scenarios[sc]!.lines, axis);
 }
 
@@ -546,8 +554,8 @@ describe("what --record refuses", () => {
 
 describe("answering from the runner (--results)", () => {
   // The digests the emitter stamps for SCENARIOS_ONLY's two scenarios.
-  const d1 = digestOf(SCENARIOS_ONLY, 0, 0);
-  const d2 = digestOf(SCENARIOS_ONLY, 0, 1);
+  const d1 = digestOf(SCENARIOS_ONLY);
+  const d2 = digestOf(SCENARIOS_ONLY, { sc: 1 });
 
   it("confirms a claim only from a green run, and the record says the runner answered", async () => {
     const p = await project(scenarioOnlyFixture());
@@ -690,7 +698,7 @@ describe("answering from the runner (--results)", () => {
     const report = await writeReport(p, [
       { digest: d1 },
       { digest: d2, name: "Reject a split that does not sum" },
-      { digest: digestOf(ARCH_ONLY, 0, 0, "arch"), name: "Duplicate delivery" },
+      { digest: digestOf(ARCH_ONLY, { axis: "arch" }), name: "Duplicate delivery" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code, res.out).toBe(0);
@@ -720,7 +728,7 @@ The split SHALL be recorded transactionally.
 - **Then** two shares are recorded
 `;
     const businessDigest = digestOf(SCENARIOS_ONLY);
-    const archDigest = digestOf(archTwin, 0, 0, "arch");
+    const archDigest = digestOf(archTwin, { axis: "arch" });
     expect(archDigest, "identical bodies across axes must yield distinct digests").not.toBe(businessDigest);
 
     const files = scenarioOnlyFixture();
@@ -1346,8 +1354,8 @@ describe("federated service verification", () => {
     const p = await project(scenarioOnlyFixture());
     const repo = await serviceRepo(p, SPLIT, "primary");
     const report = await writeReport(p, [
-      { digest: digestOf(SCENARIOS_ONLY, 0, 0) },
-      { digest: digestOf(SCENARIOS_ONLY, 0, 1), name: "Reject a split that does not sum" },
+      { digest: digestOf(SCENARIOS_ONLY) },
+      { digest: digestOf(SCENARIOS_ONLY, { sc: 1 }), name: "Reject a split that does not sum" },
     ]);
     // Committed, so the skipped check is one that had a real answer to give.
     // Every claim on this checklist is the runner's, so the report is the only

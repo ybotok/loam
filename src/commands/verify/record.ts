@@ -40,22 +40,29 @@ export interface VerifyOptions {
   json?: boolean;
 }
 
-/** The repository whose word this record is taking, and for which service. */
+/**
+ * The repository whose word this record is taking, for which service, and over
+ * which existing record.
+ *
+ * `previous` belongs here rather than beside it: every refusal in this function
+ * is about whether THIS attestor may write over what that record already says,
+ * so the two are never asked about separately.
+ */
 export interface Attestor {
   /** Undefined in the legacy all-at-once form, which answers for every service. */
   service: string | undefined;
   repoDir: string;
+  previous: Verification | null;
 }
 
 export async function record(
   target: VerifyTarget,
   checklist: Checklist,
   attestor: Attestor,
-  previous: Verification | null,
   opts: VerifyOptions,
 ): Promise<void> {
   const { docsDir, featureDir, json } = target;
-  const { service, repoDir } = attestor;
+  const { service, repoDir, previous } = attestor;
   // The legacy all-at-once form answers the WHOLE checklist on one repository's
   // word and writes a schema-1 record — no attestations, no commits. Run over a
   // federated record it does not merge and it does not migrate: it erases every
@@ -162,12 +169,9 @@ export async function record(
   } else {
     const built = buildFederatedVerification(
       checklist,
-      service,
+      { service, recorded, commit: serviceCommit!, report: consumed },
       [...fromRunner, ...checked.answers],
       previous,
-      recorded,
-      serviceCommit!,
-      consumed,
     );
     verification = built.verification;
     discarded = built.discarded;
