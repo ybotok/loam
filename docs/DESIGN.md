@@ -54,7 +54,7 @@ Inside `core/`, the DAG levels are a real division of labour:
 | L0 | `ids` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
 | L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
 | L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
-| L3 | `openapi` `staging` `provenance` `docs` `brief` `delta` `openspec-inventory` `maturity` | Read and write one artifact family |
+| L3 | `openapi` `staging` `provenance` `docs` `brief` `delta` `openspec` `maturity` | Read and write one artifact family |
 | L4 | `fleet-context` `verify` `openapi-merge` | Whole-fleet caching and evidence |
 | L5 | `coherence` `gherkin` `dependencies` `doctor` `explore` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L6 | `results` `status` | Aggregate answers for a feature or a fleet |
@@ -79,7 +79,7 @@ five, which most of them will once the 300-line limit splits the large modules.
 | `core/api/` | `openapi` `asyncapi` `openapi-merge` | repo, kernel |
 | `core/fleet/` | `fleet-context` `verify` | api, repo, c4, document, kernel |
 | `core/feature/` | `delta` `staging` `provenance` `docs` `brief` | repo, document, envelope, agent, c4, kernel |
-| `core/openspec/` | `openspec-inventory` | repo, document, kernel |
+| `core/openspec/` | the OpenSpec model, the workspace scan, and the decisions over it | repo, document, kernel |
 | `core/checks/` | `coherence` `dependencies` `gherkin` `explore` `doctor` | everything above |
 | `core/answer/` | `status` `results` | checks, and everything above |
 
@@ -119,7 +119,7 @@ and the resulting *group* graph has cycles where the file graph has none.
 A shared kernel that is the entire model means one context with several layers. Say that, and
 stop looking.
 
-**One foreign model exists, and it is already quarantined.** `core/openspec-inventory.ts` models
+**One foreign model exists, and it is already quarantined.** `core/openspec/` models
 another tool's vocabulary. Exactly one *package* in `src/` imports it — `commands/migrate-openspec/`,
 whose twelve modules are the only place outside it where an `OpenSpec*` type is named. That is an
 anti-corruption layer, correctly placed; the quarantine is the directory, not the file count, and
@@ -156,7 +156,7 @@ only the workspace layout differs, and that part is already isolated.
    (`test/validate-contract.test.ts`).
 7. **A shared grammar lives in exactly one module.** `core/kernel/ids.ts` now owns both — the service
    id and the feature id. The feature-id regex used to be spelled twice (`commands/new.ts`,
-   `core/openspec-inventory.ts`) and was recorded here as a hazard; the third caller is what
+   `core/openspec/`) and was recorded here as a hazard; the third caller is what
    made it one. `loam explore --as <FEAT>` interpolates its argument into a `loam new` line loam
    *prints for an agent to run*, so a private copy meant `explore` handed back a command `new`
    refuses — and `test/agent-commands-runnable.test.ts` cannot see that class, because it scans

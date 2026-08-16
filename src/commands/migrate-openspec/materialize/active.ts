@@ -13,11 +13,8 @@ import { join } from "node:path";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { ownValue } from "../../../core/kernel/records.js";
-import {
-  isOpenSpecArtifactDisposition,
-  type OpenSpecInventory,
-  type OpenSpecMapping,
-} from "../../../core/openspec-inventory.js";
+import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
+import { isOpenSpecArtifactDisposition, type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { planWrite, type PlannedWrite } from "../../../core/staging/writes.js";
 import { selectedServices } from "../openspec/decisions.js";
 import { OpenSpecCommandError } from "../openspec/error.js";

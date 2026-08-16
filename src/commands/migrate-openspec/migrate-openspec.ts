@@ -12,11 +12,9 @@
 import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { fail, emitJson } from "../../core/envelope/json.js";
-import {
-  createOpenSpecMappingSkeleton,
-  inventoryOpenSpec,
-  OpenSpecRootError,
-} from "../../core/openspec-inventory.js";
+import { inventoryOpenSpec } from "../../core/openspec/inventory.js";
+import { createOpenSpecMappingSkeleton } from "../../core/openspec/model/mapping.js";
+import { OpenSpecRootError } from "../../core/openspec/model/model.js";
 import { writeMappingSkeleton } from "./openspec/decisions.js";
 import { OpenSpecCommandError } from "./openspec/error.js";
 import { readMapping } from "./openspec/mapping.js";

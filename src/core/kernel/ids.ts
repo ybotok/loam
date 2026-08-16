@@ -229,7 +229,7 @@ export function declaredService(text: string): DeclaredService {
  * feature would answer to a name it was never given.
  *
  * Here for the same reason the service grammar is — this was spelled twice,
- * privately, in `commands/new.ts` and `core/openspec-inventory.ts`, and
+ * privately, in `commands/new.ts` and `core/openspec/`, and
  * docs/DESIGN.md rule 7 recorded the pair as a hazard rather than a fact. The
  * third caller is what made it one: `loam explore --as <FEAT>` interpolates its
  * argument into a `loam new` line that loam PRINTS for an agent to run, so

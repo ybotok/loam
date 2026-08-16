@@ -20,12 +20,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  createOpenSpecMappingSkeleton,
-  inventoryOpenSpec,
-  type OpenSpecInventory,
-  type OpenSpecMappingSkeleton,
-} from "../src/core/openspec-inventory.js";
+import { inventoryOpenSpec } from "../src/core/openspec/inventory.js";
+import { createOpenSpecMappingSkeleton, type OpenSpecMappingSkeleton } from "../src/core/openspec/model/mapping.js";
+import { type OpenSpecInventory } from "../src/core/openspec/model/model.js";
 import { makeTmpDir, runLoam, writeFiles } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
