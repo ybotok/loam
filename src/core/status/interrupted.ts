@@ -7,7 +7,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { COMMIT_INTENT, readCommitIntent } from "../staging.js";
+import { COMMIT_INTENT, readCommitIntent } from "../staging/recovery/intent.js";
 import type { InterruptedCommit, NextStep } from "./report.js";
 
 /**

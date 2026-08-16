@@ -18,7 +18,7 @@ import {
   agentsStampVersion,
   versionTrails,
 } from "./agent/agents-stamp.js";
-import { scanWritePathResidue, type WritePathResidue } from "./staging.js";
+import { scanWritePathResidue, type WritePathResidue } from "./staging/recovery/residue.js";
 
 export type DoctorSeverity = "blocker" | "warning";
 

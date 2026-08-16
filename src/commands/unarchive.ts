@@ -24,27 +24,12 @@ import { isRecord } from "../core/kernel/records.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../core/repo/paths.js";
 import { resolveFeature } from "../core/repo/repo.js";
 import { sayRecovery } from "./archive.js";
-import {
-  acquireDocsLock,
-  clearCommitIntent,
-  DocsBusyError,
-  InterruptedCommitError,
-  message,
-  planWrite,
-  quietRm,
-  recoverInterruptedCommit,
-  rollbackError,
-  rollbackStaged,
-  sha256,
-  stageWrites,
-  swapStaged,
-  writeCommitIntent,
-  SNAPSHOT_DIR,
-  SNAPSHOT_MANIFEST,
-  SNAPSHOT_VERSION,
-  type PlannedWrite,
-  type SnapshotManifest,
-} from "../core/staging.js";
+import { message, quietRm, rollbackError, rollbackStaged, stageWrites, swapStaged } from "../core/staging/commit.js";
+import { acquireDocsLock, DocsBusyError } from "../core/staging/lock.js";
+import { clearCommitIntent, InterruptedCommitError, writeCommitIntent } from "../core/staging/recovery/intent.js";
+import { recoverInterruptedCommit } from "../core/staging/recovery/recover.js";
+import { SNAPSHOT_DIR, SNAPSHOT_MANIFEST, SNAPSHOT_VERSION, type SnapshotManifest } from "../core/staging/snapshot.js";
+import { planWrite, sha256, type PlannedWrite } from "../core/staging/writes.js";
 
 interface UnarchiveOptions {
   json?: boolean;

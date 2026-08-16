@@ -29,7 +29,7 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
-import { COMMIT_INTENT } from "../src/core/staging.js";
+import { COMMIT_INTENT } from "../src/core/staging/recovery/intent.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { buildVerification, featureChecklist, renderVerification, type Answer } from "../src/core/verify.js";
 

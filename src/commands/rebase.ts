@@ -29,15 +29,9 @@ import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.
 import { compareIds } from "../core/repo/entries.js";
 import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
-import {
-  DocsBusyError,
-  acquireDocsLock,
-  message,
-  rollbackStaged,
-  stageWrites,
-  swapStaged,
-  type PlannedWrite,
-} from "../core/staging.js";
+import { message, rollbackStaged, stageWrites, swapStaged } from "../core/staging/commit.js";
+import { acquireDocsLock, DocsBusyError } from "../core/staging/lock.js";
+import { type PlannedWrite } from "../core/staging/writes.js";
 import {
   parseRequirements,
   readRequirementsDocument,
