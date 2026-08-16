@@ -38,7 +38,7 @@ export interface MaturityInput {
  * How far a service's documentation has got. Derived from artifact PRESENCE and
  * provenance state only — the data an enumeration already holds — never from
  * what the artifacts say. COMPLETENESS of adopted docs is explicitly on the
- * unchecked list (brief/checks.ts): a service with one endpoint documented out of
+ * unchecked list (brief/unchecked.ts): a service with one endpoint documented out of
  * thirty climbs this ladder exactly as fast as a thorough one, which is why no
  * rung is called "adopted".
  *

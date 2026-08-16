@@ -3,7 +3,7 @@
  * src/core/c4/likec4.ts reads.
  *
  * `loadSource` used to call `computedModel()`, which computes every VIEW in the
- * document — work loam throws away, because it renders nothing (brief/checks.ts's
+ * document — work loam throws away, because it renders nothing (brief/unchecked.ts's
  * UNCHECKED says so in as many words). The cost is superlinear in the number of RELATIONSHIPS,
  * so a landscape at fleet shape (120 services, a few hundred calls) turned
  * `loam list` into minutes. It now calls `parsedModel()`.
