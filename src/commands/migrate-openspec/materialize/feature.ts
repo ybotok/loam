@@ -12,7 +12,7 @@
 import { stringify as stringifyYaml } from "yaml";
 import { serializeRequirements } from "../../../core/document/spec.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { type OpenSpecArtifactDisposition } from "../../../core/openspec-inventory.js";
+import { type OpenSpecArtifactDisposition } from "../../../core/openspec/model/model.js";
 
 export function featureSlug(title: string, changeId: string): string {
   const slug = (text: string): string => text

@@ -14,11 +14,8 @@ import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { dictionary, ownValue } from "../../../core/kernel/records.js";
-import {
-  type OpenSpecInventory,
-  type OpenSpecMapping,
-  type OpenSpecMappingSkeleton,
-} from "../../../core/openspec-inventory.js";
+import { type OpenSpecMapping, type OpenSpecMappingSkeleton } from "../../../core/openspec/model/mapping.js";
+import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { OpenSpecCommandError } from "./error.js";
 import { canonicalForCreate, contains } from "./paths.js";
 

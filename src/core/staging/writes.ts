@@ -89,7 +89,7 @@ export interface StagedWrite {
  *
  * Commands map this to `merge-failed`: nothing was written, the file is named,
  * and re-saving it as UTF-8 makes the command work. The read-only migration
- * ingest already refuses non-UTF-8 input outright (openspec-inventory.ts) —
+ * ingest already refuses non-UTF-8 input outright (core/openspec/) —
  * the destructive path has strictly more to lose, so it refuses the same way
  * rather than substituting U+FFFD and rewriting the file over the author.
  *

@@ -13,8 +13,7 @@
     "src/commands/unarchive.ts": 389,
     "src/commands/verify.ts": 993,
     "src/commands/vouch.ts": 620,
-    "src/core/coherence/coherence.ts": 518,
-    "src/core/openspec-inventory.ts": 1913
+    "src/core/coherence/coherence.ts": 518
   },
   "packageFiles": {
     "src/commands": 19
@@ -36,13 +35,6 @@
     },
     "src/core/gherkin/emit.ts": {
       "renderFeature": 5
-    },
-    "src/core/openspec-inventory.ts": {
-      "inspectChangeMetadata": 5,
-      "inspectChangeShape": 5,
-      "inspectSpecFile": 7,
-      "inventoryChanges": 8,
-      "issue": 5
     },
     "src/core/staging/snapshot.ts": {
       "writeSnapshot": 5

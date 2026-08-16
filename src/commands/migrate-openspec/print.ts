@@ -11,7 +11,7 @@
  * the call site. "capability"/"capabilities" is exactly that noun, so this
  * renderer carries the two-form variant instead of misspelling a count.
  */
-import { type OpenSpecInventory } from "../../core/openspec-inventory.js";
+import { type OpenSpecInventory } from "../../core/openspec/model/model.js";
 
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;

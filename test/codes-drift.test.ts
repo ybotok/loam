@@ -19,7 +19,7 @@
  *
  *   POSITIONAL — the code arrives as an ARGUMENT to a helper. This is the hole
  *   that let a whole family drift: all 23 `openspec.*` diagnostics go through
- *   `issue(target, scope, code, path, message)` in openspec-inventory.ts, where
+ *   `issue(target, scope, code, path, message)` in openspec/scan/shape.ts, where
  *   the code is the third positional argument and the word `code` appears
  *   nowhere near it. The literal patterns above saw none of them, which is
  *   exactly why `openspec.*` went undocumented while every `mapping.*` code —
@@ -104,7 +104,7 @@ type Mask = Uint8Array;
  * line numbers stay true.
  *
  * Regex literals are masked too, and they are the reason this is a scanner
- * rather than three regexes: `/^\s*(\`\`\`|~~~)/` in openspec-inventory.ts opens
+ * rather than three regexes: `/^\s*(\`\`\`|~~~)/` in openspec/scan/shape.ts opens
  * a template literal to anything that only tracks quotes, which swallowed the
  * whole `issue()` family — the very hole this rewrite exists to close. Whether
  * a `/` opens a regex is the usual heuristic: it does when the last meaningful
@@ -377,7 +377,7 @@ describe("the code vocabulary does not drift from the docs", () => {
       "internal", // union member with neither dot nor dash
       "delta.nothing-tagged", // coherence emission not (yet) in the IssueCode union
       // The positional family. `issue(target, scope, code, path, message)` in
-      // openspec-inventory.ts spells the word `code` only in its signature, so
+      // openspec/scan/shape.ts spells the word `code` only in its signature, so
       // these three exist for this test ONLY through argument resolution — and
       // openspec.requirement-id-* went undocumented for exactly that reason.
       "openspec.living-empty",

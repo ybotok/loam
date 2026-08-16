@@ -3,13 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import {
-  createOpenSpecMappingSkeleton,
-  inventoryOpenSpec,
-  OPENSPEC_BASELINES,
-  type OpenSpecInventory,
-  type OpenSpecMappingSkeleton,
-} from "../src/core/openspec-inventory.js";
+import { inventoryOpenSpec } from "../src/core/openspec/inventory.js";
+import { createOpenSpecMappingSkeleton, type OpenSpecMappingSkeleton } from "../src/core/openspec/model/mapping.js";
+import { OPENSPEC_BASELINES, type OpenSpecInventory } from "../src/core/openspec/model/model.js";
 import { makeTmpDir, runLoam, treeHashes, writeFiles } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
