@@ -103,12 +103,19 @@ selected that tool. The map of which invocation surfaces what:
   \`spec.no-requirements\`, \`spec.repeated-operations\`, \`spec.repeated-covers\`,
   \`openapi.invalid\`, \`openapi.duplicate-operationid\` (one operationId in two
   (path, method) slots — every join on the id then picks one of them arbitrarily),
+  \`openapi.response-undescribed\` (warn — operations whose responses declare no
+  schema at all; a presence probe, what a schema says is never checked),
+  \`openapi.ref-unresolved\` (warn here, error at archive plan time — an internal
+  \`$ref\` resolving to nothing in the document),
   \`api.ungoverned\`, \`api.ops-unlinked\`,
   \`api.requirement-deprecated\`, \`spec-api.op-undefined\` (the living spec's own
   \`Operations:\` lines, not only a delta's), \`spine.landscape-invalid\`, \`spine.op-undefined\`,
   \`spine.op-link-missing\`, \`spine.op-deprecated\`,
   the async contract axis (AsyncAPI 3): \`service.no-asyncapi\`, \`asyncapi.invalid\`,
-  \`asyncapi.duplicate-message\`, \`spine.message-undefined\`,
+  \`asyncapi.duplicate-message\`, \`asyncapi.payload-undescribed\` (warn — a
+  message whose payload declares no shape at all; non-JSON \`schemaFormat\`
+  payloads are never judged), \`asyncapi.ref-unresolved\` (warn — internal
+  \`$ref\`s resolving to nothing), \`spine.message-undefined\`,
   \`spec-event.message-undefined\`, \`spine.message-unproduced\`,
   \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.covered\`, and
   the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`,

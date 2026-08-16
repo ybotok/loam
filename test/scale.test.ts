@@ -107,6 +107,9 @@ ${ops}
 }
 
 function openapi(i: number): string {
+  // Responses carry a minimal schema so the synthetic fleet models contract
+  // depth — a description-only response would fire openapi.response-undescribed
+  // twenty-five times and drown the counts this suite derives by construction.
   return `openapi: 3.1.0
 info:
   title: ${svc(i)}
@@ -118,12 +121,26 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
   /${svc(i)}/b:
     get:
       operationId: op_${i}_b
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
 `;
 }
 
@@ -213,6 +230,13 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
 `;
   // The architecture spec axis at fleet shape: every feature's tagged edge is
   // covered by an arch requirement, so a CLEAN fleet stays clean — and the

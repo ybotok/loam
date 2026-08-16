@@ -732,13 +732,14 @@ describe("cascade — extraction feeds the coherence gate", () => {
 describe("operations — the deprecated flag rides beside each id", () => {
   /**
    * operations() of a single inline OpenAPI document, without the content
-   * digest — this family is about the flags and the slots, and the digest has
-   * its own tests (test/openapi-baseline.test.ts) rather than a literal
-   * repeated in every expectation here.
+   * digest or the depth probe — this family is about the flags and the slots;
+   * the digest has its own tests (test/openapi-baseline.test.ts) and so does
+   * `undescribed` (the contract-depth family), rather than a literal repeated
+   * in every expectation here.
    */
   async function extractOps(content: string) {
     const ops = await withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
-    return ops.map(({ digest: _digest, ...rest }) => rest);
+    return ops.map(({ digest: _digest, undescribed: _undescribed, ...rest }) => rest);
   }
 
   it("returns deprecated: true exactly where the contract says so, false everywhere else", async () => {
@@ -876,6 +877,7 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
         anonymousRemovals: [],
         pathLevelRemovals: [],
         unreadable: false,
+        danglingRefs: [],
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -907,5 +909,117 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
     await withDir({ "openapi.yaml": "paths: [unclosed\n" }, async (root) => {
       expect(await operations(join(root, "openapi.yaml"))).toEqual([]);
     });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* the contract-depth probes                                           */
+/* ------------------------------------------------------------------ */
+
+describe("undescribed — does an operation say anything about what it returns", () => {
+  async function opsOf(content: string) {
+    return withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
+  }
+
+  it("flags a description-only response and an operation with no responses at all", async () => {
+    const ops = await opsOf(`openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /a:
+    post:
+      operationId: bare
+      responses:
+        "200":
+          description: OK
+  /b:
+    post:
+      operationId: silent
+`);
+    expect(ops.find((o) => o.id === "bare")?.undescribed).toBe(true);
+    expect(ops.find((o) => o.id === "silent")?.undescribed).toBe(true);
+  });
+
+  it("stays quiet on a schema'd response, a 204-only operation, and a $ref'd response", async () => {
+    const ops = await opsOf(`openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /a:
+    post:
+      operationId: described
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+  /b:
+    delete:
+      operationId: noBody
+      responses:
+        "204":
+          description: Deleted
+  /c:
+    get:
+      operationId: reffed
+      responses:
+        "200":
+          $ref: '#/components/responses/Ok'
+components:
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok:
+                type: boolean
+`);
+    for (const id of ["described", "noBody", "reffed"]) {
+      expect(ops.find((o) => o.id === id)?.undescribed, id).toBeUndefined();
+    }
+  });
+});
+
+describe("danglingRefs — internal $refs that resolve to nothing", () => {
+  it("collects the broken pointer and leaves external references alone", async () => {
+    const doc = await withDir(
+      {
+        "openapi.yaml": `openapi: 3.1.0
+info:
+  title: svc
+  version: "1.0"
+paths:
+  /a:
+    post:
+      operationId: op
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoSuchSchema'
+components:
+  schemas:
+    Real:
+      type: object
+      properties:
+        ext:
+          $ref: './common.yaml#/components/schemas/Elsewhere'
+`,
+      },
+      (root) => readOpenapi(join(root, "openapi.yaml")),
+    );
+    expect(doc.danglingRefs).toEqual(["#/components/schemas/NoSuchSchema"]);
   });
 });

@@ -5,10 +5,11 @@
 # 2.x spells the same thing as publish/subscribe under a channel, where the
 # two words are ambiguous about whose perspective they take.
 #
-# loam reads message NAMES and the `action` of the operation carrying them,
-# and nothing else in this file. It never looks inside `payload` — which is
-# what makes swapping JSON Schema for Avro a `schemaFormat` line here rather
-# than a change in loam.
+# loam reads message NAMES and the `action` of the operation carrying them.
+# It never joins on anything inside `payload` — the one look inside is a
+# presence probe (a payload declaring no shape at all warns, a non-JSON
+# `schemaFormat` is skipped) — which is what keeps swapping JSON Schema for
+# Avro a `schemaFormat` line here rather than a change in loam.
 #
 # The name is the spine: the landscape edge's `metadata { publishes }`, the
 # requirement's `Publishes:` line and `name` below are one name spelled three

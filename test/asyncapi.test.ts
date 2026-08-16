@@ -93,6 +93,9 @@ components:
       name: payment.PaymentAuthorized
       payload:
         type: object
+        properties:
+          paymentId:
+            type: string
 `;
 
 const LANDSCAPE = `specification {
@@ -241,10 +244,13 @@ components:
     ]);
   });
 
-  it("never reads inside a payload — the property that keeps Avro a document change", async () => {
-    // A payload is opaque bytes to loam. If anything here ever started reading
-    // into it, a `name` or `fields` key down there would leak into the join —
-    // and swapping JSON Schema for Avro would stop being free.
+  it("never joins on anything inside a payload — the property that keeps Avro a document change", async () => {
+    // A payload contributes no NAME to the join, ever: a `name` or `fields`
+    // key down there must never leak into the spine, or swapping JSON Schema
+    // for Avro stops being free. (The depth probe does read key PRESENCE
+    // inside a payload — whether any shape is declared at all — but it
+    // contributes no name and skips non-JSON schemaFormats; this test pins
+    // that the join stays clean.)
     const doc = await parseDoc(`asyncapi: 3.0.0
 channels:
   c:
@@ -265,7 +271,14 @@ channels:
 
   it("an absent file declares nothing and is not unreadable", async () => {
     const doc = await readAsyncapi(join(await makeTmpDir("loam-asyncapi-"), "nope.yaml"));
-    expect(doc).toEqual({ messages: [], sent: [], received: [], duplicateNames: [], unreadable: false });
+    expect(doc).toEqual({
+      messages: [],
+      sent: [],
+      received: [],
+      duplicateNames: [],
+      unreadable: false,
+      danglingRefs: [],
+    });
   });
 
   it("grades broken YAML, non-UTF-8 bytes and a non-mapping document as unreadable", async () => {
@@ -486,6 +499,146 @@ Publishes: payment.Typo
     );
     await withProject(files, {}, async (p) => {
       expect(await codesFor(p, "payment-service")).toContain("event.messages-unlinked");
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* the contract-depth probes — presence, never a field join            */
+/* ------------------------------------------------------------------ */
+
+describe("payloadEmpty — does the payload declare any shape at all", () => {
+  it("flags a bare type: object and an absent payload; a full schema stays unflagged", async () => {
+    const doc = await parseDoc(`asyncapi: 3.0.0
+components:
+  messages:
+    Bare:
+      name: payment.Bare
+      payload:
+        type: object
+    Missing:
+      name: payment.Missing
+    Full:
+      name: payment.Full
+      payload:
+        type: object
+        properties:
+          id:
+            type: string
+`);
+    const flag = (n: string) => doc.messages.find((m) => m.name === n)?.payloadEmpty;
+    expect(flag("payment.Bare")).toBe(true);
+    expect(flag("payment.Missing")).toBe(true);
+    expect(flag("payment.Full")).toBeUndefined();
+  });
+
+  it("never judges a non-JSON schemaFormat — Avro stays a document change", async () => {
+    const doc = await parseDoc(`asyncapi: 3.0.0
+components:
+  messages:
+    Avro:
+      name: payment.Avro
+      payload:
+        schemaFormat: application/vnd.apache.avro;version=1.9.0
+        schema:
+          type: record
+`);
+    expect(doc.messages[0]!.payloadEmpty).toBeUndefined();
+  });
+
+  it("a dangling payload $ref is the ref probe's finding, not an emptiness one", async () => {
+    const doc = await parseDoc(`asyncapi: 3.0.0
+components:
+  messages:
+    Ghost:
+      name: payment.Ghost
+      payload:
+        $ref: '#/components/schemas/NoSuchSchema'
+`);
+    expect(doc.messages[0]!.payloadEmpty).toBeUndefined();
+    expect(doc.danglingRefs).toEqual(["#/components/schemas/NoSuchSchema"]);
+  });
+});
+
+describe("danglingRefs — internal $refs that resolve to nothing", () => {
+  it("catches both silent-skip sites: the channel alias and the operation's message list", async () => {
+    // Both used to vanish without a trace: an operation-list entry that derefs
+    // to nothing "contributes no name", and a channel alias whose target is
+    // gone leaves a phantom local key behind. The probe names the pointers.
+    const doc = await parseDoc(`asyncapi: 3.0.0
+channels:
+  c:
+    messages:
+      Ghost:
+        $ref: '#/components/messages/NoSuchMessage'
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/c'
+    messages:
+      - $ref: '#/components/messages/AlsoMissing'
+`);
+    expect(doc.danglingRefs).toEqual([
+      "#/components/messages/NoSuchMessage",
+      "#/components/messages/AlsoMissing",
+    ]);
+  });
+});
+
+describe("validate --service: contract depth on the event axis", () => {
+  it("warns asyncapi.payload-undescribed and names the empty message", async () => {
+    const files = fleet({
+      "services/notification-service/asyncapi.yaml": `asyncapi: 3.0.0
+info:
+  title: notification-service events
+  version: "1.0"
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+operations:
+  receivePaymentAuthorized:
+    action: receive
+    channel:
+      $ref: '#/channels/paymentEvents'
+components:
+  messages:
+    PaymentAuthorized:
+      name: payment.PaymentAuthorized
+      payload:
+        type: object
+`,
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      expect(res.code).toBe(0); // warn, not a gate
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "asyncapi.payload-undescribed",
+      );
+      expect(f).toBeDefined();
+      expect(f.severity).toBe("warn");
+      expect(f.message).toContain("payment.PaymentAuthorized");
+    });
+  });
+
+  it("warns asyncapi.ref-unresolved with the pointers in details", async () => {
+    const files = fleet({
+      "services/payment-service/asyncapi.yaml": PRODUCER.replace(
+        "$ref: '#/channels/paymentEvents/messages/PaymentAuthorized'",
+        "$ref: '#/components/messages/NoSuchMessage'",
+      ),
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const f = JSON.parse(res.stdout).targets[0].findings.find(
+        (x: { code: string }) => x.code === "asyncapi.ref-unresolved",
+      );
+      expect(f).toBeDefined();
+      expect(f.severity).toBe("warn");
+      expect(f.details).toEqual(["#/components/messages/NoSuchMessage"]);
     });
   });
 });

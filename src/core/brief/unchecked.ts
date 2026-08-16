@@ -28,7 +28,7 @@ export const UNCHECKED: string[] = [
   "Whether the model is the architecture the code actually has. loam parses model.likec4; it never reads a line of the service.",
   "Whether a requirement is TRUE of the service. `loam validate` checks that a requirement has a scenario, never that either one describes real behaviour.",
   "Whether the scenarios are acceptance criteria somebody could test, or the requirement restated in Given/When/Then.",
-  "Whether an operationId is the one the code serves, and whether the request and response schemas resemble what the endpoint really accepts and returns. Only the operationId is read.",
+  "Whether an operationId is the one the code serves, and whether the request and response schemas resemble what the endpoint really accepts and returns. Presence is probed — an operation with no response schema at all is warned about — but what a declared schema SAYS is never compared with anything; only the operationId joins.",
   "Whether the runbook's steps work, or the health.yaml SLOs are numbers anyone agreed to.",
   "Whether an arch scenario really exercises what its `Covers:` line names. The entries are resolved against the model and health.yaml — never against code, tests, dashboards or alert rules.",
   "Whether an ADR records a decision that was made, or one reconstructed afterwards to justify the code.",

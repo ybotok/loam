@@ -2,6 +2,7 @@ import { isUtf8 } from "node:buffer";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
+import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
 import type { FleetContext } from "../fleet-context.js";
 
 /**
@@ -19,16 +20,17 @@ import type { FleetContext } from "../fleet-context.js";
  * declares no `operations` at all — so it reads as a contract with no messages
  * rather than as a silently mis-parsed one.
  *
- * WHAT THIS READER MUST NEVER DO: look inside a message's `payload`. The payload
- * is JSON Schema today and may be Avro later, and that switch is meant to be a
- * line in the document (`schemaFormat`) rather than a branch in loam. Every
- * check on this axis joins on a message NAME; nothing joins on a field. The day
- * something here reads a `required` array or a `fields` list, the Avro migration
- * stops being free.
+ * WHAT THIS READER MUST NEVER DO: join on anything inside a message's `payload`.
+ * The payload is JSON Schema today and may be Avro later, and that switch is
+ * meant to be a line in the document (`schemaFormat`) rather than a branch in
+ * loam. Every check on this axis joins on a message NAME; nothing joins on a
+ * field, and nothing under `payload` may ever contribute one. The day
+ * something here reads a `required` array or a `fields` list INTO A JOIN, the
+ * Avro migration stops being free. The one look the reader takes inside is
+ * `payloadUndeclared` (depth.ts) — a presence probe that checks whether any
+ * shape was declared at all, reads key existence and never a value, and skips
+ * any payload declaring a non-JSON `schemaFormat`, so the stance holds.
  */
-
-/** How deep a `$ref` chain is followed before the reader gives up. */
-const MAX_REF_DEPTH = 8;
 
 /** One message declaration, as the reader sees it. */
 export interface EventMessage {
@@ -49,6 +51,12 @@ export interface EventMessage {
    * `openapi.duplicate-operationid` names both `METHOD /path` slots.
    */
   slot: string;
+  /**
+   * Present when the declaration's payload defines no shape a consumer could
+   * code against (`payloadUndeclared`, depth.ts). Set only when true, and
+   * never set for a payload declaring a non-JSON `schemaFormat`.
+   */
+  payloadEmpty?: true;
 }
 
 /** The parse of one AsyncAPI document: what it declares, and whether it could be read at all. */
@@ -74,57 +82,8 @@ export interface AsyncapiDoc {
   unreadable: boolean;
   /** The parser's own message, when there is one to quote back. */
   error?: string;
-}
-
-/**
- * Resolve an internal JSON Pointer (`#/a/b/c`) against the document root.
- *
- * Internal only, matching the OpenAPI axis's documented stance: external
- * references — URLs, file paths, anything not starting `#/` — are out of scope,
- * left untouched and never graded. That is also why authors are told to keep
- * payloads inside the document rather than `$ref`-ing an external `.avsc`: the
- * merge cannot carry what this reader cannot see.
- */
-function resolvePointer(root: unknown, ref: unknown): unknown {
-  if (typeof ref !== "string" || !ref.startsWith("#/")) return undefined;
-  let node = root;
-  for (const raw of ref.slice(2).split("/")) {
-    // JSON Pointer escaping, `~1` before `~0` so an encoded `~1` survives.
-    const seg = raw.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (node === null || typeof node !== "object") return undefined;
-    node = (node as Record<string, unknown>)[seg];
-  }
-  return node;
-}
-
-/**
- * Follow `$ref` hops until a node that is not a reference, or the depth budget
- * runs out. The budget is the cycle guard: a document whose `$ref` points at
- * itself is legal YAML, and an unbounded walk would hang the whole validate run
- * rather than reporting a contract nobody can read.
- *
- * Returns the resolved node and the last pointer segment that reached it — the
- * segment is the declaration key, which is the message-name fallback, and it is
- * lost by the time a caller holds only the node.
- */
-function deref(root: unknown, node: unknown, key: string): { node: unknown; key: string } {
-  let current = node;
-  let currentKey = key;
-  for (let hop = 0; hop < MAX_REF_DEPTH; hop += 1) {
-    if (current === null || typeof current !== "object" || Array.isArray(current)) break;
-    const ref = (current as Record<string, unknown>)["$ref"];
-    if (typeof ref !== "string") break;
-    const resolved = resolvePointer(root, ref);
-    if (resolved === undefined) return { node: undefined, key: currentKey };
-    const seg = ref.slice(ref.lastIndexOf("/") + 1);
-    current = resolved;
-    // An alias keeps the TARGET's key, not the local one it was filed under: a
-    // channel may list `#/components/messages/PaymentAuthorized` under any alias
-    // it likes, and the fallback name has to be the declaration's own identity
-    // or two services aliasing one message differently would stop joining.
-    currentKey = seg.length > 0 ? seg : currentKey;
-  }
-  return { node: current, key: currentKey };
+  /** Internal `#/` refs that resolve to nothing in this document (depth.ts). */
+  danglingRefs: string[];
 }
 
 /** A message's join token: its `name`, or the key it is declared under. */
@@ -184,14 +143,14 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   const root = doc as Record<string, unknown>;
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
-  const declare = (name: string, slot: string): void => {
-    messages.push({ name, slot });
+  const declare = (name: string, slot: string, node: unknown): void => {
+    messages.push({ name, slot, ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
     seen.set(name, [...(seen.get(name) ?? []), slot]);
   };
 
   // `components.messages` — the ordinary place a message is declared.
   for (const [key, node] of entriesOf((root["components"] as Record<string, unknown> | undefined)?.["messages"])) {
-    declare(messageName(node, key), `components.messages.${key}`);
+    declare(messageName(node, key), `components.messages.${key}`, node);
   }
 
   // `channels.<ck>.messages.<mk>` — an entry here is either an ALIAS of a
@@ -208,7 +167,7 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
       const { node, key } = deref(root, entry, mk);
       const name = messageName(node, key);
       names.push(name);
-      if (!isAlias) declare(name, `channels.${ck}.messages.${mk}`);
+      if (!isAlias) declare(name, `channels.${ck}.messages.${mk}`, node);
     }
     channelMessages.set(ck, names);
   }
@@ -245,11 +204,18 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   }
 
   const duplicateNames = [...seen].filter(([, slots]) => slots.length > 1).map(([name]) => name);
-  return { messages, sent: [...sent], received: [...received], duplicateNames, unreadable: false };
+  return {
+    messages,
+    sent: [...sent],
+    received: [...received],
+    duplicateNames,
+    unreadable: false,
+    danglingRefs: danglingRefs(root),
+  };
 }
 
 function empty(): AsyncapiDoc {
-  return { messages: [], sent: [], received: [], duplicateNames: [], unreadable: false };
+  return { messages: [], sent: [], received: [], duplicateNames: [], unreadable: false, danglingRefs: [] };
 }
 
 /** The slots one message name is declared in — what `asyncapi.duplicate-message` names. */

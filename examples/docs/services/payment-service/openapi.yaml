@@ -11,6 +11,17 @@ paths:
       responses:
         "201":
           description: Authorized
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paymentId, status]
+                properties:
+                  paymentId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [authorized, declined]
   /payments/{id}/capture:
     post:
       operationId: capturePayment
@@ -24,3 +35,13 @@ paths:
       responses:
         "200":
           description: Captured
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paymentId, capturedAmount]
+                properties:
+                  paymentId:
+                    type: string
+                  capturedAmount:
+                    type: number

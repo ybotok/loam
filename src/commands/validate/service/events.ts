@@ -129,6 +129,35 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
         message: `${service}: asyncapi.yaml declares message '${name}' in ${slotsOf(events, name).join(" and ")} — every join on the name (an edge's metadata { publishes }, a requirement's Publishes: line) picks one of those slots arbitrarily`,
       });
     }
+    // The contract-depth probes. Form validated and depth did not: a payload
+    // of bare `type: object` and a `$ref` to nothing both read as cleanly as
+    // a full schema, and the first adoption could not rebuild its payloads
+    // from a green contract. Presence probes only — a non-JSON schemaFormat
+    // is skipped, so Avro stays a document change.
+    const empties = events.messages.filter((m) => m.payloadEmpty === true).map((m) => m.name);
+    if (empties.length > 0) {
+      findings.push({
+        severity: "warn",
+        code: "asyncapi.payload-undescribed",
+        subject: service,
+        message:
+          `${service}: ${empties.length} message(s) declare no payload shape (${empties.join(", ")}) — ` +
+          `the name joins the spine, but nothing defines what a consumer would read; ` +
+          `declare properties, or a schemaFormat for a non-JSON schema`,
+      });
+    }
+    if (events.danglingRefs.length > 0) {
+      findings.push({
+        severity: "warn",
+        code: "asyncapi.ref-unresolved",
+        subject: service,
+        message:
+          `${service}: asyncapi.yaml contains ${events.danglingRefs.length} internal $ref(s) that resolve ` +
+          `to nothing in the document — whatever they were meant to carry is silently absent from the ` +
+          `spine's view of this contract`,
+        details: events.danglingRefs,
+      });
+    }
     // Local resolution, both directions and both sources of a claim. An edge and
     // a requirement making the same broken claim get the same sentence under
     // different codes, matching how `spine.op-undefined` and

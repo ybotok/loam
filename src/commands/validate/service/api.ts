@@ -165,6 +165,35 @@ export async function apiAxisFindings(
         message: `${service}: the living OpenAPI defines operationId '${id}' at ${slots.join(" and ")} — every join on the id (a requirement's Operations: line, an edge's metadata { op }, a removal marker) picks one of those slots arbitrarily`,
       });
     }
+    // The contract-depth probes. Form validated and depth did not: an
+    // operation whose one response is `description: OK`, and a `$ref` to a
+    // schema nobody wrote, both read as cleanly as a complete contract — and
+    // the first adoption could not rebuild its payloads from green. Presence
+    // probes over the document's own keys; nothing reads what a schema says.
+    const undescribed = liveOps.filter((op) => op.undescribed === true).map((op) => op.id);
+    if (undescribed.length > 0) {
+      findings.push({
+        severity: "warn",
+        code: "openapi.response-undescribed",
+        subject: service,
+        message:
+          `${service}: ${undescribed.length} operation(s) declare no response schema (${undescribed.join(", ")}) — ` +
+          `the contract names the operation and says nothing about what it returns, so a reader still ` +
+          `needs the code; declare content with a schema on at least one response (204/304 excepted)`,
+      });
+    }
+    if (api.danglingRefs.length > 0) {
+      findings.push({
+        severity: "warn",
+        code: "openapi.ref-unresolved",
+        subject: service,
+        message:
+          `${service}: openapi.yaml contains ${api.danglingRefs.length} internal $ref(s) that resolve to ` +
+          `nothing in the document — the operation validates while its schema is silently absent ` +
+          `(the archive plan refuses the same breach in a feature delta, as an error)`,
+        details: api.danglingRefs,
+      });
+    }
     const defined = new Set(ops);
     // `Operations:` on a LIVING requirement, resolved against this service's own
     // contract. Nothing did this before: the same spine is checked inside a
