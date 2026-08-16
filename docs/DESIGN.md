@@ -14,17 +14,19 @@ No — but the tree does not show you why, and that gap is the real finding.
   produce **20** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
   and `migrate-openspec`), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations.
-- `src/commands/` (19 command modules + `format.ts` + `docs-repo-gate.ts`; the two largest,
-  `validate` and `migrate-openspec`, are packages rather than single files) owns the printing and
-  the exit codes.
-- `src/core/` (38 modules) imports `commander` zero times, never imports `commands/`, and holds
-  four `console` calls in total — three in `core/envelope/json.ts`, which *is* the envelope emitter, and
-  one stray in `core/envelope/config.ts:224`.
-- Those 38 modules form a value-import DAG **seven levels deep with zero cycles**.
+- `src/commands/` owns the printing and the exit codes. Fifteen of the nineteen command modules are
+  packages; four sit loose as files (`dependencies`, `doctor`, `explore`, `instructions`), and
+  `commands/policy/` holds the two things in that directory which are not commands.
+- `src/core/` imports `commander` zero times, never imports `commands/`, and holds four `console`
+  calls in total — three in `core/envelope/json.ts`, which *is* the envelope emitter, and one stray
+  in `core/envelope/config.ts`.
+- `src/` is 204 modules in 56 packages, and its value-import graph has **zero cycles** at both the
+  file level and the package level (`npm run arch:graph`).
 
 So the layering is true. For a long time nothing in the repository expressed it: `docs/CODE-STYLE.md`
 stated it in prose, and no tool reads prose. The cost of "true but unexpressed" is not that a reader
-is confused — it is that the next violation lands silently, exactly as `config.ts:224` did, and
+is confused — it is that the next violation lands silently, exactly as `config.ts`'s stray
+console did, and
 the eight import cycles the CHANGELOG records removing can come back the same way.
 
 This section used to end "folders would not close that gap; a lint flag and two greps would." The
@@ -35,17 +37,12 @@ the compiler does not check.
 
 ## The layers
 
-> **In flight.** The counts below describe the flat layout as measured before rule 21 landed.
-> The layers themselves are not changing — rule 21 makes them visible in `ls` instead of only in
-> this table. Where a count here disagrees with the tree, the tree is right and this table is the
-> next thing to fix; `scripts/package-graph.mjs` prints the current one.
-
 | Layer | Modules | Job |
 |---|---|---|
 | Entry | `src/cli.ts` | Register commands; decide the process exit |
-| Command | `src/commands/` — 19 modules, 20 commands | Parse flags, refuse, print, set `process.exitCode` |
-| Shared command policy | `commands/format.ts`, `commands/docs-repo-gate.ts` | Wording and gating shared by 5 and 6 commands |
-| Core | `src/core/` — 37 modules | Compute and return. Never print, never exit |
+| Command | `src/commands/` — 19 command modules, 20 commands | Parse flags, refuse, print, set `process.exitCode` |
+| Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 5 and 6 commands |
+| Core | `src/core/` | Compute and return. Never print, never exit |
 
 Inside `core/`, the DAG levels are a real division of labour:
 
@@ -54,34 +51,38 @@ Inside `core/`, the DAG levels are a real division of labour:
 | L0 | `ids` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
 | L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
 | L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
-| L3 | `openapi` `staging` `provenance` `docs` `brief` `delta` `openspec` `maturity` | Read and write one artifact family |
-| L4 | `fleet-context` `verify` `openapi-merge` | Whole-fleet caching and evidence |
-| L5 | `coherence` `gherkin` `dependencies` `doctor` `explore` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
-| L6 | `results` `status` | Aggregate answers for a feature or a fleet |
+| L3 | `openapi/` `asyncapi/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
+| L4 | `fleet-context` `verify/` `openapi/merge/` | Whole-fleet caching and evidence |
+| L5 | `coherence/` `gherkin/` `dependencies/` `doctor/` `explore/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
+| L6 | `results` `status/` | Aggregate answers for a feature or a fleet |
 
-## The target package layout
+## The package layout
 
-Rule 21's five-file limit needs a destination for every module, and the destination has to be
-decided before the moving starts — a package invented one file at a time ends up as `shared/`.
-These are the subjects. Each becomes a directory; each nests further the moment its own files pass
-five, which most of them will once the 300-line limit splits the large modules.
+Rule 21's five-file limit needed a destination for every module, and the 300-line limit decided how
+far each one nests. Both are now clear — `test/code-limits-baseline.json` is empty — so this table
+describes the tree rather than a plan for it.
 
 | Package | Holds | Depends on |
 |---|---|---|
 | `core/kernel/` | `ids` `path-safety` `records` `document-bytes` `concurrency` | nothing |
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
-| `core/envelope/` | `json` `config` | kernel |
+| `core/envelope/` | `json` `config` `version` | kernel |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
-| `core/document/` | `frontmatter` `spec` | kernel, vocabulary |
-| `core/agent/` | `agent` `agents-stamp` `version` | kernel |
+| `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
+| `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
-| `core/api/` | `openapi` `asyncapi` `openapi-merge` | repo, kernel |
-| `core/fleet/` | `fleet-context` `verify` | api, repo, c4, document, kernel |
-| `core/feature/` | `delta` `staging` `provenance` `docs` `brief` | repo, document, envelope, agent, c4, kernel |
-| `core/openspec/` | the OpenSpec model, the workspace scan, and the decisions over it | repo, document, kernel |
-| `core/checks/` | `coherence` `dependencies` `gherkin` `explore` `doctor` | everything above |
-| `core/answer/` | `status` `results` | checks, and everything above |
+| `core/openapi/` `core/asyncapi/` | the two contract axes; `openapi/merge/` is the delta path | repo, kernel |
+| `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
+| `core/verify/` | the done-check: questions, answers, the record | openapi, repo, c4, document |
+| `core/delta/` `core/coherence/` | does the diff apply, and do the three axes agree | verify, repo, document |
+| `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | repo, document, kernel |
+| `core/gherkin/` `core/dependencies/` `core/explore/` `core/doctor/` | cross-artifact rules | everything above |
+| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | everything above |
+
+Three modules stay loose in `core/`: `docs.ts`, `fleet-context.ts` and `results.ts`. That is not an
+oversight — a package of one is a directory pretending to be a subject, and the five-file limit
+counts files, not folders.
 
 The order of the rows is the dependency order, and every edge points up it. That is not a
 coincidence — the subjects were derived from the seven DAG levels this document already measured,
@@ -97,7 +98,14 @@ two levels because they share a noun. It has its own package with `verify`, the 
 and the graph is acyclic again. This is exactly the failure the old rule 21 predicted, and the
 reason `npm run arch:graph` runs before a move rather than after.
 
-Two rules bind while this is in flight:
+**And it caught three more while the tree was being built.** `core/verify/` reached the contract
+reader while `core/gherkin.ts` reached verify, so verify pointed back at the package pointing at
+it — fixed by giving `openapi` its own package. `core/openspec/scan/` reached the model types at the
+package root while `inventory.ts` reached the scan — fixed by sinking the model into
+`openspec/model/`. `core/staging/recovery/` would have done the same had its modules been left at
+the top. None of the three is visible to `import/no-cycle`, because every FILE stayed acyclic.
+
+Two rules bind:
 
 1. **Never move a module without running `npm run arch:graph` on the result.** The check is a
    second, and the failure it catches is invisible to every other tool in the repo.

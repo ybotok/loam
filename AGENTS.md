@@ -29,10 +29,13 @@ branded type**, constructible only through the smart constructor that validates 
 input keeps its own raw type. Nothing counts this one — a brand either compiles or does not, and
 what no tool can see is whether the cast inside the constructor is the only one.
 
-Pre-existing violations of the three counted limits are listed in
-`test/code-limits-baseline.json`. **That list may only shrink** — the test fails on a new violation
-*and* on a stale entry, so it cannot quietly become the permanent state. Adding an entry is not how
-you land a change.
+Violations of the three counted limits are listed in `test/code-limits-baseline.json`, and **that
+list may only shrink** — the test fails on a new violation *and* on a stale entry, so it cannot
+quietly become the permanent state. Adding an entry is not how you land a change.
+
+**The file is currently empty.** Every grandfathered violation has been split or given a record, so
+the three limits now hold outright: any entry appearing in that file is a regression, not a
+backlog.
 
 `docs/CODE-STYLE.md` holds the seam obligation that comes with the line count and the four rules
 that make a brand worth its annotations. Read it before splitting anything: the limit tells you
