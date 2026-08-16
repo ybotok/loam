@@ -4,9 +4,9 @@
  *
  * It lives in a leaf of its own because both of those readers need it and they
  * sit on opposite sides of an import: `spec.ts` parses the markdown a scenario
- * is written in, `gherkin.ts` renders that scenario into a `.feature` file and
+ * is written in, `gherkin/emit.ts` renders that scenario into a `.feature` file and
  * parses requirements back out of `spec.ts` to do it. With the detector inside
- * `gherkin.ts`, asking "does this scenario have any steps?" from the parser made
+ * `gherkin/emit.ts`, asking "does this scenario have any steps?" from the parser made
  * the two modules import each other, and a module-evaluation cycle is decided by
  * whichever entry point happens to be loaded first.
  *

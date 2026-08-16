@@ -35,7 +35,7 @@ import {
 } from "../src/core/fleet-context.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { steplessFindings, steplessScenarios } from "../src/core/document/scenarios.js";
-import { renderFeature } from "../src/core/gherkin.js";
+import { renderFeature } from "../src/core/gherkin/emit.js";
 import { serviceBrief } from "../src/core/brief/brief.js";
 
 /** The fixture every fleet-shaped case starts from: two services the landscape binds by title. */

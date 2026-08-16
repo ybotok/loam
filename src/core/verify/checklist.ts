@@ -18,7 +18,7 @@
  * carry over.
  *
  * `scenarioBodyHash` stays here for that reason and has a second consumer:
- * `core/gherkin.ts` stamps the same digest as a tag on every generated
+ * `core/gherkin/stamp.ts` stamps the same digest as a tag on every generated
  * scenario, and `--results` matches a cucumber report back to a claim by it. A
  * second spelling of the hash would silently stop every scenario claim from
  * being answerable by a run.

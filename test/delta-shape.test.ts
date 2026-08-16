@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for the delta-vs-living check (src/core/delta.ts).
+ * Deep invariant tests for the delta-vs-living check (src/core/delta/).
  *
  * A requirement delta is a diff against a living spec, and until now nothing
  * checked that the diff applied. Three ways it could lie silently:
@@ -32,7 +32,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { coherentFixture, makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
-import { deltaShapeIssues } from "../src/core/delta.js";
+import { deltaShapeIssues } from "../src/core/delta/delta.js";
 import type { Issue } from "../src/core/vocabulary/issue.js";
 
 const SVC = "payment-service";

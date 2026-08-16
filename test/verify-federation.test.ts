@@ -43,7 +43,9 @@ import {
   LIVING_SPEC,
   type Project,
 } from "./helpers/harness.js";
-import { parseStampedFeature, scenarioDigest, slugOf } from "../src/core/gherkin.js";
+import { slugOf } from "../src/core/gherkin/emit.js";
+import { parseStampedFeature } from "../src/core/gherkin/read.js";
+import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 
 const FEAT = "FEAT-1";

@@ -25,7 +25,7 @@ const SCN_RE = /^####\s+Scenario:\s*(.+?)\s*$/;
  * under, the one section `loam archive` rewrites, and the one heading a delta
  * may legally quote the living state beneath. One definition on purpose — the
  * archive cut point, archive's stray-requirement guard, and the delta-shape
- * exemption (core/delta.ts) used to spell this invariant three different ways,
+ * exemption (core/delta/document.ts) used to spell this invariant three different ways,
  * and the cut point's substring `indexOf("\n## Requirements")` was a PREFIX
  * match that also hit `## Requirements Extra`. Full-line match on a trimmed
  * heading, with KIND_RE's case and interior-whitespace tolerance.
