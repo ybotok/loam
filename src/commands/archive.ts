@@ -259,7 +259,7 @@ async function archiveLocked(
   // overrides the gating issues ONLY, and must say exactly which ones it is
   // walking past. A dry run is gated too: a plan for a merge that would be
   // refused describes nothing that will happen.
-  const issues = await featureCoherence(config.docsDir, featureDir, id, deltaDoc);
+  const issues = await featureCoherence({ docsDir: config.docsDir, featureDir, featureId: id, preloadedDelta: deltaDoc });
   // The issues --approve cannot move, carved out before the gate below reads
   // the rest. The register is issue.ts's `approveOverrides` — the same data
   // the `overridable` key in the envelope is resolved from — never a code

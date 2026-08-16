@@ -171,7 +171,7 @@ export async function validateFeature(
 
 
   // Coherence — cross-axis consistency (C4 ↔ requirements ↔ OpenAPI).
-  const issues = await featureCoherence(docsDir, featureDir, featureId, deltaDoc, fleet);
+  const issues = await featureCoherence({ docsDir, featureDir, featureId, preloadedDelta: deltaDoc, context: fleet });
   if (issues.length === 0) {
     findings.push({
       severity: "ok",

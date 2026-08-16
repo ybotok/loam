@@ -1,7 +1,7 @@
 /**
- * Deep invariant tests for src/core/coherence/coherence.ts — featureCoherence().
+ * Deep invariant tests for src/core/coherence/ — featureCoherence().
  *
- * featureCoherence(docsDir, featureDir, featureId) checks that a feature's three
+ * featureCoherence({ docsDir, featureDir, featureId }) checks that a feature's three
  * axes agree: C4 delta (architecture) ↔ requirement deltas (behaviour) ↔ OpenAPI
  * (contract), joined by the operationId spine. Errors gate `loam archive`
  * (--approve overrides them); warnings are printed but never block.
@@ -40,7 +40,7 @@ async function coherenceOf(
 ): Promise<Issue[]> {
   const p = await makeProject(files);
   try {
-    return await featureCoherence(p.docsDir, join(p.docsDir, featureRel), featureId);
+    return await featureCoherence({ docsDir: p.docsDir, featureDir: join(p.docsDir, featureRel), featureId });
   } finally {
     await p.destroy();
   }
@@ -415,7 +415,7 @@ describe("E2 C4→API: every tagged edge's op must be defined by the TARGET serv
         "outside-svc/spec.md": specDelta("hiddenOp"),
         "outside-svc/openapi.yaml": openapiWith("hiddenOp"),
       });
-      const issues = await featureCoherence(p.docsDir, join(p.docsDir, FEATURE_REL), "FEAT-1");
+      const issues = await featureCoherence({ docsDir: p.docsDir, featureDir: join(p.docsDir, FEATURE_REL), featureId: "FEAT-1" });
       expect(issues.map((i) => i.code).sort()).toEqual(["c4-api.op-undefined", "c4.op-ungoverned"]);
       // The findings still speak in the document's own words — resolution
       // failing must not rename what the author wrote.

@@ -144,7 +144,7 @@ async function featureFindings(
   scans: DeltaScan[],
   context: FleetContext,
 ): Promise<Finding[]> {
-  const issues: Issue[] = await featureCoherence(docsDir, feature.dir, feature.id, undefined, context);
+  const issues: Issue[] = await featureCoherence({ docsDir, featureDir: feature.dir, featureId: feature.id, context });
   const out: Finding[] = issues.map((i) => ({
     severity: i.severity,
     code: i.code,
