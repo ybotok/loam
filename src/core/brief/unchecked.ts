@@ -33,5 +33,7 @@ export const UNCHECKED: string[] = [
   "Whether an arch scenario really exercises what its `Covers:` line names. The entries are resolved against the model and health.yaml — never against code, tests, dashboards or alert rules.",
   "Whether an ADR records a decision that was made, or one reconstructed afterwards to justify the code.",
   "COMPLETENESS. Forty behaviours documented as one requirement passes every check loam has. So does a service with one endpoint documented out of thirty.",
+  "REPRODUCIBILITY — the bar the artifact set aims at: could a reader answer, without the code, what the service exposes, what it reaches, what shapes it exchanges, how it is run and what pages whom. The depth probes catch an EMPTY contract; nothing measures a shallow one against the service, so green means the files agree with each other, never that they reach the bar.",
+  "Whether an arch requirement recording effective configuration or a library's semantics ('retries: -1 is unbounded, proven from the bytecode') is still true of the chart and the classpath. The convention names arch.spec.md as the home for such facts; loam never verifies the values.",
   "Whether `sources` names the files you read. loam checks those paths exist — not that they are the ones the document came from.",
 ];

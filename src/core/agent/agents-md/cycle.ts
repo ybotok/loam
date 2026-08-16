@@ -87,7 +87,11 @@ its openapi.yaml, and no feature can draw a call to it.
 An adoption ends with two runs, not one: \`loam validate --service <id> --json\`
 for the baseline, then \`loam validate --all --json\` in the docs repo — the
 fleet cross-check the first invocation does not perform is exactly where a
-landscape edit that did not land shows up.
+landscape edit that did not land shows up. Done, stated once: \`--service\`
+clean when run from inside the service's own repo, and \`--all\` reporting no
+\`landscape.*\` finding. The fleet run is never SILENT — \`sources.unverifiable-from-here\`
+(severity ok) appears per service as a confirmation, not work — so "keep going
+until validation is quiet" is the wrong loop; the two runs above are the test.
 
 Two rules the brief repeats and this file will too. An artifact that already
 exists is reported as \`action: "diff"\` — read it and report what disagrees;
