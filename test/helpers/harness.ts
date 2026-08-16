@@ -305,7 +305,13 @@ Operations: authorizePayment
 - **Then** the payment is authorized
 `;
 
-/** Living OpenAPI for payment-service defining authorizePayment. */
+/**
+ * Living OpenAPI for payment-service defining authorizePayment. The response
+ * carries a minimal schema on purpose: the canonical fixture demonstrates a
+ * complete contract, not the thinnest parsable one — a description-only
+ * response is exactly the shape the contract-depth warns exist to name, and
+ * the fixture behind every exact-warn-set assertion must not carry it.
+ */
 export const LIVING_OPENAPI = `openapi: 3.1.0
 info:
   title: payment-service
@@ -318,6 +324,13 @@ paths:
       responses:
         "200":
           description: Authorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
 `;
 
 /** Feature delta.likec4 for FEAT-1: new service payment-split-service + op-linked edge. */
@@ -362,7 +375,10 @@ Operations: createSplit
 - **Then** two shares are recorded
 `;
 
-/** Feature OpenAPI delta defining createSplit. */
+/**
+ * Feature OpenAPI delta defining createSplit. Schema present for the same
+ * reason as LIVING_OPENAPI's: the canonical fixtures model contract depth.
+ */
 export const FEATURE_OPENAPI = `openapi: 3.1.0
 info:
   title: payment-split-service
@@ -375,6 +391,13 @@ paths:
       responses:
         "201":
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  splitId:
+                    type: string
 `;
 
 /**
