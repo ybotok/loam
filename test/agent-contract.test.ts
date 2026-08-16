@@ -23,7 +23,7 @@
  * inconvenience.
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
@@ -53,6 +53,19 @@ async function brief(p: Project, ...args: string[]): Promise<Record<string, any>
 }
 
 const readRepo = (name: string): Promise<string> => readFile(join(ROOT, name), "utf8");
+
+/**
+ * Every `.ts` under a package, concatenated. Naming a directory rather than a
+ * file is what keeps a source-derived assertion honest across a split: reading
+ * `src/core/verify.ts` stopped existing the day that module became a package,
+ * and a test that reads one of five modules silently asks a fifth of its
+ * question.
+ */
+const readPackage = async (dir: string): Promise<string> => {
+  const entries = await readdir(join(ROOT, dir), { withFileTypes: true, recursive: true });
+  const files = entries.filter((e) => e.isFile() && e.name.endsWith(".ts"));
+  return (await Promise.all(files.map((e) => readFile(join(e.parentPath, e.name), "utf8")))).join("\n");
+};
 
 /* ------------------------------------------------------------------ */
 /* 1. The brief asks for the fleet map                                 */
@@ -581,7 +594,6 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
   });
 
   it("every refusal code `loam verify` can emit is documented in SCHEMA", async () => {
-    // Derived from the source, not from a hand list: a new refusal code in
     // verify.ts fails here until SCHEMA explains it.
     const schema = await readRepo("SCHEMA.md");
     const json = await readRepo("src/core/envelope/json.ts");
@@ -593,7 +605,7 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     // be noise in a schema document.
     const GENERIC = new Set(["no-config", "config-invalid", "unknown-target", "invalid-option", "internal"]);
     const verifySrc =
-      (await readRepo("src/commands/verify.ts")) + (await readRepo("src/core/verify.ts"));
+      (await readRepo("src/commands/verify.ts")) + (await readPackage("src/core/verify"));
     const emitted = [...new Set([...verifySrc.matchAll(/"([a-z][a-z0-9-]*)"/g)].map((m) => m[1]!))]
       .filter((c) => union.has(c) && !GENERIC.has(c))
       .sort();

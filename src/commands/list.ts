@@ -15,13 +15,9 @@ import { compareIds, type FeatureEntry, type ServiceEntry } from "../core/repo/e
 import { landscapePath, servicePaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { listFeatures, listServices } from "../core/repo/repo.js";
-import {
-  featureChecklist,
-  readVerification,
-  tallyRecord,
-  verificationVerdict,
-  type VerificationVerdict,
-} from "../core/verify.js";
+import { featureChecklist } from "../core/verify/checklist.js";
+import { readVerification } from "../core/verify/file.js";
+import { tallyRecord, type VerificationVerdict, verificationVerdict } from "../core/verify/record.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 
 type Section = "services" | "features";
@@ -247,7 +243,7 @@ interface VerificationCell {
  * features have none, and deriving N checklists to print N dashes is the cost
  * that would get this column dropped.
  *
- * An archived feature's record is frozen history (see verify.ts): archive
+ * An archived feature's record is frozen history (see `core/verify/record.ts`): archive
  * merged the feature's operations into the living openapi, so a re-derived
  * checklist can only mismatch — the record is reported as recorded, never
  * judged stale.

@@ -5,7 +5,7 @@
  * the frontmatter reader, the requirement parser, the fleet-wide read index and
  * three commands that read a single file directly. It lived beside the read
  * index, so each of those imported the whole index (and through it repo.ts,
- * openapi.ts and spec.ts) to reach a dozen lines of decoding, and several of
+ * openapi/doc.ts and document/spec.ts) to reach a dozen lines of decoding, and several of
  * them closed an import cycle doing it. A leaf whose only dependency is
  * `node:buffer` costs nothing to import and can be reached from anywhere.
  */

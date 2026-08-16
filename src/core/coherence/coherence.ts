@@ -17,15 +17,8 @@ import { featureSpecServices, listServices } from "../repo/repo.js";
 import { enumeratedServiceIndex } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";
 import { parseRequirements, type Requirement } from "../document/spec.js";
-import {
-  OPENAPI_BASELINE_KEY,
-  OPERATION_DIGEST_LENGTH,
-  OPERATION_DIGEST_RE,
-  classifyBaselineDigests,
-  operations,
-  readOpenapi,
-  serviceOperationIds,
-} from "../openapi.js";
+import { classifyBaselineDigests, OPENAPI_BASELINE_KEY, OPERATION_DIGEST_LENGTH, OPERATION_DIGEST_RE } from "../openapi/digest.js";
+import { operations, readOpenapi, serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 
 export type { Issue, IssueCode } from "../vocabulary/issue.js";

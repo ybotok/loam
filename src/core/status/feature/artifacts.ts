@@ -9,7 +9,7 @@ import { repoPath } from "../../envelope/json.js";
 import type { PathableService } from "../../kernel/ids.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
-import { verificationPath } from "../../verify.js";
+import { verificationPath } from "../../verify/record.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
 import type { ArtifactId, ArtifactState, ArtifactStatus, VerificationState } from "../report.js";

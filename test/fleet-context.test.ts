@@ -2,7 +2,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FleetContext } from "../src/core/fleet-context.js";
-import { operationIds, operations, readOpenapi } from "../src/core/openapi.js";
+import { operationIds, operations, readOpenapi } from "../src/core/openapi/doc.js";
 import { featureSpecServices, listFeatures, listServices } from "../src/core/repo/repo.js";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 

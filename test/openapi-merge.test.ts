@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import {
-  OpenapiMergeError,
-  collectRefs,
-  mergeOpenapiPaths,
-  resolvePointer,
-  stripOpenapiRemovalMarkers,
-} from "../src/core/openapi-merge.js";
+import { OpenapiMergeError } from "../src/core/openapi/merge/error.js";
+import { stripOpenapiRemovalMarkers } from "../src/core/openapi/merge/markers.js";
+import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
+import { collectRefs, resolvePointer } from "../src/core/openapi/merge/refs.js";
 
 const LIVING = `# keep this comment
 openapi: 3.1.0

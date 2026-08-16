@@ -11,7 +11,7 @@ import { inOrder } from "./kernel/concurrency.js";
 import type { PathableService } from "./kernel/ids.js";
 import { FleetContext } from "./fleet-context.js";
 import { serviceResolver } from "./c4/likec4.js";
-import { operations } from "./openapi.js";
+import { operations } from "./openapi/doc.js";
 import { compareIds, type FeatureEntry } from "./repo/entries.js";
 import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "./repo/paths.js";
 import { listFeatures } from "./repo/repo.js";

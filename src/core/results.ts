@@ -31,7 +31,8 @@
  */
 import { DIGEST_TAG_RE, scenarioDigestTag } from "./gherkin.js";
 import { isRecord } from "./kernel/records.js";
-import type { Answer, Claim } from "./verify.js";
+import type { Answer } from "./verify/answers.js";
+import type { Claim } from "./verify/checklist.js";
 
 /** One report scenario, reduced to what matching needs. */
 export interface ReportScenario {

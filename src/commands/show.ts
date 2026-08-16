@@ -6,7 +6,7 @@ import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import { listField, readFrontmatter, stringField } from "../core/document/frontmatter.js";
 import { loadFile, serviceResolver, type Elem } from "../core/c4/likec4.js";
-import { readOpenapi } from "../core/openapi.js";
+import { readOpenapi } from "../core/openapi/doc.js";
 import type { PathableService } from "../core/kernel/ids.js";
 import { type FeatureEntry } from "../core/repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../core/repo/paths.js";

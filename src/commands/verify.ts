@@ -37,28 +37,11 @@ import { resolvePortableFileInside } from "../core/kernel/path-safety.js";
 import { today } from "../core/provenance/stamp.js";
 import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { contestedDigests, readCucumberReport, runnerAnswers, type ReportScenario } from "../core/results.js";
-import {
-  attestedNotice,
-  buildVerification,
-  buildFederatedVerification,
-  checkAnswers,
-  featureChecklist,
-  readVerificationState,
-  tallyAnswers,
-  tallyRecord,
-  verificationPath,
-  verificationVerdict,
-  writeVerification,
-  type Answer,
-  type AnsweredBy,
-  type AnsweredClaim,
-  type Checklist,
-  type Claim,
-  type ConsumedReport,
-  type DiscardedAnswer,
-  type Verification,
-  type VerifyNotice,
-} from "../core/verify.js";
+import { checkAnswers, type Answer, type AnsweredBy } from "../core/verify/answers.js";
+import { buildFederatedVerification, buildVerification, type DiscardedAnswer } from "../core/verify/build.js";
+import { featureChecklist, type Checklist, type Claim } from "../core/verify/checklist.js";
+import { readVerificationState, writeVerification } from "../core/verify/file.js";
+import { attestedNotice, tallyAnswers, tallyRecord, type AnsweredClaim, type ConsumedReport, type Verification, type VerifyNotice, verificationPath, verificationVerdict } from "../core/verify/record.js";
 import { plural } from "./format.js";
 
 interface VerifyOptions {

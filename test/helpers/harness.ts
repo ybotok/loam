@@ -34,7 +34,7 @@ import { registerExplore } from "../../src/commands/explore.js";
 import { registerInstructions } from "../../src/commands/instructions.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec/migrate-openspec.js";
 import { parseRequirements, requirementDigest } from "../../src/core/document/spec.js";
-import { pinOpenapiOperations } from "../../src/core/openapi-merge.js";
+import { pinOpenapiOperations } from "../../src/core/openapi/merge/pin.js";
 
 /**
  * The identity `loam vouch` stamps in tests.
