@@ -7,7 +7,7 @@
  */
 import { featureCoherence } from "../../coherence/coherence.js";
 import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../../coherence/living.js";
-import { analyzeDependencies } from "../../dependencies.js";
+import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { featureProvenance } from "../../provenance/findings.js";

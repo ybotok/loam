@@ -1,10 +1,7 @@
 import type { Command } from "commander";
 import { loadConfig } from "../core/envelope/config.js";
-import {
-  analyzeDependencies,
-  type DependencyGraph,
-  type DependencyReason,
-} from "../core/dependencies.js";
+import { analyzeDependencies } from "../core/dependencies/dependencies.js";
+import { type DependencyGraph, type DependencyReason } from "../core/dependencies/facts.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
 import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";

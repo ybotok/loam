@@ -14,13 +14,10 @@
     "src/commands/verify.ts": 993,
     "src/commands/vouch.ts": 620,
     "src/core/coherence/coherence.ts": 518,
-    "src/core/dependencies.ts": 484,
-    "src/core/doctor.ts": 731,
     "src/core/openspec-inventory.ts": 1913
   },
   "packageFiles": {
-    "src/commands": 19,
-    "src/core": 6
+    "src/commands": 19
   },
   "functionParams": {
     "src/commands/validate/checks/requirements.ts": {

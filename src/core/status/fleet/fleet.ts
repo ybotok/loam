@@ -11,7 +11,8 @@
  * where the checks actually run.
  */
 import { existsSync } from "node:fs";
-import { analyzeDependencies, type DependencyGraph } from "../../dependencies.js";
+import { analyzeDependencies } from "../../dependencies/dependencies.js";
+import { type DependencyGraph } from "../../dependencies/facts.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry } from "../../repo/entries.js";

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { analyzeDependencies } from "../src/core/dependencies.js";
+import { analyzeDependencies } from "../src/core/dependencies/dependencies.js";
 import { FleetContext } from "../src/core/fleet-context.js";
 import { makeProject, runLoam, treeHashes, writeFiles, type Project } from "./helpers/harness.js";
 

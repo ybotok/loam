@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
-import { analyzeDependencies } from "../src/core/dependencies.js";
+import { analyzeDependencies } from "../src/core/dependencies/dependencies.js";
 import {
   LIVING_OPENAPI,
   LIVING_SPEC,
