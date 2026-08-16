@@ -3,7 +3,7 @@
  * flight, most-unblocking first, capped so the list stays navigation rather
  * than inventory.
  */
-import type { DependencyGraph } from "../../dependencies.js";
+import type { DependencyGraph } from "../../dependencies/facts.js";
 import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import {

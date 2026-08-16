@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { diagnose } from "../src/core/doctor.js";
+import { diagnose } from "../src/core/doctor/doctor.js";
 import { scaffoldDocs } from "../src/core/docs.js";
 import { agentsStampLine } from "../src/core/agent/agents-stamp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";

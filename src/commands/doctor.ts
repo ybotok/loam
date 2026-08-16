@@ -1,5 +1,6 @@
 import type { Command } from "commander";
-import { diagnose, type DoctorReport } from "../core/doctor.js";
+import { diagnose } from "../core/doctor/doctor.js";
+import { type DoctorReport } from "../core/doctor/report.js";
 import { emitJson } from "../core/envelope/json.js";
 
 interface DoctorOptions {
