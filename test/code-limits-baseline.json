@@ -1,19 +1,12 @@
 {
-  "fileLines": {
-    "src/commands/archive.ts": 873,
-    "src/commands/verify.ts": 993
-  },
-  "packageFiles": {
-    "src/commands": 6
-  },
+  "fileLines": {},
+  "packageFiles": {},
   "functionParams": {
     "src/commands/validate/checks/requirements.ts": {
       "coversUnknownFindings": 5
     },
-    "src/commands/verify.ts": {
-      "record": 8,
-      "report": 6,
-      "reportFrozen": 5
+    "src/commands/verify/record.ts": {
+      "record": 5
     },
     "src/core/coherence/living.ts": {
       "unknownDeltaServices": 5

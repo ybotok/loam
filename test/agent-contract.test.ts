@@ -605,7 +605,7 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     // be noise in a schema document.
     const GENERIC = new Set(["no-config", "config-invalid", "unknown-target", "invalid-option", "internal"]);
     const verifySrc =
-      (await readRepo("src/commands/verify.ts")) + (await readPackage("src/core/verify"));
+      (await readPackage("src/commands/verify")) + (await readPackage("src/core/verify"));
     const emitted = [...new Set([...verifySrc.matchAll(/"([a-z][a-z0-9-]*)"/g)].map((m) => m[1]!))]
       .filter((c) => union.has(c) && !GENERIC.has(c))
       .sort();

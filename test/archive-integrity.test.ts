@@ -24,7 +24,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
 import { DOCS_LOCK } from "../src/core/staging/lock.js";
-import { registerArchive } from "../src/commands/archive.js";
+import { registerArchive } from "../src/commands/archive/archive.js";
 import { coherentFixture, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
 const fsFault = vi.hoisted(() => ({
