@@ -11,11 +11,12 @@ checks it is given.
 No — but the tree does not show you why, and that gap is the real finding.
 
 - `src/cli.ts` is 148 lines of registration and nothing else. It makes 19 `register*` calls, which
-  produce **20** commands — `migrate-openspec.ts` declares two (`audit-openspec` and
-  `migrate-openspec`), which is why `test/agents.test.ts` compares against
+  produce **20** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
+  and `migrate-openspec`), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations.
-- `src/commands/` (21 files: 19 command modules + `format.ts` + `docs-repo-gate.ts`) owns the
-  printing and the exit codes.
+- `src/commands/` (19 command modules + `format.ts` + `docs-repo-gate.ts`; the two largest,
+  `validate` and `migrate-openspec`, are packages rather than single files) owns the printing and
+  the exit codes.
 - `src/core/` (38 modules) imports `commander` zero times, never imports `commands/`, and holds
   four `console` calls in total — three in `core/envelope/json.ts`, which *is* the envelope emitter, and
   one stray in `core/envelope/config.ts:224`.
@@ -119,7 +120,8 @@ A shared kernel that is the entire model means one context with several layers. 
 stop looking.
 
 **One foreign model exists, and it is already quarantined.** `core/openspec-inventory.ts` models
-another tool's vocabulary. Exactly one file in `src/` imports it — `commands/migrate-openspec.ts`
+another tool's vocabulary. Exactly one file in `src/` imports it —
+`commands/migrate-openspec/migrate-openspec.ts`
 — and no `OpenSpec*` type appears anywhere else. That is an anti-corruption layer, correctly
 placed. Do not disturb it, and do not give it its own requirement parser: it shares
 `parseRequirements` with `spec.ts` because the *grammar* genuinely is shared; only the workspace

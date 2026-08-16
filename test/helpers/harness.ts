@@ -32,7 +32,7 @@ import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
 import { registerExplore } from "../../src/commands/explore.js";
 import { registerInstructions } from "../../src/commands/instructions.js";
-import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec.js";
+import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec/migrate-openspec.js";
 import { parseRequirements, requirementDigest } from "../../src/core/document/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi-merge.js";
 

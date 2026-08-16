@@ -6,7 +6,7 @@
     "src/commands/gherkin.ts": 418,
     "src/commands/init.ts": 311,
     "src/commands/list.ts": 388,
-    "src/commands/migrate-openspec.ts": 1145,
+    "src/commands/migrate-openspec/migrate-openspec.ts": 1145,
     "src/commands/new.ts": 446,
     "src/commands/rebase.ts": 485,
     "src/commands/show.ts": 377,
@@ -29,7 +29,7 @@
     "src/core/verify.ts": 1089
   },
   "packageFiles": {
-    "src/commands": 20,
+    "src/commands": 19,
     "src/core": 14
   },
   "functionParams": {
