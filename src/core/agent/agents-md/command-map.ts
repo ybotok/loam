@@ -117,6 +117,9 @@ selected that tool. The map of which invocation surfaces what:
   payloads are never judged), \`asyncapi.ref-unresolved\` (warn — internal
   \`$ref\`s resolving to nothing), \`spine.message-undefined\`,
   \`spec-event.message-undefined\`, \`spine.message-unproduced\`,
+  \`spine.message-external\` (warn — the only declared producer is an
+  \`#external\` element, so the consumer's own asyncapi.yaml is the contract;
+  fires while it defines no shape for the message, silent once it does),
   \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.covered\`, and
   the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`,
   \`health.dependency-unmodelled\` (warn — a health.yaml \`dependencies:\` id that
