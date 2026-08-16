@@ -130,6 +130,11 @@ describe("service mode: model + requirement + API coverage", () => {
       expect(res.out).toContain(`✓ ${SVC}: C4 model valid`);
       expect(res.out).toContain(`✓ ${SVC}: requirements covered`);
       expect(res.out).toContain(`✓ ${SVC}: API covered`);
+      // The covered line carries BOTH counts — operations and living
+      // requirements. The ratio is the one signal that lets a reviewer smell
+      // a thin baseline from the summary: forty behaviours filed under one
+      // requirement passes every check loam has.
+      expect(res.out).toContain("1 operation(s) governed by requirements · 1 living requirement(s)");
     });
   });
 

@@ -195,7 +195,11 @@ export async function apiAxisFindings(
       findings.push({
         severity: "ok",
         code: "api.covered",
-        message: `${service}: API covered (${ops.length} operation(s) governed by requirements)`,
+        // Both counts on purpose: the ratio is the one signal that lets a
+        // reviewer smell a thin baseline from the summary — forty behaviours
+        // filed under one requirement passes every check, and "covered" alone
+        // read as done.
+        message: `${service}: API covered (${ops.length} operation(s) governed by requirements · ${livingReqs.length} living requirement(s))`,
       });
     } else {
       findings.push({
