@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import {
   coherentFixture,
   makeProject,
+  pinFor,
   runLoam,
   treeHashes,
   FEATURE_SPEC,
@@ -30,7 +31,7 @@ import { parseStampedFeature } from "../src/core/gherkin/read.js";
 import { gherkinStampLine, scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { stepFromLine } from "../src/core/vocabulary/steps.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-import { scenarioBodyHash } from "../src/core/verify/checklist.js";
+import { scenarioBodyHash } from "../src/core/gherkin/digest.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -685,11 +686,15 @@ describe("the feature lifecycle: in flight, archived, abandoned", () => {
     // both modes). The overwrite path used to ignore the in-flight exemption:
     // a routine `loam gherkin --service` reverted the delta's wording — the
     // feature tag and the new scenario's digest stamp silently destroyed.
+    // The MODIFIED requirement carries a Based-On pin because archive now gates
+    // on delta.baseline-missing; pinFor keeps the digest in step with the living
+    // spec instead of hard-coding bytes that would rot.
     const modDelta = `# payment-service — delta for FEAT-2
 
 ## MODIFIED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_SPEC, "Authorize a payment")}
 The service SHALL authorize a payment before capture.
 
 Operations: authorizePayment
@@ -710,6 +715,9 @@ Operations: authorizePayment
         "services/payment-service/spec.md": LIVING_SPEC,
         "services/payment-service/openapi.yaml": LIVING_OPENAPI,
         "features/FEAT-2-decline/specs/payment-service/spec.md": modDelta,
+        // Real prose in the intent, because archive now gates on intent.empty and
+        // this test's subject is the in-flight filename collision, not that gate.
+        "features/FEAT-2-decline/intent.md": `---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Decline authorization\n\nRecord a declined authorization as a first-class outcome.\n`,
       },
       { service: "payment-service" },
     );

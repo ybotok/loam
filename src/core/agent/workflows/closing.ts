@@ -142,8 +142,9 @@ export const LOAM_SHIP: CommandContent = {
    If it reports \`delta.baseline-missing\` or \`openapi.baseline-missing\`, run
    \`loam rebase $1\` and re-validate BEFORE going on: those two say nothing has
    pinned what this delta was written against, so the merge cannot tell the text
-   you EDITED from the text you merely restated, and it upserts all of it —
-   reverting whatever another feature landed in between, silently and with exit 0.
+   you EDITED from the text you merely restated. Both gate the archive — the
+   dry run in step 3 refuses on them too — and the only way past without the
+   pins is a human's \`--approve\`.
 3. \`loam archive $1 --dry-run --json\` first. \`plan[]\` is every file the merge would
    write (\`create\` / \`update\`, then the final \`move\` into \`features/archive/\`), and
    none of them are written — read it before letting the merge touch the source of
@@ -152,8 +153,6 @@ export const LOAM_SHIP: CommandContent = {
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
    contract already defines gets overwritten wholesale (\`openapi.component-modified\`
    is the same story for a component the merged operations carry),
-   \`delta.baseline-missing\` / \`openapi.baseline-missing\` mean the pins are still not
-   there and this merge may revert somebody (go back to step 2),
    \`service.no-model\` means a service arrives with no C4 centre behind it, and
    \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive

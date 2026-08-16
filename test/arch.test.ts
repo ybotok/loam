@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { parseCoversEntry, closeIds } from "../src/core/c4/arch.js";
 import { readHealth, type HealthFile } from "../src/core/vocabulary/health.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { coherentFixture, makeProject, makeTmpDir, pinFor, runLoam, type Project } from "./helpers/harness.js";
 
 async function withProject(
   files: Record<string, string>,
@@ -750,7 +750,7 @@ Covers: paymentService.api
 /** coherentFixture plus a living arch spec and arch deltas on both services. */
 function archMergeFixture(): Record<string, string> {
   const files = coherentFixture();
-  files["services/payment-service/arch.spec.md"] = `---
+  const livingArch = `---
 service: payment-service
 status: draft
 owner: payments-team
@@ -772,11 +772,16 @@ Covers: paymentService.api
 - **When** kafka is down
 - **Then** the event is published later
 `;
+  files["services/payment-service/arch.spec.md"] = livingArch;
+  // delta.baseline-missing gates archive now, so the MODIFIED requirement pins
+  // its baseline; pinFor computes the digest instead of hard-coding it so the
+  // fixture cannot drift from the canonical requirementDigest serialization.
   files["features/FEAT-1-split/specs/payment-service/arch.spec.md"] = `# arch delta
 
 ## MODIFIED Requirements
 
 ### Requirement: Outbox discipline
+Based-On: ${pinFor(livingArch, "Outbox discipline")}
 The service SHALL publish through the outbox, including the new PaymentSplit event.
 
 Covers: paymentService.api

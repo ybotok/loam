@@ -331,11 +331,15 @@ describe("the gate", () => {
     expect(only(issues, "openapi.baseline-missing")).toEqual([]);
   });
 
-  it("counts unpinned operations into ONE warning per service, not one each", async () => {
+  it("counts unpinned operations into ONE warning per service, and that warning gates", async () => {
     const [issue, ...rest] = only(await coherenceOf(fixture(LIVING)), "openapi.baseline-missing");
     expect(rest).toEqual([]);
+    // Warn, not error: the document is legal. Gating, because the merge is
+    // not safe — every unpinned restatement reverts whatever landed on it,
+    // which is the exact loss the pin exists to prevent. `--approve` remains
+    // the deliberate way past.
     expect(issue!.severity).toBe("warn");
-    expect(gatesArchive(issue!)).toBe(false);
+    expect(gatesArchive(issue!)).toBe(true);
     // Two unpinned operations, one finding — twenty-nine identical findings
     // naming a one-command fix teach people to filter the code out.
     expect(issue!.message).toContain("2 operation(s)");
@@ -405,14 +409,32 @@ describe("two features over one service", () => {
     return makeProject(files);
   }
 
-  it("no overlap needed: an unpinned quote reverts the other feature's landed change", async () => {
+  it("no overlap needed: the unpinned quote's rollback is refused, and takes --approve to choose", async () => {
+    // This used to archive both features at exit 0 and let FEAT-2's quote of
+    // refundOrder write over FEAT-3's landed change — the silent rollback the
+    // pin exists for. The gate refuses the FIRST unpinned archive; the
+    // rollback is still reachable, but only through the flag whose help text
+    // says "may corrupt the living docs", twice, on purpose.
     const p = await twoFeatures(false);
     try {
-      expect((await runLoam(p.workDir, "archive", "FEAT-3")).code).toBe(0);
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-3", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        issues: Array<{ code: string; gates: boolean; overridable: boolean }>;
+      };
+      expect(refusal.issues).toContainEqual(
+        expect.objectContaining({ code: "openapi.baseline-missing", gates: true, overridable: true }),
+      );
+      // The refused run merged nothing.
+      expect(summaries(await p.read(`services/${SVC}/openapi.yaml`)).refund).toBe("Refund an order");
+
+      expect((await runLoam(p.workDir, "archive", "FEAT-3", "--approve")).code).toBe(0);
       expect(summaries(await p.read(`services/${SVC}/openapi.yaml`)).refund).toBe("Refund an order, partially if asked");
-      // FEAT-2 never meant to touch refundOrder. It quoted it — and the merge
-      // could not tell, so it wrote the quote back over FEAT-3's change.
-      expect((await runLoam(p.workDir, "archive", "FEAT-2")).code).toBe(0);
+      // FEAT-2 never meant to touch refundOrder. It quoted it — and under
+      // --approve the merge still cannot tell, so the quote writes back over
+      // FEAT-3's change. The loss is unchanged; what changed is that somebody
+      // had to ask for it by name.
+      expect((await runLoam(p.workDir, "archive", "FEAT-2", "--approve")).code).toBe(0);
       expect(summaries(await p.read(`services/${SVC}/openapi.yaml`))).toEqual({
         cancel: "Cancel an order within 30 minutes",
         refund: "Refund an order",

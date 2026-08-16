@@ -34,6 +34,8 @@ import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
   makeProject,
+  pinFor,
+  pinOpenapi,
   runLoam,
   treeHashes,
   LANDSCAPE,
@@ -144,6 +146,39 @@ Operations: authorizePayment
 
 ### Requirement: Legacy settlement quirk
 `;
+
+/**
+ * featureCoherence now gates archive on `intent.empty` (a feature whose
+ * intent.md is missing or holds no prose must not become living truth without
+ * --approve). The fixtures in this file exercise MERGE invariants, not the
+ * intent gate, so each one that expects to get past the gate states a one-line
+ * authored Why with this file.
+ */
+const AUTHORED_INTENT = `# Why
+
+This feature exists to exercise the merge invariant its test pins.
+`;
+
+/**
+ * REQ_DELTA_ALL_KINDS with its MODIFIED and REMOVED requirements pinned against
+ * the living text they address, exactly as `loam rebase` would stamp them.
+ * `delta.baseline-missing` now GATES archive, so a fixture that means to merge
+ * cleanly must carry the pins; they are computed with pinFor, never hard-coded,
+ * because a literal digest would be a second definition of requirementDigest.
+ * The digest covers only the requirement's own serialized content — not its
+ * surroundings — so the fixtures that wrap LIVING_SPEC_TWO_REQS in extra prose,
+ * a BOM, or CRLF line endings still pin the same two requirements correctly by
+ * passing their own living text here.
+ */
+function pinAllKinds(living: string): string {
+  return REQ_DELTA_ALL_KINDS.replace(
+    "### Requirement: Authorize a payment\n",
+    `### Requirement: Authorize a payment\nBased-On: ${pinFor(living, "Authorize a payment")}\n`,
+  ).replace(
+    "### Requirement: Legacy settlement quirk\n",
+    `### Requirement: Legacy settlement quirk\nBased-On: ${pinFor(living, "Legacy settlement quirk")}\n`,
+  );
+}
 
 /** FEAT-3: adds refundPayment to the EXISTING payment-service (edge + requirement + openapi). */
 const REFUND_DELTA = `specification {
@@ -651,11 +686,19 @@ describe("second feature re-declaring the same element and edge", () => {
     // FEAT-2 re-declares the same element + edge (no openapi delta: the living
     // openapi created by FEAT-1 already provides createSplit, so it is coherent).
     // Its requirement is MODIFIED, not ADDED: FEAT-1 already merged that name into
-    // the living spec, and re-ADDING it would replace it rather than add.
+    // the living spec, and re-ADDING it would replace it rather than add. The
+    // MODIFIED requirement carries a Based-On pin computed from the living spec
+    // FEAT-1's archive just created, because an unpinned MODIFIED now gates
+    // archive (delta.baseline-missing) rather than merely warning.
     await p.write("features/FEAT-2-redo/delta.likec4", FEATURE_DELTA.replaceAll("FEAT-1", "FEAT-2"));
+    await p.write("features/FEAT-2-redo/intent.md", AUTHORED_INTENT);
+    const livingSplit = await p.read("services/payment-split-service/spec.md");
     await p.write(
       "features/FEAT-2-redo/specs/payment-split-service/spec.md",
-      FEATURE_SPEC.replace("## ADDED Requirements", "## MODIFIED Requirements"),
+      FEATURE_SPEC.replace("## ADDED Requirements", "## MODIFIED Requirements").replace(
+        "### Requirement: Split a payment\n",
+        `### Requirement: Split a payment\nBased-On: ${pinFor(livingSplit, "Split a payment")}\n`,
+      ),
     );
     run2 = await runLoam(p.workDir, "archive", "FEAT-2");
     land = await loadFile(landscapePath(p));
@@ -692,7 +735,8 @@ describe("requirements merge into an existing living spec", () => {
     p = await makeProject({
       "services/payment-service/spec.md": LIVING_SPEC_TWO_REQS,
       "services/payment-service/openapi.yaml": LIVING_OPENAPI,
-      "features/FEAT-7-rework/specs/payment-service/spec.md": REQ_DELTA_ALL_KINDS,
+      "features/FEAT-7-rework/specs/payment-service/spec.md": pinAllKinds(LIVING_SPEC_TWO_REQS),
+      "features/FEAT-7-rework/intent.md": AUTHORED_INTENT,
     });
     res = await runLoam(p.workDir, "archive", "FEAT-7");
     mergedText = await p.read("services/payment-service/spec.md");
@@ -839,6 +883,9 @@ The service SHALL do the phantom thing.
 
 describe("openapi merge", () => {
   function refundProject(featureOpenapi: string, livingOpenapi: string = LIVING_OPENAPI) {
+    // No pins needed on the openapi axis: /payments/refund is a genuinely new
+    // slot in every variant, and only a restated LIVING operation trips
+    // openapi.baseline-missing.
     return makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
       "services/payment-service/spec.md": LIVING_SPEC,
@@ -846,6 +893,7 @@ describe("openapi merge", () => {
       "features/FEAT-3-refunds/delta.likec4": REFUND_DELTA,
       "features/FEAT-3-refunds/specs/payment-service/spec.md": REFUND_SPEC,
       "features/FEAT-3-refunds/specs/payment-service/openapi.yaml": featureOpenapi,
+      "features/FEAT-3-refunds/intent.md": AUTHORED_INTENT,
     });
   }
 
@@ -903,13 +951,17 @@ describe("openapi merge", () => {
   });
 
   it("a feature re-declaring a path that already exists in the living openapi never corrupts it (no duplicate yaml keys)", async () => {
+    // The feature restates the living /payments/authorize slot, so it carries
+    // the x-loam-based-on pin `loam rebase` would write — an unpinned restated
+    // operation now gates archive (openapi.baseline-missing).
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
       "services/payment-service/spec.md": LIVING_SPEC,
       "services/payment-service/openapi.yaml": LIVING_OPENAPI,
       "features/FEAT-4-idem/delta.likec4": REDECLARE_DELTA,
       "features/FEAT-4-idem/specs/payment-service/spec.md": REDECLARE_SPEC,
-      "features/FEAT-4-idem/specs/payment-service/openapi.yaml": REDECLARE_OPENAPI,
+      "features/FEAT-4-idem/specs/payment-service/openapi.yaml": pinOpenapi(REDECLARE_OPENAPI, LIVING_OPENAPI),
+      "features/FEAT-4-idem/intent.md": AUTHORED_INTENT,
     });
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-4");
@@ -1276,6 +1328,7 @@ describe("spine preservation through the merge", () => {
     files["features/FEAT-12-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC;
     files["features/FEAT-12-split/specs/payment-split-service/openapi.yaml"] =
       coherentFixture()["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"]!;
+    files["features/FEAT-12-split/intent.md"] = AUTHORED_INTENT;
     const p = await makeProject(files);
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-12");
@@ -1309,6 +1362,7 @@ describe("spine preservation through the merge", () => {
     files["features/FEAT-12-split/specs/payment-split-service/spec.md"] = FEATURE_SPEC;
     files["features/FEAT-12-split/specs/payment-split-service/openapi.yaml"] =
       coherentFixture()["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"]!;
+    files["features/FEAT-12-split/intent.md"] = AUTHORED_INTENT;
     const p = await makeProject(files);
     try {
       expect((await runLoam(p.workDir, "archive", "FEAT-12")).code).toBe(0);
@@ -2225,6 +2279,7 @@ The service SHALL do the thing.
 - **When** asked
 - **Then** it is done
 `,
+      "features/FEAT-2-solo/intent.md": AUTHORED_INTENT,
     });
     try {
       const res = await runLoam(p.workDir, "archive", "FEAT-2-solo", "--dry-run", "--json");
@@ -2285,7 +2340,11 @@ describe("coherence gate", () => {
   it("advisory warnings never block: archive prints them and proceeds", async () => {
     // Severity and gating are two axes (issue.ts): the gate refuses on gating
     // issues — errors, plus the rare warning marked `gates` — and advisory
-    // warnings only inform. This fixture's warns are all advisory.
+    // warnings only inform. This fixture's warns are all advisory: the
+    // demonstration rides the unconsumed-operation warn (createSplit is defined
+    // and governed but no architecture edge calls it), which stayed advisory
+    // when the baseline codes became gating — so the fixture carries an
+    // authored intent.md to keep the now-gating intent.empty out of the picture.
     const wp = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
       "features/FEAT-9-split/delta.likec4": WARN_ONLY_DELTA,
@@ -2293,6 +2352,7 @@ describe("coherence gate", () => {
       "features/FEAT-9-split/specs/payment-split-service/openapi.yaml": coherentFixture()[
         "features/FEAT-1-split/specs/payment-split-service/openapi.yaml"
       ]!,
+      "features/FEAT-9-split/intent.md": AUTHORED_INTENT,
     });
     try {
       const v = await runLoam(wp.workDir, "validate", "--feature", "FEAT-9");
@@ -2470,9 +2530,19 @@ The service SHALL authorize a payment within 2 seconds.
 `;
 
   function strayedFixture(): Record<string, string> {
+    // The delta pins its MODIFIED requirement and the feature states its Why:
+    // the coherence gate (delta.baseline-missing, intent.empty) runs BEFORE the
+    // merge plan, and what this describe pins is the plan-time duplication
+    // refusal — the fixture must get that far. The strayed requirement's digest
+    // is unaffected by which heading it sits under, so one pin serves both the
+    // strayed and the heading-less living variants.
     return {
       "services/payment-service/spec.md": LIVING_SPEC_STRAYED,
-      "features/FEAT-15-faster/specs/payment-service/spec.md": CLEAN_DELTA,
+      "features/FEAT-15-faster/specs/payment-service/spec.md": CLEAN_DELTA.replace(
+        "### Requirement: Authorize a payment\n",
+        `### Requirement: Authorize a payment\nBased-On: ${pinFor(LIVING_SPEC_STRAYED, "Authorize a payment")}\n`,
+      ),
+      "features/FEAT-15-faster/intent.md": AUTHORED_INTENT,
     };
   }
 
@@ -2568,10 +2638,14 @@ Settlement timing was agreed with finance in 2019.
     NOTES_SECTION;
 
   function proseFixture(living: string): Record<string, string> {
+    // The delta is pinned against THIS test's living text (see pinAllKinds):
+    // the pins keep the now-gating baseline codes quiet, and because the digest
+    // is content-only they stay valid across the prose, BOM and CRLF variants.
     return {
       "services/payment-service/spec.md": living,
       "services/payment-service/openapi.yaml": LIVING_OPENAPI,
-      "features/FEAT-7-rework/specs/payment-service/spec.md": REQ_DELTA_ALL_KINDS,
+      "features/FEAT-7-rework/specs/payment-service/spec.md": pinAllKinds(living),
+      "features/FEAT-7-rework/intent.md": AUTHORED_INTENT,
     };
   }
 
@@ -2688,6 +2762,7 @@ The service SHALL refund an authorized payment on request.
     const p = await makeProject({
       "services/payment-service/spec.md": living,
       "features/FEAT-7-rework/specs/payment-service/spec.md": addOnly,
+      "features/FEAT-7-rework/intent.md": AUTHORED_INTENT,
     });
     try {
       expect((await runLoam(p.workDir, "archive", "FEAT-7")).code).toBe(0);
@@ -2762,13 +2837,18 @@ describe("overwriting an existing living operation (openapi.op-modified)", () =>
    * deep-equal only: no schema-diff semantics.
    */
   function redeclareFixture(featureOpenapi: string): Record<string, string> {
+    // Every variant here restates the living /payments/authorize slot, so the
+    // feature contract carries the x-loam-based-on pins `loam rebase` would
+    // write: openapi.baseline-missing now gates archive, and what this describe
+    // pins is the op-modified WARN a pinned edit still gets on merge.
     return {
       "architecture/landscape.likec4": LANDSCAPE,
       "services/payment-service/spec.md": LIVING_SPEC,
       "services/payment-service/openapi.yaml": LIVING_OPENAPI,
       "features/FEAT-4-idem/delta.likec4": REDECLARE_DELTA,
       "features/FEAT-4-idem/specs/payment-service/spec.md": REDECLARE_SPEC,
-      "features/FEAT-4-idem/specs/payment-service/openapi.yaml": featureOpenapi,
+      "features/FEAT-4-idem/specs/payment-service/openapi.yaml": pinOpenapi(featureOpenapi, LIVING_OPENAPI),
+      "features/FEAT-4-idem/intent.md": AUTHORED_INTENT,
     };
   }
 
@@ -2899,6 +2979,9 @@ components:
     featureOpenapi: string,
     livingOpenapi: string = LIVING_OPENAPI,
   ): Record<string, string> {
+    // /payments/refund is a new slot in every variant, so no baseline pin is
+    // due; the intent.md keeps the now-gating intent.empty out of fixtures
+    // whose subject is the components closure.
     return {
       "architecture/landscape.likec4": LANDSCAPE,
       "services/payment-service/spec.md": LIVING_SPEC,
@@ -2906,6 +2989,7 @@ components:
       "features/FEAT-3-refunds/delta.likec4": REFUND_DELTA,
       "features/FEAT-3-refunds/specs/payment-service/spec.md": REFUND_SPEC,
       "features/FEAT-3-refunds/specs/payment-service/openapi.yaml": featureOpenapi,
+      "features/FEAT-3-refunds/intent.md": AUTHORED_INTENT,
     };
   }
 

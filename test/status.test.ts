@@ -29,6 +29,7 @@ import {
   SERVICE_MODEL,
   type Project,
 } from "./helpers/harness.js";
+import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
 import { COMMIT_INTENT } from "../src/core/staging/recovery/intent.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { type Answer } from "../src/core/verify/answers.js";
@@ -345,6 +346,77 @@ describe("the status vocabulary answers a different question per value", () => {
     expect(payload.verification).toMatchObject({ state: "recorded", confirmed: 0, recorded: "2026-08-01" });
     const step = (payload.next as NextStep[]).find((s) => s.code === "next.verify-unconfirmed")!;
     expect(step.command).toBe("loam verify FEAT-1 --json");
+    await p.destroy();
+  });
+});
+
+/**
+ * A gating WARN is a finding an author has work to do about — `unshippable`
+ * (status/feature/next.ts) says so — and the artifact table has to name the
+ * file that work lands in. The two the authoring gate raises had no row for a
+ * long time, which is the worst possible combination: `loam status` printed
+ * `intent · done` beside an `archive` that exited 1 for the intent saying
+ * nothing, and the reader had no way to learn which file to open.
+ */
+describe("the artifact table names the file behind an authoring gate, not just the archive's refusal", () => {
+  /** `loam new` into a bare docs repo — the exact state an author starts in. */
+  async function freshScaffold(): Promise<Project> {
+    const p = await makeProject({ "services/.gitkeep": "" });
+    const created = await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--new-service", "svc-a");
+    expect(created.code).toBe(0);
+    return p;
+  }
+
+  it("draft — a fresh scaffold's intent and delta rows, the two files the gate is about", async () => {
+    // The hole this pins: `faultedArtifact` mapped neither `intent.empty` nor
+    // `scaffold.placeholder`, so both rows fell through to `done` — the table's
+    // way of saying "nothing is owed here" — while `loam archive FEAT-1` exited
+    // 1 naming both. `done` beside a refusal is worse than no row at all.
+    const p = await freshScaffold();
+    const payload = await statusJson(p, "FEAT-1");
+
+    // Both files were written by `loam new`, so this is `draft` (on disk and
+    // wrong) and can never be confused with `missing` (never written).
+    expect(artifact(payload, "intent")).toMatchObject({ status: "draft", exists: true });
+    expect(artifact(payload, "delta")).toMatchObject({ status: "draft", exists: true });
+    // Why each row is draft: the intent says nothing, and the scaffolded
+    // service description would be published to the fleet map by the merge.
+    const reported = (payload.checks.issues as Array<{ code: string }>).map((i) => i.code);
+    expect(reported).toContain("intent.empty");
+    expect(reported).toContain("scaffold.placeholder");
+    // The command agrees with the gate it is reporting on: status never gates,
+    // but the archive it is describing does.
+    expect(payload.__code).toBe(0);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--json")).code).toBe(1);
+    await p.destroy();
+  });
+
+  it("both rows recover once the intent and the description are authored", async () => {
+    // The control the test above needs: `draft` there is the two gating warns
+    // and not some standing property of a scaffolded feature, so authoring
+    // exactly the two texts the findings name — and nothing else — must move
+    // both rows to `done`.
+    const p = await freshScaffold();
+    const intentPath = `${FEAT_DIR}/intent.md`;
+    await p.write(
+      intentPath,
+      (await p.read(intentPath)).replace(
+        "## Why\n",
+        "## Why\n\nPayments arrive as one amount and land on several ledgers.\n",
+      ),
+    );
+    const deltaPath = `${FEAT_DIR}/delta.likec4`;
+    await p.write(
+      deltaPath,
+      (await p.read(deltaPath)).replace(SERVICE_DESCRIPTION_SENTINEL, "Splits a payment across payees"),
+    );
+
+    const payload = await statusJson(p, "FEAT-1");
+    expect(artifact(payload, "intent")).toMatchObject({ status: "done", exists: true });
+    expect(artifact(payload, "delta")).toMatchObject({ status: "done", exists: true });
+    const reported = (payload.checks.issues as Array<{ code: string }>).map((i) => i.code);
+    expect(reported).not.toContain("intent.empty");
+    expect(reported).not.toContain("scaffold.placeholder");
     await p.destroy();
   });
 });

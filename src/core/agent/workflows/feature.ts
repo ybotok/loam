@@ -60,13 +60,18 @@ export const LOAM_FEATURE: CommandContent = {
    a \`note\` with the close ids, not as a failure — read it, because a \`--touches\`
    naming a service that does not exist is \`delta.service-unknown\` at validate time
    and a phantom \`services/<typo>/\` directory if it ever archives.
-4. Author what the templates left as TODO:
-   - \`intent.md\` — the problem in business terms
+4. Author what the templates left as TODO. This step is gated, not advisory:
+   \`loam archive\` refuses a scaffold nobody edited (\`scaffold.placeholder\`,
+   \`intent.empty\`), so the placeholder text cannot reach the living docs.
+   - \`intent.md\` — the problem in business terms, in prose; the scaffold's
+     comment-only Why/Scope count as unwritten
    - \`delta.likec4\` — new elements and edges, each tagged \`#$1\`; every call edge carries
-     \`metadata { op '<operationId>' }\`. For a requirements-only feature DELETE this
+     \`metadata { op '<operationId>' }\`; replace the scaffolded TODO description on each
+     new service. For a requirements-only feature DELETE this
      file: an empty delta is legal, but a scaffold left half-filled is not
-   - \`specs/<svc>/spec.md\` — one behaviour per requirement, SHALL, at least one
-     Given/When/Then scenario; uncomment \`Operations:\` once the operation exists
+   - \`specs/<svc>/spec.md\` — the example requirement ships INSIDE the template's
+     comment: copy it out, unindent, one behaviour per requirement, SHALL, at
+     least one Given/When/Then scenario; add \`Operations:\` once the operation exists
    - \`specs/<svc>/arch.spec.md\` — the architectural obligations (outbox, retries,
      idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
      tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
@@ -77,9 +82,10 @@ export const LOAM_FEATURE: CommandContent = {
    contract delta (\`x-loam-based-on\`) to the living version you wrote against.
    Run it on the contract axis even if you changed exactly one endpoint: that is
    what marks the REST of the document as quotation the merge must not write back.
-   Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` warn,
-   nothing refuses, and the second feature to archive reverts the first — with
-   \`+0 ~1 -0\`, exit 0, and nobody told.
+   Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` GATE
+   the archive: before they did, the second feature to archive reverted the
+   first — with \`+0 ~1 -0\`, exit 0, and nobody told. Rebase clears them; a
+   human's \`--approve\` is the only other way past.
    Restamping is not resolving: if rebase reports a requirement as MOVED, re-read
    the living text and fold in what you still mean BEFORE you ship.
 6. \`loam validate --feature $1 --json\`. Do not stop while \`valid\` is false.

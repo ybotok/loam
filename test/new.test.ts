@@ -3,9 +3,14 @@
  *
  * The forward flow starts with four files nobody wants to write from a blank
  * page: intent.md, delta.likec4, and a spec.md (plus an openapi.yaml) per
- * service. `loam new` scaffolds them, and the templates have one hard job — a
- * freshly scaffolded feature must VALIDATE CLEAN. A scaffold that fails its own
- * validator on the first run teaches people to ignore the validator.
+ * service. `loam new` scaffolds them, and the templates have two hard jobs that
+ * pull against each other. A freshly scaffolded feature must VALIDATE WITHOUT
+ * ERRORS — a scaffold that fails its own validator on the first run teaches
+ * people to ignore the validator. And it must NOT ARCHIVE — the scaffold's
+ * placeholder text is content nobody authored, and it used to reach the living
+ * spec at exit 0 as a literal `TODO — name the behaviour` requirement. The line
+ * between the two is the warn-that-gates: `intent.empty` and
+ * `scaffold.placeholder` keep validate at exit 0 while refusing the archive.
  *
  * Families:
  *  - directory naming and id round-tripping
@@ -17,7 +22,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
 /**
  * The floor of a docs repo: `services/` exists, even when it is empty — that is
@@ -272,8 +277,8 @@ describe("templates", () => {
   });
 });
 
-describe("a fresh scaffold validates clean", () => {
-  it("passes `validate --feature` with no parse errors and no findings against it", async () => {
+describe("a fresh scaffold validates without errors, and cannot archive", () => {
+  it("passes `validate --feature` with no parse errors — the unauthored state is warnings, not failure", async () => {
     // payment-split-service is introduced by the delta's own tagged element;
     // payment-service is merely touched, so it has to already exist.
     await withProject(livingService("payment-service"), async (p) => {
@@ -292,10 +297,123 @@ describe("a fresh scaffold validates clean", () => {
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);
       expect(json.valid).toBe(true);
-      const codes = json.targets[0].findings.map((f: { code: string }) => f.code);
+      const findings = json.targets[0].findings as Array<{ code: string; gates?: boolean; severity: string }>;
+      const codes = findings.map((f) => f.code);
       expect(codes).toContain("delta.valid");
-      expect(codes).toContain("coherence.ok");
       expect(codes).not.toContain("delta.invalid");
+      // The unauthored state is named, as warnings that GATE the archive: the
+      // intent says nothing and the new service's description is the template's
+      // TODO. The comment-only spec example declares no requirement, so no
+      // requirement-level sentinel can fire on a fresh scaffold.
+      for (const code of ["intent.empty", "scaffold.placeholder"]) {
+        const f = findings.find((x) => x.code === code);
+        expect(f, code).toBeDefined();
+        expect(f!.severity).toBe("warn");
+        expect(f!.gates).toBe(true);
+      }
+    });
+  });
+
+  it("the archive refuses the unauthored scaffold — placeholders never reach the living docs", async () => {
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split", "--new-service", "svc-a");
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        error: { code: string };
+        issues: Array<{ code: string; gates: boolean; overridable: boolean }>;
+      };
+      expect(refusal.error.code).toBe("not-coherent");
+      for (const code of ["intent.empty", "scaffold.placeholder"]) {
+        expect(refusal.issues).toContainEqual(
+          expect.objectContaining({ code, gates: true, overridable: true }),
+        );
+      }
+      // Nothing was merged: the service the scaffold would have created is not there.
+      expect(p.exists("services/svc-a")).toBe(false);
+    });
+  });
+
+  /**
+   * Scaffold FEAT-1 with NO service, then put intent.md back through `rewrite`.
+   *
+   * No service on purpose. A scaffolded service description raises
+   * `scaffold.placeholder` and refuses the archive on its own, which is exactly
+   * how the encoding hole below stayed invisible: with the description gone,
+   * the unwritten intent is the only thing standing between the scaffold and
+   * the living docs, so the EXIT CODE discriminates and not merely the issue
+   * list. `--title Split` fixes the directory as features/FEAT-1-split.
+   */
+  const scaffoldThenRewriteIntent = async (
+    p: Project,
+    rewrite: (text: string) => string,
+  ): Promise<void> => {
+    await runLoam(p.workDir, "new", "FEAT-1", "--title", "Split");
+    const path = "features/FEAT-1-split/intent.md";
+    await p.write(path, rewrite(await p.read(path)));
+  };
+
+  it("a CRLF rewrite of the scaffolded intent.md says no more than it did — the archive still refuses", async () => {
+    // The hole this pins: `hasProse` matched the frontmatter fence with `^---\n`,
+    // so in a CRLF file `---\r` was not the fence, the frontmatter survived the
+    // strip and counted as the author's prose. `intent.empty` went quiet and the
+    // untouched scaffold archived at exit 0 through the exact gate built to
+    // refuse it — and any editor on Windows produces this file by saving it.
+    await withProject({}, async (p) => {
+      await scaffoldThenRewriteIntent(p, (text) => text.replace(/\n/g, "\r\n"));
+      const before = await treeHashes(p.docsDir);
+
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        error: { code: string };
+        issues: Array<{ code: string; gates: boolean }>;
+      };
+      expect(refusal.error.code).toBe("not-coherent");
+      expect(refusal.issues).toContainEqual(
+        expect.objectContaining({ code: "intent.empty", gates: true }),
+      );
+      // A refusal that half-merged would be the worse defect: the feature is
+      // still in flight, and not one byte of the docs repo moved.
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    });
+  });
+
+  it("a byte-order mark in front of the scaffolded intent.md does not make it authored either", async () => {
+    // Same hole, reached by the other invisible byte: with a BOM ahead of it the
+    // opening `---` was no longer at index 0, the fence did not match, and the
+    // frontmatter read as prose. The mark is spelled as an escape here for the
+    // reason sentinels.ts gives — a raw one is invisible in review and to grep.
+    await withProject({}, async (p) => {
+      await scaffoldThenRewriteIntent(p, (text) => `\uFEFF${text}`);
+      const before = await treeHashes(p.docsDir);
+
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        error: { code: string };
+        issues: Array<{ code: string; gates: boolean }>;
+      };
+      expect(refusal.error.code).toBe("not-coherent");
+      expect(refusal.issues).toContainEqual(
+        expect.objectContaining({ code: "intent.empty", gates: true }),
+      );
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    });
+  });
+
+  it("one line of authored prose clears intent.empty and the same scaffold archives", async () => {
+    // The control the two tests above need: this fixture is one sentence away
+    // from shipping, so their exit 1 is the unwritten intent being refused and
+    // not some unrelated thing the archive dislikes about a service-less feature.
+    await withProject({}, async (p) => {
+      await scaffoldThenRewriteIntent(p, (text) =>
+        text.replace("## Why\n", "## Why\n\nPayments arrive as one amount and land on several ledgers.\n"),
+      );
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code).toBe(0);
+      expect(JSON.parse(shipped.stdout).ok).toBe(true);
+      expect(p.exists("features/archive/FEAT-1-split/intent.md")).toBe(true);
     });
   });
 
@@ -307,15 +425,18 @@ describe("a fresh scaffold validates clean", () => {
     });
   });
 
-  it("the scaffolded feature is projectable onto its service right away", async () => {
+  it("the scaffolded feature is projectable onto its service right away — and declares nothing", async () => {
     await withProject({}, async (p) => {
       await runLoam(p.workDir, "new", "FEAT-1", "--new-service", "svc-a");
       const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "svc-a", "--json");
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);
       expect(json.architecture.isNew).toBe(true);
-      expect(json.requirements).toHaveLength(1);
-      expect(json.requirements[0].scenarios).toHaveLength(1);
+      // ZERO requirements, deliberately: the template's example lives inside an
+      // HTML comment, past the line-anchored heading patterns, so the scaffold
+      // ships no requirement nobody wrote. It used to ship exactly one — a
+      // literal `TODO — name the behaviour` that archived into the living spec.
+      expect(json.requirements).toHaveLength(0);
     });
   });
 });

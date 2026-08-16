@@ -102,9 +102,10 @@ export async function writeMigrationTarget(
           `Review ${inventory.changes.active.length} staged feature(s), add their LikeC4/OpenAPI deltas, and resolve any retained or manual-review OpenSpec artifacts recorded in migration-plan.json.`,
           // OpenSpec has no equivalent of `Based-On:`, so every migrated
           // MODIFIED/REMOVED requirement arrives unpinned (`delta.baseline-missing`,
-          // a warning by design — a corpus that cannot archive is not a safety
-          // property). Until someone runs this, two migrated features rewriting
-          // one requirement still lose the loser's text silently.
+          // a warning that GATES archive — unpinned is the shape that reverts
+          // someone else's landed change). The corpus is not stranded: one
+          // rebase per staged feature pins everything, which is exactly the
+          // step this line asks for.
           "Run `loam rebase <FEAT>` per staged feature: OpenSpec deltas carry no Based-On, so no MODIFIED/REMOVED requirement is pinned to the living text it was written against.",
         ]),
     "Review config context/rules, Stores/references, custom schemas, and every artifact disposition in migration-plan.json.",

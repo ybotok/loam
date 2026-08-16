@@ -12,6 +12,12 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { featureCoherence, type Issue } from "../src/core/coherence/coherence.js";
+// The sentinel is imported, never re-spelled: sentinels.ts exists so the
+// templates and the gate share ONE spelling, and a third copy in a fixture is
+// exactly the drift that module was written to prevent. What this file pins is
+// the SCOPE the gate reads — new.test.ts already proves `loam new` writes this
+// very string end to end.
+import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
 import { gatesArchive } from "../src/core/vocabulary/issue.js";
 import {
   coherentFixture,
@@ -19,7 +25,10 @@ import {
   pinFor,
   pinOpenapi,
   runLoam,
+  treeHashes,
   writeFiles,
+  FEATURE_DELTA,
+  LANDSCAPE,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
   LIVING_OPENAPI,
@@ -32,13 +41,25 @@ import {
 
 const FEATURE_REL = "features/FEAT-1-split";
 
+/**
+ * A minimal intent.md carrying one authored sentence. `intent.empty` became a
+ * gating warn, so a fixture with no stated intent now adds that finding to
+ * every exact issue-set assertion in this file — the intent axis has its own
+ * tests, and the fixtures here must stay silent on it to keep probing exactly
+ * one axis at a time.
+ */
+const intentProse = (featureId = "FEAT-1") =>
+  `---\nfeature: ${featureId}\nstatus: proposed\n---\n\n# Intent\n\nExercise one coherence axis in isolation.\n`;
+
 /** Build a docs repo from `files`, run featureCoherence on FEAT-1, destroy. */
 async function coherenceOf(
   files: Record<string, string>,
   featureId = "FEAT-1",
   featureRel = FEATURE_REL,
 ): Promise<Issue[]> {
-  const p = await makeProject(files);
+  // The caller's own intent.md wins over the default: a test about the intent
+  // axis itself must be able to supply an empty or missing one deliberately.
+  const p = await makeProject({ [`${featureRel}/intent.md`]: intentProse(featureId), ...files });
   try {
     return await featureCoherence({ docsDir: p.docsDir, featureDir: join(p.docsDir, featureRel), featureId });
   } finally {
@@ -405,7 +426,12 @@ describe("E2 C4→API: every tagged edge's op must be defined by the TARGET serv
     #FEAT-1
     metadata { op 'hiddenOp' }
   }`);
-    const p = await makeProject({ [`${FEATURE_REL}/delta.likec4`]: traversal });
+    // Built via makeProject directly (the outside files must land above the
+    // docs repo), so the intent default coherenceOf injects is restated here.
+    const p = await makeProject({
+      [`${FEATURE_REL}/delta.likec4`]: traversal,
+      [`${FEATURE_REL}/intent.md`]: intentProse(),
+    });
     try {
       // A spec governing hiddenOp and an openapi defining it, one level ABOVE
       // the docs repo — exactly where join(docsDir, "services",
@@ -784,6 +810,113 @@ describe("c4.service-binding-invalid: a tagged element's explicit binding must b
 });
 
 /* ------------------------------------------------------------------ */
+/* scaffold.placeholder: the same splice scope, on the other check     */
+/* ------------------------------------------------------------------ */
+
+describe("scaffold.placeholder: a scaffolded description on an untagged child rides in with its tagged parent", () => {
+  /**
+   * FEATURE_DELTA with one extra container nested inside the tagged
+   * payment-split-service block, carrying `description`. Built from the
+   * canonical delta rather than from `delta()` so the rest of the coherent
+   * fixture still joins on it — the edge, the requirement and the contract all
+   * stay in agreement, and the description is the only thing under test.
+   */
+  const withNestedChild = (description: string): string =>
+    FEATURE_DELTA.replace("  element softwareSystem\n", "  element softwareSystem\n  element container\n").replace(
+      "    description 'Splits a payment across payees'\n",
+      `    description 'Splits a payment across payees'\n    ledger = container 'Ledger writer' {\n      description '${description}'\n    }\n`,
+    );
+
+  /**
+   * The coherent fixture, its delta carrying that nested child — and its LIVING
+   * landscape taught the `container` kind.
+   *
+   * That second edit is not cosmetic: without it the merged landscape does not
+   * parse and `archive` refuses with `merge-failed` instead. Which is itself the
+   * proof that the splice really does carry the untagged child over — a child
+   * the merge left behind could not have broken the living specification block.
+   */
+  const nestedFixture = (description: string): Record<string, string> => ({
+    ...coherentFixture(),
+    "architecture/landscape.likec4": LANDSCAPE.replace(
+      "  element softwareSystem\n",
+      "  element softwareSystem\n  element container\n",
+    ),
+    [`${FEATURE_REL}/delta.likec4`]: withNestedChild(description),
+  });
+
+  it("the untagged child's TODO description is a gating scaffold.placeholder", async () => {
+    // The bypass this pins: the gate read the TAGGED elements only, so a
+    // scaffolded description one level down was invisible to it while the
+    // landscape merge spliced the parent's block over byte for byte, children
+    // included — `TODO — what this service owns` reached the living fleet map
+    // verbatim at exit 0. c4.service-binding-invalid learned the same lesson on
+    // the same nesting (see the describe above); this is the other check that
+    // reads elements and had the narrower scope.
+    const issues = await coherenceOf(nestedFixture(SERVICE_DESCRIPTION_SENTINEL));
+    const placeholders = issues.filter((i) => i.code === "scaffold.placeholder");
+    expect(placeholders).toHaveLength(1);
+    expect(placeholders[0]!.severity).toBe("warn");
+    expect(gatesArchive(placeholders[0]!)).toBe(true);
+    // The finding names the child, not the tagged parent: the reader has to be
+    // sent to the block they actually have to edit.
+    expect(placeholders[0]!.message).toContain("Ledger writer");
+    expect(placeholders[0]!.message).toContain(SERVICE_DESCRIPTION_SENTINEL);
+  });
+
+  it("control: a real description on the same child is silent, and the fixture stays coherent", async () => {
+    // Same delta, same nesting, one authored sentence — so the finding above is
+    // the scaffolded STRING being refused and not the nested container itself
+    // upsetting some other axis.
+    const issues = await coherenceOf(nestedFixture("Writes the per-payee shares to the ledger"));
+    expect(issues).toEqual([]);
+  });
+
+  it("loam archive refuses it, and not one byte of the docs repo moves", async () => {
+    const p = await makeProject(nestedFixture(SERVICE_DESCRIPTION_SENTINEL));
+    try {
+      const before = await treeHashes(p.docsDir);
+      const blocked = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(blocked.code).toBe(1);
+      const refusal = JSON.parse(blocked.stdout + blocked.stderr) as {
+        error: { code: string };
+        issues: Array<{ code: string; gates: boolean }>;
+      };
+      expect(refusal.error.code).toBe("not-coherent");
+      expect(refusal.issues).toContainEqual(
+        expect.objectContaining({ code: "scaffold.placeholder", gates: true }),
+      );
+      // The defect class this repo cares most about: a refusal that already
+      // half-merged. The living landscape must not have grown the element, the
+      // feature must still be in flight, and the tree hash says both at once.
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      expect(p.exists("features/archive/FEAT-1-split")).toBe(false);
+      expect(await p.read("architecture/landscape.likec4")).not.toContain(
+        SERVICE_DESCRIPTION_SENTINEL,
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("control: the same archive goes through once the child says something", async () => {
+    const p = await makeProject(nestedFixture("Writes the per-payee shares to the ledger"));
+    try {
+      const shipped = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(shipped.code).toBe(0);
+      expect(p.exists("features/archive/FEAT-1-split/delta.likec4")).toBe(true);
+      // And the authored sentence is what reached the fleet map — the same
+      // route the sentinel would have taken had the gate stayed tag-scoped.
+      expect(await p.read("architecture/landscape.likec4")).toContain(
+        "Writes the per-payee shares to the ledger",
+      );
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* Broken or missing inputs                                            */
 /* ------------------------------------------------------------------ */
 
@@ -799,8 +932,11 @@ describe("broken or missing inputs", () => {
   });
 
   it("feature with no delta.likec4 and no specs dir has nothing to check — exactly no issues", async () => {
+    // The intent carries a prose sentence: a heading-only intent.md now draws
+    // the gating `intent.empty` warn, which would hide what this test pins —
+    // that the three coherence axes themselves have nothing to say here.
     const issues = await coherenceOf({
-      [`${FEATURE_REL}/intent.md`]: "---\nfeature: FEAT-1\nstatus: proposed\n---\n\n# Intent\n",
+      [`${FEATURE_REL}/intent.md`]: intentProse(),
     });
     expect(issues).toEqual([]);
   });
@@ -924,6 +1060,11 @@ describe("c4-api.op-deprecated: a NEW tagged edge on an op the living provider m
       "services/payment-service/spec.md": LIVING_SPEC,
       "services/payment-service/openapi.yaml": livingOpenapi,
       [`${FEATURE_REL}/delta.likec4`]: CONSUMING_DELTA,
+      // Real intent prose, because the archive test below feeds this fixture to
+      // `loam archive` directly: with `intent.empty` gating, a bare fixture
+      // would block the merge for a reason unrelated to the deprecation warn
+      // whose advisory nature that test exists to demonstrate.
+      [`${FEATURE_REL}/intent.md`]: intentProse(),
     };
   }
 

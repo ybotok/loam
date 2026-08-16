@@ -41,6 +41,7 @@ import {
   LANDSCAPE,
   LIVING_OPENAPI,
   LIVING_SPEC,
+  pinFor,
   type Project,
 } from "./helpers/harness.js";
 import { slugOf } from "../src/core/gherkin/emit.js";
@@ -490,13 +491,20 @@ describe("an unreadable verification.yaml", () => {
 
 const FILE = "features/loam/authorize-a-payment.feature";
 
-/** A MODIFIED delta of the living "Authorize a payment" requirement. */
+/**
+ * A MODIFIED delta of the living "Authorize a payment" requirement. It carries
+ * a Based-On pin because delta.baseline-missing now gates archive, and one of
+ * these features is archived mid-scenario below — an unpinned MODIFIED
+ * requirement would stop that archive before the gherkin behaviour under test
+ * is ever reached.
+ */
 function modified(scenario: string, then: string): string {
   return `# payment-service — delta
 
 ## MODIFIED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_SPEC, "Authorize a payment")}
 The service SHALL authorize a payment before capture.
 
 Operations: authorizePayment
@@ -518,10 +526,14 @@ function twoFeatures(): Record<string, string> {
     "architecture/landscape.likec4": LANDSCAPE,
     "services/payment-service/spec.md": LIVING_SPEC,
     "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+    // Each feature states its Why: intent.empty now gates archive, and the
+    // scenario below archives FEAT-2 to release its .feature file to FEAT-3.
+    "features/FEAT-2-decline/intent.md": `---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Decline authorization\n\nLet an authorization be declined instead of silently failing.\n`,
     "features/FEAT-2-decline/specs/payment-service/spec.md": modified(
       "Declined authorization",
       "the payment is declined",
     ),
+    "features/FEAT-3-retry/intent.md": `---\nfeature: FEAT-3\nstatus: proposed\n---\n\n# Retry authorization\n\nLet a failed authorization be retried safely.\n`,
     "features/FEAT-3-retry/specs/payment-service/spec.md": modified(
       "Retried authorization",
       "the authorization is retried",

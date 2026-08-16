@@ -126,6 +126,8 @@ export type IssueCode =
   | "openapi.remove-marker-path-level"
   /** the living OpenAPI defines one operationId in two (path, method) slots — every join on the id picks one arbitrarily */
   | "openapi.duplicate-operationid"
+  /** the FEATURE's own openapi.yaml exists but does not parse — the same name validate gives a living contract in that state: every contract-axis check for the service is suspended, and the archive plan refuses the merge mechanically */
+  | "openapi.invalid"
   /** an `x-loam-based-on` that is not a digest, or sits on an operation the living contract does not have */
   | "openapi.baseline-invalid"
   /** a feature operation with no `x-loam-based-on` — the merge cannot tell whether the delta EDITS it or merely quotes it */
@@ -146,6 +148,11 @@ export type IssueCode =
   | "delta.baseline-stale"
   /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete */
   | "service.no-model"
+  /* --- authoring: did a person actually write this? --- */
+  /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
+  | "scaffold.placeholder"
+  /** intent.md is missing, or says nothing outside the scaffold's own comments — nothing states why the feature exists */
+  | "intent.empty"
   /* --- docs-repo contract: --all only, never a merge question --- */
   /** AGENTS.md carries no version stamp, or one older than the running binary — the agent contract may have drifted */
   | "agents.stale";

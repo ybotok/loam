@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { makeProject, runLoam, treeHashes } from "./helpers/harness.js";
+import { makeProject, pinFor, runLoam, treeHashes } from "./helpers/harness.js";
 
 const fsFault = vi.hoisted(() => ({
   onRename: undefined as undefined | ((from: string, to: string) => void),
@@ -48,11 +48,18 @@ components:
     Legacy: { type: object }
 `;
 
+// The REMOVED requirement carries a Based-On pin because delta.baseline-missing
+// now gates archive: an unpinned removal cannot prove the living text it deletes
+// is the text it was written against. The pin is computed, not hard-coded, so the
+// unarchive round-trip stays byte-deterministic. The x-loam-remove marker below
+// needs no x-loam-based-on — a removal marker is not a restatement, and its slot
+// is guarded by the remove-target checks instead.
 const REMOVED_SPEC = `# retirement
 
 ## REMOVED Requirements
 
 ### Requirement: Legacy authorization
+Based-On: ${pinFor(LIVING_SPEC, "Legacy authorization")}
 
 Operations: legacyOp
 `;
@@ -71,6 +78,13 @@ function fixture(): Record<string, string> {
     "services/payment-service/openapi.yaml": LIVING_OPENAPI,
     "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": REMOVED_SPEC,
     "features/FEAT-40-retire-legacy/specs/payment-service/openapi.yaml": REMOVAL_OPENAPI,
+    // intent.empty now gates archive, and a feature with no intent.md at all
+    // gates identically to one whose intent is still the scaffold's comments —
+    // so the fixture states its Why in one line of real prose.
+    "features/FEAT-40-retire-legacy/intent.md": `# Retire legacy authorization
+
+The legacy authorization endpoint is being retired from payment-service.
+`,
   };
 }
 

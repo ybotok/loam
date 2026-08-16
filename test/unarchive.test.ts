@@ -25,6 +25,7 @@ import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
   makeProject,
+  pinFor,
   runLoam,
   treeHashes,
   LANDSCAPE,
@@ -76,12 +77,18 @@ Operations: authorizePayment
 - **Then** the payment is authorized
 `;
 
-/** The delta that rewrites it — and records nothing about what it replaced. */
+/**
+ * The delta that rewrites it — and records nothing about what it replaced.
+ * The Based-On pin is computed, not hard-coded, because archive now gates on
+ * `delta.baseline-missing`: an unpinned MODIFIED requirement no longer merges,
+ * and this test is about the round trip, not about that refusal.
+ */
 const MODIFY_DELTA = `# payment-service — delta for FEAT-20
 
 ## MODIFIED Requirements
 
 ### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_SPEC_TO_MODIFY, "Authorize a payment")}
 The service SHALL authorize a payment within 2 seconds.
 
 Operations: authorizePayment
@@ -98,6 +105,9 @@ function modifyFixture(): Record<string, string> {
     "services/payment-service/spec.md": LIVING_SPEC_TO_MODIFY,
     "services/payment-service/openapi.yaml": LIVING_OPENAPI,
     "features/FEAT-20-faster/specs/payment-service/spec.md": MODIFY_DELTA,
+    // archive now gates on `intent.empty`, so the fixture needs one line of
+    // real prose — a missing intent.md would refuse before the merge ran.
+    "features/FEAT-20-faster/intent.md": `---\nfeature: FEAT-20\nstatus: proposed\n---\n\n# Faster authorization\n\nAuthorize a payment within two seconds instead of before capture alone.\n`,
   };
 }
 
