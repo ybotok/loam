@@ -120,12 +120,12 @@ A shared kernel that is the entire model means one context with several layers. 
 stop looking.
 
 **One foreign model exists, and it is already quarantined.** `core/openspec-inventory.ts` models
-another tool's vocabulary. Exactly one file in `src/` imports it —
-`commands/migrate-openspec/migrate-openspec.ts`
-— and no `OpenSpec*` type appears anywhere else. That is an anti-corruption layer, correctly
-placed. Do not disturb it, and do not give it its own requirement parser: it shares
-`parseRequirements` with `spec.ts` because the *grammar* genuinely is shared; only the workspace
-layout differs, and that part is already isolated.
+another tool's vocabulary. Exactly one *package* in `src/` imports it — `commands/migrate-openspec/`,
+whose twelve modules are the only place outside it where an `OpenSpec*` type is named. That is an
+anti-corruption layer, correctly placed; the quarantine is the directory, not the file count, and
+splitting the command did not widen it. Do not disturb it, and do not give it its own requirement
+parser: it shares `parseRequirements` with `spec.ts` because the *grammar* genuinely is shared;
+only the workspace layout differs, and that part is already isolated.
 
 ## Rules
 
