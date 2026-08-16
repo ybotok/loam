@@ -10,7 +10,7 @@ import { featureIdFromDirName, nearestIds, type FeatureEntry } from "../core/rep
 import { featuresDir } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { listServices, resolveFeature } from "../core/repo/repo.js";
-import { docsRepoReady, reportDocsRepoError } from "./docs-repo-gate.js";
+import { docsRepoReady, reportDocsRepoError } from "./policy/gate.js";
 
 interface NewOptions {
   title?: string;

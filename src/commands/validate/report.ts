@@ -16,7 +16,7 @@ import {
   type Finding,
   type TargetReport,
 } from "../../core/vocabulary/report.js";
-import { plural } from "../format.js";
+import { plural } from "../policy/format.js";
 
 /**
  * The rollup `--json` carries and the `--all` footer prints.
