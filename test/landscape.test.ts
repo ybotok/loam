@@ -56,8 +56,10 @@ function landscape(body: string): string {
   return `specification {
   element softwareSystem
   element container
+  element database
   element person
   tag external
+  tag platform
 }
 
 model {
@@ -473,6 +475,197 @@ paths:
       const res = await runLoam(p.workDir, "show", "checkout-web", "--json");
       const json = JSON.parse(res.stdout) as { landscape: { outbound: { service: string }[] } };
       expect(json.landscape.outbound.map((e) => e.service)).toEqual([SVC]);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* fleet shape: platform candidates and datastores                     */
+/* ------------------------------------------------------------------ */
+
+function threeServices(): Record<string, string> {
+  return {
+    "services/svc-a/model.likec4": serviceModel("svc-a"),
+    "services/svc-b/model.likec4": serviceModel("svc-b"),
+    "services/svc-c/model.likec4": serviceModel("svc-c"),
+  };
+}
+
+describe("an external hub every service leans on", () => {
+  it("warns landscape.platform-candidate at three distinct consumers — one via a nested child", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  svcB = softwareSystem 'svc-b'
+  svcC = softwareSystem 'svc-c'
+  uaa = softwareSystem 'UAA' {
+    #external
+    tokens = container 'token store'
+  }
+  svcA -> uaa 'authenticates'
+  svcB -> uaa 'authenticates'
+  svcC -> uaa.tokens 'introspects'`),
+      ...threeServices(),
+    };
+    await withProject(files, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
+      expect(code).toBe(0);
+      const t = landscapeTarget(targets)!;
+      const f = t.findings.find((x) => x.code === "landscape.platform-candidate")!;
+      expect(f.severity).toBe("warn");
+      expect(f.subject).toBe("UAA");
+      expect(f.message).toContain("tag platform");
+      // Distinct consumers, sorted — and the edge into `uaa.tokens` counted
+      // for `uaa`, or svc-c would be missing and the threshold never met.
+      expect(f.message).toContain("svc-a, svc-b, svc-c");
+      // A map with a shape warning did not fully agree.
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.matched");
+    });
+  });
+
+  it("counts services, not edges — two edges from one service are one consumer", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  svcB = softwareSystem 'svc-b'
+  visitor = person 'Visitor'
+  uaa = softwareSystem 'UAA' {
+    #external
+    tokens = container 'token store'
+  }
+  svcA -> uaa 'authenticates'
+  svcA -> uaa.tokens 'introspects'
+  svcB -> uaa 'authenticates'
+  visitor -> uaa 'signs in'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+      "services/svc-b/model.likec4": serviceModel("svc-b"),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      // Two distinct services (the person never counts): below the threshold.
+      expect(codesIn(targets)).not.toContain("landscape.platform-candidate");
+    });
+  });
+
+  it("is silenced by #platform — the tag IS the fix", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  svcB = softwareSystem 'svc-b'
+  svcC = softwareSystem 'svc-c'
+  uaa = softwareSystem 'UAA' {
+    #external
+    #platform
+  }
+  svcA -> uaa 'authenticates'
+  svcB -> uaa 'authenticates'
+  svcC -> uaa 'authenticates'`),
+      ...threeServices(),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.platform-candidate");
+      expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
+    });
+  });
+});
+
+describe("a datastore drawn at fleet level", () => {
+  it("warns landscape.datastore-private on a single consumer, naming the move", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  redis = database 'Redis' {
+    #external
+  }
+  orphan = database 'Orphan' {
+    #external
+  }
+  svcA -> redis 'caches sessions'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+    };
+    await withProject(files, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
+      expect(code).toBe(0);
+      const t = landscapeTarget(targets)!;
+      const f = t.findings.find((x) => x.code === "landscape.datastore-private")!;
+      expect(f.severity).toBe("warn");
+      expect(f.subject).toBe("Redis");
+      expect(f.message).toContain("services/svc-a/model.likec4");
+      // #external does not exempt a datastore: this fleet tags private stores
+      // external precisely to silence service-undocumented, and the drawing is
+      // false regardless of whose logo is on the box.
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.service-undocumented");
+      // A datastore nothing consumes is neither private nor shared — no
+      // finding names 'Orphan'.
+      expect(t.findings.filter((x) => x.subject === "Orphan")).toEqual([]);
+    });
+  });
+
+  it("stays silent once the store is nested inside its consumer — the fixed state", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    redis = database 'Redis'
+  }`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
+      expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
+    });
+  });
+
+  it("warns landscape.datastore-shared when a second service reaches the same data", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  svcB = softwareSystem 'svc-b'
+  store = database 'Category store' {
+    #external
+  }
+  svcA -> store 'reads categories'
+  svcA -> store 'writes categories'
+  svcB -> store 'reads categories'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+      "services/svc-b/model.likec4": serviceModel("svc-b"),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      const f = t.findings.find((x) => x.code === "landscape.datastore-shared")!;
+      expect(f.severity).toBe("warn");
+      expect(f.message).toContain("svc-a, svc-b");
+      expect(f.message).toContain("DATA");
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
+    });
+  });
+
+  it("never fires on a datastore that IS a service of the fleet", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  catalogDb = database 'catalog-db'
+  svcA -> catalogDb 'queries'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+      "services/catalog-db/model.likec4": serviceModel("catalog-db"),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
+      expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
+    });
+  });
+
+  it("--strict escalates the shape warnings to exit 1", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  redis = database 'Redis' {
+    #external
+  }
+  svcA -> redis 'caches sessions'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--strict");
+      expect(res.code).toBe(1);
     });
   });
 });

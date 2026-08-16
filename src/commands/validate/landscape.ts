@@ -20,6 +20,7 @@ import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listServices, serviceIdFindings } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
 import { FleetContext, landscapeConflictFinding } from "../../core/fleet-context.js";
+import { fleetShapeFindings } from "./checks/fleet-shape.js";
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "./checks/vocabulary.js";
 
 /**
@@ -269,6 +270,13 @@ export async function validateLandscape(
       message: `landscape: '${e.title}' has no services/${e.title}/ — bind it with metadata { service '<id>' }, or tag it #${EXTERNAL_TAG} if it is not ours`,
     });
   }
+
+  // The shape advisories run LAST, over the same drawn set and resolver the
+  // structural checks used. Any one of them suppresses `landscape.matched`
+  // below on purpose: a map with a shape warning did not fully "agree".
+  findings.push(
+    ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf }),
+  );
 
   if (findings.length === 0) {
     findings.push({

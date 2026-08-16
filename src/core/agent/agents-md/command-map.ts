@@ -150,7 +150,12 @@ selected that tool. The map of which invocation surfaces what:
   cross-check: \`landscape.missing\`, \`landscape.invalid\`,
   \`landscape.merge-conflict\`, \`landscape.service-unmodelled\`,
   \`landscape.service-undocumented\`, \`landscape.binding-unknown\`,
-  \`landscape.binding-duplicate\`, \`service.id-invalid\` (a \`services/<id>/\`
+  \`landscape.binding-duplicate\`, the fleet-shape advisories
+  \`landscape.platform-candidate\`, \`landscape.datastore-private\` and
+  \`landscape.datastore-shared\` (all warn — the map's legibility and coupling
+  shapes: tag ubiquitous infrastructure \`#platform\` so the fleet view can
+  exclude it, keep a single-consumer datastore inside its service's own model,
+  and let a truly shared one state which data it shares), \`service.id-invalid\` (a \`services/<id>/\`
   directory every authoring command refuses to address — read commands like
   \`validate --service\`, \`show\` and \`status\` resolve it against the
   enumeration and still grade it, so it can be inspected but not changed
