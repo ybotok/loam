@@ -25,6 +25,15 @@ model {
     api -> domain 'Uses'
     domain -> db 'Reads/writes'
   }
+
+  // The service model carries everything the service touches — cross-boundary
+  // dependencies included, drawn with the edge the service actually has. The
+  // landscape carries only the boundary crossing; health.yaml's dependencies
+  // must resolve HERE (health.dependency-unmodelled otherwise).
+  kafka = softwareSystem 'kafka' {
+    description 'Event backbone (platform)'
+  }
+  paymentService.domain -> kafka 'Publishes payment events'
 }
 
 views {

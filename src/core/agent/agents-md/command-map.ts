@@ -111,7 +111,11 @@ selected that tool. The map of which invocation surfaces what:
   \`asyncapi.duplicate-message\`, \`spine.message-undefined\`,
   \`spec-event.message-undefined\`, \`spine.message-unproduced\`,
   \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.covered\`, and
-  the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`. Run inside
+  the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`,
+  \`health.dependency-unmodelled\` (warn — a health.yaml \`dependencies:\` id that
+  nothing in this service's own model.likec4 answers to by element id, binding
+  or title; the model, not the landscape, is what the on-call file must agree
+  with). Run inside
   the service's own repo, once a generated suite exists under
   \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
   \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\` (all warn — the fix is
