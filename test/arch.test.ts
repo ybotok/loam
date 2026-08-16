@@ -142,8 +142,29 @@ describe("readHealth (core/vocabulary/health.ts)", () => {
     // Absence and "declares nothing loam reads" are the same answer on purpose:
     // neither may manufacture an obligation, and neither is a breach.
     for (const content of [null, "checks:\n  liveness: GET /health\n", "slis: not-a-list\nalerts: 3\n"]) {
-      expect(await readOf(content)).toEqual({ ids: { slis: [], alerts: [] }, unreadable: false });
+      expect(await readOf(content)).toEqual({
+        ids: { slis: [], alerts: [] },
+        dependencies: [],
+        unreadable: false,
+      });
     }
+  });
+
+  it("reads dependency ids under every spelling the wild uses — id, service, name, plain string", async () => {
+    // The shipped example writes `service:`, the first adopted fleet wrote
+    // `id:` — the reader tolerates both (and `name`, and a bare string) so the
+    // reconciliation does not depend on which convention a team happened to
+    // pick before anything read this file.
+    const health = await readOf(
+      "dependencies:\n" +
+        "  - id: kafka\n    critical: startup\n" +
+        "  - service: xm-ms-config\n" +
+        "  - name: zookeeper\n" +
+        "  - redis\n" +
+        "  - id: kafka\n",
+    );
+    expect(health.dependencies).toEqual(["kafka", "xm-ms-config", "zookeeper", "redis"]);
+    expect(health.ids).toEqual({ slis: [], alerts: [] });
   });
 
   it("a file that exists but cannot be read reports unknown ids, not empty ones", async () => {
@@ -158,6 +179,88 @@ describe("readHealth (core/vocabulary/health.ts)", () => {
     const sequence = await readOf("- not\n- a\n- mapping\n");
     expect(sequence.unreadable).toBe(true);
     expect(sequence.error).toBe("document is not a YAML mapping");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* c4.no-relationships — the model that reaches nothing                */
+/* ------------------------------------------------------------------ */
+
+describe("c4.no-relationships", () => {
+  /** A parsed model with two nested containers and not a single edge. */
+  const TWO_SILOS = `specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    api = container 'API'
+    worker = container 'Worker'
+  }
+}
+`;
+
+  it("warns when two nested elements share a model with zero relationships", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = TWO_SILOS;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(res.code).toBe(0); // warn, not a gate — partial adoption stays legal
+      const [f] = ofCode(findings(res.stdout), "c4.no-relationships");
+      expect(f).toBeDefined();
+      expect(f!.severity).toBe("warn");
+      expect(f!.message).toContain("0 relationships");
+      expect(f!.message).toContain("nested elements");
+
+      const strict = await runLoam(p.workDir, "validate", "--service", "payment-service", "--strict");
+      expect(strict.code).toBe(1);
+    });
+  });
+
+  it("warns when health.yaml declares dependencies the model never reaches for, and names them", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: kafka\n  - id: redis\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const [f] = ofCode(findings(res.stdout), "c4.no-relationships");
+      expect(f).toBeDefined();
+      expect(f!.message).toContain("kafka, redis");
+    });
+  });
+
+  it("stays silent on the bare baseline — thin, but nothing proves it", async () => {
+    // The findings doc's own correction, pinned: 2 elements / 0 relationships
+    // with no health.yaml is the standard mid-adoption shape, and warning on
+    // it would teach agents to draw invented edges to get green.
+    const files = coherentFixture();
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(ofCode(findings(res.stdout), "c4.no-relationships")).toEqual([]);
+    });
+  });
+
+  it("stays silent the moment one relationship exists", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/model.likec4"] = TWO_SILOS.replace(
+      "  }\n}",
+      "  }\n  paymentService.api -> paymentService.worker 'queues work for'\n}",
+    );
+    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: kafka\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(ofCode(findings(res.stdout), "c4.no-relationships")).toEqual([]);
+    });
+  });
+
+  it("does not lean on an unreadable health.yaml — no claims on bad data", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/health.yaml"] = "foo: [unclosed\n  bar: ::::\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(ofCode(findings(res.stdout), "c4.no-relationships")).toEqual([]);
+      expect(ofCode(findings(res.stdout), "health.invalid")).toHaveLength(1);
+    });
   });
 });
 

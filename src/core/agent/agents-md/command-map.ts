@@ -94,6 +94,10 @@ selected that tool. The map of which invocation surfaces what:
   finding.
 - \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
+  \`c4.no-relationships\` (warn — the model declares elements and no edge joins
+  anything, while more than one nested element or this service's own
+  health.yaml dependencies say it should reach something; a model that reaches
+  nothing is almost never true),
   \`requirements.missing-scenarios\`, \`requirements.stepless-scenario\`,
   \`spec.merge-conflict\`, \`spec.duplicate-requirement\`,
   \`spec.no-requirements\`, \`spec.repeated-operations\`, \`spec.repeated-covers\`,

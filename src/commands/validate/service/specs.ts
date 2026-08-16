@@ -169,6 +169,37 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   // moment health.yaml stops being inert. Warnings, never gates: `--strict` is
   // the CI escalation.
   const health = await readHealth(paths.health);
+
+  // A model that reaches nothing is almost never true — but only when
+  // something else attests it should reach. The first adoption produced 2
+  // elements / 0 relationships beside sources naming a Kafka producer and a
+  // security config, and `0 errors, 0 warnings` read as done; the hardened
+  // rerun of the same service came out at 19/19 with an identical verdict.
+  // Evidence-gated on purpose: a bare root-plus-one-container baseline stays
+  // silent (nothing PROVES it thin — the standard mid-adoption shape), the
+  // warn needs either a second nested element with no edge joining anything,
+  // or dependencies declared in this service's own health.yaml. The health
+  // half goes quiet when the file is unreadable — no claims on bad data.
+  const nested = elements.filter((e) => e.id.includes(".")).length;
+  const deps = health.unreadable ? [] : health.dependencies;
+  if (elements.length > 0 && relationships.length === 0 && (nested > 1 || deps.length > 0)) {
+    const evidence = [
+      ...(nested > 1 ? [`${nested} nested elements with no edge joining them`] : []),
+      ...(deps.length > 0
+        ? [`health.yaml declares ${deps.length} dependenc${deps.length === 1 ? "y" : "ies"} (${deps.join(", ")})`]
+        : []),
+    ].join(", and ");
+    findings.push({
+      severity: "warn",
+      code: "c4.no-relationships",
+      subject: service,
+      message:
+        `${service}: model.likec4 declares ${elements.length} element(s) and 0 relationships, yet ${evidence} — ` +
+        `a model that reaches nothing is almost never true; draw the edges the service actually has ` +
+        `(what its containers call, what reads and writes its stores, what it depends on at runtime)`,
+    });
+  }
+
   if (archText !== null) {
     // The arch axis is advisory in what it ASKS for (covers.unknown,
     // health.uncovered are warnings) but not in whether the file is readable:
