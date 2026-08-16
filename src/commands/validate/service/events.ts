@@ -24,6 +24,7 @@ import { type Requirement } from "../../../core/document/spec.js";
 import { producersByMessage } from "../../../core/asyncapi/producers.js";
 import { readAsyncapi, slotsOf } from "../../../core/asyncapi/read.js";
 import { FleetContext } from "../../../core/fleet-context.js";
+import { externalProducerOf } from "../checks/fleet-shape.js";
 
 /** What the service target hands the event axis. */
 export interface EventAxis {
@@ -217,15 +218,40 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
       // sound over a fleet loam could actually read. One unreadable contract
       // anywhere suspends it — that service may be the producer, and the
       // alternative is blaming every consumer for somebody else's broken YAML.
-      // The contested answer below rests on positive evidence and needs no such
-      // guard.
-      if (who.length === 0 && producers.unreadable.length === 0) {
-        findings.push({
-          severity: "error",
-          code: "spine.message-unproduced",
-          subject: service,
-          message: `${service}: consumes '${message}', but no service in the fleet declares an operation with action: send for it — the message has no producer, so nothing defines its payload`,
-        });
+      // The external answer and the contested answer below rest on positive
+      // evidence and need no such guard.
+      if (who.length === 0) {
+        // A message produced OUTSIDE the fleet used to be inexpressible: the
+        // landscape said the producer was #external, and this error fired
+        // anyway — so honesty cost a red build, and the exit ramp people took
+        // was deleting the link. The landscape already carries the answer; an
+        // external producer shifts the contract question to the one file that
+        // can settle it, this service's own asyncapi.yaml.
+        const ext = externalProducerOf(message, land, landSvcOf, known);
+        if (ext !== null) {
+          const local = events.messages.find((m) => m.name === message);
+          if (local === undefined || local.payloadEmpty === true) {
+            findings.push({
+              severity: "warn",
+              code: "spine.message-external",
+              subject: service,
+              message:
+                `${service}: consumes '${message}' from '${ext}', a system outside the fleet — the ` +
+                `producer declares no contract here, so the only payload definition is this service's ` +
+                `own asyncapi.yaml, and it currently defines no shape for it; declare the message with ` +
+                `its payload`,
+            });
+          }
+          // A carried contract closes the question: the landscape states the
+          // external dependency, the consumer owns the schema — nothing to say.
+        } else if (producers.unreadable.length === 0) {
+          findings.push({
+            severity: "error",
+            code: "spine.message-unproduced",
+            subject: service,
+            message: `${service}: consumes '${message}', but no service in the fleet and no #external element declares it is sent — the message has no producer anywhere, so nothing defines its payload`,
+          });
+        }
       } else if (who.length > 1) {
         findings.push({
           severity: "warn",

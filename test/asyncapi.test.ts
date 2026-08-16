@@ -642,3 +642,194 @@ components:
     });
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* spine.message-external — a producer outside the fleet               */
+/* ------------------------------------------------------------------ */
+
+/** notification-service consumes a message only an #external element produces. */
+function externalFleet(over: Record<string, string> = {}): Record<string, string> {
+  return {
+    "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  tag external
+}
+
+model {
+  notificationService = softwareSystem 'notification-service'
+  xmMsConfig = softwareSystem 'xm-ms-config' {
+    #external
+  }
+  kafka = softwareSystem 'kafka' {
+    #external
+  }
+  xmMsConfig -> kafka 'publishes config refreshes' {
+    metadata { publishes 'xmConfig.ConfigEvent' }
+  }
+  kafka -> notificationService 'config refreshes' {
+    metadata { consumes 'xmConfig.ConfigEvent' }
+  }
+}
+`,
+    "services/notification-service/model.likec4": model("notification-service", "notificationService"),
+    "services/notification-service/asyncapi.yaml": `asyncapi: 3.0.0
+info:
+  title: notification-service events
+  version: "1.0"
+channels:
+  configTopic:
+    address: config_topic
+    messages:
+      ConfigEvent:
+        $ref: '#/components/messages/ConfigEvent'
+operations:
+  receiveConfig:
+    action: receive
+    channel:
+      $ref: '#/channels/configTopic'
+components:
+  messages:
+    ConfigEvent:
+      name: xmConfig.ConfigEvent
+      payload:
+        type: object
+        properties:
+          tenant:
+            type: string
+`,
+    ...over,
+  };
+}
+
+describe("spine.message-external — the producer is outside the fleet", () => {
+  it("a carried contract closes the question: no unproduced, no external, spine covered", async () => {
+    await withProject(externalFleet(), {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      expect(res.code).toBe(0);
+      const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
+      expect(codes).not.toContain("spine.message-unproduced");
+      expect(codes).not.toContain("spine.message-external");
+      expect(codes).toContain("event.covered");
+    });
+  });
+
+  it("warns spine.message-external while the consumer's own contract defines no shape", async () => {
+    const files = externalFleet();
+    files["services/notification-service/asyncapi.yaml"] = files[
+      "services/notification-service/asyncapi.yaml"
+    ]!.replace(
+      `      payload:
+        type: object
+        properties:
+          tenant:
+            type: string
+`,
+      `      payload:
+        type: object
+`,
+    );
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      expect(res.code).toBe(0); // warn, not the old error — honesty no longer costs a red build
+      const findings = JSON.parse(res.stdout).targets[0].findings as { code: string; message: string }[];
+      const f = findings.find((x) => x.code === "spine.message-external");
+      expect(f).toBeDefined();
+      expect(f!.message).toContain("outside the fleet");
+      expect(f!.message).toContain("'xm-ms-config'");
+      expect(findings.some((x) => x.code === "spine.message-unproduced")).toBe(false);
+    });
+  });
+
+  it("an untagged source is still unproduced — the demotion requires the tag", async () => {
+    const files = externalFleet();
+    files["architecture/landscape.likec4"] = files["architecture/landscape.likec4"]!.replace(
+      `  xmMsConfig = softwareSystem 'xm-ms-config' {
+    #external
+  }`,
+      `  xmMsConfig = softwareSystem 'xm-ms-config'`,
+    );
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      expect(res.code).toBe(1);
+      const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
+      expect(codes).toContain("spine.message-unproduced");
+      expect(codes).not.toContain("spine.message-external");
+    });
+  });
+
+  it("a tag on an element that resolves to a real service does not demote — a directory outranks a tag", async () => {
+    const files = externalFleet({
+      "services/xm-ms-config/model.likec4": model("xm-ms-config", "xmMsConfig"),
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
+      // The element resolves into the fleet, so the fleet answer applies: the
+      // real xm-ms-config service declares no send — unproduced, not external.
+      expect(codes).toContain("spine.message-unproduced");
+      expect(codes).not.toContain("spine.message-external");
+    });
+  });
+
+  it("positive evidence is not suspended by an unreadable contract elsewhere", async () => {
+    const files = externalFleet({
+      "services/svc-b/model.likec4": model("svc-b", "svcB"),
+      "services/svc-b/asyncapi.yaml": "channels: [unclosed\n",
+    });
+    files["services/notification-service/asyncapi.yaml"] = files[
+      "services/notification-service/asyncapi.yaml"
+    ]!.replace(
+      `        properties:
+          tenant:
+            type: string
+`,
+      "",
+    );
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
+      // The unreadable contract suspends the argument from absence
+      // (unproduced), never the positive one (external).
+      expect(codes).toContain("spine.message-external");
+      expect(codes).not.toContain("spine.message-unproduced");
+    });
+  });
+
+  it("a fleet producer beside the external edge wins — no finding of either kind", async () => {
+    const files = externalFleet({
+      "services/config-relay/model.likec4": model("config-relay", "configRelay"),
+      "services/config-relay/asyncapi.yaml": `asyncapi: 3.0.0
+info:
+  title: config-relay events
+  version: "1.0"
+channels:
+  configTopic:
+    address: config_topic
+    messages:
+      ConfigEvent:
+        $ref: '#/components/messages/ConfigEvent'
+operations:
+  sendConfig:
+    action: send
+    channel:
+      $ref: '#/channels/configTopic'
+components:
+  messages:
+    ConfigEvent:
+      name: xmConfig.ConfigEvent
+      payload:
+        type: object
+        properties:
+          tenant:
+            type: string
+`,
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
+      const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
+      expect(codes).not.toContain("spine.message-unproduced");
+      expect(codes).not.toContain("spine.message-external");
+      expect(codes).not.toContain("asyncapi.message-contested");
+    });
+  });
+});

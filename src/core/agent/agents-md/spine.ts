@@ -148,6 +148,31 @@ broker is not external itself, and \`loam validate --all\` will ask for a
 the calls between our own services; a second view over the broker draws the event
 spine on its own. Views are LikeC4's and loam computes none, so this costs loam
 nothing and is worth doing anyway — an \`include *\` over the whole fleet map is
-also the one view whose computation takes minutes rather than milliseconds.
+also the one view whose computation takes minutes rather than milliseconds. The
+scaffolded landscape applies the same pruning to ubiquitous infrastructure with
+\`#platform\`: the fleet view excludes it, and the platform view's
+\`include * -> element.tag = #platform\` (the relationship form — the obvious
+spelling draws boxes with no edges) keeps "who depends on it" answerable.
+
+## A message produced outside the fleet
+
+A platform service that is not ours — a config service, an auth broker —
+produces messages our services consume, and no \`services/<id>/\` will ever hold
+its contract. Declare the production on the landscape, where the element
+already says \`#external\`:
+
+    xmMsConfig = softwareSystem 'xm-ms-config' {
+      #external
+    }
+    xmMsConfig -> kafka.configTopic 'publishes config refreshes' {
+      metadata { publishes 'xmConfig.ConfigEvent' }
+    }
+
+\`spine.message-unproduced\` then stops firing — the message HAS a producer,
+outside the fleet — and the contract question moves to the one file that can
+answer it: the consuming service's own asyncapi.yaml. While that file declares
+no shape for the message, \`spine.message-external\` (warn) says so; once the
+consumer declares the payload, the axis is quiet. A truthful map and a green
+build no longer exclude each other, which is the exact choice this used to force.
 
 `;
