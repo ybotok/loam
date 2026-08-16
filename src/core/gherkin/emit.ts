@@ -108,8 +108,7 @@ export function planEmission(
       ];
       const { content, digests, stepless } = renderFeature(
         r,
-        tags,
-        opts.version,
+        { tags, version: opts.version },
         opts.service,
         axisLabel(axis),
       );
@@ -132,13 +131,19 @@ export function planEmission(
  * — the same service `loam verify` files the matching claims under. The two
  * have to be the same string or the stamps this writes match no claim at all.
  */
+/** What the emitted file is stamped with, beside the requirement it renders. */
+export interface Stamp {
+  tags: string[];
+  version: string;
+}
+
 export function renderFeature(
   r: Requirement,
-  tags: string[],
-  version: string,
+  stamp: Stamp,
   service: string,
   axis: ScenarioAxis = "business",
 ): { content: string; digests: string[]; stepless: string[] } {
+  const { tags, version } = stamp;
   const lines: string[] = [gherkinStampLine(version)];
   if (tags.length > 0) lines.push(tags.join(" "));
   lines.push(`Feature: ${r.name}`);

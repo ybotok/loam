@@ -153,7 +153,7 @@ describe("step conversion", () => {
         "- **Then** the payment is authorized",
       ].join("\n"),
     );
-    const { content } = renderFeature(req!, [], "0.0.0", "payment-split-service");
+    const { content } = renderFeature(req!, { tags: [], version: "0.0.0" }, "payment-split-service");
     expect(content).toContain("    Some prose that stays.");
     expect(content).toContain("    - just a note bullet");
     expect(content).toContain("    Given a valid card");

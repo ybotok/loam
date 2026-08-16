@@ -105,13 +105,16 @@ export async function verificationState(
  * verification and finishing one are different jobs, and an agent that treats a
  * stale record as a finished one ships a feature nobody checked.
  */
-export function verifyStep(
-  id: string,
-  artifacts: ArtifactState[],
-  verification: VerificationState,
-  boundService: string | undefined,
-  services: string[],
-): NextStep[] {
+/** The narrowed view a step is written for: what to name, and to whom. */
+export interface StepView {
+  artifacts?: ArtifactState[];
+  services: string[];
+  /** The service this repository is bound to, when a command is standing in one. */
+  boundService: string | undefined;
+}
+
+export function verifyStep(id: string, verification: VerificationState, view: StepView): NextStep[] {
+  const { artifacts = [], services, boundService } = view;
   const record = artifacts.find((a) => a.id === "verification")!;
   const open = verification.unconfirmed + verification.unanswered;
   // The code is spelled at each call site as a `code:` property rather than
@@ -201,11 +204,10 @@ export function verifyStep(
  */
 export function testStep(
   id: string,
-  services: string[],
-  scans: DeltaScan[],
   verification: VerificationState,
-  boundService: string | undefined,
+  view: { services: string[]; scans: DeltaScan[]; boundService: string | undefined },
 ): NextStep[] {
+  const { services, scans, boundService } = view;
   if (fullyVerified(verification)) return [];
   const withScenarios = [
     ...new Set(scans.filter((s) => s.scenarios > 0 && services.includes(s.service)).map((s) => s.service)),

@@ -91,10 +91,10 @@ export function snapshotDir(featureDir: string): string {
 export async function writeSnapshot(
   featureDir: string,
   docsDir: string,
-  featureId: string,
-  dirName: string,
+  feature: { featureId: string; dirName: string },
   staged: StagedWrite[],
 ): Promise<void> {
+  const { featureId, dirName } = feature;
   const dir = snapshotDir(featureDir);
   await assertSnapshotReplaceable(dir, docsDir);
   // A leftover from a rolled-back run would describe a merge that never happened.

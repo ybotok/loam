@@ -49,15 +49,24 @@ function faultedArtifact(code: string): ArtifactId | null {
  * exists and is wrong can never be reported the way one that was never written
  * is.
  */
+/** What the grading of one feature's files needs beyond the files themselves. */
+export interface Grading {
+  /** The findings that make an artifact `draft` rather than `done`. */
+  blocking: Finding[];
+  verification: VerificationState;
+  /** Operations some OTHER feature's contract already holds. */
+  contracted: ReadonlySet<string>;
+  /** Operations this feature's own requirements govern. */
+  governs: ReadonlySet<string>;
+}
+
 export function featureArtifacts(
   docsDir: string,
   feature: FeatureEntry,
   services: readonly PathableService[],
-  blocking: Finding[],
-  verification: VerificationState,
-  contracted: ReadonlySet<string>,
-  governs: ReadonlySet<string>,
+  grading: Grading,
 ): ArtifactState[] {
+  const { blocking, verification, contracted, governs } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code), subject: f.subject }));
@@ -65,21 +74,19 @@ export function featureArtifacts(
     faults.some((f) => f.artifact === id && (service === null || f.subject === service));
 
   const out: ArtifactState[] = [
-    fileState("intent", null, rel(paths.intent), existsSync(paths.intent), true, faulted("intent", null)),
-    fileState("delta", null, rel(paths.delta), existsSync(paths.delta), false, faulted("delta", null)),
+    fileState("intent", { service: null, path: rel(paths.intent), exists: existsSync(paths.intent) }, true, faulted("intent", null)),
+    fileState("delta", { service: null, path: rel(paths.delta), exists: existsSync(paths.delta) }, false, faulted("delta", null)),
   ];
 
   for (const svc of services) {
     const p = featureSpecPaths(feature.dir, svc);
     const specFault = faulted("spec", svc);
-    out.push(fileState("spec", svc, rel(p.spec), existsSync(p.spec), true, specFault));
-    out.push(fileState("arch-spec", svc, rel(p.archSpec), existsSync(p.archSpec), false, specFault));
+    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, true, specFault));
+    out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: existsSync(p.archSpec) }, false, specFault));
     out.push(
       fileState(
         "openapi",
-        svc,
-        rel(p.openapi),
-        existsSync(p.openapi),
+        { service: svc, path: rel(p.openapi), exists: existsSync(p.openapi) },
         owesContract(docsDir, svc, contracted, governs.has(svc)),
         faulted("openapi", svc),
       ),
@@ -103,14 +110,15 @@ export function featureArtifacts(
   return out;
 }
 
-function fileState(
-  id: ArtifactId,
-  service: string | null,
-  path: string,
-  exists: boolean,
-  required: boolean,
-  faulted: boolean,
-): ArtifactState {
+/** Where an artifact is and whether it is there — the three facts a grade reads. */
+interface FileFacts {
+  service: string | null;
+  path: string;
+  exists: boolean;
+}
+
+function fileState(id: ArtifactId, file: FileFacts, required: boolean, faulted: boolean): ArtifactState {
+  const { service, path, exists } = file;
   const status: ArtifactStatus = !exists
     ? required
       ? "missing"

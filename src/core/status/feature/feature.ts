@@ -6,7 +6,11 @@
  * this projection is held to.
  */
 import { featureCoherence } from "../../coherence/coherence.js";
-import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../../coherence/living.js";
+import {
+  invalidSpecServiceFindings,
+  livingMergeConflicts,
+  unknownDeltaServices,
+} from "../../coherence/living.js";
 import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
@@ -17,17 +21,12 @@ import { gatesArchive, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { contractOwners, contractsHeldElsewhere } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
-import type {
-  ArtifactState,
-  ArtifactStatus,
-  FeatureStatusReport,
-  InterruptedCommit,
-  VerificationState,
-} from "../report.js";
+import type { ArtifactStatus, FeatureStatusReport } from "../report.js";
 import { governedServices, scanDeltas, type DeltaScan } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { featureArtifacts } from "./artifacts.js";
 import { featureNext, unshippable } from "./next.js";
+import { type FeatureState } from "./state.js";
 
 /**
  * Everything about one feature in flight. `service` narrows the per-service
@@ -71,15 +70,12 @@ export async function featureStatus(
   // way round. `--service` is a lens on the table and the steps; a rollup that
   // moved with it would report a feature `ready` because the one service you
   // asked about happens to be written, while three others have nothing.
-  const graded = featureArtifacts(
-    docsDir,
-    feature,
-    services,
+  const graded = featureArtifacts(docsDir, feature, services, {
     blocking,
     verification,
-    contractsHeldElsewhere(await contractOwners(docsDir, context), feature.id),
+    contracted: contractsHeldElsewhere(await contractOwners(docsDir, context), feature.id),
     governs,
-  );
+  });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);
 
@@ -98,7 +94,10 @@ export async function featureStatus(
       dirName: feature.dirName,
       path: repoPath(docsDir, feature.dir),
       archived: feature.archived,
-      stage: featureStage(feature, graded, services, blocking.length, blockedBy, verification, interrupted),
+      stage: featureStage(
+        { feature, services, artifacts: graded, findings, blockedBy, verification, scans, interrupted },
+        blocking.length,
+      ),
       services,
       blockedBy,
     },
@@ -114,15 +113,8 @@ export async function featureStatus(
     },
     verification,
     next: featureNext(
-      feature,
-      inView,
-      artifacts,
-      findings,
-      blockedBy,
-      verification,
-      scans,
+      { feature, services: inView, artifacts, findings, blockedBy, verification, scans, interrupted },
       opts.boundService,
-      interrupted,
     ),
   };
 }
@@ -164,7 +156,7 @@ async function featureFindings(
   // `featureCoherence`, and a projection that only inherited coherence
   // printed "ship it" over all three. Errors: each is a refusal, and the rule
   // this module is held to is one-directional.
-  out.push(...(await unknownDeltaServices(docsDir, feature.dir, feature.id, undefined, context)));
+  out.push(...(await unknownDeltaServices(docsDir, feature.dir, feature.id, { context })));
   out.push(...(await invalidSpecServiceFindings(feature.dir, context)));
   out.push(...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), context)));
   for (const scan of scans) {
@@ -195,15 +187,8 @@ async function featureFindings(
  * `missing` right up until somebody ran `loam verify` — which is the state
  * `ready` exists to name, and which the fleet form already names correctly.
  */
-function featureStage(
-  feature: FeatureEntry,
-  artifacts: ArtifactState[],
-  services: string[],
-  blocking: number,
-  blockedBy: string[],
-  verification: VerificationState,
-  interrupted: InterruptedCommit | null,
-): ArtifactStatus {
+function featureStage(state: FeatureState, blocking: number): ArtifactStatus {
+  const { feature, artifacts, services, blockedBy, verification, interrupted } = state;
   // Ahead of `archived`, and ahead of everything else: a killed commit may be
   // this very feature's, half-applied, so "it shipped" is a claim about files
   // nobody has established the contents of. `blocked` is the honest word — the

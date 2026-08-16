@@ -14,18 +14,11 @@
  * the fleet green) — an empty array would be indistinguishable from a bug in
  * the caller's own parsing.
  */
-import type { FeatureEntry } from "../../repo/entries.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { recoverStep } from "../interrupted.js";
-import type {
-  ArtifactId,
-  ArtifactState,
-  InterruptedCommit,
-  NextStep,
-  VerificationState,
-} from "../report.js";
-import type { DeltaScan } from "../scan.js";
+import type { ArtifactId, ArtifactState, NextStep } from "../report.js";
 import { testStep, verifyStep } from "../verification.js";
+import { type FeatureState } from "./state.js";
 
 /**
  * Would either gate refuse this? Severity answers `validate`'s question and
@@ -40,17 +33,8 @@ export function unshippable(f: Finding): boolean {
 /** Codes whose one fix is `loam rebase`: a pin nobody ever wrote, on either axis. */
 const UNPINNED = new Set(["delta.baseline-missing", "openapi.baseline-missing"]);
 
-export function featureNext(
-  feature: FeatureEntry,
-  services: string[],
-  artifacts: ArtifactState[],
-  findings: Finding[],
-  blockedBy: string[],
-  verification: VerificationState,
-  scans: DeltaScan[],
-  boundService: string | undefined,
-  interrupted: InterruptedCommit | null,
-): NextStep[] {
+export function featureNext(state: FeatureState, boundService: string | undefined): NextStep[] {
+  const { feature, services, artifacts, findings, blockedBy, verification, scans, interrupted } = state;
   const id = feature.id;
   // Before the archived shortcut: the interrupted commit may be this feature's
   // own, and "it shipped" is not a thing to tell somebody whose living docs are
@@ -182,8 +166,8 @@ export function featureNext(
   // all: an agent read "author the spec" and then "record the verification",
   // with nothing in between saying where a test comes from — so the only way
   // left to answer a scenario claim was its own word, through `--record`.
-  steps.push(...testStep(id, services, scans, verification, boundService));
-  steps.push(...verifyStep(id, artifacts, verification, boundService, services));
+  steps.push(...testStep(id, verification, { services, scans, boundService }));
+  steps.push(...verifyStep(id, verification, { artifacts, services, boundService }));
 
   // Always last, and always present: a feature whose every artifact holds and
   // whose record is complete still has one thing left to do, and an empty

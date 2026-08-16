@@ -87,15 +87,21 @@ export interface FederatedBuild {
  * pruned from both the answers and their attestations, so a changed feature can
  * never keep a green answer to a question it no longer asks.
  */
+/** One service's attestation: whose word it is, when, and against which commit. */
+export interface Attestation {
+  service: string;
+  recorded: string;
+  commit: string;
+  report?: ConsumedReport;
+}
+
 export function buildFederatedVerification(
   checklist: Checklist,
-  service: string,
+  attestation: Attestation,
   answers: Answer[],
   previous: Verification | null,
-  recorded: string,
-  commit: string,
-  report?: ConsumedReport,
 ): FederatedBuild {
+  const { service, recorded, commit, report } = attestation;
   const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
   const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
 

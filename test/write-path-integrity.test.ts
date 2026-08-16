@@ -308,7 +308,7 @@ async function killMidCommit(
     planWrite(landscape, before.toString("utf8").replace("model {", "model {\n  // merged by FEAT-1")),
   ];
   const staged = await stageWrites(writes);
-  await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", staged);
+  await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged);
   await writeCommitIntent(
     p.docsDir,
     {
@@ -501,7 +501,7 @@ describe("a commit killed between two renames", () => {
       // never took them back: its pre-images no longer match what is there.
       await killMidCommit(p, { swaps: 2 });
       const staged = await stageWrites([planWrite(join(p.docsDir, "architecture/landscape.likec4"), "rewritten\n")]);
-      await expect(writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", staged)).rejects.toThrow(
+      await expect(writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged)).rejects.toThrow(
         SnapshotClobberError,
       );
       // The pre-images are still there to repair from.
@@ -550,7 +550,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       // naming a file that lives on the far side of the mount, and living docs
       // that still say exactly what its pre-image does.
       const first = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
-      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", first);
+      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, first);
       const manifest = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
       expect(manifest.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
 
@@ -560,7 +560,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       // again, the operator was told an intact snapshot was unreadable, and the
       // half-merge it is the only record of could never be repaired.
       const second = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
-      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", second);
+      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, second);
       const rewritten = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
       expect(rewritten.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
       expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
@@ -576,7 +576,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       const featureDir = join(p.docsDir, "features/FEAT-1-split");
       const spec = join(p.docsDir, "services/payment-service/spec.md");
       const staged = await stageWrites([planWrite(spec, "# rewritten\n")]);
-      await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", staged);
+      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged);
       const manifestFile = activeManifestPath(p, "FEAT-1-split");
       const original = JSON.parse(await readFile(manifestFile, "utf8")) as Manifest;
 
@@ -595,7 +595,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
           "utf8",
         );
         const retry = await stageWrites([planWrite(spec, "# rewritten again\n")]);
-        const rejection: unknown = await writeSnapshot(featureDir, p.docsDir, "FEAT-1", "FEAT-1-split", retry).then(
+        const rejection: unknown = await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, retry).then(
           () => undefined,
           (err: unknown) => err,
         );

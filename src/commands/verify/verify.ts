@@ -128,8 +128,7 @@ export function registerVerify(program: Command): void {
         await record(
           { docsDir, featureDir: feature.dir, json },
           checklist,
-          { service: opts.service ?? config.service, repoDir: config.root ?? process.cwd() },
-          recorded,
+          { service: opts.service ?? config.service, repoDir: config.root ?? process.cwd(), previous: recorded },
           opts,
         );
         return;

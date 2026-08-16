@@ -247,7 +247,7 @@ The card is valid, authorization is requested, and the payment is authorized.
 
   it("uses `loam gherkin`'s own detector, so the gate and the emitted suite cannot disagree", () => {
     const reqs = parseRequirements(STEPLESS);
-    const emitted = renderFeature(reqs[0]!, [], "0.0.0");
+    const emitted = renderFeature(reqs[0]!, { tags: [], version: "0.0.0" }, "svc");
     expect(steplessScenarios(reqs).map((s) => s.scenario)).toEqual(emitted.stepless);
   });
 
