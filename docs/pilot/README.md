@@ -19,7 +19,7 @@ Use a clean checkout at the exact candidate commit and Node.js 22.22.3 or newer.
 npm ci
 npm run pilot:check
 npm run release:pack -- --out /secure/loam-candidate
-npm run test:package -- --tarball /secure/loam-candidate/ybotok-loam-0.1.0-beta.1.tgz
+npm run test:package -- --tarball /secure/loam-candidate/ybotok-loam-0.1.0-beta.3.tgz
 npm run pilot:run -- --artifact-dir /secure/loam-candidate --manifest /secure/pilot-manifest.json --out /secure/baseline-scorecard.json
 ```
 

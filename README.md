@@ -5,9 +5,9 @@
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
-<!-- once published: [![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam) -->
+[![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.1.0-beta.1`.** Every command below is implemented and covered by tests; the package is not on npm yet. See [Status](#status).
+> **Pre-release: `0.1.0-beta.3`**, published to npm as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). Every command below is implemented and covered by tests. See [Status](#status).
 
 `loam` gets a service's documentation and C4 architecture written **from its code**, then lets you drive cross-service features top-down: you author a **C4 delta**, `loam` projects it onto each affected service as concrete work, and `loam gherkin` turns the spec's scenarios into real, digest-stamped Gherkin `.feature` files — the acceptance skeleton that drives TDD, kept honest by `loam validate` reporting when the spec moves under it.
 
@@ -35,7 +35,7 @@ loam --version
 
 A per-repo dev dependency works the same way: `npm i -D @ybotok/loam`, then `npx loam …`.
 
-Until the package is published ([Status](#status)), install from a clone:
+To work on loam itself — or to run an unreleased commit — install from a clone:
 
 ```bash
 git clone https://github.com/ybotok/loam.git && cd loam
@@ -165,7 +165,7 @@ Every command takes `--json`: findings carry stable codes (`c4.valid`, `spine.op
 
 **`loam status`** — the question an agent has when it joins a repo halfway or loses its session. Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry a stable code plus the literal command. It takes the union of what `validate --feature` errors on and what `archive` refuses to merge, so it may be redder than either and is never greener than both. There is no state file to go stale.
 
-**`loam new`** — the scaffold passes `loam validate --feature` with **zero errors**; the warning left standing is the `owner` you have to fill in yourself, and a feature that introduces a service starts on a second, `c4.uncovered`, until its `arch.spec.md` delta carries a `Covers:` line for the element the delta adds. For a requirements-only feature you delete the scaffolded `delta.likec4` yourself — `new` says so on the way out, and the feature validates clean without it.
+**`loam new`** — the scaffold passes `loam validate --feature` with **zero errors**, and its unauthored state is named in warnings that *gate the archive*: `intent.empty` until you write the Why, `scaffold.placeholder` while any template text survives (a feature that introduces a service also starts on `c4.uncovered`, until its `arch.spec.md` delta carries a `Covers:` line for the element the delta adds). An untouched scaffold can never fold into the living docs — `loam archive` refuses it until a person authors the content, or deliberately overrides with `--approve`. For a requirements-only feature you delete the scaffolded `delta.likec4` yourself — `new` says so on the way out.
 
 **`loam adopt`** — the brief names the target paths, the grammar of each, what the landscape already says, the checks that follow, and the ones that do not exist.
 
@@ -234,7 +234,7 @@ npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 
 Every command in the table is implemented, `verify --results` included — the generated suite's cucumber report feeds the done-check, closing the TDD loop mechanically. Remaining: `render` (diagrams — delegated to LikeC4's own tooling), `health` **compose**, UI-prototype generation. Composing a `health.yaml` is what is missing, not reading one: `validate` already grades its `slis:`/`alerts:` ids against the living `arch.spec.md`'s `Covers:` lines (`health.uncovered`, `health.invalid`).
 
-The release-candidate manifest is `@ybotok/loam@0.1.0-beta.1`: as of 2026-08-06 the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the maintainer's own npm user scope. The registry had no package at that scoped name when it was last checked — a registry fact this repository cannot confirm, so re-check it before tagging. Until it is published, use the clone install above rather than treating the package as published.
+The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently `0.1.0-beta.3`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only ([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a drift test, so it cannot silently trail a release.
 
 ## Contributing
 
