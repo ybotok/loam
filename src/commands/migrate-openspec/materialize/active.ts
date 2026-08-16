@@ -10,7 +10,8 @@
  * shapes this emits; `./living.js` is the same corpus read for the other half.
  */
 import { join } from "node:path";
-import { parseRequirements, type Requirement } from "../../../core/document/spec.js";
+import { parseRequirements } from "../../../core/document/parse.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import {
   isOpenSpecArtifactDisposition,

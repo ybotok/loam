@@ -32,12 +32,8 @@ import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 import { message, rollbackStaged, stageWrites, swapStaged } from "../core/staging/commit.js";
 import { acquireDocsLock, DocsBusyError } from "../core/staging/lock.js";
 import { type PlannedWrite } from "../core/staging/writes.js";
-import {
-  parseRequirements,
-  readRequirementsDocument,
-  requirementDigest,
-  type Requirement,
-} from "../core/document/spec.js";
+import { parseRequirements, readRequirementsDocument } from "../core/document/parse.js";
+import { requirementDigest, type Requirement } from "../core/document/spec.js";
 import { OpenapiMergeError } from "../core/openapi/merge/error.js";
 import { pinOpenapiOperations, type OpenapiPinPlan } from "../core/openapi/merge/pin.js";
 import { plural } from "./format.js";
@@ -307,7 +303,7 @@ async function planAxis(
   for (const r of reqs) {
     if (r.kind !== "MODIFIED" && r.kind !== "REMOVED") continue;
     // Every requirement parsed from a document carries its heading line
-    // (core/document/spec.ts). One built in memory has no document to write into, and
+    // (core/document/parse.ts). One built in memory has no document to write into, and
     // there is nothing truthful to report about pinning it.
     const line = r.line;
     if (line === undefined) continue;
@@ -384,7 +380,7 @@ async function planOpenapi(docsDir: string, service: PathableService, openapiPat
 
 /**
  * The living requirement a delta requirement addresses — the merge's own
- * resolution order (core/document/spec.ts `applyRequirementDelta`), so a pin is taken
+ * resolution order (core/document/apply.ts `applyRequirementDelta`), so a pin is taken
  * over exactly the requirement archive would rewrite: the stable ID when the
  * delta carries one, the exact heading otherwise, and the FIRST match either
  * way (duplicates are refused upstream by `delta.living-duplicate-requirement`).
@@ -410,7 +406,7 @@ interface LineEdit {
  * Where this requirement's `Based-On:` line goes, and whether it replaces one.
  *
  * `headingLine` is 1-based and `text` captures every body line after it
- * contiguously (core/document/spec.ts), so body line `i` is the 0-based document line
+ * contiguously (core/document/parse.ts), so body line `i` is the 0-based document line
  * `headingLine + i` — no rescan of the document, and no second opinion about
  * where a requirement begins. A new pin lands directly under `Requirement-ID:`
  * when there is one, matching what `serializeRequirements` writes, and

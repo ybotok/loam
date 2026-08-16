@@ -21,7 +21,8 @@ import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { producersByMessage, readAsyncapi, slotsOf } from "../../../core/asyncapi.js";
+import { producersByMessage } from "../../../core/asyncapi/producers.js";
+import { readAsyncapi, slotsOf } from "../../../core/asyncapi/read.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 
 /** What the service target hands the event axis. */

@@ -30,7 +30,7 @@ import { elementService, loadFile, serviceOf, type Elem } from "../c4/likec4.js"
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
-import { parseRequirements } from "../document/spec.js";
+import { parseRequirements } from "../document/parse.js";
 
 /**
  * What a claim is about. The order is the order the checklist comes back in,

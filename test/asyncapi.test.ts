@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
-import { readAsyncapi } from "../src/core/asyncapi.js";
+import { readAsyncapi } from "../src/core/asyncapi/read.js";
 import { makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 
 async function withProject(

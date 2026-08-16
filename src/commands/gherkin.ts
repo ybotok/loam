@@ -31,7 +31,8 @@ import { decodeDocument, NotUtf8DocumentError } from "../core/kernel/document-by
 import { emitJson, emitJsonError, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../core/envelope/json.js";
 import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../core/repo/paths.js";
 import { listFeatures, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
-import { parseRequirements, type Requirement } from "../core/document/spec.js";
+import { parseRequirements } from "../core/document/parse.js";
+import { type Requirement } from "../core/document/spec.js";
 import {
   axisLabel,
   featureFilesUnder,

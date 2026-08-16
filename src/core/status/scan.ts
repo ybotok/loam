@@ -4,7 +4,8 @@
  * decide which services owe a contract, and where the scenario steps come from.
  */
 import { existsSync } from "node:fs";
-import { requirementsMissingScenarios, type Requirement } from "../document/spec.js";
+import { requirementsMissingScenarios } from "../document/scenarios.js";
+import { type Requirement } from "../document/spec.js";
 import { repoPath } from "../envelope/json.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { FeatureEntry } from "../repo/entries.js";

@@ -26,12 +26,10 @@ import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { deltaShapeIssues } from "../src/core/delta.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
-import {
-  applyRequirementDelta,
-  parseRequirements,
-  requirementDigest,
-  serializeRequirements,
-} from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { applyRequirementDelta } from "../src/core/document/apply.js";
+import { serializeRequirements } from "../src/core/document/spec.js";
+import { requirementDigest } from "../src/core/document/spec.js";
 import { coherentFixture, makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
 
 const SVC = "payment-service";

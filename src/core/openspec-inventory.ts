@@ -8,14 +8,8 @@ import { parse as parseYaml } from "yaml";
 import { asRecord, dictionary, ownValue } from "./kernel/records.js";
 import { FEATURE_ID_RULE, isFeatureId } from "./kernel/ids.js";
 import { compareIds } from "./repo/entries.js";
-import {
-  isRequirementsHeading,
-  parseRequirements,
-  REQUIREMENT_ID_RE,
-  requirementIdDeclarations,
-  requirementIdProblems,
-  sectionHeadings,
-} from "./document/spec.js";
+import { isRequirementsHeading, parseRequirements, sectionHeadings } from "./document/parse.js";
+import { REQUIREMENT_ID_RE, requirementIdDeclarations, requirementIdProblems } from "./document/spec.js";
 
 /** Released behavior and the newer upstream snapshot used as a compatibility canary. */
 export const OPENSPEC_BASELINES = Object.freeze({

@@ -14,7 +14,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseCoversEntry, closeIds } from "../src/core/c4/arch.js";
 import { readHealth, type HealthFile } from "../src/core/vocabulary/health.js";
-import { parseRequirements } from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 
 async function withProject(

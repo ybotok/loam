@@ -1,7 +1,7 @@
 # Third-party OpenSpec fixtures
 
 Verbatim, unmodified spec files from the public **[Fission-AI/OpenSpec]** repository.
-They exist so `test/openspec-compat.test.ts` can check `src/core/document/spec.ts` against
+They exist so `test/openspec-compat.test.ts` can check `src/core/document/` against
 markdown that OpenSpec actually produces, instead of against markdown we invented
 while reimplementing the format.
 

@@ -16,7 +16,8 @@ import { compareIds, nearestIds } from "../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { listServices, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
-import { parseRequirements, type Requirement } from "../core/document/spec.js";
+import { parseRequirements } from "../core/document/parse.js";
+import { type Requirement } from "../core/document/spec.js";
 
 interface DeltaOptions {
   service?: string;

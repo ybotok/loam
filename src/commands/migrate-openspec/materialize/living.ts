@@ -12,7 +12,8 @@
  */
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { serializeRequirements, type Requirement } from "../../../core/document/spec.js";
+import { serializeRequirements } from "../../../core/document/spec.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import { type OpenSpecInventory, type OpenSpecMapping } from "../../../core/openspec-inventory.js";
 import { planWrite, type PlannedWrite } from "../../../core/staging/writes.js";

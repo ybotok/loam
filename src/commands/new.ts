@@ -387,7 +387,7 @@ The service SHALL <observable behaviour, testable without reading the code>.
  * requirements or the scaffold would ship a requirement nobody wrote — the
  * headings are therefore indented inside an HTML comment, which puts them past
  * the line-anchored `## ADDED Requirements` / `### Requirement:` patterns
- * core/document/spec.ts matches on. Copy the block out of the comment and unindent it.
+ * core/document/parse.ts matches on. Copy the block out of the comment and unindent it.
  */
 function archSpecTemplate(featureId: string, service: string): string {
   return `# ${service} — architecture requirement delta for ${featureId}
