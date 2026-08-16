@@ -1,0 +1,209 @@
+/**
+ * The archive itself, under the docs lock: gate, plan, commit.
+ *
+ * The order is the command's whole safety property. Every refusal happens before
+ * a byte is planned (`./plan/gate.ts`), the plan is computed entirely in memory
+ * so a failure on any axis leaves the living docs untouched (`./plan/specs.ts`,
+ * `./plan/landscape.ts`), and only a plan that succeeded on every axis is staged
+ * and swapped. `--dry-run` returns between the second and the third.
+ */
+import { existsSync } from "node:fs";
+import { mkdir, rename } from "node:fs/promises";
+import { emitJson, repoPath } from "../../core/envelope/json.js";
+import {
+  message,
+  quietPruneEmptyParents,
+  quietRm,
+  rollbackError,
+  rollbackStaged,
+  stageWrites,
+  swapStaged,
+} from "../../core/staging/commit.js";
+import { clearCommitIntent, writeCommitIntent } from "../../core/staging/recovery/intent.js";
+import {
+  SNAPSHOT_DIR,
+  SnapshotClobberError,
+  snapshotDir,
+  writeSnapshot,
+} from "../../core/staging/snapshot.js";
+import { gate } from "./plan/gate.js";
+import { type ArchiveOptions } from "./plan/refusal.js";
+import { planSpecs } from "./plan/specs.js";
+import { planLandscape } from "./plan/landscape.js";
+import { emptyPlan } from "./plan/state.js";
+import { issueJson, refuseJson } from "./plan/refusal.js";
+import { ArchiveFailure } from "./plan/refusal.js";
+import { printPlan } from "./plan/refusal.js";
+
+export async function archiveLocked(
+  config: { docsDir: string },
+  featureId: string,
+  opts: ArchiveOptions,
+): Promise<void> {
+  const dryRun = opts.dryRun === true;
+  const json = opts.json === true;
+  // All prose goes through here so `--json` keeps stdout a single JSON document.
+  const say = (line = ""): void => {
+    if (!json) console.log(line);
+  };
+
+  const gated = await gate(config, featureId, opts, say);
+  if (gated === null) return;
+  const { id, dirName, featureDir, gating, advisory, archiveDir, archiveDest, recovered, issues } = gated;
+
+  say(`archive ${id}${dryRun ? "  (dry run)" : ""}\n`);
+
+  // PLAN — compute every merge in memory. Nothing is written until the whole plan
+  // succeeds, so a failure on any axis leaves the living docs untouched.
+  const planned = emptyPlan();
+  await planSpecs(config, gated, planned, say);
+  await planLandscape(config, gated, planned, say);
+  const { writes, planWarns, planGates, openapiRemovals } = planned;
+
+  // Gate on what only the plan could see: a merged operation pointing at a
+  // component that exists nowhere, a removal marker addressing no operation.
+  // Same doctrine as the coherence gate — a judgment call --approve overrides
+  // (unlike the mechanical merge-failed refusals), and a dry run is gated too.
+  // Checked after the whole plan so the refusal costs nothing: no write has
+  // happened yet either way.
+  if (planGates.length > 0 && !opts.approve) {
+    const msg = `archive ${id} — BLOCKED: ${planGates.length} issue(s) in the OpenAPI merge`;
+    if (json) {
+      refuseJson("not-coherent", msg, [...issues, ...planWarns, ...planGates]);
+      return;
+    }
+    console.error(`${msg}:`);
+    for (const i of planGates) console.error(`  ✗ ${i.message}`);
+    console.error(`\nFix them in the feature's openapi.yaml — or re-run with --approve to merge anyway.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (planGates.length > 0) {
+    say(`\n  ⚠ archiving despite ${planGates.length} OpenAPI merge issue(s) (--approve):`);
+    for (const i of planGates) say(`      ✗ ${i.message}`);
+  }
+
+  // The plan as data, verb decided now — after the commit everything would read
+  // as an update. The `--json` payload is identical for a dry run and the real
+  // thing except for `archived`; what WOULD happen is what DOES happen.
+  const warnings = [...advisory, ...planWarns];
+  const overridden = opts.approve === true ? [...gating, ...planGates] : [];
+  const plan: Array<Record<string, unknown>> = writes.map((w) => ({
+    path: repoPath(config.docsDir, w.path),
+    action: existsSync(w.path) ? "update" : "create",
+  }));
+  plan.push({ path: `features/${dirName}`, action: "move", to: `features/archive/${dirName}` });
+  const payload = (archived: boolean): Record<string, unknown> => ({
+    feature: id,
+    archived,
+    path: repoPath(config.docsDir, archiveDest),
+    plan,
+    warnings: warnings.map(issueJson),
+    overridden: overridden.map(issueJson),
+    openapiRemovals,
+    // Present only when this run found an interrupted commit and dealt with it:
+    // an agent that sees the docs change under it deserves to be told why, and
+    // the absent field is the ordinary case.
+    ...(recovered === null ? {} : { recovered }),
+  });
+
+  if (dryRun) {
+    if (json) emitJson(payload(false));
+    else printPlan(config.docsDir, writes, dirName);
+    return;
+  }
+
+  // COMMIT — the whole plan computed cleanly. Stage every new version beside its
+  // target, snapshot what is about to be overwritten, then swap them into place.
+  // Staging touches the filesystem — a read-only `architecture/`, a full disk,
+  // a target whose pre-image cannot be read. None of that is a bug in loam, and
+  // reporting `internal` sends the reader looking for one; it is the same
+  // answer as any other merge that could not be computed: nothing was written.
+  let staged;
+  try {
+    staged = await stageWrites(writes);
+  } catch (err) {
+    throw new ArchiveFailure("merge-failed", `${message(err)} — nothing was written`);
+  }
+  let snapshot = false;
+  let createdArchiveDir: string | undefined;
+  try {
+    await writeSnapshot(featureDir, config.docsDir, id, dirName, staged);
+    snapshot = true;
+    // The journal, fsynced, BEFORE the first rename: swapStaged is N renames and
+    // only each one of them is atomic, so a kill between two used to leave a
+    // half-merged repo that nothing could name — `doctor` and `status` called it
+    // healthy and `validate --all` blamed the delta. Written from `staged`, so
+    // it records the same digests the swaps are about to produce.
+    await writeCommitIntent(
+      config.docsDir,
+      { command: "archive", restore: "before", feature: id, moveFrom: featureDir, moveTo: archiveDest },
+      staged,
+    );
+    await swapStaged(staged);
+    createdArchiveDir = await mkdir(archiveDir, { recursive: true });
+    await rename(featureDir, archiveDest);
+    // Last: while it exists, the commit is in flight.
+    await clearCommitIntent(config.docsDir);
+  } catch (err) {
+    if (err instanceof SnapshotClobberError) {
+      // Nothing swapped — the refusal happens before the journal is even
+      // written — so this only takes the temp files away. Its own code, because
+      // the answer is not "re-run": a previous archive of this feature is still
+      // sitting in the living docs.
+      await rollbackStaged(staged);
+      throw new ArchiveFailure("commit-interrupted", err.message);
+    }
+    // Everything this run made, unmade: the swapped files, the snapshot inside the
+    // feature that is staying put, and features/archive/ if we are the ones who
+    // created it (mkdir reports nothing when it was already there).
+    const failures = await rollbackStaged(staged);
+    // The rollback decided the outcome, so the journal has nothing left to
+    // describe — including on rollback-incomplete, where the files it names are
+    // the ones the message tells a human to look at.
+    await clearCommitIntent(config.docsDir);
+    // The snapshot goes only when the rollback HELD. On rollback-incomplete it
+    // holds the only on-disk pre-images of the very files the message tells the
+    // reader to repair by hand — a MODIFIED requirement's previous text appears
+    // nowhere else. Retaining it is safe: the next archive of this feature reads
+    // it before it would replace it, and refuses if the living docs have moved.
+    if (snapshot && failures.length === 0) await quietRm(snapshotDir(featureDir));
+    // `features/archive/` is shared the moment it exists: another archive can
+    // have moved a whole feature into it between our mkdir and this rollback,
+    // and a recursive remove of "the directory we created" took that feature —
+    // snapshot and all — with it, on OUR failure path, in silence. Empty
+    // directories only, stopping at the first that is not.
+    if (createdArchiveDir !== undefined) await quietPruneEmptyParents(archiveDir, createdArchiveDir);
+    // The code is a caller's answer to "can I trust the repo?": merge-failed
+    // means yes (rolled back), rollback-incomplete means look at it by hand.
+    const wrapped = rollbackError(err, failures);
+    const kept =
+      snapshot && failures.length > 0
+        ? ` Pre-images of the overwritten files are kept in features/${dirName}/${SNAPSHOT_DIR}/files/.`
+        : "";
+    throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message + kept);
+  }
+
+  if (json) {
+    emitJson(payload(true));
+    return;
+  }
+  console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
+  console.log(`  snapshot: features/archive/${dirName}/${SNAPSHOT_DIR}/ — \`loam unarchive ${id}\` puts it back`);
+  // The closing line is a claim about the whole docs repo, and it is the line a
+  // reader stops at. It may be printed only when this archive left nothing the
+  // next `validate --all` will fail on — a service with no model, or a gate the
+  // caller told it to merge past. Printing it over either is how a red fleet
+  // gets reported as a finished one.
+  const incomplete = planWarns.filter((w) => w.code === "service.no-model");
+  if (incomplete.length === 0 && overridden.length === 0) {
+    console.log("  living spec + landscape are now complete + current.");
+    return;
+  }
+  for (const w of incomplete) console.log(`  ⚠ ${w.message}`);
+  if (overridden.length > 0) {
+    console.log(
+      `  ⚠ merged past ${overridden.length} gating issue(s) with --approve — the living docs carry them now; \`loam validate --all\` says what they cost.`,
+    );
+  }
+}

@@ -4,7 +4,7 @@ import type { Elem, Rel } from "../likec4.js";
  * A landscape merge the splicer could not compute. Every one is mechanical —
  * the input cannot be spliced as authored, never a judgment `--approve` may
  * override — and it is thrown at plan time, so nothing has been written.
- * `archiveErrorCode` (commands/archive.ts) owns the mapping to `merge-failed`;
+ * `archiveErrorCode` (commands/archive/archive.ts) owns the mapping to `merge-failed`;
  * the splicer itself never names a CLI code.
  */
 export class LandscapeSpliceError extends Error {}

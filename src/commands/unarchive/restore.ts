@@ -13,7 +13,7 @@ import { dirname, join, relative } from "node:path";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
 import { resolveFeature } from "../../core/repo/repo.js";
-import { sayRecovery } from "../archive.js";
+import { sayRecovery } from "../archive/plan/refusal.js";
 import {
   quietRm,
   rollbackError,
