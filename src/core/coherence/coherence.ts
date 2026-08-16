@@ -1,26 +1,15 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import {
-  elementService,
-  loadFile,
-  serviceOf,
-  serviceResolver,
-  type Elem,
-  type LoadedDoc,
-  type Rel,
-} from "../c4/likec4.js";
+import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../repo/paths.js";
-import { featureSpecServices, listServices } from "../repo/repo.js";
+import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIndex } from "../repo/service-target.js";
-import { activeOpAdditions } from "./pending.js";
-import { parseRequirements } from "../document/parse.js";
-import { type Requirement } from "../document/spec.js";
-import { classifyBaselineDigests, OPENAPI_BASELINE_KEY, OPERATION_DIGEST_LENGTH, OPERATION_DIGEST_RE } from "../openapi/digest.js";
-import { operations, readOpenapi, serviceOperationIds } from "../openapi/doc.js";
+import { operations, serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
+import { declaredByService, type DeltaScope } from "./declared.js";
+import { coherenceLookups } from "./lookups.js";
 
 export type { Issue, IssueCode } from "../vocabulary/issue.js";
 
@@ -35,13 +24,20 @@ export type { Issue, IssueCode } from "../vocabulary/issue.js";
  * moments earlier. Standalone calls omit it and nothing changes: the file is
  * loaded here, exactly as before.
  */
-export async function featureCoherence(
-  docsDir: string,
-  featureDir: string,
-  featureId: string,
-  preloadedDelta?: LoadedDoc,
-  context?: FleetContext,
-): Promise<Issue[]> {
+
+/** How a caller names the feature being graded, and what it already has in hand. */
+export interface CoherenceRequest {
+  docsDir: string;
+  featureDir: string;
+  featureId: string;
+  /** The delta LikeC4 document, when the caller already parsed it. */
+  preloadedDelta?: LoadedDoc;
+  context?: FleetContext;
+}
+
+export async function featureCoherence(request: CoherenceRequest): Promise<Issue[]> {
+  const { docsDir, featureDir, featureId, preloadedDelta, context } = request;
+  const scope: DeltaScope = { docsDir, featureDir, featureId };
   // Delta shape first: a diff that does not apply to the living spec explains
   // everything downstream, and it is the one breach that is silent without a check.
   const issues: Issue[] = await deltaShapeIssues(docsDir, featureDir, featureId, context);
@@ -87,258 +83,13 @@ export async function featureCoherence(
 
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir, context);
-  const reqOps = new Map<PathableService, string[]>();
-  const removedReqOps = new Map<string, Set<string>>();
-  /** Per service: operations this feature genuinely retires (markers minus relocations). */
-  const removingOps = new Map<string, Set<string>>();
-  /** Per service: every id a removal marker names, relocations included. */
-  const allMarkerIds = new Map<string, Set<string>>();
-  /** Per service: does the feature contract carry a marker with no operationId? */
-  const anonymousMarkers = new Map<string, boolean>();
-  const featureApiOps = new Set<string>();
-  for (const svc of svcNames) {
-    const paths = featureSpecPaths(featureDir, svc);
-    if (existsSync(paths.spec)) {
-      const reqs = context === undefined
-        ? parseRequirements(await readFile(paths.spec, "utf8"))
-        : await context.readRequirements(paths.spec);
-      // REMOVED requirements are being retired along with their operations — their
-      // ops neither claim the contract (E1) nor govern anything after the merge.
-      reqOps.set(svc, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
-      removedReqOps.set(
-        svc,
-        new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
-      );
-    }
-    // Only operations genuinely NEW to this service count as feature-added: authors
-    // restate the full living API in the delta file (it is a complete document, not a patch).
-    const featDoc = await readOpenapi(paths.openapi, context);
-    const featOps = featDoc.ops;
-    const removals = featOps.filter((op) => op.remove);
-    // A relocation — same operationId, removal marker on the old slot, upsert
-    // on the new one — retires nothing. Every rule that asks "is this operation
-    // going away" must therefore ask the NET set (markers this feature does not
-    // redefine), while "did the author write a marker at all" asks the raw one.
-    // Conflating them made moving an endpoint fail three checks at once for a
-    // change that removes nothing.
-    const redefined = new Set(featOps.filter((op) => !op.remove).map((op) => op.id));
-    const markerIds = new Set(removals.map((op) => op.id));
-    const netRemoved = new Set([...markerIds].filter((id) => !redefined.has(id)));
-    removingOps.set(svc, netRemoved);
-    allMarkerIds.set(svc, markerIds);
-    anonymousMarkers.set(svc, featDoc.anonymousRemovals.length > 0);
+  const {
+    reqOps, removingOps, featureApiOps,
+  } = await declaredByService(scope, svcNames, issues, context);
+  const {
+    governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
+  } = coherenceLookups(scope, context);
 
-    // A marker with no operationId names a slot but no operation. Every
-    // id-keyed check is blind to it, so it used to travel all the way into the
-    // living contract as a literal `x-loam-remove: true` — the one feature-only
-    // key that must never be published.
-    for (const marker of featDoc.anonymousRemovals) {
-      issues.push({
-        severity: "error",
-        code: "openapi.remove-marker-anonymous",
-        subject: svc,
-        message: `${svc}: ${marker.method} ${marker.path} carries x-loam-remove: true but declares no operationId — loam cannot tell which operation it retires; name the operation the living contract has at that slot`,
-      });
-    }
-
-    const livingDoc = await readOpenapi(servicePaths(docsDir, svc).openapi, context);
-    const livingOps = livingDoc.ops;
-    for (const id of livingDoc.duplicateIds) {
-      const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
-      issues.push({
-        severity: "warn",
-        code: "openapi.duplicate-operationid",
-        subject: svc,
-        message: `${svc}: the living OpenAPI defines operationId '${id}' at ${slots.join(" and ")} — every join on the id (a requirement's Operations: line, an edge's metadata { op }, a removal marker) picks one of those slots arbitrarily`,
-      });
-    }
-    // The baseline axis: which of the operations this delta SPELLS does it
-    // actually edit? A feature's openapi.yaml is a complete document, so most of
-    // it is quotation — and until the pin existed the merge upserted quotations
-    // too, which reverted whatever had landed on them since. Slot-keyed, exactly
-    // as the merge writes (path + method), never by operationId.
-    const livingBySlot = new Map(livingOps.map((op) => [`${op.method} ${op.path}`, op]));
-    let unpinned = 0;
-    for (const op of featOps) {
-      // A removal marker is not a restatement of anything; its own exactness
-      // check (`openapi.remove-target-mismatch`) already guards the slot.
-      if (op.remove) continue;
-      const where = `${op.method.toUpperCase()} ${op.path}`;
-      const livingOp = livingBySlot.get(`${op.method} ${op.path}`);
-      if (op.basedOn !== undefined && !OPERATION_DIGEST_RE.test(op.basedOn)) {
-        issues.push({
-          severity: "error",
-          code: "openapi.baseline-invalid",
-          subject: svc,
-          message: `${svc}: ${where} has invalid ${OPENAPI_BASELINE_KEY} '${op.basedOn}' — expected ${OPERATION_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
-        });
-        continue;
-      }
-      const verdict = classifyBaselineDigests(op.basedOn, op.digest, livingOp?.digest);
-      if (verdict === "unfounded") {
-        issues.push({
-          severity: "error",
-          code: "openapi.baseline-invalid",
-          subject: svc,
-          message: `${svc}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — a new operation has no living version to be based on; drop the marker`,
-        });
-      } else if (verdict === "stale") {
-        issues.push({
-          severity: "error",
-          code: "openapi.baseline-stale",
-          subject: svc,
-          message: `${svc}: ${where} ('${op.id}') was written against living version ${op.basedOn}, but the living contract now holds ${livingOp!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living operation, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
-        });
-      } else if (verdict === "unpinned" && livingOp !== undefined) {
-        // Counted, not listed. A delta over a thirty-operation service quotes
-        // twenty-nine of them, and twenty-nine identical warnings naming a fix
-        // that is ONE command teaches people to filter the code out.
-        unpinned += 1;
-      }
-    }
-    if (unpinned > 0) {
-      issues.push({
-        severity: "warn",
-        code: "openapi.baseline-missing",
-        subject: svc,
-        message: `${svc}: ${unpinned} operation(s) in this feature's openapi.yaml carry no ${OPENAPI_BASELINE_KEY}, so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`.`,
-      });
-    }
-
-    if (featOps.length > 0) {
-      const living = new Set(livingOps.filter((op) => !op.remove).map((op) => op.id));
-      for (const op of featOps) {
-        if (!op.remove && !living.has(op.id)) featureApiOps.add(op.id);
-      }
-
-      // Removal is exact: the feature names both an operationId and the
-      // path+method slot it expects to delete. That catches stale deltas whose
-      // target moved or was already retired before the archive planner runs.
-      const justified = removedReqOps.get(svc) ?? new Set<string>();
-      for (const marker of removals) {
-        const target = livingOps.find((op) => op.path === marker.path && op.method === marker.method);
-        if (target === undefined) {
-          issues.push({
-            severity: "error",
-            code: "openapi.remove-target-missing",
-            subject: svc,
-            message: `${svc}: removal marker for '${marker.id}' addresses ${marker.method} ${marker.path}, but no living operation exists there`,
-          });
-        } else if (target.id !== marker.id) {
-          issues.push({
-            severity: "error",
-            code: "openapi.remove-target-mismatch",
-            subject: svc,
-            message: `${svc}: removal marker names '${marker.id}' at ${marker.method} ${marker.path}, but the living operation there is '${target.id}'`,
-          });
-        }
-        // A relocation needs no REMOVED requirement: the requirement governing
-        // the operation stays, the operation only changes address.
-        if (!netRemoved.has(marker.id)) continue;
-        if (!justified.has(marker.id)) {
-          issues.push({
-            severity: "error",
-            code: "openapi.remove-marker-unjustified",
-            subject: svc,
-            message: `${svc}: removal marker for '${marker.id}' is not governed by a REMOVED requirement's Operations: line`,
-          });
-        }
-      }
-    }
-  }
-  for (const [svc, required] of removedReqOps) {
-    const marked = allMarkerIds.get(svc) ?? new Set<string>();
-    for (const op of required) {
-      if (marked.has(op)) continue;
-      // Distinguish "no marker at all" from "a marker is there but loam cannot
-      // read which operation it names" — the first asks the author to write the
-      // marker, the second to write the operationId, and telling somebody who
-      // already wrote the marker that there is none sends them looking for a
-      // file they are staring at.
-      issues.push({
-        severity: "error",
-        code: "openapi.remove-marker-missing",
-        subject: svc,
-        message: anonymousMarkers.get(svc) === true
-          ? `${svc}: REMOVED requirement governs '${op}', and its feature openapi.yaml carries an x-loam-remove: true marker with no operationId — name '${op}' on that marker`
-          : `${svc}: REMOVED requirement governs '${op}', but its feature openapi.yaml has no matching x-loam-remove: true marker`,
-      });
-    }
-  }
-
-  // Living specs also govern: an edge calling a pre-existing endpoint is coherent if the
-  // target's living spec.md declares the op — the feature need not restate the requirement.
-  const livingReqs = new Map<string, Requirement[]>();
-  const livingRequirements = async (service: PathableService): Promise<Requirement[]> => {
-    let reqs = livingReqs.get(service);
-    if (reqs === undefined) {
-      const p = servicePaths(docsDir, service).spec;
-      reqs = existsSync(p)
-        ? context === undefined
-          ? parseRequirements(await readFile(p, "utf8"))
-          : await context.readRequirements(p)
-        : [];
-      livingReqs.set(service, reqs);
-    }
-    return reqs;
-  };
-  const governedByLivingSpec = async (service: PathableService, op: string): Promise<boolean> => {
-    return (await livingRequirements(service)).some((r) => r.operations.includes(op));
-  };
-
-  // --- retiring an operation the fleet still calls ---
-  //
-  // A removal marker is checked against the living CONTRACT (does the slot
-  // exist) and the feature's own requirements (is the retirement governed).
-  // Neither question asks the one that matters to the other ninety-nine repos:
-  // is anybody still calling it? The living landscape is the fleet's own answer
-  // — an edge with `metadata { op }` is a consumer somebody drew — and another
-  // service's living requirements naming the operation are a second. Both are
-  // gating: the merge deletes the operation from the contract while the edge
-  // and the requirement stay, so the very next `validate --all` reports a
-  // broken contract on a repository whose author was never in this feature.
-  //
-  // Lazy on purpose: the landscape is a full LikeC4 workspace spin-up and the
-  // requirement scan reads every service's living spec, and a feature that
-  // removes nothing must pay for neither.
-  let livingLandscape: LoadedDoc | null | undefined;
-  const edgeConsumers = async (service: string, op: string): Promise<string[]> => {
-    if (livingLandscape === undefined) {
-      const path = landscapePath(docsDir);
-      livingLandscape = existsSync(path)
-        ? context === undefined
-          ? await loadFile(path)
-          : await context.loadLikeC4(path)
-        : null;
-    }
-    // An unreadable landscape proves nothing either way; `landscape.invalid`
-    // is validate's finding to make, and inventing a removal refusal out of a
-    // parse error would point the author at the wrong file.
-    if (livingLandscape === null || livingLandscape.errors.length > 0) return [];
-    const resolve = serviceResolver(livingLandscape.elements);
-    return livingLandscape.relationships
-      .filter((r) => r.op === op && resolve(r.target) === service)
-      .map((r) => `edge ${resolve(r.source)} → ${resolve(r.target)}${r.title === undefined ? "" : ` ("${r.title}")`}`);
-  };
-  const requirementConsumers = async (service: string, op: string): Promise<string[]> => {
-    let others: PathableService[];
-    try {
-      others = (await (context === undefined ? listServices(docsDir) : context.listServices(docsDir)))
-        .map((s) => s.id)
-        .filter((id) => id !== service);
-    } catch {
-      // No enumerable services/ — validate's `services-missing` is that
-      // repository's finding, not this feature's.
-      return [];
-    }
-    const out: string[] = [];
-    for (const other of others) {
-      for (const r of await livingRequirements(other)) {
-        if (r.operations.includes(op)) out.push(`${other}'s living requirement '${r.name}'`);
-      }
-    }
-    return out;
-  };
   for (const [svc, retiring] of removingOps) {
     for (const op of retiring) {
       const consumers = [...(await edgeConsumers(svc, op)), ...(await requirementConsumers(svc, op))];
@@ -351,18 +102,6 @@ export async function featureCoherence(
       });
     }
   }
-
-  // What OTHER features in flight define, per (service, op). Cross-service work
-  // normally lands as feature A calling an op that in-flight feature B introduces;
-  // that is an ordering dependency, not a broken contract, and the requirements
-  // axis already grades the same shape as a warn (delta.modified-pending). Lazy
-  // like delta.ts's activeAdditions — the common case (op resolves) never pays
-  // for the fleet scan.
-  let inFlightOps: Map<string, string> | null = null;
-  const definedElsewhere = async (service: string, op: string): Promise<string | undefined> => {
-    inFlightOps ??= await activeOpAdditions(docsDir, featureId, context);
-    return inFlightOps.get(`${service} ${op}`);
-  };
 
   // E1: Spec -> API — every operation a requirement governs must exist in that service's OpenAPI.
   for (const [svc, ops] of reqOps) {

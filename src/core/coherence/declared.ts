@@ -1,0 +1,237 @@
+/**
+ * What a feature's own delta DECLARES, per service, indexed once.
+ *
+ * Six indexes over the same three files, built in one walk because every check
+ * downstream joins on the service id and would otherwise re-read the delta per
+ * question. The distinctions here are the ones the checks cannot make for
+ * themselves: an operation a REMOVED requirement governs is being retired, so
+ * it neither claims the contract nor governs anything after the merge; a
+ * removal marker that names an id also defined elsewhere in the delta is a
+ * RELOCATION, not a retirement; and a marker with no `operationId` at all is a
+ * shape only this walk can see.
+ */
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { type PathableService } from "../kernel/ids.js";
+import type { Issue } from "../vocabulary/issue.js";
+import { featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { parseRequirements } from "../document/parse.js";
+import {
+  classifyBaselineDigests,
+  OPENAPI_BASELINE_KEY,
+  OPERATION_DIGEST_LENGTH,
+  OPERATION_DIGEST_RE,
+} from "../openapi/digest.js";
+import { readOpenapi } from "../openapi/doc.js";
+import type { FleetContext } from "../fleet-context.js";
+
+/** Everything one feature's delta says about its own services. */
+export interface Declared {
+  /** Per service: the operations its non-REMOVED requirements govern. */
+  reqOps: Map<PathableService, string[]>;
+  /** Per service: the operations its REMOVED requirements governed. */
+  removedReqOps: Map<string, Set<string>>;
+  /** Per service: operations this feature genuinely retires (markers minus relocations). */
+  removingOps: Map<string, Set<string>>;
+  /** Per service: every id a removal marker names, relocations included. */
+  allMarkerIds: Map<string, Set<string>>;
+  /** Per service: does the feature contract carry a marker with no operationId? */
+  anonymousMarkers: Map<string, boolean>;
+  /** The operationIds genuinely NEW to their service across the whole feature. */
+  featureApiOps: Set<string>;
+}
+
+/** The three facts this walk needs about the feature it is reading. */
+export interface DeltaScope {
+  docsDir: string;
+  featureDir: string;
+  featureId: string;
+}
+
+export async function declaredByService(
+  scope: DeltaScope,
+  svcNames: PathableService[],
+  issues: Issue[],
+  context?: FleetContext,
+): Promise<Declared> {
+  const { docsDir, featureDir, featureId } = scope;
+    const reqOps = new Map<PathableService, string[]>();
+    const removedReqOps = new Map<string, Set<string>>();
+    /** Per service: operations this feature genuinely retires (markers minus relocations). */
+    const removingOps = new Map<string, Set<string>>();
+    /** Per service: every id a removal marker names, relocations included. */
+    const allMarkerIds = new Map<string, Set<string>>();
+    /** Per service: does the feature contract carry a marker with no operationId? */
+    const anonymousMarkers = new Map<string, boolean>();
+    const featureApiOps = new Set<string>();
+    for (const svc of svcNames) {
+      const paths = featureSpecPaths(featureDir, svc);
+      if (existsSync(paths.spec)) {
+        const reqs = context === undefined
+          ? parseRequirements(await readFile(paths.spec, "utf8"))
+          : await context.readRequirements(paths.spec);
+        // REMOVED requirements are being retired along with their operations — their
+        // ops neither claim the contract (E1) nor govern anything after the merge.
+        reqOps.set(svc, reqs.filter((r) => r.kind !== "REMOVED").flatMap((r) => r.operations));
+        removedReqOps.set(
+          svc,
+          new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
+        );
+      }
+      // Only operations genuinely NEW to this service count as feature-added: authors
+      // restate the full living API in the delta file (it is a complete document, not a patch).
+      const featDoc = await readOpenapi(paths.openapi, context);
+      const featOps = featDoc.ops;
+      const removals = featOps.filter((op) => op.remove);
+      // A relocation — same operationId, removal marker on the old slot, upsert
+      // on the new one — retires nothing. Every rule that asks "is this operation
+      // going away" must therefore ask the NET set (markers this feature does not
+      // redefine), while "did the author write a marker at all" asks the raw one.
+      // Conflating them made moving an endpoint fail three checks at once for a
+      // change that removes nothing.
+      const redefined = new Set(featOps.filter((op) => !op.remove).map((op) => op.id));
+      const markerIds = new Set(removals.map((op) => op.id));
+      const netRemoved = new Set([...markerIds].filter((id) => !redefined.has(id)));
+      removingOps.set(svc, netRemoved);
+      allMarkerIds.set(svc, markerIds);
+      anonymousMarkers.set(svc, featDoc.anonymousRemovals.length > 0);
+
+      // A marker with no operationId names a slot but no operation. Every
+      // id-keyed check is blind to it, so it used to travel all the way into the
+      // living contract as a literal `x-loam-remove: true` — the one feature-only
+      // key that must never be published.
+      for (const marker of featDoc.anonymousRemovals) {
+        issues.push({
+          severity: "error",
+          code: "openapi.remove-marker-anonymous",
+          subject: svc,
+          message: `${svc}: ${marker.method} ${marker.path} carries x-loam-remove: true but declares no operationId — loam cannot tell which operation it retires; name the operation the living contract has at that slot`,
+        });
+      }
+
+      const livingDoc = await readOpenapi(servicePaths(docsDir, svc).openapi, context);
+      const livingOps = livingDoc.ops;
+      for (const id of livingDoc.duplicateIds) {
+        const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
+        issues.push({
+          severity: "warn",
+          code: "openapi.duplicate-operationid",
+          subject: svc,
+          message: `${svc}: the living OpenAPI defines operationId '${id}' at ${slots.join(" and ")} — every join on the id (a requirement's Operations: line, an edge's metadata { op }, a removal marker) picks one of those slots arbitrarily`,
+        });
+      }
+      // The baseline axis: which of the operations this delta SPELLS does it
+      // actually edit? A feature's openapi.yaml is a complete document, so most of
+      // it is quotation — and until the pin existed the merge upserted quotations
+      // too, which reverted whatever had landed on them since. Slot-keyed, exactly
+      // as the merge writes (path + method), never by operationId.
+      const livingBySlot = new Map(livingOps.map((op) => [`${op.method} ${op.path}`, op]));
+      let unpinned = 0;
+      for (const op of featOps) {
+        // A removal marker is not a restatement of anything; its own exactness
+        // check (`openapi.remove-target-mismatch`) already guards the slot.
+        if (op.remove) continue;
+        const where = `${op.method.toUpperCase()} ${op.path}`;
+        const livingOp = livingBySlot.get(`${op.method} ${op.path}`);
+        if (op.basedOn !== undefined && !OPERATION_DIGEST_RE.test(op.basedOn)) {
+          issues.push({
+            severity: "error",
+            code: "openapi.baseline-invalid",
+            subject: svc,
+            message: `${svc}: ${where} has invalid ${OPENAPI_BASELINE_KEY} '${op.basedOn}' — expected ${OPERATION_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
+          });
+          continue;
+        }
+        const verdict = classifyBaselineDigests(op.basedOn, op.digest, livingOp?.digest);
+        if (verdict === "unfounded") {
+          issues.push({
+            severity: "error",
+            code: "openapi.baseline-invalid",
+            subject: svc,
+            message: `${svc}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — a new operation has no living version to be based on; drop the marker`,
+          });
+        } else if (verdict === "stale") {
+          issues.push({
+            severity: "error",
+            code: "openapi.baseline-stale",
+            subject: svc,
+            message: `${svc}: ${where} ('${op.id}') was written against living version ${op.basedOn}, but the living contract now holds ${livingOp!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living operation, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
+          });
+        } else if (verdict === "unpinned" && livingOp !== undefined) {
+          // Counted, not listed. A delta over a thirty-operation service quotes
+          // twenty-nine of them, and twenty-nine identical warnings naming a fix
+          // that is ONE command teaches people to filter the code out.
+          unpinned += 1;
+        }
+      }
+      if (unpinned > 0) {
+        issues.push({
+          severity: "warn",
+          code: "openapi.baseline-missing",
+          subject: svc,
+          message: `${svc}: ${unpinned} operation(s) in this feature's openapi.yaml carry no ${OPENAPI_BASELINE_KEY}, so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`.`,
+        });
+      }
+
+      if (featOps.length > 0) {
+        const living = new Set(livingOps.filter((op) => !op.remove).map((op) => op.id));
+        for (const op of featOps) {
+          if (!op.remove && !living.has(op.id)) featureApiOps.add(op.id);
+        }
+
+        // Removal is exact: the feature names both an operationId and the
+        // path+method slot it expects to delete. That catches stale deltas whose
+        // target moved or was already retired before the archive planner runs.
+        const justified = removedReqOps.get(svc) ?? new Set<string>();
+        for (const marker of removals) {
+          const target = livingOps.find((op) => op.path === marker.path && op.method === marker.method);
+          if (target === undefined) {
+            issues.push({
+              severity: "error",
+              code: "openapi.remove-target-missing",
+              subject: svc,
+              message: `${svc}: removal marker for '${marker.id}' addresses ${marker.method} ${marker.path}, but no living operation exists there`,
+            });
+          } else if (target.id !== marker.id) {
+            issues.push({
+              severity: "error",
+              code: "openapi.remove-target-mismatch",
+              subject: svc,
+              message: `${svc}: removal marker names '${marker.id}' at ${marker.method} ${marker.path}, but the living operation there is '${target.id}'`,
+            });
+          }
+          // A relocation needs no REMOVED requirement: the requirement governing
+          // the operation stays, the operation only changes address.
+          if (!netRemoved.has(marker.id)) continue;
+          if (!justified.has(marker.id)) {
+            issues.push({
+              severity: "error",
+              code: "openapi.remove-marker-unjustified",
+              subject: svc,
+              message: `${svc}: removal marker for '${marker.id}' is not governed by a REMOVED requirement's Operations: line`,
+            });
+          }
+        }
+      }
+    }
+    for (const [svc, required] of removedReqOps) {
+      const marked = allMarkerIds.get(svc) ?? new Set<string>();
+      for (const op of required) {
+        if (marked.has(op)) continue;
+        // Distinguish "no marker at all" from "a marker is there but loam cannot
+        // read which operation it names" — the first asks the author to write the
+        // marker, the second to write the operationId, and telling somebody who
+        // already wrote the marker that there is none sends them looking for a
+        // file they are staring at.
+        issues.push({
+          severity: "error",
+          code: "openapi.remove-marker-missing",
+          subject: svc,
+          message: anonymousMarkers.get(svc) === true
+            ? `${svc}: REMOVED requirement governs '${op}', and its feature openapi.yaml carries an x-loam-remove: true marker with no operationId — name '${op}' on that marker`
+            : `${svc}: REMOVED requirement governs '${op}', but its feature openapi.yaml has no matching x-loam-remove: true marker`,
+        });
+      }
+    }
+  return { reqOps, removedReqOps, removingOps, allMarkerIds, anonymousMarkers, featureApiOps };
+}

@@ -12,8 +12,7 @@
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 389,
     "src/commands/verify.ts": 993,
-    "src/commands/vouch.ts": 620,
-    "src/core/coherence/coherence.ts": 518
+    "src/commands/vouch.ts": 620
   },
   "packageFiles": {
     "src/commands": 19
@@ -26,9 +25,6 @@
       "record": 8,
       "report": 6,
       "reportFrozen": 5
-    },
-    "src/core/coherence/coherence.ts": {
-      "featureCoherence": 5
     },
     "src/core/coherence/living.ts": {
       "unknownDeltaServices": 5

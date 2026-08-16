@@ -298,7 +298,7 @@ describe("the gate", () => {
   async function coherenceOf(files: Record<string, string>): Promise<Issue[]> {
     const p: Project = await makeProject(files);
     try {
-      return await featureCoherence(p.docsDir, join(p.docsDir, "features", "FEAT-1-split"), "FEAT-1");
+      return await featureCoherence({ docsDir: p.docsDir, featureDir: join(p.docsDir, "features", "FEAT-1-split"), featureId: "FEAT-1" });
     } finally {
       await p.destroy();
     }
