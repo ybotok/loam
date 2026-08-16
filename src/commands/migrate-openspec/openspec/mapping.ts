@@ -12,7 +12,7 @@ import { parse as parseYaml } from "yaml";
 import { serviceIdProblem } from "../../../core/kernel/ids.js";
 import { asRecord, dictionary } from "../../../core/kernel/records.js";
 import { type OpenSpecMapping } from "../../../core/openspec-inventory.js";
-import { message } from "../../../core/staging.js";
+import { message } from "../../../core/staging/commit.js";
 import { OpenSpecCommandError } from "./error.js";
 import { decodeSource } from "./read.js";
 

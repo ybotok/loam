@@ -27,24 +27,12 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readOpenapi } from "../src/core/openapi.js";
 import { mergeOpenapiPaths, stripOpenapiRemovalMarkers } from "../src/core/openapi-merge.js";
-import {
-  COMMIT_INTENT,
-  NotUtf8Error,
-  planWrite,
-  readUtf8,
-  recoverInterruptedCommit,
-  scanWritePathResidue,
-  sha256,
-  snapshotDir,
-  SnapshotClobberError,
-  stageWrites,
-  swapStaged,
-  writeCommitIntent,
-  writeSnapshot,
-  SNAPSHOT_DIR,
-  SNAPSHOT_MANIFEST,
-  SNAPSHOT_VERSION,
-} from "../src/core/staging.js";
+import { stageWrites, swapStaged } from "../src/core/staging/commit.js";
+import { COMMIT_INTENT, writeCommitIntent } from "../src/core/staging/recovery/intent.js";
+import { recoverInterruptedCommit } from "../src/core/staging/recovery/recover.js";
+import { scanWritePathResidue } from "../src/core/staging/recovery/residue.js";
+import { SNAPSHOT_DIR, SNAPSHOT_MANIFEST, SNAPSHOT_VERSION, SnapshotClobberError, snapshotDir, writeSnapshot } from "../src/core/staging/snapshot.js";
+import { NotUtf8Error, planWrite, readUtf8, sha256 } from "../src/core/staging/writes.js";
 import {
   coherentFixture,
   LANDSCAPE,

@@ -5,30 +5,12 @@ import { join } from "node:path";
 import { loadConfig } from "../core/envelope/config.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, type ErrorCode } from "../core/envelope/json.js";
 import { approveOverrides, gatesArchive, type Issue } from "../core/vocabulary/issue.js";
-import {
-  acquireDocsLock,
-  clearCommitIntent,
-  DocsBusyError,
-  InterruptedCommitError,
-  message,
-  NotUtf8Error,
-  planWrite,
-  quietPruneEmptyParents,
-  quietRm,
-  readUtf8,
-  recoverInterruptedCommit,
-  rollbackError,
-  rollbackStaged,
-  snapshotDir,
-  SnapshotClobberError,
-  stageWrites,
-  swapStaged,
-  writeCommitIntent,
-  writeSnapshot,
-  SNAPSHOT_DIR,
-  type CommitRecovery,
-  type PlannedWrite,
-} from "../core/staging.js";
+import { message, quietPruneEmptyParents, quietRm, rollbackError, rollbackStaged, stageWrites, swapStaged } from "../core/staging/commit.js";
+import { acquireDocsLock, DocsBusyError } from "../core/staging/lock.js";
+import { clearCommitIntent, InterruptedCommitError, type CommitRecovery, writeCommitIntent } from "../core/staging/recovery/intent.js";
+import { recoverInterruptedCommit } from "../core/staging/recovery/recover.js";
+import { SNAPSHOT_DIR, SnapshotClobberError, snapshotDir, writeSnapshot } from "../core/staging/snapshot.js";
+import { NotUtf8Error, planWrite, readUtf8, type PlannedWrite } from "../core/staging/writes.js";
 import { loadFile } from "../core/c4/likec4.js";
 import { LandscapeSpliceError } from "../core/c4/splice/contract.js";
 import { planLandscapeMerge } from "../core/c4/splice/landscape-merge.js";

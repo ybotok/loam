@@ -8,14 +8,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  StagingRaceError,
-  planWrite,
-  quietPruneEmptyParents,
-  rollbackStaged,
-  stageWrites,
-  swapStaged,
-} from "../src/core/staging.js";
+import { quietPruneEmptyParents, rollbackStaged, stageWrites, StagingRaceError, swapStaged } from "../src/core/staging/commit.js";
+import { planWrite } from "../src/core/staging/writes.js";
 
 describe("exclusive staged writes", () => {
   it("never recursively removes a file created concurrently with a no-clobber swap", async () => {

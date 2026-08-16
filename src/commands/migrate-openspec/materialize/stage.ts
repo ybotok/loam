@@ -19,7 +19,7 @@ import { findConfigPath, parseConfig } from "../../../core/envelope/config.js";
 import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { type OpenSpecInventory } from "../../../core/openspec-inventory.js";
-import { type PlannedWrite } from "../../../core/staging.js";
+import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { OpenSpecCommandError } from "../openspec/error.js";
 import { canonicalForCreate, contains } from "../openspec/paths.js";
 
