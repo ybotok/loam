@@ -19,7 +19,7 @@ import { serviceResolver } from "../c4/likec4.js";
 import { operations } from "../openapi/doc.js";
 import { type FeatureEntry } from "../repo/entries.js";
 import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "../repo/paths.js";
-import { enumeratedServiceIndex } from "../repo/service-target.js";
+import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
 import type { Requirement } from "../document/spec.js";
 
 export type DependencyReason =
@@ -235,8 +235,17 @@ export async function readFacts(
     // of a half-read document would be worse than the silence.
     if (doc.errors.length === 0) {
       // One resolver for the whole delta: `serviceOf` rebuilds its id map on
-      // every call, and this loop asks once per edge.
-      const svcOf = serviceResolver(doc.elements);
+      // every call, and this loop asks once per edge. The enumerated fleet —
+      // `services/` plus this feature's own `specs/` directories, the same
+      // union `enumeratedTarget` probes below — rides into the resolver so a
+      // delta that models CONTAINERS keeps its edges attached: without it, an
+      // edge into `payment.api` resolves to a service called "api" that has
+      // never existed, the op lookup misses the living contract, and the graph
+      // invents a dependency (or orders two features that share nothing). An
+      // unenumerable services/ falls back to the feature's own names — every
+      // living probe would have found nothing there anyway.
+      const fleetIds = await enumeratedServiceIds(docsDir, context);
+      const svcOf = serviceResolver(doc.elements, new Set([...fleetIds, ...feature.services]));
       // The resolver answers with document text and `living` builds a path, so
       // the name crosses through the enumeration — coherence.ts grades its
       // edges through the same bridge. A name no enumeration vouches for has

@@ -54,6 +54,15 @@ export interface CoverageScope {
   elements: Elem[];
   relationships: Rel[];
   health: HealthIds;
+  /**
+   * The enumerated fleet (plus the feature's own `specs/` names, where the
+   * caller has them). The Covers matcher resolves edge ENDPOINTS with it, and
+   * it must be the SAME set the caller's own findings resolve with: the finding
+   * says "write `Covers: checkout-web -> payment-service`" with the fleet in
+   * hand, and a matcher resolving without it answered that exact line with
+   * `covers.unknown` whenever the edge landed on a modelled container.
+   */
+  known?: ReadonlySet<string>;
 }
 
 /** Does an element entry name this element? Its id, or the service it stands for. */
@@ -77,20 +86,44 @@ function namesElement(name: string, e: Elem): boolean {
  * key alone, and nothing in it is derived from the working directory — so two
  * runs can never see each other's answer, and the entry dies with the document.
  * Nothing mutates an `Elem[]` after parse.
+ *
+ * Two tiers because the fleet set is part of the answer: the same document
+ * resolves differently with and without `known`, so a cache keyed on the
+ * elements alone handed a with-fleet caller the without-fleet resolver.
+ * Callers build ONE set per run and pass the same instance through, which is
+ * what lets the inner WeakMap key on the set's identity.
  */
 const RESOLVERS = new WeakMap<Elem[], (id: string) => string>();
+const FLEET_RESOLVERS = new WeakMap<Elem[], WeakMap<ReadonlySet<string>, (id: string) => string>>();
 
-function resolverFor(elements: Elem[]): (id: string) => string {
-  const cached = RESOLVERS.get(elements);
+function resolverFor(elements: Elem[], known?: ReadonlySet<string>): (id: string) => string {
+  if (known === undefined) {
+    const cached = RESOLVERS.get(elements);
+    if (cached !== undefined) return cached;
+    const resolver = serviceResolver(elements);
+    RESOLVERS.set(elements, resolver);
+    return resolver;
+  }
+  let perSet = FLEET_RESOLVERS.get(elements);
+  if (perSet === undefined) {
+    perSet = new WeakMap();
+    FLEET_RESOLVERS.set(elements, perSet);
+  }
+  const cached = perSet.get(known);
   if (cached !== undefined) return cached;
-  const resolver = serviceResolver(elements);
-  RESOLVERS.set(elements, resolver);
+  const resolver = serviceResolver(elements, known);
+  perSet.set(known, resolver);
   return resolver;
 }
 
 /** Does an edge entry's side name this relationship endpoint? */
-function namesEndpoint(name: string, endpointId: string, elements: Elem[]): boolean {
-  return endpointId === name || resolverFor(elements)(endpointId) === name;
+function namesEndpoint(
+  name: string,
+  endpointId: string,
+  elements: Elem[],
+  known?: ReadonlySet<string>,
+): boolean {
+  return endpointId === name || resolverFor(elements, known)(endpointId) === name;
 }
 
 /** Does a Covers entry match this element? (Only element entries can.) */
@@ -98,12 +131,12 @@ export function coversElement(entry: CoversEntry, e: Elem): boolean {
   return entry.form === "element" && namesElement(entry.id, e);
 }
 
-/** Does a Covers entry match this relationship? Endpoints resolved within `elements`. */
-export function coversEdge(entry: CoversEntry, r: Rel, elements: Elem[]): boolean {
+/** Does a Covers entry match this relationship? Endpoints resolved within `elements`, through `known` where the caller has the fleet. */
+export function coversEdge(entry: CoversEntry, r: Rel, elements: Elem[], known?: ReadonlySet<string>): boolean {
   return (
     entry.form === "edge" &&
-    namesEndpoint(entry.source, r.source, elements) &&
-    namesEndpoint(entry.target, r.target, elements)
+    namesEndpoint(entry.source, r.source, elements, known) &&
+    namesEndpoint(entry.target, r.target, elements, known)
   );
 }
 
@@ -115,7 +148,7 @@ export function entryResolves(entry: CoversEntry, scope: CoverageScope): boolean
     case "sli":
       return scope.health.slis.includes(entry.id);
     case "edge":
-      return scope.relationships.some((r) => coversEdge(entry, r, scope.elements));
+      return scope.relationships.some((r) => coversEdge(entry, r, scope.elements, scope.known));
     case "element":
       return scope.elements.some((e) => coversElement(entry, e));
   }

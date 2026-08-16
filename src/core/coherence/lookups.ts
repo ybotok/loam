@@ -13,7 +13,7 @@ import { readFile } from "node:fs/promises";
 import { loadFile, serviceResolver, type LoadedDoc } from "../c4/likec4.js";
 import { type PathableService } from "../kernel/ids.js";
 import { landscapePath, servicePaths } from "../repo/paths.js";
-import { listServices } from "../repo/repo.js";
+import { enumeratedServiceIds } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";
 import { parseRequirements } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
@@ -48,6 +48,11 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
       return (await livingRequirements(service)).some((r) => r.operations.includes(op));
     };
 
+    // The enumerated fleet, read once and shared by both consumer scans below.
+    let serviceIds: PathableService[] | undefined;
+    const enumeratedServices = async (): Promise<PathableService[]> =>
+      (serviceIds ??= await enumeratedServiceIds(docsDir, context));
+
     // --- retiring an operation the fleet still calls ---
     //
     // A removal marker is checked against the living CONTRACT (does the slot
@@ -77,22 +82,18 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
       // is validate's finding to make, and inventing a removal refusal out of a
       // parse error would point the author at the wrong file.
       if (livingLandscape === null || livingLandscape.errors.length > 0) return [];
-      const resolve = serviceResolver(livingLandscape.elements);
+      // The enumerated fleet rides along so a landscape that models CONTAINERS
+      // stays visible: without it, an edge into `payment.api` resolves to a
+      // service called "api" that has never existed, the `=== service` join
+      // below finds nothing, and the one check standing between a removal and
+      // its last consumer answers "nobody calls it".
+      const resolve = serviceResolver(livingLandscape.elements, new Set(await enumeratedServices()));
       return livingLandscape.relationships
         .filter((r) => r.op === op && resolve(r.target) === service)
         .map((r) => `edge ${resolve(r.source)} → ${resolve(r.target)}${r.title === undefined ? "" : ` ("${r.title}")`}`);
     };
     const requirementConsumers = async (service: string, op: string): Promise<string[]> => {
-      let others: PathableService[];
-      try {
-        others = (await (context === undefined ? listServices(docsDir) : context.listServices(docsDir)))
-          .map((s) => s.id)
-          .filter((id) => id !== service);
-      } catch {
-        // No enumerable services/ — validate's `services-missing` is that
-        // repository's finding, not this feature's.
-        return [];
-      }
+      const others = (await enumeratedServices()).filter((id) => id !== service);
       const out: string[] = [];
       for (const other of others) {
         for (const r of await livingRequirements(other)) {

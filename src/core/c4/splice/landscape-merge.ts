@@ -261,6 +261,10 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     }
     if (rides(s.start, s.end)) continue;
     const key = relSortKey(deltaElements, r);
+    // Deliberately no `known` fleet set: this resolves only the anchor a new
+    // relationship lands after (placement.ts's reason — cosmetic grouping,
+    // safety-netted by the re-parse below), never which service a check
+    // grades.
     const spot = relSpot(modelRegion(), serviceOf(deltaElements, r.source), key);
     applyTop(spot, spliceSource(deltaText, s, featureId, "  "));
   }

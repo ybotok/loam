@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
 import { landscapePath } from "../repo/paths.js";
-import { listServices } from "../repo/repo.js";
+import { enumeratedServiceIds } from "../repo/service-target.js";
 import type { BriefTarget } from "./targets.js";
 
 /**
@@ -140,11 +140,7 @@ export interface LandscapeContext {
  * had before.
  */
 async function knownServices(docsDir: string): Promise<ReadonlySet<string>> {
-  try {
-    return new Set((await listServices(docsDir)).map((s) => s.id));
-  } catch {
-    return new Set();
-  }
+  return new Set(await enumeratedServiceIds(docsDir));
 }
 
 /**

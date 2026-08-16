@@ -25,6 +25,7 @@ import {
 } from "../../core/c4/likec4.js";
 import { type PathableService } from "../../core/kernel/ids.js";
 import { landscapePath as landscapeFile, servicePaths } from "../../core/repo/paths.js";
+import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { type Finding } from "../../core/vocabulary/report.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { coversEdge, coversElement, type CoverageScope } from "../../core/c4/arch.js";
@@ -45,6 +46,14 @@ export interface DeltaArch {
   taggedRels: Rel[];
   /** Each addressed service's arch.spec.md delta, in enumeration order. */
   archDeltas: Array<{ service: PathableService; reqs: Requirement[] }>;
+  /**
+   * Every service the feature's `specs/` addresses — not just the ones with an
+   * arch delta. The resolver's fleet set unions these in because a service the
+   * feature INTRODUCES has no `services/` directory yet, and without its name
+   * an edge into that service's own modelled container resolved to the
+   * container's title — a phantom the fleet half alone cannot rule out.
+   */
+  featureServices: PathableService[];
   /** Every scenario the feature's deltas carry, lowercased — the heuristic's haystack. */
   scenarioText: string;
   /** The living landscape under --all; undefined means "load it if you need it", null "there is none". */
@@ -60,6 +69,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     taggedEls,
     taggedRels,
     archDeltas,
+    featureServices,
     scenarioText,
     preloadedLand,
     fleet,
@@ -70,10 +80,19 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   // `serviceOf` is a one-shot wrapper that rebuilds its index on every call, and
   // the two loops below ask it up to five times per tagged edge — so a delta
   // over a large model paid for one Map of every element per question asked.
-  // Identical answers by construction: `serviceOf(elements, id)` IS
-  // `serviceResolver(elements)(id)`, and nothing reassigns `elements` after the
-  // delta parse.
-  const svcOf = serviceResolver(elements);
+  // The enumerated fleet — `services/` plus the feature's own `specs/` names,
+  // where a service it introduces lives — rides into it, and into `baseSvcOf`
+  // below, which MUST resolve the same way or the already-living exemption
+  // keys never match: so an edge drawn into a modelled container
+  // (`payment.api`) grades against the service that owns it instead of a
+  // service called "api" that has never existed. An unenumerable services/
+  // degrades to the feature's own names, exactly what every caller got before
+  // the set existed.
+  const known: ReadonlySet<string> = new Set<string>([
+    ...(await enumeratedServiceIds(docsDir, fleet)),
+    ...featureServices,
+  ]);
+  const svcOf = serviceResolver(elements, known);
 
   // Arch-edge coverage (heuristic, warn-only): each new tagged edge should be named by a scenario.
   for (const r of taggedRels) {
@@ -133,7 +152,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     return doc !== null && doc.errors.length === 0 ? doc : null;
   };
   const base = await alreadyLiving();
-  const baseSvcOf = base === null ? null : serviceResolver(base.elements);
+  const baseSvcOf = base === null ? null : serviceResolver(base.elements, known);
   const baseIds = new Set(base?.elements.map((e) => e.id) ?? []);
   const baseServices = new Set((base?.elements ?? []).map(elementService));
   // How a service→service pair is keyed, spelled ONCE. The two sides used to
@@ -162,7 +181,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   }
   for (const r of taggedRels) {
     if (baseEdges.has(edgeKey(svcOf(r.source), svcOf(r.target)))) continue;
-    if (activeCovers.some((c) => coversEdge(c, r, elements))) continue;
+    if (activeCovers.some((c) => coversEdge(c, r, elements, known))) continue;
     findings.push({
       severity: "warn",
       code: "c4.uncovered",
@@ -187,7 +206,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       // exactly as in service scope — the health.invalid finding itself
       // belongs to the service target, which owns the file's diagnosis.
       const health = await readHealth(servicePaths(docsDir, svc).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids };
+      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids, known };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = servicePaths(docsDir, svc).model;
@@ -201,6 +220,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
             elements: [...baseElements, ...model.elements],
             relationships: [...baseRels, ...model.relationships],
             health: health.ids,
+            known,
           };
         }
         findings.push(...coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable));

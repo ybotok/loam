@@ -209,6 +209,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       elements,
       relationships,
       land,
+      known,
     })),
   );
 

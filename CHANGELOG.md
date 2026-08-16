@@ -4,6 +4,14 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Fixed — the fleet map's containers are visible to the checks that guard removals and ordering
+
+- The element→service resolver was called without the enumerated fleet in exactly the places that are repository-aware: the removal gate's consumer scan, the feature dependency graph, coherence's edge grading, arch coverage and its `Covers:` matcher, the verify checklist, and `loam delta`'s projection. An edge drawn into a modelled container — `checkoutWeb -> paymentService.api` — therefore resolved to a service called `api` that has never existed: `openapi.remove-op-consumed` answered "nobody calls it" while retiring an operation that container still consumed, `loam dependencies` could invent or drop an ordering edge, and `loam delta` briefed the provider with no inbound call and the consumer with a phantom target. All of these now resolve through the fleet's `services/` enumeration (plus the feature's own `specs/`, where a service it introduces lives), exactly as `validate --landscape` always did.
+- **Two consequences a green repo may notice, and one is a migration event.** First, checks now grade container-targeted edges against the owning service instead of a phantom, so previously silent breaches can surface. Second, for an **active** feature whose delta draws an op-tagged edge into a modelled container, the resolved service name is part of every `c4.calls` claim id — so `loam verify`'s checklist digest changes, an existing `verification.yaml` reports **STALE**, and its verdict drops from `attested`/`verified` to `unverified` until the feature is re-recorded (one `loam verify --record` or `--results` run against the re-derived checklist). This is the same one-time cost the digest salts paid before it (`core/gherkin/digest.ts` records that precedent); archived features are untouched — their records are frozen.
+
+
+
+
 ### Added — the fleet-shape and contract-depth checks, from the first fleet adoption's findings
 
 Everything in this group came out of adopting two real Spring Boot services into a fresh docs repo. Each check compares artifacts loam already parses; none reads a line of code, and all of them are warnings — `--strict` is the escalation, plain exit codes do not move.
