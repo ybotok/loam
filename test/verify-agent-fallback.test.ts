@@ -38,7 +38,7 @@ import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin.js";
 import { parseRequirements } from "../src/core/document/spec.js";
 import { contestedDigests } from "../src/core/results.js";
-import { scenarioBodyHash, type Claim as CoreClaim } from "../src/core/verify.js";
+import { scenarioBodyHash, type Claim as CoreClaim } from "../src/core/verify/checklist.js";
 import { coherentFixture, makeProject, runLoam, FEATURE_SPEC, type Project } from "./helpers/harness.js";
 
 const FEAT = "FEAT-1";

@@ -22,7 +22,7 @@ import { format } from "node:util";
 import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { mergeOpenapiPaths } from "../src/core/openapi-merge.js";
+import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
 import { DOCS_LOCK } from "../src/core/staging/lock.js";
 import { registerArchive } from "../src/commands/archive.js";
 import { coherentFixture, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";

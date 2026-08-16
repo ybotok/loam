@@ -7,7 +7,7 @@ import type { PathableService } from "./kernel/ids.js";
 import { servicePaths } from "./repo/paths.js";
 
 /**
- * The async contract axis: AsyncAPI 3.0, read the way `core/openapi.ts` reads
+ * The async contract axis: AsyncAPI 3.0, read the way `core/openapi/doc.ts` reads
  * OpenAPI — a shallow structural walk over the `yaml` parse, never a real
  * AsyncAPI parser. `@asyncapi/parser` would be a fourth runtime dependency
  * (AGENTS.md: adding one is a product decision), and loam needs a slice of the

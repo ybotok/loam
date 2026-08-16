@@ -7,7 +7,7 @@ import {
   requirementIdProblems,
   serializeRequirements,
 } from "../src/core/document/spec.js";
-import { featureChecklist } from "../src/core/verify.js";
+import { featureChecklist } from "../src/core/verify/checklist.js";
 import {
   LIVING_SPEC,
   coherentFixture,

@@ -1,5 +1,5 @@
 /**
- * Deep invariants for src/core/openapi.ts — operationIds() and serviceOperationIds().
+ * Deep invariants for src/core/openapi/doc.ts — operationIds() and serviceOperationIds().
  *
  * operationId is the spine joining the three axes (C4 edge `op` ↔ requirement
  * `Operations:` ↔ OpenAPI `operationId`, SCHEMA.md "API linkage"). Extraction must
@@ -31,7 +31,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { FleetContext } from "../src/core/fleet-context.js";
-import { operationIds, operations, readOpenapi, serviceOperationIds } from "../src/core/openapi.js";
+import { operationIds, operations, readOpenapi, serviceOperationIds } from "../src/core/openapi/doc.js";
 import {
   FEATURE_DELTA,
   FEATURE_OPENAPI,

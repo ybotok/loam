@@ -16,7 +16,7 @@ import { type DeclaredService, type PathableService } from "../../../core/kernel
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { readOpenapi } from "../../../core/openapi.js";
+import { readOpenapi } from "../../../core/openapi/doc.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 
 /** What the service target hands the HTTP axis. */

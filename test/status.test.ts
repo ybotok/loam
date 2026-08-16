@@ -31,7 +31,10 @@ import {
 } from "./helpers/harness.js";
 import { COMMIT_INTENT } from "../src/core/staging/recovery/intent.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
-import { buildVerification, featureChecklist, renderVerification, type Answer } from "../src/core/verify.js";
+import { type Answer } from "../src/core/verify/answers.js";
+import { buildVerification } from "../src/core/verify/build.js";
+import { featureChecklist } from "../src/core/verify/checklist.js";
+import { renderVerification } from "../src/core/verify/file.js";
 
 const FEAT_DIR = "features/FEAT-1-split";
 

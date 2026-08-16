@@ -7,7 +7,7 @@
  * gap mechanically: one `.feature` file per requirement, steps taken from the
  * scenario's own bullet lines, and a digest TAG (`@loam-digest-<16hex>`) on
  * every scenario using the SAME body-hash recipe `loam verify` folds into its
- * claim ids (verify.ts's scenarioBodyHash — salted by the owning service and
+ * claim ids (`verify/checklist.ts`'s scenarioBodyHash — salted by the owning service and
  * by the spec axis, so a stamp belongs to one suite and one axis) — so the
  * test skeleton, the claim and the spec can never quietly disagree about what
  * a scenario says, and no two repositories can answer each other's. A tag
@@ -33,7 +33,7 @@ import { servicePaths, SPEC_AXES, type SpecAxis } from "./repo/paths.js";
 import { listFeatures } from "./repo/repo.js";
 import type { FleetContext } from "./fleet-context.js";
 import type { Finding } from "./vocabulary/report.js";
-import { scenarioBodyHash, type ScenarioAxis } from "./verify.js";
+import { scenarioBodyHash, type ScenarioAxis } from "./verify/checklist.js";
 import { resolveInside, UnsafePathError } from "./kernel/path-safety.js";
 
 /** Where Gherkin lives in a service repo when loam.json does not say. */

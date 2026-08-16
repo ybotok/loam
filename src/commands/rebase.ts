@@ -38,11 +38,8 @@ import {
   requirementDigest,
   type Requirement,
 } from "../core/document/spec.js";
-import {
-  OpenapiMergeError,
-  pinOpenapiOperations,
-  type OpenapiPinPlan,
-} from "../core/openapi-merge.js";
+import { OpenapiMergeError } from "../core/openapi/merge/error.js";
+import { pinOpenapiOperations, type OpenapiPinPlan } from "../core/openapi/merge/pin.js";
 import { plural } from "./format.js";
 
 interface RebaseOptions {

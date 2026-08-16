@@ -27,12 +27,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
-import {
-  classifyOperationBaseline,
-  mergeOpenapiPaths,
-  pinOpenapiOperations,
-} from "../src/core/openapi-merge.js";
-import { operationDigest, operations } from "../src/core/openapi.js";
+import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
+import { classifyOperationBaseline, pinOpenapiOperations } from "../src/core/openapi/merge/pin.js";
+import { operationDigest } from "../src/core/openapi/digest.js";
+import { operations } from "../src/core/openapi/doc.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { join } from "node:path";

@@ -2,19 +2,13 @@
  * The verification record as `status` reads it: the rung the record stands on,
  * the projection of what it says, and the two `next[]` steps that discharge it
  * — where a test comes from, and what `loam verify` still wants answered.
- * Every verdict here is `verify.ts`'s own, re-read; nothing in this module is
+ * Every verdict here is `core/verify/`'s own, re-read; nothing in this module is
  * a second definition of "verified".
  */
 import type { FeatureEntry } from "../repo/entries.js";
-import {
-  attestedNotice,
-  featureChecklist,
-  readVerificationState,
-  tallyRecord,
-  verificationVerdict,
-  type VerificationVerdict,
-  type VerifyNotice,
-} from "../verify.js";
+import { featureChecklist } from "../verify/checklist.js";
+import { readVerificationState } from "../verify/file.js";
+import { attestedNotice, tallyRecord, type VerificationVerdict, type VerifyNotice, verificationVerdict } from "../verify/record.js";
 import type { ArtifactState, ArtifactStatus, NextStep, VerificationState } from "./report.js";
 import type { DeltaScan } from "./scan.js";
 

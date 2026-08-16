@@ -12,7 +12,7 @@
  */
 import { featureSpecPaths } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
-import { operations } from "../openapi.js";
+import { operations } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 
 /**

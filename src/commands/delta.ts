@@ -6,7 +6,7 @@ import { loadConfig } from "../core/envelope/config.js";
 import { InvalidIdError, assertServiceId } from "../core/kernel/ids.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../core/envelope/json.js";
 import { elementService, loadFile, serviceOf, type Elem, type LoadedDoc, type Rel } from "../core/c4/likec4.js";
-import { readOpenapi, type Operation } from "../core/openapi.js";
+import { readOpenapi, type Operation } from "../core/openapi/doc.js";
 // The summary walk below descends four levels into a document nobody has
 // validated, and `isRecord` is what it asks at each step: a cast there would
 // assert a shape the parser never promised, and a sequence or a scalar in any of
@@ -268,7 +268,7 @@ function introducedServices(doc: LoadedDoc | null, featureId: string): string[] 
 /**
  * The feature's OpenAPI delta for one service, as slots rather than names.
  *
- * The operation set comes from core/openapi.ts — the same structure-aware reader
+ * The operation set comes from core/openapi/doc.ts — the same structure-aware reader
  * every other check uses, so this view cannot see an operation validate does not.
  * `summary` is the one field that reader does not carry, and it is the sentence
  * an implementer most wants, so it is looked up by the path+method the reader

@@ -18,13 +18,10 @@ import { titleOf } from "../core/c4/splice/placement.js";
 import { parseServiceId, type PathableService } from "../core/kernel/ids.js";
 import { archiveDir as archiveRoot, featurePaths, featureSpecPaths, landscapePath as landscapeFile, servicePaths, SPEC_AXES } from "../core/repo/paths.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
-import { readOpenapi } from "../core/openapi.js";
-import {
-  mergeOpenapiPaths,
-  OpenapiMergeError,
-  stripOpenapiRemovalMarkers,
-  type OpenapiMergeResult,
-} from "../core/openapi-merge.js";
+import { readOpenapi } from "../core/openapi/doc.js";
+import { OpenapiMergeError } from "../core/openapi/merge/error.js";
+import { stripOpenapiRemovalMarkers } from "../core/openapi/merge/markers.js";
+import { mergeOpenapiPaths, type OpenapiMergeResult } from "../core/openapi/merge/merge.js";
 import { featureCoherence } from "../core/coherence/coherence.js";
 import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../core/coherence/living.js";
 import { findingJson, SEVERITY_MARK, type Finding } from "../core/vocabulary/report.js";

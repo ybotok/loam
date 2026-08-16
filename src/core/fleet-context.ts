@@ -23,11 +23,7 @@ import { readAsyncapi, type AsyncapiDoc } from "./asyncapi.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
 import type { Finding } from "./vocabulary/report.js";
-import {
-  readOpenapi,
-  type OpenapiDoc,
-  type Operation,
-} from "./openapi.js";
+import { readOpenapi, type OpenapiDoc, type Operation } from "./openapi/doc.js";
 import type { RawServiceId } from "./kernel/ids.js";
 import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
 import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
@@ -265,7 +261,7 @@ export class FleetContext {
    * interleaved removals with upserts, so a relocated operation answered
    * "defined" through `archive` (no context) and "gone" through `validate` and
    * `status` (context), or the reverse, depending on the order the feature's
-   * YAML happened to spell the two slots in. `core/openapi.ts` owns the rule and
+   * YAML happened to spell the two slots in. `core/openapi/doc.ts` owns the rule and
    * threads a context through the reads underneath it, which is the only part
    * this class was ever needed for.
    */

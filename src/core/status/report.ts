@@ -11,7 +11,7 @@
  * else.
  *
  * The obvious implementation is a state file — a `.loam/state.json` recording
- * which step each feature reached. It is rejected here for the reason verify.ts
+ * which step each feature reached. It is rejected here for the reason core/verify/
  * refuses a second mutable database: the moment a second record of the truth
  * exists, an author who edits a file by hand, a merge, a rebase or a
  * `git checkout` desynchronises it, and the state file's answer is confidently
@@ -72,7 +72,7 @@
  * refuses to pay.
  */
 import type { ServiceEntry } from "../repo/entries.js";
-import type { VerificationVerdict } from "../verify.js";
+import type { VerificationVerdict } from "../verify/record.js";
 import type { Finding } from "../vocabulary/report.js";
 
 /** The closed set. The module header says what each value instructs. */
