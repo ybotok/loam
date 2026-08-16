@@ -71,8 +71,8 @@ export interface WalkStop {
 export const WALK: WalkStop[] = [
   {
     where: "the build and dependency manifests — pom.xml, build.gradle, package.json, go.mod, requirements.txt, and whatever the repo's own README calls the build",
-    find: "what this service is built from, and every client library it links against. A broker client, an HTTP client, a database driver: each one is a dependency that has to appear as an edge or a container later, and this list is the only place they are all named at once.",
-    lands: ["model.likec4", "runbook.md"],
+    find: "what this service is built from, and every client library it links against. A broker client, an HTTP client, a database driver: each one is a dependency that has to appear as an edge or a container later, and this list is the only place they are all named at once. A library whose SEMANTICS decide behaviour — a retry budget, a delivery guarantee, a serialization format — is an arch requirement (arch.spec.md), not a fact to leave in your head.",
+    lands: ["model.likec4", "runbook.md", "arch.spec.md"],
   },
   {
     where: "the entry points — main/Application/server bootstrap, the DI or module wiring, and anything the deploy manifests actually start",
@@ -106,8 +106,8 @@ export const WALK: WalkStop[] = [
   },
   {
     where: "the runtime — config and env vars, deploy manifests, pipelines, alert rules, dashboards",
-    find: "how it is run and what pages whom. Alerts are the honest source for health.yaml: an SLO nobody agreed to is invention, but an alert that already fires is a fact somebody wrote down. Deployment manifests OVERRIDE configuration files, and they usually live in another repository — go and find them before any dependency that only configuration attests goes in the model, and check for an environment variable that disables the feature. A capability switched off at deploy time is not a dependency, however completely the config wires it: delete its edge and container, and record it in runbook.md's 'configured but not a dependency, and why' list. A manifest read from another repository is named in the runbook's prose — never in `sources`, which may only hold paths of this service's own repository.",
-    lands: ["runbook.md", "health.yaml"],
+    find: "how it is run and what pages whom. Alerts are the honest source for health.yaml: an SLO nobody agreed to is invention, but an alert that already fires is a fact somebody wrote down. Deployment manifests OVERRIDE configuration files, and they usually live in another repository — go and find them before any dependency that only configuration attests goes in the model, and check for an environment variable that disables the feature. A capability switched off at deploy time is not a dependency, however completely the config wires it: delete its edge and container, and record it in runbook.md's 'configured but not a dependency, and why' list. A manifest read from another repository is named in the runbook's prose — never in `sources`, which may only hold paths of this service's own repository. An EFFECTIVE configuration value behaviour depends on — the timeout the chart sets, the flag that switches a code path — is an arch requirement in arch.spec.md, with a Covers: line naming what it decides; loam holds its coverage even though it can never check the value.",
+    lands: ["runbook.md", "health.yaml", "arch.spec.md"],
   },
   {
     where: "the tests, integration ones first",

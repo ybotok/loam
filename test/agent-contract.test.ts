@@ -499,6 +499,37 @@ describe("the brief promises only what a check can keep", () => {
     expect(shape).toContain("configured but not a dependency, and why");
   });
 
+  /**
+   * The facts no artifact structurally holds — effective configuration,
+   * library semantics — needed a NAMED home, or two adoptions file the same
+   * fact two different ways. The convention is arch.spec.md, stated where the
+   * facts are found (walk stops 1 and 8) and in the generated AGENTS.md; the
+   * reproducibility bar those facts serve is stated beside COMPLETENESS in
+   * unchecked[], because nothing checks either.
+   */
+  it("the walk lands library semantics and effective configuration in arch.spec.md", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const walk = b.walk as Array<{ where: string; find: string; lands: string[] }>;
+    const manifests = walk.find((s) => s.where.split(" — ")[0] === "the build and dependency manifests");
+    expect(manifests!.find).toContain("arch requirement");
+    expect(manifests!.lands).toContain("arch.spec.md");
+    const runtime = walk.find((s) => s.where.split(" — ")[0] === "the runtime");
+    expect(runtime!.find).toContain("EFFECTIVE configuration");
+    expect(runtime!.lands).toContain("arch.spec.md");
+  });
+
+  it("unchecked[] states the reproducibility bar, and AGENTS.md names the convention and the done-test", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const unchecked: string = (b.unchecked as string[]).join("\n");
+    expect(unchecked).toContain("REPRODUCIBILITY");
+    expect(unchecked).toContain("loam never verifies the values");
+    expect(AGENTS_MD).toContain("Effective configuration and dependency semantics live here too");
+    expect(AGENTS_MD).toContain("The bar this artifact set aims at is reproducibility");
+    expect(AGENTS_MD).toContain("Done, stated once");
+  });
+
   it("the brief's walk survives the text view — an agent reading either gets the same order", async () => {
     const p = await project({}, { service: SVC });
     const b = await brief(p);

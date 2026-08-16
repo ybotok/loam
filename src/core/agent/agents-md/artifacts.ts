@@ -15,6 +15,13 @@ This is a **loam** docs repo: the shared source of truth for a fleet of services
 their architecture, their contracts, and what they are required to do. Everything
 here is plain files. \`loam\` reads and writes them; delete \`loam\` and the docs remain.
 
+**The bar this artifact set aims at is reproducibility**: a reader should be able
+to answer, from these files alone — what the service exposes, what it reaches and
+depends on, what shapes it exchanges, how it is run, and what pages whom —
+without opening the code. \`loam validate\` grades form and joins, never depth:
+green means the files agree with each other, and the bar is what "done" is
+measured against — a thin baseline that validates is thin, not done.
+
 ## Layout
 
 \`\`\`
@@ -112,6 +119,16 @@ living arch spec (\`health.uncovered\`). None of this gates \`loam archive\`;
 \`--strict\` is the CI escalation. An absent arch.spec.md is not a finding —
 partial adoption is supported — but write one for any service with real
 architecture, or its obligations ship unchecked.
+
+**Effective configuration and dependency semantics live here too, by
+convention.** Facts about the service that no artifact structurally holds —
+the value a deploy chart actually sets, the retry budget a client library
+hardcodes ("retries: -1 is unbounded"), the delivery or idempotency guarantee
+a driver decides — are ARCH REQUIREMENTS: prose with a \`Covers:\` line naming
+the element or edge whose behaviour the fact decides. loam will never verify
+the values; naming the home is the point. A service whose timeout comes from
+an env var in a chart in another repository is otherwise described by no file
+in this repo, and two adoptions will file the same fact two different ways.
 
 **Test levels, mapped once.** A business scenario is an acceptance test. An arch
 scenario is an integration/ops test — the outbox relay under a dead broker, the
