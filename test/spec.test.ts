@@ -1,5 +1,5 @@
 /**
- * Deep invariant tests for src/core/document/spec.ts:
+ * Deep invariant tests for the src/core/document/ requirement package:
  *   parseRequirements / requirementsMissingScenarios / serializeRequirements / applyRequirementDelta
  *
  * Tests assert DESIRED behavior per SCHEMA.md ("Living spec vs delta") and the module
@@ -8,15 +8,11 @@
  */
 import { describe, it, expect } from "vitest";
 import { LIVING_SPEC, FEATURE_SPEC } from "./helpers/harness.js";
-import {
-  parseRequirements,
-  serializeRequirements,
-  applyRequirementDelta,
-  requirementsMissingScenarios,
-  sectionHeadings,
-  type Requirement,
-  type DeltaKind,
-} from "../src/core/document/spec.js";
+import { parseRequirements, sectionHeadings } from "../src/core/document/parse.js";
+import { applyRequirementDelta } from "../src/core/document/apply.js";
+import { serializeRequirements } from "../src/core/document/spec.js";
+import { requirementsMissingScenarios } from "../src/core/document/scenarios.js";
+import { type DeltaKind, type Requirement } from "../src/core/document/spec.js";
 
 /** Written escaped: a literal U+FEFF in this source would itself be invisible. */
 const BOM = "\uFEFF";

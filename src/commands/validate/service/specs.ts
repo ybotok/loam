@@ -21,11 +21,9 @@ import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js"
 import { type PathableService } from "../../../core/kernel/ids.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
-import {
-  parseRequirements,
-  steplessFindings,
-  type Requirement,
-} from "../../../core/document/spec.js";
+import { parseRequirements } from "../../../core/document/parse.js";
+import { steplessFindings } from "../../../core/document/scenarios.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
 import { FleetContext, documentConflictFinding } from "../../../core/fleet-context.js";

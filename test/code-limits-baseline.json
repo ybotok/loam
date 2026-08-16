@@ -1,31 +1,29 @@
 {
   "fileLines": {
     "src/commands/adopt.ts": 312,
-    "src/commands/archive.ts": 878,
-    "src/commands/delta.ts": 444,
-    "src/commands/gherkin.ts": 418,
+    "src/commands/archive.ts": 873,
+    "src/commands/delta.ts": 445,
+    "src/commands/gherkin.ts": 419,
     "src/commands/init.ts": 311,
     "src/commands/list.ts": 384,
     "src/commands/new.ts": 446,
-    "src/commands/rebase.ts": 476,
-    "src/commands/show.ts": 377,
+    "src/commands/rebase.ts": 472,
+    "src/commands/show.ts": 378,
     "src/commands/status.ts": 317,
     "src/commands/unarchive.ts": 389,
     "src/commands/verify.ts": 993,
     "src/commands/vouch.ts": 620,
-    "src/core/asyncapi.ts": 313,
-    "src/core/coherence/coherence.ts": 517,
-    "src/core/delta.ts": 529,
+    "src/core/coherence/coherence.ts": 518,
+    "src/core/delta.ts": 519,
     "src/core/dependencies.ts": 484,
     "src/core/doctor.ts": 731,
-    "src/core/document/spec.ts": 594,
     "src/core/explore.ts": 368,
-    "src/core/gherkin.ts": 535,
-    "src/core/openspec-inventory.ts": 1919
+    "src/core/gherkin.ts": 536,
+    "src/core/openspec-inventory.ts": 1913
   },
   "packageFiles": {
     "src/commands": 19,
-    "src/core": 10
+    "src/core": 9
   },
   "functionParams": {
     "src/commands/validate/checks/requirements.ts": {

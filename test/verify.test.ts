@@ -37,7 +37,7 @@ import { chmod, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin.js";
-import { parseRequirements } from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
   makeProject,

@@ -124,7 +124,8 @@ another tool's vocabulary. Exactly one *package* in `src/` imports it — `comma
 whose twelve modules are the only place outside it where an `OpenSpec*` type is named. That is an
 anti-corruption layer, correctly placed; the quarantine is the directory, not the file count, and
 splitting the command did not widen it. Do not disturb it, and do not give it its own requirement
-parser: it shares `parseRequirements` with `spec.ts` because the *grammar* genuinely is shared;
+parser: it shares `parseRequirements` with `document/parse.ts` because the *grammar* genuinely is
+shared;
 only the workspace layout differs, and that part is already isolated.
 
 ## Rules

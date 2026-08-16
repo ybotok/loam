@@ -10,7 +10,8 @@
  * different questions when a migration reads wrong.
  */
 import { stringify as stringifyYaml } from "yaml";
-import { serializeRequirements, type Requirement } from "../../../core/document/spec.js";
+import { serializeRequirements } from "../../../core/document/spec.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { type OpenSpecArtifactDisposition } from "../../../core/openspec-inventory.js";
 
 export function featureSlug(title: string, changeId: string): string {

@@ -13,11 +13,8 @@
  * requirements and answer in findings.
  */
 import { type Finding } from "../../../core/vocabulary/report.js";
-import {
-  requirementIdProblems,
-  requirementsMissingScenarios,
-  type Requirement,
-} from "../../../core/document/spec.js";
+import { requirementsMissingScenarios } from "../../../core/document/scenarios.js";
+import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import {
   coversCandidates,
   entryResolves,

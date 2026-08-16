@@ -21,18 +21,8 @@ import { relative } from "node:path";
 import type { Issue } from "./vocabulary/issue.js";
 import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "./repo/paths.js";
 import { featureSpecServices, listFeatures } from "./repo/repo.js";
-import {
-  KIND_RE,
-  REQUIREMENT_DIGEST_LENGTH,
-  REQUIREMENT_DIGEST_RE,
-  basedOnDeclarations,
-  isRequirementsHeading,
-  parseRequirements,
-  requirementDigest,
-  requirementIdProblems,
-  sectionHeadings,
-  type Requirement,
-} from "./document/spec.js";
+import { isRequirementsHeading, parseRequirements, sectionHeadings } from "./document/parse.js";
+import { basedOnDeclarations, KIND_RE, REQUIREMENT_DIGEST_LENGTH, REQUIREMENT_DIGEST_RE, requirementDigest, requirementIdProblems, type Requirement } from "./document/spec.js";
 import type { FleetContext } from "./fleet-context.js";
 
 /**

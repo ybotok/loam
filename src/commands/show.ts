@@ -12,7 +12,8 @@ import { type FeatureEntry } from "../core/repo/entries.js";
 import { featurePaths, featureSpecPaths, landscapePath, servicePaths } from "../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { countMarkdown, listServices, resolveFeature } from "../core/repo/repo.js";
-import { parseRequirements, type Requirement } from "../core/document/spec.js";
+import { parseRequirements } from "../core/document/parse.js";
+import { type Requirement } from "../core/document/spec.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./docs-repo-gate.js";
 import { plural } from "./format.js";
 

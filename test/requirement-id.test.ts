@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { deltaShapeIssues } from "../src/core/delta.js";
-import {
-  applyRequirementDelta,
-  parseRequirements,
-  requirementIdProblems,
-  serializeRequirements,
-} from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { applyRequirementDelta } from "../src/core/document/apply.js";
+import { serializeRequirements } from "../src/core/document/spec.js";
+import { requirementIdProblems } from "../src/core/document/spec.js";
 import { featureChecklist } from "../src/core/verify/checklist.js";
 import {
   LIVING_SPEC,

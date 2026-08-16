@@ -33,7 +33,8 @@ import {
   FleetContext,
   landscapeConflictFinding,
 } from "../src/core/fleet-context.js";
-import { parseRequirements, steplessFindings, steplessScenarios } from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { steplessFindings, steplessScenarios } from "../src/core/document/scenarios.js";
 import { renderFeature } from "../src/core/gherkin.js";
 import { serviceBrief } from "../src/core/brief/brief.js";
 

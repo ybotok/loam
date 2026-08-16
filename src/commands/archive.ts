@@ -25,15 +25,10 @@ import { mergeOpenapiPaths, type OpenapiMergeResult } from "../core/openapi/merg
 import { featureCoherence } from "../core/coherence/coherence.js";
 import { invalidSpecServiceFindings, livingMergeConflicts, unknownDeltaServices } from "../core/coherence/living.js";
 import { findingJson, SEVERITY_MARK, type Finding } from "../core/vocabulary/report.js";
-import {
-  parseRequirements,
-  serializeRequirements,
-  applyRequirementDelta,
-  isRequirementsHeading,
-  sectionHeadings,
-  splitRequirementsSection,
-  type Requirement,
-} from "../core/document/spec.js";
+import { isRequirementsHeading, parseRequirements, sectionHeadings, splitRequirementsSection } from "../core/document/parse.js";
+import { applyRequirementDelta } from "../core/document/apply.js";
+import { serializeRequirements } from "../core/document/spec.js";
+import { type Requirement } from "../core/document/spec.js";
 
 interface ArchiveOptions {
   approve?: boolean;

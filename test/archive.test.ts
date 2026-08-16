@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { rm } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
-import { parseRequirements } from "../src/core/document/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
   makeProject,

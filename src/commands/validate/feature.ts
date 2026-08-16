@@ -20,7 +20,9 @@ import { featurePaths, featureSpecPaths, servicePaths } from "../../core/repo/pa
 import { docsRepoState } from "../../core/repo/state.js";
 import { featureSpecServices, listServices } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
-import { parseRequirements, steplessFindings, type Requirement } from "../../core/document/spec.js";
+import { parseRequirements } from "../../core/document/parse.js";
+import { steplessFindings } from "../../core/document/scenarios.js";
+import { type Requirement } from "../../core/document/spec.js";
 import { featureCoherence } from "../../core/coherence/coherence.js";
 import {
   deltaServiceUnknownFinding,

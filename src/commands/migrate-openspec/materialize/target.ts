@@ -11,7 +11,8 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { parseRequirements, type Requirement } from "../../../core/document/spec.js";
+import { parseRequirements } from "../../../core/document/parse.js";
+import { type Requirement } from "../../../core/document/spec.js";
 import { DOCS_SUBDIRS, docsRepoFiles } from "../../../core/docs.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import { inventoryOpenSpec, type OpenSpecInventory, type OpenSpecMapping } from "../../../core/openspec-inventory.js";
