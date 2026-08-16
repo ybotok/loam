@@ -458,6 +458,45 @@ describe("the brief promises only what a check can keep", () => {
     expect(at("entry points")).toBeLessThan(at("HTTP surface"));
     expect(at("entry points")).toBeLessThan(at("message surface"));
     expect(at("build and dependency manifests")).toBeLessThan(at("entry points"));
+    // A config-attested edge must meet the manifest that can veto it: outbound
+    // calls are drawn before the runtime stop opens the deploy manifests. This
+    // ordering is what turns "the config wires Consul" into a provisional edge
+    // instead of a shipped requirement.
+    expect(at("outbound calls")).toBeLessThan(at("the runtime"));
+  });
+
+  /**
+   * The Consul lesson from the first fleet adoption: a service wired for Consul
+   * in every way the repository shows — client on the classpath, full config
+   * block, fail-fast — while the Helm chart in ANOTHER repository set
+   * SPRING_CLOUD_CONSUL_ENABLED=false. The adoption read the config carefully
+   * and still concluded the opposite of production, because no protocol text
+   * stated the precedence. This test pins that text to the stop that opens the
+   * manifests.
+   */
+  it("the runtime stop states that the deploy manifest overrides configuration", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const walk = b.walk as Array<{ where: string; find: string; lands: string[] }>;
+    const runtime = walk.find((s) => s.where.split(" — ")[0] === "the runtime");
+    expect(runtime).toBeDefined();
+    expect(runtime!.find).toMatch(/override/i);
+    expect(runtime!.find).toContain("another repository");
+    // The finding's landing site: a disabled feature is a runbook fact, not an edge.
+    expect(runtime!.find).toContain("configured but not a dependency");
+    expect(runtime!.lands).toContain("runbook.md");
+    // And the out-of-repo read must not be laundered into `sources`, where
+    // sources.path-outside would grade the honesty an error.
+    expect(runtime!.find).toContain("never in `sources`");
+  });
+
+  it("runbook.md's shape names the 'configured but not a dependency' list the runtime stop lands", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const shape: string = b.targets
+      .find((t: { artifact: string }) => t.artifact === "runbook.md")
+      .shape.join("\n");
+    expect(shape).toContain("configured but not a dependency, and why");
   });
 
   it("the brief's walk survives the text view — an agent reading either gets the same order", async () => {
