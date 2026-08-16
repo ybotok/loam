@@ -366,6 +366,23 @@ describe("scaffoldDocs writes a fleet map the parser accepts", () => {
     expect(doc.errors).toEqual([]);
   });
 
+  it("scaffolds the platform tag and the two views, with the predicate spelling that draws edges", async () => {
+    // The trap this pins: `include element.tag = #platform` parses, renders,
+    // and draws the platform boxes with NO edges and no consumers — the map
+    // answers "who depends on UAA" with silence. The relationship form is the
+    // one that works, and it is exactly the line a user mistypes when writing
+    // the view from memory, so the scaffold must never regress to the other
+    // spelling.
+    const docs = join(await tmp(), "docs");
+    await scaffoldDocs(docs);
+
+    const stub = await readFile(join(docs, "architecture", "landscape.likec4"), "utf8");
+    expect(stub).toContain("tag platform");
+    expect(stub).toContain("views {");
+    expect(stub).toContain("exclude element.tag = #platform");
+    expect(stub).toContain("include * -> element.tag = #platform");
+  });
+
   it("creates the docs repo's own loam.json pointing at itself", async () => {
     const docs = join(await tmp(), "docs");
     await scaffoldDocs(docs);

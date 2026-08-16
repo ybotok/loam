@@ -47,14 +47,18 @@ const EMPTY_SUBDIRS = [
  * fleet actually uses are declared, the model is empty, and the comments say
  * what to add and why. The first `loam adopt` then has somewhere to be drawn.
  *
- * No `views` block, deliberately. loam reads elements and relationships and
- * never a view, so the scaffolded `view index { include * }` was a diagram loam
- * planted on every repo and then never drew — and views are the expensive half
- * of LikeC4: computing them is superlinear in edge count (120 services / 300
- * calls does not finish in three minutes; parsing the same file takes 11 ms).
- * loam stopped computing views, so the block is free for loam itself now, but
- * scaffolding one still hands the user a fleet-sized bill for the first tool
- * that does compute it. Teams who want diagrams declare their own.
+ * A `views` block IS scaffolded — reversing the decision this comment used to
+ * record, which was: no views, because computing one is superlinear in edge
+ * count and a scaffolded `include *` handed every repo a fleet-sized bill for
+ * the first tool that renders. That cost was real and still is; what changed
+ * is the shape of the block. The first fleet adoption showed the map stops
+ * being readable at the third service unless platform infrastructure is split
+ * out, and the split's `exclude element.tag = #platform` is exactly the
+ * pruning that keeps the fleet view's render affordable — the scaffold now
+ * pays the old objection instead of ignoring it. loam itself still reads
+ * elements and relationships and never a view. The platform view's predicate
+ * is scaffolded because it is the line users mistype: the obvious spelling
+ * draws boxes with no edges.
  */
 const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears here, and every call
 // between two of them is an edge. This file is written by hand — loam never
@@ -75,15 +79,15 @@ const LANDSCAPE_STUB = `// The fleet map: every service in services/ appears her
 //     metadata { op 'authorizePayment' }
 //   }
 //
-// There is no \`views\` block, on purpose: loam reads the model and never a
-// view, so it would draw nothing. Add views here if you want diagrams, and
-// render them with LikeC4's own tooling — \`npx likec4 start\` from the docs
+// The \`views\` block at the bottom is for LikeC4's own tooling — loam reads
+// the model and never a view. Render with \`npx likec4 start\` from the docs
 // repo root, which likec4.config.json scopes to this directory. (A service
 // model or a feature delta renders from its OWN directory, e.g.
 // \`npx likec4 start services/<id>\`: each declares its own \`specification\`
-// block, so the renderer can only be given one of them at a time.) Scope your
-// views, because computing one is superlinear in the number of edges and an
-// \`include *\` over a whole fleet takes minutes.
+// block, so the renderer can only be given one of them at a time.) Keep views
+// scoped, because computing one is superlinear in the number of edges — the
+// \`fleet\` view below stays affordable precisely because it excludes the
+// platform hubs.
 //
 // One shape is worth getting right before the fleet is drawn: a shared broker.
 // Kafka as a single element becomes the node every service points at, and any
@@ -106,9 +110,28 @@ specification {
   element softwareSystem
   element container
   element database
+
+  // Ubiquitous infrastructure — logging Kafka, auth, service discovery — takes
+  // one inbound edge per service, and by the third service the fleet view is a
+  // hairball. Tag those elements #platform: the fleet view excludes them
+  // without losing "who depends on UAA", which the platform view answers.
+  tag platform
 }
 
 model {
+}
+
+views {
+  view fleet {
+    include *
+    exclude element.tag = #platform
+  }
+  // The obvious spelling — \`include element.tag = #platform\` — draws the
+  // platform boxes with NO edges and no consumers. The predicate that works is
+  // the relationship form below.
+  view platform {
+    include * -> element.tag = #platform
+  }
 }
 `;
 
