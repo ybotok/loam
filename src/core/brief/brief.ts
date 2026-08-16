@@ -24,7 +24,8 @@ import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { PathableService } from "../kernel/ids.js";
 import { landscapePath, servicePaths } from "../repo/paths.js";
-import { UNCHECKED, VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
+import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
+import { UNCHECKED } from "./unchecked.js";
 import { landscapeArtifact, landscapeContext, type LandscapeContext } from "./landscape.js";
 import { ARTIFACTS, type BriefTarget } from "./targets.js";
 
