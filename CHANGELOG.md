@@ -4,6 +4,14 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Changed — the OpenSpec compatibility baseline moves to v1.9.0, and the gate that backs it runs again
+
+- **`audit-openspec` and `migrate-openspec` now report v1.9.0 as the certified release baseline.** The banner line and `baselines.release` under `--json` carry `1.9.0` / `2826b8889e5223a9a8095d4428b60b56597e1020` (2026-08-13, and the tip of `main` when pinned) instead of `1.7.0` / `4e16790`. The payload shape is unchanged and `baselines.mainCanary` still names the post-v1.7 canary, now explicitly as a regression pin rather than a claim about where `main` points. What moved with it: the corpus gate's `--baseline release` is the v1.9.0 corpus — 211 Markdown files, 746 requirements, 2317 scenarios, every file parsed and round-tripped — with the former release pin available as `--baseline legacy` and the canary unchanged, all three in the scheduled CI matrix. The seven vendored fixtures were re-fetched at the v1.9.0 commit; six were already byte-identical, and `living/openspec-conventions.spec.md` moved only where upstream rewrote its capability paths as `<capability-path>/` to document nested capabilities. **What a migration notices:** nothing in the mapping or apply path changes, and the shapes v1.8/v1.9 added — nested capability directories, `skip_specs`, `retire_capabilities`, `initiative`, Stores, the `explorations/`, `initiatives/` and `work/` planning roots — are still inventoried rather than converted, as `MIGRATING-from-OpenSpec.md` describes.
+
+### Fixed
+
+- **The OpenSpec corpus gate had not run for eight days: it failed at module resolution, not at a corpus.** `scripts/check-openspec-corpus.ts` imported `../src/core/spec.js`, which moved into `src/core/document/` when core's leaves became packages, so every scheduled and manual invocation died with `ERR_MODULE_NOT_FOUND` while three documents pointed at it as the evidence for the compatibility claim. The import is fixed, and the reason it could break unseen is fixed with it: `tsconfig.json` compiles `src` alone, so nothing under `scripts/` was ever typechecked. `npm run typecheck` now also runs `tsconfig.scripts.json`, which fails on exactly this — a gate that only runs weekly cannot be the first thing to notice its own tooling broke.
+
 ### Documentation
 
 - Added the evidence-backed `ROADMAP.md`, updated the product comparison to OpenSpec v1.9 while preserving the exact v1.7 compatibility baseline, documented AsyncAPI/authorization/response-governance joins, and reconciled release, pilot, contributor, security and generated-agent guidance with the implemented contracts. `WORKFLOW.md`, `ROADMAP.md` and `CONTRIBUTING.md` are now part of the published package and its release/package smoke checks.

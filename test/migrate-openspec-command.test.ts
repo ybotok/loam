@@ -126,12 +126,12 @@ async function mappingFile(inventory: OpenSpecInventory): Promise<{ path: string
 }
 
 describe("OpenSpec audit inventory", () => {
-  it("pins the released v1.7.0 tag separately from the post-release main canary", () => {
+  it("pins the certified v1.9.0 release separately from the older regression canary", () => {
     expect(OPENSPEC_BASELINES).toEqual({
       release: {
-        version: "1.7.0",
-        ref: "v1.7.0",
-        commit: "4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b",
+        version: "1.9.0",
+        ref: "v1.9.0",
+        commit: "2826b8889e5223a9a8095d4428b60b56597e1020",
       },
       mainCanary: { ref: "main", commit: "45cca5db6137ed209117cc70510eb3e057fb981b" },
     });
@@ -208,6 +208,42 @@ describe("OpenSpec audit inventory", () => {
         suggestedFeature: "FEAT-1",
         title: "Add reports",
       },
+    });
+  });
+
+  it("inventories the whole v1.9 metadata surface without translating a lifecycle key", async () => {
+    // MIGRATING-from-OpenSpec.md promises that a current `.openspec.yaml` field
+    // such as retire_capabilities is inventoried and preserved, never converted
+    // into a loam lifecycle action. The promise is only worth something if an
+    // unknown-to-loam key cannot block the migration OR disappear from the plan,
+    // so this pins both halves against the full optional surface v1.9 defines.
+    const fixture = await workspace({
+      "config.yaml": "schema: spec-driven\n",
+      "specs/payments/spec.md": LIVING,
+      "changes/retire-billing/.openspec.yaml": [
+        "schema: spec-driven",
+        "created: 2026-08-14",
+        "goal: Retire the billing capability",
+        "affected_areas:",
+        "  - billing",
+        "initiative:",
+        "  store: team-context",
+        "  id: platform-cleanup",
+        "retire_capabilities: true",
+        "",
+      ].join("\n"),
+      "changes/retire-billing/specs/payments/spec.md": DELTA,
+    });
+
+    const inventory = await inventoryOpenSpec(fixture.root);
+
+    expect(inventory.unsupported).toEqual([]);
+    expect(inventory.changes.active[0]?.metadata).toEqual({
+      path: "changes/retire-billing/.openspec.yaml",
+      schema: "spec-driven",
+      skipSpecs: false,
+      created: "2026-08-14",
+      fields: ["affected_areas", "created", "goal", "initiative", "retire_capabilities", "schema"],
     });
   });
 

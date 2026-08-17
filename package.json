@@ -47,7 +47,7 @@
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "lint": "oxlint -D correctness --import-plugin --promise-plugin --node-plugin --deny-warnings src test scripts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "arch:graph": "node scripts/package-graph.mjs",

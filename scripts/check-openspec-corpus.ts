@@ -1,35 +1,45 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseRequirements, serializeRequirements } from "../src/core/spec.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { serializeRequirements } from "../src/core/document/spec.js";
 
-type BaselineName = "release" | "canary";
 type CorpusTotals = { files: number; requirements: number; scenarios: number };
-const BASELINES: Record<
-  BaselineName,
-  { label: string; commit: string; expected: CorpusTotals }
-> = {
+/**
+ * `release` is the certified current upstream release; `legacy` and `canary`
+ * are the older pins kept so a parser change cannot fix today's corpus by
+ * breaking a corpus somebody already migrated from. Each entry is an exact
+ * commit with its own totals, so a checkout can never stand in for another.
+ */
+const BASELINES = {
   release: {
+    label: "OpenSpec v1.9.0 release",
+    commit: "2826b8889e5223a9a8095d4428b60b56597e1020",
+    expected: { files: 211, requirements: 746, scenarios: 2317 },
+  },
+  legacy: {
     label: "OpenSpec v1.7.0 release",
     commit: "4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b",
     expected: { files: 207, requirements: 739, scenarios: 2273 },
   },
   canary: {
-    label: "OpenSpec main canary",
+    label: "OpenSpec post-v1.7 main canary",
     commit: "45cca5db6137ed209117cc70510eb3e057fb981b",
     expected: { files: 209, requirements: 742, scenarios: 2284 },
   },
-};
+} as const satisfies Record<string, { label: string; commit: string; expected: CorpusTotals }>;
+type BaselineName = keyof typeof BASELINES;
+const NAMES = Object.keys(BASELINES) as BaselineName[];
+const isBaselineName = (value: string | undefined): value is BaselineName =>
+  value !== undefined && value in BASELINES;
 
-let baselineName: BaselineName = "canary";
+let baselineName: BaselineName = "release";
 let checkoutArg = process.env.OPENSPEC_CHECKOUT;
 for (let index = 2; index < process.argv.length; index += 1) {
   const arg = process.argv[index];
   if (arg === "--baseline") {
     const value = process.argv[++index];
-    if (value !== "release" && value !== "canary") {
-      throw new Error("--baseline must be release or canary");
-    }
+    if (!isBaselineName(value)) throw new Error(`--baseline must be one of ${NAMES.join(", ")}`);
     baselineName = value;
   } else if (!checkoutArg) {
     checkoutArg = arg;
@@ -39,9 +49,8 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 const baseline = BASELINES[baselineName];
 if (!checkoutArg) {
-  console.error("usage: npm run test:openspec-corpus -- [--baseline release|canary] /path/to/OpenSpec");
-  console.error(`release: ${BASELINES.release.commit}`);
-  console.error(`canary:  ${BASELINES.canary.commit}`);
+  console.error(`usage: npm run test:openspec-corpus -- [--baseline ${NAMES.join("|")}] /path/to/OpenSpec`);
+  for (const [name, pin] of Object.entries(BASELINES)) console.error(`${name.padEnd(8)} ${pin.commit}`);
   process.exit(2);
 }
 

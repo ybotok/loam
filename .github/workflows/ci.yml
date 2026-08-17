@@ -1,6 +1,7 @@
 # Supported-runtime gate plus an install-from-tarball smoke. The seven vendored
 # OpenSpec fixtures run in the normal suite; scheduled/manual jobs exercise the
-# complete release and canary corpora from external, commit-pinned checkouts.
+# three complete corpora — the certified v1.9.0 release and the two older
+# regression pins — from external, commit-pinned checkouts.
 name: ci
 
 on:
@@ -87,6 +88,8 @@ jobs:
       matrix:
         include:
           - baseline: release
+            commit: 2826b8889e5223a9a8095d4428b60b56597e1020
+          - baseline: legacy
             commit: 4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b
           - baseline: canary
             commit: 45cca5db6137ed209117cc70510eb3e057fb981b
