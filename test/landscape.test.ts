@@ -497,13 +497,13 @@ describe("an external hub every service leans on", () => {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
   svcB = softwareSystem 'svc-b'
   svcC = softwareSystem 'svc-c'
-  uaa = softwareSystem 'UAA' {
+  identityProvider = softwareSystem 'Identity Provider' {
     #external
     tokens = container 'token store'
   }
-  svcA -> uaa 'authenticates'
-  svcB -> uaa 'authenticates'
-  svcC -> uaa.tokens 'introspects'`),
+  svcA -> identityProvider 'authenticates'
+  svcB -> identityProvider 'authenticates'
+  svcC -> identityProvider.tokens 'introspects'`),
       ...threeServices(),
     };
     await withProject(files, {}, async (p) => {
@@ -512,10 +512,11 @@ describe("an external hub every service leans on", () => {
       const t = landscapeTarget(targets)!;
       const f = t.findings.find((x) => x.code === "landscape.platform-candidate")!;
       expect(f.severity).toBe("warn");
-      expect(f.subject).toBe("UAA");
+      expect(f.subject).toBe("Identity Provider");
       expect(f.message).toContain("tag platform");
-      // Distinct consumers, sorted — and the edge into `uaa.tokens` counted
-      // for `uaa`, or svc-c would be missing and the threshold never met.
+      // Distinct consumers, sorted — and the edge into
+      // `identityProvider.tokens` counted for `identityProvider`, or svc-c
+      // would be missing and the threshold never met.
       expect(f.message).toContain("svc-a, svc-b, svc-c");
       // A map with a shape warning did not fully agree.
       expect(t.findings.map((x) => x.code)).not.toContain("landscape.matched");
@@ -527,14 +528,14 @@ describe("an external hub every service leans on", () => {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
   svcB = softwareSystem 'svc-b'
   visitor = person 'Visitor'
-  uaa = softwareSystem 'UAA' {
+  identityProvider = softwareSystem 'Identity Provider' {
     #external
     tokens = container 'token store'
   }
-  svcA -> uaa 'authenticates'
-  svcA -> uaa.tokens 'introspects'
-  svcB -> uaa 'authenticates'
-  visitor -> uaa 'signs in'`),
+  svcA -> identityProvider 'authenticates'
+  svcA -> identityProvider.tokens 'introspects'
+  svcB -> identityProvider 'authenticates'
+  visitor -> identityProvider 'signs in'`),
       "services/svc-a/model.likec4": serviceModel("svc-a"),
       "services/svc-b/model.likec4": serviceModel("svc-b"),
     };
@@ -550,13 +551,13 @@ describe("an external hub every service leans on", () => {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
   svcB = softwareSystem 'svc-b'
   svcC = softwareSystem 'svc-c'
-  uaa = softwareSystem 'UAA' {
+  identityProvider = softwareSystem 'Identity Provider' {
     #external
     #platform
   }
-  svcA -> uaa 'authenticates'
-  svcB -> uaa 'authenticates'
-  svcC -> uaa 'authenticates'`),
+  svcA -> identityProvider 'authenticates'
+  svcB -> identityProvider 'authenticates'
+  svcC -> identityProvider 'authenticates'`),
       ...threeServices(),
     };
     await withProject(files, {}, async (p) => {

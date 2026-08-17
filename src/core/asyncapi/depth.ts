@@ -91,8 +91,8 @@ const SHAPE_KEYS = [
 /**
  * True when a message declaration's payload defines no shape at all: no
  * `payload`, or a schema with none of the keys that say anything and a `type`
- * of `object` or none — `type: object` and not one word more is exactly what
- * the first adoption shipped, and it validated as cleanly as a full schema.
+ * of `object` or none — `type: object` and not one word more validates as
+ * cleanly as a full schema even though it carries no usable shape.
  *
  * Deliberately NOT empty: a payload behind a dangling `$ref` (that is the ref
  * probe's finding), a non-mapping payload (`payload: true` is a declared

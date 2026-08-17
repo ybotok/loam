@@ -51,9 +51,9 @@ const EMPTY_SUBDIRS = [
  * record, which was: no views, because computing one is superlinear in edge
  * count and a scaffolded `include *` handed every repo a fleet-sized bill for
  * the first tool that renders. That cost was real and still is; what changed
- * is the shape of the block. The first fleet adoption showed the map stops
- * being readable at the third service unless platform infrastructure is split
- * out, and the split's `exclude element.tag = #platform` is exactly the
+ * is the shape of the block. A fleet map stops being readable at the third
+ * service unless platform infrastructure is split out, and the split's
+ * `exclude element.tag = #platform` is exactly the
  * pruning that keeps the fleet view's render affordable — the scaffold now
  * pays the old objection instead of ignoring it. loam itself still reads
  * elements and relationships and never a view. The platform view's predicate
@@ -114,7 +114,8 @@ specification {
   // Ubiquitous infrastructure — logging Kafka, auth, service discovery — takes
   // one inbound edge per service, and by the third service the fleet view is a
   // hairball. Tag those elements #platform: the fleet view excludes them
-  // without losing "who depends on UAA", which the platform view answers.
+  // without losing "who depends on the Identity Provider", which the platform
+  // view answers.
   tag platform
 }
 

@@ -33,11 +33,10 @@ export type ScenarioAxis = "business" | "arch";
  * - The AXIS salt keeps `spec.md` and `arch.spec.md` apart. Without it a green
  *   BUSINESS run answered the arch claim too — an integration test nobody wrote
  *   read as run.
- * - The SERVICE salt keeps two repositories apart. "the service returns 404 for
- *   an unknown id" is worded the same way in nine services of a real fleet;
- *   unsalted, all nine shared one digest, `loam gherkin` stamped one tag into
- *   nine repositories, and one repository's green run confirmed the other
- *   eight's claims — across suites that never ran each other's tests.
+ * - The SERVICE salt keeps two repositories apart. Different services can word
+ *   "the service returns 404 for an unknown id" identically; unsalted, those
+ *   scenarios share one digest and one repository's green run can appear to
+ *   confirm claims from suites that never ran each other's tests.
  *
  * The service salt is what makes that case CORRECT rather than merely refused:
  * `contestedDigests` could only decline to answer a shared digest, which left a

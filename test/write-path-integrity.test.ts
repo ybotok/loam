@@ -50,10 +50,10 @@ import {
 /* Fixtures                                                            */
 /* ------------------------------------------------------------------ */
 
-/** The living landscape with a Latin-1 name in it — bytes no UTF-8 decoder can read. */
+/** The living landscape with a synthetic Latin-1 name — bytes no UTF-8 decoder can read. */
 function latin1Landscape(): Buffer {
   return Buffer.from(
-    LANDSCAPE.replace("description 'Customer-facing checkout UI'", "description 'Owned by André Muñoz'"),
+    LANDSCAPE.replace("description 'Customer-facing checkout UI'", "description 'Owned by André Example'"),
     "latin1",
   );
 }

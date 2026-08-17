@@ -127,9 +127,12 @@ try {
     "LICENSE",
     "CHANGELOG.md",
     "COMPARISON.md",
+    "CONTRIBUTING.md",
     "MIGRATING-from-OpenSpec.md",
+    "ROADMAP.md",
     "SCHEMA.md",
     "SECURITY.md",
+    "WORKFLOW.md",
     "dist/cli.js",
   ]) {
     if (!paths.includes(required)) throw new Error(`tarball is missing ${required}`);

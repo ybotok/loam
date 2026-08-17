@@ -4,11 +4,11 @@
  *
  * Form validated and depth did not, and that was invisible from the output:
  * an operation whose one response is `description: OK`, and a `$ref` to a
- * schema nobody ever wrote, both validated exactly as cleanly as a complete
- * contract — so the first fleet adoption shipped green contracts a reader
- * still needed the code for. Everything here is a PRESENCE probe over the
- * document's own keys: nothing reads what a schema says, only whether one was
- * declared at all, so the reader's structure-only stance holds.
+ * schema nobody ever wrote, both validate exactly as cleanly as a complete
+ * contract even though a reader still needs the code. Everything here is a
+ * PRESENCE probe over the document's own keys: nothing reads what a schema
+ * says, only whether one was declared at all, so the reader's structure-only
+ * stance holds.
  *
  * A local pointer walk rather than an import from `merge/refs.ts`: the merge
  * package already imports this package (`HTTP_METHODS` from doc.ts), so the

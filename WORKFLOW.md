@@ -53,6 +53,12 @@ configurable graph, because a fleet needs one lifecycle and one meaning of green
 | `specs/<svc>/openapi.yaml` | service | conditional | The contract delta. Required where the fleet map shows somebody calls this service |
 | `verification.yaml` | feature | yes | The done-check record: every claim, its answer, its evidence, and who gave it |
 
+Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
+`publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, but has no feature delta or
+merge yet. `architecture/permissions.yaml` is the opt-in authorization vocabulary: requirements
+name `<subject>/<permission>` pairs with `Requires:`; unknown pairs are errors and unused
+declarations are warnings. [SCHEMA.md](SCHEMA.md#canonical-joins) is the canonical join table.
+
 Two of those "no"s are load-bearing. An artifact that is legitimately absent reads `done` — nothing
 is owed — with `exists: false` beside it, so a reader can tell that from a file that is present and
 fine. Marking everything required is how an axis that is optional everywhere gets reported as
@@ -210,7 +216,9 @@ digests over both. Later, `content.stale` says the document moved and `sources.s
 did — the second one only answerable inside that service's own repository.
 
 The same distinction runs the done-check. `loam verify` derives the claims; a `scenario.tested`
-claim is confirmed **mechanically** when a digest-matched green Cucumber run answers it. An agent
+claim is confirmed **mechanically in the record** when a digest-matched green Cucumber report
+answers it. That proves which passing report bytes loam accepted; it does not prove the report was
+produced by executing the attested commit. An agent
 may confirm one too — a legacy service with no runnable suite has to be able to record its answers
 — but the record then reads **`verdict: "attested"`**, not `verified`, and says so on every
 surface. `verified: true` in the envelope means every scenario claim came from a test run.
@@ -235,7 +243,9 @@ loam derives the answer instead, at two altitudes:
   than transcribed from it once.
 
 Then `loam gherkin` turns the scenarios into digest-stamped `.feature` files — a checklist that
-executes. A box you tick is a claim about work; a scenario that goes green is evidence of it.
+executes. A valid Markdown table becomes the `Examples:` of a Scenario Outline, so a permission or
+status-code matrix remains one requirement scenario rather than twenty copied ones. A box you tick
+is a claim about work; a scenario that goes green is evidence of it.
 
 The same reasoning is why `intent.md` is a real artifact and a `design.md` is not. The intent is
 input — a human's statement of the problem, which nothing can derive. The design is the

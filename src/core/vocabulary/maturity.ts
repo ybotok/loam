@@ -53,8 +53,8 @@ export interface MaturityInput {
  * `openapi.yaml` is required ONLY where an API is expected. The rung used to
  * demand it of everything, which permanently pinned every worker, cron and
  * consumer in the fleet at `partial` — services that are fully documented and
- * vouched for, reported as unfinished forever, and a rollup that therefore said
- * a correctly-adopted fleet was half-done. The evidence is the same one
+ * vouched for, reported as unfinished forever, leaving the rollup permanently
+ * below its true documentation state. The evidence is the same one
  * `validate` uses to keep `service.no-openapi` quiet, so a service cannot be
  * green in one command and unfinished in the other.
  */

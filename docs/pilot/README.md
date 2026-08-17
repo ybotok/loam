@@ -9,21 +9,28 @@ Choose two independent, owner-approved fleets; toy fixtures and two views of the
 1. **Brownfield adoption:** at least five services and at least three currently populated maturity states (`empty`, `partial`, `documented`, `sourced`, `vouched`). It should expose adoption/provenance friction rather than only a clean greenfield path.
 2. **Active cross-service change:** at least five services, at least one active feature, and at least one active feature touching two or more services. It should exercise the dependency and fleet-validation path on real in-flight artifacts.
 
-Never copy proprietary docs into this repository. Run the harness where the fleets already live, keep scorecards in an access-controlled location, and review paths and stderr before sharing them.
+Never copy proprietary docs into this repository. Run the harness only in an owner-approved checkout, keep scorecards in an access-controlled location, and review paths and stderr before sharing them.
 
 ## Reproducible run
 
-Use a clean checkout at the exact candidate commit and Node.js 22.22.3 or newer. Pack one immutable candidate, smoke those exact bytes, then copy `manifest.example.json` outside this repository, replace every placeholder, and declare thresholds before seeing results.
+Use a clean checkout at the exact candidate commit and Node.js 22.22.3 or newer. Before packing, bump both `package.json` and `package-lock.json` to the intended candidate version; do not run a pilot from `main` while it still identifies itself as an already-published version. Pack one immutable candidate, smoke those exact bytes, then copy `manifest.example.json` outside this repository, replace every placeholder, and declare thresholds before seeing results.
 
 ```sh
 npm ci
 npm run pilot:check
-npm run release:pack -- --out /secure/loam-candidate
-npm run test:package -- --tarball /secure/loam-candidate/ybotok-loam-0.1.0-beta.3.tgz
-npm run pilot:run -- --artifact-dir /secure/loam-candidate --manifest /secure/pilot-manifest.json --out /secure/baseline-scorecard.json
+CANDIDATE_DIR=/secure/loam-candidate
+npm run release:pack -- --out "$CANDIDATE_DIR"
+CANDIDATE_TARBALL="$(node --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  const directory = process.argv[1];
+  const manifest = JSON.parse(readFileSync(`${directory}/release-manifest.json`, "utf8"));
+  process.stdout.write(`${directory}/${manifest.filename}`);
+' "$CANDIDATE_DIR")"
+npm run test:package -- --tarball "$CANDIDATE_TARBALL"
+npm run pilot:run -- --artifact-dir "$CANDIDATE_DIR" --manifest /secure/pilot-manifest.json --out /secure/baseline-scorecard.json
 ```
 
-`release:pack` refuses a dirty tracked worktree and binds the tarball manifest to the checked-out commit. The harness verifies that manifest and tarball digest, installs the candidate into a fresh isolated dependency tree, and executes only that installed CLI. The scorecard records both the tarball SHA-256 and the complete installed runtime-tree digest, so a stale or modified local `dist/` or dependency cannot masquerade as the candidate.
+`release:pack` refuses a dirty tracked worktree and binds `release-manifest.json` to the checked-out commit. Read the tarball filename only from that manifest; do not predict it from a version copied into this run book. The harness verifies the manifest and tarball digest, installs the candidate into a fresh isolated dependency tree, and executes only that installed CLI. The scorecard records both the tarball SHA-256 and the complete installed runtime-tree digest, so a stale or modified local `dist/` or dependency cannot masquerade as the candidate.
 
 The output path must not exist and must be outside both measured fleet repositories and docs directories. Each fleet runs `doctor`, `list`, `validate --all`, and `dependencies` twice with `--json`. The scorecard records the candidate identity, environment, exit codes, durations, stdout hashes, selection metrics, and a before/after docs-tree hash. `.git` is excluded from the content hash; symlinks are hashed as links and are not followed.
 

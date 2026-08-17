@@ -178,10 +178,9 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   const health = await readHealth(paths.health);
 
   // A model that reaches nothing is almost never true — but only when
-  // something else attests it should reach. The first adoption produced 2
-  // elements / 0 relationships beside sources naming a Kafka producer and a
-  // security config, and `0 errors, 0 warnings` read as done; the hardened
-  // rerun of the same service came out at 19/19 with an identical verdict.
+  // something else attests it should reach. A deliberately shallow synthetic
+  // fixture can hold elements without relationships beside sources that name
+  // dependencies, yet `0 errors, 0 warnings` would still read as done.
   // Evidence-gated on purpose: a bare root-plus-one-container baseline stays
   // silent (nothing PROVES it thin — the standard mid-adoption shape), the
   // warn needs either a second nested element with no edge joining anything,

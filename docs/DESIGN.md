@@ -20,7 +20,7 @@ No — but the tree does not show you why, and that gap is the real finding.
 - `src/core/` imports `commander` zero times, never imports `commands/`, and holds four `console`
   calls in total — three in `core/envelope/json.ts`, which *is* the envelope emitter, and one stray
   in `core/envelope/config.ts`.
-- `src/` is 212 modules in 57 packages, and its value-import graph has **zero cycles** at both the
+- `src/` is 214 modules in 58 packages, and its value-import graph has **zero cycles** at both the
   file level and the package level (`npm run arch:graph`).
 
 So the layering is true. For a long time nothing in the repository expressed it: `docs/CODE-STYLE.md`
@@ -51,7 +51,7 @@ Inside `core/`, the DAG levels are a real division of labour:
 | L0 | `ids` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
 | L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
 | L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
-| L3 | `openapi/` `asyncapi/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
+| L3 | `openapi/` `asyncapi/` `permissions/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
 | L4 | `fleet-context` `verify/` `openapi/merge/` | Whole-fleet caching and evidence |
 | L5 | `coherence/` `gherkin/` `dependencies/` `doctor/` `explore/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L6 | `results` `status/` | Aggregate answers for a feature or a fleet |
@@ -73,6 +73,7 @@ describes the tree rather than a plan for it.
 | `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
 | `core/openapi/` `core/asyncapi/` | the two contract axes; `openapi/merge/` is the delta path | repo, kernel |
+| `core/permissions/` | the fleet authorization vocabulary joined by `Requires:` | kernel |
 | `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
 | `core/verify/` | the done-check: questions, answers, the record | openapi, repo, c4, document |
 | `core/delta/` `core/coherence/` | does the diff apply, and do the three axes agree | verify, repo, document |
@@ -142,7 +143,7 @@ only the workspace layout differs, and that part is already isolated.
 
 1. **`core/` does not print.** Sole exception: `core/envelope/json.ts`, whose job is the envelope.
    Checkable: `npx oxlint -D no-console src/core` must report `json.ts` only. Today it also
-   reports `config.ts:224`, which fires even under `--json` — so an unreadable `loam.json` is
+   reports `core/envelope/config.ts`, which fires even under `--json` — so an unreadable `loam.json` is
    reported twice, once outside the envelope.
 2. **`core/` does not read `process.argv`, call `process.exit`, or set `process.exitCode`.**
    Only `core/envelope/json.ts` touches `exitCode`.
@@ -189,7 +190,7 @@ only the workspace layout differs, and that part is already isolated.
 9. **No interface with one implementation.** `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/`
    returns zero. Keep it zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
-    13 exported classes: 12 typed errors and `FleetContext`.
+    17 exported classes: 16 typed errors and `FleetContext`.
 11. **No barrel or index re-export files.** None exist. They would make rule 4 unenforceable by
     hiding the real edge behind a re-export — and under rule 21 they would also defeat the
     package graph, since every import would point at a directory instead of at the module it
@@ -228,9 +229,11 @@ only the workspace layout differs, and that part is already isolated.
     looking for a record, take the entry that already exists rather than inventing an options
     object that holds the same two fields loosely.
 18. **A validated identifier or path carries a branded type; a raw one carries the raw type.**
-    `ServiceId`, `FeatureId`, `DocsDir` and the path types are `string & { readonly [brand]: … }`,
-    constructible only through the smart constructor that validates. `docs/CODE-STYLE.md` holds
-    the shape and the four rules that make a brand worth its annotations.
+    This is the target invariant, not yet a completed migration. `ServiceId` and its raw/declared
+    variants carry the distinction today; `FeatureEntry.id`, `DocsDir` and several validated path
+    helpers are still plain strings. `docs/CODE-STYLE.md` holds the required end state and the four
+    rules that make a brand worth its annotations. Until the remaining values migrate, typecheck
+    cannot enforce the repository-wide claim by itself.
 
     This rule used to say the opposite, and the objection it rested on is real and is what the
     two-type split answers: `core/repo/repo.ts`'s `listServices` deliberately returns ids that *failed*
@@ -296,14 +299,14 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 |---|---|---|---|
 | Add `-D import/no-cycle` to the `lint` script | Freezes the zero-cycle property, currently only discipline | One flag; verified exit 0 today | **Do it** — best ratio here |
 | `assertServiceId` in `validate`'s service branches | Closes the only path from an unvalidated argv string to a filesystem path | ~10 lines, one file. Deliberate behaviour change: an existing badly-named service directory would now be refused | **Done** — but not as this row planned. `core/repo/service-target.ts` resolves against the enumeration of `services/` first and asks the grammar only for a name no directory matches, so the behaviour change this row predicted deliberately never happened: the badly-named directory keeps grading, because refusing on the grammar would make the one service `validate --all` complains about the one service `validate --service` cannot look at. The third test in `test/validate-contract.test.ts` fails if that order is ever reversed |
-| `timeout` + `maxBuffer` on `commands/verify.ts`'s `execFile` | Closes a hang — a blocking credential helper makes `verify --record` wait forever with no output | One line; `git()` already folds spawn failures to `-1`, so no new branch | **Do it** |
+| `timeout` + `maxBuffer` on `commands/verify/results.ts`'s `execFile` | Closes a hang — a blocking credential helper makes `verify --record` wait forever with no output | One line; `git()` already folds spawn failures to `-1`, so no new branch | **Do it** |
 | Extract `issueFinding(i: Issue): Finding` into `core/vocabulary/issue.ts` | Removes the third copy of the `gatesArchive` defaulting rule, which `archive.ts` documents in prose while re-implementing twice | ~12 lines, 3 call sites. Two are identical; `validate`'s adds a `text` hint on top. Emitted shape unchanged | **Do it** |
 | Options objects for `pinOpenapiOperations` / `mergeOpenapiPaths` | Removes the one swap in the repo that silently corrupts a living document instead of crashing | 2 signatures, 2 production sites, ~30 test sites. Do **not** fix by reordering positionals — that edit is itself compile-clean and wrong | **Do it** |
 | `(docsDir, feature: FeatureEntry)` for the four triple-takers | Makes an inconsistent `(dir, id)` pair unrepresentable | 9 src sites (all already hold an entry) + 11 test sites needing a shared fixture helper — budget the helper | **Do it** |
 | Options objects for `writeSnapshot` / `readManifest` | Kills the only four-way positional swaps, on the undo path. Both also invert the `(docsDir, featureDir)` order every other function uses, and for a feature created without `--title` the swap is invisible in every fixture | 2 signatures, ~8 call sites | **Do it** |
 | Move `archive.ts`'s landscape splicer into `core/` | Un-strands it: the region has zero `console`/`fail`/`emitJson`/`exit` calls and its only escape is a thrown error — `LandscapeSpliceError` since 2026-08-16, exactly so the splicer names no CLI code | ~695 lines relocated, ~12 imports. Payoff only arrives if you then write the unit tests | **Done** 2026-08-16 — `core/c4/splice/` (`contract` `landscape-merge` `authored-source` `placement`); the unit tests it pays for are still owed |
 | Audit the six `serviceResolver` calls that omit `known` | Without it the resolver's last rung can resolve a container id to a service that never existed, so group-by-service joins find nothing | 6 sites to decide, plus a comment at each deliberate omission. Not confirmed against a fixture — audit before fixing | **Done** 2026-08-16 — confirmed against fixtures, the worst case being the removal gate answering "nobody calls it" for a container-drawn consumer. Every repository-aware site now passes the enumerated fleet (coherence, lookups, dependencies, arch coverage, the Covers matcher via `CoverageScope.known`, the verify checklist, `delta`'s projection); the two splice placement sites stay without it, each with its deliberate-omission comment — placement is cosmetic anchoring inside one document, safety-netted by the re-parse |
-| Fix `core/envelope/config.ts:224` | Restores rule 1 to exceptionless | Three options: delete the `console.error` (1–3 lines, check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in an `.oxlintrc.json` override (4 lines, two visible exceptions instead of one invisible) | **Your call** — all three are defensible; leaving it undecided is not |
+| Fix `core/envelope/config.ts`'s stray `console.error` | Restores rule 1 to exceptionless | Three options: delete the print (check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in a lint override (two visible exceptions instead of one invisible) | **Your call** — all three are defensible; leaving it undecided is not |
 | Split `commands/validate/`'s rule functions into core | Nothing yet | ~1300 lines relocated — now isolated in `validate/checks/` and `validate/service/` rather than interleaved with two callers, so the cost is a move rather than an extraction. `core/status/` already needs these answers and does *not* re-derive them — it calls into core. Everything with two callers is already there | **Not worth it** until `loam status --service` exists |
 | A shared `withDocsRepo(…)` command frame | Removes a repeated 9–11 line prelude | ~0.5% of the command layer, and everything the frame must parameterise is the part that differs: four distinct consequence sentences, a conditional gate level, and `validate`'s per-target catch. Tests assert stdout, so the change would be invisible to the suite | **Not worth it.** The defect class that actually bit — four drifting errno readings — is already fixed by `docs-repo-gate.ts` |
 
@@ -323,11 +326,12 @@ each one names is the cost now being paid, and the next reader deserves to know 
 
 **oxlint, today, with no new dependency:**
 
-- Rule 4 — `-D import/no-cycle` appended to the `lint` script. Verified: passes, and leaves
-  type-only edges alone.
+- Rule 4 — `-D import/no-cycle` passes when run directly and leaves type-only edges alone, but is
+  **not yet present** in the `lint` script. `npm run arch:graph` checks the package graph separately;
+  making both part of one enforced `arch:check` remains open.
 - Rules 1–2 — need an `.oxlintrc.json` (there is none; the lint script is entirely flag-driven).
   An `overrides` entry for `src/core/**` with `no-console`, excluding `json.ts`. That config would
-  fail on `config.ts:224` today, which is the point.
+  fail on `core/envelope/config.ts` today, which is the point.
 
 **oxlint cannot express a path-boundary rule.** It ships no `import/no-restricted-paths` and no
 boundaries plugin; the only boundary-shaped rule bans all `../` imports, which would ban all 127

@@ -168,8 +168,8 @@ export async function apiAxisFindings(
     }
     // The contract-depth probes. Form validated and depth did not: an
     // operation whose one response is `description: OK`, and a `$ref` to a
-    // schema nobody wrote, both read as cleanly as a complete contract — and
-    // the first adoption could not rebuild its payloads from green. Presence
+    // schema nobody wrote, both read as cleanly as a complete contract while
+    // a reader still cannot rebuild its payloads. Presence
     // probes over the document's own keys; nothing reads what a schema says.
     const undescribed = liveOps.filter((op) => op.undescribed === true).map((op) => op.id);
     if (undescribed.length > 0) {

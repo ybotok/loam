@@ -3,13 +3,13 @@
  * stops answering questions as it grows, caught while the map is already in
  * memory.
  *
- * Both arrived with the first fleet adoption, at service three rather than
- * service two. Ubiquitous infrastructure — logging Kafka, auth, service
- * discovery — takes one inbound edge per adopted service until the map is a
+ * Both shapes become visible at service three rather than service two.
+ * Ubiquitous infrastructure — logging Kafka, an identity provider, service
+ * discovery — takes one inbound edge per modelled service until the map is a
  * hairball around it; deleting the element fixes the picture and loses "who
- * depends on UAA", which is the question the map exists to answer during an
- * incident. Tagging keeps both: the fleet view excludes `#platform`, and a
- * platform view keeps the dependents. And a datastore drawn as a fleet-level
+ * depends on the Identity Provider", which is the question the map exists to
+ * answer during an incident. Tagging keeps both: the fleet view excludes
+ * `#platform`, and a platform view keeps the dependents. And a datastore drawn as a fleet-level
  * peer makes a claim its consumer count either supports or refutes: one
  * consumer means the drawing is false — the store is that service's
  * internals, not a system in its own right — while two or more mean the
@@ -41,7 +41,7 @@ export const PLATFORM_TAG = "platform";
  * Consumers at which an untagged external hub starts to warn. Three, not two:
  * two services sharing a dependency is a fact about those two services, the
  * same edge from three is a pattern about the element — and three is where
- * the first fleet's map stopped being readable.
+ * the shared hub starts making the map unreadable.
  */
 export const PLATFORM_CANDIDATE_MIN_CONSUMERS = 3;
 
@@ -95,7 +95,7 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
         subject: e.title,
         message:
           `landscape: '${e.title}' is consumed by ${consumers.length} services (${consumers.join(", ")}) ` +
-          `and is not tagged #platform — a hub like this takes one more edge per adopted service until ` +
+          `and is not tagged #platform — a hub like this takes one more edge per modelled service until ` +
           `the fleet view is unreadable. Declare \`tag platform\` in the specification block and tag the ` +
           `element (LikeC4 refuses an undeclared tag, so both steps are needed): the fleet view then ` +
           `excludes it, and a platform view over \`include * -> element.tag = #platform\` keeps ` +

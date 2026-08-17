@@ -657,17 +657,17 @@ function externalFleet(over: Record<string, string> = {}): Record<string, string
 
 model {
   notificationService = softwareSystem 'notification-service'
-  xmMsConfig = softwareSystem 'xm-ms-config' {
+  externalConfig = softwareSystem 'external-config' {
     #external
   }
   kafka = softwareSystem 'kafka' {
     #external
   }
-  xmMsConfig -> kafka 'publishes config refreshes' {
-    metadata { publishes 'xmConfig.ConfigEvent' }
+  externalConfig -> kafka 'publishes config refreshes' {
+    metadata { publishes 'config.ConfigRefreshed' }
   }
   kafka -> notificationService 'config refreshes' {
-    metadata { consumes 'xmConfig.ConfigEvent' }
+    metadata { consumes 'config.ConfigRefreshed' }
   }
 }
 `,
@@ -690,7 +690,7 @@ operations:
 components:
   messages:
     ConfigEvent:
-      name: xmConfig.ConfigEvent
+      name: config.ConfigRefreshed
       payload:
         type: object
         properties:
@@ -735,7 +735,7 @@ describe("spine.message-external — the producer is outside the fleet", () => {
       const f = findings.find((x) => x.code === "spine.message-external");
       expect(f).toBeDefined();
       expect(f!.message).toContain("outside the fleet");
-      expect(f!.message).toContain("'xm-ms-config'");
+      expect(f!.message).toContain("'external-config'");
       expect(findings.some((x) => x.code === "spine.message-unproduced")).toBe(false);
     });
   });
@@ -743,10 +743,10 @@ describe("spine.message-external — the producer is outside the fleet", () => {
   it("an untagged source is still unproduced — the demotion requires the tag", async () => {
     const files = externalFleet();
     files["architecture/landscape.likec4"] = files["architecture/landscape.likec4"]!.replace(
-      `  xmMsConfig = softwareSystem 'xm-ms-config' {
+      `  externalConfig = softwareSystem 'external-config' {
     #external
   }`,
-      `  xmMsConfig = softwareSystem 'xm-ms-config'`,
+      `  externalConfig = softwareSystem 'external-config'`,
     );
     await withProject(files, {}, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
@@ -759,13 +759,13 @@ describe("spine.message-external — the producer is outside the fleet", () => {
 
   it("a tag on an element that resolves to a real service does not demote — a directory outranks a tag", async () => {
     const files = externalFleet({
-      "services/xm-ms-config/model.likec4": model("xm-ms-config", "xmMsConfig"),
+      "services/external-config/model.likec4": model("external-config", "externalConfig"),
     });
     await withProject(files, {}, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
       const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
       // The element resolves into the fleet, so the fleet answer applies: the
-      // real xm-ms-config service declares no send — unproduced, not external.
+      // in-fleet external-config service declares no send — unproduced, not external.
       expect(codes).toContain("spine.message-unproduced");
       expect(codes).not.toContain("spine.message-external");
     });
@@ -816,7 +816,7 @@ operations:
 components:
   messages:
     ConfigEvent:
-      name: xmConfig.ConfigEvent
+      name: config.ConfigRefreshed
       payload:
         type: object
         properties:

@@ -1,7 +1,7 @@
 /**
- * How the artifacts JOIN: the operationId spine, the requirement baseline
- * pins (`Based-On:` / `x-loam-based-on`), which element is which service,
- * and how to draw a shared broker.
+ * How the artifacts JOIN: operation and message ids, coverage and permission
+ * references, requirement baseline pins (`Based-On:` / `x-loam-based-on`),
+ * which element is which service, and how to draw a shared broker.
  *
  * One section of the AGENTS.md template. ../agents-md.ts assembles the
  * document by PLAIN CONCATENATION — no join separator — so every section
@@ -11,8 +11,11 @@
  */
 export const SPINE = `## The ID spine
 
-Three artifacts describe the same call in three languages. They are joined by the
-**operationId**, and that join is what \`loam validate\` checks:
+The spine is a family of exact joins, not one magic id: feature tag; service
+binding; synchronous operation; asynchronous message; architecture coverage;
+authorization permission. Three artifacts describe the same synchronous call in
+three languages. They are joined by the **operationId**, and that join is what
+\`loam validate\` checks:
 
 - architecture — a C4 edge names the operation it calls:
   \`checkoutWeb -> paymentService 'Calls authorizePayment' { metadata { op 'authorizePayment' } }\`
@@ -28,6 +31,24 @@ Features are joined the same way: a delta's new elements and edges carry the
 feature id as a LikeC4 tag (\`#FEAT-101\`), and that tag is exactly what
 \`loam archive\` folds into the living landscape. Untagged elements in a delta are
 context for the diagram, not changes.
+
+The other joins use the same discipline:
+
+- \`metadata { publishes|consumes 'message' }\` on an edge ↔
+  \`Publishes:\`/\`Consumes:\` in a requirement ↔ the AsyncAPI 3 message name;
+- \`Covers:\` in an architecture requirement ↔ a C4 element/edge or
+  \`alert:<id>\` / \`sli:<id>\` from health.yaml;
+- \`Requires: <subject>/<permission>\` in either requirement file ↔ the fleet
+  declaration in \`architecture/permissions.yaml\`.
+
+The permissions file is opt-in: a fleet with no \`Requires:\` line owes none.
+Once a requirement names a permission, an undeclared pair is
+\`permissions.unknown\` (error). An unreadable vocabulary is
+\`permissions.invalid\`; a declaration nothing requires is
+\`permissions.unenforced\` (warn). The subject is what the permission is checked
+ON (user, profile, service), not necessarily the caller. \`owned_by\` and
+\`enforced_by\` are explanatory and are not resolved against services; this is
+a checked document join, not proof that the identity provider implements it.
 
 ## The requirement baseline — \`Based-On:\`
 
@@ -163,11 +184,11 @@ produces messages our services consume, and no \`services/<id>/\` will ever hold
 its contract. Declare the production on the landscape, where the element
 already says \`#external\`:
 
-    xmMsConfig = softwareSystem 'xm-ms-config' {
+    externalConfig = softwareSystem 'external-config' {
       #external
     }
-    xmMsConfig -> kafka.configTopic 'publishes config refreshes' {
-      metadata { publishes 'xmConfig.ConfigEvent' }
+    externalConfig -> kafka.configTopic 'publishes config refreshes' {
+      metadata { publishes 'config.ConfigRefreshed' }
     }
 
 \`spine.message-unproduced\` then stops firing — the message HAS a producer,

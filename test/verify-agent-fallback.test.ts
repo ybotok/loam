@@ -257,11 +257,10 @@ describe("a green run still confirms, and says which report it read", () => {
 describe("two services wording one scenario the same way are two digests", () => {
   /**
    * The salt is the whole fix. Before it, a scenario body hashed to the same 16
-   * hex in every service that worded it that way — "the service returns 404 for
-   * an unknown id" is written identically in nine services of a real fleet — so
-   * `loam gherkin` stamped ONE tag into nine repositories and one repository's
-   * green cucumber run confirmed the other eight's claims, across suites that
-   * never ran each other's tests. `contestedDigests` closed the reachable half
+   * hex in every service that worded it that way, so `loam gherkin` could stamp
+   * ONE tag into multiple repositories and one repository's green cucumber run
+   * could appear to confirm claims from suites that never ran each other's
+   * tests. `contestedDigests` closed the reachable half
    * by refusing to answer a shared digest at all, which traded a false
    * confirmation for a question nothing could ever answer. Salting by service
    * answers each one, in its own repository, correctly.
