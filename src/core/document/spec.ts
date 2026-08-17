@@ -61,6 +61,20 @@ export interface Requirement {
    */
   covers: string[];
   /**
+   * Authorization this requirement is gated on, from a `Requires:` line —
+   * `<subject>/<permission>` entries declared in `architecture/permissions.yaml`.
+   *
+   * A third join beside `Operations:` and `Covers:`, and it exists because the
+   * other two cannot carry it. A permission is not an operation (one operation
+   * is gated by several, and the same permission gates several operations) and
+   * it is not a C4 element (it is a domain fact, not a structural one). The
+   * subject half is what the OpenAPI security model cannot express at all:
+   * `security` names what the CALLER must hold, while a permission is as often
+   * checked on an entity inside the request — the profile a message is sent
+   * from, the org a resource belongs to.
+   */
+  requires: string[];
+  /**
    * AsyncAPI message names this requirement governs on the PRODUCING side, from
    * a `Publishes:` line — the event-axis analog of `Operations:`.
    *

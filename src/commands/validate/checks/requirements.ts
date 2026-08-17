@@ -16,12 +16,15 @@ import { type Finding } from "../../../core/vocabulary/report.js";
 import { requirementsMissingScenarios } from "../../../core/document/scenarios.js";
 import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import {
+  closeIds,
   coversCandidates,
   entryResolves,
   parseCoversEntry,
   type CoverageScope,
   type CoversEntry,
 } from "../../../core/c4/arch.js";
+import { type Vocabulary } from "../../../core/permissions/permissions.js";
+import { type Operation } from "../../../core/openapi/doc.js";
 
 /** The parsed Covers entries of every requirement that will live (REMOVED covers nothing). */
 export function coversEntries(reqs: Requirement[]): CoversEntry[] {
@@ -161,6 +164,107 @@ export function coversUnknownFindings(
     }
   }
   return out;
+}
+
+/**
+ * `permissions.unknown` — the typo guard on the `Requires:` line, and an ERROR
+ * where its `Covers:` sibling is a warning.
+ *
+ * The two differ because what they promise differs. `Covers:` is advisory end
+ * to end: a wrong id costs its author the coverage they wrote the line for and
+ * nothing else. `Requires:` names authorization the service actually enforces,
+ * and the failure it guards is the one an unaided reader cannot see — an
+ * invented permission reads exactly like a real one, in the requirement, in the
+ * generated scenario, and in the test somebody then writes against it. Its
+ * grade is `Operations:`', not `Covers:`'.
+ *
+ * Silent on ONE case only: an unreadable vocabulary, where
+ * `permissions.invalid` is the honest finding and grading every entry against a
+ * file nobody could parse is the false cascade `healthUnreadable` exists to
+ * stop one axis over. A MISSING vocabulary is not that case — the `Requires:`
+ * line is itself the opt-in, and a line that resolves against nothing while
+ * reading like a join is the failure this whole axis exists to prevent.
+ */
+export function requiresUnknownFindings(
+  reqs: Requirement[],
+  target: CoverageTarget,
+  vocabulary: Vocabulary,
+): Finding[] {
+  const { where, subject } = target;
+  if (vocabulary.invalid !== undefined) return [];
+  const known = [...vocabulary.byId.keys()];
+  const out: Finding[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const raw of r.requires) {
+      if (vocabulary.byId.has(raw)) continue;
+      const close = closeIds(raw, known);
+      out.push({
+        severity: "error",
+        code: "permissions.unknown",
+        subject,
+        message:
+          `${where}: requirement '${r.name}' — Requires: '${raw}' is not declared in architecture/permissions.yaml` +
+          (!vocabulary.present
+            ? ", which does not exist. The `Requires:` line is the opt-in: create the fleet vocabulary with this permission under its subject kind, or drop the line"
+            : close.length > 0
+              ? `. Did you mean: ${close.join(", ")}?`
+              : ". Entries are '<subject>/<permission>'; declare it there, or fix the spelling"),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * `api.response-ungoverned` — a declared 4xx/5xx response no scenario reaches.
+ *
+ * The gap this closes is the one a whole adoption can fall into: `api.ungoverned`
+ * grades OPERATIONS against requirements, so an endpoint with one happy-path
+ * requirement and twelve declared failure codes is fully governed by every
+ * check loam had. The refusals are where a service's decision layer surfaces —
+ * a permission denied, a field combination rejected, a state that forbids the
+ * transition — and the contract is the only artifact in the corpus that already
+ * enumerates them.
+ *
+ * A scenario "reaches" a code when the code appears as a standalone number
+ * anywhere in its body, `Examples` rows included — which is why this arrived
+ * with outline support and not before: a status column is exactly where a
+ * matrix puts its codes, and before it those rows were prose in a description.
+ * The match is textual and therefore generous by design. It answers "did
+ * anybody write this case down", not "is this scenario correct", and the
+ * failure it is built to catch is the code nobody mentioned at all. Warn, like
+ * its sibling: a service may legitimately declare a code its scenarios describe
+ * in words, and an error would teach authors to paste numbers into prose.
+ *
+ * Operations no requirement governs are skipped: `api.ungoverned` already
+ * names those, and reporting each of their codes as well is one defect
+ * counted twice.
+ */
+export function responseGovernanceFindings(
+  service: string,
+  ops: Operation[],
+  livingReqs: Requirement[],
+): Finding[] {
+  const ungoverned: string[] = [];
+  for (const op of ops) {
+    if (op.failureCodes.length === 0) continue;
+    const governing = livingReqs.filter((r) => r.kind !== "REMOVED" && r.operations.includes(op.id));
+    if (governing.length === 0) continue;
+    const body = governing.flatMap((r) => r.scenarios.flatMap((s) => s.lines)).join("\n");
+    const missing = op.failureCodes.filter((code) => !new RegExp(`(?<!\\d)${code}(?!\\d)`).test(body));
+    if (missing.length > 0) ungoverned.push(`${op.id}: ${missing.join(", ")}`);
+  }
+  if (ungoverned.length === 0) return [];
+  return [
+    {
+      severity: "warn",
+      code: "api.response-ungoverned",
+      subject: service,
+      message: `${service}: ${ungoverned.length} operation(s) declare a failure response no scenario reaches — write the refusal as a scenario, or as a row in one`,
+      details: ungoverned,
+    },
+  ];
 }
 
 export function coverageFinding(label: string, reqs: Requirement[]): Finding {

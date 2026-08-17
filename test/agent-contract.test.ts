@@ -257,6 +257,30 @@ describe("the agent contract teaches the multi-repo forms", () => {
       adopt.indexOf("loam validate --service $1 --json"),
     );
   });
+
+  /**
+   * The hand-back asks for evidence, never for a verdict.
+   *
+   * "Is this enough to rebuild the service?" is the question this step is FOR,
+   * and it is the one form it must not take: the only thing an agent can check
+   * a sufficiency claim against is the document it just wrote, so the answer is
+   * yes every time — including from the runs that documented a third of a
+   * service. Both closing asks below are shaped to be falsifiable instead. Three
+   * named gaps are three things a reviewer can go and look for; a branch count
+   * beside a scenario count is two numbers whose disagreement needs no judgement
+   * at all. Neither becomes a check — `REPRODUCIBILITY` stays in `UNCHECKED` —
+   * so the wording is the whole mechanism, and rewording it belongs here.
+   */
+  it("/loam-adopt's hand-back asks for named gaps and two counts, not a sufficiency verdict", () => {
+    const adopt = PROTOCOLS["loam-adopt"]!;
+    expect(adopt).toContain("three behaviours");
+    expect(adopt).toMatch(/documents do not describe/i);
+    expect(adopt).toContain("two counts per operation");
+    expect(adopt).toContain("how many scenarios you wrote");
+    // The escape hatch is a claim, not a shrug: an agent that finds no gap has
+    // to say it looked, which is itself checkable.
+    expect(adopt).toMatch(/looked for three and found none/i);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -463,6 +487,35 @@ describe("the brief promises only what a check can keep", () => {
     // ordering is what turns "the config wires Consul" into a provisional edge
     // instead of a shipped requirement.
     expect(at("outbound calls")).toBeLessThan(at("the runtime"));
+  });
+
+  /**
+   * The gap a real adoption left behind: every endpoint documented, and not one
+   * of the guards behind them — the permission checks, the fields required only
+   * in combination, the transitions a request is refused for. The walk's ORDER
+   * was not the problem. The HTTP stop asked for the operation set and got
+   * exactly that, so the decision layer INSIDE each operation was never read,
+   * and the service that came back could not be rebuilt from its own baseline.
+   *
+   * Nothing downstream can catch it: `api.ungoverned` grades operations against
+   * requirements, never branches against scenarios, and `UNCHECKED` says
+   * COMPLETENESS is unmeasurable in principle. The instruction is therefore the
+   * only place this is fixable at all, which is why it is pinned here.
+   */
+  it("the HTTP stop asks for the decisions inside an operation, not only the operation set", async () => {
+    const p = await project({}, { service: SVC });
+    const b = await brief(p);
+    const walk = b.walk as Array<{ where: string; find: string; lands: string[] }>;
+    const http = walk.find((s) => s.where.includes("HTTP surface"));
+    expect(http).toBeDefined();
+    for (const guard of ["permission", "required only when", "default", "transition"]) {
+      expect(http!.find.toLowerCase(), `the HTTP stop never names ${guard}`).toContain(guard);
+    }
+    // Both counts, because one is the denominator of the other: twelve
+    // operations says nothing about the thirty branches sitting inside them.
+    expect(http!.find).toMatch(/count both/i);
+    // A guard is refused behaviour, and refused behaviour is a scenario.
+    expect(http!.lands).toContain("spec.md");
   });
 
   /**

@@ -9,7 +9,7 @@
  * checklist matches on, which is why nothing here may reword a scenario body.
  */
 import { type Requirement } from "../document/spec.js";
-import { scenarioGherkin } from "../vocabulary/steps.js";
+import { scenarioGherkin, type Examples } from "../vocabulary/steps.js";
 import { type SpecAxis } from "../repo/paths.js";
 import { type ScenarioAxis } from "./digest.js";
 import { gherkinStampLine, scenarioDigest, scenarioDigestTag } from "./stamp.js";
@@ -68,6 +68,13 @@ export interface PlannedFeature {
    * loud, and the fix is rewording the spec bullets, never editing the file.
    */
   stepless: string[];
+  /**
+   * Names of scenarios whose markdown table could not be read as `Examples` —
+   * see `ScenarioGherkin.malformedExamples`. The table stays in the description
+   * and the file is valid Gherkin, so nothing downstream can notice: the
+   * emission is the only place this is visible at all.
+   */
+  malformedExamples: string[];
   content: string;
 }
 
@@ -106,13 +113,13 @@ export function planEmission(
         ...(opts.featureTag === undefined ? [] : [`@${opts.featureTag}`]),
         ...(axis.key === "archSpec" ? ["@architecture"] : []),
       ];
-      const { content, digests, stepless } = renderFeature(
+      const { content, digests, stepless, malformedExamples } = renderFeature(
         r,
         { tags, version: opts.version },
         opts.service,
         axisLabel(axis),
       );
-      out.push({ fileName, axis, requirement: r, digests, stepless, content });
+      out.push({ fileName, axis, requirement: r, digests, stepless, malformedExamples, content });
     }
   }
   return out;
@@ -142,7 +149,7 @@ export function renderFeature(
   stamp: Stamp,
   service: string,
   axis: ScenarioAxis = "business",
-): { content: string; digests: string[]; stepless: string[] } {
+): { content: string; digests: string[]; stepless: string[]; malformedExamples: string[] } {
   const { tags, version } = stamp;
   const lines: string[] = [gherkinStampLine(version)];
   if (tags.length > 0) lines.push(tags.join(" "));
@@ -154,14 +161,41 @@ export function renderFeature(
   }
   const digests: string[] = [];
   const stepless: string[] = [];
+  const malformedExamples: string[] = [];
   for (const s of r.scenarios) {
+    // The digest hashes the WHOLE body, table rows included, so a changed cell
+    // is a changed scenario: `gherkin.stale` fires on an edited case exactly as
+    // it does on an edited step, and the claim it answers moves with it.
     const digest = scenarioDigest(service, s.lines, axis);
     digests.push(digest);
-    lines.push("", `  ${scenarioDigestTag(digest)}`, `  Scenario: ${s.name}`);
-    const { description, steps } = scenarioGherkin(s.lines);
+    const { description, steps, examples, malformedExamples: broken } = scenarioGherkin(s.lines);
     if (steps.length === 0) stepless.push(s.name);
+    if (broken) malformedExamples.push(s.name);
+    // The keyword is the whole difference between one case and twenty: cucumber
+    // expands an outline into one report element per row, each carrying this
+    // scenario's tag, and `runnerAnswers` confirms the claim only when every
+    // one of them passed.
+    lines.push("", `  ${scenarioDigestTag(digest)}`, `  ${examples === null ? "Scenario" : "Scenario Outline"}: ${s.name}`);
     for (const d of description) lines.push(`    ${d}`);
     for (const st of steps) lines.push(`    ${st}`);
+    if (examples !== null) {
+      lines.push("", "    Examples:");
+      for (const row of [examples.header, ...examples.rows]) lines.push(`      ${examplesRow(row, examples)}`);
+    }
   }
-  return { content: lines.join("\n") + "\n", digests, stepless };
+  return { content: lines.join("\n") + "\n", digests, stepless, malformedExamples };
+}
+
+/**
+ * One `Examples` row, columns padded to the table's widest cell.
+ *
+ * Padding is cosmetic to cucumber and deliberate here: these files are read in
+ * review as often as they are run, and an unaligned twenty-row matrix is where
+ * a wrong cell hides. Deterministic to the byte, like everything else the
+ * emitter writes — the widths come from the table alone.
+ */
+function examplesRow(row: string[], table: Examples): string {
+  const all = [table.header, ...table.rows];
+  const cells = row.map((c, i) => c.padEnd(Math.max(...all.map((r) => r[i]!.length))));
+  return `| ${cells.join(" | ")} |`;
 }

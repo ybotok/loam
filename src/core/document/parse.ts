@@ -201,6 +201,7 @@ export function parseRequirements(md: string): Requirement[] {
         covers: [],
         publishes: [],
         consumes: [],
+        requires: [],
         scenarios: [],
         section,
         line: index + 1,
@@ -245,6 +246,12 @@ export function parseRequirements(md: string): Requirement[] {
       if (mp) req.publishes = mp[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
       const mcon = /^\s*Consumes?:\s*(.+?)\s*$/i.exec(line);
       if (mcon) req.consumes = mcon[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      // The authorization axis. Same grammar, same keep-last quirk, same purely
+      // additive parse — the line rides in `req.text` and therefore inside
+      // `requirementDigest`, so no living document moves because loam learned
+      // to read it.
+      const mreq = /^\s*Requires?:\s*(.+?)\s*$/i.exec(line);
+      if (mreq) req.requires = mreq[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }
 

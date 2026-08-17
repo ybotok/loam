@@ -20,7 +20,7 @@ import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listServices, serviceIdFindings } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
 import { FleetContext, landscapeConflictFinding } from "../../core/fleet-context.js";
-import { fleetShapeFindings } from "./checks/fleet-shape.js";
+import { fleetShapeFindings, permissionFindings } from "./checks/fleet-shape.js";
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "./checks/vocabulary.js";
 
 /**
@@ -117,6 +117,9 @@ export async function validateLandscape(
   // what the rename fixes.
   const entries = await listServices(docsDir, fleet);
   findings.push(...serviceIdFindings(entries));
+  // Before the landscape's own early returns: the authorization vocabulary is a
+  // fleet fact that does not depend on the map existing or parsing.
+  findings.push(...(await permissionFindings(docsDir, entries, fleet)));
 
   if (!existsSync(path)) {
     const count = entries.length;

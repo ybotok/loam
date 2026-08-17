@@ -166,6 +166,129 @@ describe("step conversion", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Scenario Outline                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A matrix is the shape most of a service's decision layer actually has — which
+ * permission may do what, which field combination is refused, which status each
+ * case returns — and in the code it came from it is one parameterised test.
+ * Without an outline it lands here as N near-identical scenarios, and N is
+ * where an author stops enumerating and starts summarising. That is the failure
+ * these tests exist to keep closed.
+ */
+function requirementWith(body: string[]): Parameters<typeof renderFeature>[0] {
+  const [req] = parseRequirements(
+    ["## Requirements", "", "### Requirement: Refunding is permission-gated", "Body.", "", "#### Scenario: By permission", ...body].join(
+      "\n",
+    ),
+  );
+  return req!;
+}
+
+const MATRIX = [
+  "- **Given** a captured payment",
+  "- **When** a caller holding <permission> requests a refund",
+  "- **Then** the response is <status>",
+  "",
+  "| permission      | status |",
+  "|-----------------|--------|",
+  "| payments:refund | 200    |",
+  "| payments:read   | 403    |",
+];
+
+describe("a table in a scenario body becomes a Scenario Outline", () => {
+  it("emits the outline keyword and an Examples block, header first, columns padded", () => {
+    const { content, malformedExamples } = renderFeature(
+      requirementWith(MATRIX),
+      { tags: [], version: "0.0.0" },
+      "payment-service",
+    );
+    expect(malformedExamples).toEqual([]);
+    expect(content).toContain("  Scenario Outline: By permission");
+    expect(content).not.toContain("  Scenario: By permission");
+    expect(content).toContain("    Examples:");
+    // Padded to the widest cell, header before rows, source order preserved.
+    expect(content).toContain("      | permission      | status |");
+    expect(content).toContain("      | payments:refund | 200    |");
+    expect(content).toContain("      | payments:read   | 403    |");
+    expect(content.indexOf("| permission ")).toBeLessThan(content.indexOf("| payments:refund"));
+    // The table is the Examples, so it must not ALSO survive as description.
+    expect(content.indexOf("| payments:refund")).toBeGreaterThan(content.indexOf("Examples:"));
+    // Steps still render, and the placeholders reach them untouched.
+    expect(content).toContain("    When a caller holding <permission> requests a refund");
+  });
+
+  it("the emitted outline reads back with its digest bound to it", () => {
+    // `Scenario Outline:` is a different keyword from `Scenario:`, and every
+    // staleness finding is computed from what parseStampedFeature returns. If
+    // the reader missed the keyword, an outline would report as gherkin.missing
+    // forever while sitting on disk perfectly current.
+    const req = requirementWith(MATRIX);
+    const { content, digests } = renderFeature(req, { tags: [], version: LOAM_VERSION }, "payment-service");
+    const parsed = parseStampedFeature(content);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.scenarios).toEqual([{ name: "By permission", digest: digests[0]! }]);
+  });
+
+  it("a changed cell is a changed scenario — the digest covers the rows", () => {
+    // Otherwise a corrected matrix would leave every generated file current
+    // while the suite tests the old cases.
+    const before = renderFeature(requirementWith(MATRIX), { tags: [], version: "0.0.0" }, "payment-service");
+    const after = renderFeature(
+      requirementWith(MATRIX.map((l) => l.replace("| payments:read   | 403    |", "| payments:read   | 404    |"))),
+      { tags: [], version: "0.0.0" },
+      "payment-service",
+    );
+    expect(after.digests[0]).not.toBe(before.digests[0]);
+  });
+
+  it("is deterministic to the byte, like every other emission", () => {
+    const once = renderFeature(requirementWith(MATRIX), { tags: [], version: "0.0.0" }, "payment-service");
+    const twice = renderFeature(requirementWith(MATRIX), { tags: [], version: "0.0.0" }, "payment-service");
+    expect(once.content).toBe(twice.content);
+  });
+
+  it("a row that disagrees with the header stays description, and the emission says so", () => {
+    // Never emit invalid Gherkin: cucumber refuses a ragged Examples table, and
+    // a suite that will not parse is worse than one scenario that runs once.
+    // But silence here is the trap — the file is valid, the report is clean,
+    // and twenty cases quietly became one.
+    const { content, malformedExamples } = renderFeature(
+      requirementWith([...MATRIX, "| payments:write |"]),
+      { tags: [], version: "0.0.0" },
+      "payment-service",
+    );
+    expect(malformedExamples).toEqual(["By permission"]);
+    expect(content).toContain("  Scenario: By permission");
+    expect(content).not.toContain("Examples:");
+    // Prose is never dropped: the table is still in the file, as description.
+    expect(content).toContain("| payments:refund | 200    |");
+  });
+
+  it("a header with no rows under it is malformed too — an outline of zero cases", () => {
+    const { content, malformedExamples } = renderFeature(
+      requirementWith(MATRIX.slice(0, 6)),
+      { tags: [], version: "0.0.0" },
+      "payment-service",
+    );
+    expect(malformedExamples).toEqual(["By permission"]);
+    expect(content).not.toContain("Examples:");
+  });
+
+  it("prose containing pipes is not a table", () => {
+    const { content, malformedExamples } = renderFeature(
+      requirementWith(["- **Given** a payment", "The pipe | character appears in this sentence."]),
+      { tags: [], version: "0.0.0" },
+      "payment-service",
+    );
+    expect(malformedExamples).toEqual([]);
+    expect(content).toContain("  Scenario: By permission");
+    expect(content).toContain("    The pipe | character appears in this sentence.");
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* Emission                                                            */
 /* ------------------------------------------------------------------ */
 
