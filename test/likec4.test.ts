@@ -357,6 +357,48 @@ model {
       expect(r.target).toBe("b");
     }
   });
+
+  /**
+   * A key repeated inside one metadata block is legal LikeC4 and comes back as an
+   * ARRAY. Reading only the string form dropped every value, so an edge naming two
+   * operations reported as naming NONE — and `c4.op-link-missing` then told the
+   * author their edge carried no operation link at all, which is the opposite of
+   * what they wrote. Both readers must land on the same value or the splice merges
+   * against a binding the parse does not have.
+   */
+  it("a repeated `op` key yields the FIRST value, not undefined, in both readers", async () => {
+    const src = `specification { element softwareSystem }
+model {
+  a = softwareSystem 'A'
+  b = softwareSystem 'B'
+  a -> b 'Calls' { metadata { op 'one' op 'two' } }
+}
+`;
+    const doc = await load(src);
+    expect(doc.errors, "LikeC4 accepts a repeated key with no error").toEqual([]);
+    expect(
+      doc.relationships[0]!.op,
+      "dropping both values made a two-op edge indistinguishable from an unlinked one",
+    ).toBe("one");
+    const scan = scanModel(src);
+    expect(scan!.rels[0]!.op, "the text scanner takes the first too — the readers must agree").toBe(
+      "one",
+    );
+  });
+
+  it("a repeated `publishes` key yields the FIRST value in both readers", async () => {
+    const src = `specification { element softwareSystem }
+model {
+  a = softwareSystem 'A'
+  b = softwareSystem 'B'
+  a -> b 'Emits' { metadata { publishes 'x.One' publishes 'x.Two' } }
+}
+`;
+    const doc = await load(src);
+    expect(doc.errors).toEqual([]);
+    expect(doc.relationships[0]!.publishes).toBe("x.One");
+    expect(scanModel(src)!.rels[0]!.publishes).toBe("x.One");
+  });
 });
 
 /* ------------------------------------------------------------------ */
