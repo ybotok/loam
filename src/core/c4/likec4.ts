@@ -273,6 +273,14 @@ function metaKey(m: unknown, key: string): string | undefined {
   if (m && typeof m === "object") {
     const v = (m as Record<string, unknown>)[key];
     if (typeof v === "string") return v;
+    // A key written TWICE in one block comes back as an array, accepted with no
+    // error, and reading only the string form dropped every value — so an edge
+    // naming two operations reported as naming none, `c4.op-link-missing` telling
+    // the author the opposite of what they wrote. First wins, matching the text
+    // scanner's `keyedLiteral`: the two readers disagreeing about a binding is
+    // exactly what the paragraph above exists to prevent. Later values stay
+    // dropped — one id per key per edge is the model.
+    if (Array.isArray(v) && typeof v[0] === "string") return v[0];
   }
   return undefined;
 }
