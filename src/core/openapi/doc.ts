@@ -10,7 +10,7 @@
  * merge need it.
  */
 import { isUtf8 } from "node:buffer";
-import { danglingRefs, responseUndescribed } from "./depth.js";
+import { danglingRefs, failureCodesOf, responseUndescribed } from "./depth.js";
 import { operationBaselineOf, operationDigest } from "./digest.js";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -64,6 +64,18 @@ export interface Operation {
    * contract.
    */
   undescribed?: true;
+  /**
+   * Declared non-2xx response codes, in document order — the refusals this
+   * operation promises. `default` and any `4XX`/`5XX` wildcard are excluded:
+   * neither names a case a scenario could be written for.
+   *
+   * The contract is the only place in the corpus that enumerates what an
+   * operation REFUSES, and until this was read nothing joined those refusals to
+   * anything. `api.ungoverned` grades whole operations against requirements,
+   * so an operation documented by its happy path alone — one requirement, one
+   * scenario, twelve declared failure codes — passed every check loam had.
+   */
+  failureCodes: string[];
 }
 
 /** A `x-loam-remove: true` marker with no usable operationId — a slot named but no operation named. */
@@ -194,6 +206,7 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
         digest: operationDigest(op),
         ...(basedOn === undefined ? {} : { basedOn }),
         ...(responseUndescribed(op) ? { undescribed: true as const } : {}),
+        failureCodes: failureCodesOf(op),
       });
     }
   }

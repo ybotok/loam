@@ -43,7 +43,8 @@ import { axisLabel, planEmission } from "../../core/gherkin/emit.js";
 import { gherkinRoot } from "../../core/gherkin/stamp.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { UnsafePathError } from "../../core/kernel/path-safety.js";
-import { reconcile, type Action, type Scope } from "./reconcile.js";
+import { reconcile, type Scope } from "./reconcile.js";
+import { render } from "./render.js";
 
 interface GherkinOptions {
   service?: string;
@@ -239,58 +240,22 @@ export function registerGherkin(program: Command): void {
             digests: a.action === "kept" ? a.kept.scenarios.map((s) => s.digest) : a.digests,
             ...(a.action === "kept"
               ? { inFlight: a.kept.tags.filter((t) => activeIds.has(t)) }
-              : { stepless: a.stepless }),
+              : { stepless: a.stepless, malformedExamples: a.malformedExamples }),
           })),
           deleted: orphans.map(rel),
         });
         return;
       }
 
-      const head =
-        scope.mode === "feature" ? `${scope.featureId} · ${service}` : `${service} (living suite)`;
-      console.log(`gherkin ${head} → ${rel(root)}/${dryRun ? "  (dry run)" : ""}\n`);
-      if (actions.length === 0) {
-        console.log(
-          scope.mode === "feature"
-            ? `  ${scope.featureId} has no ADDED or MODIFIED requirements for ${service} — nothing to emit.`
-            : `  the living specs hold no requirements for ${service} — nothing to emit.`,
-        );
-      }
-      // `conflict` never reaches here — the run refused above — but the map is
-      // total so a future action cannot silently print `undefined`.
-      const VERB: Record<Action, string> = {
-        written: "write  ",
-        replaced: "replace",
-        kept: "keep   ",
-        conflict: "CONFLICT",
-      };
-      for (const a of actions) {
-        if (a.action === "kept") {
-          const owners = a.kept.tags.filter((t) => activeIds.has(t));
-          console.log(
-            `  keep     ${a.fileName}  —  ${a.requirement.name}  (in flight: @${owners.join(" @")} — \`loam gherkin ${owners[0]}\` regenerates it)`,
-          );
-          continue;
-        }
-        const n = a.digests.length;
-        const arch = a.axis.key === "archSpec" ? ", arch" : "";
-        console.log(
-          `  ${VERB[a.action]}  ${a.fileName}  —  ${a.requirement.name}  (${n} scenario${n === 1 ? "" : "s"}${arch})`,
-        );
-        for (const name of a.stepless) {
-          console.log(
-            `      ⚠ scenario '${name}' has NO recognizable steps — cucumber runs it vacuously green and \`verify --results\` can never confirm it; reword its body as \`- **Given/When/Then**\` bullets`,
-          );
-        }
-      }
-      for (const o of orphans) console.log(`  delete   ${relative(root, o).split(/[\\/]/).join("/")}  —  no longer in this scope`);
-      const wrote = `${writes.length} file(s)`;
-      const keptNote = actions.length > writes.length ? `, ${actions.length - writes.length} kept in flight` : "";
-      const dropped = orphans.length > 0 ? `, ${orphans.length} deletion(s)` : "";
-      console.log(
-        dryRun
-          ? `\n  ${wrote}${keptNote}${dropped} — dry run, nothing was written.`
-          : `\n  ${wrote} written${keptNote}${dropped}. Write step definitions OUTSIDE ${rel(root)}/ — regeneration rewrites it.`,
-      );
+      render(actions, {
+        service,
+        root: rel(root),
+        absRoot: root,
+        featureId: scope.mode === "feature" ? scope.featureId : null,
+        dryRun,
+        activeIds,
+        writes: writes.length,
+        orphans,
+      });
     });
 }

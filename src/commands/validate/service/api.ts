@@ -15,6 +15,7 @@ import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type DeclaredService, type PathableService } from "../../../core/kernel/ids.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
+import { responseGovernanceFindings } from "../checks/requirements.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { readOpenapi } from "../../../core/openapi/doc.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -237,6 +238,7 @@ export async function apiAxisFindings(
         message: `${service}: ${orphans.length} operation(s) not governed by any requirement — ${orphans.join(", ")}`,
       });
     }
+    findings.push(...responseGovernanceFindings(service, liveOps, livingReqs));
     // The migration-debt case: requirements exist, the API exists, and no
     // `Operations:` line ties them — every cross-axis check above and in
     // feature mode is vacuously green. Once per service, not per operation;

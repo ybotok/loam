@@ -16,7 +16,7 @@ export const LOAM_ADOPT: CommandContent = {
     "walk the service in the brief's order — shape first, then one surface at a time — keeping the list of every path you open, because that list becomes `sources`",
     "write the artifacts, everything `status: draft`",
     "validate the service, then validate the whole fleet — a baseline that passes one and fails the other is documented and invisible",
-    "hand back with what you could not determine from the code, and which directories you never opened, then let a human vouch",
+    "hand back with what you could not determine from the code, which directories you never opened, the branch-to-scenario count per operation, and three behaviours your documents do not describe — then let a human vouch",
   ],
   body: `Write one service's baseline documentation into the loam docs repo (its path is
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
@@ -81,12 +81,34 @@ result. It never reads the service — so anything you cannot show, do not write
    \`landscape.binding-unknown\` / \`landscape.binding-duplicate\` mean it landed wrong,
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
-6. Hand back, and say four things: what you could not determine from the code, what
-   the existing artifacts disagreed with, which parts you are least sure of, and
-   what you did not open — every path \`sources.unwalked\` named, with one line each
-   on why the baseline does not owe it. That last list is the only account anybody
-   gets of how much of the service was actually read; loam can name the paths, and
-   it can never say whether skipping one was right.
+6. Hand back, and say seven things:
+   - what you could not determine from the code;
+   - what the existing artifacts disagreed with;
+   - which parts you are least sure of;
+   - what you did not open — every path \`sources.unwalked\` named, with one line
+     each on why the baseline does not owe it. That list is the only account
+     anybody gets of how much of the service was actually read; loam can name the
+     paths, and it can never say whether skipping one was right;
+   - **two counts per operation**: how many decisions its code makes — permission
+     checks, conditionally required fields, defaults and normalisations, refused
+     transitions — and how many scenarios you wrote for it.
+     \`12 branches / 3 scenarios\` is a fact a reader can act on; "the
+     requirements look complete" is not, and no check loam has can tell the two
+     apart;
+   - **how well this service is covered by its own tests**, and how many of them
+     became scenarios. Say the number the service's own coverage tooling
+     reports, and where you read it. This is the ceiling on the whole baseline:
+     a well-covered service can be documented from evidence, and a service with
+     almost no tests can only be documented from a reading of its code, which is
+     a weaker document however carefully it is written. Nothing in loam can
+     compute this — say it, or nobody ever knows which kind they are holding;
+   - **three behaviours this service has that your documents do not describe.**
+     Not "is this enough" — that question is answered yes by every agent that
+     ever wrote a baseline, including the ones that documented a third of a
+     service, because the only thing it can be answered against is the document
+     itself. Name three. If you looked for three and found none, say exactly
+     that: it is a claim a reviewer can go and check, which "it is complete"
+     is not.
    Then a human runs \`loam vouch --service $1\` in the service's own repo.
 
 Where the code does not say, write that it does not say. A confident sentence about

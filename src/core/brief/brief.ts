@@ -81,17 +81,17 @@ export const WALK: WalkStop[] = [
   },
   {
     where: "the HTTP surface — every route, controller, handler and middleware, counted",
-    find: "the operation set, in full. Count them before you write, and say the count in the hand-back: `api.ungoverned` can tell you an operation you WROTE has no requirement, and nothing at all can tell you about the twelve you never wrote down.",
+    find: "the operation set, in full, and inside each operation the DECISIONS its code makes: the permission and role checks — each one is a `Requires:` entry, and a name `architecture/permissions.yaml` does not declare yet is a line to ADD to that shared file, never to invent locally — the fields required only when another field is present, the defaults and normalisations applied before anything is stored, the transitions a request is refused for. Count both — operations, and branches per operation — before you write, and say both counts in the hand-back. `api.ungoverned` can tell you an operation you WROTE has no requirement; nothing at all can tell you about the twelve you never wrote down, or about the thirty branches inside the one you did. A guard is not implementation detail: what a service REFUSES is behaviour its caller observes and a test pins, and it is the half of a legacy service that lives only in the code and in one developer's head.",
     lands: ["openapi.yaml", "spec.md"],
   },
   {
     where: "the message surface — producers, consumers, listener annotations, topic and queue names, the outbox table and its relay",
-    find: "every message this service puts on and takes off the bus, with its direction. The direction is the half that gets lost: a consumer documented as a producer is a contract the whole fleet then joins against backwards.",
+    find: "every message this service puts on and takes off the bus, with its direction, and — on the consuming side — the DECISIONS the handler makes about a message before it acts on one. The direction is the half that gets lost: a consumer documented as a producer is a contract the whole fleet then joins against backwards. The guards are the half nobody looks for at all: which messages are filtered out and on what field, what happens to one whose entity has since been deleted, what is idempotency-keyed against a replay, what is dead-lettered rather than retried. Each of those is a scenario, and none of them appears anywhere in the contract — asyncapi.yaml describes the message, never what this service refuses to do with it.",
     lands: ["asyncapi.yaml", "landscape.likec4"],
   },
   {
     where: "the scheduled and background work — cron entries, timers, retry loops, reconcilers, migrations that run at boot",
-    find: "behaviour no request ever triggers. It has requirements like anything else, and it is invisible to every surface above — which is why a baseline written from routes alone describes a service that does half of what it does.",
+    find: "behaviour no request ever triggers, and the conditions under which it does or does not run. It has requirements like anything else, and it is invisible to every surface above — which is why a baseline written from routes alone describes a service that does half of what it does. Take the decisions with it: which rows a reconciler SELECTS and which it skips, what a retry loop gives up on and after how long, what a migration does when it finds the state it is meant to fix already fixed. A scheduled job documented as 'runs nightly' is a requirement with no behaviour in it.",
     lands: ["spec.md", "arch.spec.md"],
   },
   {
@@ -110,8 +110,8 @@ export const WALK: WalkStop[] = [
     lands: ["runbook.md", "health.yaml", "arch.spec.md"],
   },
   {
-    where: "the tests, integration ones first",
-    find: "the behaviours somebody already thought worth pinning, in Given/When/Then form before you write a line. A test suite is the only part of a legacy service that states intent rather than mechanism.",
+    where: "the tests, integration and component ones first",
+    find: "the behaviours somebody already thought worth pinning. This is the PRIMARY source for scenarios, not the last sweep: a behaviour a test already pins is written FROM that test, and the code is read only for what no test covers. A test suite is the only part of a legacy service that states intent rather than mechanism, and a scenario derived from one is the only kind that starts out true. Carry the shape across as well as the content — a parameterised test (`@ParameterizedTest`, `@parametrize`, `test.each`) is one scenario with a table, not one scenario per case. Then say in the hand-back how well this service is covered and how many of its tests became scenarios: that number is the ceiling on what this whole baseline can be worth, and nothing downstream can compute it.",
     lands: ["spec.md", "arch.spec.md"],
   },
 ];
@@ -145,11 +145,11 @@ const FRONTMATTER_BRIEF: FrontmatterBrief = {
       "`draft`, always. `verified` is a human's word, stamped by `loam vouch --service <id>` run inside the service's own repo — never written by hand.",
     owner: "the team or person who answers for this service.",
     sources:
-      "the paths in THIS SERVICE'S repository you actually read to write the document — files and directories only, a directory covering everything beneath it; glob patterns are refused. Not the paths a reader would expect to have been read.",
+      "the paths in THIS SERVICE'S repository you actually read to write the document — files and directories only, a directory covering everything beneath it; glob patterns are refused. Not the paths a reader would expect to have been read. This is NOT a reading list for a human: nobody follows these, and nothing about the document asks them to.",
   },
   never: ["last_verified", "sources_digest", "content_digest", "sources_files"],
   why:
-    "`sources` is the only mechanical tie between this document and the code. Everything else loam checks is internal consistency, and a corpus can agree with itself perfectly while describing nothing that exists. `loam validate`, run inside the service's repo, checks every listed path is still there; `loam vouch` hashes their content so a later `validate` can say the code has moved since anyone read it. Both are worth exactly as much as the list is honest.",
+    "`sources` is digest input, not a citation. It is the only mechanical tie between this document and the code — everything else loam checks is internal consistency, and a corpus can agree with itself perfectly while describing nothing that exists. `loam validate`, run inside the service's repo, checks every listed path is still there; `loam vouch` hashes their CONTENT so that a later `validate` can say the code has moved since anyone read it. That hash is the entire point, and it is why padding the list costs something real rather than merely being untidy: a path nobody read still gets hashed, so its next change reports as drift in a document it never described, and a path that WAS read and went unlisted moves under the document in silence. Neither failure is visible to a reader; both are decided by whether this list is honest.",
 };
 
 export interface Brief {

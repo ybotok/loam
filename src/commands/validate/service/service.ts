@@ -12,7 +12,9 @@
 import { existsSync } from "node:fs";
 import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
 import { type PathableService } from "../../../core/kernel/ids.js";
-import { landscapePath as landscapeFile, servicePaths } from "../../../core/repo/paths.js";
+import { landscapePath as landscapeFile, permissionsPath, servicePaths } from "../../../core/repo/paths.js";
+import { readVocabulary } from "../../../core/permissions/permissions.js";
+import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
@@ -212,6 +214,17 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       known,
     })),
   );
+
+  // The authorization axis. Both requirement documents are graded against one
+  // fleet vocabulary — a permission is a fleet fact, and an arch requirement
+  // gates on one exactly as a business requirement does.
+  const vocabulary = await readVocabulary(permissionsPath(docsDir));
+  for (const [label, docReqs] of [
+    ["spec.md", reqs],
+    ["arch.spec.md", archReqs],
+  ] as const) {
+    findings.push(...requiresUnknownFindings(docReqs, { where: `${service}: ${label}`, subject: service }, vocabulary));
+  }
 
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));

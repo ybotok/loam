@@ -53,6 +53,22 @@ export function responseUndescribed(op: unknown): boolean {
 }
 
 /**
+ * The non-2xx response codes an operation declares, in document order.
+ *
+ * Exact three-digit codes only. `default` names no case — it is whatever else
+ * happens — and the `4XX`/`5XX` wildcards name a class rather than a refusal,
+ * so no scenario could be written for either and demanding one would teach an
+ * author to write a scenario about nothing. 1xx and 3xx are excluded with 2xx:
+ * a redirect or a continue is not the service saying no.
+ */
+export function failureCodesOf(op: unknown): string[] {
+  if (op === null || typeof op !== "object") return [];
+  const responses = (op as Record<string, unknown>)["responses"];
+  if (responses === null || typeof responses !== "object" || Array.isArray(responses)) return [];
+  return Object.keys(responses as Record<string, unknown>).filter((code) => /^[45]\d\d$/.test(code));
+}
+
+/**
  * Every internal `#/` reference in the document that resolves to nothing —
  * deduped, document order. External references (URLs, file paths) are out of
  * scope and never graded, matching the merge's documented stance.

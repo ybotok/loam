@@ -21,9 +21,17 @@
  * what counts as platform and which data is truly shared — these warnings
  * only name the shapes that are usually wrong.
  */
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
+import { type ServiceEntry } from "../../../core/repo/entries.js";
+import { permissionsPath, servicePaths } from "../../../core/repo/paths.js";
+import { readVocabulary } from "../../../core/permissions/permissions.js";
+import { parseRequirements } from "../../../core/document/parse.js";
+import { type Requirement } from "../../../core/document/spec.js";
+import { FleetContext } from "../../../core/fleet-context.js";
 import { EXTERNAL_TAG } from "./vocabulary.js";
 
 /** Tag marking ubiquitous infrastructure; the scaffolded fleet view excludes it. */
@@ -138,6 +146,75 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
  * a mis-tagged internal service reading as unproduced: a tag is cheap to
  * write, and a services/<id>/ directory outranks it.
  */
+/**
+ * The authorization vocabulary graded against the fleet that uses it — the half
+ * of the axis no single service can answer.
+ *
+ * `permissions.invalid` is an error and it is the only one reported when it
+ * fires: a vocabulary nobody can read resolves nothing, so every `Requires:`
+ * line in the fleet would follow it as `permissions.unknown`, and a hundred
+ * findings about one broken file is a cascade, not a diagnosis.
+ *
+ * `permissions.unenforced` is the mirror of `api.ungoverned`, and it earns its
+ * place for the same reason: a vocabulary is only worth what cites it. A
+ * permission nothing requires is either a rule that was removed and left its
+ * word behind, or a word nobody adopted — both are drift, and neither is
+ * visible from inside the file. Warn, because the honest answer is sometimes
+ * "not modelled yet".
+ */
+export async function permissionFindings(
+  docsDir: string,
+  services: ServiceEntry[],
+  fleet: FleetContext | undefined,
+): Promise<Finding[]> {
+  const vocabulary = await readVocabulary(permissionsPath(docsDir));
+  if (!vocabulary.present) return [];
+  if (vocabulary.invalid !== undefined) {
+    return [
+      {
+        severity: "error",
+        code: "permissions.invalid",
+        message:
+          `landscape: architecture/permissions.yaml does not read as a vocabulary — ${vocabulary.invalid}. ` +
+          "Every `Requires:` line in the fleet resolves against this file, so none of them can be graded until it parses. " +
+          "The shape is `subjects: {<kind>: {description}}` then `permissions: {<kind>: {<name>: {description, owned_by, enforced_by}}}`.",
+      },
+    ];
+  }
+  const used = new Set<string>();
+  for (const entry of services) {
+    const paths = servicePaths(docsDir, entry.id);
+    for (const path of [paths.spec, paths.archSpec]) {
+      // Existence first, and for BOTH readers: arch.spec.md is optional (most
+      // of a legacy fleet has none) and spec.md is missing on a half-adopted
+      // service. `FleetContext.readRequirements` throws ENOENT, which surfaces
+      // as `repository-unavailable` and takes the whole `--all` run down — an
+      // absent optional artifact must never be able to do that.
+      if (!existsSync(path)) continue;
+      const reqs = fleet === undefined ? await readRequirementsAt(path) : await fleet.readRequirements(path);
+      for (const r of reqs) {
+        if (r.kind !== "REMOVED") for (const p of r.requires) used.add(p);
+      }
+    }
+  }
+  const unenforced = [...vocabulary.byId.keys()].filter((id) => !used.has(id));
+  if (unenforced.length === 0) return [];
+  return [
+    {
+      severity: "warn",
+      code: "permissions.unenforced",
+      message: `landscape: ${unenforced.length} declared permission(s) that no requirement's \`Requires:\` line names — write the requirement that gates on each, or drop the declaration`,
+      details: unenforced,
+    },
+  ];
+}
+
+/** The uncached read, for the `--service` path where no fleet context exists. */
+async function readRequirementsAt(path: string): Promise<Requirement[]> {
+  if (!existsSync(path)) return [];
+  return parseRequirements(await readFile(path, "utf8"));
+}
+
 export function externalProducerOf(
   message: string,
   land: LoadedDoc | null,

@@ -103,6 +103,11 @@ export function landscapePath(docsDir: string): string {
   return join(docsDir, "architecture", "landscape.likec4");
 }
 
+/** The fleet's authorization vocabulary — beside the fleet map, for the same reason. */
+export function permissionsPath(docsDir: string): string {
+  return join(docsDir, "architecture", "permissions.yaml");
+}
+
 export function featuresDir(docsDir: string): string {
   return join(docsDir, "features");
 }

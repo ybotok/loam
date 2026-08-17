@@ -589,6 +589,14 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       "covers",
       "publishes",
       "consumes",
+      // The authorization axis, added with `architecture/permissions.yaml`.
+      // It joins this list for the same reason the three above it did: the
+      // parse is purely ADDITIVE — the `Requires:` line stays in `text` like
+      // every other body line, so it round-trips through serialization and
+      // rides inside `requirementDigest` unchanged. No OpenSpec document's
+      // digest moves because loam learned to read one more line, which is what
+      // this file exists to keep true.
+      "requires",
       "scenarios",
       "section",
       // Where the heading was, so `loam rebase` can rewrite one body line by

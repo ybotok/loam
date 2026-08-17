@@ -739,7 +739,11 @@ describe("operations — the deprecated flag rides beside each id", () => {
    */
   async function extractOps(content: string) {
     const ops = await withDir({ "openapi.yaml": content }, (root) => operations(join(root, "openapi.yaml")));
-    return ops.map(({ digest: _digest, undescribed: _undescribed, ...rest }) => rest);
+    // `failureCodes` joins `digest` and `undescribed` in the projection: these
+    // cases are about the deprecation flag, the removal marker and the (path,
+    // method) slot, and asserting a field none of them is about would make
+    // every one of them fail the next time the reader learns something.
+    return ops.map(({ digest: _d, undescribed: _u, failureCodes: _f, ...rest }) => rest);
   }
 
   it("returns deprecated: true exactly where the contract says so, false everywhere else", async () => {
@@ -901,6 +905,13 @@ describe("readOpenapi — a broken contract is flagged, not read as empty", () =
         path: "/payments/authorize",
         method: "post",
         digest: expect.stringMatching(/^[0-9a-f]{16}$/),
+        // Present and empty: the fixture declares only a 200. Asserted rather
+        // than projected away, because this is the case that pins the whole
+        // shape — and what matters about the addition is that `digest` did NOT
+        // move for it. The digest hashes the raw YAML node, never this object,
+        // which is why no `x-loam-based-on` pin in any fleet went stale when
+        // the reader learned to read response codes.
+        failureCodes: [],
       },
     ]);
   });
