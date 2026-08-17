@@ -1449,6 +1449,168 @@ describe("edge identity", () => {
   });
 });
 
+/**
+ * The event spine's half of edge identity. `relKey` keyed on `op` alone, so an
+ * edge differing from a living one only by `metadata { publishes '...' }` hashed
+ * the same, was counted as already present, and never reached the landscape —
+ * archive printing `+0 relationship(s)` and exit 0 over a binding the author had
+ * just written. The landscape is the fleet's only record of event flow, so the
+ * loss disarmed every check that reads it, and the delta stating the intent was
+ * moved into features/archive/ by the same command.
+ */
+describe("edge identity — the event spine keys", () => {
+  const LIVING = `specification {
+  element softwareSystem
+  tag FEAT-15
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  checkoutWeb -> paymentService 'Emits'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+  /** A delta whose edge differs from LIVING's in metadata and in nothing else. */
+  const delta = (body: string): string => `specification {
+  element softwareSystem
+  tag FEAT-15
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+${body}
+}
+
+views {
+  view feat_15 {
+    include *
+  }
+}
+`;
+
+  /** Every checkout-web → payment-service edge's publishes/consumes, sorted. */
+  function bindings(land: LoadedDoc): string[] {
+    return edgesBetween(land, "checkout-web", "payment-service")
+      .map((r) => `${r.publishes ?? "-"}|${r.consumes ?? "-"}`)
+      .sort();
+  }
+
+  async function archived(living: string, deltaSrc: string): Promise<LoadedDoc> {
+    const p = await makeProject({
+      "architecture/landscape.likec4": living,
+      "features/FEAT-15-events/delta.likec4": deltaSrc,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-15", "--approve");
+      expect(res.code, res.stdout + res.stderr).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      return land;
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("a feature that binds a message to an existing edge does not merge as a no-op", async () => {
+    const land = await archived(
+      LIVING,
+      delta(`  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { publishes 'payment.Authorized' }
+  }`),
+    );
+    expect(
+      bindings(land),
+      "the binding must reach the landscape; the add-only splicer cannot amend the living edge, so it lands beside it",
+    ).toEqual(["-|-", "payment.Authorized|-"]);
+  });
+
+  it("an edge whose message differs from the living one's is not the living edge", async () => {
+    const living = LIVING.replace(
+      "checkoutWeb -> paymentService 'Emits'",
+      `checkoutWeb -> paymentService 'Emits' {
+    metadata { publishes 'payment.Captured' }
+  }`,
+    );
+    const land = await archived(
+      living,
+      delta(`  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { publishes 'payment.Authorized' }
+  }`),
+    );
+    expect(
+      bindings(land),
+      "two different event flows keyed the same, so the second was taken for the first",
+    ).toEqual(["payment.Authorized|-", "payment.Captured|-"]);
+  });
+
+  it("two delta edges differing only in the message both land, with their own bytes", async () => {
+    const land = await archived(
+      LIVING,
+      delta(`  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { publishes 'payment.AAA' }
+  }
+  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { publishes 'payment.BBB' }
+  }`),
+    );
+    expect(
+      bindings(land),
+      "the pool that matches an addition back to its authored statement keyed on op alone too — one addition drew the other's bytes",
+    ).toEqual(["-|-", "payment.AAA|-", "payment.BBB|-"]);
+  });
+
+  it("`consumes` is in the key exactly as `publishes` is", async () => {
+    const land = await archived(
+      LIVING,
+      delta(`  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { consumes 'payment.Authorized' }
+  }`),
+    );
+    expect(bindings(land)).toEqual(["-|-", "-|payment.Authorized"]);
+  });
+
+  it("re-archiving the same message binding adds nothing back", async () => {
+    const body = `  checkoutWeb -> paymentService 'Emits' {
+    #FEAT-15
+    metadata { publishes 'payment.Authorized' }
+  }`;
+    const p = await makeProject({
+      "architecture/landscape.likec4": LIVING,
+      "features/FEAT-15-events/delta.likec4": delta(body),
+    });
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-15", "--approve")).code).toBe(0);
+      const once = bindings(await loadFile(landscapePath(p)));
+      await p.write(
+        "features/FEAT-16-events/delta.likec4",
+        delta(body).replaceAll("FEAT-15", "FEAT-16").replace("feat_15", "feat_16"),
+      );
+      expect((await runLoam(p.workDir, "archive", "FEAT-16", "--approve")).code).toBe(0);
+      expect(
+        bindings(await loadFile(landscapePath(p))),
+        "widening the key must not cost idempotence — the landscape already carries this binding",
+      ).toEqual(once);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("landscape splice fidelity (the merge copies authored source, it does not re-serialize)", () => {
   it("an element with technology, style, icon, link and a second tag survives byte-verbatim minus the feature tag", async () => {
     const p = await makeProject({

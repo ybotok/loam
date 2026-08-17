@@ -243,10 +243,13 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   }
 
   // Relationships: match each parsed addition back to its statement in the
-  // delta source — full identity (endpoints, title, op, tags), consumed one
-  // statement per addition so duplicates stay duplicates.
-  const relKeyOf = (r: { source: string; target: string; title?: string; op?: string; tags: string[] }): string =>
-    JSON.stringify([r.source, r.target, r.title ?? "", r.op ?? "", [...r.tags].sort()]);
+  // delta source — full identity (endpoints, title, all three spine keys,
+  // tags), consumed one statement per addition so duplicates stay duplicates.
+  // The spine keys earn their place here the same way they do in `relKey`:
+  // without them two additions differing only by `publishes` share one pool
+  // entry, and `shift()` hands the second one the first one's authored bytes.
+  const relKeyOf = (r: Rel | ScannedRel): string =>
+    JSON.stringify([r.source, r.target, r.title ?? "", r.op ?? "", r.publishes ?? "", r.consumes ?? "", [...r.tags].sort()]);
   const pool = new Map<string, ScannedRel[]>();
   for (const s of scan.rels) {
     const k = relKeyOf(s);

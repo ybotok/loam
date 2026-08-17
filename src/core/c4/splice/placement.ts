@@ -106,16 +106,17 @@ export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
 
 /**
  * The order of loam-inserted relationships that share a landing region:
- * (source title, target title, op, title) as one comparable string. Titles,
- * not ids — the delta's and the landscape's id namespaces differ, and the
- * same edge must sort identically as today's addition and as an existing
- * statement in the next archive's scan.
+ * (source title, target title, the three spine keys, title) as one comparable
+ * string. Titles, not ids — the namespaces differ. The same edge must sort
+ * identically as today's addition and as a statement in the next archive's
+ * scan, so every field is one BOTH `Rel` and `ScannedRel` carry.
  */
 export function relSortKey(
   els: Elem[],
-  r: { source: string; target: string; title?: string; op?: string },
+  r: { source: string; target: string; title?: string; op?: string; publishes?: string; consumes?: string },
 ): string {
-  return JSON.stringify([titleOf(els, r.source), titleOf(els, r.target), r.op ?? "", r.title ?? ""]);
+  const spine = [r.op ?? "", r.publishes ?? "", r.consumes ?? ""];
+  return JSON.stringify([titleOf(els, r.source), titleOf(els, r.target), ...spine, r.title ?? ""]);
 }
 
 /**
@@ -276,16 +277,22 @@ export function nestedInsert(text: string, parent: ScannedElement, block: string
  * What makes two edges the same edge. Endpoints are compared by TITLE, which is
  * stable across the delta's and the landscape's id namespaces.
  *
- * An edge that carries an `op` IS that call, whatever it is titled — retitling it
- * must not merge a second copy. An edge with no `op` has only its title. The two
- * live in separate namespaces because they are separate things: an op-less edge
- * titled `authorizePayment` is not the edge whose operationId is authorizePayment,
- * and keying on `op ?? title` quietly merged only one of them.
+ * An edge carrying a SPINE KEY — `op`, `publishes` or `consumes` — IS that call
+ * or that message, whatever it is titled: retitling it must not merge a second
+ * copy. An edge with none has only its title. Separate namespaces, because they
+ * are separate things: an op-less edge titled `authorizePayment` is not the edge
+ * whose operationId is authorizePayment, and keying on `op ?? title` quietly
+ * merged only one of them.
+ *
+ * ALL THREE keys, not just `op`. While the other two were out, a delta edge differing from a
+ * living one only by `metadata { publishes 'x' }` hashed the same, counted as already present,
+ * and was dropped — `+0 relationship(s)` at exit 0 over a binding that never reached the map.
  */
 export function relKey(els: Elem[], r: Rel): string {
   const src = titleOf(els, r.source);
   const tgt = titleOf(els, r.target);
-  return JSON.stringify(r.op !== undefined ? ["op", src, tgt, r.op] : ["title", src, tgt, r.title ?? ""]);
+  const spine = [r.op ?? "", r.publishes ?? "", r.consumes ?? ""];
+  return JSON.stringify(spine.some((v) => v !== "") ? ["spine", src, tgt, ...spine] : ["title", src, tgt, r.title ?? ""]);
 }
 
 export function titleOf(elements: Elem[], id: string): string {
