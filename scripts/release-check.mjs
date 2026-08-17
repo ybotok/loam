@@ -121,9 +121,12 @@ const requiredPackageFiles = [
   "dist",
   "CHANGELOG.md",
   "COMPARISON.md",
+  "CONTRIBUTING.md",
   "MIGRATING-from-OpenSpec.md",
+  "ROADMAP.md",
   "SCHEMA.md",
   "SECURITY.md",
+  "WORKFLOW.md",
 ];
 for (const path of requiredPackageFiles) {
   check(manifest.files?.includes(path), `tarball allow-list includes ${path}`);
@@ -216,7 +219,14 @@ if (pack.status !== 0) {
   try {
     const [packed] = JSON.parse(pack.stdout);
     const paths = new Set(packed.files.map((entry) => entry.path));
-    for (const required of ["package.json", "README.md", "LICENSE", "CHANGELOG.md", "SECURITY.md", "dist/cli.js"]) {
+    const requiredTarballFiles = [
+      "package.json",
+      "README.md",
+      "LICENSE",
+      ...requiredPackageFiles.filter((path) => path !== "dist"),
+      "dist/cli.js",
+    ];
+    for (const required of requiredTarballFiles) {
       check(paths.has(required), `dry-run tarball contains ${required}`);
     }
     const forbidden = [...paths].find((path) => /^(src|test|scripts)\//.test(path));

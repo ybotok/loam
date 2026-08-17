@@ -648,7 +648,7 @@ describe("service mode: landscape spine", () => {
 
 describe("service mode: the deprecation bridge (spine.op-deprecated / api.requirement-deprecated)", () => {
   /*
-   * Real fleets migrate: legacy ops coexist with their replacements, and the
+   * Long-lived APIs migrate: legacy ops coexist with their replacements, and the
    * standard OpenAPI per-operation `deprecated: true` is how a contract says
    * so. loam turns the flag into lifecycle warnings — visibility only, never
    * removal, never a gate; `--strict` is the escalation.

@@ -1,7 +1,7 @@
 {
   "name": "@ybotok/loam",
   "version": "0.1.0-beta.3",
-  "description": "Architecture-first spec framework for microservice fleets: reverse-engineer service docs from code, drive cross-service features from C4 deltas.",
+  "description": "Architecture-first specification framework for microservice fleets: connect C4, requirements, APIs, events, permissions, and verification evidence.",
   "author": "spentsov",
   "repository": {
     "type": "git",
@@ -26,9 +26,12 @@
     "dist",
     "CHANGELOG.md",
     "COMPARISON.md",
+    "CONTRIBUTING.md",
     "MIGRATING-from-OpenSpec.md",
+    "ROADMAP.md",
     "SCHEMA.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "WORKFLOW.md"
   ],
   "publishConfig": {
     "access": "public",

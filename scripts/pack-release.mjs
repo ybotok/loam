@@ -99,9 +99,12 @@ const publicationInputs = spawnSync(
     "LICENSE",
     "CHANGELOG.md",
     "COMPARISON.md",
+    "CONTRIBUTING.md",
     "MIGRATING-from-OpenSpec.md",
+    "ROADMAP.md",
     "SCHEMA.md",
     "SECURITY.md",
+    "WORKFLOW.md",
   ],
   { cwd: projectRoot, encoding: "utf8" },
 );

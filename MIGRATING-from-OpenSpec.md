@@ -1,13 +1,21 @@
 # Migrating from OpenSpec
 
-loam reads OpenSpec requirement Markdown from the outside: `### Requirement:` headings, `#### Scenario:` blocks, and `## ADDED|MODIFIED|REMOVED Requirements` delta sections. Compatibility is measured, not assumed.
+loam reads OpenSpec requirement Markdown from the outside: `### Requirement:` headings, `#### Scenario:` blocks, and `## ADDED|MODIFIED|REMOVED Requirements` delta sections. Compatibility is measured, not inferred from a successful directory walk.
 
-Two upstream baselines are named separately:
+## Version matrix
 
-- released behavior: **OpenSpec v1.7.0**, exact commit `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b`;
-- compatibility canary: post-release `main` commit `45cca5db6137ed209117cc70510eb3e057fb981b` — a fixed historical pin, not a moving one. Upstream `main` advances daily; the canary exists to give the sweep a second reproducible corpus, and its totals are unchanged since it was taken.
+> **Compatibility boundary:** only the v1.7 exact-commit corpus is certified for the parser and one-way migration boundary documented here. `audit-openspec` can inventory important v1.8/v1.9 workspace shapes, but that does not certify a complete modern workspace migration or equivalent lifecycle behavior.
 
-The seven verbatim fixtures come from the main canary and run in routine CI. A scheduled/manual matrix separately checks the exact release and canary commits across living, active, and archived spec trees: release 207 files / 739 requirements / 2273 scenarios; canary 209 / 742 / 2284. These test requirement/scenario parsing, not every modern workspace feature. Provenance and checksums are in [`test/fixtures/openspec/README.md`](test/fixtures/openspec/README.md).
+| OpenSpec source | Exact pin | loam coverage | Status |
+|---|---|---|---|
+| [v1.7.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.7.0) | `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | Full living + active + archived Markdown corpus sweep, seven verbatim regression fixtures, and the documented audit/mapping/staged-apply path. | **Certified for this documented parser/migration boundary.** It is not bidirectional OpenSpec compatibility. |
+| Historical post-v1.7 `main` canary | `45cca5db6137ed209117cc70510eb3e057fb981b` | A second exact living + active + archived parser corpus. | **Regression canary only.** It is not a release and not a moving claim. |
+| [v1.8.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.8.0) | `d57889664cab4f2f061d236ec3ff82a5578701bb`, released 2026-08-05 | Audit inventories or preserves modern planning roots, Stores, nested capability paths, config context/rules/references, custom schemas/templates, per-change metadata, `skip_specs`, `RENAMED`, and authored artifacts. | **Inventoried, not certified for full migration.** No v1.8 exact-release corpus/apply sweep backs a broader claim. |
+| [v1.9.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0) | `2826b8889e5223a9a8095d4428b60b56597e1020`, released 2026-08-13 | The same read-only inventory can expose and preserve current workspace content. Unknown/new metadata keys remain visible in the field inventory and exact legacy copy. | **Inventoried, not certified for full migration.** v1.9 validation, archive recovery, capability retirement, Stores, and agent-delivery semantics are not replayed by loam migration. |
+
+The seven verbatim fixtures come from the historical canary and run in routine CI. A scheduled/manual matrix separately checks the exact v1.7 release and canary commits across living, active, and archived spec trees: release 207 files / 739 requirements / 2273 scenarios; canary 209 / 742 / 2284. These test requirement/scenario parsing, not every v1.8/v1.9 workspace feature. The [fixture provenance, immutable upstream paths, and checksums](https://github.com/ybotok/loam/blob/main/test/fixtures/openspec/README.md) and the [compatibility tests](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts) use absolute GitHub URLs because this guide is also shipped in the npm tarball while `test/` is not.
+
+An audit result of `ready: true` means that the particular files the installed loam inspected satisfy loam's documented migration checks. It is not a statement that every behavior of the OpenSpec version which created them has been certified. In particular, a v1.8/v1.9 `.openspec.yaml` field such as `retire_capabilities` is inventoried and preserved with the source tree, but loam does not translate OpenSpec capability retirement into a loam service or feature lifecycle action.
 
 ## Start with a read-only audit
 
@@ -129,7 +137,7 @@ loam migrate-openspec /path/to/repo \
   --target /tmp/loam-migration-review
 ```
 
-Before apply, loam repeats the audit and compares the fresh source root/digest with the mapping. Any living or active source edit since review invalidates the mapping. The target must be absent or empty, must not overlap the OpenSpec source, and **must not sit inside a live loam fleet**: a target under the `docsDir` of a governing `loam.json` — or under any directory holding `architecture/landscape.likec4` — is refused, because every staged feature would otherwise be enumerated by `loam list` and `loam validate --all` as a phantom feature of the real fleet. A sibling of `docsDir` is fine. Writes are staged and swapped with rollback; source files and live loam docs are never modified, and every refusal above leaves the target directory absent rather than half-written.
+Before apply, loam repeats the audit and compares the fresh source root/digest with the mapping. Any living or active source edit since review invalidates the mapping. The target must be absent or empty, must not overlap the OpenSpec source, and **must not sit inside a live loam fleet**: a target under the `docsDir` of a governing `loam.json` — or under any directory holding `architecture/landscape.likec4` — is refused, because every staged feature would otherwise be enumerated by `loam list` and `loam validate --all` as a phantom feature of the governing fleet. A sibling of `docsDir` is fine. Writes are staged and swapped with rollback; source files and live loam docs are never modified, and every refusal above leaves the target directory absent rather than half-written.
 
 The target contains:
 
@@ -158,6 +166,7 @@ Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “
 - **Dot-prefixed directories under `changes/`** (`openspec.hidden-change-directory`) — a `.wip-refunds/` convention. They are not enumerated as changes, so nothing under them migrates. loam blocks rather than walking them: rename or move the directory before migrating, and its content is never silently dropped. Under `changes/archive/` the same finding is an archive diagnostic and does not gate, because frozen history never blocks.
 - **An ISO-8601 `created` timestamp** in `.openspec.yaml` is a valid date. It used to fail the whole workspace; a calendar date with an optional time and offset is now accepted.
 - **Spec-less changes.** They are valid only when a present, valid `.openspec.yaml` explicitly sets `skip_specs: true` and its named built-in or project custom schema resolves. A custom artifact graph never implies this opt-out by itself. Otherwise an active zero-delta change is a blocker. Explicit `skip_specs` suppresses generated feature specs while preserving intent, metadata, and authored legacy material.
+- **v1.8/v1.9 lifecycle metadata.** `retire_capabilities` changes what OpenSpec archive is allowed to delete when the last requirement is removed. loam records the metadata field and preserves the exact change tree, but does not infer that an OpenSpec capability is a loam service or translate retirement into a loam deletion. Review that intent manually before apply and express any loam retirement through loam's own modeled change.
 - **Malformed RENAMED.** A rename-only delta is not “empty”, but every section must supply a FROM/TO pair and every active pair needs an identity decision.
 - **External Store pointer.** A config-only code repo with `store: <id>` identifies external planning. Audit the registered Store checkout itself; loam does not guess a machine-local registry path.
 - **Frozen archive history.** Legacy shapes are diagnostics only. Keep `changes/archive/` read-only where it is; do not reconstruct it as loam `features/archive/`, whose entries imply loam computed and snapshotted the merge.
@@ -167,7 +176,7 @@ Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “
 - Truthful `sources:` paths from each service repository, followed by human `loam vouch`; staged specs intentionally remain `status: draft`.
 - `Operations:` links to provider OpenAPI `operationId`s, and `Covers:` links where architecture requirements are created.
 - `architecture/landscape.likec4`, service `model.likec4`, and explicit fleet relationships.
-- Service OpenAPI contracts and provider-before-consumer adoption where inbound edges already name operations.
+- Service OpenAPI contracts and provider-before-consumer sequencing where inbound edges already name operations.
 - LikeC4 and OpenAPI deltas for the already mapped active feature ids (`FEAT-12`, `BUG-42`, and so on); OpenSpec's prose change id/title remains visible in the staged slug, annotations, plan, and preserved source tree.
 - Human disposition of `config.yaml.context`, per-artifact rules, custom schemas/templates, Stores/references, Purpose prose and generated tool instructions.
 
@@ -178,7 +187,7 @@ Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “
 | `config.yaml` (`schema`, `context`, `rules`, optional `store`) | Inventory and review. Move durable operating context into the docs contract; do not silently convert workflow rules into different validator semantics. |
 | `specs/<nested/capability>/spec.md` | Map requirements to one or more services. Apply stages combined `services/<svc>/spec.md` files. |
 | `specs/<capability>/design.md` | Review as a service ADR; do not mark accepted merely because the file existed. |
-| `changes/<id>/.openspec.yaml` | Preserve schema/`skip_specs`/created metadata in the plan and exact feature-local legacy tree. |
+| `changes/<id>/.openspec.yaml` | Preserve schema/`skip_specs`/created and all inventoried field names in the plan and exact feature-local legacy tree. Current fields such as `retire_capabilities` are not silently converted into loam lifecycle actions. |
 | `changes/<id>/proposal.md` | Explicit `convert-to-intent`, or retain/manual-review in feature legacy material; the original is also preserved. |
 | `changes/<id>/specs/**/spec.md` | Validate and route ADDED/MODIFIED/REMOVED requirements into the mapped feature/service delta, preserving delta kinds; keep the original beneath `legacy/openspec/`. |
 | `changes/<id>/tasks.md` | Preserve as a non-authoritative feature-local legacy checklist with its explicit disposition until reviewed. |

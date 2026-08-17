@@ -333,7 +333,7 @@ describe("a document that is not UTF-8 text is refused, not read as empty", () =
   });
 
   it("reads ordinary UTF-8, accents and all", () => {
-    expect(decodeDocument(Buffer.from("# André Muñoz\n", "utf8"), "/x.md")).toBe("# André Muñoz\n");
+    expect(decodeDocument(Buffer.from("# André Example\n", "utf8"), "/x.md")).toBe("# André Example\n");
   });
 
   it("refuses through the read index every command shares", async () => {

@@ -1,23 +1,9 @@
-/**
- * Mutable release facts, pinned to their one source of truth.
- *
- * The version is written in prose in three places a reader trusts — the README
- * banner, the README status paragraph, the pilot run book — and every one of
- * them has already drifted once: the README said `beta.1` and "not on npm yet"
- * for two releases after the package was published. Prose cannot be generated
- * here (these documents are read on npm and GitHub, not through loam), so the
- * next-best thing is a test that fails the gate when `package.json` moves and
- * the prose does not.
- *
- * Deliberately NOT pinned: performance numbers (a measurement, not a fact the
- * repo can derive) and the OpenSpec comparison's upstream claims (pinned to an
- * exact upstream commit by design — see COMPARISON.md's own header).
- */
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
+const PRIVATE_ROUTE_BLOCKER = "<!-- loam-release-blocker: private-security-route -->";
 
 async function read(rel: string): Promise<string> {
   return readFile(join(ROOT, rel), "utf8");
@@ -28,38 +14,63 @@ async function version(): Promise<string> {
   return pkg.version;
 }
 
-describe("release facts in prose match package.json", () => {
-  it("the README banner names the current version and no other", async () => {
+describe("mutable release facts", () => {
+  it("derives the README version from package.json", async () => {
     const readme = await read("README.md");
-    expect(readme).toContain(`**Pre-release: \`${await version()}\`**`);
+    const current = await version();
+    expect(readme).toContain(`**Pre-release: \`${current}\`**`);
+    expect(readme).toContain(`currently \`${current}\``);
   });
 
-  it("the README status paragraph names the current version", async () => {
+  it("does not restore superseded publication claims", async () => {
     const readme = await read("README.md");
-    expect(readme).toContain(`currently \`${await version()}\``);
-  });
-
-  it("the README no longer claims the package is unpublished", async () => {
-    const readme = await read("README.md");
-    // The exact sentences that sat in the README for two releases after the
-    // publish. Wording may change freely; the CLAIM must not come back.
     expect(readme).not.toMatch(/not on npm yet/i);
     expect(readme).not.toMatch(/until (it|the package) is published/i);
+    expect(readme).not.toMatch(/nothing has been released yet/i);
   });
 
-  it("the pilot run book packs the tarball npm pack would produce for this version", async () => {
+  it("derives the pilot tarball path from the release manifest", async () => {
     const pilot = await read("docs/pilot/README.md");
-    // `npm pack` derives the filename from name + version, so the run book's
-    // literal is re-derivable — and re-drifts on every release unless pinned.
-    expect(pilot).toContain(`ybotok-loam-${await version()}.tgz`);
+    expect(pilot).toContain("release-manifest.json");
+    expect(pilot).toContain("manifest.filename");
+    expect(pilot).toMatch(/bump both `package\.json` and `package-lock\.json` to the intended candidate version/i);
   });
 
-  it("no doc still points the pilot at a superseded tarball", async () => {
+  it("keeps version literals out of the pilot run book", async () => {
     const pilot = await read("docs/pilot/README.md");
-    const stale = /ybotok-loam-\d[^\s`]*\.tgz/g;
-    const v = await version();
-    for (const hit of pilot.match(stale) ?? []) {
-      expect(hit).toBe(`ybotok-loam-${v}.tgz`);
-    }
+    expect(pilot).not.toContain(await version());
+    expect(pilot).not.toMatch(/ybotok-loam-\d[^\s`"']*\.tgz/i);
+  });
+
+  it("keeps the unrun pilot status explicit", async () => {
+    const [pilot, scorecard] = await Promise.all([
+      read("docs/pilot/README.md"),
+      read("docs/pilot/SCORECARD.md"),
+    ]);
+    expect(pilot).toMatch(/not a claim that Loam has already worked in production/i);
+    expect(scorecard).toContain("Current repository status: **not run**");
+  });
+});
+
+describe("private vulnerability reporting status", () => {
+  it("marks the intended private route as unavailable and release-blocking", async () => {
+    const [security, readiness] = await Promise.all([
+      read("SECURITY.md"),
+      read("docs/pilot/RELEASE-READINESS.md"),
+    ]);
+    expect(security).toContain(PRIVATE_ROUTE_BLOCKER);
+    expect(security).toMatch(/Private Vulnerability Reporting[\s\S]{0,240}not currently confirmed or enabled/i);
+    expect(security).toMatch(/detail-free issue/i);
+    expect(security).toMatch(/release prerequisite/i);
+    expect(readiness).toMatch(/enable and test GitHub Private Vulnerability Reporting/i);
+    expect(readiness).not.toMatch(/currently has no remote/i);
+    expect(readiness).not.toMatch(/first-publication bootstrap/i);
+  });
+
+  it("does not tell readers that private reporting is already enabled", async () => {
+    const readme = await read("README.md");
+    expect(readme).toMatch(
+      /Private Vulnerability Reporting[\s\S]{0,240}not (?:currently )?(?:confirmed|enabled|switched on)/i,
+    );
   });
 });

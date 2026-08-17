@@ -150,20 +150,18 @@ describe("readHealth (core/vocabulary/health.ts)", () => {
     }
   });
 
-  it("reads dependency ids under every spelling the wild uses — id, service, name, plain string", async () => {
-    // The shipped example writes `service:`, the first adopted fleet wrote
-    // `id:` — the reader tolerates both (and `name`, and a bare string) so the
-    // reconciliation does not depend on which convention a team happened to
-    // pick before anything read this file.
+  it("reads dependency ids under every accepted spelling — id, service, name, plain string", async () => {
+    // The reader tolerates all documented forms so reconciliation does not
+    // depend on which convention a fixture or existing document uses.
     const health = await readOf(
       "dependencies:\n" +
         "  - id: kafka\n    critical: startup\n" +
-        "  - service: xm-ms-config\n" +
+        "  - service: external-config\n" +
         "  - name: zookeeper\n" +
         "  - redis\n" +
         "  - id: kafka\n",
     );
-    expect(health.dependencies).toEqual(["kafka", "xm-ms-config", "zookeeper", "redis"]);
+    expect(health.dependencies).toEqual(["kafka", "external-config", "zookeeper", "redis"]);
     expect(health.ids).toEqual({ slis: [], alerts: [] });
   });
 
@@ -391,7 +389,7 @@ describe("health.dependency-unmodelled", () => {
   /**
    * A model exercising all three names an element answers to: `kafka` by its
    * likec4 id (and title), `category-store` by a nested container's title,
-   * `xm-ms-config` by an explicit metadata binding on a box titled otherwise.
+   * `external-config` by an explicit metadata binding on a box titled otherwise.
    */
   const MODELLED = `specification {
   element softwareSystem
@@ -407,7 +405,7 @@ model {
   }
   kafka = softwareSystem 'kafka'
   cfg = softwareSystem 'Config Service' {
-    metadata { service 'xm-ms-config' }
+    metadata { service 'external-config' }
   }
   paymentService.api -> kafka 'publishes'
 }
@@ -417,7 +415,7 @@ model {
     const files = coherentFixture();
     files["services/payment-service/model.likec4"] = MODELLED;
     files["services/payment-service/health.yaml"] =
-      "dependencies:\n  - id: kafka\n  - id: category-store\n  - id: xm-ms-config\n";
+      "dependencies:\n  - id: kafka\n  - id: category-store\n  - id: external-config\n";
     await withProject(files, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
       expect(res.code).toBe(0);
@@ -428,14 +426,15 @@ model {
   it("warns per unresolvable id, offering close ones", async () => {
     const files = coherentFixture();
     files["services/payment-service/model.likec4"] = MODELLED;
-    files["services/payment-service/health.yaml"] = "dependencies:\n  - id: consul\n  - id: kafk\n";
+    files["services/payment-service/health.yaml"] =
+      "dependencies:\n  - id: service-registry\n  - id: kafk\n";
     await withProject(files, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
       expect(res.code).toBe(0); // warn-only — the axis is advisory end to end
       const fs = ofCode(findings(res.stdout), "health.dependency-unmodelled");
       expect(fs).toHaveLength(2);
       expect(fs[0]!.severity).toBe("warn");
-      expect(fs[0]!.message).toContain("'consul'");
+      expect(fs[0]!.message).toContain("'service-registry'");
       expect(fs[0]!.message).toContain("answers to that name");
       expect(fs[1]!.message).toContain("Did you mean: kafka");
     });

@@ -132,8 +132,8 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
     }
     // The contract-depth probes. Form validated and depth did not: a payload
     // of bare `type: object` and a `$ref` to nothing both read as cleanly as
-    // a full schema, and the first adoption could not rebuild its payloads
-    // from a green contract. Presence probes only — a non-JSON schemaFormat
+    // a full schema, while a reader still cannot rebuild the payload from the
+    // green contract. Presence probes only — a non-JSON schemaFormat
     // is skipped, so Avro stays a document change.
     const empties = events.messages.filter((m) => m.payloadEmpty === true).map((m) => m.name);
     if (empties.length > 0) {

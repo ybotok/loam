@@ -4,20 +4,19 @@
  * alert and SLI ids, so the architecture spec axis can ask whether a
  * requirement covers each one (`health.uncovered`); and the dependency ids,
  * so the same axis can weigh and reconcile them against the service's own
- * model — the file an on-call engineer reaches for first was otherwise free
- * text as far as validation was concerned, and it held four false operational
- * claims with a green validator in the first adopted fleet. Queries,
- * thresholds, checks, criticality — everything else stays authored prose that
- * no check reads, the same stance `operationIds` takes on OpenAPI schemas.
+ * model — otherwise the file an on-call engineer reaches for first is free text
+ * as far as validation is concerned and can hold false operational claims under
+ * a green result. Queries, thresholds, checks, criticality — everything else
+ * stays authored prose that no check reads, the same stance `operationIds`
+ * takes on OpenAPI schemas.
  *
  * The recognized keys (documented in SCHEMA.md, and deliberately few):
  *
  *   slis:         a YAML sequence; each entry contributes its `name` (or `id`
  *   alerts:       when there is no name), and a plain string entry is its own id.
  *   dependencies: a YAML sequence; each entry contributes its `id` (or
- *                 `service`, or `name` — the key is unstandardized in the wild:
- *                 the shipped example writes `service:`, the first adopted
- *                 fleet wrote `id:`), and a plain string entry is its own id.
+ *                 `service`, or `name` — accepted inputs use all three forms),
+ *                 and a plain string entry is its own id.
  *
  * Tolerant about absence, honest about breakage: a health.yaml that is missing
  * or declares nothing recognizable yields an empty set — and an empty set

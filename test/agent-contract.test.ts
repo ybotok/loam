@@ -203,6 +203,20 @@ describe("the agent contract teaches the multi-repo forms", () => {
     expect(AGENTS_MD).toContain("`--create`");
   });
 
+  it("the generated contract exposes every current join and the read-only verify exception", () => {
+    for (const fact of [
+      "architecture/permissions.yaml",
+      "`Requires: <subject>/<permission>`",
+      "asyncapi.yaml",
+      "`Publishes:`/`Consumes:`",
+      "`Scenario Outline`",
+    ]) {
+      expect(AGENTS_MD, `AGENTS.md never mentions ${fact}`).toContain(fact);
+    }
+    expect(AGENTS_MD).toMatch(/read-only verify checklist needs no\s+binding/);
+    expect(AGENTS_MD).toMatch(/does not prove\s+the report was produced by executing the attested commit/);
+  });
+
   it("the done-check teaches the federated recording form and warns about the other one", () => {
     expect(AGENTS_MD).toMatch(
       /loam verify FEAT-101 --service payment-service --results report\.json --record answers\.json/,
@@ -455,7 +469,7 @@ describe("the brief promises only what a check can keep", () => {
    * The walk's `lands` and the brief's `targets` are one list seen twice. Left
    * unjoined, a stop could feed an artifact nobody was asked to write — which is
    * the same class of defect as a shape rule naming a check that does not exist,
-   * and it fails the same way: silently, in an agent's head, at adoption time.
+   * and it fails the same way: silently, in the agent's hand-back.
    */
   it("every walk stop lands in an artifact the same brief hands over", async () => {
     const p = await project({}, { service: SVC });
@@ -484,18 +498,19 @@ describe("the brief promises only what a check can keep", () => {
     expect(at("build and dependency manifests")).toBeLessThan(at("entry points"));
     // A config-attested edge must meet the manifest that can veto it: outbound
     // calls are drawn before the runtime stop opens the deploy manifests. This
-    // ordering is what turns "the config wires Consul" into a provisional edge
+    // ordering is what turns "the config wires an optional service registry"
+    // into a provisional edge
     // instead of a shipped requirement.
     expect(at("outbound calls")).toBeLessThan(at("the runtime"));
   });
 
   /**
-   * The gap a real adoption left behind: every endpoint documented, and not one
-   * of the guards behind them — the permission checks, the fields required only
-   * in combination, the transitions a request is refused for. The walk's ORDER
-   * was not the problem. The HTTP stop asked for the operation set and got
-   * exactly that, so the decision layer INSIDE each operation was never read,
-   * and the service that came back could not be rebuilt from its own baseline.
+   * The gap this prevents: every endpoint documented, and not one of the guards
+   * behind them — the permission checks, the fields required only in
+   * combination, the transitions a request is refused for. The walk's ORDER was
+   * not the problem. The HTTP stop asked for the operation set and got exactly
+   * that, so the decision layer INSIDE each operation was never read, and the
+   * resulting service baseline could not describe how to rebuild it.
    *
    * Nothing downstream can catch it: `api.ungoverned` grades operations against
    * requirements, never branches against scenarios, and `UNCHECKED` says
@@ -519,13 +534,11 @@ describe("the brief promises only what a check can keep", () => {
   });
 
   /**
-   * The Consul lesson from the first fleet adoption: a service wired for Consul
-   * in every way the repository shows — client on the classpath, full config
-   * block, fail-fast — while the Helm chart in ANOTHER repository set
-   * SPRING_CLOUD_CONSUL_ENABLED=false. The adoption read the config carefully
-   * and still concluded the opposite of production, because no protocol text
-   * stated the precedence. This test pins that text to the stop that opens the
-   * manifests.
+   * In a synthetic example, a service is wired for an optional registry in its
+   * repository while a deployment manifest disables that capability. Reading
+   * only the service configuration then yields the wrong effective topology
+   * unless the protocol states deployment precedence. This test pins that text
+   * to the stop that opens the manifests.
    */
   it("the runtime stop states that the deploy manifest overrides configuration", async () => {
     const p = await project({}, { service: SVC });
@@ -554,7 +567,7 @@ describe("the brief promises only what a check can keep", () => {
 
   /**
    * The facts no artifact structurally holds — effective configuration,
-   * library semantics — needed a NAMED home, or two adoptions file the same
+   * library semantics — need a NAMED home, or two agent runs can file the same
    * fact two different ways. The convention is arch.spec.md, stated where the
    * facts are found (walk stops 1 and 8) and in the generated AGENTS.md; the
    * reproducibility bar those facts serve is stated beside COMPLETENESS in

@@ -2,13 +2,12 @@
  * The health.yaml → model reconciliation: every id the `dependencies:` block
  * declares must be something this service's OWN model answers to.
  *
- * The gap this closes cost four false operational claims in the first fleet
- * adoption. When Consul turned out to be disabled in production, the model,
- * the landscape, the arch spec and the runbook were each corrected because
- * something forced the issue — health.yaml still declared a `consul`
- * dependency, `critical: startup`, under a green validator, in the file an
- * on-call engineer reaches for first. Its dependencies block was free text as
- * far as validation was concerned.
+ * Without this reconciliation, a disabled optional service registry can leave
+ * the model, landscape, arch spec and runbook corrected while health.yaml still
+ * declares `serviceRegistry` as a `critical: startup` dependency under a green
+ * validator — in the file an on-call engineer reaches for first. Its
+ * dependencies block was otherwise free text as far as validation was
+ * concerned.
  *
  * Resolution is against the SERVICE'S OWN model — deliberately never the
  * landscape. A private datastore lives nested inside the service element

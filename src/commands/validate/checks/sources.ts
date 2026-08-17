@@ -18,7 +18,7 @@ import { UNVERIFIABLE } from "./vocabulary.js";
  * run from the docs repo — the single most common way anyone looks at one
  * service — reported nothing at all about its own blind spot. Severity `ok`,
  * deliberately: nothing is WRONG with the docs, the check simply cannot run
- * here, and grading it a warning would make a correctly-adopted fleet
+ * here, and grading it a warning would make a fully documented fleet
  * permanently yellow and `--strict` permanently red in the docs repo's CI.
  *
  * `sources.empty` — the paths exist, and expand to no files at all: an empty
@@ -76,4 +76,3 @@ export async function sourceScopeFindings(
   }
   return out;
 }
-

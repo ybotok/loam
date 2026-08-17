@@ -26,11 +26,13 @@ measured against — a thin baseline that validates is thin, not done.
 
 \`\`\`
 architecture/landscape.likec4     the living C4 model of the whole fleet
+architecture/permissions.yaml     optional fleet authorization vocabulary
 services/<svc>/
   model.likec4                    this service's C4
   spec.md                         its living requirements (current state)
   arch.spec.md                    its living ARCHITECTURE requirements (outbox, retries, alerts)
   openapi.yaml                    its API contract
+  asyncapi.yaml                   its AsyncAPI 3 event contract
   adrs/  runbook.md  health.yaml  why it is like this, how to run it
 features/<FEAT>/                  a change in flight
   intent.md                       why, in business terms
@@ -63,9 +65,11 @@ with \`no-config\` rather than guessing.
   The docs repo's own \`loam.json\` says \`"docsDir": "."\`.
 - \`service\` — the canonical id of the service THIS repo contains, i.e. the
   \`services/<id>/\` directory it is allowed to speak for. \`loam vouch\`,
-  \`loam gherkin\` and \`loam verify --service\` all bind to it; without it they
-  refuse (\`repository-unavailable\`) rather than write another service's
-  documents from a repo that is not that service's.
+  \`loam gherkin\` and \`loam verify --service\` when writing with \`--record\`
+  or \`--results\` bind to it; without it they refuse
+  (\`repository-unavailable\`) rather than write another service's documents
+  from a repo that is not that service's. A read-only verify checklist needs no
+  binding and works from the docs repo.
 - \`gherkinDir\` — optional, default \`features\`: the directory \`loam gherkin\`
   writes its own \`loam/\` subtree into.
 - \`agentTools\` — optional: the agent tools \`loam init\` has written command and
@@ -158,7 +162,10 @@ outside it, and loam never touches a byte outside \`loam/\`.
 One file per requirement (\`Feature:\` is the requirement name). Bullet lines
 opening with Given/When/Then/And/But — the \`- **WHEN** ...\` convention
 included — become steps; every other body line is kept as scenario
-description. Each scenario is tagged \`@loam-digest-<16hex>\`: the same body
+description. A valid Markdown table becomes the \`Examples:\` of a
+\`Scenario Outline\`; a malformed table stays in the description and is
+reported, because it will run once rather than once per row. Each scenario is
+tagged \`@loam-digest-<16hex>\`: the same body
 hash \`loam verify\` folds into its claim ids, riding into cucumber's JSON
 report as a tag, so the suite, the claim and the report cannot quietly
 disagree about what a scenario says. \`loam validate
@@ -172,8 +179,10 @@ The flow, closed end to end: \`loam gherkin FEAT-101\` → write step definition
 \`loam verify FEAT-101 --service <id> --results report.json [--record rest.json]\`,
 run in that same service repo. The digest
 tags ride through the runner into the report, so the \`scenario.tested\` claims
-are answered by the green run itself — mechanically, never by anybody's word.
-See "The done-check" for what \`--record\` still covers.
+are answered mechanically from the passing report rather than anybody's word.
+This proves which digest-matched report bytes loam accepted; it does not prove
+the report was produced by executing the attested commit. See "The done-check"
+for what \`--record\` still covers.
 
 ## Frontmatter — who vouched for this, and from what
 

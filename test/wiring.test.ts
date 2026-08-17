@@ -341,7 +341,7 @@ describe("service ids are validated before anything is written", () => {
     expect(existsSync(join(svc, "loam.json"))).toBe(false);
   });
 
-  it("accepts the ids a real fleet uses", async () => {
+  it("accepts representative valid service ids", async () => {
     for (const id of ["payment-service", "checkout_web", "svc.v2", "a1"]) {
       const { svc } = await fleetRoot();
       const res = await runLoam(svc, "init", "--docs", "../docs", "--service", id);
@@ -369,7 +369,8 @@ describe("scaffoldDocs writes a fleet map the parser accepts", () => {
   it("scaffolds the platform tag and the two views, with the predicate spelling that draws edges", async () => {
     // The trap this pins: `include element.tag = #platform` parses, renders,
     // and draws the platform boxes with NO edges and no consumers — the map
-    // answers "who depends on UAA" with silence. The relationship form is the
+    // answers "who depends on the Identity Provider" with silence. The
+    // relationship form is the
     // one that works, and it is exactly the line a user mistypes when writing
     // the view from memory, so the scaffold must never regress to the other
     // spelling.
@@ -557,8 +558,8 @@ describe("doctor names the next step and reads what it reports on", () => {
   });
 
   it("blocks on a landscape left full of merge conflict markers", async () => {
-    // Ten people adopting ten services into one landscape.likec4 in one week is
-    // the shape of this campaign, so this is the expected onboarding accident.
+    // Concurrent service additions can target one landscape.likec4 before any
+    // of their branches see the others, so this merge conflict is expected.
     const { docs, svc } = await fleetRoot();
     await writeFile(join(svc, "loam.json"), JSON.stringify({ docsDir: "../docs" }), "utf8");
     await writeFile(

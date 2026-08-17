@@ -40,8 +40,8 @@ import { makeProject, runLoam, type Project } from "./helpers/harness.js";
  * directory with no artifacts is a validate ERROR, and this fleet is clean. */
 /**
  * svc-1 … svc-5: model + spec, no openapi.yaml, and NOTHING in the landscape
- * calls an operation on them — the workers, crons and consumers a real fleet is
- * half made of. They are fully documented, and the maturity ladder used to pin
+ * calls an operation on them — workers, crons and consumers common in
+ * multi-service fleets. They are fully documented, and the maturity ladder used to pin
  * them at `partial` forever for missing a contract nobody wants; it now asks
  * for an OpenAPI only where the landscape proves an API is expected.
  */

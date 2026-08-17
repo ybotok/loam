@@ -14,7 +14,7 @@
  *  - an edge drawn into a modelled CONTAINER resolved to the container's title,
  *    so container-level calls left the C4↔API spine without a word;
  *  - one syntax error in the landscape printed its whole diagnostic cascade
- *    once per service, which on a real fleet is the entire log;
+ *    once per service, making the output grow with the fleet;
  *  - a living `Operations:` line was never resolved against the service's own
  *    OpenAPI — only feature deltas were checked, so a typo that shipped was
  *    green forever;
@@ -23,7 +23,7 @@
  *  - `sources` that only another repo can resolve were counted under --all and
  *    invisible in single-service scope, which is how anyone actually looks;
  *  - the maturity ladder demanded an openapi.yaml of workers that have no HTTP
- *    surface, pinning a correctly-adopted fleet at `partial` forever;
+ *    surface, pinning their documentation state at `partial` forever;
  *  - `show` and `list` could not see arch.spec.md at all, so the architecture
  *    axis was unnavigable;
  *  - a positional argument that named both a service and a feature silently
@@ -1091,6 +1091,5 @@ describe("the gate holds together on a fleet-shaped repo", () => {
     });
   });
 });
-
 
 

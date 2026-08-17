@@ -6,13 +6,13 @@ The release workflow is fail-closed and tag-driven. It does not publish from pul
 
 These cannot be inferred or created safely from this workspace and must be completed before any tag is created:
 
-- choose the canonical public GitHub repository, then set `package.repository` to its exact case-sensitive URL; this workspace currently has no remote, so no URL has been invented;
-- enable private vulnerability reporting (or document another durable private route) and replace the temporary reporting instructions in `SECURITY.md`;
-- confirm control of the `@ybotok` npm scope and the intended package name;
+- verify that `https://github.com/ybotok/loam` is the canonical public repository and that `package.repository`, the release workflow, and GitHub's case-sensitive repository identity all refer to it;
+- enable and test GitHub Private Vulnerability Reporting (or document and test another durable private route), replace the temporary fallback in `SECURITY.md`, and remove its `private-security-route` blocker only after a private report can actually be submitted;
+- confirm continued maintainer control of the `@ybotok` npm scope and `@ybotok/loam` package;
 - create/protect the GitHub `npm-production` environment and require appropriate reviewers;
 - configure npm trusted publishing for the exact owner/repository, workflow filename `release.yml`, and environment `npm-production`;
 - protect release tags and restrict creation of `v*` tags to release maintainers;
-- resolve npm's first-publication bootstrap before tagging. If the package does not yet exist and npm cannot configure a trusted publisher for it, stop and document a separately reviewed bootstrap; do not add a token fallback to the workflow.
+- verify the existing npm trusted-publisher configuration from the npm and GitHub settings; repository files alone cannot prove that external configuration is active.
 
 Trusted publishing requires a GitHub-hosted runner, Node.js 22.14 or newer, npm 11.5.1 or newer, `id-token: write`, and `contents: read`. The workflow uses Node 24, installs npm 11.5.1 explicitly, disables release caching, configures the npm registry, and relies on npm's automatic provenance generation.
 

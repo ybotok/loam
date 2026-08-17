@@ -46,7 +46,7 @@ that make a brand worth its annotations. Read it before splitting anything: the 
 Nothing is done until all of this is green:
 
 ```bash
-npm run lint && npm run typecheck && npm test
+npm run lint && npm run typecheck && npm run arch:graph && npm test
 ```
 
 Coverage thresholds are enforced separately and must also hold:

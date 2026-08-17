@@ -8,3 +8,7 @@ loam.json
 # per-machine tool permissions, not project configuration — the agents/ and
 # skills/ beside it ARE shared, which is why this is excluded by name
 .claude/settings.local.json
+# agent worktrees: real `git worktree` checkouts of this repository, created
+# inside it by parallel agent runs. Committing one would nest a checkout in
+# the history; `git worktree list` is where they are managed from.
+.claude/worktrees/
