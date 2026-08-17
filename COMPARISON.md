@@ -2,15 +2,15 @@
 
 loam reads part of [OpenSpec](https://github.com/Fission-AI/OpenSpec)'s requirement Markdown from the outside, but the two tools solve different problems. [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) covers the one-way migration mechanics.
 
-This product comparison is pinned to **[OpenSpec v1.9.0](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0)**, released 2026-08-13 at exact commit `2826b8889e5223a9a8095d4428b60b56597e1020`, and was checked on 2026-08-17. It must not be confused with loam's older parser/migration compatibility baselines:
+This product comparison is pinned to **[OpenSpec v1.9.0](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0)**, released 2026-08-13 at exact commit `2826b8889e5223a9a8095d4428b60b56597e1020`, and was checked on 2026-08-18 — when that commit was both the published `latest` and the tip of `main`. The same commit now carries loam's parser/migration corpus; the two older pins below are regression baselines, not competing claims:
 
 | Purpose | Exact upstream pin | What the pin supports |
 |---|---|---|
-| Current feature comparison | OpenSpec v1.9.0, `2826b8889e5223a9a8095d4428b60b56597e1020` | The product and workflow claims in this document. |
-| Certified parser/migration corpus | OpenSpec v1.7.0, `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | Seven vendored regression fixtures and a full living + active + archived corpus sweep. |
-| Historical parser canary | Former `main`, `45cca5db6137ed209117cc70510eb3e057fb981b` | A second reproducible corpus. It is neither a release nor a moving compatibility claim. |
+| Feature comparison and certified parser/migration corpus | OpenSpec v1.9.0, `2826b8889e5223a9a8095d4428b60b56597e1020` | The product and workflow claims in this document, seven vendored regression fixtures, and a full living + active + archived corpus sweep. |
+| Previously certified corpus | OpenSpec v1.7.0, `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | A reproducible older corpus a parser change may not break to fix the current one. |
+| Historical parser canary | Former `main`, `45cca5db6137ed209117cc70510eb3e057fb981b` | A third reproducible corpus. It is neither a release nor a moving compatibility claim. |
 
-The v1.7 release corpus contains 207 files / 739 requirements / 2273 scenarios; the historical canary contains 209 / 742 / 2284. Routine CI runs the [seven verbatim fixtures](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts). The exact-checkout sweep is reproducible with `npm run test:openspec-corpus -- --baseline release|canary /path/to/OpenSpec`; it refuses any other HEAD. This proves the documented Markdown boundary, not full workspace compatibility with v1.8 or v1.9.
+The v1.9.0 corpus contains 211 files / 746 requirements / 2317 scenarios; v1.7.0 contains 207 / 739 / 2273 and the historical canary 209 / 742 / 2284. Routine CI runs the [seven verbatim fixtures](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts). The exact-checkout sweep is reproducible with `npm run test:openspec-corpus -- --baseline release|legacy|canary /path/to/OpenSpec`; it refuses any other HEAD. This proves the documented Markdown boundary and the staged migration path, not that loam implements v1.9's CLI, schema engine, Stores or workflow semantics.
 
 Primary v1.9 sources: [concepts](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/concepts.md), [workflows](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/workflows.md), [default schema](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/schemas/spec-driven/schema.yaml), [CLI](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/cli.md), [agent contract](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/agent-contract.md), [supported tools](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/supported-tools.md), [Stores guide](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/stores-beta/user-guide.md), the deterministic [CLI archive implementation](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/src/core/archive.ts), and the separate [agent archive workflow](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/src/core/templates/workflows/archive-change.ts).
 
@@ -55,7 +55,7 @@ For a single repository, a small team, and no important cross-service API contra
 
 ## What loam takes from OpenSpec
 
-loam reads `### Requirement:` headings, `#### Scenario:` blocks, and `## ADDED | MODIFIED | REMOVED Requirements`. Seven upstream files are vendored as byte-for-byte fixtures, and the two exact v1.7-era corpus pins test living, active, and archived trees plus parse/serialize/parse stability. This is deliberately a Markdown compatibility claim, not a claim that loam implements OpenSpec's current CLI, schema engine, Stores, or workflow semantics.
+loam reads `### Requirement:` headings, `#### Scenario:` blocks, and `## ADDED | MODIFIED | REMOVED Requirements`. Seven upstream files are vendored as byte-for-byte fixtures at the v1.9.0 commit, and three exact corpus pins test living, active, and archived trees plus parse/serialize/parse stability. This is deliberately a Markdown compatibility claim, not a claim that loam implements OpenSpec's current CLI, schema engine, Stores, or workflow semantics.
 
 loam also borrowed the multi-tool delivery pattern: one workflow source with thin tool-specific command/skill adapters. The exact upstream paths have since evolved — notably toward shared `.agents` skills — while loam's own per-adapter layout remains its own contract. OpenSpec regenerates the files it owns; loam only reports an old stamp.
 
@@ -69,4 +69,4 @@ loam also borrowed the multi-tool delivery pattern: one workflow source with thi
 
 ## Migrating
 
-[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) separates the certified v1.7 parser/migration corpus from the v1.8/v1.9 workspace shapes that the audit can inventory but that have not received full-corpus migration certification. It also documents capability→service mapping, stable ids for `RENAMED`, artifact dispositions, topology/OpenAPI follow-up, and the one-way cutover boundary.
+[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) states what the certified v1.9 corpus does and does not cover — the Markdown boundary and the staged migration, never OpenSpec's own lifecycle behavior — and which workspace shapes the audit inventories rather than converts. It also documents capability→service mapping, stable ids for `RENAMED`, artifact dispositions, topology/OpenAPI follow-up, and the one-way cutover boundary.

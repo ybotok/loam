@@ -61,7 +61,7 @@ To wire loam into your own repositories, start at [Day zero](#day-zero-onboardin
 
 ## loam vs OpenSpec
 
-These are two separate comparisons. The current product reference is [OpenSpec v1.9.0](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0), released 2026-08-13. Parser and migration compatibility remain pinned to the reproducible **v1.7.0** corpus: 207 Markdown files, 739 requirements and 2273 scenarios, plus a fixed historical canary. v1.8/v1.9 workspace features are inventoried by `audit-openspec`, but full migration compatibility is not claimed until that corpus is re-vendored and replayed.
+The product reference and the compatibility pin are now the same release: [OpenSpec v1.9.0](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0), published 2026-08-13, which was also the tip of `main` when this was pinned. Parser and migration compatibility are measured against its reproducible corpus — 211 Markdown files, 746 requirements and 2317 scenarios, swept file by file — with the v1.7.0 release and a post-v1.7 canary kept as regression pins. What that certifies is the Markdown boundary and the staged migration; loam does not reimplement OpenSpec's validation, archive recovery, capability retirement, Stores or agent delivery, and `audit-openspec` inventories those shapes rather than converting them.
 
 | | OpenSpec v1.9 | loam |
 |---|---|---|

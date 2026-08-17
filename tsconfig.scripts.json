@@ -1,0 +1,17 @@
+// The repository's TypeScript tooling outside src/. `tsconfig.json` compiles the
+// shipped binary and its `include` is deliberately `src` alone, so nothing under
+// scripts/ was ever typechecked: check-openspec-corpus.ts went on importing
+// `../src/core/spec.js` for eight days after that module moved into
+// src/core/document/, and the corpus gate — which only runs on a schedule —
+// failed at module resolution instead of checking a corpus. This config exists
+// so the gate's own tooling is compiled by `npm run typecheck` like everything
+// else it verifies.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "outDir": null
+  },
+  "include": ["scripts/**/*.ts"]
+}

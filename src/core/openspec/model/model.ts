@@ -16,11 +16,19 @@ import {
   type OpenSpecMappingIssue,
 } from "./mapping.js";
 
+/**
+ * The upstream commits this binary's OpenSpec compatibility is measured against:
+ * `release` is the certified current release, swept file by file by the corpus
+ * gate (`scripts/check-openspec-corpus.ts`) and vendored as the seven verbatim
+ * fixtures. `mainCanary` is the older post-v1.7 canary, kept as a regression pin
+ * rather than as a claim about where `main` points today — at the time of the
+ * v1.9.0 pin, `main` and the release tag were the same commit.
+ */
 export const OPENSPEC_BASELINES = Object.freeze({
   release: Object.freeze({
-    version: "1.7.0",
-    ref: "v1.7.0",
-    commit: "4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b",
+    version: "1.9.0",
+    ref: "v1.9.0",
+    commit: "2826b8889e5223a9a8095d4428b60b56597e1020",
   }),
   mainCanary: Object.freeze({
     ref: "main",

@@ -16,13 +16,13 @@
  * FINDINGS — where we diverge from OpenSpec
  * ============================================================================
  *
- * Established by parsing the exact release and main-canary living, active, and
- * archived spec corpora (release: 207/739/2273; canary: 209/742/2284), and by
- * reading OpenSpec's own parsers
+ * Established by parsing the three exact living, active, and archived spec corpora
+ * the corpus gate pins (v1.9.0 release: 211/746/2317; v1.7.0: 207/739/2273;
+ * post-v1.7 canary: 209/742/2284), and by reading OpenSpec's own parsers
  * (src/core/parsers/{markdown-parser,change-parser,spec-structure}.ts).
  *
  * WHAT WORKS. Requirement and scenario extraction is compatible on every corpus file:
- * all 739/2273 release and 742/2284 canary requirements/scenarios are found, with the
+ * every requirement and scenario in all three corpora is found, with the
  * same delta kinds, and round-trip is lossless (see "round-trip" below). Nested bullets, fenced blocks,
  * `**Reason for removal**:` metadata, CRLF, and non-ASCII names all survive.
  *
