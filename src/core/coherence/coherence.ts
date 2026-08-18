@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
 import { elementService, loadFile, serviceResolver, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
-import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
+import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featurePaths } from "../repo/paths.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
-import { operations, serviceOperationIds } from "../openapi/doc.js";
+import { serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
@@ -115,6 +115,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   } = await declaredByService(scope, svcNames, issues, context);
   const {
     governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
+    deprecatedInLiving, undeprecatedByFeature,
   } = coherenceLookups(scope, context);
 
   for (const [svc, retiring] of removingOps) {
@@ -148,38 +149,6 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
       issues.push({ severity: "error", code: "spec-api.op-undefined", message: `requirement in ${svc} governs '${op}', not defined in ${svc}'s OpenAPI` });
     }
   }
-
-  // What the LIVING provider contracts mark `deprecated: true`, read lazily
-  // per service. Living only, on purpose: the feature's own openapi delta
-  // restates the full API, and the question here is whether the fleet as
-  // shipped is already retiring the op this feature starts leaning on.
-  const livingDeprecated = new Map<string, Set<string>>();
-  const deprecatedInLiving = async (service: PathableService, op: string): Promise<boolean> => {
-    let set = livingDeprecated.get(service);
-    if (!set) {
-      const list = await operations(servicePaths(docsDir, service).openapi, context);
-      set = new Set(list.filter((o) => o.deprecated).map((o) => o.id));
-      livingDeprecated.set(service, set);
-    }
-    return set.has(op);
-  };
-
-  // ...unless this feature IS the un-deprecation: an openapi delta that
-  // restates the op WITHOUT `deprecated: true` retires the flag on archive
-  // (the path-item overwrite is wholesale), so "prefer the replacement
-  // operation" would point the author away from the exact change they are
-  // shipping. A delta that restates the op still deprecated — or has no
-  // delta for the service at all — keeps the warning.
-  const featureUndeprecated = new Map<string, Set<string>>();
-  const undeprecatedByFeature = async (service: PathableService, op: string): Promise<boolean> => {
-    let set = featureUndeprecated.get(service);
-    if (!set) {
-      const list = await operations(featureSpecPaths(featureDir, service).openapi, context);
-      set = new Set(list.filter((o) => !o.deprecated).map((o) => o.id));
-      featureUndeprecated.set(service, set);
-    }
-    return set.has(op);
-  };
 
   // The declared→enumerated bridge for edge TARGETS. `svcOf` answers with
   // whatever the document wrote — `metadata { service '../../x' }` parses in
