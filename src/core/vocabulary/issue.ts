@@ -128,11 +128,11 @@ export type IssueCode =
   | "openapi.duplicate-operationid"
   /** the FEATURE's own openapi.yaml exists but does not parse — the same name validate gives a living contract in that state: every contract-axis check for the service is suspended, and the archive plan refuses the merge mechanically */
   | "openapi.invalid"
-  /** an `x-loam-based-on` that is not a digest, or sits on an operation the living contract does not have */
+  /** an `x-loam-based-on` that is not a digest or sits on an operation the living contract does not have; a malformed `x-loam-baselines` record, an entry of it pinning a surface the delta does not restate, or one whose living counterpart is gone */
   | "openapi.baseline-invalid"
-  /** a feature operation with no `x-loam-based-on` — the merge cannot tell whether the delta EDITS it or merely quotes it */
+  /** a feature operation, restated path-level key or component with no baseline pin — the merge cannot tell whether the delta EDITS it or merely quotes it */
   | "openapi.baseline-missing"
-  /** the living operation changed since this delta edited it — merging would discard whoever landed in between */
+  /** the living operation, path-level key or component changed since this delta pinned it — merging would discard whoever landed in between */
   | "openapi.baseline-stale"
   /** the feature retires an operation the LIVING fleet still consumes — a landscape edge's `metadata { op }`, or another service's living requirement */
   | "openapi.remove-op-consumed"

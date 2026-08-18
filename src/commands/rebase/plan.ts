@@ -16,6 +16,7 @@ import { parseRequirements, readRequirementsDocument } from "../../core/document
 import { requirementDigest, type Requirement } from "../../core/document/spec.js";
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
 import { pinOpenapiOperations, type OpenapiPinPlan } from "../../core/openapi/merge/pin.js";
+import { planOpenapiBaselines, type OpenapiBaselinePlan } from "../../core/openapi/baseline/plan.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
@@ -46,9 +47,13 @@ export interface PinOutcome {
   service: string;
   /** The axis's filename — "spec.md", "arch.spec.md" or "openapi.yaml". */
   file: string;
-  /** MODIFIED/REMOVED for a requirement; the upper-case HTTP method for an operation. */
+  /**
+   * MODIFIED/REMOVED for a requirement; the upper-case HTTP method for an
+   * operation; COMPONENT for a `components/<kind>/<name>`; PATH-ITEM for a
+   * path-item non-method key.
+   */
   kind: string;
-  /** The requirement heading, or `/path ('operationId')`. */
+  /** The requirement heading, `/path ('operationId')`, `<kind>/<name>`, or `/path '<key>'`. */
   target: string;
   status: PinStatus;
   /** The pin as it was, or null when there was none. */
@@ -137,8 +142,14 @@ export async function planOpenapi(docsDir: DocsDir, service: PathableService, op
   const living = existsSync(livingPath) ? decodeDocument(await readFile(livingPath), livingPath) : "";
   const delta = decodeDocument(await readFile(openapiPath), openapiPath);
   let plan: OpenapiPinPlan;
+  let baselines: OpenapiBaselinePlan;
   try {
     plan = pinOpenapiOperations(delta, living, service);
+    // The surface record, planned over the OPERATION pass's output so one run
+    // writes one file once. Order is safe: a surface digest never includes an
+    // operation pin (`restatedSurfaces` skips the methods entirely), and the
+    // root record never enters an operation digest.
+    baselines = planOpenapiBaselines(plan.text ?? delta, living, service);
   } catch (err) {
     // A document loam cannot read is validate's diagnosis to make
     // (`openapi.invalid`), not this command's to guess at — and stamping into a
@@ -147,16 +158,27 @@ export async function planOpenapi(docsDir: DocsDir, service: PathableService, op
     return { outcomes: [], content: null };
   }
   return {
-    outcomes: plan.pins.map((pin) => ({
-      service,
-      file: "openapi.yaml",
-      kind: pin.method.toUpperCase(),
-      target: pin.operationId.length === 0 ? pin.path : `${pin.path} ('${pin.operationId}')`,
-      status: pin.status,
-      from: pin.from,
-      to: pin.to,
-    })),
-    content: plan.text,
+    outcomes: [
+      ...plan.pins.map((pin) => ({
+        service,
+        file: "openapi.yaml",
+        kind: pin.method.toUpperCase(),
+        target: pin.operationId.length === 0 ? pin.path : `${pin.path} ('${pin.operationId}')`,
+        status: pin.status,
+        from: pin.from,
+        to: pin.to,
+      })),
+      ...baselines.pins.map((pin) => ({
+        service,
+        file: "openapi.yaml",
+        kind: pin.kind === "component" ? "COMPONENT" : "PATH-ITEM",
+        target: pin.target,
+        status: pin.status,
+        from: pin.from,
+        to: pin.to,
+      })),
+    ],
+    content: baselines.text ?? plan.text,
   };
 }
 
