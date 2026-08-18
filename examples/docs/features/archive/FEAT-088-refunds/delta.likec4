@@ -1,0 +1,28 @@
+// C4 DELTA for FEAT-088 — one new edge, tagged #FEAT-088.
+//
+// A delta is self-contained so it validates on its own, which is why the two existing systems
+// and the group around them are quoted here. Only the tagged statement is merged; the quotes
+// are how the tagged statement gets something to attach to.
+specification {
+  element group
+  element softwareSystem
+  tag FEAT-088
+}
+
+model {
+  marketplace = group 'Marketplace' {
+    orderService = softwareSystem 'order-service'
+    paymentService = softwareSystem 'payment-service'
+  }
+
+  marketplace.orderService -> marketplace.paymentService 'Calls refundPayment' {
+    #FEAT-088
+    metadata { op 'refundPayment' }
+  }
+}
+
+views {
+  view feat_088 {
+    include *
+  }
+}

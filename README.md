@@ -46,16 +46,19 @@ Drop `--link` to build without a global `loam`; on Windows run `npm ci && npm ru
 
 ## Quick start
 
-The repo ships a small example fleet under [`examples/docs/`](https://github.com/ybotok/loam/tree/main/examples/docs) — two services, one feature in flight. From a clone, point a throwaway `loam.json` at it and run the real commands (the file is untracked; delete it when done):
+The repo ships a runnable example fleet under [`examples/docs/`](https://github.com/ybotok/loam/tree/main/examples/docs) — five services, one feature already shipped, two in flight, the event spine, the permission vocabulary and a verification record. [`examples/README.md`](https://github.com/ybotok/loam/blob/main/examples/README.md) is the guided tour: what each service is there to show, and what every one of the seven deliberate warnings demonstrates. From a clone, point a throwaway `loam.json` at it and run the real commands (the file is untracked; delete it when done):
 
 ```bash
 echo '{ "docsDir": "examples/docs" }' > loam.json   # relative, resolved against this file
-npm run dev -- list                          # what the fleet looks like
-npm run dev -- validate --all                # the CI gate: 0 errors, 3 deliberate warnings
+npm run dev -- list                          # the fleet and its maturity ladder
+npm run dev -- status                        # what to do next, derived from the files
+npm run dev -- validate --all                # the CI gate: 0 errors, 7 deliberate warnings
 npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
+npm run dev -- archive FEAT-112 --dry-run    # an operation being retired, writing nothing
+npm run dev -- verify FEAT-088               # a shipped feature's done-check, frozen history
 ```
 
-`test/examples.test.ts` pins the validate summary and every finding code, and the archive plan file-for-file, so those outcomes cannot drift from the code; the `list` rendering is not pinned.
+`test/examples.test.ts` pins the validate summary and every finding code, and both archive plans file-for-file, so those outcomes cannot drift from the code; the `list` rendering is not pinned.
 
 To wire loam into your own repositories, start at [Day zero](#day-zero-onboarding-a-fleet).
 

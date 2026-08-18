@@ -1,0 +1,76 @@
+# Verification record for FEAT-088 — written by `loam verify FEAT-088` (--results / --record).
+#
+# Every claim below was derived mechanically from this feature's own artifacts:
+# delta.likec4, specs/<svc>/spec.md, specs/<svc>/arch.spec.md and specs/<svc>/
+# openapi.yaml. Each verdict names who answered it: `answered_by: runner` means a
+# cucumber JSON report's digest-tagged scenarios answered it mechanically;
+# `answered_by: agent` means somebody's word about the code, which loam did not
+# check. Nothing gates on either.
+#
+# A `scenario.tested` claim confirmed by an agent is ATTESTED, not run: loam
+# reports it as `verify.scenario-attested` and the feature does not count as
+# verified until a report answers it. `report:` records the file a --results run
+# read — its sha256 and mtime say WHICH file, not that it came from that commit;
+# no digest can say that.
+#
+# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same
+# one, the feature changed after this was recorded and these answers are stale.
+feature: FEAT-088
+recorded: 2026-08-18
+checklist: 53d168ad70d5da6a
+summary:
+  claims: 7
+  confirmed: 7
+  unconfirmed: 0
+claims:
+  - id: api.exposes-0b428913
+    kind: api.exposes
+    claim: payment-service exposes operationId 'refundPayment'
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/main/java/com/marketplace/payments/api/RefundController.java:31
+    note: POST /payments/{id}/refund, operationId refundPayment
+  - id: c4.calls-ce371652
+    kind: c4.calls
+    claim: order-service calls 'refundPayment' on payment-service
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/main/kotlin/com/marketplace/orders/cancel/CancelOrderService.kt:74
+    note: the cancellation path calls refundPayment when the payment was captured
+  - id: scenario.tested-d95d0521
+    kind: scenario.tested
+    claim: scenario 'Cancel an order before payment is captured' of requirement 'Cancel an order' (order-service) is covered by a test
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/test/kotlin/com/marketplace/orders/CancelOrderTest.kt:22
+  - id: scenario.tested-2521fcf9
+    kind: scenario.tested
+    claim: scenario 'Cancelling a captured order refunds it' of requirement 'Cancel an order' (order-service) is covered by a test
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/test/kotlin/com/marketplace/orders/CancelOrderTest.kt:48
+  - id: scenario.tested-f676b29f
+    kind: scenario.tested
+    claim: scenario 'A shipped order cannot be cancelled' of requirement 'Cancel an order' (order-service) is covered by a test
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/test/kotlin/com/marketplace/orders/CancelOrderTest.kt:71
+  - id: scenario.tested-0015cd33
+    kind: scenario.tested
+    claim: scenario 'Refund a captured payment in full' of requirement 'Refund a captured payment' (payment-service) is covered by a test
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/test/java/com/marketplace/payments/RefundPaymentTest.java:29
+  - id: scenario.tested-ec3b0881
+    kind: scenario.tested
+    claim: scenario 'A second refund of the same payment is refused' of requirement 'Refund a captured payment' (payment-service) is covered by a test
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/test/java/com/marketplace/payments/RefundPaymentTest.java:57

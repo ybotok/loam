@@ -1,0 +1,253 @@
+// Global C4 fleet landscape — the LIVING current state.
+// `loam archive` folds a feature's #FEAT-tagged elements/relationships in here.
+// One landscape file, by decision: conflicts resolve through PRs. See SCHEMA.md,
+// "Operating at fleet scale", for the trigger that would change this.
+//
+// `loam validate --all` cross-checks this file against services/: every service
+// directory needs an element here (error), and every element that looks like a
+// service needs a directory (warning). An element is tied to its directory by
+// `metadata { service '<id>' }`, or by its title when there is no binding.
+// Systems that are not ours carry #external and are exempt.
+specification {
+  // A grouping element — it stands for no service and owns no directory. The
+  // service checks WALK the tree rather than reading only top-level elements:
+  // an element is graded at service level when no ancestor already stands for a
+  // service, so nesting the fleet inside a boundary costs nothing, and the
+  // group itself never raises `landscape.service-undocumented` because it
+  // CONTAINS services rather than being one.
+  element group
+  element softwareSystem
+  // Declared here because archive SPLICES a delta's additions verbatim: FEAT-101's
+  // new system carries its `api` container along, and the kind has to be legal in
+  // THIS document for the merged landscape to parse (archive refuses otherwise).
+  element container
+  element person
+  // A topic is an element, and the kind carries #external rather than each
+  // instance doing it: LikeC4 does NOT inherit tags, so a topic nested inside
+  // the #external broker is not external itself, and `loam validate --all`
+  // would ask for a services/payment.events/ nobody owes
+  // (`landscape.service-undocumented`).
+  element topic {
+    #external
+    // The channel is platform too, and the tag has to be HERE rather than on
+    // the broker alone: `landscape.platform-candidate` grades each drawn
+    // element by how many services consume it, and once the edges point at
+    // topics it is the topics that collect three consumers each — tagging only
+    // `kafka` would leave three untagged hubs behind.
+    #platform
+    style {
+      shape queue
+    }
+  }
+  tag external
+  // Ubiquitous infrastructure. Three consuming services is where an untagged
+  // external hub starts warning (`landscape.platform-candidate`), because that
+  // is where one more edge per modelled service stops being a fact about two
+  // services and starts being the shape of the map. Tagging keeps both pictures:
+  // the fleet view below excludes #platform, and the platform view keeps "who
+  // depends on it" answerable during an incident. LikeC4 refuses an undeclared
+  // tag, so the declaration here and the tag on the element are both needed.
+  tag platform
+}
+
+model {
+  customer = person 'Customer'
+
+  // Our own fleet, drawn inside a boundary the way ordinary grouped C4 is. The
+  // group has no `metadata { service }` and no directory under services/: it is
+  // scenery for the reader, and every check below resolves through it to the
+  // element that really stands for each service.
+  marketplace = group 'Marketplace' {
+    description 'Everything this organisation runs'
+
+    checkoutWeb = softwareSystem 'checkout-web' {
+      description 'Customer-facing checkout UI'
+      metadata {
+        service 'checkout-web'
+      }
+    }
+    orderService = softwareSystem 'order-service' {
+      description 'Owns the order lifecycle'
+      metadata {
+        service 'order-service'
+      }
+    }
+    paymentService = softwareSystem 'payment-service' {
+      description 'Owns payment authorization/capture'
+      metadata {
+        service 'payment-service'
+      }
+    }
+    identityService = softwareSystem 'identity-service' {
+      description 'Issues and introspects access tokens'
+      metadata {
+        service 'identity-service'
+      }
+    }
+    notificationService = softwareSystem 'notification-service' {
+      description 'Turns events into customer email and push'
+      metadata {
+        service 'notification-service'
+      }
+    }
+  }
+
+  kafka = softwareSystem 'kafka' {
+    // Not one of ours: no services/kafka/ is expected, and none is asked for.
+    #external
+    // Three of our services reach it, which is exactly the count at which the
+    // untagged version of this element becomes `landscape.platform-candidate`.
+    #platform
+    description 'Event backbone'
+    // Edges point HERE, not at the broker. Two producers make no difference;
+    // sixty do — a broker drawn as one element is the node every service in the
+    // fleet points at, and a view over it is a star nobody can read. The topic
+    // is also the truer target: what a producer and a consumer share is the
+    // channel, never the server it happens to live on.
+    paymentEvents = topic 'payment.events'
+    orderEvents = topic 'order.events'
+    crmEvents = topic 'crm.events'
+  }
+
+  stripe = softwareSystem 'stripe' {
+    #external
+    description 'Card acquirer'
+  }
+
+  salesforce = softwareSystem 'salesforce' {
+    #external
+    description 'CRM of record — the fleet reads its events and writes none'
+  }
+
+  customer -> marketplace.checkoutWeb 'Uses'
+
+  // The synchronous spine. Every one of these resolves against the TARGET's
+  // openapi.yaml: `loam validate` fails the fleet when an `op` names an
+  // operation the callee does not define (`spine.op-undefined`), which is what
+  // turns a rename in one repository into a red build in the one that depended
+  // on it.
+  marketplace.checkoutWeb -> marketplace.orderService 'Calls createOrder' {
+    metadata {
+      op 'createOrder'
+    }
+  }
+  marketplace.checkoutWeb -> marketplace.orderService 'Calls getOrder' {
+    metadata {
+      op 'getOrder'
+    }
+  }
+  // Deliberately unlinked, and the example's demonstration of
+  // `spine.op-link-missing` (warn): an edge whose title starts with "Call" and
+  // carries no `metadata { op }` is drawn but joined to nothing, so no check can
+  // tell whether the operation behind it still exists. Every other call edge
+  // here carries its op; this one is what the warning looks like.
+  marketplace.checkoutWeb -> marketplace.paymentService 'Calls the payment API'
+  marketplace.orderService -> marketplace.paymentService 'Calls authorizePayment' {
+    metadata {
+      op 'authorizePayment'
+    }
+  }
+  marketplace.orderService -> marketplace.identityService 'Calls introspectToken' {
+    metadata {
+      op 'introspectToken'
+    }
+  }
+  // The other half of the deprecation story, and the example's
+  // `spine.op-deprecated` (warn): identity-service still DEFINES validateToken,
+  // so the contract holds and this is not an error — but its OpenAPI marks the
+  // operation `deprecated: true`, and this edge is the consumer that has not
+  // migrated yet. The warning is addressed to payment-service, not to identity.
+  marketplace.paymentService -> marketplace.identityService 'Calls validateToken' {
+    metadata {
+      op 'validateToken'
+    }
+  }
+  // An edge into a system nobody owns a directory for. It carries no `op`
+  // because there is no contract in this repository to resolve one against, and
+  // it raises no warning because its title does not claim to be a call into a
+  // fleet service.
+  marketplace.paymentService -> stripe 'Authorizes cards'
+
+  // The event spine, the async mirror of `metadata { op }`: the name must be a
+  // message the PRODUCER's own asyncapi.yaml declares an `action: send` for, or
+  // `spine.message-undefined` fires. A consumer's edge carries
+  // `metadata { consumes }` instead, and its name has to have a producer
+  // SOMEWHERE in the fleet — the one check no single repository can answer.
+  //
+  // THE ARROW FOLLOWS THE MESSAGE, and that is load-bearing rather than
+  // aesthetic. `publishes` binds the edge's SOURCE and `consumes` binds its
+  // TARGET, so a consume edge drawn the other way round — `orderService ->
+  // kafka.paymentEvents` — binds to nothing at all: the metadata parses, the
+  // document validates, and the check silently grades zero edges. Producer to
+  // topic, topic to consumer, every time.
+  marketplace.paymentService -> kafka.paymentEvents 'Publishes PaymentAuthorized' {
+    metadata {
+      publishes 'payment.PaymentAuthorized'
+    }
+  }
+  marketplace.paymentService -> kafka.paymentEvents 'Publishes PaymentCaptured' {
+    metadata {
+      publishes 'payment.PaymentCaptured'
+    }
+  }
+  kafka.paymentEvents -> marketplace.orderService 'PaymentAuthorized advances the order' {
+    metadata {
+      consumes 'payment.PaymentAuthorized'
+    }
+  }
+  marketplace.orderService -> kafka.orderEvents 'Publishes OrderPlaced' {
+    metadata {
+      publishes 'order.OrderPlaced'
+    }
+  }
+  kafka.orderEvents -> marketplace.notificationService 'OrderPlaced triggers the confirmation' {
+    metadata {
+      consumes 'order.OrderPlaced'
+    }
+  }
+  kafka.paymentEvents -> marketplace.notificationService 'PaymentCaptured triggers the receipt' {
+    metadata {
+      consumes 'payment.PaymentCaptured'
+    }
+  }
+  // A producer OUTSIDE the fleet, expressed rather than left implicit. Without
+  // this edge notification-service's `consumes 'crm.CustomerUpdated'` would be
+  // `spine.message-unproduced` (error) — nobody in the fleet declares it is
+  // sent — and the exit ramp people take from that error is deleting the link.
+  // The edge moves the contract question to the one file that can settle it:
+  // the consumer's own asyncapi.yaml, which must define the payload
+  // (`spine.message-external` fires while it does not).
+  salesforce -> kafka.crmEvents 'Publishes CustomerUpdated' {
+    metadata {
+      publishes 'crm.CustomerUpdated'
+    }
+  }
+  kafka.crmEvents -> marketplace.notificationService 'CustomerUpdated refreshes contact details' {
+    metadata {
+      consumes 'crm.CustomerUpdated'
+    }
+  }
+}
+
+// Views are LikeC4's renderer's, never loam's — nothing below is read by any
+// check. Three of them rather than one `include *`, because at fleet scale a
+// single view holding every call is both the slow one to compute and the one
+// nobody can read: the synchronous map, the event spine and the platform
+// dependencies answer different questions and belong on different pages.
+views {
+  view landscape {
+    title 'Fleet — calls between our own services'
+    include *
+    exclude element.tag = #external
+  }
+
+  view events {
+    title 'Fleet — the event spine'
+    include kafka, kafka.*, * -> kafka.*, kafka.* -> *
+  }
+
+  view platform {
+    title 'Fleet — who depends on shared infrastructure'
+    include element.tag = #platform, * -> element.tag = #platform
+  }
+}

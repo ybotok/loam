@@ -1,0 +1,118 @@
+// Per-service C4. Written by an agent from the `loam adopt` brief, then curated.
+//
+// Every .likec4 file is parsed ALONE, so the kinds this document uses have to be
+// declared in this document: a `specification` block here is not a duplicate of
+// the landscape's, it is what makes this file readable without it.
+specification {
+  element softwareSystem
+  element container
+  element database
+  // Declared because the consumption edges below point at CHANNELS rather than
+  // at the broker. Three edges into one `kafka` box would say only "talks to
+  // kafka"; three edges into three topics say which contracts this service is
+  // standing on, and they line up one-for-one with the channels in
+  // asyncapi.yaml.
+  element topic {
+    style {
+      shape queue
+    }
+  }
+}
+
+model {
+  notificationService = softwareSystem 'notification-service' {
+    description 'Turns fleet events into customer email and SMS'
+    // The binding, not the title, is what ties this element to
+    // services/notification-service/. With only a title, renaming the box in a
+    // diagram silently detaches every join that runs through it — health.yaml's
+    // dependencies, `Covers:` entries, the landscape's service checks.
+    metadata {
+      service 'notification-service'
+    }
+
+    consumer = container 'consumer' {
+      description 'Kafka consumer group; one handler per message name'
+      technology 'Go'
+    }
+    sender = container 'sender' {
+      description 'Renders a template and hands it to the email/SMS provider'
+      technology 'Go'
+    }
+    // Both stores are nested INSIDE the service and neither is drawn beside it
+    // in the landscape: a store with one consumer drawn as a fleet-level peer
+    // reads as a system other services may depend on, which is what
+    // `landscape.datastore-private` pushes back on. Neither appears in
+    // health.yaml's dependencies either — they share this service's lifecycle
+    // rather than being something it reaches across a boundary.
+    deliveryLog = database 'delivery-log' {
+      description 'One row per (message id, channel) — the idempotency key that makes redelivery a no-op — carrying the orderId and customer each send was addressed to, so a receipt can find its order and a capture that arrives first has somewhere to wait'
+      technology 'PostgreSQL'
+    }
+    // The state NTF-CONTACT is entirely about, and it cannot be a corner of the
+    // delivery log: that table is keyed by message and holds nothing per
+    // customer, so it has no place to put a `version` to compare an update
+    // against. Without this element the spec promises a versioned copy of every
+    // customer address that the model gives nowhere to live — a divergence no
+    // loam check catches, because loam grades that health.yaml's dependencies
+    // resolve here and never that the requirements do.
+    contacts = database 'contacts' {
+      description 'The copy of each customer email and phone this service sends to, with the CRM version that decides whether an arriving update is newer'
+      technology 'PostgreSQL'
+    }
+
+    consumer -> deliveryLog 'Claims a delivery before sending'
+    consumer -> contacts 'Applies a CRM update only when its version is newer'
+    consumer -> sender 'Hands off a rendered notification'
+    sender -> contacts 'Reads the address a notification goes to'
+    sender -> deliveryLog 'Records delivered / failed'
+  }
+
+  // Everything the service touches belongs in its own model, cross-boundary
+  // dependencies included — the landscape carries only the boundary crossing.
+  // health.yaml names `kafka` as a critical dependency and that id has to resolve
+  // HERE, by element id, `metadata { service }` binding or title
+  // (`health.dependency-unmodelled` otherwise); and a model with elements and no
+  // edges beside a health.yaml that declares dependencies is `c4.no-relationships`
+  // — a service that reaches nothing is almost never true.
+  kafka = softwareSystem 'kafka' {
+    description 'Event backbone (platform)'
+    orderEvents = topic 'order.events'
+    paymentEvents = topic 'payment.events'
+    crmEvents = topic 'crm.events'
+  }
+
+  // The second thing this service reaches across its own boundary, and the one
+  // the runbook spends an incident section on: while the provider is down or
+  // throttling, nothing is delivered and there is no fallback path. It belongs
+  // here for the same reason payment-service's model draws `stripe` — a model
+  // that stopped at the broker would show a worker whose only failure mode is
+  // lag, which is the half of the picture the on-call graphs already give you.
+  provider = softwareSystem 'notification-provider' {
+    description 'Third-party email and SMS gateway — quota-limited, and outside this fleet'
+  }
+
+  // No `metadata { consumes }` on these edges, and adding it would change
+  // nothing: loam reads the event spine off `architecture/landscape.likec4`
+  // alone, never off a service model. What resolves a consumed name against
+  // asyncapi.yaml is each requirement's `Consumes:` line
+  // (`spec-event.message-undefined` when one names a message no `action:
+  // receive` operation declares); what the landscape settles is the other
+  // half — that somebody, inside the fleet or tagged #external, publishes it.
+  // These three edges are here for the picture only, and they earn it: this
+  // model, the three channels in asyncapi.yaml and the three topics the runbook
+  // names agree, or one of the three is out of date.
+  // Drawn topic → consumer, the direction the landscape uses and the one the
+  // event spine requires there: `consumes` binds the edge's TARGET, so the same
+  // edge drawn the other way round binds to nothing at all.
+  kafka.orderEvents -> notificationService.consumer 'OrderPlaced triggers the confirmation'
+  kafka.paymentEvents -> notificationService.consumer 'PaymentCaptured triggers the receipt'
+  kafka.crmEvents -> notificationService.consumer 'CustomerUpdated refreshes contact details'
+
+  notificationService.sender -> provider 'Sends email and SMS, and backs off on 429'
+}
+
+views {
+  view notification_service of notificationService {
+    include *
+  }
+}

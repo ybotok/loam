@@ -1,4 +1,12 @@
-# API contract. Written by an agent from the `loam adopt` brief; forward-flow authors changes in the delta.
+# API contract. Written by an agent from the `loam adopt` brief; forward-flow authors changes
+# in the feature's own `specs/<svc>/openapi.yaml` delta and lets `loam archive` merge them here.
+#
+# Only the eight HTTP methods of a path item are read for operationIds — an id tucked inside a
+# vendor extension does not exist as far as the spine is concerned, because a phantom id would
+# mask a contract break. Two things are graded beyond form: every operation wants a response
+# with a schema (`openapi.response-undescribed` otherwise — a contract that names an operation
+# and says nothing about what it returns still sends the reader to the code), and every 4xx/5xx
+# it declares wants a scenario that reaches it (`api.response-ungoverned`).
 openapi: 3.1.0
 info:
   title: payment-service
@@ -8,40 +16,136 @@ paths:
     post:
       operationId: authorizePayment
       summary: Authorize a payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationRequest'
       responses:
         "201":
           description: Authorized
           content:
             application/json:
               schema:
-                type: object
-                required: [paymentId, status]
-                properties:
-                  paymentId:
-                    type: string
-                  status:
-                    type: string
-                    enum: [authorized, declined]
+                $ref: '#/components/schemas/Payment'
+        "409":
+          description: A different authorization already exists for this order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /payments/{id}/capture:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     post:
       operationId: capturePayment
       summary: Capture an authorized payment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
       responses:
         "200":
           description: Captured
           content:
             application/json:
               schema:
-                type: object
-                required: [paymentId, capturedAmount]
-                properties:
-                  paymentId:
-                    type: string
-                  capturedAmount:
-                    type: number
+                $ref: '#/components/schemas/Capture'
+        "404":
+          description: No such authorized payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /payments/{id}/refund:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: refundPayment
+      summary: Refund a captured payment
+      responses:
+        "200":
+          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Refund"
+        "409":
+          description: The payment was already refunded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  schemas:
+    AuthorizationRequest:
+      type: object
+      required: [ orderId, amount, currency ]
+      properties:
+        orderId:
+          type: string
+        amount:
+          type: integer
+          description: minor units
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+    Payment:
+      type: object
+      required: [ paymentId, status ]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ authorized, declined ]
+    Capture:
+      type: object
+      required: [ paymentId, capturedAmount ]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        capturedAmount:
+          type: integer
+          description: minor units
+    # RFC 9457. One shared shape for every refusal, so a client parses failures once —
+    # and so the 409 and 404 above declare a schema rather than a bare description.
+    Problem:
+      type: object
+      required: [ type, title, status ]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    Refund:
+      type: object
+      required:
+        - paymentId
+        - refundedAmount
+        - refundedAt
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        refundedAmount:
+          type: integer
+          description: minor units
+        refundedAt:
+          type: string
+          format: date-time

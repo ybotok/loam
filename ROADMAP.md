@@ -471,10 +471,17 @@ OpenSpec's source of truth is capability-oriented while loam joins requirements 
 and copies capability prose into `legacy/` because it has no loam equivalent. Both describe the missing
 axis as a migration caveat. Neither treats it as a gap in the product.
 
-This item takes the half that costs little: name the capabilities, join the requirements that already
-exist to them, and make the total readable. It deliberately does **not** give analysts a place to
-author — that is the Later item below, and what this one shows on a real fleet is the evidence that
-decides it.
+The documents in question already exist in most fleets, outside the docs repository: one long-lived
+page per user-facing capability — registration, sign-in, user profile, finding and adding friends,
+finding and adding products — each revised by changes that fan out first into API changes and then into
+per-service requirement changes. loam models the bottom of that cascade and nothing above it, which is
+why an analyst either edits `services/<svc>/spec.md` or works somewhere loam cannot see.
+
+This item takes the half that costs little: declare the names those documents already have, join the
+requirements the fleet already carries to them, and make the total readable — so "which parts of
+registration does nothing in 120 services claim to implement" is answerable before deciding whether the
+documents themselves should move here. No prose moves and no authoring surface is added; that is the
+Later item below, and this rollup is the evidence that decides it.
 
 Required change:
 
@@ -563,21 +570,39 @@ criterion.
   become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than monthly — evaluate
   service-owned model files plus a thin global cross-service map. Migration must preserve archive/undo,
   deterministic resolution, and readable plain files.
-- **Authored business axis:** proceed only if the capability rollup above is read and still leaves
-  analysts unable to write without editing `services/`. The recorded trigger is authorship: analyst edits
-  appearing in `services/*/spec.md` history, or capability-level requirements accumulating as `intent.md`
-  prose that no requirement realizes. The shape is already decided, so promotion is a question of need
-  and not of design — `capabilities/<cap>/spec.md` as a fourth top-level tree beside the three in
-  [src/core/docs.ts](https://github.com/ybotok/loam/blob/main/src/core/docs.ts), carrying the existing
-  requirement grammar, delta algebra, `Based-On:` pins and `Requirement-ID` identity; a feature-local
-  `features/<FEAT>/capabilities/<cap>/` delta merged by the same transactional archive; `Realizes:` on a
-  service requirement as the downward join, written by whoever implements it rather than by the analyst;
-  and `capability.uncovered` gating archive exactly as `c4.uncovered` does, for a capability requirement
-  the feature's own service deltas leave unrealized. Two rules keep it from becoming a second copy of the
-  same prose: a capability requirement must be observable outside the fleet and name no service — one that
-  could be pasted into a service spec unchanged belongs there instead — and neither corpus is derived from
-  the other. `gherkin` and `verify` must keep computing from service requirements, so a service repository
-  can still validate itself with nothing but its own files.
+- **Authored business axis:** proceed only if the rollup above maps the fleet's existing business
+  documents onto real requirements and analysts still cannot write without editing `services/`. The
+  recorded trigger is authorship: analyst edits appearing in `services/*/spec.md` history, or
+  capability-level requirements accumulating as `intent.md` prose that no requirement realizes. The
+  shape follows the cascade those documents already describe — a capability is revised, the revision
+  changes the API, and the API change becomes per-service requirement changes — so promotion is a
+  question of need rather than of design:
+  - `capabilities/<cap>/spec.md` as a fourth top-level tree beside the three in
+    [src/core/docs.ts](https://github.com/ybotok/loam/blob/main/src/core/docs.ts), carrying narrative
+    **and** requirements in one document. The narrative slot is not decoration: OpenSpec's `## Purpose`
+    prose has no loam equivalent today and is dropped into `legacy/` on migration, and an axis without
+    room for it would repeat that loss on loam's own documents.
+  - A stable capability id on the discipline `Requirement-ID` already establishes. These documents
+    outlive every service named in them, so a rename stays one identity rather than becoming a removal
+    and an addition.
+  - Exactly one new authored join: `Realizes:` on a service requirement, written by whoever implements
+    it rather than by the analyst. The API hop needs no line of its own — a capability requirement
+    reaches its operations by composing `Realizes:` with the `Operations:` lines that already exist — so
+    the whole cascade is expressible without a third place to keep in sync.
+  - A feature-local `features/<FEAT>/capabilities/<cap>/` delta carrying the existing requirement
+    grammar, delta algebra, `Based-On:` pins and `Requirement-ID` identity, merged by the same
+    transactional archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for
+    a capability requirement the feature's own service deltas leave unrealized.
+  - `loam new <FEAT> --capability <cap>` as an entry point, inverting today's `--touches <services>`: the
+    analyst opens the document that changes, and the service work is derived from it rather than named
+    before the business change is written.
+  - Tens of documents, not hundreds. This corpus is sized like the landscape, not like the service tree,
+    which is what keeps a second requirement corpus reviewable at all.
+  - Two rules keep it from becoming a second copy of the same prose: a capability requirement must be
+    observable outside the fleet and name no service — one that could be pasted into a service spec
+    unchanged belongs there instead — and neither corpus is derived from the other. `gherkin` and
+    `verify` must keep computing from service requirements, so a service repository can still validate
+    itself with nothing but its own files.
 
 Exit criteria for promoting a Later item:
 

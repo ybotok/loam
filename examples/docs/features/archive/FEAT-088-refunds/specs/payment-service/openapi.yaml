@@ -1,0 +1,70 @@
+# API delta for FEAT-088 — payment-service gains the refund operation.
+#
+# A feature contract is a COMPLETE document, not a patch, and the merge upserts every operation
+# it spells. This one adds an operation that does not exist living, so it carries no
+# `x-loam-based-on` pin: a pin is the digest of the LIVING operation, and there is none.
+# Restated operations are the ones that need pins — on a service with thirty operations a delta
+# quotes twenty-nine of them, and every unpinned quote is a candidate rollback of whoever landed
+# in between. `loam rebase` writes them.
+openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/{id}/refund:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: refundPayment
+      summary: Refund a captured payment
+      responses:
+        "200":
+          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'
+        "409":
+          description: The payment was already refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+  schemas:
+    Refund:
+      type: object
+      required: [paymentId, refundedAmount, refundedAt]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        refundedAmount:
+          type: integer
+          description: minor units
+        refundedAt:
+          type: string
+          format: date-time
+    # Quoted from the living contract unchanged. The merge leaves a component the living
+    # document already holds IDENTICALLY alone; one it holds DIFFERENTLY is overwritten
+    # wholesale and reported as `openapi.component-modified`, because components carry no
+    # baseline pin the way operations do.
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string

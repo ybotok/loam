@@ -8,7 +8,12 @@
 # `health.uncovered` says nothing tests it), and each dependency's `service:`
 # id, which must resolve in model.likec4 (`health.dependency-unmodelled`
 # otherwise). A dependency a feature in flight introduces arrives with that
-# feature — it is not a dependency of the living service yet.
+# feature — it is not a dependency of the living service yet, which is why
+# payment-split-service is absent from the list below while FEAT-101 is open.
+#
+# Everything else — the queries, the thresholds, the criticality words — is
+# authored prose no check reads. That is deliberate: loam grades whether the
+# signal is tested, never whether the threshold is right.
 service: payment-service
 status: draft
 slis:
@@ -27,4 +32,8 @@ checks:
   readiness: GET /actuator/health/readiness
 dependencies:
   - service: kafka
-    criticality: critical        # kafka down -> payment-service unhealthy
+    criticality: critical        # the outbox holds, but nothing leaves the service
+  - service: stripe
+    criticality: critical        # no acquirer, no authorization
+  - service: identity-service
+    criticality: degradable      # cached introspection decisions carry a request

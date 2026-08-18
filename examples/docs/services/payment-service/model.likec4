@@ -1,4 +1,9 @@
 // Per-service C4. Written by an agent from the `loam adopt` brief, then curated.
+//
+// loam parses every `.likec4` file ALONE, so this document declares its own
+// `specification` block; a renderer handed the whole tree at once would merge
+// them and call every declaration a duplicate, which is what
+// `likec4.config.json` scopes the root project to `architecture/` for.
 specification {
   element softwareSystem
   element container
@@ -17,23 +22,42 @@ model {
       description 'Payment domain logic'
       technology 'Java'
     }
+    // The store is a container of THIS service, not a fleet-level peer. Drawn
+    // in the landscape it would be a system in its own right, available to be
+    // depended on — which is the claim `landscape.datastore-private` exists to
+    // refuse when only one service reaches it.
     db = database 'db' {
       description 'Payments store'
+      technology 'PostgreSQL'
+    }
+    outbox = database 'outbox' {
+      description 'Transactional outbox drained by the relay'
       technology 'PostgreSQL'
     }
 
     api -> domain 'Uses'
     domain -> db 'Reads/writes'
+    domain -> outbox 'Appends events in the state-change transaction'
   }
 
   // The service model carries everything the service touches — cross-boundary
   // dependencies included, drawn with the edge the service actually has. The
   // landscape carries only the boundary crossing; health.yaml's dependencies
-  // must resolve HERE (health.dependency-unmodelled otherwise).
+  // must resolve HERE (`health.dependency-unmodelled` otherwise), which is why
+  // all three of this service's declared dependencies appear below.
   kafka = softwareSystem 'kafka' {
     description 'Event backbone (platform)'
   }
-  paymentService.domain -> kafka 'Publishes payment events'
+  identityService = softwareSystem 'identity-service' {
+    description 'Token validation (degradable: cached decisions carry a request)'
+  }
+  stripe = softwareSystem 'stripe' {
+    description 'Card acquirer'
+  }
+
+  paymentService.outbox -> kafka 'Relay publishes payment events'
+  paymentService.domain -> identityService 'Validates the caller token'
+  paymentService.domain -> stripe 'Authorizes and captures cards'
 }
 
 views {

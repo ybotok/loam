@@ -10,8 +10,17 @@ layout:
   - { type: heading, text: "Split this payment" }
   - { type: list, id: payees, itemFields: [name, amount] }
   - { type: button, id: add-payee, text: "Add payee" }
+  # Where "A split that does not sum to the total cannot be confirmed" lands. A
+  # disabled confirm button with no remainder on screen is a dead end rather
+  # than an explanation, and the scenario says the 10.00 is shown.
+  - { type: text, id: unassigned, label: "Unassigned" }
   - { type: button, id: confirm, text: "Confirm split" }
 consumes:
+  # createSplit only: the 201 carries back the split this page shows, so nothing
+  # here re-reads it through `getSplit`.
   - { service: payment-split-service, op: createSplit }   # POST /splits
 behavior:
+  # BOTH scenarios of FEAT-101's ADDED `Split payment on checkout` — a page that
+  # names only the happy one leaves its own refusal path governed by nothing.
   - "FEAT-101 / checkout-web / Split payment on checkout / Customer splits a payment across two payees"
+  - "FEAT-101 / checkout-web / Split payment on checkout / A split that does not sum to the total cannot be confirmed"

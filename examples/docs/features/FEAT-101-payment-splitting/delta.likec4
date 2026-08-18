@@ -1,46 +1,89 @@
 // C4 DELTA for FEAT-101 — new/changed elements + relationships tagged #FEAT-101.
 // Self-contained so it validates on its own; loam projects the #FEAT-101 subset per service.
+//
+// The tag is loam's ONLY way of seeing the delta: a file that declares elements or
+// relationships with none carrying `#FEAT-101` is `delta.nothing-tagged` (error), because
+// everything in it would be invisible to the checks and the archive would merge nothing.
 specification {
+  element group
   element softwareSystem
   element container
   element topic {
     #external
+    #platform
   }
   tag external
+  tag platform
   tag FEAT-101
 }
 
 model {
-  // existing elements, referenced for context
-  checkoutWeb = softwareSystem 'checkout-web'
-  paymentService = softwareSystem 'payment-service'
+  // Existing elements, referenced for context and left untagged — archive merges only what
+  // carries the feature tag, so quoting the neighbourhood costs nothing.
+  //
+  // The new service is declared INSIDE the group the landscape already draws, which is where
+  // archive splices it: a nested element lands inside its parent's block, never as a flat
+  // dotted id, which LikeC4 rejects at top level.
+  marketplace = group 'Marketplace' {
+    checkoutWeb = softwareSystem 'checkout-web'
+    paymentService = softwareSystem 'payment-service'
+
+    paymentSplitService = softwareSystem 'payment-split-service' {
+      #FEAT-101
+      description 'Splits a payment across payees'
+      // The binding, not the title, is what ties this element to the
+      // `services/payment-split-service/` directory archive will create. A
+      // title works too and is what most existing repositories rely on — and
+      // it is also the trap: rename the box in a diagram and every check that
+      // joined it to its directory silently stops matching.
+      metadata {
+        service 'payment-split-service'
+      }
+
+      api = container 'api' {
+        technology 'Spring Boot'
+      }
+    }
+  }
+
   // The broker AND the topic the new edge points at, both already in the
   // landscape: a delta references the channel, never the server, so the merged
   // map does not grow one more spoke on a hub.
   kafka = softwareSystem 'kafka' {
     #external
+    #platform
     paymentEvents = topic 'payment.events'
   }
 
-  // new
-  paymentSplitService = softwareSystem 'payment-split-service' {
-    #FEAT-101
-    description 'Splits a payment across payees'
-
-    api = container 'api' {
-      technology 'Spring Boot'
-    }
-  }
-
-  paymentService -> paymentSplitService 'Calls createSplit' {
+  marketplace.paymentService -> marketplace.paymentSplitService 'Calls createSplit' {
     #FEAT-101
     metadata { op 'createSplit' }
   }
-  checkoutWeb -> paymentSplitService 'Calls createSplit' {
+  // Read back at capture time: settlement needs the shares the split recorded.
+  marketplace.paymentService -> marketplace.paymentSplitService 'Calls getSplit' {
+    #FEAT-101
+    metadata { op 'getSplit' }
+  }
+  // The one tagged addition this feature leaves uncovered, on purpose: no
+  // `Covers:` line in any of its arch.spec.md deltas names it, so
+  // `c4.uncovered` (warn) says the architectural obligations behind this call
+  // ship untested. A `Covers: checkout-web -> payment-split-service` line
+  // would close it — and would also close the edge above, since an edge entry
+  // resolves by ENDPOINT, so two edges between one pair are one target.
+  marketplace.checkoutWeb -> marketplace.paymentSplitService 'Calls createSplit' {
     #FEAT-101
     metadata { op 'createSplit' }
   }
-  paymentSplitService -> kafka.paymentEvents 'Publishes PaymentSplit' { #FEAT-101 }
+  // Drawn with the message in its title and no `metadata { publishes }`, and that is not an
+  // oversight: the async axis has no feature delta. There is no
+  // `features/<FEAT>/specs/<svc>/asyncapi.yaml`, no merge and no baseline pin, so a new
+  // service's contract for a message it will send is written into its living
+  // `services/payment-split-service/asyncapi.yaml` in the same reviewed PR that archives this
+  // feature. Carrying the metadata now would join the edge to a file that does not exist yet
+  // and fail the fleet on `spine.message-undefined` the moment the archive lands.
+  marketplace.paymentSplitService -> kafka.paymentEvents 'Publishes PaymentSplit' {
+    #FEAT-101
+  }
 }
 
 views {

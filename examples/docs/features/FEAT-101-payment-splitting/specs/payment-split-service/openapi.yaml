@@ -1,5 +1,12 @@
 # API delta for FEAT-101 — payment-split-service (new) gains the split API.
 # On `loam archive` this folds into services/payment-split-service/openapi.yaml (living).
+#
+# A feature contract is a COMPLETE document, not a patch: the author restates the living
+# contract around the slot being changed, and the merge upserts every operation the document
+# spells. Both operations here are new, so neither carries an `x-loam-based-on` pin — there is
+# no living operation for a pin to be the digest of. On a service that already exists, every
+# quoted operation carries one, written by `loam rebase`, and an unpinned restatement is exactly
+# the shape that silently reverts whoever landed in between.
 openapi: 3.1.0
 info:
   title: payment-split-service
@@ -9,6 +16,101 @@ paths:
     post:
       operationId: createSplit
       summary: Create a split of a payment across payees
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SplitRequest'
       responses:
         "201":
           description: Split created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Split'
+        "422":
+          description: The shares do not sum to the payment total
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /splits/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getSplit
+      summary: Read a recorded split
+      responses:
+        "200":
+          description: The split and its shares
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Split'
+        "404":
+          description: No such split
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+  schemas:
+    SplitRequest:
+      type: object
+      required: [orderId, currency, shares]
+      properties:
+        orderId:
+          type: string
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        shares:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/Share'
+    Split:
+      type: object
+      required: [splitId, orderId, currency, shares]
+      properties:
+        splitId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        shares:
+          type: array
+          items:
+            $ref: '#/components/schemas/Share'
+    Share:
+      type: object
+      required: [payee, amount]
+      properties:
+        payee:
+          type: string
+        amount:
+          type: integer
+          description: minor units
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string

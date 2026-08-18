@@ -1,0 +1,35 @@
+# Service health model. Targets are authored; the dependency graph comes from C4
+# — this service's own model.likec4, which carries everything the service touches.
+# planned: `loam health` composes these across the fleet -> cascade / blast-radius.
+#
+# `loam validate` reads only ids out of this file: the `name` of each SLI and
+# alert, and each dependency's `service:` id.
+#
+# THERE ARE NO `slis:` AND NO `alerts:` HERE, and the absence is the point of this
+# example. `health.uncovered` asks that every declared signal be named by a
+# `Covers: sli:<id>` / `Covers: alert:<id>` line in the service's living
+# arch.spec.md — so declaring nothing is what makes an arch.spec.md genuinely not
+# owed, and the check has nothing to fire on rather than being suppressed. The
+# honest reading of this file today is "nobody has written this service's SLOs
+# yet": consumer lag and provider failure rate are the two obvious ones, and the
+# day either is declared here it also owes an arch requirement covering it. An
+# absent file would say the same thing more quietly and lose the `checks:` and
+# `dependencies:` below, which on-call reads first.
+service: notification-service
+status: draft
+# Probes, not fleet operations: they carry no operationId, no requirement governs
+# them and no service calls them, which is exactly why they live here and not in
+# an openapi.yaml this service does not owe. Nothing below is read by any check —
+# `checks:` is authored prose for whoever is holding the pager.
+checks:
+  liveness: GET /internal/health/liveness
+  readiness: GET /internal/health/readiness    # consumer group joined + both stores reachable
+dependencies:
+  # Resolved against services/notification-service/model.likec4 and never the
+  # landscape (`health.dependency-unmodelled` when nothing there answers to the
+  # name). The delivery log and the contact store are absent on purpose: both
+  # are nested inside the service element and share its lifecycle, so they are
+  # blast radius rather than dependency — identity-service's health.yaml states
+  # the same rule for its two stores.
+  - service: kafka
+    criticality: critical        # no broker -> no events -> nothing to notify anyone about

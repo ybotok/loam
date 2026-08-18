@@ -1,0 +1,70 @@
+# Service health model: the signals this service promises to emit and the pages it
+# promises to send. Targets and queries are authored here; the dependency graph
+# comes from C4. Planned: `loam health` composes these across the fleet into a
+# cascade / blast-radius view.
+#
+# `loam validate` reads exactly three things out of this file, all of them ids:
+#
+#   * each `slis[].name` — every one wants a `Covers: sli:<id>` line in
+#     arch.spec.md, or `health.uncovered` says nothing tests the signal, and a
+#     signal nothing tests is dashboard decoration;
+#   * each `alerts[].name` — same obligation, through `Covers: alert:<id>`;
+#   * each `dependencies[]` id — which must resolve in this service's OWN
+#     model.likec4, or `health.dependency-unmodelled` fires.
+#
+# Queries, thresholds, pages and the checks below are authored prose that no check
+# reads. They are here because the on-call engineer reads them.
+service: identity-service
+status: draft
+
+slis:
+  - name: availability
+    # Every service that accepts a token calls this one, so this number is a
+    # ceiling on the fleet's: the 0.05% it permits is spent by every consumer at
+    # once. That is why it is set a notch tighter than payment-service's 0.999
+    # rather than matching it — a shared dependency cannot hold the same budget
+    # as the services depending on it and leave them any of their own.
+    query: "sum(rate(http_requests_total{job='identity-service',code!~'5..'}[5m])) / sum(rate(http_requests_total{job='identity-service'}[5m]))"
+    slo: 0.9995
+  - name: token_issue_latency_p99_ms
+    # Issuance alone, not introspection: minting signs with the active key and is
+    # the slow path, while introspection answers from cache. Averaging the two
+    # would let a signing stall hide behind cache hits.
+    query: "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job='identity-service',path='/tokens'}[5m]))) * 1000"
+    slo: 150
+
+alerts:
+  - name: token_issue_5xx
+    # Pages on issuance failing, which is the failure every other service feels as
+    # its own: a caller that cannot get a token cannot call anybody.
+    #
+    # A RATIO, not a raw error rate: ARCH-ISSUE-HEALTH promises a page at "more
+    # than 0.5% of token issuance requests", and `rate(5xx) > 0.005` would instead
+    # page at one error every 200 seconds — a threshold that means one thing at
+    # 10 rps and something else entirely at 1000. The five minutes the scenario
+    # names live in the range vector, so there is no second `for:` delay under it
+    # making the page later than the requirement says it comes.
+    expr: "sum(rate(http_requests_total{job='identity-service',path='/tokens',code=~'5..'}[5m])) / sum(rate(http_requests_total{job='identity-service',path='/tokens'}[5m])) > 0.005"
+    page: identity-oncall
+
+checks:
+  liveness: GET /healthz
+  # Readiness fails while the active signing key cannot be loaded: an instance that
+  # is up and cannot sign should take no traffic, because it turns every issuance
+  # into a 5xx and burns the alert above instead of being rolled out of the pool.
+  readiness: GET /readyz
+
+# There is deliberately NO `dependencies:` key here, and this comment is the
+# difference between that fact and a forgotten section. identity-service is the
+# fleet's root of trust: it calls no other service, publishes to no broker and
+# reaches no third party, so it is named in other services' dependency lists
+# (payment-service carries it as `degradable`) and names none of its own. Its two
+# stores are inside its own boundary in model.likec4 (a private store nested in
+# the service, never a fleet-level peer) and share its lifecycle rather than being
+# something it depends on across a boundary.
+#
+# The day that stops being true, the new entry has to be drawn in
+# services/identity-service/model.likec4 as well — resolution is against this
+# service's own model and never the landscape, because the landscape carries only
+# what crosses the service boundary while the model carries everything the service
+# touches, and the model is the set an on-call file has to agree with.

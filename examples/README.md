@@ -1,0 +1,94 @@
+# The example fleet
+
+`docs/` is a complete, runnable loam docs repo. It is small enough to read in one sitting and
+large enough that every row of [SCHEMA.md](../SCHEMA.md)'s canonical-joins table is exercised by
+something — including the joins that only appear once a fleet has more than two services in it.
+
+Run it from a clone. The `loam.json` is untracked; delete it when you are done.
+
+```bash
+echo '{ "docsDir": "examples/docs" }' > loam.json
+npm run dev -- list                          # the fleet and its maturity ladder
+npm run dev -- status                        # what to do next, derived from the files
+npm run dev -- validate --all                # the gate CI runs
+npm run dev -- archive FEAT-101 --dry-run    # the three-axis merge plan, writing nothing
+npm run dev -- archive FEAT-112 --dry-run    # an operation being retired, writing nothing
+npm run dev -- verify FEAT-088               # a shipped feature's done-check, frozen
+npm run dev -- dependencies                  # the active-feature graph
+```
+
+`test/examples.test.ts` pins the validate summary, every finding code and the archive plans
+file-for-file, so nothing below can drift away from the code without a test going red.
+
+## What is in it
+
+Five services, drawn inside one grouping element so the map looks like ordinary grouped C4:
+
+| service | what it is here to show |
+|---|---|
+| `checkout-web` | a UI service: page-specs under `ui/pages/`, no `openapi.yaml` of its own, and the one spec in the fleet that names no `sources` |
+| `order-service` | the busiest spine: four operations, a produced event, a consumed event, and a deprecated operation with a feature already open to retire it |
+| `payment-service` | the outbox, the acquirer, and an `arch.spec.md` whose `Covers:` lines reach the C4 model *and* the health signals |
+| `identity-service` | the permission vocabulary's owner, and a deprecated operation whose consumer has not migrated |
+| `notification-service` | a service with no HTTP API at all — three consumed messages, one of them from a producer outside the fleet |
+
+Around them: `kafka` as an `#external` `#platform` system with a topic per channel (edges point
+at the topic, never at the broker), `stripe` and `salesforce` as external systems, and
+`architecture/permissions.yaml` as the fleet's authorization vocabulary.
+
+**On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
+consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
+edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds
+to nothing: the metadata parses, the document validates, and the check silently grades zero
+edges. Nothing in loam reports that today, which is why the landscape says so in a comment.
+
+## Three features, at three points in their life
+
+- **`features/archive/FEAT-088-refunds/`** — shipped. It was merged by the real `loam archive`,
+  so its `.loam-before/` snapshot holds the exact bytes the merge overwrote and `loam unarchive
+  FEAT-088` would put them back. Its `verification.yaml` is the done-check written down, and it
+  reads **`attested`** rather than `verified`: every claim is confirmed, but the scenario claims
+  rest on an agent's word instead of a digest-matched test run. loam does not pretend those are
+  the same thing.
+- **`features/FEAT-101-payment-splitting/`** — in flight, and the big one: a new service arriving
+  with its own requirements, architecture requirements and contract, a C4 delta that splices a
+  nested element into the living landscape, and a `MODIFIED` requirement that **renames its
+  heading** while keeping its `Requirement-ID` — loam's rename mechanism.
+- **`features/FEAT-112-retire-order-v1/`** — in flight, and the smallest legal shape: no
+  `delta.likec4` at all, because retiring an operation moves no boxes. It carries the two halves
+  loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true`
+  marker inside the operation object.
+
+## The warnings are the lesson
+
+`loam validate --all` reports **0 errors and 7 warnings** here, and every one of them is
+deliberate. An example that reported nothing would teach nothing about what these checks catch:
+
+| finding | what it is demonstrating |
+|---|---|
+| `sources.absent` | `checkout-web`'s spec names no `sources`, so nothing ties it to code and `loam vouch` would refuse to stamp it |
+| `spine.op-link-missing` | one landscape edge says it calls payment-service and names no operation, so no check can tell whether the call still exists |
+| `spine.op-deprecated` | payment-service still calls identity-service's `validateToken`, which that contract marks `deprecated: true` — the consumer, not the provider, is the one being told |
+| `api.requirement-deprecated` (×2) | `IDN-VALIDATE-LEGACY` and `ORD-PLACE-V1` each govern only a deprecated operation: promised behaviour on its way out |
+| `permissions.unenforced` | `user/profile:read` is declared in the vocabulary and named by no requirement — the shape a vocabulary drifts into |
+| `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
+
+Plus one count rather than a finding: `sourcesUnverifiableFromHere: 4`. Four specs name paths in
+their own service repositories, and this is none of those repositories — the fleet gate reports
+the blind spot instead of resolving it. Running `loam validate --service <id>` inside each
+service repo is what closes it.
+
+## What the example deliberately does not carry
+
+- **`AGENTS.md` and `loam.json`.** A real docs repo has both, written by `loam init --docs .
+  --create`. They are left out here so the tree stays a pure set of documents, and so the
+  version stamp in a generated `AGENTS.md` cannot go stale against the running binary.
+- **An `asyncapi.yaml` delta.** There is no `features/<FEAT>/specs/<svc>/asyncapi.yaml` in loam
+  today: the async axis has no feature delta, no merge and no baseline pin. FEAT-101 therefore
+  draws its `PaymentSplit` edge with the message in the title and no `metadata { publishes }`,
+  and the new service's living async contract is written in the same reviewed PR that archives
+  the feature. The comment in `delta.likec4` says so rather than leaving it to be discovered.
+- **A generated Gherkin suite.** `loam gherkin` writes into a *service's* repository, and there
+  are none here — this fleet is six repositories, and `docs/` is one of them. The same reason
+  leaves `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code
+  is, so nothing in this tree can honestly be stamped `verified`.

@@ -104,6 +104,8 @@ export type ErrorCode =
   | "record-federated"
   /** A `verification.yaml` that exists but cannot be read as a record — never overwritten, never reported as absent. */
   | "record-unreadable"
+  /** `loam verify --record` found the record changed between its locked read and the swap — an editor or a lock-ignoring writer landed first. Nothing was written; re-running merges over the record as it now stands. */
+  | "record-raced"
   /** `loam gherkin <FEAT>` refusing to overwrite a `.feature` file owned by another feature still in flight. */
   | "gherkin-conflict"
   /** `loam vouch` found the spec changed under it between reading and stamping — another vouch or an edit landed first, and nothing was written. */
@@ -118,7 +120,7 @@ export type ErrorCode =
   | "docs-missing"
   /** `docsDir` is a directory but has no `services/`: it is some other directory, most often the service repo itself after a typo. */
   | "services-missing"
-  /** Another `loam archive`/`unarchive` holds the docs repo's advisory lock: nothing was read or written, and re-running once it finishes works. */
+  /** Another loam writer holds the docs repo's advisory lock: nothing was read or written, and re-running once it finishes works. `verify --record` waits out a short holder before giving this answer. */
   | "docs-busy"
   | "internal";
 

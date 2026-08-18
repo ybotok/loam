@@ -1,0 +1,24 @@
+# Page-spec (source of truth). planned: `loam render` generates an HTML prototype from this (model A).
+# Links the architecture (consumes endpoints) and behavior (governing scenarios).
+# No command reads page-specs yet — the format is illustrative, not contract.
+page: order-status
+title: Order status
+service: checkout-web
+status: draft
+layout:
+  - { type: heading, text: "Order {orderId}" }
+  - { type: text, id: state, label: "Status" }
+  - { type: list, id: order-lines, itemFields: [sku, quantity, amount] }
+  # One empty state for both "no such order" and "not yours" — the page cannot
+  # tell them apart, and the governing scenario says it must not try: two
+  # different messages would turn the id into an oracle for whether an order exists.
+  - { type: banner, id: not-found, text: "We could not find that order" }
+consumes:
+  # One operation, one page. The status page reads and never writes, which is
+  # why `cancelOrder` is absent: it is order-service's own requirement, gated on
+  # `user/orders:cancel`, and a page that consumed it would owe that permission
+  # a place in the layout and a scenario naming the refusal.
+  - { service: order-service, op: getOrder }  # GET /orders/{id}
+behavior:
+  - "checkout-web / Show order status / Show the current state of an order"
+  - "checkout-web / Show order status / The order id is not the customer's"

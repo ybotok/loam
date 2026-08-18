@@ -1,0 +1,164 @@
+# The async contract — read-only. Every operation here carries `action: receive`:
+# this service produces no message and exposes no HTTP operation, so the whole of
+# what it promises the fleet is what it does with three topics.
+#
+# AsyncAPI 3.0 only. Its operations are named top-level objects carrying
+# `action: send|receive`, which is what makes a message's direction legible;
+# 2.x spells the same thing as publish/subscribe under a channel, where the two
+# words are ambiguous about whose perspective they take — and a 2.x document
+# reads here as a contract with no messages at all.
+#
+# The name is the spine: the landscape edge's `metadata { consumes }`, the
+# requirement's `Consumes:` line and `name` below are one name spelled three
+# times, and they must be identical. For a consumer the line that grades THIS
+# file is the requirement's — a `Consumes:` naming a message no operation here
+# receives is `spec-event.message-undefined`. The edge's copy answers the other
+# question, the one no single repository can: whether anybody publishes the
+# name at all. Deleting a `Consumes:` line therefore does not move a check onto
+# the landscape, it removes one.
+#
+# WHY THE PAYLOADS ARE HERE AT ALL, and why one of them is different in kind:
+#
+#   * `order.OrderPlaced` and `payment.PaymentCaptured` are produced INSIDE the
+#     fleet, so order-service's and payment-service's own asyncapi.yaml are the
+#     authoritative contracts. What is restated below is the subset this consumer
+#     actually reads — enough that the handler is codeable from this file, not a
+#     second source of truth for the event.
+#
+#   * `crm.CustomerUpdated` is produced by `salesforce`, an `#external` element in
+#     the landscape. There is no services/salesforce/, there never will be, and so
+#     no producer contract exists anywhere in this docs repo. That is a legal
+#     shape — loam recognizes an external producer and does not report
+#     `spine.message-unproduced` — but it shifts the contract question onto the
+#     only file that can answer it: this one. `spine.message-external` (warn)
+#     fires for exactly as long as this document defines no shape for the message,
+#     and stops the moment it does. The payload below is therefore not a
+#     convenience copy; it IS the fleet's contract for that message, and the
+#     reason the finding is absent from this service's validate output.
+asyncapi: 3.0.0
+info:
+  title: notification-service events
+  version: "1.0"
+
+channels:
+  orderEvents:
+    address: order.events.v1
+    description: Order lifecycle events, produced by order-service
+    messages:
+      OrderPlaced:
+        $ref: '#/components/messages/OrderPlaced'
+  paymentEvents:
+    address: payment.events.v1
+    description: Payment lifecycle events, produced by payment-service's outbox relay
+    messages:
+      PaymentCaptured:
+        $ref: '#/components/messages/PaymentCaptured'
+  crmEvents:
+    address: crm.events.v1
+    description: Customer master-data events, produced by salesforce (outside the fleet)
+    messages:
+      CustomerUpdated:
+        $ref: '#/components/messages/CustomerUpdated'
+
+# One operation per message rather than one per channel, so that adding a second
+# message to a topic later is an addition here instead of a silent widening: an
+# operation that lists no messages applies to EVERY message of its channel, and
+# would start receiving contracts nobody read.
+operations:
+  receiveOrderPlaced:
+    action: receive
+    channel:
+      $ref: '#/channels/orderEvents'
+    messages:
+      - $ref: '#/channels/orderEvents/messages/OrderPlaced'
+  receivePaymentCaptured:
+    action: receive
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
+  receiveCustomerUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/crmEvents'
+    messages:
+      - $ref: '#/channels/crmEvents/messages/CustomerUpdated'
+
+components:
+  messages:
+    OrderPlaced:
+      # Namespaced by the domain that OWNS the message, never by the service
+      # reading it: `order.` says order-service is the one producer, and two
+      # services declaring they send this name would be
+      # `asyncapi.message-contested` — which contract a consumer reads must not
+      # be a coin flip.
+      name: order.OrderPlaced
+      title: Order placed
+      payload:
+        type: object
+        # A payload declaring no shape — absent, or a bare `type: object` — is
+        # `asyncapi.payload-undescribed`: the name joins the spine while nothing
+        # says what a handler would read. loam probes for presence and never
+        # reads a field, which is what keeps a later move to Avro a
+        # `schemaFormat:` line here and no change in loam.
+        required: [orderId, customerId, placedAt]
+        properties:
+          orderId:
+            type: string
+            format: uuid
+            description: The idempotency key for the confirmation — one send per orderId
+          customerId:
+            type: string
+            format: uuid
+          placedAt:
+            type: string
+            format: date-time
+    PaymentCaptured:
+      name: payment.PaymentCaptured
+      title: Payment captured
+      payload:
+        type: object
+        required: [paymentId, orderId, capturedAmount, currency, capturedAt]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+            format: uuid
+            description: What joins a receipt to the order the customer was told about
+          capturedAmount:
+            type: integer
+            description: minor units, restated on the receipt exactly as captured
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          capturedAt:
+            type: string
+            format: date-time
+    CustomerUpdated:
+      name: crm.CustomerUpdated
+      title: Customer contact details updated
+      payload:
+        type: object
+        # `version` is load-bearing rather than descriptive: the CRM redelivers
+        # and reorders, and the "out-of-order update is ignored" scenario in
+        # spec.md is only implementable because this field is in the contract.
+        # Nothing outside this document defines it.
+        required: [customerId, version, updatedAt]
+        properties:
+          customerId:
+            type: string
+            format: uuid
+          version:
+            type: integer
+            description: Monotonic per customer; an update at or below the stored version is dropped
+          email:
+            type: string
+            format: email
+          phone:
+            type: string
+            description: E.164; absent when the customer has no phone on record
+          updatedAt:
+            type: string
+            format: date-time

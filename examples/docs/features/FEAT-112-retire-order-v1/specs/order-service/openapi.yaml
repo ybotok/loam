@@ -1,0 +1,28 @@
+# API delta for FEAT-112 — order-service retires `createOrderV1`.
+#
+# A removal is spelled as the exact living path and HTTP method, the operationId kept, and
+# `x-loam-remove: true` INSIDE the operation object beside it. Three things are load-bearing:
+#
+#   - the path+method must address a living operation (`openapi.remove-target-missing`);
+#   - the operationId must be the one living at that slot (`openapi.remove-target-mismatch`);
+#   - the marker must sit at operation level, not one level up beside the methods, where it
+#     names no operation and retires nothing (`openapi.remove-marker-path-level`).
+#
+# The marker never reaches the living contract — archive strips `x-loam-remove` and
+# `x-loam-based-on` on every merge branch — and a path item consisting of nothing but a marker
+# publishes no phantom path. Archive deletes only the matching method, and deliberately does not
+# garbage-collect the components the operation used: another operation may still reference them,
+# and a merge is not the place to decide that.
+#
+# Removal markers carry no baseline pin, unlike the operations a feature edits:
+# `openapi.remove-target-mismatch` already checks that exact slot, which is the same question a
+# pin would answer.
+openapi: 3.1.0
+info:
+  title: order-service
+  version: "1.0"
+paths:
+  /v1/orders:
+    post:
+      operationId: createOrderV1
+      x-loam-remove: true

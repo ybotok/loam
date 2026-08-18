@@ -200,7 +200,8 @@ selected that tool. The map of which invocation surfaces what:
   reported as \`writePath\` beside the findings: \`doctor.docs-locked\` (a held
   \`.loam-lock\` — a warning while its holder is alive, since the answer is to wait
   and re-run, and a BLOCKER once the holder is a process that no longer exists on
-  this host, since nothing will ever release it and every archive and unarchive
+  this host, since nothing will ever release it and every writer — archive,
+  unarchive, rebase, \`verify --record\` —
   refuses \`docs-busy\` until it is deleted), \`doctor.commit-interrupted\` (blocker:
   a \`.loam-commit\` naming an archive or unarchive that was killed mid-commit, so
   the living docs may be half-written — re-run that exact command and it recovers

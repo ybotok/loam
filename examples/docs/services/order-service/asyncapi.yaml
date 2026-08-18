@@ -1,0 +1,108 @@
+# The async contract — both directions, because this service is a producer and a
+# consumer at once.
+#
+# AsyncAPI 3.0 only. Its operations are named top-level objects carrying
+# `action: send|receive`, which is the exact analog of an `operationId` and the thing
+# that makes direction legible; 2.x spells the same thing as publish/subscribe under
+# a channel, where the two words are ambiguous about whose perspective they take. A
+# 2.x document declares no `operations` at all, so loam would read it as a contract
+# with no messages rather than as a mis-parsed one.
+#
+# The join is the message NAME, spelled three times and required to be identical: the
+# landscape edge's `metadata { publishes }` / `metadata { consumes }`, a requirement's
+# `Publishes:` / `Consumes:` line, and `name` below. A name this file does not declare
+# an operation for, in the matching direction, is `spine.message-undefined` from the
+# landscape and `spec-event.message-undefined` from the spec — the same breach seen
+# from the two documents that can be wrong about it.
+asyncapi: 3.0.0
+info:
+  title: order-service events
+  version: "1.0"
+
+channels:
+  orderEvents:
+    address: order.events.v1
+    description: Order lifecycle events, published by the outbox relay (ARCH-ORD-OUTBOX)
+    messages:
+      OrderPlaced:
+        $ref: '#/components/messages/OrderPlaced'
+  paymentEvents:
+    address: payment.events.v1
+    description: payment-service's channel, read by the payment-consumer
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+
+operations:
+  sendOrderPlaced:
+    action: send
+    channel:
+      $ref: '#/channels/orderEvents'
+    messages:
+      - $ref: '#/channels/orderEvents/messages/OrderPlaced'
+  # `action: receive` is what keeps order-service a consumer of this message and not a
+  # second producer of it: `asyncapi.message-contested` counts services declaring they
+  # SEND one name, and two of them make every consumer's join a coin flip. Declaring
+  # the message here is not a claim to own it — payment-service's contract is
+  # authoritative — it is what makes the consuming edge resolve at all.
+  receivePaymentAuthorized:
+    action: receive
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentAuthorized'
+
+components:
+  messages:
+    OrderPlaced:
+      # Namespaced by the domain that owns it, and produced by exactly one service.
+      name: order.OrderPlaced
+      title: Order placed
+      # The producer's copy, so this is the authoritative shape — notification-service
+      # declares a three-field subset of it and nothing compares the two, which is what
+      # leaves this file free to add a field without breaking a consumer. `currency`
+      # travels with `totalAmount` because a total with no currency is precisely the
+      # defect v1 shipped (ORD-PLACE-V1: every v1 total is assumed EUR). Declaring
+      # properties at all is what keeps this out of `asyncapi.payload-undescribed`.
+      payload:
+        type: object
+        required: [orderId, customerId, currency, totalAmount, placedAt]
+        properties:
+          orderId:
+            type: string
+            format: uuid
+          customerId:
+            type: string
+            format: uuid
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          totalAmount:
+            type: integer
+            description: minor units
+          placedAt:
+            type: string
+            format: date-time
+
+    PaymentAuthorized:
+      # The consumer's copy of a contract payment-service owns. It is deliberately the
+      # subset this service reads — `paymentId` is what ARCH-ORD-DEDUPE's ledger keys
+      # on and `orderId` is what ORD-ON-AUTHORIZED advances — and nothing compares the
+      # two documents field by field, because a consumer that demanded the producer's
+      # whole payload would break on every field the producer adds.
+      name: payment.PaymentAuthorized
+      title: Payment authorized
+      payload:
+        type: object
+        required: [paymentId, orderId, authorizedAt]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+            description: The ledger key that makes a redelivery a no-op.
+          orderId:
+            type: string
+            format: uuid
+          authorizedAt:
+            type: string
+            format: date-time
