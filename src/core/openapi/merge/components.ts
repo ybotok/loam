@@ -1,16 +1,21 @@
 /**
  * `$ref` as a pair of plain questions — which ones does this tree contain, and
  * what does one point at — and the component closure the merge answers them
- * for: every local component reachable from the feature's path items rides
- * along into the living document.
+ * for.
  *
- * Formerly `refs.ts`, which held only the two questions; the closure moved in
- * beside them because it is their one caller outside tests, and the walk and
- * the questions drifting apart would change which components a merge copies.
+ * The closure is verdict-driven, not reachability-driven: every component the
+ * feature DECLARES is classified against its `x-loam-baselines` entry exactly
+ * as an operation is classified against its pin, and reachability decides only
+ * one thing — whether a genuinely NEW component rides along. The old rule,
+ * "copy everything reachable from any feature path item", let a QUOTED
+ * operation drag its authoring-time component copy over someone else's landed
+ * change; the walk now starts from what this merge actually WROTE, so a quote
+ * pulls nothing.
  */
 import { isDeepStrictEqual } from "node:util";
 import type { Document } from "yaml";
-import { withoutFeatureMarkers } from "./markers.js";
+import { classifyBaselineDigests, valueDigest } from "../digest.js";
+import { restatedSurfaces, surfaceIn, type BaselineRecord } from "../baseline/record.js";
 
 export function collectRefs(node: unknown): string[] {
   const out: string[] = [];
@@ -50,30 +55,96 @@ export function resolvePointer(root: unknown, ref: string): { found: boolean; va
   return { found: true, value: current };
 }
 
-/** What the closure computed: living components overwritten, and local refs nothing resolves. */
+/** Everything the closure needs; one object because the merge is its only caller. */
+export interface ComponentClosureInput {
+  /** The living document the copies are written into. */
+  living: Document;
+  featPlain: unknown;
+  livingPlain: unknown;
+  /** The feature's `x-loam-baselines` record, read once by the merge. */
+  record: BaselineRecord;
+  /** The plain values the path merge actually wrote, labelled for the ref sweep. */
+  written: Array<{ from: string; value: unknown }>;
+}
+
+/** What the closure computed: components overwritten, quoted, stale, and refs nothing resolves. */
 export interface ComponentClosureOutcome {
   componentsModified: string[];
+  componentsQuoted: string[];
+  componentsStale: string[];
   unresolved: Array<{ ref: string; from: string }>;
 }
 
 /**
- * Merge the feature's component closure into the living document: every local
- * component reachable from the feature's path items is copied in (recursively
- * — a component's own refs pull their targets in too), identical living
- * components are left alone, differing ones are overwritten, and a local ref
- * that resolves in NEITHER document is reported for the caller to gate.
+ * Merge the feature's components into the living document by verdict:
+ *
+ *  - quote → skipped; the living copy stays, whatever landed on it since.
+ *  - edit, stale (under --approve), or unpinned-and-differing → copied; the
+ *    unpinned copy is the old upsert, kept for never-rebased deltas.
+ *  - unpinned and living-equal → skipped, as it always was: nothing to write.
+ *  - unfounded (pinned, living gone — the gate refused; --approve) → copied,
+ *    because a written operation may reference it and the merge must never
+ *    leave a dangling ref behind.
+ *  - NEW (unpinned, living-absent) → copied only when reachable from written
+ *    content or from another copied component's own refs. The visited-set
+ *    fixpoint is what keeps A↔B cycles terminating and unrelated namespaces
+ *    uncopied.
+ *
+ * The unresolved sweep is unchanged in meaning: every local ref reachable from
+ * written content and copied components must resolve in the copy set or the
+ * living document.
  */
-export function mergeComponentClosure(
-  living: Document,
-  featPlain: unknown,
-  livingPlain: unknown,
-  featPathEntries: Array<[string, unknown]>,
-): ComponentClosureOutcome {
+export function mergeComponentClosure(input: ComponentClosureInput): ComponentClosureOutcome {
+  const { living, featPlain, livingPlain, record, written } = input;
   const componentsModified: string[] = [];
+  const componentsQuoted: string[] = [];
+  const componentsStale: string[] = [];
   const unresolved: ComponentClosureOutcome["unresolved"] = [];
-  const visited = new Set<string>();
   const copies: Array<{ kind: string; name: string; value: unknown }> = [];
+  const copied = new Set<string>();
+  /** Genuinely new components, parked until something written reaches them. */
+  const parked = new Map<string, { kind: string; name: string; value: unknown }>();
 
+  // ONE enumeration (baseline/record.ts) with the rebase plan and the gate —
+  // and ONE living lookup — so "which components does this delta declare, and
+  // do they exist" cannot drift between the command that pins, the gate that
+  // grades and this closure that writes.
+  for (const surface of restatedSurfaces(featPlain)) {
+    if (surface.kind !== "component") continue;
+    const cut = surface.id.indexOf("/");
+    const entry = { kind: surface.id.slice(0, cut), name: surface.id.slice(cut + 1), value: surface.value };
+    const inLiving = surfaceIn(livingPlain, surface);
+    const verdict = classifyBaselineDigests(
+      record.components[surface.id],
+      valueDigest(surface.value),
+      inLiving.found ? valueDigest(inLiving.value) : undefined,
+    );
+    if (verdict === "quote") {
+      componentsQuoted.push(surface.id);
+      continue;
+    }
+    if (verdict === "unpinned") {
+      if (!inLiving.found) {
+        parked.set(surface.id, entry);
+        continue;
+      }
+      if (isDeepStrictEqual(inLiving.value, surface.value)) continue;
+      componentsModified.push(surface.id);
+    } else {
+      if (verdict === "stale") componentsStale.push(surface.id);
+      if (inLiving.found && !isDeepStrictEqual(inLiving.value, surface.value)) componentsModified.push(surface.id);
+    }
+    copies.push(entry);
+    copied.add(surface.id);
+  }
+
+  // The reachability fixpoint: refs out of written content and out of every
+  // copy — classification copies now, parked promotions as they join.
+  const queue: Array<{ node: unknown; from: string }> = [
+    ...written.map((w) => ({ node: w.value, from: w.from })),
+    ...copies.map((c) => ({ node: c.value, from: `components/${c.kind}/${c.name}` })),
+  ];
+  const visited = new Set<string>();
   const visitRef = (ref: string, from: string): void => {
     if (!ref.startsWith("#/")) return;
     const match = /^#\/components\/([^/]+)\/([^/]+)(?:\/|$)/.exec(ref);
@@ -83,39 +154,33 @@ export function mergeComponentClosure(
       }
       return;
     }
-    const kind = match[1]!;
-    const name = match[2]!;
-    const key = `${kind}/${name}`;
+    const key = `${match[1]!}/${match[2]!}`;
     if (visited.has(key)) return;
     visited.add(key);
-    const inFeature = resolvePointer(featPlain, `#/components/${kind}/${name}`);
-    if (inFeature.found) {
-      copies.push({ kind, name, value: inFeature.value });
-      walk(inFeature.value, `components/${key}`);
+    // Already copied by verdict: its own refs are in the queue from the start.
+    if (copied.has(key)) return;
+    const parkedEntry = parked.get(key);
+    if (parkedEntry !== undefined) {
+      parked.delete(key);
+      copies.push(parkedEntry);
+      copied.add(key);
+      queue.push({ node: parkedEntry.value, from: `components/${key}` });
       return;
     }
-    if (!resolvePointer(livingPlain, `#/components/${kind}/${name}`).found) {
+    // Not copied and not new: a quoted or unchanged declaration, or something
+    // the feature never spells. Either way the LIVING document must have it.
+    if (!resolvePointer(livingPlain, `#/components/${key}`).found) {
       unresolved.push({ ref, from });
     }
   };
-
-  const walk = (node: unknown, from: string): void => {
+  while (queue.length > 0) {
+    const { node, from } = queue.pop()!;
     for (const ref of collectRefs(node)) visitRef(ref, from);
-  };
-
-  for (const [path, featItemPlain] of featPathEntries) {
-    walk(withoutFeatureMarkers(featItemPlain), `paths ${path}`);
   }
 
   for (const { kind, name, value } of copies) {
-    const existing = living.getIn(["components", kind, name]);
-    if (existing !== undefined) {
-      const existingPlain = resolvePointer(livingPlain, `#/components/${kind}/${name}`);
-      if (existingPlain.found && isDeepStrictEqual(existingPlain.value, value)) continue;
-      componentsModified.push(`${kind}/${name}`);
-    }
     living.setIn(["components", kind, name], value);
   }
 
-  return { componentsModified, unresolved };
+  return { componentsModified, componentsQuoted, componentsStale, unresolved };
 }

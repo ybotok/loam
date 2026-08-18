@@ -1085,10 +1085,10 @@ paths:
       // The delta restates /payments with a SHORTER parameters list. The
       // difference check skipped every non-method key, so the shared header
       // parameter vanished from every operation on the path, silently. The
-      // restated operation is pinned (openapi.baseline-missing gates archive
-      // now), and the pin changes nothing here: path-level keys have no
-      // per-operation slot to hang a pin on, which is exactly why the wholesale
-      // upsert below still deserves its warning.
+      // delta is pinned (openapi.baseline-missing gates archive now), and the
+      // record classifies the shortened list an EDIT — pinned against living,
+      // differing from it — so the wholesale upsert still happens, and still
+      // deserves its warning: it applies to every operation on the path.
       "features/FEAT-81-params/specs/payment-service/openapi.yaml": pinOpenapi(
         `openapi: 3.1.0
 paths:

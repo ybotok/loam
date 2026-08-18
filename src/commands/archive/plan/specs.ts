@@ -140,7 +140,10 @@ export async function planSpecs(
         if (err instanceof OpenapiMergeError) throw new ArchiveFailure("merge-failed", err.message);
         throw err;
       }
-      const { text, modified, pathItemModified, removed, quoted, componentsModified, unresolved } = merge;
+      const {
+        text, modified, pathItemModified, removed, quoted,
+        pathItemQuoted, pathItemStale, componentsModified, componentsQuoted, componentsStale, unresolved,
+      } = merge;
       if (text !== null) {
         writes.push(planWrite(livingOpenapi, text));
         say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
@@ -152,8 +155,23 @@ export async function planSpecs(
       // Said out loud, because "the plan wrote less than my delta spells" is
       // the one thing a reader cannot infer from a merged file. Not a warning:
       // quoting the contract around your change is correct authoring, and
-      // leaving the quote alone is the correct merge.
+      // leaving the quote alone is the correct merge. The path-level and
+      // component quotes get the same sentence for the same reason.
       for (const label of quoted) say(`      · quotes ${label} — unchanged since it was pinned, left as living has it`);
+      for (const label of pathItemQuoted) {
+        say(`      · quotes path-level ${label} — unchanged since it was pinned, left as living has it`);
+      }
+      for (const comp of componentsQuoted) {
+        say(`      · quotes component ${comp} — unchanged since it was pinned, left as living has it`);
+      }
+      // Stale surfaces reaching the merge at all means --approve pushed past
+      // the gate's openapi.baseline-stale — the plan still names what it cost.
+      for (const label of pathItemStale) {
+        say(`      ⚠ stale baseline on path-level ${label} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
+      }
+      for (const comp of componentsStale) {
+        say(`      ⚠ stale baseline on component ${comp} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
+      }
       for (const label of modified) {
         planWarns.push({
           severity: "warn",

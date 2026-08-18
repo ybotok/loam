@@ -23,7 +23,8 @@
  *  - the merge: quotes are skipped, pins never reach a living contract
  *  - both losses above, end to end, through the real commands
  *  - the gate: stale refuses, missing is one warning per service
- *  - the documented gaps: components, path-level keys, removal markers
+ *  - the closed gaps: components and path-level keys ride the same verdicts
+ *    through the `x-loam-baselines` record
  */
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
@@ -509,12 +510,20 @@ describe("two features over one service", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* The documented gaps                                                 */
+/* The closed gaps                                                     */
 /* ------------------------------------------------------------------ */
 
-describe("what the pin deliberately does NOT cover", () => {
-  it("a restated component still overwrites the living one — only the warning says so", () => {
-    const living = `openapi: 3.1.0
+describe("what the pin now covers: the surfaces beside the operations", () => {
+  // These two used to pin the DOCUMENTED LOSSES — a quoted component and a
+  // quoted path-level key were upserted wholesale, because neither had a slot
+  // to hang a pin on. The `x-loam-baselines` record closed both gaps, so the
+  // tests flip: the same restatement, pinned when it was authored, is now a
+  // QUOTE the merge skips, and the living document keeps whatever landed on
+  // it since. The fixtures pin against the living AS IT STOOD at authoring
+  // time (a pure restatement), then merge against a moved living — the exact
+  // sequence that used to revert the other team's change.
+  it("a quoted component is skipped: the living document keeps the newer value", () => {
+    const authored = `openapi: 3.1.0
 paths:
   /a:
     post:
@@ -525,19 +534,23 @@ paths:
             schema: { $ref: "#/components/schemas/Order" }
 components:
   schemas:
-    Order: { type: object, title: "changed by somebody else" }
+    Order: { type: object, title: "as authored" }
 `;
-    const delta = pinOpenapi(living.replace('title: "changed by somebody else"', 'title: "as authored"'), living);
+    const delta = pinOpenapi(authored, authored);
+    const living = authored.replace('title: "as authored"', 'title: "changed by somebody else"');
     const merged = mergeOpenapiPaths(living, delta, SVC);
-    // The operation itself is a quote and is skipped…
+    // The operation is a quote and is skipped, as it always was…
     expect(merged.quoted).toHaveLength(1);
-    // …but its component closure is copied over regardless. `components/schemas`
-    // has no per-operation slot to hang a pin on; SCHEMA.md records the gap.
-    expect(merged.componentsModified).toEqual(["schemas/Order"]);
+    // …and its component no longer rides along: the record entry equals the
+    // delta's own content, so the copy is a quote too, and skipping it is what
+    // keeps somebody else's landed change standing.
+    expect(merged.componentsModified).toEqual([]);
+    expect(merged.componentsQuoted).toEqual(["schemas/Order"]);
+    expect(merged.text).toContain("changed by somebody else");
   });
 
-  it("a path-level key is still upserted wholesale", () => {
-    const living = `openapi: 3.1.0
+  it("a quoted path-level key is skipped, not upserted wholesale", () => {
+    const authored = `openapi: 3.1.0
 paths:
   /a:
     parameters: [{ name: tenant, in: header }]
@@ -546,9 +559,12 @@ paths:
       responses:
         "200": { description: ok }
 `;
-    const delta = pinOpenapi(living.replace("[{ name: tenant, in: header }]", "[]"), living);
+    const delta = pinOpenapi(authored, authored);
+    const living = authored.replace("[{ name: tenant, in: header }]", "[{ name: tenant, in: header, required: true }]");
     const merged = mergeOpenapiPaths(living, delta, SVC);
     expect(merged.quoted).toHaveLength(1);
-    expect(merged.pathItemModified).toEqual(["'parameters' (/a)"]);
+    expect(merged.pathItemModified).toEqual([]);
+    expect(merged.pathItemQuoted).toEqual(["'parameters' (/a)"]);
+    expect(merged.text).toContain("required: true");
   });
 });
