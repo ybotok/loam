@@ -186,3 +186,75 @@ describe("status and doctor agree about the repo they are standing in", () => {
     expect(svcReport.findings.map((f: { code: string }) => f.code)).toContain("doctor.service-unbound");
   });
 });
+
+/**
+ * A version-2 journal — the record the smaller transaction (rebase, vouch,
+ * new, gherkin) writes before its first rename — as a killed run leaves it.
+ *
+ * Written by hand rather than by killing a real commit because the question
+ * under test is what `doctor` READS off it; test/staging-txn.test.ts and the
+ * per-writer crash suites own the other half, that the writers put it there
+ * and recover from it. The digests are syntactically real (that is what the
+ * strict reader checks) and belong to no file: nothing here repairs anything.
+ */
+const INTERRUPTED_VOUCH = {
+  version: 2,
+  command: "vouch",
+  rerun: "loam vouch --service payment-service --yes",
+  target: "payment-service",
+  pid: 4242,
+  host: "build-box",
+  at: "2026-08-01T10:00:00.000Z",
+  files: [
+    {
+      path: "services/payment-service/spec.md",
+      before: "a".repeat(64),
+      after: "b".repeat(64),
+      tmp: "services/payment-service/.spec.md.loam-4242-0-1754042400000.tmp",
+    },
+  ],
+};
+
+describe("an interrupted commit's own record names its repair", () => {
+  it("prints the stored rerun verbatim as the fix, rather than guessing at a command", async () => {
+    // The `rerun` is journal DATA, so agent-commands-runnable.test.ts cannot
+    // see it and cannot check it parses — test/staging-txn.test.ts parses every
+    // writer's template against the real CLI instead. What is checked here is
+    // that `doctor` prints THAT string and not one it composed itself: version
+    // 1's `loam <command> <feature>` form yields `loam vouch payment-service`,
+    // which the CLI refuses.
+    const project = await makeProject(coherentFixture());
+    cleanups.push(() => project.destroy());
+    await project.write(".loam-commit", JSON.stringify(INTERRUPTED_VOUCH, null, 2) + "\n");
+
+    const result = await runLoam(project.workDir, "doctor", "--json");
+    expect(result.code).toBe(1);
+    const report = JSON.parse(result.stdout);
+    expect(report.healthy).toBe(false);
+    const finding = report.findings.find((f: { code: string }) => f.code === "doctor.commit-interrupted");
+    expect(finding, result.stdout).toBeDefined();
+    expect(finding.severity).toBe("blocker");
+    expect(finding.fix).toContain(INTERRUPTED_VOUCH.rerun);
+    // Who, when and which files — what a human places the crash against.
+    expect(finding.message).toContain("build-box");
+    expect(finding.message).toContain("4242");
+    expect(finding.message).toContain("services/payment-service/spec.md");
+    // And it is graded as a record loam UNDERSTANDS: the v1 reader rejects the
+    // version field, and a v2 record mis-graded `commit-unreadable` would send
+    // its reader to a human instead of to the one-command repair.
+    expect(report.findings.map((f: { code: string }) => f.code)).not.toContain("doctor.commit-unreadable");
+    expect(report.writePath.intent).toMatchObject({ version: 2, rerun: INTERRUPTED_VOUCH.rerun });
+    expect(report.writePath.intentUnreadable).toBe(false);
+  });
+
+  it("names the writer and its target in the human view too", async () => {
+    const project = await makeProject(coherentFixture());
+    cleanups.push(() => project.destroy());
+    await project.write(".loam-commit", JSON.stringify(INTERRUPTED_VOUCH, null, 2) + "\n");
+
+    const result = await runLoam(project.workDir, "doctor");
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("interrupted vouch of payment-service");
+    expect(result.out).toContain(INTERRUPTED_VOUCH.rerun);
+  });
+});

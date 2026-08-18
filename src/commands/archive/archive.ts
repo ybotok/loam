@@ -15,7 +15,7 @@ import { archiveLocked } from "./run.js";
 import { LandscapeSpliceError } from "../../core/c4/splice/contract.js";
 import { NotUtf8Error } from "../../core/staging/writes.js";
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
-import { InterruptedCommitError } from "../../core/staging/recovery/intent.js";
+import { InterruptedCommitError } from "../../core/staging/interrupted.js";
 
 
 function archiveErrorCode(err: unknown): ErrorCode {

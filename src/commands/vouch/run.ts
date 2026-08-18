@@ -10,12 +10,41 @@ import { existsSync } from "node:fs";
 import { withFrontmatterFields } from "../../core/document/frontmatter.js";
 import { contentDigest, encodeSourceIndex } from "../../core/provenance/stamp.js";
 import { SPEC_AXES, servicePaths } from "../../core/repo/paths.js";
-import { message, rollbackMessage, rollbackStaged, stageWrites, swapStaged } from "../../core/staging/commit.js";
+import { rollbackStaged, stageWrites } from "../../core/staging/commit.js";
+import { join } from "node:path";
+import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
+import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { type StampedSpec, type VouchOutcome, type VouchRequest } from "./contract.js";
 import { verifySpec, type VerifiedSpec } from "./verify.js";
 
 export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
+  // A predecessor's journal is rolled forward BEFORE verification reads a
+  // byte. Recovery under the commit lock alone was tried first and kept as
+  // the backstop, but it changes files verification has already read, so the
+  // run's own raced check then refused a sound stamp and the fix doctor
+  // prints took two runs instead of one. Cheap when there is nothing to do:
+  // one existsSync.
+  let recoveredEarly: CommitRecovery | null = null;
+  if (existsSync(join(req.docsDir, COMMIT_INTENT))) {
+    let release: () => Promise<void>;
+    try {
+      release = await acquireDocsLockWaiting(req.docsDir, LOCK_WAIT_MS);
+    } catch (err) {
+      if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
+      throw err;
+    }
+    try {
+      recoveredEarly = await recoverInterruptedCommit(req.docsDir);
+    } catch (err) {
+      if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
+      throw err;
+    } finally {
+      await release();
+    }
+  }
   const paths = servicePaths(req.docsDir, req.service);
   if (!existsSync(paths.spec)) {
     return {
@@ -46,13 +75,54 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
   const archPlan = archVerified === null ? null : planStamp(archVerified, req);
   const writes: PlannedWrite[] = [specPlan.write, ...(archPlan === null ? [] : [archPlan.write])];
 
-  // Commit through archive's stage-and-swap machinery (core/staging.ts) rather
-  // than a writeFile per file: every stamp is computed above in memory, so a
-  // plain sequential write could only die BETWEEN the pair's writes — spec.md
-  // verified, arch.spec.md still carrying the old stamp — the exact half-stamped
-  // state the all-or-nothing verification exists to rule out, lost at the last
-  // step to a full disk. Staging parks each file's new bytes beside it, swaps by
-  // rename(2), and on failure restores what already swapped from its pre-image.
+  // The slow half — reading specs, hashing sources, composing stamps — ran
+  // UNLOCKED above, so vouches for independent services do not serialise
+  // behind one repo-wide mutex. Only the commit window takes the docs lock:
+  // the same one archive, rebase and verify --record hold, in the waiting
+  // form, because two vouches for different services are both supposed to
+  // land. This is the lock the roadmap called missing: without it a vouch
+  // could stage against bytes an archive was mid-swap over, and the byte
+  // compare below would refuse a perfectly sound stamp — or worse, an
+  // interrupted commit's journal would be silently written over.
+  let releaseLock: () => Promise<void>;
+  try {
+    releaseLock = await acquireDocsLockWaiting(req.docsDir, LOCK_WAIT_MS);
+  } catch (err) {
+    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
+    throw err;
+  }
+  try {
+    // A journal under the lock means the last writer never finished; recover
+    // or refuse before reading the pre-images this commit will compare.
+    let recovered: CommitRecovery | null;
+    try {
+      recovered = await recoverInterruptedCommit(req.docsDir);
+    } catch (err) {
+      if (err instanceof InterruptedCommitError) return { ok: false, code: "commit-interrupted", message: err.message };
+      throw err;
+    }
+    return await commitStamp(req, { writes, specPlan, archPlan, verified }, recovered ?? recoveredEarly);
+  } finally {
+    await releaseLock();
+  }
+}
+
+/**
+ * The commit window: stage, compare against what verification read, journal,
+ * swap. Split from `vouch` so the lock's extent is visible in the code shape —
+ * everything in here holds it, nothing above does.
+ */
+async function commitStamp(
+  req: VouchRequest,
+  plan: {
+    writes: PlannedWrite[];
+    specPlan: { write: PlannedWrite; stamped: StampedSpec };
+    archPlan: { write: PlannedWrite; stamped: StampedSpec } | null;
+    verified: VerifiedSpec[];
+  },
+  recovered: CommitRecovery | null,
+): Promise<VouchOutcome> {
+  const { writes, specPlan, archPlan, verified } = plan;
   const staged = await stageWrites(writes);
 
   // One shared docs repo, ten service repos, and nothing stopping two of them
@@ -92,31 +162,42 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
     };
   }
 
-  try {
-    await swapStaged(staged);
-  } catch (err) {
-    const failures = await rollbackStaged(staged);
-    // Archive's two answers to "can I trust the repo?", reused rather than
-    // minting vouch-only codes — a caller branches on the same fact either way:
-    // rolled back → nothing changed, re-running can work; incomplete → the
-    // files listed need a human. Only the prose is vouch's own.
-    return failures.length > 0
+  // The journaled commit: intent fsynced before the first rename, so a kill
+  // between the pair's two swaps is recoverable instead of invisible — the
+  // exact half-stamped state the all-or-nothing verification exists to rule
+  // out used to be reachable through that one window. The codes are archive's,
+  // reused rather than minted: rolled back → nothing changed, re-running can
+  // work; incomplete → the files listed need a human.
+  const committed = await commitStaged(
+    {
+      root: req.docsDir,
+      command: "vouch",
+      // Runnable where vouch runs — the SERVICE repo, with --yes because the
+      // journal's reader may be unattended. Any other journaled docs-repo
+      // writer recovers this journal on its next run too.
+      rerun: `loam vouch --service ${req.service} --yes`,
+      target: req.service,
+    },
+    staged,
+    "stamped",
+  );
+  if (!committed.ok) {
+    return committed.raced
       ? {
           ok: false,
-          code: "rollback-incomplete",
-          message: rollbackMessage(err, failures, "stamped"),
+          code: "vouch-raced",
+          message:
+            `${req.service}: a document changed while this vouch was committing — ` +
+            `another writer landed first. Nothing was stamped: re-read and re-run.`,
         }
-      : {
-          ok: false,
-          code: "merge-failed",
-          message: `${message(err)} — the vouch was rolled back, no spec was stamped`,
-        };
+      : { ok: false, code: committed.code, message: committed.message };
   }
   return {
     ok: true,
     status: "verified",
     lastVerified: req.today,
     vouchedBy: req.vouchedBy,
+    recovered,
     stamped: { spec: specPlan.stamped, archSpec: archPlan === null ? null : archPlan.stamped },
   };
 }

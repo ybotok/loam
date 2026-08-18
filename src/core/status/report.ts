@@ -170,8 +170,13 @@ export interface VerificationState {
  * and `unarchive`, and `status` writes nothing and takes no lock.
  */
 export interface InterruptedCommit {
-  /** Which command was committing, or null when the journal cannot be read at all. */
-  command: "archive" | "unarchive" | null;
+  /**
+   * Which command was committing, or null when the journal cannot be read at
+   * all. A sentence for a human, never a branch: version-2 journals carry any
+   * writer's name (rebase, vouch, new, gherkin), so an enum here would be a
+   * list this type has to chase.
+   */
+  command: string | null;
   feature: string | null;
   /** Who and when, so a human can place it against their own shell history. */
   host: string | null;

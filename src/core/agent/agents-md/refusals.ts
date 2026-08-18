@@ -129,16 +129,23 @@ directory that is not a docs repo — the fleet is unreadable, not empty),
 each other, or a value that cannot be right — a \`loam list\` section that is not
 services or features, or a service id that is not a legal
 \`services/<id>/\` directory name, included), \`already-exists\` (\`loam new\` refusing
-to scaffold over an existing feature), \`sources-absent\` / \`sources-path-missing\` /
+to scaffold over an existing feature — also the answer when a concurrent \`new\`
+for the same id wins the race; the scaffold commits under the docs lock through
+the same journaled transaction as every other writer, so \`new\` can answer
+\`docs-busy\`, \`commit-interrupted\`, \`merge-failed\` and — the one that needs
+a human — \`rollback-incomplete\` too),
+\`sources-absent\` / \`sources-path-missing\` /
 \`vouch-raced\` (\`loam vouch\` refusing to stamp — the last one when the document
-changed between the read and the write, so nothing was written),
+changed between the read and the write, so nothing was written; vouch now takes
+the docs lock for its commit window and journals it, so it can also answer
+\`docs-busy\`, \`commit-interrupted\`, \`merge-failed\` and \`rollback-incomplete\`),
 \`not-coherent\` / \`living-outside-requirements\` /
 \`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` / \`docs-busy\` /
 \`commit-interrupted\`
 (\`loam archive\` — see the
 archive gate below; \`docs-busy\` means another writer — an archive, unarchive,
-rebase, or a \`verify --record\` — holds the docs repo's lock, nothing was read or
-written, and re-running once it finishes works),
+rebase, vouch, \`new\`, or a \`verify --record\` — holds the docs repo's lock,
+nothing was read or written, and re-running once it finishes works),
 \`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` / \`snapshot-corrupt\` /
 \`restore-failed\` / \`rollback-incomplete\` / \`docs-busy\` / \`commit-interrupted\`
 (\`loam unarchive\` — the
@@ -148,9 +155,16 @@ the pair's shared refusal: a previous archive or unarchive was killed mid-commit
 and this run cannot repair it on its own — a half-written file has been edited
 since, the repairing pre-image is gone or altered, or \`.loam-commit\` itself
 cannot be read. \`loam doctor\` names the same state as
-\`doctor.commit-interrupted\`. And \`gherkin-conflict\`
+\`doctor.commit-interrupted\`, \`loam validate\` leads every mode with
+\`docs.commit-interrupted\` while the journal sits there, and every journaled
+writer — archive, unarchive, rebase, vouch, \`new\`, \`gherkin\`,
+\`verify --record\` — recovers a finished predecessor's journal on its next run
+and reports it as \`recovered\` in \`--json\`. And \`gherkin-conflict\`
 (\`loam gherkin <FEAT>\` would overwrite a \`.feature\` file owned by another
-feature still in flight — the whole emission refuses and names the owner),
+feature still in flight — the whole emission refuses and names the owner;
+\`gherkin\` commits into the service repo's own \`<gherkinDir>/loam/\` through the
+same lock and journal, so it can answer \`docs-busy\`, \`commit-interrupted\`,
+\`merge-failed\` and \`rollback-incomplete\` about that root),
 \`answers-unreadable\` / \`answers-mismatch\` /
 \`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\` /
 \`record-raced\` / \`docs-busy\`

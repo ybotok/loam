@@ -27,7 +27,7 @@ import {
   verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
-import { plural } from "../policy/format.js";
+import { plural, sayRecovered } from "../policy/format.js";
 import { readResults, repositoryCommit, validateServiceEvidence } from "./results.js";
 import { contestedNotices, noticesFor, reportLine } from "./frozen.js";
 import { type VerifyTarget } from "./report.js";
@@ -206,6 +206,7 @@ export async function record(
     emitJson({
       feature: verification.feature,
       path: repoPath(docsDir, path),
+      ...(target.recovered == null ? {} : { recovered: target.recovered }),
       digest: verification.checklist,
       verified,
       verdict,
@@ -221,6 +222,7 @@ export async function record(
     return;
   }
 
+  if (target.recovered != null) console.log(`${sayRecovered(target.recovered)}\n`);
   console.log(`${verification.feature} verification recorded — ${repoPath(docsDir, path)}\n`);
   console.log(`  ${tally.confirmed} of ${plural(tally.claims, "claim")} confirmed with evidence.`);
   if (consumed !== undefined) {

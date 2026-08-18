@@ -180,6 +180,15 @@ function contains(parent: string, candidate: string): boolean {
  * `boundary`. Remove only directories that are still EMPTY: anything else in
  * there arrived after we made it, and belongs to whoever put it there.
  */
+/** Remove `dir` if it is empty. Best effort — a directory left standing is noise, not corruption. */
+export async function quietRmdir(dir: string): Promise<void> {
+  try {
+    await rmdir(dir);
+  } catch {
+    // Not empty, or not ours.
+  }
+}
+
 export async function quietPruneEmptyParents(start: string, boundary: string): Promise<void> {
   let cursor = resolve(start);
   const root = resolve(boundary);

@@ -41,7 +41,10 @@ import {
   SPLIT,
   spawnRecord,
 } from "./helpers/federated.js";
+import { stageWrites } from "../src/core/staging/commit.js";
+import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { acquireDocsLock, acquireDocsLockWaiting, DocsBusyError, DOCS_LOCK } from "../src/core/staging/lock.js";
+import { writeTxnIntent } from "../src/core/staging/txn/journal.js";
 import { readVerificationState } from "../src/core/verify/file.js";
 import { commitVerification } from "../src/core/verify/store/commit.js";
 
@@ -232,5 +235,76 @@ describe("commitVerification", () => {
     expect(after.state).toBe("ok");
     const dir = await readdir(join(p.docsDir, DIR));
     expect(dir.filter((n) => n.includes(".tmp"))).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A predecessor's interrupted commit                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `--record` was the last docs-repo writer that could still treat a
+ * half-commit as healthy: it took the lock, read the record authoritatively,
+ * and merged — over whatever bytes a killed `rebase`, `vouch` or `new` had
+ * left. It now recovers (or refuses) inside that same held lock, before the
+ * read.
+ */
+describe("a version-2 journal in the docs repo", () => {
+  /**
+   * A commit killed before its one swap: the journal is fsynced, the temp holds
+   * the after-bytes, nothing has landed. The file is a docs-root note nothing
+   * in the fleet reads, on purpose — the question here is whether `--record`
+   * recovers, and a target that fed the checklist would change the claim ids
+   * this test's answers were written against.
+   */
+  async function killedRebase(p: Project): Promise<string> {
+    const note = join(p.docsDir, "NOTES.md");
+    const staged = await stageWrites([{ path: note, content: "carried forward by recovery\n" }]);
+    await writeTxnIntent(
+      { root: p.docsDir, command: "rebase", rerun: "loam rebase FEAT-1", target: FEAT },
+      staged,
+    );
+    return note;
+  }
+
+  it("is rolled forward before the authoritative read, and rides the payload", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT);
+    const answers = await answersFile(repo, await serviceClaims(p, SPLIT), "proof.ts:2");
+    const note = await killedRebase(p);
+
+    const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(JSON.parse(res.stdout).recovered).toMatchObject({
+      command: "rebase",
+      feature: FEAT,
+      outcome: "repaired",
+    });
+    // The commit was finished, the record landed on top of it, and the journal
+    // is gone — a record written over a half-commit is the state this closes.
+    expect(await readFile(note, "utf8")).toBe("carried forward by recovery\n");
+    expect(existsSync(join(p.docsDir, RECORD))).toBe(true);
+    expect(existsSync(join(p.docsDir, COMMIT_INTENT))).toBe(false);
+    expect((await readVerificationState(join(p.docsDir, DIR))).state).toBe("ok");
+  });
+
+  it("that cannot be read refuses commit-interrupted, and the record is never written", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT);
+    const answers = await answersFile(repo, await serviceClaims(p, SPLIT), "proof.ts:2");
+    // The bytes a crash DURING the journal write leaves: nothing can grade it.
+    await writeFile(join(p.docsDir, COMMIT_INTENT), '{"version":2,"command":"reba', "utf8");
+
+    const res = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout).error.code).toBe("commit-interrupted");
+    expect(existsSync(join(p.docsDir, RECORD))).toBe(false);
+    // The record it could not grade is left for a human to reconcile.
+    expect(existsSync(join(p.docsDir, COMMIT_INTENT))).toBe(true);
+    // And the lock is back, like every other refusal under it: the recovery
+    // sits INSIDE the try whose finally releases, so this path cannot turn one
+    // unreadable journal into a docs repo wedged for the whole fleet. It once
+    // sat outside, and did exactly that.
+    expect(existsSync(join(p.docsDir, DOCS_LOCK))).toBe(false);
   });
 });

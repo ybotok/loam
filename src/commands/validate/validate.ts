@@ -34,6 +34,7 @@ import {
   reportDocsRepoError,
   reportRepositoryUnavailable,
 } from "../policy/gate.js";
+import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
 import { readLandscape, validateLandscape } from "./landscape.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
@@ -238,6 +239,13 @@ export function registerValidate(program: Command): void {
           t.findings.filter((f) => f.code === UNVERIFIABLE).map((f) => f.subject ?? t.id),
         ),
       ).size;
+      // A journal in the repo outranks everything graded above: the docs may
+      // be half-merged, and in CI a green over them merges. Led, not appended
+      // — it is the reason nothing below can be trusted — and attached to the
+      // first target because a finding lives in one.
+      const interrupted = await interruptedCommitFinding(docsDir);
+      if (interrupted !== null && targets.length > 0) targets[0]!.findings.unshift(interrupted);
+
       const valid = reportValid(targets);
       const capped = targets.map(capDetails);
       if (json) {

@@ -35,8 +35,8 @@ export function gradeWritePathResidue(
       message: residue.lock.unreadable
         ? `${residue.lock.path} exists but cannot be read as a lock record — no process can be identified as its holder, so nothing is ever going to release it, and every writing command refuses with \`docs-busy\` while it is there.`
         : residue.lock.stale
-          ? `${residue.lock.path} is held by ${residue.lock.holder}, a process that no longer exists on this host — every writing command (\`loam archive\`, \`loam unarchive\`, \`loam rebase\`, \`loam verify --record\`) will refuse with \`docs-busy\` until it is gone.`
-          : `${residue.lock.path} is held by ${residue.lock.holder}; another loam command is writing this docs repo.`,
+          ? `${residue.lock.path} is held by ${residue.lock.holder}, a process that no longer exists on this host — every command that writes through this root will refuse with \`docs-busy\` until it is gone.`
+          : `${residue.lock.path} is held by ${residue.lock.holder}; another loam command is writing through this root.`,
       fix: unbreakable
         ? `Delete ${lockFile} — ${residue.lock.unreadable ? "it names no holder, so nothing is going to release it" : "its holder is dead, so nothing is going to release it"}. Check \`loam doctor\` again afterwards for an interrupted commit.`
         : "Wait for it to finish and re-run; nothing is read or written while it is held.",
@@ -48,7 +48,23 @@ export function gradeWritePathResidue(
       severity: "blocker",
       code: "doctor.commit-unreadable",
       message: `${docsDir} holds a .loam-commit that cannot be read — a commit was interrupted and the one record of which files it had already written is unreadable.`,
-      fix: "Hand this to a human: compare the living docs against version control before running any loam command that writes. `loam archive` and `loam unarchive` both refuse with `commit-interrupted` while it is there.",
+      fix: "Hand this to a human: compare this root's files against version control before running any loam command that writes here. Every journaled writer refuses with `commit-interrupted` while it is there.",
+    });
+  } else if (residue.intent !== null && "rerun" in residue.intent) {
+    // Version 2 — the smaller journaled transaction (rebase, vouch, new,
+    // gherkin, and any writer after them). Its stored `rerun` IS the repair:
+    // that command recovers first, rolling the staged bytes forward. The
+    // string is journal data, so agent-commands-runnable cannot parse it here;
+    // test/staging-txn.test.ts parses every writer's rerun template against
+    // the real program instead.
+    const i = residue.intent;
+    findings.push({
+      severity: "blocker",
+      code: "doctor.commit-interrupted",
+      message:
+        `A \`${i.rerun}\` was killed mid-commit (${i.host}, pid ${i.pid}, ${i.at}) — `
+        + `${i.files.length} file(s) may be half-written: ${i.files.map((f) => f.path).join(", ")}`,
+      fix: `Re-run \`${i.rerun}\` — it recovers first, rolling the staged bytes forward, and refuses with \`commit-interrupted\` rather than guessing if a file has been edited since.`,
     });
   } else if (residue.intent !== null) {
     const i = residue.intent;
@@ -71,12 +87,22 @@ export function gradeWritePathResidue(
     });
   }
 
-  if (residue.temps.length > 0) {
+  // A version-2 journal's recorded temps are NOT litter: they are the only
+  // durable copy of the after-bytes its roll-forward recovery renames in.
+  // Advising their deletion beside a blocker that says "re-run to recover"
+  // converted a one-command repair into a manual VCS restore.
+  const journalTemps = new Set(
+    residue.intent !== null && "rerun" in residue.intent
+      ? residue.intent.files.flatMap((f) => (f.tmp === null ? [] : [f.tmp]))
+      : [],
+  );
+  const litter = residue.temps.filter((t) => !journalTemps.has(t));
+  if (litter.length > 0) {
     findings.push({
       severity: "warning",
       code: "doctor.staging-temps",
-      message: `${residue.temps.length} orphaned staging file(s) under ${docsDir}: ${residue.temps.join(", ")} — a killed writer's scratch, never linked into place.`,
-      fix: "The next `loam archive` or `loam unarchive` removes its own; delete any that remain. Nothing reads them, so they cost disk and nothing else.",
+      message: `${litter.length} orphaned staging file(s) under ${docsDir}: ${litter.join(", ")} — a killed writer's scratch, never linked into place.`,
+      fix: "The next journaled writer through this root removes its own; delete any that remain. Nothing reads them, so they cost disk and nothing else.",
     });
   }
 }

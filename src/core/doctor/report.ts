@@ -61,6 +61,13 @@ export interface DoctorReport {
    * lock somebody is legitimately holding right now is a fact, not a complaint.
    */
   writePath: WritePathResidue | null;
+  /**
+   * The same scan over the service repo's owned `<gherkinDir>/loam/` root —
+   * the one writer whose journal is not in the docs repo. Null when this repo
+   * is not a service repo, or the root does not exist. Additive: a consumer
+   * of the original envelope never sees a key it did not ask about removed.
+   */
+  serviceWritePath: WritePathResidue | null;
   findings: DoctorFinding[];
 }
 

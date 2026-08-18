@@ -30,7 +30,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
-import { COMMIT_INTENT } from "../src/core/staging/recovery/intent.js";
+import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { type Answer } from "../src/core/verify/answers.js";
 import { buildVerification } from "../src/core/verify/build.js";
@@ -712,6 +712,69 @@ describe("an interrupted commit outranks every other answer", () => {
 
     const run = await runLoam(p.workDir, "status", "FEAT-1");
     expect(run.stdout).not.toContain("pid undefined");
+    await p.destroy();
+  });
+});
+
+/**
+ * The version-2 journal the SMALLER transaction writes — rebase, vouch, new,
+ * gherkin. Hand-written for the same reason `INTERRUPTED_ARCHIVE` is: the
+ * question here is what `status` READS off it, and the digests are
+ * syntactically real (which is all the strict reader checks) and belong to no
+ * file.
+ */
+const INTERRUPTED_REBASE = {
+  version: 2,
+  command: "rebase",
+  rerun: "loam rebase FEAT-1",
+  target: "FEAT-1",
+  pid: 4242,
+  host: "build-box",
+  at: "2026-08-01T10:00:00.000Z",
+  files: [
+    {
+      path: `${FEAT_DIR}/specs/payment-split-service/spec.md`,
+      before: "a".repeat(64),
+      after: "b".repeat(64),
+      tmp: `${FEAT_DIR}/specs/payment-split-service/.spec.md.loam-4242-0-1754042400000.tmp`,
+    },
+  ],
+};
+
+describe("a version-2 journal names its own repair", () => {
+  it("carries the stored rerun as the recover step, in both the payload and next[]", async () => {
+    // Version 1 could compose the repair from `command` + `feature`, because
+    // only archive and unarchive ever wrote one. Version 2 belongs to four
+    // writers whose repairs are spelled differently (`--service … --yes`, a
+    // bare `loam gherkin`), so the journal carries the string and `status`
+    // prints THAT — composing it here would put `loam vouch payment-service`,
+    // which the CLI refuses, in front of the reader.
+    const p = await makeProject(coherentFixture());
+    await recordVerification(p, "FEAT-1");
+    expect((await statusJson(p, "FEAT-1")).feature.stage).toBe("done");
+
+    await p.write(COMMIT_INTENT, JSON.stringify(INTERRUPTED_REBASE, null, 2) + "\n");
+
+    const payload = await statusJson(p, "FEAT-1");
+    expect(payload.feature.stage).toBe("blocked");
+    expect(payload.interrupted).toMatchObject({
+      command: "rebase",
+      feature: "FEAT-1",
+      host: "build-box",
+      pid: 4242,
+      unreadable: false,
+      recover: INTERRUPTED_REBASE.rerun,
+    });
+    expect(payload.interrupted.files).toEqual(INTERRUPTED_REBASE.files.map((f) => f.path));
+
+    const step = (payload.next as NextStep[])[0]!;
+    expect(step.code).toBe("next.recover-commit");
+    expect(step.command).toBe(INTERRUPTED_REBASE.rerun);
+    // The fleet view is the one that used to read presence only and answer
+    // `done` over the same repo.
+    const fleet = await statusJson(p);
+    expect(fleet.features[0].stage).toBe("blocked");
+    expect((fleet.next as NextStep[])[0]!.command).toBe(INTERRUPTED_REBASE.rerun);
     await p.destroy();
   });
 });

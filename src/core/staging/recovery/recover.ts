@@ -2,27 +2,35 @@
  * Refuse or repair an interrupted commit, before this run reads anything.
  *
  * Split from `./intent.ts` because this is the only module on the write path
- * that writes bytes nobody asked for in this run. Repair is never more than the
- * pre-image the interrupted run had already captured, and only once that
- * pre-image's own digest matches what the record captured before the crash. A
- * file in NEITHER state was written by somebody else since, so this refuses and
- * names it rather than choosing which of two truths to destroy.
+ * that writes bytes nobody asked for in this run. Two journal versions, two
+ * doctrines, one dispatch: a version-1 record (archive/unarchive) is repaired
+ * BACKWARD from the snapshot pre-images, each verified against the digest the
+ * record captured; a version-2 record is handed to `txn/forward.ts`, which
+ * rolls FORWARD from the staged temps under the same verification. Either
+ * way, a file in NEITHER recorded state was written by somebody else since,
+ * so recovery refuses and names it rather than choosing which of two truths
+ * to destroy.
  */
 import { existsSync } from "node:fs";
-import { readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
 import { sha256 } from "../writes.js";
-import { atomicWrite, quietRm, TEMP_FILE_RE } from "../commit.js";
+import { atomicWrite, quietRmdir } from "../commit.js";
 import { SNAPSHOT_DIR } from "../snapshot.js";
+import {
+  COMMIT_INTENT,
+  type CommitRecovery,
+  InterruptedCommitError,
+  sweepPidTemps,
+} from "../interrupted.js";
+import { readTxnIntent } from "../txn/journal.js";
+import { recoverForward } from "../txn/forward.js";
 import {
   clearCommitIntent,
   readCommitIntent,
-  COMMIT_INTENT,
   type CommitIntent,
   type CommitIntentFile,
-  type CommitRecovery,
-  InterruptedCommitError,
 } from "./intent.js";
 
 /**
@@ -42,6 +50,10 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
   if (!existsSync(path)) return null;
   const intent = await readCommitIntent(docsDir);
   if (intent === null) {
+    // Version 2 — the smaller transaction's journal. Same file, different
+    // recovery: forward from the staged temps, in txn/forward.ts.
+    const txn = await readTxnIntent(docsDir);
+    if (txn !== null) return recoverForward(docsDir, txn);
     throw new InterruptedCommitError(
       `${repoPath(docsDir, path)} records a commit this loam cannot read, so it cannot tell a half-merged docs repo ` +
         `from a healthy one. Check the living docs against version control, delete ${COMMIT_INTENT}, then re-run.`,
@@ -117,37 +129,13 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
   return { command: intent.command, feature: intent.feature, outcome: "repaired", repaired };
 }
 
-/**
- * Drop the record, and the staged temp files the killed run could not remove.
- *
- * Scoped to that run's own pid and its own targets — the temp name carries both
- * — so a leftover belonging to anything else is left for `doctor` to name.
- * Without this a repair that put every byte back still left the docs repo
- * dirty, which is the one thing a caller checks to decide whether it worked.
- */
+/** Drop the record, and (via the shared pid-scoped sweep) the killed run's own temps. */
 async function finishRecovery(docsDir: string, intent: CommitIntent): Promise<void> {
-  const dirs = new Set(intent.files.map((f) => dirname(join(docsDir, ...f.path.split("/")))));
-  for (const dir of dirs) {
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!TEMP_FILE_RE.test(name) || !name.includes(`.loam-${intent.pid}-`)) continue;
-      await quietRm(join(dir, name));
-    }
-  }
+  await sweepPidTemps(
+    intent.files.map((f) => dirname(join(docsDir, ...f.path.split("/")))),
+    intent.pid,
+  );
   await clearCommitIntent(docsDir);
 }
 
-/** Remove `dir` if it is empty. Best effort — a directory left standing is noise, not corruption. */
-async function quietRmdir(dir: string): Promise<void> {
-  try {
-    await rmdir(dir);
-  } catch {
-    // Not empty, or not ours.
-  }
-}
 

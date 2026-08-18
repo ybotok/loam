@@ -28,6 +28,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { rm } from "node:fs/promises";
+import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 
 const SVC = "payment-service";
 
@@ -1589,6 +1590,71 @@ describe("contract depth on the API axis", () => {
       // A $ref IS a declared response shape — the dangling pointer is this
       // finding's subject, not response-undescribed's.
       expect(findings.some((x) => x.code === "openapi.response-undescribed")).toBe(false);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A journal outranks everything graded below it                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `.loam-commit` in the docs repo means the last writer's commit never
+ * finished: some files hold the new bytes, some the old, and a validate that
+ * grades that tree green is certifying a state no run ever produced. In CI that
+ * green MERGES — which is why it is an error finding rather than a warning, and
+ * why it LEADS rather than being appended.
+ *
+ * The record is written by hand: what is under test is what `validate` reads
+ * off it, and the digests are syntactically real (all the strict reader checks)
+ * and belong to no file, so nothing here is repairable and nothing is repaired.
+ */
+const INTERRUPTED_GHERKIN = {
+  version: 2,
+  command: "gherkin",
+  rerun: "loam gherkin FEAT-1",
+  target: SVC,
+  pid: 4242,
+  host: "build-box",
+  at: "2026-08-01T10:00:00.000Z",
+  files: [
+    {
+      path: `services/${SVC}/spec.md`,
+      before: "a".repeat(64),
+      after: "b".repeat(64),
+      tmp: `services/${SVC}/.spec.md.loam-4242-0-1754042400000.tmp`,
+    },
+  ],
+};
+
+describe("an interrupted commit in the docs repo", () => {
+  it("leads every mode's findings with docs.commit-interrupted, and gates", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      // The control: this fleet grades green, so the exit 1 below is the record.
+      expect((await runLoam(p.workDir, "validate", "--all", "--json")).code).toBe(0);
+      await p.write(COMMIT_INTENT, JSON.stringify(INTERRUPTED_GHERKIN, null, 2) + "\n");
+
+      for (const mode of [["--all"], ["--feature", "FEAT-1"], ["--service", SVC]]) {
+        const res = await runLoam(p.workDir, "validate", ...mode, "--json");
+        expect(res.code, mode.join(" ")).toBe(1);
+        const first = JSON.parse(res.stdout).targets[0].findings[0];
+        expect(first, mode.join(" ")).toMatchObject({ severity: "error", code: "docs.commit-interrupted" });
+        // Which command's, so the reader knows what recovers it — the stored
+        // rerun, not a guess composed from the command name.
+        expect(first.message, mode.join(" ")).toContain(INTERRUPTED_GHERKIN.rerun);
+      }
+    });
+  });
+
+  it("says so about an unreadable record too, rather than certifying the repo", async () => {
+    await withProject(coherentFixture(), {}, async (p) => {
+      // The bytes a crash DURING the journal write leaves.
+      await p.write(COMMIT_INTENT, '{"version":2,"command":"reba');
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(1);
+      const first = JSON.parse(res.stdout).targets[0].findings[0];
+      expect(first).toMatchObject({ severity: "error", code: "docs.commit-interrupted" });
+      expect(first.message).toContain("cannot read");
     });
   });
 });

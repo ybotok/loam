@@ -147,7 +147,11 @@ executable: real \`.feature\` files, written into the SERVICE'S repo — the one
 loam command that writes there, because tests live with the code they gate.
 Output lands in \`<gherkinDir>/loam/\` (\`gherkinDir\` is an optional loam.json
 fact, default \`features\`), and that \`loam/\` subdirectory is loam's own
-derived space: regeneration rewrites its scope and deletes its orphans, so
+derived space — and a committed one: an emission lands through the same lock
+and journal the docs repo's writers use, as \`loam/.loam-lock\` and
+\`loam/.loam-commit\` dotfiles that exist only while a run is in flight (or
+after a kill, where the journal is what lets the next run finish the job).
+Regeneration rewrites its scope and deletes its orphans, so
 never hand-edit inside it — step definitions and hand-written features belong
 outside it, and loam never touches a byte outside \`loam/\`.
 

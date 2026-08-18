@@ -7,10 +7,13 @@ import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/js
 import { compareIds } from "../../core/repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import { message, rollbackStaged, stageWrites, swapStaged } from "../../core/staging/commit.js";
+import { stageWrites } from "../../core/staging/commit.js";
+import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
 import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
+import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
-import { plural } from "../policy/format.js";
+import { plural, sayRecovered } from "../policy/format.js";
 import { planAxis, planOpenapi, type PinOutcome } from "./plan.js";
 
 /**
@@ -49,7 +52,10 @@ export function registerRebase(program: Command): void {
     .argument("<featureId>", "feature id, e.g. FEAT-101")
     .description("Pin a feature's MODIFIED/REMOVED requirements to the living text they are written against")
     .option("--service <id>", "restrict to one service (default: every service the feature touches)")
-    .option("--dry-run", "print what would be pinned and write nothing")
+    .option(
+      "--dry-run",
+      "print what would be pinned and write nothing — beyond first finishing a predecessor's interrupted commit, exactly as a real run would",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: RebaseOptions) => {
       const json = opts.json === true;
@@ -83,14 +89,29 @@ export function registerRebase(program: Command): void {
         return fail(json, "docs-busy", err.message);
       }
       try {
-        await rebaseLocked(config.docsDir, featureId, opts);
+        // A journal in the repo means the LAST write never finished — reading
+        // living documents to compute pins over a half-commit would digest
+        // bytes no run ever produced. Recover (or refuse) first, under the
+        // same lock the commit will hold.
+        let recovered: CommitRecovery | null;
+        try {
+          recovered = await recoverInterruptedCommit(config.docsDir);
+        } catch (err) {
+          if (!(err instanceof InterruptedCommitError)) throw err;
+          return fail(json, "commit-interrupted", err.message);
+        }
+        await rebaseLocked(config.docsDir, featureId, { ...opts, recovered });
       } finally {
         await release();
       }
     });
 }
 
-async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOptions): Promise<void> {
+async function rebaseLocked(
+  docsDir: string,
+  featureId: string,
+  opts: RebaseOptions & { recovered: CommitRecovery | null },
+): Promise<void> {
   const json = opts.json === true;
   const dryRun = opts.dryRun === true;
 
@@ -153,21 +174,22 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
   }
 
   if (!dryRun && writes.length > 0) {
-    // Staged and swapped like every other multi-file write in loam
-    // (core/staging.ts): a feature spanning four services is one act, and a
-    // full disk between its second and third file must not leave two of them
-    // pinned to a reading the other two never saw.
+    // Staged and committed through the journaled transaction: a feature
+    // spanning four services is one act, and neither a full disk between its
+    // second and third file NOR a kill between two renames may leave two of
+    // them pinned to a reading the other two never saw — the journal makes
+    // the second case recoverable where rollback alone could not see it.
     const staged = await stageWrites(writes);
-    try {
-      await swapStaged(staged);
-    } catch (err) {
-      const failures = await rollbackStaged(staged);
+    const committed = await commitStaged(
+      { root: docsDir, command: "rebase", rerun: `loam rebase ${id}`, target: id },
+      staged,
+      "pinned",
+    );
+    if (!committed.ok) {
       return fail(
         json,
-        failures.length === 0 ? "merge-failed" : "rollback-incomplete",
-        failures.length === 0
-          ? `rebase ${id} failed and was rolled back — nothing was pinned: ${message(err)}`
-          : `rebase ${id} failed and the rollback did not complete; these files are in an unknown state: ${failures.join(", ")} — ${message(err)}`,
+        committed.code,
+        committed.code === "merge-failed" ? `rebase ${id} failed — nothing was pinned: ${committed.message}` : committed.message,
       );
     }
   }
@@ -182,6 +204,7 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
       dryRun,
       pins: outcomes,
       written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
+      ...(opts.recovered === null ? {} : { recovered: opts.recovered }),
     });
     return;
   }
@@ -193,6 +216,7 @@ async function rebaseLocked(docsDir: string, featureId: string, opts: RebaseOpti
     return;
   }
 
+  if (opts.recovered !== null) console.log(`${sayRecovered(opts.recovered)}\n`);
   console.log(`${id}${dryRun ? " (dry run)" : ""}\n`);
   for (const o of outcomes) {
     const what = `${o.service}/${o.file}  ${o.kind} ${o.target}`;

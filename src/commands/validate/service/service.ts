@@ -21,6 +21,9 @@ import { type Finding, type TargetReport } from "../../../core/vocabulary/report
 import { closeIds } from "../../../core/c4/arch.js";
 import { serviceProvenance } from "../../../core/provenance/findings.js";
 import { gherkinFindings } from "../../../core/gherkin/stale.js";
+import { gherkinRoot } from "../../../core/gherkin/stamp.js";
+import { UnsafePathError } from "../../../core/kernel/path-safety.js";
+import { interruptedCommitFinding } from "../../../core/staging/recovery/finding.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { errorText } from "../checks/vocabulary.js";
 import { sourceScopeFindings } from "../checks/sources.js";
@@ -234,6 +237,23 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // it needs the repo (the suite lives there), and it stays quiet until
   // <gherkinDir>/loam/ exists — a service that never generated has not opted in.
   findings.push(...(await gherkinFindings({ docsDir, service, repoDir, gherkinDir, fleet })));
+
+  // The one journal that does NOT live in the docs repo: gherkin commits into
+  // the service repo's emission root. A half-committed suite graded by the
+  // freshness chain above reads as merely stale — warn-severity, which never
+  // gates — while doctor calls the same state a blocker. Same finding, same
+  // code, led rather than appended, exactly as validate leads with the docs
+  // repo's own journal.
+  if (repoDir !== undefined) {
+    try {
+      const interrupted = await interruptedCommitFinding(gherkinRoot(repoDir, gherkinDir));
+      if (interrupted !== null) findings.unshift(interrupted);
+    } catch (err) {
+      // An unsafe gherkinDir is `loam gherkin`'s refusal to make, with its
+      // own sentence; grading declines to scan what it cannot trust.
+      if (!(err instanceof UnsafePathError)) throw err;
+    }
+  }
 
   return report;
 }

@@ -24,7 +24,7 @@
  */
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import { loadConfig } from "../../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
@@ -43,8 +43,10 @@ import { axisLabel, planEmission } from "../../core/gherkin/emit.js";
 import { gherkinRoot } from "../../core/gherkin/stamp.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { UnsafePathError } from "../../core/kernel/path-safety.js";
+import { commitEmission, recoverEmissionRoot } from "./commit.js";
 import { reconcile, type Scope } from "./reconcile.js";
 import { render } from "./render.js";
+import { sayRecovered } from "../policy/format.js";
 
 interface GherkinOptions {
   service?: string;
@@ -60,7 +62,10 @@ export function registerGherkin(program: Command): void {
       "Emit Gherkin .feature files from spec scenarios into this service repo's <gherkinDir>/loam/",
     )
     .option("--service <id>", "service to emit for (defaults to the configured service)")
-    .option("--dry-run", "print the plan (writes, replacements, deletions) and write nothing")
+    .option(
+      "--dry-run",
+      "print the plan (writes, replacements, deletions) and write nothing — beyond first finishing a predecessor's interrupted commit, exactly as a real run would",
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureArg: string | undefined, opts: GherkinOptions) => {
       const json = opts.json === true;
@@ -107,6 +112,17 @@ export function registerGherkin(program: Command): void {
         );
       }
       const rel = (abs: string): string => relative(repoDir, abs).split(/[\\/]/).join("/");
+
+      // A predecessor's interrupted emission is rolled forward before ANY
+      // read — and before the feature argument resolves: reconcile grades the
+      // very bytes a half-commit corrupts, and the journal's stored rerun may
+      // name a feature that has since ARCHIVED, whose recovery must still
+      // work. `new` fixed the same ordering and documented it; refusing
+      // unknown-target over a wedged root left doctor printing a repair that
+      // could never run.
+      const early = await recoverEmissionRoot(root);
+      if (!early.ok) return fail(json, early.code, early.message);
+      let recovered = early.recovered;
 
       const feature =
         featureArg === undefined ? null : await resolveFeature(config.docsDir, featureArg, "exclude");
@@ -213,13 +229,15 @@ export function registerGherkin(program: Command): void {
 
       const writes = actions.filter((a) => a.action !== "kept");
 
-      if (!dryRun) {
-        // The root is created only when something lands in it: an emission with
-        // nothing to emit must not flip the repo into "opted in" — an empty
-        // loam/ tells `loam validate` the whole living suite is missing.
-        if (writes.length > 0) await mkdir(root, { recursive: true });
-        for (const a of writes) await writeFile(a.path, a.content, "utf8");
-        for (const o of orphans) await unlink(o);
+      if (!dryRun && (writes.length > 0 || orphans.length > 0)) {
+        // The commit window: locked, journaled, compared against the bytes
+        // reconcile graded. A zero-op run takes no lock and creates no root —
+        // an emission with nothing to emit must not flip the repo into
+        // "opted in", where an empty loam/ tells `loam validate` the whole
+        // living suite is missing.
+        const committed = await commitEmission({ root, service, scope }, { writes, orphans });
+        if (!committed.ok) return fail(json, committed.code, committed.message);
+        recovered = committed.recovered ?? recovered;
       }
 
       if (json) {
@@ -242,11 +260,13 @@ export function registerGherkin(program: Command): void {
               ? { inFlight: a.kept.tags.filter((t) => activeIds.has(t)) }
               : { stepless: a.stepless, malformedExamples: a.malformedExamples }),
           })),
-          deleted: orphans.map(rel),
+          deleted: orphans.map((o) => rel(o.path)),
+          ...(recovered === null ? {} : { recovered }),
         });
         return;
       }
 
+      if (recovered !== null) console.log(`${sayRecovered(recovered)}\n`);
       render(actions, {
         service,
         root: rel(root),
@@ -255,7 +275,7 @@ export function registerGherkin(program: Command): void {
         dryRun,
         activeIds,
         writes: writes.length,
-        orphans,
+        orphans: orphans.map((o) => o.path),
       });
     });
 }

@@ -3,7 +3,7 @@ import { loadConfig } from "../../core/envelope/config.js";
 import { fail, reportNoConfig } from "../../core/envelope/json.js";
 import { message } from "../../core/staging/commit.js";
 import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
-import { InterruptedCommitError } from "../../core/staging/recovery/intent.js";
+import { InterruptedCommitError } from "../../core/staging/interrupted.js";
 import { unarchiveLocked } from "./restore.js";
 import { RestoreFailure } from "./manifest.js";
 

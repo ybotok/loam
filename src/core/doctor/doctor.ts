@@ -16,6 +16,8 @@ import { landscapePath } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { listFeatures, listServices } from "../repo/repo.js";
 import { LIKEC4_PROJECT_CONFIG, LIKEC4_PROJECT_FILENAME } from "../docs.js";
+import { gherkinRoot } from "../gherkin/stamp.js";
+import { UnsafePathError } from "../kernel/path-safety.js";
 import { scanWritePathResidue } from "../staging/recovery/residue.js";
 import { type DoctorFinding, type DoctorReport } from "./report.js";
 import { canAccess, inspectConfig, inspectLandscape } from "./config.js";
@@ -155,6 +157,28 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     : null;
   if (docsDir !== null && writePath !== null) gradeWritePathResidue(docsDir, writePath, findings);
 
+  // The one writer whose journal is NOT in the docs repo: `loam gherkin`
+  // commits into the service repo's owned `<gherkinDir>/loam/` root, with the
+  // same lock and journal files. When this repo IS a service repo, that root
+  // gets the same scan and the same grades — the codes are the contract, the
+  // prose says where — because "doctor reports an interrupted commit until
+  // recovery succeeds" has to hold for every writer, not only the docs-repo
+  // ones. Scanning it is cheap: the root is loam's own flat directory.
+  let serviceWritePath = null;
+  if (inspected.config?.service !== undefined && inspected.config.root !== undefined) {
+    try {
+      const emissionRoot = gherkinRoot(inspected.config.root, inspected.config.gherkinDir);
+      if (existsSync(emissionRoot)) {
+        serviceWritePath = await scanWritePathResidue(emissionRoot);
+        gradeWritePathResidue(emissionRoot, serviceWritePath, findings);
+      }
+    } catch (err) {
+      // An unsafe gherkinDir is `loam gherkin`'s refusal to make, with its own
+      // sentence; doctor only declines to scan what it cannot trust.
+      if (!(err instanceof UnsafePathError)) throw err;
+    }
+  }
+
   let services: Awaited<ReturnType<typeof listServices>> = [];
   let activeFeatures: Awaited<ReturnType<typeof listFeatures>> = [];
   // Whether the fleet was actually READ, which is a narrower question than
@@ -253,6 +277,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     currentService,
     agents,
     writePath,
+    serviceWritePath,
     findings,
   };
 }

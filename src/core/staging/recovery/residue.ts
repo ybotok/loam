@@ -15,7 +15,9 @@ import { join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
 import { DOCS_LOCK, lockResidue } from "../lock.js";
 import { TEMP_FILE_RE } from "../commit.js";
-import { readCommitIntent, COMMIT_INTENT, type CommitIntent } from "./intent.js";
+import { COMMIT_INTENT } from "../interrupted.js";
+import { readTxnIntent, type TxnIntent } from "../txn/journal.js";
+import { readCommitIntent, type CommitIntent } from "./intent.js";
 
 /** The four shapes an unfinished write leaves behind, each named by its cause. */
 export interface WritePathResidue {
@@ -25,8 +27,12 @@ export interface WritePathResidue {
    * case nothing will ever release it and `stale` is meaningless.
    */
   lock: { path: string; holder: string; stale: boolean; unreadable: boolean } | null;
-  /** An interrupted commit's intent record — present means a commit was in flight when something killed it. */
-  intent: CommitIntent | null;
+  /**
+   * An interrupted commit's intent record — present means a commit was in
+   * flight when something killed it. Either journal version: the consumer
+   * tells them apart by shape (`rerun` exists only on version 2).
+   */
+  intent: CommitIntent | TxnIntent | null;
   /** True when `.loam-commit` exists but cannot be parsed: the worst case, because nothing can grade it. */
   intentUnreadable: boolean;
   /** Docs-repo-relative paths of orphaned `.loam-*.tmp` staging files. */
@@ -42,7 +48,10 @@ export async function scanWritePathResidue(docsDir: string): Promise<WritePathRe
   const residue = await lockResidue(lockPath);
   const lock: WritePathResidue["lock"] =
     residue === null ? null : { path: repoPath(docsDir, lockPath), ...residue };
-  const intent = await readCommitIntent(docsDir);
+  // Both journal versions wear the same filename; a version-2 record must
+  // not be graded "unreadable" merely because the version-1 reader rejects
+  // its version field.
+  const intent = (await readCommitIntent(docsDir)) ?? (await readTxnIntent(docsDir));
   return {
     lock,
     intent,
