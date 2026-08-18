@@ -354,6 +354,170 @@ Exit criteria:
 - The scope remains explicit: payload-schema correctness that loam does not validate is documented and
   can be delegated to an optional external CI validator without adding a runtime dependency.
 
+### Subsystems: a navigable tree under `services/` that no identity depends on
+
+`services/` is one flat level today —
+[src/core/repo/repo.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/repo.ts) reads its
+subdirectories and that list *is* the fleet. At 120 services the list stops being readable, and teams
+already group their directories by whatever agreement they reach: a domain here, an owning team there,
+a technology elsewhere. The tree is a filing convention enforced by review, not a taxonomy, and it will
+be re-cut. The whole design turns on one decision that makes re-cutting cheap:
+
+> **A service id is the leaf directory name. Placement is never part of any identity.**
+
+`loam.json`'s `service`, `metadata { service }`, spec frontmatter, and `features/<FEAT>/specs/<svc>/`
+never change when a service moves. `SERVICE_ID` in
+[src/core/kernel/ids.ts](https://github.com/ybotok/loam/blob/main/src/core/kernel/ids.ts) keeps
+forbidding `/`, so `--service` can never take a path. The subsystem tree exists in exactly one place,
+`services/`; mirroring it into feature directories would rewrite archived history on every re-cut.
+
+Scope boundary, stated so it does not creep: the tree carries **no policy**. No per-group gate, no
+allowed-dependency rules between groups, no ownership derived from position. It exists so a human can
+find a service and so views can be scoped, and nothing branches on it.
+
+Required change, in this order:
+
+1. **Re-key archive snapshots by service id first, before any subsystem can exist.**
+   `SnapshotEntry.path` in
+   [src/core/staging/snapshot.ts](https://github.com/ybotok/loam/blob/main/src/core/staging/snapshot.ts)
+   is docs-repo-relative, so a service that moves after a feature was archived makes `unarchive` restore
+   into a path that is gone. Record `(service, artifact)` for anything under `services/` and resolve it
+   through the enumeration at restore time; keep literal paths for the landscape and `features/`, which
+   do not move. Bump `SNAPSHOT_VERSION` to 3 and keep reading version 2. Ordering is the requirement:
+   version-2 snapshots already sit in archived features, and re-cutting is expected to be routine rather
+   than exceptional.
+2. **Classify a directory three ways, and make the third branch a refusal.** A directory holding
+   `subsystem.yaml` is a subsystem and is walked; one holding any service artifact is a service and is
+   not; one holding neither while containing subdirectories is an **error** naming the services stranded
+   beneath it. Two-way classification loses a service silently on an ordinary clean merge — one branch
+   deletes an emptied subsystem while another moves a service into it, and the group directory is then
+   read as a service whose real services vanish from the fleet with no finding. No directory under
+   `services/` may ever be reinterpreted as a different kind without saying so.
+3. **One flat namespace.** Service ids and subsystem names share it, must be unique across the entire
+   tree at any depth, and must not collide with each other. Subsystem names take the service-id grammar
+   and a distinct branded type; depth is unbounded and is the author's problem, not the tool's.
+4. **Record placement exactly once — in the directory itself.** No `subsystem` frontmatter field and no
+   membership list anywhere. `subsystem.yaml` declares that a directory is a group and carries its
+   title, optional description and optional owner; it never enumerates members, which is what the
+   directory already is. A marker beside service artifacts is an error.
+5. **Resolve service paths from the enumeration instead of a join.** The 41 `servicePaths(docsDir, id)`
+   call sites assume `services/<id>/`;
+   [src/core/repo/entries.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/entries.ts) already
+   carries the resolved `dir` per service, so the work is threading that map rather than discovering it.
+   The `PathableService` guarantee in
+   [src/core/repo/paths.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/paths.ts) strengthens:
+   a path that came from a readdir is narrower than one built from a validated string.
+6. **Mirror the tree in a generated views file, never in the authored landscape.**
+   `architecture/subsystems.likec4` holds views only — no model, no tags, no `specification` entries —
+   with one view per subsystem enumerating its members. Authored bytes stay authored, which is what
+   archive's verbatim splice promises. Output is deterministic and line-oriented: subsystems sorted by
+   path, members sorted by id, **one `include` per line**, so concurrent moves into different groups
+   touch different lines and git merges them, exactly as the service-grouped splice already achieves for
+   the landscape. Staleness against the tree is a single error on a single file, repaired by one command.
+   This is a scoping convenience, not the landscape decomposition under "Later"; it does not change what
+   any check reads.
+7. **Commands.** `subsystem new`, `move` (accepting several services and whole subtrees), `rename`, `rm`,
+   `list`, `history`, and `sync`; plus `adopt --subsystem`, so an adoption does not always land unfiled
+   and need a second command. `history` stays inside the doctrine in
+   [src/core/provenance/git.ts](https://github.com/ybotok/loam/blob/main/src/core/provenance/git.ts):
+   loam asks git and never tells it, every refusal reads as "git will not say", and `move` stages
+   renames without committing.
+8. **A move is one transaction over N renames plus one generated file**, which is the first real
+   consumer of the journaled transaction required by P0 — a sequence of directory renames is not atomic
+   as a group. It refuses when a file being moved has uncommitted changes, and only then: the generated
+   views file must be written in the same commit, or the tree is left failing between two commits.
+9. **Grade absence honestly.** A service directly under `services/` is unfiled, which is a permanent and
+   normal state in a partially organized fleet: silence, not a warning, with a count in `list`. An empty
+   subsystem is legal, since `subsystem new` must be usable before anything moves in.
+
+Exit criteria:
+
+- After any sequence of moves, renames and subtree moves, every join key is byte-identical: `loam.json`,
+  `metadata { service }`, spec frontmatter, `features/<FEAT>/specs/<svc>/` names, `sources_digest` and
+  `content_digest`. No `verified` service is demoted by a move.
+- The deleted-marker merge race is a fixture: the resulting tree refuses with a finding naming every
+  stranded service, and never reports a smaller fleet.
+- A duplicated service id or subsystem name anywhere in the tree, at any depth, is an error naming both
+  locations; a name that is both a subsystem and a service id is refused the same way.
+- `archive`, then a move, then `unarchive` restores the pre-image byte-for-byte with no `--force` and no
+  `snapshot-stale`. Version-2 snapshots still restore under their own rules.
+- Two concurrent moves into different subsystems produce a generated file git merges without
+  intervention; two moves of the same service conflict visibly rather than resolving silently.
+- The generated file is byte-reproducible from the tree on any machine — no timestamps, no absolute
+  paths, no readdir-order dependence — and `validate` detects staleness by comparing generated bytes.
+- `subsystem history` answers across at least two chained moves, and answers nothing without a finding
+  when git declines.
+- Unfiled services produce no findings at any count, and `validate --all` runtime is unchanged beyond
+  one readdir per directory walked.
+
+### Name the capabilities the fleet promises, and join requirements to them
+
+Every axis loam checks has a fleet-level place where its parts add up, except the one analysts work in.
+Architecture has `architecture/landscape.likec4`, and a feature's C4 additions splice into it on archive.
+Authorization has `architecture/permissions.yaml`, graded against every `Requires:` line in the fleet.
+Business behaviour has 120 `services/<svc>/spec.md` files and nothing above them.
+
+The feature-level side is thinner than it looks. `verify` never reads `intent.md` — the claims in
+[src/core/verify/checklist.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/checklist.ts)
+are derived from the delta, the contracts, and the scenarios. `archive` merges nothing out of it either.
+So a feature's `## Business acceptance` is the only authored content in loam that no check joins to
+anything and no merge accumulates: it is held to being non-empty (`intent.empty`) and to not being
+scaffold text (`scaffold.placeholder`), and then it is filed into `features/archive/`. An analyst can
+write five acceptance criteria, three can be implemented, and every gate stays green.
+
+This is a known concession, recorded in the wrong place. [COMPARISON.md](COMPARISON.md) states that
+OpenSpec's source of truth is capability-oriented while loam joins requirements to services, and
+[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) leaves capability→service mapping to a human
+and copies capability prose into `legacy/` because it has no loam equivalent. Both describe the missing
+axis as a migration caveat. Neither treats it as a gap in the product.
+
+This item takes the half that costs little: name the capabilities, join the requirements that already
+exist to them, and make the total readable. It deliberately does **not** give analysts a place to
+author — that is the Later item below, and what this one shows on a real fleet is the evidence that
+decides it.
+
+Required change:
+
+- Add `architecture/capabilities.yaml` in the shape
+  [src/core/permissions/permissions.ts](https://github.com/ybotok/loam/blob/main/src/core/permissions/permissions.ts)
+  already proves: a declared vocabulary of ids with a description and an owner, nested ids such as
+  `payments/refunds` kept nested, and the same defensive read. An unparseable vocabulary is exactly one
+  error and suppresses the rest of the family, because a hundred findings about one broken file is a
+  cascade rather than a diagnosis. An absent file is silence, so no existing fleet gains a finding until
+  it writes one.
+- Add a `Capability:` line to the requirement grammar in both spec files, parsed by
+  [src/core/document/parse.ts](https://github.com/ybotok/loam/blob/main/src/core/document/parse.ts)
+  beside `Operations:`, `Requires:`, `Publishes:` and `Consumes:`. It is a **list**, and the relation is
+  many-to-many in both directions: one requirement commonly closes part of two capabilities, and a
+  capability is realized by many requirements across several services. A single-valued field would force
+  authors to pick a lie.
+- Grade both directions, as the authorization axis already does. A line naming an undeclared capability
+  is an error with close-name suggestions; a declared capability that no living non-`REMOVED` requirement
+  names is a warning — it is either a promise nobody implemented or a word nobody adopted, and both are
+  drift invisible from inside the file.
+- Report the total. `list`, `explore` and the JSON envelope answer "what does the fleet promise about
+  refunds" with the realizing requirements, their services, and the draft/verified split — one command
+  instead of a grep across 120 directories.
+- Preserve capability identity through `migrate-openspec`. Today the capability is dissolved into service
+  requirements and its id is kept only in the verbatim `legacy/` copy. The mapping of requirements to
+  services stays a human decision, but every OpenSpec capability id should survive as a declared name and
+  a `Capability:` line, so migration stops being the step where the analyst's structure is lost.
+- Nothing new gates `archive` in this item beyond the unknown-name error.
+
+Exit criteria:
+
+- A vocabulary that does not parse produces exactly one error for the whole run, never one per requirement,
+  and the rest of the capability family is suspended rather than answered from a file nobody can read.
+- An undeclared capability name is an error naming close candidates; a declared capability nothing realizes
+  is one warning per capability, not one per service.
+- A fleet with no `architecture/capabilities.yaml` produces no capability findings at all.
+- The rollup is deterministic: same tree, same bytes, and the `--json` ordering is stable enough for
+  consumers to diff.
+- A migrated OpenSpec workspace retains every capability id as a declared name, and no requirement loses
+  the capability association its source file expressed.
+- `validate --all` pays one additional YAML parse per invocation and no additional per-service cost, and
+  the assessed runtime target for a 120-service fleet is unaffected.
+
 ### Protect documentation, package contents, and links
 
 Public prose currently carries several facts that code can derive but the existing
@@ -381,9 +545,10 @@ Exit criteria:
 
 ## Later — promote only from evidence
 
-Health composition, built-in rendering, UI generation, and landscape decomposition remain candidate
-investments, not promises. Promote one only when pilot evidence names the operator, repeated task,
-failure mode, frequency, current workaround, and measurable acceptance criterion.
+Health composition, built-in rendering, UI generation, landscape decomposition, and an authored
+business axis remain candidate investments, not promises. Promote one only when pilot evidence names
+the operator, repeated task, failure mode, frequency, current workaround, and measurable acceptance
+criterion.
 
 - **Health composition:** proceed only if both service-level `health.yaml` and fleet relationships are
   repeatedly being joined by hand and that work causes missed or contradictory checks. The result must
@@ -398,11 +563,26 @@ failure mode, frequency, current workaround, and measurable acceptance criterion
   become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than monthly — evaluate
   service-owned model files plus a thin global cross-service map. Migration must preserve archive/undo,
   deterministic resolution, and readable plain files.
+- **Authored business axis:** proceed only if the capability rollup above is read and still leaves
+  analysts unable to write without editing `services/`. The recorded trigger is authorship: analyst edits
+  appearing in `services/*/spec.md` history, or capability-level requirements accumulating as `intent.md`
+  prose that no requirement realizes. The shape is already decided, so promotion is a question of need
+  and not of design — `capabilities/<cap>/spec.md` as a fourth top-level tree beside the three in
+  [src/core/docs.ts](https://github.com/ybotok/loam/blob/main/src/core/docs.ts), carrying the existing
+  requirement grammar, delta algebra, `Based-On:` pins and `Requirement-ID` identity; a feature-local
+  `features/<FEAT>/capabilities/<cap>/` delta merged by the same transactional archive; `Realizes:` on a
+  service requirement as the downward join, written by whoever implements it rather than by the analyst;
+  and `capability.uncovered` gating archive exactly as `c4.uncovered` does, for a capability requirement
+  the feature's own service deltas leave unrealized. Two rules keep it from becoming a second copy of the
+  same prose: a capability requirement must be observable outside the fleet and name no service — one that
+  could be pasted into a service spec unchanged belongs there instead — and neither corpus is derived from
+  the other. `gherkin` and `verify` must keep computing from service requirements, so a service repository
+  can still validate itself with nothing but its own files.
 
 Exit criteria for promoting a Later item:
 
-- Evidence comes from at least two independent operators or fleets, except landscape scaling, whose
-  recorded conflict-frequency trigger is sufficient.
+- Evidence comes from at least two independent operators or fleets, except landscape scaling and the
+  authored business axis, whose recorded triggers are sufficient.
 - An ADR compares the existing workflow, external tooling, and the smallest loam-owned change.
 - A prototype is measured against a predeclared acceptance criterion and preserves every non-goal below.
 - The feature returns to this roadmap under a numbered priority before production implementation begins.
