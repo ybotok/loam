@@ -40,7 +40,8 @@ import { readAsyncapi } from "../src/core/asyncapi/read.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
-import { FleetContext, conflictMarkerLines } from "../src/core/fleet-context.js";
+import { conflictMarkerLines } from "../src/core/conflict-markers.js";
+import { FleetContext } from "../src/core/fleet-context.js";
 import { decodeDocument } from "../src/core/kernel/document-bytes.js";
 import { operationIds, operations, readOpenapi } from "../src/core/openapi/doc.js";
 import { type FeatureEntry } from "../src/core/repo/entries.js";
@@ -133,6 +134,9 @@ interface Fixture {
   asyncapi: string;
   landscape: string;
   conflicted: string;
+  /** Two documents no other row loads, so the prefetch row truly batches. */
+  model: string;
+  delta: string;
 }
 
 /**
@@ -242,6 +246,23 @@ const READERS: Reader[] = [
       expect(doc.relationships.length).toBeGreaterThanOrEqual(2);
     },
   },
+  {
+    name: "prefetchLikeC4",
+    // Not a reader of its own: prefetch SEEDS loadLikeC4's memo through the
+    // shared batch workspace. Its parity claim is the seed's — a load answered
+    // from a prefetched document equals the same document read directly. The
+    // two paths are ones no earlier row memoized, so the batch genuinely runs
+    // (a single miss would be the documented no-op).
+    memo: async (fleet, at) => {
+      await fleet.prefetchLikeC4([at.model, at.delta]);
+      return fleet.loadLikeC4(at.model);
+    },
+    direct: (at) => loadFile(at.model),
+    floor: (doc) => {
+      expect(doc.errors).toEqual([]);
+      expect(doc.elements.length).toBeGreaterThanOrEqual(1);
+    },
+  },
 ];
 
 /** The row by name — the negative control needs one specific reader. */
@@ -283,6 +304,8 @@ describe("every FleetContext reader answers exactly what the core module answers
       asyncapi: join(docsDir, "services/payment-service/asyncapi.yaml"),
       landscape: join(docsDir, "architecture/landscape.likec4"),
       conflicted: join(docsDir, "services/checkout-web/spec.md"),
+      model: join(docsDir, "services/payment-service/model.likec4"),
+      delta: join(inFlight.dir, "delta.likec4"),
     };
     fleet = new FleetContext();
   });

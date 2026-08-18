@@ -16,7 +16,7 @@ import { access, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { configPath, parseConfig, type LoamConfig } from "../envelope/config.js";
 import { loadFile } from "../c4/likec4.js";
-import { conflictMarkerLines } from "../fleet-context.js";
+import { conflictMarkerLines } from "../conflict-markers.js";
 import { type DoctorFinding, type DoctorReport } from "./report.js";
 
 export interface ConfigInspection {
@@ -97,7 +97,7 @@ export async function inspectLandscape(path: string, findings: DoctorFinding[]):
   // error. This is the failure mode of onboarding a fleet: ten people adopt ten
   // services into one landscape.likec4 in the same week.
   //
-  // The scan itself is fleet-context's, which is where the same rule already
+  // The scan itself is conflict-markers's, which is where the same rule already
   // grades every other document loam reads. doctor kept a second copy of it,
   // and a second copy of a rule is a second chance to spell it differently;
   // what doctor owns is what a conflicted landscape COSTS, which is the finding

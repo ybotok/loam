@@ -30,7 +30,8 @@ import {
 } from "../../core/coherence/living.js";
 import { gatesArchive } from "../../core/vocabulary/issue.js";
 import { featureProvenance } from "../../core/provenance/findings.js";
-import { FleetContext, documentConflictFinding } from "../../core/fleet-context.js";
+import { documentConflictFinding } from "../../core/conflict-markers.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "./checks/vocabulary.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
