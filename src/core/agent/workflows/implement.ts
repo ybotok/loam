@@ -72,7 +72,8 @@ repository, which needs its own committed ./loam.json — if there is none,
    validate. Every edit you make in the docs repo while other features are in
    flight is written against a living document that may have moved since the
    feature directory was created, and the pins are the only thing that lets the
-   merge tell an EDIT from a QUOTE. \`delta.baseline-missing\` and
+   merge tell an EDIT from a QUOTE — for operations, path-level keys and
+   components alike. \`delta.baseline-missing\` and
    \`openapi.baseline-missing\` are the warnings that say you skipped it — archive
    refuses on them until you rebase (or a human \`--approve\`s the unpinned merge);
    \`delta.baseline-stale\` / \`openapi.baseline-stale\` are archive refusing because

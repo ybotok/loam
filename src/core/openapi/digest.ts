@@ -59,6 +59,41 @@ export function isRemoval(node: unknown): boolean {
  */
 export const FEATURE_ONLY_KEYS: ReadonlySet<string> = new Set([OPENAPI_REMOVE_KEY, OPENAPI_BASELINE_KEY]);
 
+/**
+ * `value` with every feature-only key removed, at ANY depth — or the value
+ * unchanged (same reference) when it carries none. The component closure
+ * writes values VERBATIM into the living contract, and a component holding an
+ * operation shape (a `pathItems` component, a callback) can nest the markers
+ * where the path-level strip never walks: `--approve` once published
+ * `x-loam-remove: true` inside a living component, invisible even to
+ * `validate`, whose marker sweep reads `paths` alone.
+ */
+export function withoutFeatureKeysDeep(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    let changed = false;
+    const out = value.map((v) => {
+      const stripped = withoutFeatureKeysDeep(v);
+      if (stripped !== v) changed = true;
+      return stripped;
+    });
+    return changed ? out : value;
+  }
+  const record = value as Record<string, unknown>;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(record)) {
+    if (FEATURE_ONLY_KEYS.has(key)) {
+      changed = true;
+      continue;
+    }
+    const stripped = withoutFeatureKeysDeep(v);
+    if (stripped !== v) changed = true;
+    out[key] = stripped;
+  }
+  return changed ? out : value;
+}
+
 /** How much of the sha256 an `x-loam-based-on` carries — the length every loam digest uses. */
 export const OPERATION_DIGEST_LENGTH = 16;
 
@@ -119,9 +154,9 @@ export function operationDigest(node: unknown): string {
 }
 
 /**
- * What a pin says, from digests alone — the one definition both the gate
- * (core/coherence/coherence.ts, which has parsed Operations) and the merge
- * (./merge/merge.ts, which has raw YAML trees) decide by. Two spellings of
+ * What a pin says, from digests alone — the one definition every decider
+ * shares: the gate (./baseline/gate.ts) and the merge
+ * (./merge/{merge,components,pin}.ts) alike. Two spellings of
  * this rule would eventually disagree about which operations a merge writes,
  * and the disagreement would be invisible until a contract came back wrong.
  *

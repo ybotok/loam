@@ -21,7 +21,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { isRecord } from "../../kernel/records.js";
 import { OPENAPI_BASELINES_KEY, valueDigest } from "../digest.js";
-import { buildRecord, readBaselineRecord, restatedSurfaces, surfaceIn } from "./record.js";
+import { buildRecord, entryFor, readBaselineRecord, restatedSurfaces, surfaceIn } from "./record.js";
 
 /** What happened to one restated surface's baseline entry. */
 export interface SurfacePin {
@@ -84,10 +84,7 @@ export function planOpenapiBaselines(
     // it into `problems`), so this run reports `pinned` and overwrites it —
     // rebase is the command the gate's `openapi.baseline-invalid` sends people
     // to, and it must repair what it names.
-    const from =
-      surface.kind === "path-item"
-        ? current.pathItems[surface.path]?.[surface.key]
-        : current.components[surface.id];
+    const from = entryFor(current, surface);
     const base = {
       kind: surface.kind,
       target: surface.kind === "path-item" ? `${surface.path} '${surface.key}'` : surface.id,

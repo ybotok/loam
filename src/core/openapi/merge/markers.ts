@@ -10,7 +10,7 @@
  * "which keys are feature-only" is how one of the two starts leaking a marker.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
+import { isMap, isScalar, parseDocument } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -19,10 +19,12 @@ import {
   FEATURE_ONLY_KEYS,
   isRemoval,
   operationBaselineOf,
+  withoutFeatureKeysDeep,
   withoutOperationBaseline,
   OPENAPI_BASELINE_KEY,
   OPENAPI_BASELINES_KEY,
 } from "../digest.js";
+import { setComponentValue } from "./components.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 
 /**
@@ -67,6 +69,26 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
     // path the contract advertises and nothing answers.
     if (kept !== undefined) cleaned[path] = kept;
   }
+  // Component values get the same discipline as path items: a component
+  // holding an operation shape (a `pathItems` component, a callback) nests
+  // the feature-only keys where the paths walk never looks, and the create
+  // branch publishes this function's output verbatim. The write is
+  // string-key-matched (setComponentValue) so a numeric component name is
+  // replaced, never duplicated.
+  const comps = plainChild(plain, "components");
+  if (isRecord(comps)) {
+    for (const [kind, names] of Object.entries(comps)) {
+      if (!isRecord(names)) continue;
+      for (const [name, value] of Object.entries(names)) {
+        const kept = withoutFeatureKeysDeep(value);
+        if (kept !== value) {
+          setComponentValue(feature, kind, name, kept);
+          stripped = true;
+        }
+      }
+    }
+  }
+
   if (!stripped) {
     if (!hasRecord) return featureText;
     feature.deleteIn([OPENAPI_BASELINES_KEY]);
@@ -129,7 +151,11 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
         }
       }
       const remaining = feature.getIn(["paths", path]);
-      if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
+      // The merge's twin: no OPERATIONS left means the path goes, surviving
+      // path-level keys included — `{}` was only the easy shape of dead.
+      if (isMap(remaining) && !remaining.items.some((it) => isScalar(it.key) && HTTP_METHODS.has(String(it.key.value)))) {
+        feature.deleteIn(["paths", path]);
+      }
     }
   }
   // The root record goes on BOTH serialization branches: it is feature

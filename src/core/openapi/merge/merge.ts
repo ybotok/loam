@@ -9,7 +9,7 @@
  * survives a refactor.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, parseDocument } from "yaml";
+import { isMap, isScalar, parseDocument } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -17,7 +17,7 @@ import { HTTP_METHODS } from "../doc.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
-import { readBaselineRecord } from "../baseline/record.js";
+import { entryFor, readBaselineRecord } from "../baseline/record.js";
 import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { mergeComponentClosure } from "./components.js";
 
@@ -208,7 +208,7 @@ export function mergeOpenapiPaths(
           // every operation on the path, including ones this feature never
           // mentions. Stale still writes: reaching the merge means --approve.
           const verdict = classifyBaselineDigests(
-            record.pathItems[path]?.[m],
+            entryFor(record, { kind: "path-item", path, key: m, value: afterPlain }),
             valueDigest(afterPlain),
             before === undefined ? undefined : valueDigest(beforePlain),
           );
@@ -244,11 +244,16 @@ export function mergeOpenapiPaths(
         living.setIn(["paths", path, m], publishable[m]);
         written.push({ from: `paths ${path}`, value: publishable[m] });
       }
-      // Removing the last method leaves `\/x: {}` — a path the contract still
-      // advertises and nothing answers. The same cleanup
-      // stripOpenapiRemovalMarkers already does on the feature side.
+      // Removing the last method leaves a path the contract still advertises
+      // and nothing answers — and `{}` is only the easy shape of that state: a
+      // surviving path-LEVEL key (`parameters`, `summary`) kept the path alive
+      // with zero operations just as misleadingly. No methods left means the
+      // path goes, whatever else survived beside them. The same cleanup
+      // stripOpenapiRemovalMarkers does on the feature side.
       const remaining = living.getIn(["paths", path]);
-      if (isMap(remaining) && remaining.items.length === 0) living.deleteIn(["paths", path]);
+      if (isMap(remaining) && !remaining.items.some((it) => isScalar(it.key) && HTTP_METHODS.has(String(it.key.value)))) {
+        living.deleteIn(["paths", path]);
+      }
       continue;
     }
     if (!isRecord(featItemPlain)) {

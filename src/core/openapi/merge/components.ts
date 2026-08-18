@@ -13,9 +13,9 @@
  * pulls nothing.
  */
 import { isDeepStrictEqual } from "node:util";
-import type { Document } from "yaml";
-import { classifyBaselineDigests, valueDigest } from "../digest.js";
-import { restatedSurfaces, surfaceIn, type BaselineRecord } from "../baseline/record.js";
+import { isMap, isScalar, type Document } from "yaml";
+import { classifyBaselineDigests, valueDigest, withoutFeatureKeysDeep } from "../digest.js";
+import { entryFor, restatedSurfaces, surfaceIn, type BaselineRecord } from "../baseline/record.js";
 
 export function collectRefs(node: unknown): string[] {
   const out: string[] = [];
@@ -94,6 +94,22 @@ export interface ComponentClosureOutcome {
  * written content and copied components must resolve in the copy set or the
  * living document.
  */
+/**
+ * Write one component's value, matching the existing key AS A STRING: a
+ * living `404:` response is the YAML number 404, and a plain `setIn` with the
+ * string "404" misses it and APPENDS a second pair — the contract then
+ * declares the component twice, forever, with the pre-merge copy first in
+ * reading order. Exported for the strip's twin write on the feature side.
+ */
+export function setComponentValue(doc: Document, kind: string, name: string, value: unknown): void {
+  const kindNode = doc.getIn(["components", kind]);
+  const existing = isMap(kindNode)
+    ? kindNode.items.find((it) => isScalar(it.key) && String(it.key.value) === name)
+    : undefined;
+  if (existing !== undefined) existing.value = doc.createNode(value);
+  else doc.setIn(["components", kind, name], value);
+}
+
 export function mergeComponentClosure(input: ComponentClosureInput): ComponentClosureOutcome {
   const { living, featPlain, livingPlain, record, written } = input;
   const componentsModified: string[] = [];
@@ -115,7 +131,7 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
     const entry = { kind: surface.id.slice(0, cut), name: surface.id.slice(cut + 1), value: surface.value };
     const inLiving = surfaceIn(livingPlain, surface);
     const verdict = classifyBaselineDigests(
-      record.components[surface.id],
+      entryFor(record, surface),
       valueDigest(surface.value),
       inLiving.found ? valueDigest(inLiving.value) : undefined,
     );
@@ -179,7 +195,11 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
   }
 
   for (const { kind, name, value } of copies) {
-    living.setIn(["components", kind, name], value);
+    // The value is deep-stripped of loam's bookkeeping keys — a component
+    // holding an operation shape nests them where the path-level strip never
+    // walks, and `--approve` once published `x-loam-remove: true` into a
+    // living component.
+    setComponentValue(living, kind, name, withoutFeatureKeysDeep(value));
   }
 
   return { componentsModified, componentsQuoted, componentsStale, unresolved };
