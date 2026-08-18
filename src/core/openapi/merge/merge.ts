@@ -16,7 +16,8 @@ import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
-import { isRemoval, opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
+import { isRemoval } from "../digest.js";
+import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { collectRefs, resolvePointer } from "./refs.js";
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */

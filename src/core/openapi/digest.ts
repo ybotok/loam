@@ -27,6 +27,38 @@ import { createHash } from "node:crypto";
  */
 export const OPENAPI_BASELINE_KEY = "x-loam-based-on";
 
+/**
+ * The feature-only ROOT record that pins the surfaces the operation pin cannot
+ * reach: path-item non-method keys and components. `{ pathItems: {<path>:
+ * {<key>: <16-hex>}}, components: {"<kind>/<name>": <16-hex>} }` — written by
+ * `loam rebase`, graded by validate/archive, consumed by the merge, and
+ * stripped from every living document exactly like the pin. A single root
+ * record rather than in-value extensions because a component's value can be a
+ * bare boolean (JSON Schema allows `true`), which no in-value key survives.
+ */
+export const OPENAPI_BASELINES_KEY = "x-loam-baselines";
+
+/** The feature-only explicit removal marker's key. */
+export const OPENAPI_REMOVE_KEY = "x-loam-remove";
+
+/** Is this operation node a feature-only explicit removal marker? */
+export function isRemoval(node: unknown): boolean {
+  return node !== null &&
+    typeof node === "object" &&
+    (node as Record<string, unknown>)[OPENAPI_REMOVE_KEY] === true;
+}
+
+/**
+ * Every key that is an instruction to loam rather than part of the contract.
+ * At PATH level none has any meaning — `x-loam-remove` addresses one
+ * operation and `x-loam-based-on` pins one — so a path item carrying either
+ * is an authoring mistake, and one that must not be published whatever else
+ * is done about it. Lives HERE, in the openapi root beside the keys it names,
+ * because both `merge/` and `baseline/` consume it and a value edge between
+ * those two packages in either direction would be a package cycle.
+ */
+export const FEATURE_ONLY_KEYS: ReadonlySet<string> = new Set([OPENAPI_REMOVE_KEY, OPENAPI_BASELINE_KEY]);
+
 /** How much of the sha256 an `x-loam-based-on` carries — the length every loam digest uses. */
 export const OPERATION_DIGEST_LENGTH = 16;
 
@@ -71,12 +103,19 @@ export function withoutOperationBaseline(node: unknown): unknown {
   return rest;
 }
 
+/**
+ * The identity of ANY resolved value: sha256 of its canonical form. The one
+ * digest the path-item and component baselines carry — order-of-keys blind,
+ * array-order sensitive, legal over scalars and booleans, exactly as the
+ * operation digest always was.
+ */
+export function valueDigest(node: unknown): string {
+  return createHash("sha256").update(canonicalJson(node), "utf8").digest("hex").slice(0, OPERATION_DIGEST_LENGTH);
+}
+
 /** The identity of an operation's CONTENT: sha256 of its canonical form, pin excluded. */
 export function operationDigest(node: unknown): string {
-  return createHash("sha256")
-    .update(canonicalJson(withoutOperationBaseline(node)), "utf8")
-    .digest("hex")
-    .slice(0, OPERATION_DIGEST_LENGTH);
+  return valueDigest(withoutOperationBaseline(node));
 }
 
 /**

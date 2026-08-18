@@ -23,7 +23,8 @@ import {
   OPENAPI_BASELINE_KEY,
 } from "../digest.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
-import { isRemoval, plainChild } from "./markers.js";
+import { isRemoval } from "../digest.js";
+import { plainChild } from "./markers.js";
 
 /**
  * What a feature's operation IS, relative to the living contract — the one

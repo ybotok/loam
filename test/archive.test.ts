@@ -3141,16 +3141,19 @@ components:
     featureOpenapi: string,
     livingOpenapi: string = LIVING_OPENAPI,
   ): Record<string, string> {
-    // /payments/refund is a new slot in every variant, so no baseline pin is
-    // due; the intent.md keeps the now-gating intent.empty out of fixtures
-    // whose subject is the components closure.
+    // /payments/refund is a new slot in every variant, so no operation pin is
+    // due — but the Money variants restate a LIVING component, which gates
+    // unpinned since the surface baselines landed, so the delta rides through
+    // pinOpenapi exactly as `loam rebase` would leave it (a no-op for the
+    // variants whose surfaces are all new). The intent.md keeps the
+    // now-gating intent.empty out of fixtures whose subject is the closure.
     return {
       "architecture/landscape.likec4": LANDSCAPE,
       "services/payment-service/spec.md": LIVING_SPEC,
       "services/payment-service/openapi.yaml": livingOpenapi,
       "features/FEAT-3-refunds/delta.likec4": REFUND_DELTA,
       "features/FEAT-3-refunds/specs/payment-service/spec.md": REFUND_SPEC,
-      "features/FEAT-3-refunds/specs/payment-service/openapi.yaml": featureOpenapi,
+      "features/FEAT-3-refunds/specs/payment-service/openapi.yaml": pinOpenapi(featureOpenapi, livingOpenapi),
       "features/FEAT-3-refunds/intent.md": AUTHORED_INTENT,
     };
   }

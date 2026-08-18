@@ -14,7 +14,13 @@ import { isMap, parseDocument } from "yaml";
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
-import { operationBaselineOf, withoutOperationBaseline, OPENAPI_BASELINE_KEY } from "../digest.js";
+import {
+  FEATURE_ONLY_KEYS,
+  isRemoval,
+  operationBaselineOf,
+  withoutOperationBaseline,
+  OPENAPI_BASELINE_KEY,
+} from "../digest.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 
 /**
@@ -122,13 +128,6 @@ export function opLabel(before: unknown, after: unknown, method: string, path: s
   return operation !== undefined ? `'${operation}' (${method} ${path})` : `${method} ${path}`;
 }
 
-/** Is this operation node a feature-only explicit removal marker? */
-export function isRemoval(node: unknown): boolean {
-  return node !== null &&
-    typeof node === "object" &&
-    (node as Record<string, unknown>)["x-loam-remove"] === true;
-}
-
 /** Read an operationId from a YAML or plain operation node. */
 export function operationIdOf(node: unknown): string | undefined {
   const value = isMap(node)
@@ -139,14 +138,7 @@ export function operationIdOf(node: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/**
- * Every key that is an instruction to loam rather than part of the contract.
- * At PATH level neither has any meaning — `x-loam-remove` addresses one
- * operation and `x-loam-based-on` pins one — so a path item carrying either is
- * an authoring mistake, and one that must not be published whatever else is
- * done about it.
- */
-const FEATURE_ONLY_KEYS = new Set(["x-loam-remove", OPENAPI_BASELINE_KEY]);
+
 
 /**
  * Copy a path item without anything that belongs to the FEATURE rather than to

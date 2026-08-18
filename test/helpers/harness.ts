@@ -43,6 +43,7 @@ import { docsDirOf, type DocsDir } from "../../src/core/kernel/ids/dirs.js";
 import { parseRequirements } from "../../src/core/document/parse.js";
 import { requirementDigest } from "../../src/core/document/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi/merge/pin.js";
+import { planOpenapiBaselines } from "../../src/core/openapi/baseline/plan.js";
 
 /**
  * The identity `loam vouch` stamps in tests.
@@ -98,14 +99,16 @@ export function pinFor(livingMarkdown: string, name: string): string {
 }
 
 /**
- * A feature contract with every operation pinned against `living` — byte for
- * byte what `loam rebase` writes on the OpenAPI axis, because it IS the
- * function that command calls. A fixture pinning itself by hand would be a
- * second implementation of the rule, free to agree with the merge right up
- * until the day it quietly did not.
+ * A feature contract with every operation pinned against `living`, and the
+ * `x-loam-baselines` record for its restated path-item keys and components —
+ * byte for byte what `loam rebase` writes on the OpenAPI axis, because these
+ * ARE the two functions that command chains, in the same order. A fixture
+ * pinning itself by hand would be a second implementation of the rule, free to
+ * agree with the merge right up until the day it quietly did not.
  */
 export function pinOpenapi(featureYaml: string, livingYaml: string): string {
-  return pinOpenapiOperations(featureYaml, livingYaml, "fixture").text ?? featureYaml;
+  const ops = pinOpenapiOperations(featureYaml, livingYaml, "fixture").text ?? featureYaml;
+  return planOpenapiBaselines(ops, livingYaml, "fixture").text ?? ops;
 }
 
 /** Create a temp dir (caller owns cleanup unless using makeProject().destroy()). */
