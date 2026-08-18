@@ -10,7 +10,7 @@
  * says, only whether one was declared at all, so the reader's structure-only
  * stance holds.
  *
- * A local pointer walk rather than an import from `merge/refs.ts`: the merge
+ * A local pointer walk rather than an import from `merge/components.ts`: the merge
  * package already imports this package (`HTTP_METHODS` from doc.ts), so the
  * reverse import would be a package cycle — the same reason read-side
  * `resolvePointer` copies exist on the asyncapi axis.
