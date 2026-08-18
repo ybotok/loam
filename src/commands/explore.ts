@@ -3,7 +3,7 @@ import { loadConfig } from "../core/envelope/config.js";
 import { explore, type Exploration, type ExploreService } from "../core/explore/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
-import { featureIdProblem, parseServiceIds } from "../core/kernel/ids.js";
+import { featureIdProblem, parseServiceIds } from "../core/kernel/ids/service.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./policy/gate.js";
 import { plural } from "./policy/format.js";

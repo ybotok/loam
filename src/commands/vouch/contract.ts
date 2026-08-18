@@ -8,7 +8,7 @@
  * writer already knew.
  */
 import { type ErrorCode } from "../../core/envelope/json.js";
-import type { PathableService } from "../../core/kernel/ids.js";
+import type { PathableService } from "../../core/kernel/ids/service.js";
 import type { CommitRecovery } from "../../core/staging/interrupted.js";
 import type { SkippedSource } from "../../core/provenance/walk.js";
 

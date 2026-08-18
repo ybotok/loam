@@ -7,7 +7,7 @@ import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { join } from "node:path";
 import { loadConfig } from "../../core/envelope/config.js";
-import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../../core/kernel/ids.js";
+import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../../core/kernel/ids/service.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../../core/kernel/path-safety.js";
 import { featureIdFromDirName, nearestIds, type FeatureEntry } from "../../core/repo/entries.js";

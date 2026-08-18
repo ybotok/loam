@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { type PathableService } from "../../../core/kernel/ids.js";
+import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { servicePaths, SPEC_AXES } from "../../../core/repo/paths.js";
 import { listField, readFrontmatter } from "../../../core/document/frontmatter.js";
 import { type Finding } from "../../../core/vocabulary/report.js";

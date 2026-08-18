@@ -5,7 +5,7 @@
  */
 import { existsSync } from "node:fs";
 import type { FleetContext } from "../fleet-context.js";
-import type { PathableService } from "../kernel/ids.js";
+import type { PathableService } from "../kernel/ids/service.js";
 import { featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
 

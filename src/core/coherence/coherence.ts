@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { elementService, loadFile, serviceResolver, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
-import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
+import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";

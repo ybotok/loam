@@ -7,7 +7,7 @@
  * `compareIds` lives here for the same reason: sorting ids is what a renderer
  * does, and no renderer wants the enumeration.
  */
-import type { RawServiceId } from "../kernel/ids.js";
+import type { RawServiceId } from "../kernel/ids/service.js";
 
 
 export interface ServiceArtifacts {

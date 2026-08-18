@@ -11,7 +11,7 @@ import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseRequirements } from "../document/parse.js";
-import type { PathableService } from "../kernel/ids.js";
+import type { PathableService } from "../kernel/ids/service.js";
 import { servicePaths, SPEC_AXES } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
 import type { FleetContext } from "../fleet-context.js";

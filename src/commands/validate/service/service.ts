@@ -11,7 +11,7 @@
  */
 import { existsSync } from "node:fs";
 import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
-import { type PathableService } from "../../../core/kernel/ids.js";
+import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile, permissionsPath, servicePaths } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";

@@ -9,7 +9,7 @@
  */
 import { type Issue } from "../../../core/vocabulary/issue.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
-import { type PathableService } from "../../../core/kernel/ids.js";
+import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type CommitRecovery } from "../../../core/staging/interrupted.js";
 

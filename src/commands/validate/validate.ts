@@ -13,7 +13,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { agentsStaleFinding } from "../../core/agent/agents-stamp.js";
 import { inOrder } from "../../core/kernel/concurrency.js";
-import type { RawServiceId } from "../../core/kernel/ids.js";
+import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";

@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
-import { rawServiceId } from "../src/core/kernel/ids.js";
+import { rawServiceId } from "../src/core/kernel/ids/service.js";
 import { featureIdFromDirName } from "../src/core/repo/entries.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../src/core/repo/paths.js";
 import { DocsRepoUnavailableError, docsRepoState } from "../src/core/repo/state.js";

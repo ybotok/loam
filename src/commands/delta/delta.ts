@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../../core/envelope/config.js";
-import { InvalidIdError, assertServiceId } from "../../core/kernel/ids.js";
+import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { loadFile } from "../../core/c4/likec4.js";
 import { compareIds, nearestIds } from "../../core/repo/entries.js";

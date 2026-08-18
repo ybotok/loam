@@ -11,7 +11,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "../document/frontmatter.js";
 import type { FleetContext } from "../fleet-context.js";
-import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids.js";
+import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
 import type { Finding } from "../vocabulary/report.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
 import { ARCHIVE_DIR, featurePaths, featuresDir, servicePaths } from "./paths.js";

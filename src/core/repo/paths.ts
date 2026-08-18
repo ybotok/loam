@@ -14,7 +14,7 @@
  * `resolveInside` at the write.
  */
 import { join } from "node:path";
-import type { PathableService } from "../kernel/ids.js";
+import type { PathableService } from "../kernel/ids/service.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 export const ARCHIVE_DIR = "archive";

@@ -13,7 +13,7 @@
  * would make the graph depend on when the corpus was migrated.
  */
 import { existsSync } from "node:fs";
-import type { PathableService } from "../kernel/ids.js";
+import type { PathableService } from "../kernel/ids/service.js";
 import { FleetContext } from "../fleet-context.js";
 import { serviceResolver } from "../c4/likec4.js";
 import { operations } from "../openapi/doc.js";

@@ -10,7 +10,7 @@
  */
 import { readAsyncapi } from "./read.js";
 import type { FleetContext } from "../fleet-context.js";
-import type { PathableService } from "../kernel/ids.js";
+import type { PathableService } from "../kernel/ids/service.js";
 import { servicePaths } from "../repo/paths.js";
 
 /** Who produces what across the fleet, and whether that view is complete. */
