@@ -20,11 +20,8 @@ import { featurePaths, landscapePath, servicePaths, SPEC_AXES } from "../repo/pa
 import { docsRepoState } from "../repo/state.js";
 import { featureSpecServices, listServices } from "../repo/repo.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
-import {
-  documentConflictFinding,
-  landscapeConflictFinding,
-  type FleetContext,
-} from "../fleet-context.js";
+import { documentConflictFinding, landscapeConflictFinding } from "../conflict-markers.js";
+import type { FleetContext } from "../fleet-context.js";
 
 
 /* ------------------------------------------------------------------ */
@@ -154,7 +151,7 @@ export async function invalidSpecServiceFindings(
  * Git conflict markers in the LIVING documents a merge of this feature would
  * rewrite: each touched service's requirement files, and the fleet map.
  *
- * The rule and the sentence are fleet-context's — one spelling of the breach,
+ * The rule and the sentence are conflict-markers's — one spelling of the breach,
  * wherever it is found. What this adds is the SET: the documents `archive`
  * rewrites. A conflicted `services/<svc>/spec.md` parses as prose, so every
  * check upstream of the merge reads it as a valid document with some odd

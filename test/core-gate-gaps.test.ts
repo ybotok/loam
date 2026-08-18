@@ -30,9 +30,9 @@ import { decodeDocument, NotUtf8DocumentError } from "../src/core/kernel/documen
 import {
   conflictMarkerLines,
   documentConflictFinding,
-  FleetContext,
   landscapeConflictFinding,
-} from "../src/core/fleet-context.js";
+} from "../src/core/conflict-markers.js";
+import { FleetContext } from "../src/core/fleet-context.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { steplessFindings, steplessScenarios } from "../src/core/document/scenarios.js";
 import { renderFeature } from "../src/core/gherkin/emit.js";

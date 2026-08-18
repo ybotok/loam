@@ -19,7 +19,8 @@ import {
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listServices, serviceIdFindings } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
-import { FleetContext, landscapeConflictFinding } from "../../core/fleet-context.js";
+import { landscapeConflictFinding } from "../../core/conflict-markers.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { fleetShapeFindings, permissionFindings } from "./checks/fleet-shape.js";
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "./checks/vocabulary.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
