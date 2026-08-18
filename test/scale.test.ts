@@ -14,20 +14,22 @@
  *
  * Wall-clock is gated, but only as a blowup alarm, and the ceiling has to
  * tolerate the fact that this file runs inside a 64-file parallel suite. What
- * it costs, measured: ~12s for `validate --all` on an idle box, ~30s with the
- * cores saturated, and 65-77s when the whole suite is running beside it. Those
- * numbers are the machine, not a regression — the same fixture on 4d8cb4b (the
- * commit before the hardening campaign) measures 11.9s against 12.1s today,
- * so the earlier "~4s on a dev laptop" in this header described hardware this
- * one is not.
+ * it costs, measured since `validate --all` batch-parses its documents in one
+ * LikeC4 workspace: ~0.5s for the whole suite on an idle box, where the same
+ * fixture cost ~4s here before the batch (and ~12s on the slower machine an
+ * earlier header described — those numbers were that machine, not a
+ * regression). The honest cross-machine numbers live in docs/BENCHMARKS.md;
+ * this ceiling is deliberately NOT performance evidence and must not be
+ * tightened into it.
  *
  * It exists to catch pathological blowups — an accidental per-service re-parse
- * of the landscape or a return of the per-feature double-load turns 40-odd
- * workspace spins into hundreds, and THAT is what must never land silently.
- * That class is an order of magnitude, so it trips this ceiling under any load;
- * vitest's own 120s testTimeout is the hard backstop behind it, and the ceiling
- * sits just under it so a blowup fails with the message below rather than an
- * opaque timeout.
+ * of the landscape, a return of the per-feature double-load, or the batch
+ * prefetch silently dying so every document pays its own workspace spin again,
+ * per service, turns one shared workspace into hundreds of private ones, and
+ * THAT is what must never land silently. That class is an order of magnitude,
+ * so it trips this ceiling under any load; vitest's own 120s testTimeout is
+ * the hard backstop behind it, and the ceiling sits just under it so a blowup
+ * fails with the message below rather than an opaque timeout.
  */
 import { describe, it, expect } from "vitest";
 import { fleetFiles } from "./helpers/fleet-fixture.js";

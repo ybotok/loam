@@ -44,3 +44,31 @@ Machine: darwin/arm64, 8× Apple M1, 8 GB RAM · node v24.13.1 · 2026-08-19
 The 13.7s median reproduces the roadmap's 13–14s assessment: under `--all`,
 every service model, feature delta and the landscape paid a fresh
 LikeC4/Langium workspace (~100ms each even warm), one per document.
+
+## After — one shared workspace for the whole `--all` run
+
+Same machine, same fixture, same method, re-measured after `validate --all`
+started prefetching the run's documents through `loadBatch`
+(`src/core/c4/workspace.ts`): one mkdtemp workspace, one single-file project
+per document, one `LikeC4.fromWorkspace`. Single-service `validate` and `list`
+keep their untouched per-path code, so their rows are the drift bound, not a
+claim.
+
+Machine: darwin/arm64, 8× Apple M1, 8 GB RAM · node v24.13.1 · 2026-08-19
+
+| command | median | runs (ms) | peak RSS (median of per-run peaks) |
+|---|---|---|---|
+| `loam validate --all --json` | 731 ms | 731, 727, 716, 731, 746 | 246 MB |
+| `loam validate svc-21 --json` | 515 ms | 515, 513, 515, 513, 517 | 205 MB |
+| `loam list --json` | 406 ms | 408, 408, 406, 404, 406 | 177 MB |
+
+Exit-criteria arithmetic, against the baseline above:
+
+- `validate --all`: 13748 ms → 731 ms = **18.8x faster** (criterion: ≥2x).
+- `validate svc-21`: 515 ms → 515 ms = 0.0% drift (criterion: within 10%).
+- `list`: 405 ms → 406 ms = +0.2% drift (criterion: within 10%).
+- Peak RSS for `--all` **dropped** 526 MB → 246 MB: one workspace holding all
+  141 documents costs less than the serial loop's per-document workspaces,
+  whose memory `dispose()` does not promptly return. The linear caveat stands:
+  a fleet with far fatter documents scales this row linearly, and this table is
+  the honest bound at the committed shape.
