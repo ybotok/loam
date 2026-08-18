@@ -17,8 +17,9 @@
  * and `swapStaged` already do temp-beside-target, whole-content compare-and-set
  * and same-directory rename — vouch commits through exactly this shape.
  */
-import { message, rollbackStaged, stageWrites, StagingRaceError, swapStaged } from "../../staging/commit.js";
-import { type PlannedWrite } from "../../staging/writes.js";
+import { message, rollbackMessage, rollbackStaged, stageWrites, StagingRaceError, swapStaged } from "../../staging/commit.js";
+import { repoPath } from "../../envelope/json.js";
+import { type PlannedWrite, type StagedWrite } from "../../staging/writes.js";
 import { renderVerification } from "../file.js";
 import { verificationPath, type Verification } from "../record.js";
 
@@ -41,12 +42,31 @@ export async function commitVerification(
   featureDir: string,
   v: Verification,
   preImage: Buffer | null,
+  docsDir: string,
 ): Promise<VerificationCommit> {
   const path = verificationPath(featureDir);
+  const display = repoPath(docsDir, path);
   const write: PlannedWrite =
     preImage === null ? { path, content: renderVerification(v), exclusive: true } : { path, content: renderVerification(v) };
-  const staged = await stageWrites([write]);
-  const s = staged[0]!;
+  // Staging touches the filesystem — a read-only feature directory, a full
+  // disk, a pre-image that will not read. None of that is a bug in loam, and
+  // letting it escape as `internal` sends the reader looking for one (archive
+  // draws the same line around its own `stageWrites`). Nothing was written.
+  let staged: StagedWrite[];
+  try {
+    staged = await stageWrites([write]);
+  } catch (err) {
+    return { ok: false, code: "merge-failed", message: `${message(err)} — nothing was recorded; the record is as the last writer left it` };
+  }
+  // Joined by path, not by index — vouch's rule, for vouch's reason: one entry
+  // per planned write in order is true today and promised nowhere, and a
+  // compare-and-set over the wrong pair would vouch for bytes the merge never
+  // saw. A missing entry fails closed as a merge that never happened.
+  const s = staged.find((x) => x.write.path === path);
+  if (s === undefined) {
+    await rollbackStaged(staged);
+    return { ok: false, code: "merge-failed", message: `staging returned no entry for ${display} — nothing was recorded` };
+  }
   // The compare the read promised: the file as staging found it must be the
   // file the merge consumed. `swapStaged` re-checks against ITS read just
   // before the rename, so together the two compares cover the whole window
@@ -54,7 +74,7 @@ export async function commitVerification(
   const edited = preImage === null ? s.before !== null : s.before === null || !s.before.equals(preImage);
   if (edited) {
     await rollbackStaged(staged);
-    return { ok: false, code: "record-raced", message: racedMessage(path) };
+    return { ok: false, code: "record-raced", message: racedMessage(display) };
   }
   try {
     await swapStaged(staged);
@@ -64,22 +84,22 @@ export async function commitVerification(
       return {
         ok: false,
         code: "rollback-incomplete",
-        message: `${message(err)} — ROLLBACK INCOMPLETE, ${failures.join(", ")} may be half-written and needs checking by hand`,
+        message: rollbackMessage(err, failures, "written"),
       };
     }
     // EEXIST is the exclusive create losing its race — same fact as the CAS
     // refusal, discovered by link(2) instead of by the compare.
     if (err instanceof StagingRaceError || (err as NodeJS.ErrnoException).code === "EEXIST") {
-      return { ok: false, code: "record-raced", message: racedMessage(path) };
+      return { ok: false, code: "record-raced", message: racedMessage(display) };
     }
     return { ok: false, code: "merge-failed", message: `${message(err)} — nothing was recorded; the record is as the last writer left it` };
   }
   return { ok: true, path };
 }
 
-function racedMessage(path: string): string {
+function racedMessage(display: string): string {
   return (
-    `${path} changed while this record was being written — another writer or an editor landed between the read and the write. ` +
+    `${display} changed while this record was being written — another writer or an editor landed between the read and the write. ` +
     "Nothing was written and their bytes are untouched. Re-run: the merge is recomputed over the record as it now stands."
   );
 }

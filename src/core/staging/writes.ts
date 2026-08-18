@@ -48,7 +48,10 @@ export function toBytes(content: string | Buffer | null): Buffer | null {
 }
 
 /**
- * The one place that decides whether a planned write is a CREATE.
+ * The one place that decides whether a planned write is a CREATE *from the
+ * filesystem*. (`core/verify/store/commit.ts` is the deliberate second rule:
+ * it decides from the caller's held pre-image instead, because a CAS must
+ * follow the read it promised, not what `existsSync` says now.)
  *
  * `exclusive` is a no-clobber create (link(2)), so it can only be asked of a
  * path that does not exist yet: asking it of an overwrite would fail EEXIST on

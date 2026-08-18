@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { withFrontmatterFields } from "../../core/document/frontmatter.js";
 import { contentDigest, encodeSourceIndex } from "../../core/provenance/stamp.js";
 import { SPEC_AXES, servicePaths } from "../../core/repo/paths.js";
-import { message, rollbackStaged, stageWrites, swapStaged } from "../../core/staging/commit.js";
+import { message, rollbackMessage, rollbackStaged, stageWrites, swapStaged } from "../../core/staging/commit.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { type StampedSpec, type VouchOutcome, type VouchRequest } from "./contract.js";
 import { verifySpec, type VerifiedSpec } from "./verify.js";
@@ -104,7 +104,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       ? {
           ok: false,
           code: "rollback-incomplete",
-          message: `${message(err)} — ROLLBACK INCOMPLETE, these files may be half-stamped and need checking by hand: ${failures.join(", ")}`,
+          message: rollbackMessage(err, failures, "stamped"),
         }
       : {
           ok: false,

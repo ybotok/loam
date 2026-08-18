@@ -199,8 +199,10 @@ selected that tool. The map of which invocation surfaces what:
   read). It also grades what a WRITE that did not finish left in the docs repo,
   reported as \`writePath\` beside the findings: \`doctor.docs-locked\` (a held
   \`.loam-lock\` — a warning while its holder is alive, since the answer is to wait
-  and re-run, and a BLOCKER once the holder is a process that no longer exists on
-  this host, since nothing will ever release it and every writer — archive,
+  and re-run, and a BLOCKER in the two shapes nothing will ever release: a holder
+  that is a process no longer existing on this host, or a lock file that cannot
+  name a holder at all — empty or unparseable, a crash between its create and
+  flush; either way every writer — archive,
   unarchive, rebase, \`verify --record\` —
   refuses \`docs-busy\` until it is deleted), \`doctor.commit-interrupted\` (blocker:
   a \`.loam-commit\` naming an archive or unarchive that was killed mid-commit, so

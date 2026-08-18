@@ -4,9 +4,10 @@
  * One doctrine, three ways of reaching it: the gate a command passes before it
  * enumerates anything, the error the enumeration throws when the repo goes away
  * underneath it, and the errno that comes back when the repo is real but one
- * file under it will not open. Six commands reach for one or another of them
- * (`adopt`, `list`, `new`, `show`, `status`, `validate`), and the whole point of
- * collecting them is that all six answer with the same sentences.
+ * file under it will not open. Every command that reads a docs repo reaches
+ * for one or another of them (`rg docsRepoReady` is the always-current list),
+ * and the whole point of collecting them is that they all answer with the same
+ * sentences.
  *
  * They live in `commands/` rather than in `core/`: each one calls `fail`, which
  * writes to stdout or stderr and sets the exit code. That is a decision about
@@ -38,11 +39,10 @@ import { docsRepoState, type DocsRepoUnavailableError } from "../../core/repo/st
  * the directory that IS the list of services.
  *
  * It used to live in validate.ts, on the reasoning that validate is the fleet
- * gate this doctrine is about. Six commands import it now (`adopt`, `list`,
- * `new`, `show`, `status`, `validate`), so the doctrine outgrew its host: `loam
- * show` was structurally depending on the whole validate implementation for
- * twenty lines of policy. The rule is the module now, and validate is one of
- * its callers like the rest.
+ * gate this doctrine is about. Enough commands import it now that the doctrine
+ * outgrew its host: `loam show` was structurally depending on the whole
+ * validate implementation for twenty lines of policy. The rule is the module
+ * now, and validate is one of its callers like the rest.
  */
 export function docsRepoReady(json: boolean, docsDir: string, need: "docs" | "services"): boolean {
   const state = docsRepoState(docsDir);

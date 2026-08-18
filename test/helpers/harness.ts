@@ -6,6 +6,12 @@
  * process.exitCode, so runLoam() chdirs into the fixture workdir and captures
  * console output + exit code, restoring everything afterwards. Requires the
  * vitest "forks" pool (worker threads cannot chdir).
+ *
+ * The OTHER side of a federation — the service repositories that stand around a
+ * docs repo, their claims and their `--record` runs — lives in
+ * `./federated.ts`, which builds on this. It is a separate file because it is a
+ * narrower subject: it is pinned to `coherentFixture()`'s one feature, while
+ * everything here is fixture-agnostic.
  */
 import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";

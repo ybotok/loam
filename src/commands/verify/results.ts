@@ -196,19 +196,38 @@ export async function committedFile(repoDir: string, commit: string, path: strin
 interface GitResult {
   /**
    * Git's own exit status, or `-1` for "git could not be run to completion" —
-   * no git on PATH, a spawn failure, or a child killed by a signal. Callers
-   * read specific meaning into small numbers (`1` from `git diff --quiet` is
-   * "that file differs"), so a run that never reached an exit status must not
-   * borrow one of them.
+   * no git on PATH, a spawn failure, a child killed by a signal (the deadline
+   * below included), or output past the declared cap. Callers read specific
+   * meaning into small numbers (`1` from `git diff --quiet` is "that file
+   * differs"), so a run that never reached an exit status must not borrow one
+   * of them.
    */
   code: number;
   stdout: string;
   stderr: string;
 }
 
+/**
+ * How long one git question may take, and how much it may say. Both bounds
+ * exist because every call in this module now runs while `loam verify --record`
+ * HOLDS the docs lock: a `git rev-parse` blocked on a credential-helper prompt
+ * used to hang this process forever with the lock in hand, wedging every
+ * archive, rebase and record in the fleet behind a live pid that
+ * `breakStaleLock` rightly refuses to break. The timeout mirrors
+ * `core/provenance/git.ts`; the cap is sized for `git show` of a source file
+ * an attestation cites (the default 1 MiB refused sound evidence the moment a
+ * generated client crossed it), not for arbitrary blobs.
+ */
+const GIT_TIMEOUT_MS = 10_000;
+const GIT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
 function git(repoDir: string, args: string[]): Promise<GitResult> {
   return new Promise((done) => {
-    execFile("git", ["-C", repoDir, ...args], { encoding: "utf8" }, (error, stdout, stderr) => {
+    execFile(
+      "git",
+      ["-C", repoDir, ...args],
+      { encoding: "utf8", timeout: GIT_TIMEOUT_MS, maxBuffer: GIT_MAX_OUTPUT_BYTES },
+      (error, stdout, stderr) => {
       done({
         // `error.code` is an exit status only when it is a number: a spawn
         // failure reports an errno string ("ENOENT") and a signal-killed child
@@ -221,8 +240,16 @@ function git(repoDir: string, args: string[]): Promise<GitResult> {
         stdout,
         // A child that never ran writes nothing to stderr, so its only account
         // of itself is on the error; without this the refusal would name no
-        // cause at all.
-        stderr: stderr.trim() || (error === null ? "" : error.message),
+        // cause at all. A child WE killed gets its account written for it: the
+        // deadline exists for a git blocked on a credential-helper prompt, and
+        // the raw "Command failed: git …" says nothing about a deadline — the
+        // operator re-runs, waits the same 10 s, and reads the same message,
+        // with the actual fix (GIT_TERMINAL_PROMPT=0, or the helper) never
+        // reachable from it.
+        stderr:
+          error !== null && error.killed && error.signal !== null
+            ? `git did not answer within ${GIT_TIMEOUT_MS / 1000}s and was stopped — a prompt or a hung remote; GIT_TERMINAL_PROMPT=0 disables credential prompts`
+            : stderr.trim() || (error === null ? "" : error.message),
       });
     });
   });

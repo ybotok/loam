@@ -31,7 +31,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { parse } from "yaml";
 import {
   coherentFixture,
@@ -44,16 +44,20 @@ import {
   pinFor,
   type Project,
 } from "./helpers/harness.js";
+import {
+  allClaims,
+  answersFile,
+  type Claim,
+  FEAT,
+  PAYMENT,
+  RECORD,
+  serviceRepo,
+  SPLIT,
+} from "./helpers/federated.js";
 import { slugOf } from "../src/core/gherkin/emit.js";
 import { parseStampedFeature } from "../src/core/gherkin/read.js";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-
-const FEAT = "FEAT-1";
-const DIR = "features/FEAT-1-split";
-const RECORD = `${DIR}/verification.yaml`;
-const SPLIT = "payment-split-service";
-const PAYMENT = "payment-service";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -66,59 +70,8 @@ async function project(files: Record<string, string> = coherentFixture()): Promi
   return p;
 }
 
-interface Claim {
-  id: string;
-  kind: string;
-  subject: string;
-  claim: string;
-  verdict: string;
-}
-
-/**
- * A service repository beside the docs project: its own loam.json naming the
- * service, one committed file to point evidence at, and a git HEAD to bind to.
- */
-async function serviceRepo(p: Project, service: string, name = service): Promise<string> {
-  const repo = join(dirname(p.workDir), name);
-  await mkdir(repo, { recursive: true });
-  await writeFile(
-    join(repo, "loam.json"),
-    JSON.stringify({ docsDir: p.docsDir, service }, null, 2) + "\n",
-    "utf8",
-  );
-  await writeFile(join(repo, "proof.ts"), "export const proof = true;\n// implementation evidence\n", "utf8");
-  execFileSync("git", ["init", "-q"], { cwd: repo });
-  execFileSync("git", ["add", "loam.json", "proof.ts"], { cwd: repo });
-  execFileSync(
-    "git",
-    ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", "fixture"],
-    { cwd: repo },
-  );
-  return repo;
-}
-
 const head = (repo: string): string =>
   execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
-
-/** The whole checklist, read from the docs project (nothing is narrowed). */
-async function allClaims(p: Project): Promise<Claim[]> {
-  const res = await runLoam(p.workDir, "verify", FEAT, "--json");
-  expect(res.code, res.out).toBe(0);
-  return JSON.parse(res.stdout).claims as Claim[];
-}
-
-async function answersFile(dir: string, claims: Claim[], name = "answers.json"): Promise<string> {
-  await writeFile(
-    join(dir, name),
-    JSON.stringify(
-      claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["proof.ts:2"] })),
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
-  return name;
-}
 
 /** A cucumber report whose one scenario carries FEATURE_SPEC's digest and ran green. */
 function greenReport(): unknown {
@@ -162,7 +115,7 @@ describe("legacy --record over a federated record", () => {
     // A complete, well-formed all-at-once answer set — the refusal is about
     // WHAT it would replace, not about the answers being wrong.
     const all = await allClaims(p);
-    const file = await answersFile(p.workDir, all, "all.json");
+    const file = await answersFile(p.workDir, all, "proof.ts:2", "all.json");
 
     const res = await runLoam(p.workDir, "verify", FEAT, "--record", file, "--json");
     expect(res.code).toBe(1);
@@ -182,7 +135,7 @@ describe("legacy --record over a federated record", () => {
   it("still writes the legacy record when nothing has been attested", async () => {
     const p = await project();
     const all = await allClaims(p);
-    const file = await answersFile(p.workDir, all, "all.json");
+    const file = await answersFile(p.workDir, all, "proof.ts:2", "all.json");
     const res = await runLoam(p.workDir, "verify", FEAT, "--record", file, "--json");
     expect(res.code, res.out).toBe(0);
     const doc = parse(await p.read(RECORD)) as Record<string, any>;
@@ -194,7 +147,7 @@ describe("legacy --record over a federated record", () => {
     const p = await project();
     // an all-at-once record answering all four claims...
     const all = await allClaims(p);
-    const legacy = await answersFile(p.workDir, all, "all.json");
+    const legacy = await answersFile(p.workDir, all, "proof.ts:2", "all.json");
     expect((await runLoam(p.workDir, "verify", FEAT, "--record", legacy)).code).toBe(0);
     const foreign = all.find((c) => c.subject === PAYMENT)!;
 
@@ -212,7 +165,7 @@ describe("legacy --record over a federated record", () => {
   it("says the same out loud in the human view", async () => {
     const p = await project();
     const all = await allClaims(p);
-    expect((await runLoam(p.workDir, "verify", FEAT, "--record", await answersFile(p.workDir, all, "all.json"))).code).toBe(0);
+    expect((await runLoam(p.workDir, "verify", FEAT, "--record", await answersFile(p.workDir, all, "proof.ts:2", "all.json"))).code).toBe(0);
     const foreign = all.find((c) => c.subject === PAYMENT)!;
 
     const splitRepo = await serviceRepo(p, SPLIT, "split-work");
@@ -414,7 +367,7 @@ describe("the read view teaches federation", () => {
   it("answering only your own claims says whose the rest are, not 're-run and answer them'", async () => {
     const p = await project();
     const mine = (await allClaims(p)).filter((c) => c.subject === SPLIT);
-    const file = await answersFile(p.workDir, mine, "mine.json");
+    const file = await answersFile(p.workDir, mine, "proof.ts:2", "mine.json");
     const res = await runLoam(p.workDir, "verify", FEAT, "--record", file, "--json");
     expect(res.code).toBe(1);
     const err = JSON.parse(res.stdout).error;
@@ -430,7 +383,7 @@ describe("the read view teaches federation", () => {
     // yours to answer, and being told to go to another repository is a dead end.
     const p = await project();
     const mine = (await allClaims(p)).filter((c) => c.subject === SPLIT);
-    const file = await answersFile(p.workDir, mine.slice(1), "partial.json");
+    const file = await answersFile(p.workDir, mine.slice(1), "proof.ts:2", "partial.json");
     const res = await runLoam(p.workDir, "verify", FEAT, "--record", file, "--json");
     expect(res.code).toBe(1);
     const err = JSON.parse(res.stdout).error;
@@ -464,7 +417,7 @@ describe("an unreadable verification.yaml", () => {
   it("--record over it refuses instead of overwriting what it could not read", async () => {
     const p = await project();
     const all = await allClaims(p);
-    const file = await answersFile(p.workDir, all, "all.json");
+    const file = await answersFile(p.workDir, all, "proof.ts:2", "all.json");
     await p.write(RECORD, BROKEN);
     const res = await runLoam(p.workDir, "verify", FEAT, "--record", file, "--json");
     expect(res.code).toBe(1);

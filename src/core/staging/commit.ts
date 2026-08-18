@@ -143,7 +143,7 @@ export async function atomicWrite(path: string, content: Buffer): Promise<void> 
 }
 
 /** A hidden sibling of `path`: same directory, so the rename never crosses a filesystem. */
-function tempPath(path: string, n: number): string {
+export function tempPath(path: string, n: number): string {
   return join(dirname(path), `.${basename(path)}.loam-${process.pid}-${n}-${Date.now()}.tmp`);
 }
 
@@ -204,13 +204,24 @@ export async function quietRm(path: string): Promise<void> {
   }
 }
 
+/**
+ * The one spelling of the sentence a rollback failure prints, parameterised
+ * only by the verb for what the files were mid-way through becoming. It
+ * existed in three near-copies (archive's "half-merged", vouch's
+ * "half-stamped", verify's "half-written") — the exact shape whose fix lands
+ * in one copy while an operator greps their logs for another.
+ */
+export function rollbackMessage(err: unknown, failures: string[], what: string): string {
+  return `${message(err)} — ROLLBACK INCOMPLETE, these files may be half-${what} and need checking by hand: ${failures.join(", ")}`;
+}
+
 /** Say what the failure cost: nothing, or a repo that needs looking at by hand. */
 export function rollbackError(err: unknown, failures: string[]): Error {
   if (failures.length === 0) {
     return new Error(`${message(err)} — the living docs were rolled back, nothing was merged`);
   }
   return new Error(
-    `${message(err)} — ROLLBACK INCOMPLETE, these files may be half-merged and need checking by hand: ${failures.join(", ")}`,
+    rollbackMessage(err, failures, "merged"),
   );
 }
 
