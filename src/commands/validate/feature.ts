@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { elementService, loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
-import { type PathableService } from "../../core/kernel/ids.js";
+import { type PathableService } from "../../core/kernel/ids/service.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../../core/repo/paths.js";
 import { docsRepoState } from "../../core/repo/state.js";

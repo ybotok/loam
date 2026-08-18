@@ -13,9 +13,9 @@
  * PRODUCER owns the contract and it lives in another repository, so the two
  * could not share a walk even though they share the shape.
  */
-import { type DeclaredService } from "../../../core/kernel/ids.js";
+import { type DeclaredService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
-import { type PathableService } from "../../../core/kernel/ids.js";
+import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { errorText } from "../checks/vocabulary.js";
 import { type ServiceContract } from "./api.js";

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
-import { declaredService, type DeclaredService } from "../kernel/ids.js";
+import { declaredService, type DeclaredService } from "../kernel/ids/service.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {

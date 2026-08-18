@@ -12,7 +12,7 @@
 import { existsSync } from "node:fs";
 import { closeIds } from "../../../core/c4/arch.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
-import { type DeclaredService, type PathableService } from "../../../core/kernel/ids.js";
+import { type DeclaredService, type PathableService } from "../../../core/kernel/ids/service.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { responseGovernanceFindings } from "../checks/requirements.js";

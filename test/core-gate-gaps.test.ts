@@ -25,7 +25,7 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { listFeatures, listServices, serviceIdFindings } from "../src/core/repo/repo.js";
-import { serviceIdProblem } from "../src/core/kernel/ids.js";
+import { serviceIdProblem } from "../src/core/kernel/ids/service.js";
 import { decodeDocument, NotUtf8DocumentError } from "../src/core/kernel/document-bytes.js";
 import {
   conflictMarkerLines,

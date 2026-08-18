@@ -5,7 +5,7 @@
  * (test/codes-drift.test.ts, test/agent-contract.test.ts,
  * test/agent-commands-runnable.test.ts).
  */
-import { featureIdProblem, serviceIdProblem } from "../kernel/ids.js";
+import { featureIdProblem, serviceIdProblem } from "../kernel/ids/service.js";
 import type { CommandContent, PlaceholderKind } from "./contract.js";
 import { LOAM_ADOPT } from "./workflows/adopt.js";
 import { LOAM_CHECK } from "./workflows/check.js";

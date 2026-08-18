@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadFile, serviceResolver, type LoadedDoc } from "../c4/likec4.js";
-import { type PathableService } from "../kernel/ids.js";
+import { type PathableService } from "../kernel/ids/service.js";
 import { landscapePath, servicePaths } from "../repo/paths.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";

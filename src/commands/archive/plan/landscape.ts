@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
 import { titleOf } from "../../../core/c4/splice/placement.js";
-import { parseServiceId } from "../../../core/kernel/ids.js";
+import { parseServiceId } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile, servicePaths } from "../../../core/repo/paths.js";
 import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";

@@ -13,7 +13,7 @@ import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { listField, readFrontmatter, stringField } from "../../core/document/frontmatter.js";
 import { loadFile, serviceResolver } from "../../core/c4/likec4.js";
 import { readOpenapi } from "../../core/openapi/doc.js";
-import type { PathableService } from "../../core/kernel/ids.js";
+import type { PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath, servicePaths } from "../../core/repo/paths.js";
 import { countMarkdown, listServices } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";

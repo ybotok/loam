@@ -10,7 +10,7 @@
  */
 import { resolve } from "node:path";
 import { dictionary, ownValue } from "../../kernel/records.js";
-import { FEATURE_ID_RULE, isFeatureId } from "../../kernel/ids.js";
+import { FEATURE_ID_RULE, isFeatureId } from "../../kernel/ids/service.js";
 import { compareIds } from "../../repo/entries.js";
 import { parseRequirements } from "../../document/parse.js";
 import { type Requirement } from "../../document/spec.js";

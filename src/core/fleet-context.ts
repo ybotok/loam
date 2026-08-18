@@ -24,7 +24,7 @@ import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
 import type { Finding } from "./vocabulary/report.js";
 import { readOpenapi, type OpenapiDoc, type Operation } from "./openapi/doc.js";
-import type { RawServiceId } from "./kernel/ids.js";
+import type { RawServiceId } from "./kernel/ids/service.js";
 import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
 import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
 import { parseRequirements } from "./document/parse.js";

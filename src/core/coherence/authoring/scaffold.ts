@@ -16,7 +16,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { Elem } from "../../c4/likec4.js";
-import type { PathableService } from "../../kernel/ids.js";
+import type { PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { Requirement } from "../../document/spec.js";

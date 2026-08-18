@@ -12,7 +12,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { type PathableService } from "../kernel/ids.js";
+import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
 import { featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { parseRequirements } from "../document/parse.js";

@@ -13,7 +13,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { elementService, loadFile, type LoadedDoc } from "../c4/likec4.js";
 import { closeIds } from "../c4/arch.js";
-import { serviceIdProblem, type PathableService } from "../kernel/ids.js";
+import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { repoPath } from "../envelope/json.js";
 import type { Finding } from "../vocabulary/report.js";
 import { featurePaths, landscapePath, servicePaths, SPEC_AXES } from "../repo/paths.js";

@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../../core/kernel/document-bytes.js";
-import { type PathableService } from "../../core/kernel/ids.js";
+import { type PathableService } from "../../core/kernel/ids/service.js";
 import { servicePaths, type SpecAxis } from "../../core/repo/paths.js";
 import { parseRequirements, readRequirementsDocument } from "../../core/document/parse.js";
 import { requirementDigest, type Requirement } from "../../core/document/spec.js";

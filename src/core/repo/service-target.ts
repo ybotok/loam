@@ -36,7 +36,7 @@
  * for the same input.
  */
 import { listServices } from "./repo.js";
-import { parseServiceId, type RawServiceId } from "../kernel/ids.js";
+import { parseServiceId, type RawServiceId } from "../kernel/ids/service.js";
 import type { FleetContext } from "../fleet-context.js";
 
 export type ServiceTarget =

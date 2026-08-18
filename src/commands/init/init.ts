@@ -13,7 +13,7 @@ import { emitJson, fail } from "../../core/envelope/json.js";
 import { plannedDocsFiles, scaffoldDocs } from "../../core/docs.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { listServices } from "../../core/repo/repo.js";
-import { InvalidIdError, assertServiceId } from "../../core/kernel/ids.js";
+import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import {
   detectAgentTools,
   plannedCommandFiles,

@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { loadConfig } from "../../core/envelope/config.js";
 import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
-import { InvalidIdError, assertServiceId } from "../../core/kernel/ids.js";
+import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { compareIds } from "../../core/repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";

@@ -9,7 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
-import { serviceIdProblem } from "../../../core/kernel/ids.js";
+import { serviceIdProblem } from "../../../core/kernel/ids/service.js";
 import { asRecord, dictionary } from "../../../core/kernel/records.js";
 import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
 import { message } from "../../../core/staging/commit.js";

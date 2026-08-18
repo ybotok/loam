@@ -16,7 +16,7 @@ import {
   type DeclaredService,
   type PathableService,
   type RawServiceId,
-} from "../../../core/kernel/ids.js";
+} from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
