@@ -62,6 +62,15 @@ is worth more than an engineered pass.
 Run a single suite while iterating: `npx vitest run test/archive.test.ts`.
 Run the CLI without building: `npm run dev -- status --json`.
 
+Concurrency stability has its own proof: `node scripts/gate-stress.mjs --runs 3` runs the full
+suite three times sequentially at the configured parallelism and classifies every failure —
+`product` (a real defect), `runner-policy` (the pool broke; the run measured nothing),
+`coverage-threshold` (all tests green, thresholds red under `--coverage`), or `infrastructure`
+(the host forbids a required primitive; the vitest globalSetup probe in
+`test/helpers/host-probe.ts` fails once with a `[loam-host]` cause instead of scattering flakes).
+Three runs are three verdicts, never three attempts: an isolated rerun is diagnostic evidence,
+not a green gate, and no failure is retried away.
+
 ## What is frozen
 
 loam is published (`@ybotok/loam`, currently a `beta` prerelease). These are a contract, not

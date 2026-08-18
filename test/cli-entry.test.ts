@@ -17,36 +17,27 @@
  * parallel at module scope and each test just awaits its own result.
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { execFile } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { spawnLoam, type SpawnedResult } from "./helpers/cli-process.js";
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
-const cliEntry = join(repoRoot, "src", "cli.ts");
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 /** Bare cwd for every spawn — proves nothing here needs a loam.json. */
 const workDir = mkdtempSync(join(tmpdir(), "loam-cli-entry-"));
 afterAll(() => rm(workDir, { recursive: true, force: true }));
 
-interface SpawnResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-function runCli(...args: string[]): Promise<SpawnResult> {
-  return new Promise((resolve) => {
-    execFile(tsxBin, [cliEntry, ...args], { cwd: workDir }, (err, stdout, stderr) => {
-      const code = err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-      resolve({ code, stdout, stderr });
-    });
-  });
+// spawnLoam rather than a local execFile: same spawn, plus the deadline and
+// the reaping registry every child in this suite now owes. Its -1 for a
+// child that never reached an exit status cannot fire here — every case is a
+// commander-level exit. One mapping difference is deliberate: the old local
+// helper folded a signal-killed child to 1, which would have counted a
+// SIGKILLed run as an ordinary usage error.
+function runCli(...args: string[]): Promise<SpawnedResult> {
+  return spawnLoam(workDir, ...args);
 }
 
 const runs = {

@@ -3,6 +3,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
+    // One probe before any test: a host that forbids a required primitive
+    // (O_EXCL, link(2), rename-over, symlink, spawn) fails ONCE with a
+    // [loam-host]-prefixed cause instead of scattering EPERM failures that
+    // read as flakes. See test/helpers/host-probe.ts.
+    globalSetup: ["test/helpers/host-probe.ts"],
     // Commands resolve loam.json via process.cwd(); tests chdir per invocation,
     // which worker_threads forbid — run each file in a forked child process instead.
     pool: "forks",

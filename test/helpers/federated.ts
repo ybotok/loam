@@ -20,9 +20,9 @@
 import { execFile, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import { parse } from "yaml";
+import { cliEntry, trackChild, tsxBin } from "./cli-process.js";
 import { runLoam, type Project } from "./harness.js";
 
 /** The feature `coherentFixture()` carries, and the paths and services around it. */
@@ -104,10 +104,6 @@ export async function answersFile(
   return name;
 }
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
-const cliEntry = join(repoRoot, "src", "cli.ts");
-
 export interface PendingRecord {
   done: Promise<{ code: number; out: string }>;
   child: ChildProcess;
@@ -126,6 +122,7 @@ export function startRecord(repo: string, service: string, answers: string): Pen
   const child = execFile(tsxBin, [cliEntry, "verify", FEAT, "--service", service, "--record", answers, "--json"], {
     cwd: repo,
   });
+  trackChild(child);
   const done = new Promise<{ code: number; out: string }>((resolve) => {
     let out = "";
     child.stdout?.on("data", (chunk) => {

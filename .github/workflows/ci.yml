@@ -79,6 +79,39 @@ jobs:
       - run: npm run pilot:check
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
 
+  # The concurrency-stability proof: three sequential full-suite runs per leg
+  # at the configured parallelism, classified (product / runner-policy /
+  # coverage-threshold / infrastructure) and never retried — see
+  # scripts/gate-stress.mjs. Scheduled/manual only, like the corpus job, so
+  # push/PR latency is unchanged. Reading of the roadmap's exit criterion,
+  # stated so the maintainer can choose otherwise: "three consecutive clean CI
+  # executions" is satisfied here as three sequential runs inside ONE job
+  # execution per matrix leg; three separate workflow_dispatch runs of the
+  # same commit are the stricter reading and remain available by dispatching
+  # three times.
+  stability:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node-version: "22.22.3"
+            args: "--runs 3"
+          - node-version: "24"
+            args: "--runs 3 --coverage"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: node scripts/gate-stress.mjs ${{ matrix.args }}
+
   openspec-corpus:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

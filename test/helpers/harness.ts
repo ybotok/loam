@@ -185,7 +185,38 @@ export async function treeHashes(root: string): Promise<Record<string, string>> 
  * Run a loam command in-process from `cwd`.
  * Example: runLoam(p.workDir, "validate", "--feature", "FEAT-1").
  */
+/**
+ * Serialises the fact runLoam's whole design rests on: cwd, console.log/error
+ * and process.exitCode are process-global, so two in-process runs overlapping
+ * would silently interleave each other's output and directory. Every call
+ * queues behind the previous one's settlement — the ONE module-level mutable
+ * value in this harness, tolerated because it exists precisely to contain the
+ * module-level-state hazard AGENTS.md names.
+ *
+ * A queue rather than a refusal, and that is an observed lesson, not a
+ * preference: the throw variant was tried first, and under host overload it
+ * turned one runner timeout into a cascade — vitest cannot cancel a timed-out
+ * test's async work, so the zombie run kept the flag held while every later
+ * test in the fork failed the guard with what the failure classifier honestly
+ * read as product errors (44 of them in one overloaded coverage run). Waiting
+ * keeps the corruption impossible and keeps a timeout being one timeout. The
+ * cost — a test that overlaps two runLoam calls by MISTAKE now serialises
+ * silently instead of failing loudly — is accepted and recorded here; use
+ * spawnLoam from test/helpers/cli-process.ts for real concurrency. runPair in
+ * archive-integrity.test.ts is the one audited in-process overlap, and it
+ * never enters runLoam.
+ */
+let runLoamTurn: Promise<unknown> = Promise.resolve();
+
 export async function runLoam(cwd: string, ...args: string[]): Promise<RunResult> {
+  const run = runLoamTurn.then(() => runLoamNow(cwd, args));
+  // The chain must survive a failed run — otherwise one rejection poisons
+  // every later call in the fork with the same stale error.
+  runLoamTurn = run.catch(() => undefined);
+  return run;
+}
+
+async function runLoamNow(cwd: string, args: string[]): Promise<RunResult> {
   const prevCwd = process.cwd();
   const prevExit = process.exitCode;
   const stdout: string[] = [];
