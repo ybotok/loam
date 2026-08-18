@@ -59,6 +59,7 @@
     "pilot:run": "node scripts/pilot-harness.mjs",
     "pilot:check": "node scripts/pilot-harness.mjs --check-manifest docs/pilot/manifest.example.json --selftest",
     "test:openspec-corpus": "tsx scripts/check-openspec-corpus.ts",
+    "bench:validate": "tsx scripts/bench-validate.ts",
     "setup": "bash scripts/setup.sh"
   },
   "license": "MIT",
