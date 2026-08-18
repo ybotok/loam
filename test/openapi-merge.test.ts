@@ -137,7 +137,11 @@ paths:
       removed: [],
       quoted: [],
       baselineStale: [],
+      pathItemQuoted: [],
+      pathItemStale: [],
       componentsModified: [],
+      componentsQuoted: [],
+      componentsStale: [],
       unresolved: [],
     });
   });

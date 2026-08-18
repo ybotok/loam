@@ -1,6 +1,7 @@
 /**
  * The keys loam adds to a feature's contract that must never reach the living
- * one: `x-loam-remove` and `x-loam-based-on`.
+ * one: `x-loam-remove`, `x-loam-based-on`, and the root `x-loam-baselines`
+ * record.
  *
  * They are gathered here rather than spread through the merge because they are
  * the vocabulary both ends of the delta path share — `stripOpenapiRemovalMarkers`
@@ -20,14 +21,20 @@ import {
   operationBaselineOf,
   withoutOperationBaseline,
   OPENAPI_BASELINE_KEY,
+  OPENAPI_BASELINES_KEY,
 } from "../digest.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 
 /**
- * Remove feature-only operation-removal markers before a feature contract is
- * used to create a brand-new living document. Normally coherence refuses this
- * shape because there cannot be a removal target; this guard also keeps
- * `--approve` from ever persisting the marker into living docs.
+ * Remove feature-only operation-removal markers — and the root
+ * `x-loam-baselines` record — before a feature contract is used to create a
+ * brand-new living document. Normally coherence refuses the removal shape
+ * because there cannot be a removal target; this guard also keeps `--approve`
+ * from ever persisting a marker into living docs. The record needs the strip
+ * on THIS path even more than the pins do: archive's create branch publishes
+ * this function's output verbatim, and a components-only delta has nothing
+ * strippable inside `paths` at all — the root key must not ride out on the
+ * early returns below.
  */
 export function stripOpenapiRemovalMarkers(featureText: string, service: string): string {
   const feature = parseDocument(featureText);
@@ -40,11 +47,16 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   } catch (error) {
     throw new OpenapiMergeError("feature", service, errorMessage(error));
   }
+  const hasRecord = isRecord(plain) && OPENAPI_BASELINES_KEY in plain;
   // Shape from the RESOLVED tree, for the same reason the merge reads it there:
   // an aliased `paths` or path item is not a map node, and treating it as
   // "nothing to strip" is how a feature-only marker reached a living contract.
   const paths = plainChild(plain, "paths");
-  if (!isRecord(paths)) return featureText;
+  if (!isRecord(paths)) {
+    if (!hasRecord) return featureText;
+    feature.deleteIn([OPENAPI_BASELINES_KEY]);
+    return serialize(feature, service);
+  }
 
   const cleaned: Record<string, unknown> = {};
   let stripped = false;
@@ -55,7 +67,11 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
     // path the contract advertises and nothing answers.
     if (kept !== undefined) cleaned[path] = kept;
   }
-  if (!stripped) return featureText;
+  if (!stripped) {
+    if (!hasRecord) return featureText;
+    feature.deleteIn([OPENAPI_BASELINES_KEY]);
+    return serialize(feature, service);
+  }
 
   // Edit the AST in place when every node the strip touches IS a node — the
   // author's comments, key order and formatting are theirs to keep. An alias
@@ -116,6 +132,15 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
       if (isMap(remaining) && remaining.items.length === 0) feature.deleteIn(["paths", path]);
     }
   }
+  // The root record goes on BOTH serialization branches: it is feature
+  // bookkeeping exactly like the pins, and the rewrite branch above replaced
+  // only `paths`, so the root key survives either way without this.
+  if (hasRecord) feature.deleteIn([OPENAPI_BASELINES_KEY]);
+  return serialize(feature, service);
+}
+
+/** One spelling of "hand the document back", so every strip branch fails the same way. */
+function serialize(feature: ReturnType<typeof parseDocument>, service: string): string {
   try {
     return feature.toString();
   } catch (error) {

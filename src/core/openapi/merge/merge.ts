@@ -16,7 +16,8 @@ import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
-import { isRemoval } from "../digest.js";
+import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
+import { readBaselineRecord } from "../baseline/record.js";
 import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { mergeComponentClosure } from "./components.js";
 
@@ -50,8 +51,16 @@ export interface OpenapiMergeResult {
    * overwrites, because reaching it at all means `--approve` said to.
    */
   baselineStale: string[];
+  /** Path-level keys the delta QUOTED (`x-loam-baselines` entry equal to own content) — skipped, living's copy kept. */
+  pathItemQuoted: string[];
+  /** Path-level keys written on a stale record entry — reaching the merge means `--approve` said to. */
+  pathItemStale: string[];
   /** `<kind>/<name>` of living components overwritten with different content. */
   componentsModified: string[];
+  /** Components the delta QUOTED — not copied, living's copy kept. */
+  componentsQuoted: string[];
+  /** Components written on a stale record entry — under `--approve`, like the operations. */
+  componentsStale: string[];
   /** Local refs reachable from merged content that resolve in neither document. */
   unresolved: Array<{ ref: string; from: string }>;
 }
@@ -122,6 +131,16 @@ export function mergeOpenapiPaths(
   const removed: string[] = [];
   const quoted: string[] = [];
   const baselineStale: string[] = [];
+  const pathItemQuoted: string[] = [];
+  const pathItemStale: string[] = [];
+  // The surface record, read ONCE for the path-item loop and the component
+  // closure. Malformed entries read back as absent — the gate refuses them,
+  // and a value nobody can evaluate must never be why a merge skips a write.
+  const { record } = readBaselineRecord(featPlain);
+  // The plain values this merge actually WRITES, labelled for the ref sweep:
+  // the closure copies new components reachable from these, and only these —
+  // a quoted operation's refs are living's own business.
+  const written: Array<{ from: string; value: unknown }> = [];
   for (const [path, featItemPlain] of featPathEntries) {
     const existing = living.getIn(["paths", path]);
     const existingPlain = plainChild(livingPathsPlain, path);
@@ -181,6 +200,24 @@ export function mergeOpenapiPaths(
           // the contract at all. The archive gate names it to the author.
           continue;
         }
+        if (!HTTP_METHODS.has(m)) {
+          // The operations' verdict, for the keys beside them, from the root
+          // record instead of an in-value pin. A QUOTE is skipped for the
+          // operations' reason — the author restated it, they did not edit it
+          // — and skipping matters MORE here: a path-level key applies to
+          // every operation on the path, including ones this feature never
+          // mentions. Stale still writes: reaching the merge means --approve.
+          const verdict = classifyBaselineDigests(
+            record.pathItems[path]?.[m],
+            valueDigest(afterPlain),
+            before === undefined ? undefined : valueDigest(beforePlain),
+          );
+          if (verdict === "quote") {
+            pathItemQuoted.push(`'${m}' (${path})`);
+            continue;
+          }
+          if (verdict === "stale") pathItemStale.push(`'${m}' (${path})`);
+        }
         // The difference check covers EVERY key of the path item; only the
         // LABEL depends on whether the key is an HTTP method.
         if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
@@ -205,6 +242,7 @@ export function mergeOpenapiPaths(
         // Without the strip the living contract would grow a pin to a version
         // of itself, and the NEXT feature's baseline would hash it.
         living.setIn(["paths", path, m], publishable[m]);
+        written.push({ from: `paths ${path}`, value: publishable[m] });
       }
       // Removing the last method leaves `\/x: {}` — a path the contract still
       // advertises and nothing answers. The same cleanup
@@ -217,10 +255,14 @@ export function mergeOpenapiPaths(
       throw new OpenapiMergeError("feature", service, `path '${path}' is not a mapping`);
     }
     const clean = withoutFeatureMarkers(featItemPlain);
-    if (clean !== undefined) living.setIn(["paths", path], clean);
+    if (clean !== undefined) {
+      living.setIn(["paths", path], clean);
+      written.push({ from: `paths ${path}`, value: clean });
+    }
   }
 
-  const { componentsModified, unresolved } = mergeComponentClosure(living, featPlain, livingPlain, featPathEntries);
+  const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written });
+  const { componentsModified, componentsQuoted, componentsStale, unresolved } = closure;
 
   let text: string;
   try {
@@ -228,20 +270,17 @@ export function mergeOpenapiPaths(
   } catch (error) {
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
-  return { text, modified, pathItemModified, removed, quoted, baselineStale, componentsModified, unresolved };
+  return {
+    text, modified, pathItemModified, removed, quoted, baselineStale,
+    pathItemQuoted, pathItemStale, componentsModified, componentsQuoted, componentsStale, unresolved,
+  };
 }
 
 /** The successful "the feature document has nothing to merge" answer. */
 function noop(): OpenapiMergeResult {
   return {
-    text: null,
-    modified: [],
-    pathItemModified: [],
-    removed: [],
-    quoted: [],
-    baselineStale: [],
-    componentsModified: [],
-    unresolved: [],
+    text: null, modified: [], pathItemModified: [], removed: [], quoted: [], baselineStale: [],
+    pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }
 
