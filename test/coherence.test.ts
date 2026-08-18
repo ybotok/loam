@@ -11,7 +11,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { featureCoherence, type Issue } from "../src/core/coherence/coherence.js";
+import { featureCoherence } from "../src/core/coherence/coherence.js";
+import { type Issue } from "../src/core/vocabulary/issue.js";
 // The sentinel is imported, never re-spelled: sentinels.ts exists so the
 // templates and the gate share ONE spelling, and a third copy in a fixture is
 // exactly the drift that module was written to prevent. What this file pins is

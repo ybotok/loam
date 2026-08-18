@@ -13,9 +13,7 @@
  * the document it describes spell the same fact the same way. snake_case only
  * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
-import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import { configPath } from "./config.js";
 
 /**
  * Version of the top-level JSON envelope, independent of the CLI/package
@@ -178,16 +176,17 @@ export const NO_SERVICE_MESSAGE = "No service. Pass --service <id> or set it in 
  * Report "no config" in whichever mode the caller is in — distinguishing a
  * config that is absent from one that exists but would not load, because the
  * two point at opposite fixes: a missing config wants `loam init`, a corrupt
- * one wants repair, and `init` would silently rewrite the corrupt file.
- * Callers reach here only after `loadConfig()` returned null, so the file
- * existing is proof it failed to load.
+ * one wants repair, and `init` would silently rewrite the corrupt file. The
+ * distinction arrives as DATA on the load outcome rather than being re-derived
+ * from the filesystem here — the file could change between the load and a
+ * re-check, and the parse problem itself is worth showing.
  */
-export function reportNoConfig(json: boolean): void {
-  if (existsSync(configPath())) {
+export function reportNoConfig(json: boolean, load: { kind: "absent" } | { kind: "invalid"; path: string; problem: string }): void {
+  if (load.kind === "invalid") {
     fail(
       json,
       "config-invalid",
-      "loam.json exists but could not be loaded. Fix it (or delete it and re-run `loam init`).",
+      `Invalid loam.json: ${load.problem}. Fix it (or delete it and re-run \`loam init\`).`,
     );
     return;
   }

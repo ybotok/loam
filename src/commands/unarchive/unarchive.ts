@@ -61,11 +61,12 @@ export function registerUnarchive(program: Command): void {
 }
 
 async function runUnarchive(featureId: string, json: boolean, force: boolean): Promise<void> {
-  const config = await loadConfig();
-  if (!config) {
-    reportNoConfig(json);
+  const loaded = await loadConfig();
+  if (loaded.kind !== "loaded") {
+    reportNoConfig(json, loaded);
     return;
   }
+  const config = loaded.config;
   // The same lock archive takes, for the same reason: unarchive rewrites the
   // living spec, contract and landscape from a snapshot, and an archive landing
   // inside that window would have its merge silently reverted by our restore —

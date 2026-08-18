@@ -18,11 +18,12 @@ export function registerDependencies(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureArg: string | undefined, opts: DependenciesOptions) => {
       const json = opts.json === true;
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
 
       const context = new FleetContext();
       const feature = featureArg === undefined

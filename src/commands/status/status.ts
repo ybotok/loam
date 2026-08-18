@@ -34,11 +34,12 @@ export function registerStatus(program: Command): void {
     .option("--service <id>", "narrow the per-service view to one service")
     .action(async (featureArg: string | undefined, opts: StatusOptions) => {
       const json = opts.json === true;
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as a repo
       // with nothing in it — the doctrine docs-repo-gate.ts's docsRepoReady exists

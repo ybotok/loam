@@ -37,11 +37,12 @@ export function registerDelta(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: DeltaOptions) => {
       const json = opts.json === true;
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
 
       // The id grammar first, and on the RAW argument: `--service ../../etc`
       // reaches `featureSpecPaths` and reads from outside the feature directory.

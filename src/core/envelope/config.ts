@@ -220,9 +220,23 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
   };
 }
 
-export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfig | null> {
+/**
+ * Every way asking for the config can come out, as data. It used to be
+ * `LoamConfig | null` with a `console.error` on the invalid arm — core's one
+ * print outside the envelope adapter, and a null that collapsed "no config"
+ * and "a config nobody can read" into one answer `reportNoConfig` then had to
+ * re-derive from the filesystem (a TOCTOU: the file could change between the
+ * load and the re-check). The union says which case it is, carries the parse
+ * problem for the command layer to render, and prints nothing.
+ */
+export type ConfigLoad =
+  | { kind: "loaded"; config: LoamConfig }
+  | { kind: "absent" }
+  | { kind: "invalid"; path: string; problem: string };
+
+export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoad> {
   const p = findConfigPath(cwd);
-  if (p === null) return null;
+  if (p === null) return { kind: "absent" };
   try {
     // The read belongs INSIDE the try: `existsSync` only says the name is
     // taken, not that it names a file this process can read. A loam.json that
@@ -230,16 +244,10 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<LoamConfi
     // deleted between the search and the read (ENOENT) all fail here rather
     // than in `parseConfig` — and read outside, each of them escaped every
     // command as an `internal` crash carrying a bare errno. Caught here they
-    // join the same "exists but cannot be believed" arm the parse failures
-    // already take, so `reportNoConfig` re-checks the path and answers the
-    // designed `config-invalid` (or `no-config` if the file really has gone).
-    return parseConfig(await readFile(p, "utf8"), dirname(p));
+    // join the same "exists but cannot be believed" arm the parse failures take.
+    return { kind: "loaded", config: parseConfig(await readFile(p, "utf8"), dirname(p)) };
   } catch (err) {
-    // An unreadable config must not crash the CLI with a stack trace: report it and
-    // treat it as absent — commands fail with their normal hint, and `loam init`
-    // (which spreads the old config) can rewrite a corrupt file instead of dying on it.
-    console.error(`Invalid ${CONFIG_FILENAME}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+    return { kind: "invalid", path: p, problem: err instanceof Error ? err.message : String(err) };
   }
 }
 

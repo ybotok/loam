@@ -88,11 +88,12 @@ export function registerAdopt(program: Command): void {
     .action(async (opts: AdoptOptions) => {
       const json = opts.json === true;
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       // This command writes nothing, but it briefs an agent to write a whole
       // baseline — so a docsDir that does not exist is not a harmless read: it
       // hands over eight target paths under a directory nobody has, at exit 0,

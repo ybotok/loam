@@ -46,11 +46,12 @@ export function registerList(program: Command): void {
         return;
       }
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as an empty
       // fleet — the whole point of the gate (see docs-repo-gate.ts).

@@ -91,7 +91,12 @@ export function registerInit(program: Command): void {
       // Only THIS directory's config is spread forward. Under --force there is
       // a config in an ancestor too, and inheriting its `service` would bind
       // this repo to a service somebody else's repo declared.
-      const existing = existsSync(localConfigPath(cwd)) ? await loadConfig(cwd) : null;
+      // `kind: "invalid"` reads as null on purpose: init REPAIRS a corrupt
+      // loam.json by rewriting it, so a config nobody can read is treated
+      // exactly like no config at all. The old stderr line about it was
+      // core's side effect, promised nowhere.
+      const load = existsSync(localConfigPath(cwd)) ? await loadConfig(cwd) : null;
+      const existing = load?.kind === "loaded" ? load.config : null;
 
       // A re-run must not move a committed pointer. `--docs` has a default
       // (`.loam-docs`), so an init invoked for any OTHER reason — `--service`,

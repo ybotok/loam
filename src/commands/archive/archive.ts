@@ -59,11 +59,12 @@ export function registerArchive(program: Command): void {
 
 async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {
   const json = opts.json === true;
-  const config = await loadConfig();
-  if (!config) {
-    reportNoConfig(json);
+  const loaded = await loadConfig();
+  if (loaded.kind !== "loaded") {
+    reportNoConfig(json, loaded);
     return;
   }
+  const config = loaded.config;
   let release: () => Promise<void>;
   try {
     release = await acquireDocsLock(config.docsDir);

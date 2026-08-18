@@ -75,11 +75,12 @@ export function registerNew(program: Command): void {
       const newServices = parseServiceIds(opts.newService, "--new-service");
       if (!newServices.ok) return fail(json, "invalid-option", newServices.problem);
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // Before a single file is scaffolded: a docsDir that is not a docs repo is
       // refused, never written into. `features/<id>/**` lands happily in any

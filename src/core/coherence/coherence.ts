@@ -12,7 +12,6 @@ import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 
-export type { Issue, IssueCode } from "../vocabulary/issue.js";
 
 /**
  * Cross-axis consistency for a feature: do C4 (architecture), requirements (behaviour),
