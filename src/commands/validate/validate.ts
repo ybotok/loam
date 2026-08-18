@@ -79,11 +79,12 @@ export function registerValidate(program: Command): void {
         return;
       }
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // Before anything is enumerated: a docsDir that is not a docs repo must
       // refuse, not report an empty fleet. See docsRepoReady. `--feature` is the

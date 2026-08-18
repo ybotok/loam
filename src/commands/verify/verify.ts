@@ -33,11 +33,12 @@ export function registerVerify(program: Command): void {
     .action(async (featureId: string, opts: VerifyOptions) => {
       const json = opts.json === true;
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       const recording = opts.record !== undefined || opts.results !== undefined;
 

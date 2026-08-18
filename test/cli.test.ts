@@ -311,13 +311,31 @@ describe("config handling", () => {
   });
 
   it("malformed loam.json fails delta cleanly: exit 1 with a diagnostic naming the config, no crash", async () => {
-    // loadConfig reports an unparsable config and treats it as absent — the
+    // loadConfig reports an unparsable config as a typed outcome — the
     // command must exit 1 with a diagnostic, never die with a stack trace.
     const dir = await throwawayDir();
     await writeFile(join(dir, "loam.json"), "{ this is not json", "utf8");
     const res = await runLoam(dir, "delta", "FEAT-1");
     expect(res.code).toBe(1);
     expect(res.out).toContain("Invalid loam.json");
+  });
+
+  it("malformed loam.json under --json is ONE envelope carrying the parse detail, stderr empty", async () => {
+    // The invalid arm used to be core's console.error — a stray stderr line
+    // beside the machine envelope, whose own message carried no detail. The
+    // typed outcome moves the sentence into the envelope where a consumer
+    // can read it, and --json's stdout stays the single machine stream.
+    const dir = await throwawayDir();
+    await writeFile(join(dir, "loam.json"), "{ this is not json", "utf8");
+    const res = await runLoam(dir, "delta", "FEAT-1", "--json");
+    expect(res.code).toBe(1);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("config-invalid");
+    expect(payload.error.message).toContain("Invalid loam.json");
+    // The parse problem itself travels in the message — the fix starts there.
+    expect(payload.error.message.length).toBeGreaterThan("Invalid loam.json: . Fix it".length);
+    expect(res.stderr.trim()).toBe("");
   });
 
   it("re-running `loam init` over a corrupt loam.json repairs it instead of dying", async () => {

@@ -25,6 +25,7 @@ import {
   loadConfig,
   parseConfig,
   saveConfig,
+  type LoamConfig,
 } from "../src/core/envelope/config.js";
 import { diagnose } from "../src/core/doctor/doctor.js";
 import { DOCS_SUBDIRS, scaffoldDocs } from "../src/core/docs.js";
@@ -66,6 +67,11 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 /* 1. docsDir is stored exactly as it was passed                       */
 /* ------------------------------------------------------------------ */
 
+/** The loaded config, or undefined — the pre-union spelling these pins were written in. */
+function configOf(load: Awaited<ReturnType<typeof loadConfig>>): LoamConfig | undefined {
+  return load.kind === "loaded" ? load.config : undefined;
+}
+
 describe("init stores docsDir the way the caller wrote it", () => {
   it("keeps a relative --docs relative in the committed config", async () => {
     const { docs, svc } = await fleetRoot();
@@ -77,7 +83,7 @@ describe("init stores docsDir the way the caller wrote it", () => {
       service: "payment-service",
     });
     // and it still resolves to the real docs repo from that repo
-    const config = await loadConfig(svc);
+    const config = configOf(await loadConfig(svc));
     expect(config?.docsDir).toBe(resolve(docs));
   });
 
@@ -92,7 +98,7 @@ describe("init stores docsDir the way the caller wrote it", () => {
     await cp(first.root, elsewhere, { recursive: true });
     const movedSvc = join(elsewhere, "payment-service");
 
-    const config = await loadConfig(movedSvc);
+    const config = configOf(await loadConfig(movedSvc));
     expect(config?.docsDir).toBe(join(elsewhere, "docs"));
     expect(config?.docsDir).not.toBe(resolve(first.docs));
   });
@@ -136,7 +142,7 @@ describe("config discovery walks up the tree", () => {
     await mkdir(deep, { recursive: true });
 
     expect(findConfigPath(deep)).toBe(join(svc, "loam.json"));
-    const config = await loadConfig(deep);
+    const config = configOf(await loadConfig(deep));
     expect(config?.docsDir).toBe(resolve(docs));
     // the repo root is where the file is, not where the caller was standing
     expect(config?.root).toBe(resolve(svc));
@@ -152,7 +158,7 @@ describe("config discovery walks up the tree", () => {
     await writeFile(join(outer, "loam.json"), JSON.stringify({ docsDir: "." }) + "\n", "utf8");
 
     expect(findConfigPath(deep)).toBeNull();
-    expect(await loadConfig(deep)).toBeNull();
+    expect((await loadConfig(deep)).kind).toBe("absent");
     // configPath stays total: it names where a config would have to be written
     expect(configPath(deep)).toBe(join(deep, "loam.json"));
   });
@@ -177,7 +183,7 @@ describe("config discovery walks up the tree", () => {
 
   it("a docs repo carries its own loam.json, so commands run from inside it work", async () => {
     const { docs } = await fleetRoot();
-    const config = await loadConfig(join(docs, "services"));
+    const config = configOf(await loadConfig(join(docs, "services")));
     expect(config?.docsDir).toBe(resolve(docs));
   });
 });
@@ -223,7 +229,7 @@ describe("doctor and loadConfig cannot disagree about a config", () => {
       const loaded = await loadConfig(svc);
 
       expect(report.config.status).toBe(valid ? "valid" : "invalid");
-      expect(loaded !== null).toBe(valid);
+      expect(loaded.kind === "loaded").toBe(valid);
       if (!valid) {
         expect(report.findings).toContainEqual(
           expect.objectContaining({ severity: "blocker", code: "doctor.config-invalid" }),

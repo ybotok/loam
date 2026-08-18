@@ -11,6 +11,36 @@ import { spawn } from "node:child_process";
 const GIT_TIMEOUT_MS = 10_000;
 
 /**
+ * How much a git answer may SAY. The three streamed reads below accumulated
+ * without bound — a fleet repo's ls-files fits in single-digit MiB, so the
+ * cap is generous, and past it the child is killed and the doctrine answers
+ * exactly as for any other way git declines: null, or the empty set — "git
+ * will not say", never a truncated denominator presented as the whole one.
+ */
+const MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Accumulate a child's stdout up to the cap; past it, kill the child and
+ * remember why. One helper because the three readers below had three copies
+ * of the same `out += chunk` line, which is where an unbounded buffer hides.
+ */
+function collectStdout(child: import("node:child_process").ChildProcess): { text: () => string; overflowed: () => boolean } {
+  let out = "";
+  let overflowed = false;
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    if (overflowed) return;
+    if (out.length + chunk.length > MAX_GIT_OUTPUT_BYTES) {
+      overflowed = true;
+      child.kill();
+      return;
+    }
+    out += chunk;
+  });
+  return { text: () => out, overflowed: () => overflowed };
+}
+
+/**
  * What this repository considers its own, as repo-relative paths — or null for
  * every way git can decline to say: not a repository, not installed, a timeout,
  * a non-zero exit. The caller distinguishes none of them, exactly as
@@ -29,14 +59,10 @@ export async function gitTrackedFiles(repoDir: string): Promise<string[] | null>
       stdio: ["ignore", "pipe", "ignore"],
       timeout: GIT_TIMEOUT_MS,
     });
-    let out = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      out += chunk;
-    });
+    const out = collectStdout(child);
     child.on("error", () => done(null));
     child.on("close", (code) => {
-      done(code === 0 ? out.split("\0").filter((p) => p !== "") : null);
+      done(code === 0 && !out.overflowed() ? out.text().split("\0").filter((p) => p !== "") : null);
     });
   });
 }
@@ -62,16 +88,17 @@ export async function gitIgnoredPaths(repoDir: string, rels: string[]): Promise<
       stdio: ["pipe", "pipe", "ignore"],
       timeout: GIT_TIMEOUT_MS,
     });
-    let out = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      out += chunk;
-    });
+    const out = collectStdout(child);
     child.on("error", () => done(new Set()));
     child.on("close", (code) => {
       // 0: some paths are ignored and are on stdout. 1: none are — an empty
-      // answer, not a failure. Anything else: we learned nothing.
-      done(code === 0 || code === 1 ? new Set(out.split("\0").filter((s) => s.length > 0)) : new Set());
+      // answer, not a failure. Anything else, the overflow included: we
+      // learned nothing, and nothing is ignored.
+      done(
+        (code === 0 || code === 1) && !out.overflowed()
+          ? new Set(out.text().split("\0").filter((s) => s.length > 0))
+          : new Set(),
+      );
     });
     // A git that died before reading its input hands us EPIPE; the close
     // handler above is what decides the outcome either way.
@@ -138,15 +165,11 @@ async function gitConfig(repoDir: string, key: string): Promise<string | null> {
       stdio: ["ignore", "pipe", "ignore"],
       timeout: GIT_TIMEOUT_MS,
     });
-    let out = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      out += chunk;
-    });
+    const out = collectStdout(child);
     child.on("error", () => done(null));
     child.on("close", (code) => {
-      const value = out.trim();
-      done(code === 0 && value !== "" ? value : null);
+      const value = out.text().trim();
+      done(code === 0 && !out.overflowed() && value !== "" ? value : null);
     });
   });
 }

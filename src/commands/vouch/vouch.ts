@@ -68,11 +68,12 @@ export function registerVouch(program: Command): void {
     .action(async (opts: VouchOptions) => {
       const json = opts.json === true;
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
 
       const service = opts.service ?? config.service;
       if (service === undefined) {

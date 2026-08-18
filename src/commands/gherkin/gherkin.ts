@@ -71,11 +71,12 @@ export function registerGherkin(program: Command): void {
       const json = opts.json === true;
       const dryRun = opts.dryRun === true;
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const service = opts.service ?? config.service;
       if (service === undefined) {
         return fail(json, "invalid-option", NO_SERVICE_MESSAGE);

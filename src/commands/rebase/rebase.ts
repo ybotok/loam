@@ -59,11 +59,12 @@ export function registerRebase(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: RebaseOptions) => {
       const json = opts.json === true;
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
 
       // The id grammar on the RAW argument, before it reaches a path join —
       // one grammar for the whole tool (core/kernel/ids.ts).

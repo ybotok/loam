@@ -30,11 +30,12 @@ export function registerShow(program: Command): void {
       }
       const forced = opts.type as TargetType | undefined;
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // "No service or feature 'x' in <dir>" is a lie when <dir> is not a docs
       // repo at all — the same refusal validate and list owe (docsRepoReady).

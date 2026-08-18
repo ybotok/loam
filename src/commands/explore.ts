@@ -88,11 +88,12 @@ export function registerExplore(program: Command): void {
         return;
       }
 
-      const config = await loadConfig();
-      if (!config) {
-        reportNoConfig(json);
+      const loaded = await loadConfig();
+      if (loaded.kind !== "loaded") {
+        reportNoConfig(json, loaded);
         return;
       }
+      const config = loaded.config;
       const { docsDir } = config;
       // `services`, not `docs`: every answer here is a statement about the
       // fleet, and an empty ring read out of a directory that is not a docs
