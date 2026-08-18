@@ -21,6 +21,12 @@
  * post-v1.7 canary: 209/742/2284), and by reading OpenSpec's own parsers
  * (src/core/parsers/{markdown-parser,change-parser,spec-structure}.ts).
  *
+ * The constructs v1.9 added are workspace metadata, not requirement Markdown —
+ * `goal`, `affected_areas`, `initiative`, `retire_capabilities` live in
+ * `.openspec.yaml` — so their observed-behavior pin lives with the migration
+ * surface in test/migrate-openspec-command.test.ts ("v1.9 metadata surface"
+ * inventory), not in this file. This note is the trail between the two.
+ *
  * WHAT WORKS. Requirement and scenario extraction is compatible on every corpus file:
  * every requirement and scenario in all three corpora is found, with the
  * same delta kinds, and round-trip is lossless (see "round-trip" below). Nested bullets, fenced blocks,

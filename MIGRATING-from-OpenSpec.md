@@ -154,7 +154,7 @@ This is deliberately called **staged migration docs**, not a finished or green l
 
 ## What carries over mechanically
 
-The exact-commit corpus gate checks living, active, and archived spec trees. OpenSpec v1.7.0 release `4e16790` contributes 207 Markdown files, 739 requirements, and 2273 scenarios; main canary `45cca5d` contributes 209, 742, and 2284. Both sweeps check parse/serialize/parse stability of requirement content. Nested bullets, fenced markup, removal prose, CRLF, BOM and non-ASCII names survive. `REMOVED` requirements with no scenarios remain legal.
+The exact-commit corpus gate checks living, active, and archived spec trees. The certified corpus is the OpenSpec v1.9.0 release `2826b888`: 211 Markdown files, 746 requirements, and 2317 scenarios. The v1.7.0 release `4e16790` (207, 739, 2273) and the post-v1.7 main canary `45cca5d` (209, 742, 2284) remain as regression sweeps. All three sweeps check parse/serialize/parse stability of requirement content. Nested bullets, fenced markup, removal prose, CRLF, BOM and non-ASCII names survive. `REMOVED` requirements with no scenarios remain legal.
 
 Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “ready”: routing to services, loam frontmatter, Operations/Covers links and feature identity still require decisions.
 
