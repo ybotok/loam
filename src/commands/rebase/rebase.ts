@@ -213,7 +213,7 @@ async function rebaseLocked(
 
   if (outcomes.length === 0) {
     console.log(
-      `${id}: nothing to pin — a baseline only means something for a requirement or an operation that already exists.`,
+      `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key or a component that already exists in the living docs.`,
     );
     return;
   }

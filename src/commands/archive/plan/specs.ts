@@ -195,7 +195,7 @@ export async function planSpecs(
           severity: "warn",
           code: "openapi.component-modified",
           subject: svc,
-          message: `${svc}: the merged operations carry component '${comp}', which the living OpenAPI already defines differently — the merge overwrites the living component wholesale`,
+          message: `${svc}: the delta declares component '${comp}', which the living OpenAPI already defines differently — the merge overwrites the living component wholesale`,
         });
         say(`      ⚠ overwrites component ${comp} — the living definition differs`);
       }

@@ -240,27 +240,30 @@ Exit criteria:
 
 ### P1 — baseline semantics for OpenAPI path items and components
 
-Operation-level `x-loam-based-on` pins prevent a quoted operation from silently overwriting a newer
-living operation. The protection stops at that identity boundary. A feature can restate a path-level
-key such as shared parameters, or carry a referenced component closure, while another change edits the
-same living value; archive currently warns and then overwrites it wholesale. The executable examples in
-[test/openapi-baseline.test.ts](https://github.com/ybotok/loam/blob/main/test/openapi-baseline.test.ts)
-pin both gaps. This is not merely an AsyncAPI parity feature: it is unresolved lost-update semantics on
-an already supported OpenAPI write path.
+Operation-level `x-loam-based-on` pins prevented a quoted operation from silently overwriting a newer
+living operation, and the protection stopped at that identity boundary. It no longer does: the same
+discipline now covers path-item non-method keys and recursively referenced components, through a
+canonical pre-image digest per surface recorded in the feature-only root key `x-loam-baselines`.
 
-Required change:
+Required change, and where each landed:
 
-- Choose and document the identity of path-item fields and recursively referenced components. Prefer a
-  canonical pre-image digest attached to the feature delta or its baseline record; do not infer safety
-  from the operation pin when the overwritten value lives outside that operation.
-- Have `rebase` record the baseline for every existing path-item/component value the feature would
-  overwrite, while leaving genuinely new values explicitly unpinned.
-- Make `validate` and archive distinguish absent, unchanged, stale, and structurally unresolvable
-  baselines before merge. A stale baseline refuses or requires an explicit compatibility decision; a
-  warning followed by unconditional overwrite is not sufficient for concurrent edits.
-- Define closure behavior for local `$ref`s, shared components reached by several operations, component
-  cycles, and a component edited directly without a changed operation. Preserve the current refusal on
-  unresolved references and avoid copying unrelated component namespaces.
+1. ~~Choose and document the identity~~ — done: `(path, key)` / `(kind, name)` plus the canonical-form
+   digest (`valueDigest`), recorded in `x-loam-baselines`, documented in [SCHEMA.md](SCHEMA.md);
+   recursion is deliberately not part of identity — closure only ever decides copying.
+2. ~~`rebase` records the baseline~~ — done:
+   [src/core/openapi/baseline/plan.ts](https://github.com/ybotok/loam/blob/main/src/core/openapi/baseline/plan.ts),
+   wholesale rebuild, sorted and byte-idempotent, genuinely new values explicitly unpinned.
+3. ~~`validate` and archive distinguish absent/unchanged/stale/unresolvable before merge~~ — done:
+   [src/core/openapi/baseline/gate.ts](https://github.com/ybotok/loam/blob/main/src/core/openapi/baseline/gate.ts)
+   through the existing three `openapi.baseline-*` codes; stale is a refusal, not warn+overwrite.
+4. ~~Closure behavior~~ — done: verdict-driven component copying with a written-content fixpoint for
+   new components; cycles terminate, unrelated namespaces stay uncopied, the unresolved-`$ref`
+   refusal is unchanged.
+
+Recorded while landing it: a components-only feature contract (no `paths` mapping) passes the gate
+but merges nothing — the merge answers no-op before the closure runs. Pre-existing, now written down
+here rather than silently true; the AsyncAPI lifecycle item touches the same merge entry point and
+should close it in passing.
 
 Exit criteria:
 

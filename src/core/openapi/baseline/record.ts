@@ -11,7 +11,7 @@
  */
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
-import { FEATURE_ONLY_KEYS, isRemoval, OPENAPI_BASELINES_KEY, OPERATION_DIGEST_RE } from "../digest.js";
+import { FEATURE_ONLY_KEYS, OPENAPI_BASELINES_KEY, OPERATION_DIGEST_RE } from "../digest.js";
 
 /** The record as read: per-(path, key) digests and per-(kind/name) digests. */
 export interface BaselineRecord {
@@ -79,9 +79,12 @@ export function readBaselineRecord(plain: unknown): { record: BaselineRecord; pr
  * Every surface this feature document RESTATES — the enumeration the plan
  * pins, the gate grades and the merge classifies. Path-item surfaces are the
  * non-HTTP-method keys (the feature-only markers are bookkeeping, not
- * surfaces; a method whose value is a removal marker stays an operation
- * matter). Component surfaces are every `components/<kind>/<name>` the
- * document declares.
+ * surfaces; a METHOD whose value is a removal marker is the operation pin's
+ * territory — but a non-method key is a surface whatever its value looks
+ * like, because skipping the removal SHAPE here once let it through unpinned
+ * and the merge wrote `{x-loam-remove: true}` over a living shared
+ * `parameters` at exit 0). Component surfaces are every
+ * `components/<kind>/<name>` the document declares.
  */
 export function restatedSurfaces(plain: unknown): RestatedSurface[] {
   const out: RestatedSurface[] = [];
@@ -91,8 +94,15 @@ export function restatedSurfaces(plain: unknown): RestatedSurface[] {
     for (const [path, item] of Object.entries(paths)) {
       if (!isRecord(item)) continue;
       for (const [key, value] of Object.entries(item)) {
+        // Methods are the operation pin's territory and the feature-only
+        // markers are bookkeeping; everything else is a surface — INCLUDING a
+        // non-method key whose value happens to be removal-shaped. Skipping
+        // that shape here once let it through unpinned and ungraded, and the
+        // merge then wrote `{x-loam-remove: true}` over a living shared
+        // `parameters` array at exit 0. The merge's own publishable filter
+        // (markers.ts withoutFeatureMarkers) must keep agreeing with this
+        // pair of exclusions — the surfaces test pins the agreement.
         if (HTTP_METHODS.has(key) || FEATURE_ONLY_KEYS.has(key)) continue;
-        if (isRemoval(value)) continue;
         out.push({ kind: "path-item", path, key, value });
       }
     }
@@ -116,6 +126,16 @@ export function restatedSurfaces(plain: unknown): RestatedSurface[] {
  * verdict — two lookups could disagree about absence, and the disagreement
  * would surface as a pin graded against the wrong baseline.
  */
+/**
+ * The record's entry for one surface, or undefined — the mirror of
+ * `surfaceIn`, and one spelling for the same reason: four open-coded lookups
+ * could disagree about absence, and a disagreement surfaces as a pin graded
+ * against the wrong baseline.
+ */
+export function entryFor(record: BaselineRecord, surface: RestatedSurface): string | undefined {
+  return surface.kind === "path-item" ? record.pathItems[surface.path]?.[surface.key] : record.components[surface.id];
+}
+
 export function surfaceIn(plain: unknown, surface: RestatedSurface): { found: boolean; value: unknown } {
   const absent = { found: false, value: undefined };
   if (!isRecord(plain)) return absent;
