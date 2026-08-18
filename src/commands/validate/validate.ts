@@ -11,6 +11,7 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { agentsStaleFinding } from "../../core/agent/agents-stamp.js";
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
@@ -18,7 +19,7 @@ import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
+import { agentsPath as agentsFile, featurePaths, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import {
   countSeverity,
@@ -112,10 +113,28 @@ export function registerValidate(program: Command): void {
 
       try {
         if (opts.all) {
-          // Parse the living landscape ONCE for the whole run: loadFile spins up
-          // a fresh LikeC4 workspace per call, and paying that per service makes
-          // the fleet's main CI command O(services) re-parses of the same file.
+          // ONE LikeC4 workspace for the whole run. The per-path load pays a
+          // fresh Langium workspace per document (~100ms each even warm), which
+          // made the fleet's main CI command O(documents) workspace spins —
+          // 13.7s median over the 120-service benchmark (docs/BENCHMARKS.md).
+          // So --all enumerates its documents up front — the landscape, every
+          // service model, every active feature's delta — and batch-parses
+          // them into the fleet context's memo; every loadLikeC4 below, the
+          // landscape read included, is then a seeded hit. The enumerations are
+          // the same memoized promises the target loops reuse. If the batch
+          // CANNOT run (a sandbox denying tmpdir writes), prefetch seeds
+          // nothing and every load falls back to today's per-path parse:
+          // identical findings, the old speed. Single-service validate and
+          // list keep their untouched code paths on purpose — the ≤10%
+          // regression bound in docs/BENCHMARKS.md holds by construction.
           const lp = landscapeFile(docsDir);
+          const services = await listServices(docsDir, fleet);
+          const features = await listFeatures(docsDir, {}, fleet);
+          await fleet.prefetchLikeC4([
+            ...(existsSync(lp) ? [lp] : []),
+            ...services.filter((svc) => svc.has.model).map((svc) => join(svc.dir, "model.likec4")),
+            ...features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
+          ]);
           const land = existsSync(lp) ? await readLandscape(() => fleet.loadLikeC4(lp)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
@@ -134,7 +153,7 @@ export function registerValidate(program: Command): void {
           );
           if (agents !== null) landscape.findings.push(agents);
           targets.push(
-            ...(await inOrder(await listServices(docsDir, fleet), (svc) =>
+            ...(await inOrder(services, (svc) =>
               guarded({ kind: "service", id: svc.id }, () =>
                 validateService({
                   docsDir,
@@ -149,7 +168,7 @@ export function registerValidate(program: Command): void {
             )),
           );
           targets.push(
-            ...(await inOrder(await listFeatures(docsDir, {}, fleet), (feat) =>
+            ...(await inOrder(features, (feat) =>
               guarded({ kind: "feature", id: feat.id }, () =>
                 validateFeature(docsDir, feat, land, fleet),
               ),
