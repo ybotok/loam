@@ -519,7 +519,7 @@ describe("refusals", () => {
         expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
       }
 
-      // The grammar is `new`'s own, from core/kernel/ids.ts, so an id one command
+      // The grammar is `new`'s own, from core/kernel/ids/feature.ts, so an id one command
       // accepts is accepted by the other. A second spelling here would drift.
       const ok = await runLoam(p.workDir, "explore", SVC, "--as", "BUG-42", "--json");
       expect(ok.code, ok.out).toBe(0);

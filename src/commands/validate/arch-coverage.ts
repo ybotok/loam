@@ -33,10 +33,11 @@ import { readHealth } from "../../core/vocabulary/health.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "./checks/vocabulary.js";
 import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /** One feature delta's architecture, and everything needed to decide what in it is new. */
 export interface DeltaArch {
-  docsDir: string;
+  docsDir: DocsDir;
   /** Every element the delta declares — the resolver's index, and `coversEdge`'s scope. */
   elements: Elem[];
   /** Every relationship the delta declares. */

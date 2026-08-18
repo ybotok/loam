@@ -2,14 +2,23 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, parse as parsePath, resolve } from "node:path";
 import { resolveInside } from "../kernel/path-safety.js";
+import { docsDirOf, type DocsDir } from "../kernel/ids/dirs.js";
 import { parseServiceId, type ServiceId } from "../kernel/ids/service.js";
 
 /** Local config, committed at the root of a service repo (or the docs repo itself). */
 export const CONFIG_FILENAME = "loam.json";
 
 export interface LoamConfig {
-  /** Path to the single shared docs repo (the source of truth). Absolute or relative to the config file. */
-  docsDir: string;
+  /**
+   * Path to the single shared docs repo (the source of truth). A LOADED config
+   * carries it resolved — `parseConfig` resolves the file's spelling against
+   * the config file's own directory, which is what earns the brand. The
+   * spelling itself is `docsDirAsWritten`, and the shape `saveConfig` persists
+   * (`StoredConfig`) keeps it a plain `string`: the stored form is deliberately
+   * unresolved (see `storedDocsDir` in commands/init/options.ts), and branding
+   * it would state a resolution that never happened.
+   */
+  docsDir: DocsDir;
   /**
    * Canonical id of the service in the current repo, if this is a service repo.
    *
@@ -210,8 +219,9 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
 
   return {
     // Resolved here, against the file's own directory, so the doc comment on
-    // `docsDir` is true no matter where a caller later resolves the path from.
-    docsDir: resolve(configDir, record.docsDir),
+    // `docsDir` is true no matter where a caller later resolves the path from —
+    // which is exactly the provenance `docsDirOf` demands.
+    docsDir: docsDirOf(resolve(configDir, record.docsDir)),
     ...(service === undefined ? {} : { service }),
     ...(record.gherkinDir === undefined ? {} : { gherkinDir: record.gherkinDir as string }),
     ...(record.agentTools === undefined ? {} : { agentTools: record.agentTools as string[] }),
@@ -252,11 +262,20 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
 }
 
 /**
+ * What `saveConfig` persists: `LoamConfig` with `docsDir` back to a plain
+ * `string`, because the stored form is the SPELLING (deliberately relative —
+ * `storedDocsDir`), not the resolved `DocsDir` a loaded config carries. The
+ * two derived fields ride along as optional so a caller may spread a loaded
+ * config forward — `saveConfig` strips them on the way out either way.
+ */
+export type StoredConfig = Omit<LoamConfig, "docsDir"> & { docsDir: string };
+
+/**
  * Write the config for the repo rooted at `cwd`. The derived fields are dropped
  * on the way out: they are facts about where the file was found and how it was
  * spelled, and a stored copy could only ever disagree with the file itself.
  */
-export async function saveConfig(config: LoamConfig, cwd: string = process.cwd()): Promise<string> {
+export async function saveConfig(config: StoredConfig, cwd: string = process.cwd()): Promise<string> {
   const p = localConfigPath(cwd);
   const { root: _root, docsDirAsWritten: _asWritten, ...stored } = config;
   await writeFile(p, JSON.stringify(stored, null, 2) + "\n", "utf8");

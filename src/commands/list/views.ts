@@ -19,6 +19,7 @@ import { landscapePath, servicePaths } from "../../core/repo/paths.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
 import { readVerification } from "../../core/verify/file.js";
 import { tallyRecord, type VerificationVerdict, verificationVerdict } from "../../core/verify/record.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export interface ServiceView extends MaturityInput {
   /** True when this service's `sources` can only be resolved from its own repo. */
@@ -36,7 +37,7 @@ export interface ServiceView extends MaturityInput {
  * cannot disagree about who is called.
  */
 export async function serviceViews(
-  docsDir: string,
+  docsDir: DocsDir,
   services: ServiceEntry[],
   boundService: string | undefined,
 ): Promise<ServiceView[]> {
@@ -104,7 +105,7 @@ export interface VerificationCell {
  * judged stale.
  */
 export async function featureVerification(
-  docsDir: string,
+  docsDir: DocsDir,
   f: FeatureEntry,
 ): Promise<VerificationCell | null> {
   const v = await readVerification(f.dir);

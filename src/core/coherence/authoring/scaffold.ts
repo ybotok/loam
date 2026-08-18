@@ -22,6 +22,7 @@ import type { FleetContext } from "../../fleet-context.js";
 import type { Requirement } from "../../document/spec.js";
 import { parseRequirements } from "../../document/parse.js";
 import { featurePaths, featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
+import type { FeatureDir } from "../../kernel/ids/dirs.js";
 import {
   BODY_SENTINELS,
   HEADING_SENTINELS,
@@ -30,7 +31,7 @@ import {
 
 /** What the placeholder gate reads: the feature's own documents, nothing else. */
 export interface AuthoringScope {
-  featureDir: string;
+  featureDir: FeatureDir;
   featureId: string;
   /**
    * Every element whose authored block the landscape merge would SPLICE — the

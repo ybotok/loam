@@ -8,6 +8,7 @@ import type { FleetContext } from "../fleet-context.js";
 import type { PathableService } from "../kernel/ids/service.js";
 import { featureSpecPaths, servicePaths } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * Does this feature owe `svc` an openapi.yaml?
@@ -39,7 +40,7 @@ import { listFeatures } from "../repo/repo.js";
  * an error about that very file.
  */
 export function owesContract(
-  docsDir: string,
+  docsDir: DocsDir,
   svc: PathableService,
   contracted: ReadonlySet<string>,
   governsOperations: boolean,
@@ -62,7 +63,7 @@ export function owesContract(
  * Enumeration only — the feature list and its `specs/` subdirectories are
  * already in the request-scoped index by the time anything asks.
  */
-export async function contractOwners(docsDir: string, context: FleetContext): Promise<Map<string, Set<string>>> {
+export async function contractOwners(docsDir: DocsDir, context: FleetContext): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
   for (const f of await listFeatures(docsDir, {}, context)) {
     for (const svc of f.services) {

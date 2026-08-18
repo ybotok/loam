@@ -38,6 +38,7 @@
 import { listServices } from "./repo.js";
 import { parseServiceId, type RawServiceId } from "../kernel/ids/service.js";
 import type { FleetContext } from "../fleet-context.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 export type ServiceTarget =
   | { readonly ok: true; readonly id: RawServiceId }
@@ -54,7 +55,7 @@ export type ServiceTarget =
  * the other five keep the old behaviour.
  */
 export async function enumeratedServiceIds(
-  docsDir: string,
+  docsDir: DocsDir,
   fleet?: FleetContext,
 ): Promise<RawServiceId[]> {
   try {
@@ -65,7 +66,7 @@ export async function enumeratedServiceIds(
 }
 
 export async function resolveServiceTarget(
-  docsDir: string,
+  docsDir: DocsDir,
   name: string,
   label: string,
   fleet?: FleetContext,
@@ -100,7 +101,7 @@ export async function resolveServiceTarget(
  * this document's.
  */
 export function enumeratedServiceIndex(
-  docsDir: string,
+  docsDir: DocsDir,
   known: readonly RawServiceId[],
   fleet?: FleetContext,
 ): (name: string) => Promise<RawServiceId | undefined> {

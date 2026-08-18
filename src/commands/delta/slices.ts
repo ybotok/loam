@@ -15,6 +15,7 @@ import { isRecord } from "../../core/kernel/records.js";
 import { compareIds } from "../../core/repo/entries.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices } from "../../core/repo/repo.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /** One end of a feature edge, as seen from the projected service. */
 export interface Edge {
@@ -62,7 +63,7 @@ export interface ApiSlice {
   error?: string;
 }
 
-export async function livingServices(docsDir: string): Promise<string[]> {
+export async function livingServices(docsDir: DocsDir): Promise<string[]> {
   try {
     return (await listServices(docsDir)).map((s) => s.id);
   } catch (err) {

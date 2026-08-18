@@ -34,9 +34,10 @@ import { FleetContext, documentConflictFinding } from "../../core/fleet-context.
 import { errorText } from "./checks/vocabulary.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function validateFeature(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   preloadedLand?: LoadedDoc | null,
   fleet?: FleetContext,

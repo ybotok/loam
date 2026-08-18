@@ -24,6 +24,7 @@ import {
 } from "../openapi/digest.js";
 import { readOpenapi } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Everything one feature's delta says about its own services. */
 export interface Declared {
@@ -51,8 +52,8 @@ export interface Declared {
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface DeltaScope {
-  docsDir: string;
-  featureDir: string;
+  docsDir: DocsDir;
+  featureDir: FeatureDir;
   featureId: string;
 }
 

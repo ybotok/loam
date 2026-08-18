@@ -3,7 +3,8 @@ import { loadConfig } from "../core/envelope/config.js";
 import { explore, type Exploration, type ExploreService } from "../core/explore/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
 import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
-import { featureIdProblem, parseServiceIds } from "../core/kernel/ids/service.js";
+import { featureIdProblem } from "../core/kernel/ids/feature.js";
+import { parseServiceIds } from "../core/kernel/ids/service.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "./policy/gate.js";
 import { plural } from "./policy/format.js";
@@ -54,7 +55,7 @@ export function registerExplore(program: Command): void {
       // something loam rejects, which is the one thing the printed-command
       // guard exists to prevent and the one shape it cannot see, because it
       // reads literal source strings and this line is assembled from argv.
-      // Same grammar as `new`'s, from core/kernel/ids.ts, so the two cannot disagree.
+      // Same grammar as `new`'s, from core/kernel/ids/feature.ts, so the two cannot disagree.
       if (opts.as !== undefined) {
         const problem = featureIdProblem(opts.as, "feature id for --as");
         if (problem !== null) {

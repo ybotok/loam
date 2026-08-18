@@ -39,6 +39,7 @@ import { registerDependencies } from "../../src/commands/dependencies.js";
 import { registerExplore } from "../../src/commands/explore.js";
 import { registerInstructions } from "../../src/commands/instructions.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec/migrate-openspec.js";
+import { docsDirOf, type DocsDir } from "../../src/core/kernel/ids/dirs.js";
 import { parseRequirements } from "../../src/core/document/parse.js";
 import { requirementDigest } from "../../src/core/document/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi/merge/pin.js";
@@ -70,7 +71,7 @@ export interface Project {
   /** cwd for runLoam — contains loam.json. */
   workDir: string;
   /** The docs repo root loam.json points at. */
-  docsDir: string;
+  docsDir: DocsDir;
   /** Read a file under docsDir. */
   read(relPath: string): Promise<string>;
   /** Write/overwrite a file under docsDir (parent dirs auto-created). */
@@ -133,7 +134,9 @@ export async function makeProject(
 ): Promise<Project> {
   const root = await makeTmpDir();
   const workDir = join(root, "work");
-  const docsDir = join(root, "docs");
+  // The fixture's loam.json (written below) spells this same path, so the
+  // brand states exactly what loading that config would establish.
+  const docsDir = docsDirOf(join(root, "docs"));
   await mkdir(workDir, { recursive: true });
   await mkdir(docsDir, { recursive: true });
   await writeFiles(docsDir, files);

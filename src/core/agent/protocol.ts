@@ -5,7 +5,8 @@
  * (test/codes-drift.test.ts, test/agent-contract.test.ts,
  * test/agent-commands-runnable.test.ts).
  */
-import { featureIdProblem, serviceIdProblem } from "../kernel/ids/service.js";
+import { featureIdProblem } from "../kernel/ids/feature.js";
+import { serviceIdProblem } from "../kernel/ids/service.js";
 import type { CommandContent, PlaceholderKind } from "./contract.js";
 import { LOAM_ADOPT } from "./workflows/adopt.js";
 import { LOAM_CHECK } from "./workflows/check.js";
@@ -53,7 +54,7 @@ export const PLACEHOLDERS: Record<string, readonly PlaceholderKind[]> = Object.f
  * null when they can. One sentence per bad argument, already naming the
  * placeholder it was meant to fill.
  *
- * The grammars are `core/kernel/ids.ts`'s, never a second copy: a value this accepts
+ * The grammars are `core/kernel/ids/`'s, never a second copy: a value this accepts
  * and `loam adopt` refuses would be worse than no check, because the protocol
  * would still be wrong and now something had approved it. An argument nobody
  * supplied is not an error — `protocolFor` leaves that placeholder standing on

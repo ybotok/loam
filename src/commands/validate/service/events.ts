@@ -25,10 +25,11 @@ import { producersByMessage } from "../../../core/asyncapi/producers.js";
 import { readAsyncapi, slotsOf } from "../../../core/asyncapi/read.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { externalProducerOf } from "../checks/fleet-shape.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /** What the service target hands the event axis. */
 export interface EventAxis {
-  docsDir: string;
+  docsDir: DocsDir;
   service: PathableService;
   /** `service` widened for `===` against the resolver's DOCUMENT text — see service.ts. */
   me: string;

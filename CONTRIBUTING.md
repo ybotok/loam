@@ -5,7 +5,7 @@ Loam requires Node.js 22.22.3 or newer. Install from the lockfile with `npm ci`.
 ```sh
 npm run lint
 npm run typecheck
-npm run arch:graph
+npm run arch:check
 npm test
 npm run test:coverage
 npm run test:package

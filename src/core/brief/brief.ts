@@ -28,6 +28,7 @@ import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
 import { landscapeArtifact, landscapeContext, type LandscapeContext } from "./landscape.js";
 import { ARTIFACTS, type BriefTarget } from "./targets.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /* ------------------------------------------------------------------ */
 /* The walk — what to read, in what order, and where each finding lands */
@@ -155,7 +156,7 @@ const FRONTMATTER_BRIEF: FrontmatterBrief = {
 export interface Brief {
   service: string;
   /** Absolute docs repo root — the anchor the repo-relative paths hang off. */
-  docsDir: string;
+  docsDir: DocsDir;
   /** Repo-relative path of services/<id>/. */
   path: string;
   targets: BriefTarget[];
@@ -175,7 +176,7 @@ const NEVER_OVERWRITE =
   "Do not overwrite an artifact that already exists. Read it, diff your findings against it, and report what disagrees — a document somebody wrote is evidence, and replacing it destroys the only copy of what they knew.";
 
 /** Assemble the brief for one service. Reads the docs repo; writes nothing. */
-export async function serviceBrief(docsDir: string, service: PathableService): Promise<Brief> {
+export async function serviceBrief(docsDir: DocsDir, service: PathableService): Promise<Brief> {
   const paths = servicePaths(docsDir, service);
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 

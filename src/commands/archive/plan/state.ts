@@ -9,6 +9,7 @@
  */
 import { type Issue } from "../../../core/vocabulary/issue.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
+import { type FeatureDir } from "../../../core/kernel/ids/dirs.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type CommitRecovery } from "../../../core/staging/interrupted.js";
@@ -17,7 +18,7 @@ export interface Gated {
   /** The canonical feature id. The raw argument does not survive the gate. */
   id: string;
   dirName: string;
-  featureDir: string;
+  featureDir: FeatureDir;
   /** Parsed ONCE for the whole run — loading it spins up a fresh Langium workspace. */
   deltaDoc: LoadedDoc | undefined;
   deltaServices: PathableService[];

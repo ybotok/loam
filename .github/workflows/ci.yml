@@ -42,10 +42,11 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      # The package-level import graph. The current lint command does not yet enforce
-      # file-level import/no-cycle, and even that rule cannot see a cycle that exists
-      # only between directories; ROADMAP.md tracks the unified architecture gate.
-      - run: npm run arch:graph
+      # The unified architecture gate: file-level cycles, the package graph,
+      # core/commands layering, the barrel ban, the console/process boundary,
+      # child-process bounds, and brand-cast containment — each pinned by a
+      # negative self-test in test/arch-gate.test.ts.
+      - run: npm run arch:check
       - run: npm test
         if: matrix.node-version == '22.22.3'
       - run: npm run test:coverage

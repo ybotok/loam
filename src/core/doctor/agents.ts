@@ -24,6 +24,7 @@ import {
   versionTrails,
 } from "../agent/agents-stamp.js";
 import { type AgentSurface, type DoctorFinding } from "./report.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 export function recordedTools(config: LoamConfig | null): string[] | null {
   const ids = (config?.agentTools ?? []).filter((t) => t in AGENT_TOOLS);
@@ -123,7 +124,7 @@ export async function staleAgentFiles(
 export async function inspectAgentSurface(
   repoRoot: string,
   config: LoamConfig | null,
-  docsDir: string | null,
+  docsDir: DocsDir | null,
   findings: DoctorFinding[],
 ): Promise<AgentSurface> {
   const recorded = recordedTools(config);

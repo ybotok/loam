@@ -15,10 +15,12 @@
  *  - the digest recipe, and the staleness findings it makes possible
  *  - the --all blind spot: sources only a service's own repo can check, counted once
  *  - the draft/verified inventory in list and show
+ *  - the bounds on the git spawns underneath all of it: a deadline, an output
+ *    cap, and the one doctrine both fold into — "git will not say"
  */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdir, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   coherentFixture,
@@ -33,6 +35,7 @@ import {
 import { parseFrontmatter, listField, stringField } from "../src/core/document/frontmatter.js";
 import { patternSources } from "../src/core/provenance/sources.js";
 import { contentDigest, sourcesDigest } from "../src/core/provenance/stamp.js";
+import { gitIdentity, gitIgnoredPaths, gitTrackedFiles } from "../src/core/provenance/git.js";
 
 const SVC = "payment-service";
 
@@ -887,4 +890,126 @@ status: draft
       },
     );
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* The bounds on the git spawns                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Put a `git` on PATH that runs `body` instead of git for one subcommand and
+ * passes everything else through to the real one, and return the undo.
+ *
+ * `spawn` resolves the binary through PATH, so shadowing it is the only way to
+ * put these helpers in front of a git that misbehaves: one that never answers,
+ * and one that answers without end. The same technique shims `git diff` in
+ * test/verify.test.ts, for the bounds on the other side of the same doctrine.
+ */
+async function shimGit(subcommand: string, body: string): Promise<() => Promise<void>> {
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = await makeTmpDir("loam-git-shim-");
+  const shim = join(bin, "git");
+  await writeFile(
+    shim,
+    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "${subcommand}" ]; then ${body}; fi\ndone\nexec "${real}" "$@"\n`,
+    "utf8",
+  );
+  await chmod(shim, 0o755);
+  const previous = process.env["PATH"];
+  process.env["PATH"] = `${bin}:${previous ?? ""}`;
+  return async () => {
+    if (previous === undefined) delete process.env["PATH"];
+    else process.env["PATH"] = previous;
+    await rm(bin, { recursive: true, force: true });
+  };
+}
+
+/** Ask one of the helpers its question with that git in front of it. */
+async function withShimmedGit<T>(
+  subcommand: string,
+  body: string,
+  ask: (repoDir: string) => Promise<T>,
+): Promise<T> {
+  const repo = await makeTmpDir("loam-git-bounds-");
+  const restore = await shimGit(subcommand, body);
+  try {
+    return await ask(repo);
+  } finally {
+    await restore();
+    await rm(repo, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A git that never answers — `exec` so the deadline's signal lands on the sleep
+ * itself rather than on a shell holding the pipes open, which would measure
+ * node's teardown instead of loam's deadline.
+ */
+const NEVER_ANSWERS = "exec sleep 60";
+
+/**
+ * A git that answers without end: 64 MiB is the declared cap, so 67.2 MB of
+ * NUL-separated paths crosses it in the exact shape `ls-files -z` and
+ * `check-ignore -z` speak — a truncation of it would be a plausible-looking
+ * answer, which is the whole hazard. `yes | head -c` generates it in well under
+ * a second.
+ */
+const ANSWERS_PAST_THE_CAP =
+  "yes 'services/payments/src/generated/client.ts' | head -c 67200000 | tr '\\n' '\\0'; exit 0";
+
+describe("the bounds on the git spawns — a deadline, an output cap, and no half-answers", () => {
+  it("a tracked-file list past the cap is not a list: null, never a truncated denominator", async () => {
+    // The failure this closes is not the memory: it is that half of `ls-files`
+    // reads exactly like all of it. Every file past the cut would be graded
+    // "not tracked by this repository" by a caller that cannot tell the
+    // difference — so past the cap there is no denominator, and null says so.
+    await withShimmedGit("ls-files", ANSWERS_PAST_THE_CAP, async (repo) => {
+      expect(await gitTrackedFiles(repo)).toBeNull();
+    });
+  }, 60_000);
+
+  it("an ignore answer past the cap ignores nothing, rather than a prefix of the truth", async () => {
+    // Non-empty input on purpose: `gitIgnoredPaths` short-circuits an empty
+    // list to an empty set, which would pass this assertion without ever
+    // spawning anything.
+    await withShimmedGit("check-ignore", ANSWERS_PAST_THE_CAP, async (repo) => {
+      const ignored = await gitIgnoredPaths(repo, ["src/a.ts", "src/b.ts", "dist/bundle.js"]);
+      expect([...ignored]).toEqual([]);
+    });
+  }, 60_000);
+
+  it("an identity past the cap is nobody — a vouch is never stamped with a truncated name", async () => {
+    // gitIdentity reads GIT_COMMITTER_*/GIT_AUTHOR_* first, exactly as git
+    // does, and the harness pins them; clearing them is what puts the question
+    // to `git config`, which is the spawn under test here.
+    const env = { ...process.env };
+    for (const k of ["GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL"]) {
+      delete process.env[k];
+    }
+    try {
+      await withShimmedGit("config", ANSWERS_PAST_THE_CAP, async (repo) => {
+        expect(await gitIdentity(repo)).toBeNull();
+      });
+    } finally {
+      Object.assign(process.env, env);
+    }
+  }, 60_000);
+
+  it("a git that never answers is dropped at the deadline, not waited out", async () => {
+    // One sleeping case for the whole family: all four spawns carry the same
+    // GIT_TIMEOUT_MS, and the wall clock is what proves it is enforced rather
+    // than merely declared. Without it this call would return in a minute —
+    // the shim's — and in a real fleet never, because the git it stands for is
+    // blocked on a credential prompt nobody is there to answer.
+    await withShimmedGit("ls-files", NEVER_ANSWERS, async (repo) => {
+      const started = Date.now();
+      expect(await gitTrackedFiles(repo)).toBeNull();
+      const elapsed = Date.now() - started;
+      // It really waited for the deadline (a shim that failed to run would
+      // answer null instantly, and pin nothing)...
+      expect(elapsed).toBeGreaterThan(5_000);
+      // ...and it did not wait for the sleeping git.
+      expect(elapsed).toBeLessThan(30_000);
+    });
+  }, 60_000);
 });

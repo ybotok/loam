@@ -23,7 +23,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+// --root lets the self-tests point the same rules at a fixture tree; the
+// default is this repository, byte-identical to the pre-flag behaviour.
+const rootFlag = process.argv.indexOf("--root");
+const projectRoot = rootFlag === -1 ? dirname(dirname(fileURLToPath(import.meta.url))) : resolve(process.argv[rootFlag + 1]);
 const src = join(projectRoot, "src");
 
 const posix = (path) => path.split("\\").join("/");

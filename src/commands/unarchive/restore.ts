@@ -26,9 +26,10 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { SNAPSHOT_DIR } from "../../core/staging/snapshot.js";
 import { planWrite, sha256, type PlannedWrite } from "../../core/staging/writes.js";
 import { readManifest, RestoreFailure } from "./manifest.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function unarchiveLocked(
-  docsDir: string,
+  docsDir: DocsDir,
   featureId: string,
   json: boolean,
   force: boolean,

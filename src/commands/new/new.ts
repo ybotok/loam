@@ -1,21 +1,19 @@
 import type { Command } from "commander";
-import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
-import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
+import { commitScaffold } from "./commit.js";
 import { join } from "node:path";
 import { loadConfig } from "../../core/envelope/config.js";
-import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../../core/kernel/ids/service.js";
+import { type FeatureId, parseFeatureId } from "../../core/kernel/ids/feature.js";
+import { parseServiceIds } from "../../core/kernel/ids/service.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../../core/kernel/path-safety.js";
-import { featureIdFromDirName, nearestIds, type FeatureEntry } from "../../core/repo/entries.js";
+import { featureIdFromDirName, nearestIds } from "../../core/repo/entries.js";
 import { featuresDir } from "../../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { listServices, resolveFeature } from "../../core/repo/repo.js";
+import { listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
 import { sayRecovered } from "../policy/format.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import {
   archSpecTemplate,
   deltaTemplate,
@@ -47,23 +45,31 @@ export function registerNew(program: Command): void {
     .action(async (featureId: string, opts: NewOptions) => {
       const json = opts.json === true;
 
-      const dirName = featureDirName(featureId, opts.title);
+      // The grammar's verdict arrives as the brand: `featureDirName` demands
+      // a FeatureId, so an argv string cannot reach the directory derivation
+      // without passing through this parse — the producer the brand was
+      // missing while `isFeatureId` narrowed to plain string.
+      const parsedId = parseFeatureId(featureId, "feature id");
+      if (!parsedId.ok) {
+        return fail(json, "invalid-option", parsedId.problem);
+      }
+      const dirName = featureDirName(parsedId.id, opts.title);
       // The round-trip is checked beside the grammar, not inside it: the
       // grammar is a fact about the id, while `featureIdFromDirName` depends on
       // the TITLE this command is about to slug into the directory name. Only
       // `new` creates that directory, so only `new` owes that second half.
-      if (!isFeatureId(featureId) || featureIdFromDirName(dirName) !== featureId) {
+      if (featureIdFromDirName(dirName) !== featureId) {
         return fail(
           json,
           "invalid-option",
-          `'${featureId}' is not a usable feature id. ${FEATURE_ID_RULE}`,
+          `'${featureId}' does not survive the directory round-trip with this title.`,
         );
       }
 
       // Service ids are validated BEFORE the config is even loaded, and long
       // before anything is written: every one of them is interpolated into
       // `specs/<id>/` under the new feature directory, so `--touches ../../x`
-      // was a writer pointed outside the docs repo. One grammar (core/kernel/ids.ts),
+      // was a writer pointed outside the docs repo. One grammar (core/kernel/ids/service.ts),
       // the same one adopt/init/vouch refuse on, so a service that is legal to
       // create is legal to name here and nowhere the two disagree.
       // The LIST, not each item: a loop narrows the element and leaves the
@@ -142,67 +148,26 @@ export function registerNew(program: Command): void {
         writes.push({ path, content, exclusive: true });
       }
 
-      // The commit window holds the docs lock: two `new`s for one id serialise
-      // into a stable already-exists, and a predecessor's interrupted commit
-      // is rolled forward (or refused) before this one stages anything.
-      let releaseLock: () => Promise<void>;
-      try {
-        releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-      } catch (err) {
-        if (err instanceof DocsBusyError) return fail(json, "docs-busy", err.message);
-        throw err;
-      }
-      let recovered: CommitRecovery | null = null;
-      try {
-        try {
-          recovered = await recoverInterruptedCommit(docsDir);
-        } catch (err) {
-          if (!(err instanceof InterruptedCommitError)) throw err;
-          return fail(json, "commit-interrupted", err.message);
-        }
-        // The one existence check, UNDER the lock and AFTER recovery: two
-        // racing runs serialise on it, and a recovered half-scaffold has been
-        // completed by the recovery above, so this refusal is truthful.
-        let existing: FeatureEntry | null;
-        try {
-          existing = await resolveFeature(docsDir, featureId, "include");
-        } catch (err) {
-          // The gate above already refused both broken states, so reaching
-          // here means the docs repo went away between that check and this
-          // read. Same breach, same two codes — the alternative is a stack
-          // trace under `internal` that names neither.
-          if (!(err instanceof DocsRepoUnavailableError)) throw err;
-          reportDocsRepoError(json, err);
+      const committed = await commitScaffold(docsDir, featureId, writes);
+      if (!committed.ok) {
+        if ("repoGone" in committed) {
+          reportDocsRepoError(json, committed.repoGone);
           return;
         }
-        if (existing) {
+        if (committed.code === "already-exists") {
           // After a recovery the refusal must SAY the repair happened: doctor
           // told the operator to re-run this exact command, and "already
           // exists" alone reads as the fix having failed.
           return fail(
             json,
             "already-exists",
-            `Feature '${featureId}' already exists at ${repoPath(docsDir, existing.dir)}.` +
-              (recovered === null ? "" : ` (${sayRecovered(recovered)} The scaffold is complete.)`),
+            `Feature '${featureId}' already exists at ${repoPath(docsDir, committed.existing?.dir ?? dir)}.` +
+              (committed.recovered === null ? "" : ` (${sayRecovered(committed.recovered)} The scaffold is complete.)`),
           );
         }
-        const staged = await stageWrites(writes);
-        const committed = await commitStaged(
-          { root: docsDir, command: "new", rerun: `loam new ${featureId}`, target: featureId },
-          staged,
-          "scaffolded",
-        );
-        if (!committed.ok) {
-          // A lost exclusive-create race IS the feature existing: the other
-          // `new` won, and this refusal is the same stable answer the re-check
-          // above gives when it sees the winner first.
-          return committed.raced
-            ? fail(json, "already-exists", `Feature '${featureId}' already exists at ${repoPath(docsDir, dir)}.`)
-            : fail(json, committed.code, committed.message);
-        }
-      } finally {
-        await releaseLock();
+        return fail(json, committed.code, committed.message);
       }
+      const recovered = committed.recovered;
       const written = writes.map((w) => repoPath(docsDir, w.path));
 
       const notes = await unknownServiceNotes(docsDir, touched);
@@ -249,7 +214,7 @@ function collect(value: string, previous: string[]): string[] {
  * adopted next week is legitimate — but the near-miss is spelled out, because
  * `order-api` vs `orders-api` is exactly the pair a person cannot see.
  */
-async function unknownServiceNotes(docsDir: string, touched: string[]): Promise<string[]> {
+async function unknownServiceNotes(docsDir: DocsDir, touched: string[]): Promise<string[]> {
   if (touched.length === 0) return [];
   let known: string[];
   try {
@@ -278,7 +243,7 @@ async function unknownServiceNotes(docsDir: string, touched: string[]): Promise<
 /* Naming                                                              */
 /* ------------------------------------------------------------------ */
 
-function featureDirName(featureId: string, title: string | undefined): string {
+function featureDirName(featureId: FeatureId, title: string | undefined): string {
   const slug = slugify(title ?? "");
   return slug ? `${featureId}-${slug}` : featureId;
 }

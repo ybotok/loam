@@ -27,6 +27,7 @@ import { fullyVerified, verificationState } from "../verification.js";
 import { featureArtifacts } from "./artifacts.js";
 import { featureNext, unshippable } from "./next.js";
 import { type FeatureState } from "./state.js";
+import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
  * Everything about one feature in flight. `service` narrows the per-service
@@ -35,7 +36,7 @@ import { type FeatureState } from "./state.js";
  * services exist would read as a feature that touches exactly one.
  */
 export async function featureStatus(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   opts: { service?: string; boundService?: string; context?: FleetContext } = {},
 ): Promise<FeatureStatusReport> {
@@ -131,7 +132,7 @@ export async function featureStatus(
  * not severity's (issue.ts) and no consumer should re-derive it.
  */
 async function featureFindings(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   scans: DeltaScan[],
   context: FleetContext,

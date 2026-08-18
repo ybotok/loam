@@ -16,12 +16,13 @@ import { compareIds, type ServiceEntry } from "../repo/entries.js";
 import { servicePaths } from "../repo/paths.js";
 // Type-only, so it is erased and no runtime edge points back at the walk.
 import { type ExploreEdge, type ExploreReason, type ExploreService } from "./explore.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 interface DescribeRequest {
   id: string;
   reason: ExploreReason;
   entry: ServiceEntry | undefined;
-  docsDir: string;
+  docsDir: DocsDir;
   relationships: Rel[];
   svcOf: (id: string) => string;
   elements: Elem[];
@@ -105,7 +106,7 @@ export async function describe(req: DescribeRequest): Promise<ExploreService> {
  * codebase — and it happens only when somebody passes `--op`.
  */
 export async function operationOwner(
-  docsDir: string,
+  docsDir: DocsDir,
   entries: ServiceEntry[],
   op: string,
   context: FleetContext,

@@ -29,9 +29,10 @@ import { serializeRequirements } from "../../../core/document/spec.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { ArchiveFailure } from "./refusal.js";
 import { type Gated, type Plan } from "./state.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 export async function planSpecs(
-  config: { docsDir: string },
+  config: { docsDir: DocsDir },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,

@@ -17,9 +17,10 @@ import { landscapePath as landscapeFile, servicePaths } from "../../../core/repo
 import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";
 import { featurePaths } from "../../../core/repo/paths.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 export async function planLandscape(
-  config: { docsDir: string },
+  config: { docsDir: DocsDir },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,

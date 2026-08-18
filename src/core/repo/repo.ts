@@ -11,6 +11,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "../document/frontmatter.js";
 import type { FleetContext } from "../fleet-context.js";
+import { featureDirOf, type DocsDir, type FeatureDir } from "../kernel/ids/dirs.js";
 import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
 import type { Finding } from "../vocabulary/report.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
@@ -78,7 +79,7 @@ export async function countMarkdown(dir: string): Promise<number> {
 
 /** Services a feature carries a delta for, ordered — the subdirs of its specs/. */
 export async function featureSpecServices(
-  featureDir: string,
+  featureDir: FeatureDir,
   context?: FleetContext,
 ): Promise<RawServiceId[]> {
   if (context !== undefined) return context.featureSpecServices(featureDir);
@@ -86,7 +87,7 @@ export async function featureSpecServices(
 }
 
 /** Every service in the docs repo, ordered by id. */
-export async function listServices(docsDir: string, context?: FleetContext): Promise<ServiceEntry[]> {
+export async function listServices(docsDir: DocsDir, context?: FleetContext): Promise<ServiceEntry[]> {
   if (context !== undefined) return context.listServices(docsDir);
   requireDocsRepo(docsDir, ["ok"]);
   // Branded at the readdir, not at the entry: everything below this line —
@@ -151,7 +152,7 @@ export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
     }));
 }
 
-async function readFeature(dir: string, dirName: string, archived: boolean): Promise<FeatureEntry> {
+async function readFeature(dir: FeatureDir, dirName: string, archived: boolean): Promise<FeatureEntry> {
   const p = featurePaths(dir);
   return {
     id: featureIdFromDirName(dirName),
@@ -168,7 +169,7 @@ async function readFeature(dir: string, dirName: string, archived: boolean): Pro
  * both are asked for). `features/archive/` is the archive, never a feature.
  */
 export async function listFeatures(
-  docsDir: string,
+  docsDir: DocsDir,
   opts: { includeArchived?: boolean } = {},
   context?: FleetContext,
 ): Promise<FeatureEntry[]> {
@@ -179,12 +180,14 @@ export async function listFeatures(
   requireDocsRepo(docsDir, ["ok", "no-services"]);
   const root = featuresDir(docsDir);
   const active = (await subdirs(root)).filter((n) => n !== ARCHIVE_DIR);
-  const out = await Promise.all(active.map((n) => readFeature(join(root, n), n, false)));
+  // Branded at the join: the name came off this readdir, onto the features
+  // root it was listed under — the provenance `FeatureDir` records.
+  const out = await Promise.all(active.map((n) => readFeature(featureDirOf(join(root, n)), n, false)));
 
   if (opts.includeArchived) {
     const archiveRoot = join(root, ARCHIVE_DIR);
     const archived = await subdirs(archiveRoot);
-    out.push(...(await Promise.all(archived.map((n) => readFeature(join(archiveRoot, n), n, true)))));
+    out.push(...(await Promise.all(archived.map((n) => readFeature(featureDirOf(join(archiveRoot, n)), n, true)))));
   }
 
   return out.sort((a, b) => compareIds(a.id, b.id) || compareIds(a.dirName, b.dirName));
@@ -221,7 +224,7 @@ export type ArchivedPolicy = "exclude" | "include" | "only";
  * order this replaces; `ambiguousFeatureMessage` lists them for the caller.
  */
 export async function resolveFeature(
-  docsDir: string,
+  docsDir: DocsDir,
   arg: string,
   archived: ArchivedPolicy,
   context?: FleetContext,
@@ -235,7 +238,7 @@ export async function resolveFeature(
  * see the tie instead of inheriting the winner.
  */
 export async function featureCandidates(
-  docsDir: string,
+  docsDir: DocsDir,
   arg: string,
   archived: ArchivedPolicy,
   context?: FleetContext,
@@ -273,7 +276,7 @@ export function ambiguousFeatureMessage(arg: string, candidates: FeatureEntry[])
  * that asked, and the prose carries the diagnosis.
  */
 export async function missingFeatureMessage(
-  docsDir: string,
+  docsDir: DocsDir,
   arg: string,
   context?: FleetContext,
 ): Promise<string> {

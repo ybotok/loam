@@ -8,13 +8,14 @@
  * writer already knew.
  */
 import { type ErrorCode } from "../../core/envelope/json.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import type { CommitRecovery } from "../../core/staging/interrupted.js";
 import type { SkippedSource } from "../../core/provenance/walk.js";
 
 
 export interface VouchRequest {
-  docsDir: string;
+  docsDir: DocsDir;
   service: PathableService;
   /** The service's own repo — what `sources` resolve against. */
   repoDir: string;

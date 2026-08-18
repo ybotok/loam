@@ -46,7 +46,7 @@ export function registerDelta(program: Command): void {
 
       // The id grammar first, and on the RAW argument: `--service ../../etc`
       // reaches `featureSpecPaths` and reads from outside the feature directory.
-      // One grammar for the whole tool (core/kernel/ids.ts).
+      // One grammar for the whole tool (core/kernel/ids/service.ts).
       if (opts.service !== undefined) {
         try {
           assertServiceId(opts.service, "--service");

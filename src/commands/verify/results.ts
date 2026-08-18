@@ -25,10 +25,11 @@ export type ResultsRead =
  *
  * `repoDir` is set in federated mode, and there the report must be a file
  * INSIDE the repository being attested, resolved by the same rules as evidence
- * (`resolvePortableFileInside`): an attestation says "at this commit, in this
- * repository", and a report living somewhere else answers for a run nobody
- * standing here can find. The legacy all-at-once form binds to no repository at
- * all, so it takes the path as spelled — its looser contract, unchanged.
+ * (`portablePathOf` then `resolveInside`): an attestation says "at this
+ * commit, in this repository", and a report living somewhere else answers for
+ * a run nobody standing here can find. The legacy all-at-once form binds to no
+ * repository at all, so it takes the path as spelled — its looser contract,
+ * unchanged.
  *
  * Either way the bytes are digested and the file's mtime read, because loam
  * cannot prove a JSON file came from executing this commit and should stop

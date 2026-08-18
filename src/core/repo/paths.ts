@@ -4,16 +4,19 @@
  *
  * This is also the module that carries loam's one path guarantee.
  * `servicePaths(docsDir, service)` spells `<docsDir>/services/<service>/`, so
- * `service` is caller-controlled path input, and `node:path` cannot help:
+ * both parts are caller-controlled path input, and `node:path` cannot help:
  * `join(...paths: string[])` accepts every string there is. The guarantee IS
- * the `PathableService` parameter and nothing else: a name whose provenance is
- * the repository, unconstructible from document text (kernel/ids.ts holds the
- * only casts), so an unchecked name at this call site does not compile. Code
- * that spells `services/<id>/` with a bare join is outside the guarantee —
- * `commands/new.ts` and the openspec migrator both do, held instead by
- * `resolveInside` at the write.
+ * the parameter brands and nothing else — `PathableService` for the id (a name
+ * whose provenance is the repository, unconstructible from document text) and
+ * `DocsDir`/`FeatureDir` for the roots (a resolved config or validated
+ * `--docs`; a directory an enumeration read) — the `kernel/ids/` package holds
+ * the only casts, so an unchecked value at these call sites does not compile.
+ * Code that spells `services/<id>/` or a feature layout with a bare join is
+ * outside the guarantee — `commands/new.ts` and the openspec migrator both do,
+ * held instead by `resolveInside` at the write.
  */
 import { join } from "node:path";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import type { PathableService } from "../kernel/ids/service.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
@@ -36,7 +39,7 @@ export interface ServicePaths {
   adrsDir: string;
 }
 
-export function servicePaths(docsDir: string, service: PathableService): ServicePaths {
+export function servicePaths(docsDir: DocsDir, service: PathableService): ServicePaths {
   const dir = join(docsDir, "services", service);
   return {
     dir,
@@ -72,7 +75,7 @@ export interface FeaturePaths {
   adrsDir: string;
 }
 
-export function featurePaths(featureDir: string): FeaturePaths {
+export function featurePaths(featureDir: FeatureDir): FeaturePaths {
   return {
     dir: featureDir,
     intent: join(featureDir, "intent.md"),
@@ -89,7 +92,7 @@ export interface FeatureSpecPaths {
   openapi: string;
 }
 
-export function featureSpecPaths(featureDir: string, service: string): FeatureSpecPaths {
+export function featureSpecPaths(featureDir: FeatureDir, service: PathableService): FeatureSpecPaths {
   const dir = join(featureDir, "specs", service);
   return {
     dir,
@@ -99,16 +102,16 @@ export function featureSpecPaths(featureDir: string, service: string): FeatureSp
   };
 }
 
-export function landscapePath(docsDir: string): string {
+export function landscapePath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", "landscape.likec4");
 }
 
 /** The fleet's authorization vocabulary — beside the fleet map, for the same reason. */
-export function permissionsPath(docsDir: string): string {
+export function permissionsPath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", "permissions.yaml");
 }
 
-export function featuresDir(docsDir: string): string {
+export function featuresDir(docsDir: DocsDir): string {
   return join(docsDir, "features");
 }
 
@@ -128,7 +131,7 @@ export function featuresDir(docsDir: string): string {
  */
 export const AGENTS_FILENAME = "AGENTS.md";
 
-export function agentsPath(docsDir: string): string {
+export function agentsPath(docsDir: DocsDir): string {
   return join(docsDir, AGENTS_FILENAME);
 }
 
@@ -140,6 +143,6 @@ export function agentsPath(docsDir: string): string {
  * `features/archive/…` strings in refusal PROSE are not this path — they are
  * what a reader types into `ls`, and they stay spelled out.
  */
-export function archiveDir(docsDir: string): string {
+export function archiveDir(docsDir: DocsDir): string {
   return join(featuresDir(docsDir), ARCHIVE_DIR);
 }

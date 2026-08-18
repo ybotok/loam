@@ -222,7 +222,7 @@ npm run setup              # or: npm ci && npm run build
 npm run dev -- --help      # run the CLI from source
 npm run lint
 npm run typecheck
-npm run arch:graph          # package-level dependency graph stays acyclic
+npm run arch:check          # package-level dependency graph stays acyclic
 npm test                   # vitest
 npm run test:coverage      # full src/**/*.ts coverage with enforced thresholds
 npm run test:package       # clean, pack, install the tarball, run its loam binary

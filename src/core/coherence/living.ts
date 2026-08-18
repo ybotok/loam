@@ -19,6 +19,7 @@ import type { Finding } from "../vocabulary/report.js";
 import { featurePaths, landscapePath, servicePaths, SPEC_AXES } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { featureSpecServices, listServices } from "../repo/repo.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import {
   documentConflictFinding,
   landscapeConflictFinding,
@@ -53,8 +54,8 @@ import {
  * takes the same position), where enumerating is a refusal, not an answer.
  */
 export async function unknownDeltaServices(
-  docsDir: string,
-  featureDir: string,
+  docsDir: DocsDir,
+  featureDir: FeatureDir,
   featureId: string,
   loaded: { preloadedDelta?: LoadedDoc; context?: FleetContext } = {},
 ): Promise<Finding[]> {
@@ -129,7 +130,7 @@ export function deltaServiceUnknownFinding(svc: string, knownIds: string[]): Fin
  * because the name itself is what becomes the path.
  */
 export async function invalidSpecServiceFindings(
-  featureDir: string,
+  featureDir: FeatureDir,
   context?: FleetContext,
 ): Promise<Finding[]> {
   const out: Finding[] = [];
@@ -167,7 +168,7 @@ export async function invalidSpecServiceFindings(
  * the same thing later.
  */
 export async function livingMergeConflicts(
-  docsDir: string,
+  docsDir: DocsDir,
   services: readonly PathableService[],
   context?: FleetContext,
 ): Promise<Finding[]> {

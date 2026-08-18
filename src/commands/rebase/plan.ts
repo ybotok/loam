@@ -17,6 +17,7 @@ import { requirementDigest, type Requirement } from "../../core/document/spec.js
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
 import { pinOpenapiOperations, type OpenapiPinPlan } from "../../core/openapi/merge/pin.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export type PinStatus =
   /** It had none and now has one. */
@@ -64,7 +65,7 @@ export interface AxisPlan {
 
 /** Pin every MODIFIED/REMOVED requirement in one delta file against one living document. */
 export async function planAxis(
-  docsDir: string,
+  docsDir: DocsDir,
   service: PathableService,
   axis: SpecAxis,
   specPath: string,
@@ -126,7 +127,7 @@ export async function planAxis(
  * `unresolved` and correct: there is no living version of an operation at a
  * path the contract does not serve yet.
  */
-export async function planOpenapi(docsDir: string, service: PathableService, openapiPath: string): Promise<AxisPlan> {
+export async function planOpenapi(docsDir: DocsDir, service: PathableService, openapiPath: string): Promise<AxisPlan> {
   const livingPath = servicePaths(docsDir, service).openapi;
   // Decoded, not `readFile(…, "utf8")`, for the requirement axes' reason: a
   // contract read with U+FFFD substituted in defines no operation loam can

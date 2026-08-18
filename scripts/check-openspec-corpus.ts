@@ -56,7 +56,9 @@ if (!checkoutArg) {
 
 const checkout = realpathSync(resolve(checkoutArg));
 function git(...args: string[]): string {
-  return execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8" }).trim();
+  // Bounded like every other git question in the tree: a corpus checkout on a
+  // stalled filesystem must fail the gate loudly, not hang the weekly job.
+  return execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8", timeout: 60_000, maxBuffer: 64 * 1024 * 1024 }).trim();
 }
 
 const head = git("rev-parse", "HEAD");

@@ -21,6 +21,7 @@ import { type FeatureEntry } from "../repo/entries.js";
 import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "../repo/paths.js";
 import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
 import type { Requirement } from "../document/spec.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 export type DependencyReason =
   | {
@@ -143,7 +144,7 @@ export function addOwner<T>(index: Map<string, Owners<T>>, key: string, at: T, f
 }
 
 export async function readFacts(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   context: FleetContext,
 ): Promise<FeatureFacts> {

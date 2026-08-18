@@ -29,6 +29,7 @@ import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
 import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
 import { parseRequirements } from "./document/parse.js";
 import { type Requirement } from "./document/spec.js";
+import type { DocsDir, FeatureDir } from "./kernel/ids/dirs.js";
 
 export interface FleetContextStats {
   serviceEnumerations: number;
@@ -146,7 +147,7 @@ export class FleetContext {
     return { ...this.counts };
   }
 
-  listServices(docsDir: string): Promise<ServiceEntry[]> {
+  listServices(docsDir: DocsDir): Promise<ServiceEntry[]> {
     const k = key(docsDir);
     let pending = this.services.get(k);
     if (pending === undefined) {
@@ -157,7 +158,7 @@ export class FleetContext {
     return pending;
   }
 
-  listFeatures(docsDir: string, opts: { includeArchived?: boolean } = {}): Promise<FeatureEntry[]> {
+  listFeatures(docsDir: DocsDir, opts: { includeArchived?: boolean } = {}): Promise<FeatureEntry[]> {
     const k = `${key(docsDir)}\0${opts.includeArchived === true ? "all" : "active"}`;
     let pending = this.features.get(k);
     if (pending === undefined) {
@@ -178,7 +179,7 @@ export class FleetContext {
     return pending;
   }
 
-  featureSpecServices(featureDir: string): Promise<RawServiceId[]> {
+  featureSpecServices(featureDir: FeatureDir): Promise<RawServiceId[]> {
     const k = key(featureDir);
     let pending = this.featureServices.get(k);
     if (pending === undefined) {

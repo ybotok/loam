@@ -77,11 +77,27 @@ export function resolveInside(root: string, candidate: string, label = "path"): 
 }
 
 /**
+ * A relative file path in the portable spelling — forward slashes, no
+ * redundant components. The brand's provenance is `portablePathOf` below: the
+ * spelling checks there are the only way to construct one, so a value carrying
+ * it has demonstrably passed them. Deliberately thin: it says nothing about
+ * containment (that stays `resolveInside`'s question, asked per root), and it
+ * is consumed by `resolvePortableInside` below — the one signature that
+ * demands it — and every boundary (verify's evidence, unarchive's manifests)
+ * reaches it through `resolvePortableFileInside`, the pair's one spelling.
+ * The staging manifests keep their plain strings until the writer work that
+ * owns those formats re-keys them.
+ */
+declare const portable: unique symbol;
+export type PortablePath = string & { readonly [portable]: true };
+
+/**
  * Snapshot manifests are portable data, so their path spelling is stricter
  * than an interactive path: forward slashes, no redundant components, and a
- * file (not directory) name at the end.
+ * file (not directory) name at the end. The one constructor of `PortablePath`,
+ * because these checks are what the brand asserts.
  */
-export function resolvePortableFileInside(root: string, candidate: string, label = "path"): string {
+export function portablePathOf(candidate: string, label = "path"): PortablePath {
   if (candidate.includes("\\")) {
     throw new UnsafePathError(candidate, `${label} must use forward slashes`);
   }
@@ -89,7 +105,22 @@ export function resolvePortableFileInside(root: string, candidate: string, label
   if (parts.some((part) => part === "" || part === "." || part === "..")) {
     throw new UnsafePathError(candidate, `${label} must be a canonical relative file path`);
   }
-  return resolveInside(root, candidate, label);
+  // The cast, on the line immediately after the checks that earn it.
+  return candidate as PortablePath;
+}
+
+/**
+ * Containment for a path that already EARNED the portable spelling — the one
+ * signature that demands the brand, so `PortablePath` has a consumer the
+ * compiler checks rather than a comment claiming the order of two calls.
+ */
+function resolvePortableInside(root: string, portable: PortablePath, label: string): string {
+  return resolveInside(root, portable, label);
+}
+
+/** The portable spelling checks, then `resolveInside`'s containment proof — the ONE spelling of the pair. */
+export function resolvePortableFileInside(root: string, candidate: string, label = "path"): string {
+  return resolvePortableInside(root, portablePathOf(candidate, label), label);
 }
 
 /**

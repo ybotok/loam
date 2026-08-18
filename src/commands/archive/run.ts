@@ -34,9 +34,10 @@ import { emptyPlan } from "./plan/state.js";
 import { issueJson, refuseJson } from "./plan/refusal.js";
 import { ArchiveFailure } from "./plan/refusal.js";
 import { printPlan } from "./plan/refusal.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function archiveLocked(
-  config: { docsDir: string },
+  config: { docsDir: DocsDir },
   featureId: string,
   opts: ArchiveOptions,
 ): Promise<void> {

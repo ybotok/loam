@@ -14,6 +14,7 @@ import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
 import type { ArtifactId, ArtifactState, ArtifactStatus, VerificationState } from "../report.js";
 import { verificationStatus } from "../verification.js";
+import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
  * Which artifact an error names.
@@ -68,7 +69,7 @@ export interface Grading {
 }
 
 export function featureArtifacts(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   services: readonly PathableService[],
   grading: Grading,
