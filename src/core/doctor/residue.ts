@@ -20,18 +20,25 @@ export function gradeWritePathResidue(
 ): void {
   if (residue.lock !== null) {
     const lockFile = join(docsDir, residue.lock.path);
+    // Three grades of one file. Held by a live process is a fact about right
+    // now — wait and re-run. Held by a dead process is damage: nothing will
+    // ever release it. And a lock that cannot NAME a holder — empty bytes from
+    // a crash between create and flush, or JSON nothing understands — is the
+    // same damage wearing a live lock's face: `breakStaleLock` rightly refuses
+    // to guess about it, so "wait" is advice that can never work, while every
+    // writer (archive, unarchive, rebase, verify --record) refuses `docs-busy`
+    // forever.
+    const unbreakable = residue.lock.stale || residue.lock.unreadable;
     findings.push({
-      // Held by a live process is a fact about right now — wait and re-run.
-      // Held by a process that no longer exists is damage: nothing will ever
-      // release it, and every archive and unarchive refuses `docs-busy` until
-      // somebody deletes it.
-      severity: residue.lock.stale ? "blocker" : "warning",
+      severity: unbreakable ? "blocker" : "warning",
       code: "doctor.docs-locked",
-      message: residue.lock.stale
-        ? `${residue.lock.path} is held by ${residue.lock.holder}, a process that no longer exists on this host — every \`loam archive\` and \`loam unarchive\` will refuse with \`docs-busy\` until it is gone.`
-        : `${residue.lock.path} is held by ${residue.lock.holder}; another archive or unarchive is running against this docs repo.`,
-      fix: residue.lock.stale
-        ? `Delete ${lockFile} — its holder is dead, so nothing is going to release it. Check \`loam doctor\` again afterwards for an interrupted commit.`
+      message: residue.lock.unreadable
+        ? `${residue.lock.path} exists but cannot be read as a lock record — no process can be identified as its holder, so nothing is ever going to release it, and every writing command refuses with \`docs-busy\` while it is there.`
+        : residue.lock.stale
+          ? `${residue.lock.path} is held by ${residue.lock.holder}, a process that no longer exists on this host — every writing command (\`loam archive\`, \`loam unarchive\`, \`loam rebase\`, \`loam verify --record\`) will refuse with \`docs-busy\` until it is gone.`
+          : `${residue.lock.path} is held by ${residue.lock.holder}; another loam command is writing this docs repo.`,
+      fix: unbreakable
+        ? `Delete ${lockFile} — ${residue.lock.unreadable ? "it names no holder, so nothing is going to release it" : "its holder is dead, so nothing is going to release it"}. Check \`loam doctor\` again afterwards for an interrupted commit.`
         : "Wait for it to finish and re-run; nothing is read or written while it is held.",
     });
   }

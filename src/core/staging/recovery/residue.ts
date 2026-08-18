@@ -13,14 +13,18 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
-import { DOCS_LOCK, describeLock, lockIsStale } from "../lock.js";
+import { DOCS_LOCK, lockResidue } from "../lock.js";
 import { TEMP_FILE_RE } from "../commit.js";
 import { readCommitIntent, COMMIT_INTENT, type CommitIntent } from "./intent.js";
 
 /** The four shapes an unfinished write leaves behind, each named by its cause. */
 export interface WritePathResidue {
-  /** A held `.loam-lock`, and whether its holder is a process that no longer exists on this host. */
-  lock: { path: string; holder: string; stale: boolean } | null;
+  /**
+   * A held `.loam-lock`; whether its holder is a process that no longer exists
+   * on this host; and whether the file cannot name a holder at all — in which
+   * case nothing will ever release it and `stale` is meaningless.
+   */
+  lock: { path: string; holder: string; stale: boolean; unreadable: boolean } | null;
   /** An interrupted commit's intent record — present means a commit was in flight when something killed it. */
   intent: CommitIntent | null;
   /** True when `.loam-commit` exists but cannot be parsed: the worst case, because nothing can grade it. */
@@ -31,10 +35,13 @@ export interface WritePathResidue {
 
 export async function scanWritePathResidue(docsDir: string): Promise<WritePathResidue> {
   const lockPath = join(docsDir, DOCS_LOCK);
-  let lock: WritePathResidue["lock"] = null;
-  if (existsSync(lockPath)) {
-    lock = { path: repoPath(docsDir, lockPath), holder: await describeLock(lockPath), stale: await lockIsStale(lockPath) };
-  }
+  // One read decides everything about the lock. An exists-then-describe-then-
+  // grade sequence read the file up to four times, and a lock released between
+  // reads — the ordinary sub-second commit window of a healthy archive — could
+  // be reported in a state no single moment ever had.
+  const residue = await lockResidue(lockPath);
+  const lock: WritePathResidue["lock"] =
+    residue === null ? null : { path: repoPath(docsDir, lockPath), ...residue };
   const intent = await readCommitIntent(docsDir);
   return {
     lock,

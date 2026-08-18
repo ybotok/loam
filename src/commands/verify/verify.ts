@@ -68,8 +68,13 @@ export function registerVerify(program: Command): void {
       // Before the lock, because the lock is a file INSIDE the docs repo: a
       // `docsDir` pointing at nothing used to surface as the lock file's own
       // ENOENT — an `internal` where the read side of this same command names
-      // the misconfiguration. One gate, both modes, and the lock is only ever
-      // created inside a directory that is a docs repo.
+      // the misconfiguration. "docs", not "services", in BOTH modes — and that
+      // is a pinned contract, not looseness: the legacy all-at-once form
+      // records against a features-only docs repo with no `services/` at all,
+      // and it has always exited 0 there. The cost is real and accepted: a
+      // typo'd `docsDir` pointing at some existing non-docs directory gets a
+      // `.loam-lock` created and removed inside it. The gate above only
+      // guarantees the directory exists.
       if (!docsRepoReady(json, docsDir, "docs")) return;
 
       // A record is a merge over the docs repo, so recording takes the docs
@@ -160,8 +165,7 @@ export function registerVerify(program: Command): void {
             {
               service: opts.service ?? config.service,
               repoDir: config.root ?? process.cwd(),
-              previous: recorded,
-              preImage: existing.state === "ok" ? existing.raw : null,
+              previous: existing.state === "ok" ? { verification: existing.verification, raw: existing.raw } : null,
             },
             opts,
           );

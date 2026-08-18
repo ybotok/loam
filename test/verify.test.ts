@@ -33,7 +33,7 @@
  */
 import { describe, expect, it, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { chmod, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
@@ -49,11 +49,7 @@ import {
   type Project,
   type RunResult,
 } from "./helpers/harness.js";
-
-const FEAT = "FEAT-1";
-const DIR = "features/FEAT-1-split";
-const RECORD = `${DIR}/verification.yaml`;
-const SPLIT = "payment-split-service";
+import { DIR, FEAT, RECORD, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -1165,25 +1161,6 @@ describe("the machine contract", () => {
 /* ------------------------------------------------------------------ */
 /* Federated, commit-bound service attestations                        */
 /* ------------------------------------------------------------------ */
-
-async function serviceRepo(p: Project, service: string, name = service): Promise<string> {
-  const repo = name === "primary" ? p.workDir : join(dirname(p.workDir), name);
-  await mkdir(repo, { recursive: true });
-  await writeFile(
-    join(repo, "loam.json"),
-    JSON.stringify({ docsDir: p.docsDir, service }, null, 2) + "\n",
-    "utf8",
-  );
-  await writeFile(join(repo, "proof.ts"), "export const proof = true;\n// implementation evidence\n", "utf8");
-  execFileSync("git", ["init", "-q"], { cwd: repo });
-  execFileSync("git", ["add", "loam.json", "proof.ts"], { cwd: repo });
-  execFileSync(
-    "git",
-    ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", "fixture"],
-    { cwd: repo },
-  );
-  return repo;
-}
 
 async function recordService(
   repo: string,

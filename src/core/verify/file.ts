@@ -8,11 +8,12 @@
  * verification, a `summary` that disagrees with the claims below it — because
  * the file is data meant to survive without loam, and anything may have edited
  * it since. Putting the rendered bytes ON DISK is a separate concern with its
- * own failure modes (locks, races, kills mid-write) and lives in
- * `store/commit.ts`; nothing here touches the filesystem except to read.
+ * own failure modes: races and kills mid-write live in `store/commit.ts`, and
+ * the lock that serialises writers is taken by `commands/verify/verify.ts`
+ * before this module's authoritative read. Nothing here touches the
+ * filesystem except to read.
  */
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { parse, stringify } from "yaml";
 import { isRecord } from "../kernel/records.js";
 import { VERDICTS } from "./answers.js";
@@ -89,11 +90,36 @@ export type VerificationRead =
 
 export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
   const path = verificationPath(featureDir);
-  if (!existsSync(path)) return { state: "absent" };
   let raw: Buffer;
   try {
     raw = await readFile(path);
   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // ENOENT is "absent" — except from a symlink whose target is gone, which
+      // `existsSync` used to fold into the same answer. That mislabel was a
+      // trap: the read said "no record" while the commit's exclusive link(2)
+      // saw the link itself and refused EEXIST, so every `--record` answered
+      // `record-raced` with advice (re-run) that could never work. The lstat
+      // must CONFIRM the link before the message asserts one: a real file can
+      // also appear between the two calls, and telling its owner to "remove
+      // the link" would delete a valid record.
+      let entry;
+      try {
+        entry = await lstat(path);
+      } catch {
+        return { state: "absent" };
+      }
+      if (entry.isSymbolicLink()) {
+        return {
+          state: "unreadable",
+          reason: "it is a symlink whose target does not exist — replace the link with a real record, or remove it",
+        };
+      }
+      return {
+        state: "unreadable",
+        reason: "it appeared while being read — another writer is landing; re-run",
+      };
+    }
     return { state: "unreadable", reason: err instanceof Error ? err.message : String(err) };
   }
   let doc: unknown;
@@ -136,6 +162,13 @@ function summaryDisagreement(v: Verification): string | null {
   const t = tallyAnswers(v.claims);
   const unanswered = v.summary.unanswered ?? 0;
   const says: string[] = [];
+  // Before the arithmetic, because a negative count defeats it: `unanswered:
+  // -2` is never something loam wrote, and it is the one value that lets a
+  // hand-edited summary balance its own books — every comparison below then
+  // agrees, and a record contradicting its claims reported `verified`.
+  for (const [field, value] of Object.entries(v.summary)) {
+    if (typeof value === "number" && value < 0) says.push(`carries a negative count (${field}: ${value})`);
+  }
   if (v.summary.confirmed !== t.confirmed) {
     says.push(`says ${v.summary.confirmed} confirmed where claims[] holds ${t.confirmed}`);
   }
@@ -239,8 +272,15 @@ function isConsumedReport(v: unknown): boolean {
   );
 }
 
-/** A summary count: a finite number. YAML hands back strings for anything quoted. */
+/**
+ * A summary count: an integer. YAML hands back strings for anything quoted.
+ * Negativity is deliberately NOT checked here: a negative count is a summary
+ * that disagrees with the claims below it, and `summaryDisagreement` owns that
+ * refusal — failing the SHAPE check instead made the message list five keys
+ * that were all present, while the miscount branch one call away holds the
+ * advice the case actually needs.
+ */
 function isCount(v: unknown): v is number {
-  return typeof v === "number" && Number.isFinite(v);
+  return typeof v === "number" && Number.isInteger(v);
 }
 

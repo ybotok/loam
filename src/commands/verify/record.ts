@@ -52,14 +52,15 @@ export interface Attestor {
   /** Undefined in the legacy all-at-once form, which answers for every service. */
   service: string | undefined;
   repoDir: string;
-  previous: Verification | null;
   /**
-   * The exact bytes `previous` was parsed from — null when there was no record.
-   * They travel together because they ARE the same read: the merge consumes the
-   * parse, the commit compares the bytes, and a pre-image from any other read
-   * would let the commit vouch for a document the merge never saw.
+   * The existing record as ONE read — the parse the merge consumes and the
+   * exact bytes it was parsed from — or null when there was no record. One
+   * field rather than a `Verification` beside a `Buffer` because the two are
+   * meaningless apart: a pre-image from any other read would let the commit
+   * vouch for a document the merge never saw, and as separate fields that
+   * inconsistent pair is representable and compiles.
    */
-  preImage: Buffer | null;
+  previous: { verification: Verification; raw: Buffer } | null;
 }
 
 export async function record(
@@ -69,14 +70,14 @@ export async function record(
   opts: VerifyOptions,
 ): Promise<void> {
   const { docsDir, featureDir, json } = target;
-  const { service, repoDir, previous, preImage } = attestor;
+  const { service, repoDir, previous } = attestor;
   // The legacy all-at-once form answers the WHOLE checklist on one repository's
   // word and writes a schema-1 record — no attestations, no commits. Run over a
   // federated record it does not merge and it does not migrate: it erases every
   // other service's commit-bound attestation, and the erasure is invisible
   // afterwards because what replaces it is a well-formed, plausible record. So
   // it refuses, and names the repositories whose word is on the file.
-  const attested = previous?.schema === 2 ? (previous.attestations ?? []) : [];
+  const attested = previous?.verification.schema === 2 ? (previous.verification.attestations ?? []) : [];
   if (service === undefined && attested.length > 0) {
     const services = [...new Set(attested.map((a) => a.service))].sort();
     return fail(
@@ -178,14 +179,14 @@ export async function record(
       checklist,
       { service, recorded, commit: serviceCommit!, report: consumed },
       [...fromRunner, ...checked.answers],
-      previous,
+      previous?.verification ?? null,
     );
     verification = built.verification;
     discarded = built.discarded;
   }
   // Staged, compared against the locked read's bytes, swapped in by one
   // rename — see core/verify/store/commit.ts for what each refusal means.
-  const committed = await commitVerification(featureDir, verification, preImage);
+  const committed = await commitVerification(featureDir, verification, previous?.raw ?? null, docsDir);
   if (!committed.ok) return fail(json, committed.code, committed.message);
   const path = committed.path;
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");

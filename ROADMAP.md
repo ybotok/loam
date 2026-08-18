@@ -72,26 +72,39 @@ source of truth or the gate that is meant to protect it.
 
 ### P0 — atomic, locked, compare-and-swap verification records
 
-The federated verification record is assembled from a previously read value in
+The federated verification record used to be assembled from a previously read value in
 [src/commands/verify/record.ts](https://github.com/ybotok/loam/blob/main/src/commands/verify/record.ts) and
-ultimately written with a plain file write in
-[src/core/verify/file.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/file.ts). Two service
-runs can therefore read the same pre-image and let the last writer discard the other service's
-attestation; interruption can also leave the only record truncated. That is weaker than the additive,
-non-destructive record contract.
+written with a plain file write, so two service runs could read the same pre-image and let the last
+writer discard the other service's attestation, and an interruption could leave the only record
+truncated. That was weaker than the additive, non-destructive record contract.
 
-Required change:
+Required change, and where each landed:
 
-1. Acquire a docs-repository or feature-record lock before the authoritative read.
-2. Re-read under that lock, merge the service result, and retain unrelated service attestations through
-   [src/core/verify/build.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/build.ts).
-3. Stage the new bytes, compare the on-disk pre-image immediately before commit, and replace atomically.
-4. Reuse the proven primitives in
-   [src/core/staging/](https://github.com/ybotok/loam/tree/main/src/core/staging) where their
-   archive-specific assumptions do not leak; otherwise add a smaller single-file transaction with the
-   same guarantees.
-5. Map contention, stale pre-images, and recovery failures to stable, documented outcomes rather than
-   silently retrying or overwriting.
+1. ~~Acquire a docs-repository lock before the authoritative read~~ — done:
+   [src/commands/verify/verify.ts](https://github.com/ybotok/loam/blob/main/src/commands/verify/verify.ts)
+   takes the waiting form of the docs lock
+   ([src/core/staging/lock.ts](https://github.com/ybotok/loam/blob/main/src/core/staging/lock.ts)) before
+   the feature is even resolved.
+2. ~~Re-read under that lock, merge, retain unrelated attestations~~ — done: the locked read returns the
+   parse and its exact bytes as one value, and the merge in
+   [src/core/verify/build.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/build.ts) consumes
+   the parse while the commit compares the bytes.
+3. ~~Stage, compare the pre-image immediately before commit, replace atomically~~ — done:
+   [src/core/verify/store/commit.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/store/commit.ts).
+4. ~~Reuse the proven staging primitives~~ — done: the same `stageWrites`/`swapStaged`/`rollbackStaged`
+   vouch commits through, with the exclusive-create decision made from the held pre-image rather than
+   from the filesystem.
+5. ~~Map contention, stale pre-images, and recovery failures to stable outcomes~~ — done: `docs-busy`
+   (bounded wait, nothing read or written), `record-raced` (bytes changed under the merge; re-run),
+   `merge-failed` / `rollback-incomplete` with exactly the meanings archive gives them, and
+   `record-unreadable` for a record — or a dangling symlink where one should be — that cannot be read.
+
+What completing this item surfaced, fixed in the same change: the git calls the record path makes
+([src/commands/verify/results.ts](https://github.com/ybotok/loam/blob/main/src/commands/verify/results.ts))
+now carry a deadline and an output cap, because they run while the docs lock is held — a git blocked on
+a credential helper used to wedge every writer in the fleet behind a live pid nothing could break; and
+`doctor` grades a `.loam-lock` that cannot name its holder (an empty file from a crash between create
+and flush) as damage with a named fix, not as a live writer to wait out.
 
 Exit criteria:
 

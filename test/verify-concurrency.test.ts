@@ -16,32 +16,34 @@
  *    so a third-party edit between the locked read and the swap refuses with
  *    `record-raced` and the edit survives untouched;
  *  - a write killed between staging and swap leaves the OLD record whole and a
- *    temp file `doctor` names — never truncated YAML;
+ *    temp file `doctor` names — never truncated YAML. That one is pinned in
+ *    test/verify-record-faults.test.ts, over a temp `stageWrites` really made:
+ *    the copy here spelled the temp's name by hand and so kept passing whether
+ *    or not staging still wrote that shape;
  *  - the lock is released on every refusal path, and a holder that outlives
  *    the bounded wait is answered with `docs-busy`, nothing read or written.
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
+import {
+  answersFile,
+  DIR,
+  FEAT,
+  PAYMENT,
+  RECORD,
+  recordOnFile,
+  serviceClaims,
+  serviceRepo,
+  SPLIT,
+  spawnRecord,
+} from "./helpers/federated.js";
 import { acquireDocsLock, acquireDocsLockWaiting, DocsBusyError, DOCS_LOCK } from "../src/core/staging/lock.js";
 import { readVerificationState } from "../src/core/verify/file.js";
 import { commitVerification } from "../src/core/verify/store/commit.js";
-
-const FEAT = "FEAT-1";
-const DIR = "features/FEAT-1-split";
-const RECORD = `${DIR}/verification.yaml`;
-const SPLIT = "payment-split-service";
-const PAYMENT = "payment-service";
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const tsxBin = join(repoRoot, "node_modules", ".bin", "tsx");
-const cliEntry = join(repoRoot, "src", "cli.ts");
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -52,61 +54,6 @@ async function project(): Promise<Project> {
   const p = await makeProject(coherentFixture());
   cleanups.push(() => p.destroy());
   return p;
-}
-
-/** Same shape as verify-federation's: a service repo with a committed file to point evidence at. */
-async function serviceRepo(p: Project, service: string, name = service): Promise<string> {
-  const repo = join(dirname(p.workDir), name);
-  await mkdir(repo, { recursive: true });
-  await writeFile(join(repo, "loam.json"), JSON.stringify({ docsDir: p.docsDir, service }, null, 2) + "\n", "utf8");
-  await writeFile(join(repo, "proof.ts"), "export const proof = true;\n// implementation evidence\n", "utf8");
-  execFileSync("git", ["init", "-q"], { cwd: repo });
-  execFileSync("git", ["add", "loam.json", "proof.ts"], { cwd: repo });
-  execFileSync(
-    "git",
-    ["-c", "user.name=Loam Test", "-c", "user.email=loam@example.test", "commit", "-qm", "fixture"],
-    { cwd: repo },
-  );
-  return repo;
-}
-
-interface Claim {
-  id: string;
-  subject: string;
-}
-
-async function serviceClaims(p: Project, service: string): Promise<Claim[]> {
-  const res = await runLoam(p.workDir, "verify", FEAT, "--json");
-  expect(res.code, res.out).toBe(0);
-  return (JSON.parse(res.stdout).claims as Claim[]).filter((c) => c.subject === service);
-}
-
-async function answersFile(repo: string, claims: Claim[], evidence: string, name = "answers.json"): Promise<string> {
-  await writeFile(
-    join(repo, name),
-    JSON.stringify(claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence: [evidence] })), null, 2) + "\n",
-    "utf8",
-  );
-  return name;
-}
-
-/** A REAL process, not the in-process harness: the whole CLI entry, its own cwd, its own lock contention. */
-function spawnRecord(repo: string, service: string, answers: string): Promise<{ code: number; out: string }> {
-  return new Promise((resolve) => {
-    execFile(
-      tsxBin,
-      [cliEntry, "verify", FEAT, "--service", service, "--record", answers, "--json"],
-      { cwd: repo },
-      (err, stdout, stderr) => {
-        const code = err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-        resolve({ code, out: stdout + stderr });
-      },
-    );
-  });
-}
-
-async function recordOnFile(p: Project): Promise<Record<string, unknown>> {
-  return parse(await readFile(join(p.docsDir, RECORD), "utf8")) as Record<string, unknown>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +204,7 @@ describe("commitVerification", () => {
     const edited = state.raw.toString("utf8") + "# a human annotated this by hand\n";
     await writeFile(path, edited, "utf8");
 
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw);
+    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw, p.docsDir);
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.code).toBe("record-raced");
     // The edit is byte-identical on disk, and no staging residue sits beside it.
@@ -270,7 +217,7 @@ describe("commitVerification", () => {
     const p = await project();
     const state = await recordedState(p);
     // The caller read "absent" (preImage null) — but the file exists now.
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, null);
+    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, null, p.docsDir);
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.code).toBe("record-raced");
     expect((await readVerificationState(join(p.docsDir, DIR))).state).toBe("ok");
@@ -279,28 +226,11 @@ describe("commitVerification", () => {
   it("a matching pre-image commits atomically: new bytes, no temp residue", async () => {
     const p = await project();
     const state = await recordedState(p);
-    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw);
+    const outcome = await commitVerification(join(p.docsDir, DIR), state.verification, state.raw, p.docsDir);
     expect(outcome.ok).toBe(true);
     const after = await readVerificationState(join(p.docsDir, DIR));
     expect(after.state).toBe("ok");
     const dir = await readdir(join(p.docsDir, DIR));
     expect(dir.filter((n) => n.includes(".tmp"))).toEqual([]);
-  });
-
-  it("a write killed between staging and swap leaves the old record whole, and doctor names the temp", async () => {
-    const p = await project();
-    const state = await recordedState(p);
-    // The constructed post-crash state: staging's temp beside the target,
-    // target untouched — exactly what a SIGKILL after stageWrites leaves.
-    const temp = join(p.docsDir, DIR, ".verification.yaml.loam-99999-0-1234.tmp");
-    await writeFile(temp, "half-written staging bytes", "utf8");
-
-    const read = await readVerificationState(join(p.docsDir, DIR));
-    expect(read.state).toBe("ok");
-    if (read.state === "ok") expect(read.raw.equals(state.raw)).toBe(true);
-
-    const doctor = await runLoam(p.workDir, "doctor", "--json");
-    const writePath = JSON.parse(doctor.stdout).writePath as { temps: string[] };
-    expect(writePath.temps).toContain(`${DIR}/.verification.yaml.loam-99999-0-1234.tmp`);
   });
 });
