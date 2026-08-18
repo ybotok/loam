@@ -6,6 +6,7 @@ import { type Finding } from "../../../core/vocabulary/report.js";
 import { missingSources, patternSources, unsafeSources } from "../../../core/provenance/sources.js";
 import { emptySourcesMessage, expandSourceFiles } from "../../../core/provenance/stamp.js";
 import { UNVERIFIABLE } from "./vocabulary.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
  * The two things a `sources` list can be that `serviceProvenance` cannot say.
@@ -30,7 +31,7 @@ import { UNVERIFIABLE } from "./vocabulary.js";
  * definition vouch refuses with, under the label vouch uses.
  */
 export async function sourceScopeFindings(
-  docsDir: string,
+  docsDir: DocsDir,
   service: PathableService,
   repoDir: string | undefined,
 ): Promise<Finding[]> {

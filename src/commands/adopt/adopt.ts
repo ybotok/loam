@@ -10,6 +10,7 @@ import { listServices } from "../../core/repo/repo.js";
 import { serviceBrief } from "../../core/brief/brief.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { render } from "./render.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /**
  * `loam adopt` — the bootstrap flow, as a contract with an agent.
@@ -39,7 +40,7 @@ interface AdoptOptions {
  * `billing-service`, and an agent following the brief created it.
  */
 async function invocationWarnings(
-  docsDir: string,
+  docsDir: DocsDir,
   service: PathableService,
   bound: string | undefined,
 ): Promise<string[]> {

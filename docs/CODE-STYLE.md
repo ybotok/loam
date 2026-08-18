@@ -76,7 +76,9 @@ checking. A second construction path, or a cast anywhere outside the constructor
 type a comment that the compiler happens to typeset.
 
 **A cast in the constructor is the design; a cast anywhere else is a lie.** The single
-`as ServiceId` lives on the line immediately after the check that earns it.
+`as ServiceId` lives on the line immediately after the check that earns it — and `arch:check`'s
+brand-cast scan fails any cast to a branded type outside the constructor modules, so this rule is
+enforced, not remembered.
 
 **Unvalidated input keeps its own type.** `core/repo/repo.ts`'s `listServices` deliberately returns ids
 that *failed* validation, reporting the failure as a field, because `loam list` must show you the

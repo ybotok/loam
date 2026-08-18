@@ -12,6 +12,7 @@ import { elementService, loadFile, serviceResolver, type Elem } from "../c4/like
 import { landscapePath } from "../repo/paths.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
 import type { BriefTarget } from "./targets.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * The LikeC4 identifier the fleet map's element for a service conventionally
@@ -139,7 +140,7 @@ export interface LandscapeContext {
  * `adopt` runs there) leaves the resolver with bindings alone, which is what it
  * had before.
  */
-async function knownServices(docsDir: string): Promise<ReadonlySet<string>> {
+async function knownServices(docsDir: DocsDir): Promise<ReadonlySet<string>> {
   return new Set(await enumeratedServiceIds(docsDir));
 }
 
@@ -151,7 +152,7 @@ async function knownServices(docsDir: string): Promise<ReadonlySet<string>> {
  * to attach to them. A landscape that does not parse yields `modelled: null` —
  * "nothing models it" would be a claim about a document nobody could read.
  */
-export async function landscapeContext(docsDir: string, service: string): Promise<LandscapeContext> {
+export async function landscapeContext(docsDir: DocsDir, service: string): Promise<LandscapeContext> {
   const path = landscapePath(docsDir);
   const empty: LandscapeContext = {
     present: existsSync(path),

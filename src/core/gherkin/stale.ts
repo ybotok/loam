@@ -20,6 +20,7 @@ import { UnsafePathError } from "../kernel/path-safety.js";
 import { gherkinRoot, scenarioDigest } from "./stamp.js";
 import { axisLabel } from "./emit.js";
 import { parseStampedFeature, type StampedFeature } from "./read.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * The gherkin freshness chain, service-repo-scoped like `sources.*`: it needs
@@ -64,7 +65,7 @@ import { parseStampedFeature, type StampedFeature } from "./read.js";
  * exists and nothing disagrees.
  */
 export async function gherkinFindings(ctx: {
-  docsDir: string;
+  docsDir: DocsDir;
   service: PathableService;
   /** The service repo, when loam is standing in it. Undefined disables the chain, like sources.*. */
   repoDir?: string;
@@ -120,7 +121,9 @@ export async function gherkinFindings(ctx: {
 
   // The stamped side. Every stamped digest counts toward coverage — an
   // in-flight file whose scenario matches the living words IS a test for them.
-  const active = new Set((await listFeatures(ctx.docsDir, {}, ctx.fleet)).map((f) => f.id));
+  // `Set<string>`, not the ids' own brand: this set answers membership
+  // questions for tags read out of .feature files — document text.
+  const active = new Set<string>((await listFeatures(ctx.docsDir, {}, ctx.fleet)).map((f) => f.id));
   const stampedDigests = { business: new Set<string>(), arch: new Set<string>() };
   const parsed: Array<{ rel: string; axis: "business" | "arch"; file: StampedFeature }> = [];
   let stampedScenarios = 0;

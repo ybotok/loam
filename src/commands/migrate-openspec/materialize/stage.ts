@@ -16,6 +16,7 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { findConfigPath, parseConfig } from "../../../core/envelope/config.js";
+import { docsDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
@@ -65,11 +66,14 @@ async function assertOutsideLoamDocs(stage: string): Promise<void> {
  * bytes go through `decodeDocument`. Null is the conservative answer here: the
  * caller refuses to stage rather than accept a docsDir it cannot establish.
  */
-async function governingDocsDir(path: string): Promise<string | null> {
+async function governingDocsDir(path: string): Promise<DocsDir | null> {
   try {
-    return await canonicalForCreate(
+    // Re-branded after canonicalization: the path came out of `parseConfig`
+    // already resolved (a `DocsDir`), and `canonicalForCreate` only follows
+    // symlinks — same root, same provenance, canonical spelling.
+    return docsDirOf(await canonicalForCreate(
       parseConfig(decodeDocument(await readFile(path), path), dirname(path)).docsDir,
-    );
+    ));
   } catch {
     return null;
   }

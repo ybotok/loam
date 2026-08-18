@@ -27,6 +27,7 @@ import type { Finding } from "../vocabulary/report.js";
 import { featurePaths, servicePaths, SPEC_AXES } from "../repo/paths.js";
 import { sourceFindings } from "./sources.js";
 import { contentDigest } from "./stamp.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /** Fields every artifact is expected to carry, beyond its identity and status. */
 const EXPECTED = ["owner"] as const;
@@ -41,7 +42,7 @@ export interface ProvenanceOptions {
 }
 
 export async function serviceProvenance(
-  docsDir: string,
+  docsDir: DocsDir,
   service: PathableService,
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
@@ -78,7 +79,7 @@ export async function serviceProvenance(
 }
 
 export async function featureProvenance(
-  featureDir: string,
+  featureDir: FeatureDir,
   featureId: string,
 ): Promise<Finding[]> {
   const path = featurePaths(featureDir).intent;

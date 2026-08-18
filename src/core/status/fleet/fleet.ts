@@ -31,6 +31,7 @@ import {
 import { governedServices, scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
 import { fleetNext } from "./next.js";
+import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
  * The fleet view: how much of `services/` anyone has written down, every
@@ -40,7 +41,7 @@ import { fleetNext } from "./next.js";
  * `next[]` hands off to `loam status <FEAT>` for everything else.
  */
 export async function fleetStatus(
-  docsDir: string,
+  docsDir: DocsDir,
   opts: { service?: string; bound?: string; context?: FleetContext } = {},
 ): Promise<FleetStatusReport> {
   const context = opts.context ?? new FleetContext();
@@ -104,7 +105,7 @@ interface FleetView {
 }
 
 async function fleetFeature(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
   view: FleetView,
 ): Promise<FleetFeatureState> {

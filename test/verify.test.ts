@@ -1193,23 +1193,22 @@ function commitInto(repo: string, path: string): void {
 }
 
 /**
- * Put a `git` on PATH that dies of SIGKILL on every `diff` and passes anything
- * else through to the real one, and return the undo.
+ * Put a `git` on PATH that runs `body` instead of git for one subcommand and
+ * passes everything else through to the real one, and return the undo.
  *
- * The case under test is a child that never reaches an exit status — an OOM
- * kill, a CI timeout, a fork that failed. No exit code can stand in for it,
- * because the whole point is that there is no exit code: node reports
- * `error.code` as null rather than a number, which is the input that used to
- * slip past a `=== 1` test. `execFile` resolves the binary through PATH, so
- * shadowing it is the only way to make a real run produce that shape.
+ * `execFile` resolves the binary through PATH, so shadowing it is the only way
+ * to make a REAL run of the command produce a misbehaving git: the three cases
+ * below (a child that never reaches an exit status, one that never answers, one
+ * that answers past every bound) are all shapes no fixture can fake from
+ * inside loam.
  */
-async function killGitDiff(): Promise<() => Promise<void>> {
+async function shimGit(subcommand: string, body: string): Promise<() => Promise<void>> {
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   const bin = await makeTmpDir("loam-git-shim-");
   const shim = join(bin, "git");
   await writeFile(
     shim,
-    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "diff" ]; then kill -9 $$; fi\ndone\nexec "${real}" "$@"\n`,
+    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "${subcommand}" ]; then ${body}; fi\ndone\nexec "${real}" "$@"\n`,
     "utf8",
   );
   await chmod(shim, 0o755);
@@ -1221,6 +1220,34 @@ async function killGitDiff(): Promise<() => Promise<void>> {
     await rm(bin, { recursive: true, force: true });
   };
 }
+
+/**
+ * A `git diff` that dies of SIGKILL, and the undo.
+ *
+ * The case under test is a child that never reaches an exit status — an OOM
+ * kill, a CI timeout, a fork that failed. No exit code can stand in for it,
+ * because the whole point is that there is no exit code: node reports
+ * `error.code` as null rather than a number, which is the input that used to
+ * slip past a `=== 1` test.
+ */
+function killGitDiff(): Promise<() => Promise<void>> {
+  return shimGit("diff", "kill -9 $$");
+}
+
+/**
+ * A git that never answers: `exec` so the deadline's signal lands on the sleep
+ * itself rather than on a shell holding the pipes open — the test must measure
+ * loam's deadline, not node's teardown.
+ */
+const NEVER_ANSWERS = "exec sleep 60";
+
+/**
+ * A git that answers past every bound: 64 MiB is the declared cap, so 67.2 MB
+ * of newline-terminated lines crosses it while staying a plausible SOURCE file
+ * — one whose line 2 exists, so nothing but the cap can refuse the evidence
+ * that cites it. `yes | head -c` keeps generating it to well under a second.
+ */
+const ANSWERS_PAST_THE_CAP = "yes 'export const generated = true;' | head -c 67200000; exit 0";
 
 describe("federated service verification", () => {
   it("merges two service repositories, captures each commit, and stays partial until every claim is answered", async () => {
@@ -1355,6 +1382,73 @@ describe("federated service verification", () => {
     // The whole point: no attestation was written on an unchecked binding.
     expect(p.exists(RECORD)).toBe(false);
   });
+
+  it("refuses to attest when git never answers the evidence check, and stops waiting at its deadline", async () => {
+    // The hang this closes is not hypothetical: every git call in a
+    // `--record` run happens while the docs lock is HELD, so a `git diff`
+    // blocked on a credential-helper prompt used to wedge every archive,
+    // rebase and record in the fleet behind a live pid nothing may break.
+    // What must hold is both halves — the run refuses rather than accepting an
+    // unchecked binding, AND it gets there in the deadline's time rather than
+    // the hung git's.
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const local = (await claims(p)).filter((claim) => claim.subject === SPLIT);
+    const answers = await writeAnswers(
+      p,
+      local.map((claim) => ({ id: claim.id, verdict: "confirmed", evidence: ["proof.ts:2"] })),
+    );
+
+    const restore = await shimGit("diff", NEVER_ANSWERS);
+    const started = Date.now();
+    let result: RunResult;
+    try {
+      result = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
+    } finally {
+      await restore();
+    }
+    const elapsed = Date.now() - started;
+
+    expect(result.code).toBe(1);
+    const err = JSON.parse(result.stdout).error;
+    expect(err.code).toBe("answers-unevidenced");
+    // The deadline names itself: "Command failed: git …" would send the
+    // operator back to wait the same 10s again with no idea what to change.
+    expect(err.message).toContain("git did not answer within");
+    // The shim sleeps for a minute; anything near that means loam waited on it.
+    expect(elapsed).toBeLessThan(40_000);
+    expect(p.exists(RECORD)).toBe(false);
+  }, 90_000);
+
+  it("refuses to attest when git answers past the output cap, rather than buffering it", async () => {
+    // `git show` of the evidence blob is the one call whose answer is a whole
+    // file, so it is the one an unbounded buffer grows on. Past the cap the
+    // read is not an answer at all — and the run that hits it must refuse,
+    // because the alternative is an attestation minted from a blob loam never
+    // finished reading. The shim's flood is millions of lines, so line 2 of
+    // it resolves fine: nothing but the cap can produce this refusal.
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const local = (await claims(p)).filter((claim) => claim.subject === SPLIT);
+    const answers = await writeAnswers(
+      p,
+      local.map((claim) => ({ id: claim.id, verdict: "confirmed", evidence: ["proof.ts:2"] })),
+    );
+
+    // Only `show` floods: `diff --quiet` runs for real and answers "unchanged",
+    // so the refusal cannot be about the working tree.
+    const restore = await shimGit("show", ANSWERS_PAST_THE_CAP);
+    let result: RunResult;
+    try {
+      result = await runLoam(repo, "verify", FEAT, "--service", SPLIT, "--record", answers, "--json");
+    } finally {
+      await restore();
+    }
+
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout).error.code).toBe("answers-unevidenced");
+    expect(p.exists(RECORD)).toBe(false);
+  }, 90_000);
 
   it("prunes stale claims and their attestation when another service records against a changed checklist", async () => {
     const p = await project();

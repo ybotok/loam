@@ -229,7 +229,7 @@ describe("the arguments it substitutes have to be the things they stand for", ()
     expect(res.code).toBe(1);
     const err = JSON.parse(res.stdout).error;
     expect(err.code).toBe("invalid-option");
-    // the same sentence `loam adopt` would print — one grammar, in core/kernel/ids.ts
+    // the same sentence `loam adopt` would print — one grammar, in core/kernel/ids/service.ts
     expect(err.message).toContain("no slashes");
     expect(err.message).toContain("$1");
   });

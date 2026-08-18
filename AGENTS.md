@@ -46,8 +46,14 @@ that make a brand worth its annotations. Read it before splitting anything: the 
 Nothing is done until all of this is green:
 
 ```bash
-npm run lint && npm run typecheck && npm run arch:graph && npm test
+npm run lint && npm run typecheck && npm run arch:check && npm test
 ```
+
+`arch:check` is the single architecture gate: file-level import cycles, the package graph,
+the core→commands ban, the barrel ban, the console/process boundary (envelope/json.ts is the
+named exception), child-process timeout/maxBuffer policy, and brand-cast containment — each
+with a negative self-test in `test/arch-gate.test.ts`. `npm run arch:graph` remains available
+alone for move-a-module workflows.
 
 Coverage thresholds are enforced separately and must also hold:
 

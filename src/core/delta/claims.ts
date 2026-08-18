@@ -15,6 +15,7 @@ import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
 import { key, requirementKey, type DeltaScope } from "./scope.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** Which other feature claims this requirement, if any — one question per index. */
 export interface ClaimLookup {
@@ -26,7 +27,7 @@ export interface ClaimLookup {
  * A lookup that runs the fleet scan at most once, on the first question asked.
  * The common case never pays for it.
  */
-export function claimLookup(docsDir: string, featureId: string, context?: FleetContext): ClaimLookup {
+export function claimLookup(docsDir: DocsDir, featureId: string, context?: FleetContext): ClaimLookup {
   let inFlight: ActiveClaims | null = null;
   const ask = async (
     which: keyof ActiveClaims,
@@ -58,7 +59,7 @@ interface ActiveClaims {
 }
 
 async function activeClaims(
-  docsDir: string,
+  docsDir: DocsDir,
   exclude: string,
   context?: FleetContext,
 ): Promise<ActiveClaims> {

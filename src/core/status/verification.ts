@@ -11,6 +11,7 @@ import { readVerificationState } from "../verify/file.js";
 import { attestedNotice, tallyRecord, type VerificationVerdict, type VerifyNotice, verificationVerdict } from "../verify/record.js";
 import type { ArtifactState, ArtifactStatus, NextStep, VerificationState } from "./report.js";
 import type { DeltaScan } from "./scan.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * Is the done-check discharged? `verificationVerdict`'s answer and nobody
@@ -55,7 +56,7 @@ export function verificationStatus(v: VerificationState): ArtifactStatus {
  * mismatch, and calling it stale would slander every feature that shipped.
  */
 export async function verificationState(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
 ): Promise<{ state: VerificationState; notice: VerifyNotice | null }> {
   const empty = {

@@ -149,7 +149,10 @@ export function registerGherkin(program: Command): void {
         parseRequirements(decodeDocument(await readFile(path), path));
       try {
         if (feature !== null) {
-          const paths = featureSpecPaths(feature.dir, service);
+          // `config.service`, not `service`: the guard above proved they are
+          // the same id, and only the config's copy carries the load-time
+          // parse, so it is the pathable spelling — same as the else arm.
+          const paths = featureSpecPaths(feature.dir, config.service);
           for (const axis of SPEC_AXES) {
             const path = paths[axis.key];
             const reqs = existsSync(path)
@@ -191,7 +194,9 @@ export function registerGherkin(program: Command): void {
       // only its own emissions: stamped files carrying this feature's tag whose
       // file is no longer in the plan (a requirement renamed or dropped).
 
-      const activeIds = new Set((await listFeatures(config.docsDir)).map((f) => f.id));
+      // `Set<string>`, not the ids' own brand: this set answers membership
+      // questions for tags read out of .feature files — document text.
+      const activeIds = new Set<string>((await listFeatures(config.docsDir)).map((f) => f.id));
       let reconciled;
       try {
         reconciled = await reconcile(plan, { root, repoDir }, scope, activeIds);

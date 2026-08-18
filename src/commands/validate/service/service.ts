@@ -31,6 +31,7 @@ import { apiAxisFindings } from "./api.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events.js";
 import { archAxisFindings, readServiceSpecs } from "./specs.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
  * A service's absences are graded by what each one proves.
@@ -53,7 +54,7 @@ import { archAxisFindings, readServiceSpecs } from "./specs.js";
  * does exactly that by default, and vacuous is not the same as checked.
  */
 interface ServiceCheck {
-  docsDir: string;
+  docsDir: DocsDir;
   service: PathableService;
   /** The service's own repo, when loam is standing in it. Undefined from the docs repo. */
   repoDir?: string;
@@ -78,7 +79,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // validated? The resolver answers with DOCUMENT text and `service` is the
   // repository's own name — disjoint brands, so `===` between them is TS2367.
   // Widening to `string` is not a cast: membership questions cross the
-  // provenance line through plain-string containers by design (kernel/ids.ts),
+  // provenance line through plain-string containers by design (kernel/ids/service.ts),
   // and nothing pathable ever comes back out of a comparison.
   const me: string = service;
   const findings: Finding[] = [];

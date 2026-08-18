@@ -15,6 +15,7 @@ import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
 import { planAxis, planOpenapi, type PinOutcome } from "./plan.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /**
  * `loam rebase` — pin a feature's MODIFIED/REMOVED requirements to the living
@@ -67,7 +68,7 @@ export function registerRebase(program: Command): void {
       const config = loaded.config;
 
       // The id grammar on the RAW argument, before it reaches a path join —
-      // one grammar for the whole tool (core/kernel/ids.ts).
+      // one grammar for the whole tool (core/kernel/ids/service.ts).
       if (opts.service !== undefined) {
         try {
           assertServiceId(opts.service, "--service");
@@ -109,7 +110,7 @@ export function registerRebase(program: Command): void {
 }
 
 async function rebaseLocked(
-  docsDir: string,
+  docsDir: DocsDir,
   featureId: string,
   opts: RebaseOptions & { recovered: CommitRecovery | null },
 ): Promise<void> {

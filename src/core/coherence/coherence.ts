@@ -11,6 +11,7 @@ import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
 import { authoringIssues } from "./authoring/scaffold.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 
 /**
@@ -27,8 +28,8 @@ import { authoringIssues } from "./authoring/scaffold.js";
 
 /** How a caller names the feature being graded, and what it already has in hand. */
 export interface CoherenceRequest {
-  docsDir: string;
-  featureDir: string;
+  docsDir: DocsDir;
+  featureDir: FeatureDir;
   featureId: string;
   /** The delta LikeC4 document, when the caller already parsed it. */
   preloadedDelta?: LoadedDoc;

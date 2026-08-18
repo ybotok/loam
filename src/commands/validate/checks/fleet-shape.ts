@@ -33,6 +33,7 @@ import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { EXTERNAL_TAG } from "./vocabulary.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /** Tag marking ubiquitous infrastructure; the scaffolded fleet view excludes it. */
 export const PLATFORM_TAG = "platform";
@@ -163,7 +164,7 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
  * "not modelled yet".
  */
 export async function permissionFindings(
-  docsDir: string,
+  docsDir: DocsDir,
   services: ServiceEntry[],
   fleet: FleetContext | undefined,
 ): Promise<Finding[]> {

@@ -14,6 +14,7 @@ import { featureSpecPaths } from "../repo/paths.js";
 import { listFeatures } from "../repo/repo.js";
 import { operations } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /**
  * (service, operationId) pairs other ACTIVE features' openapi deltas define,
@@ -22,7 +23,7 @@ import type { FleetContext } from "../fleet-context.js";
  * feature wins a clash — one name to archive first is enough to make progress.
  */
 export async function activeOpAdditions(
-  docsDir: string,
+  docsDir: DocsDir,
   exclude: string,
   context?: FleetContext,
 ): Promise<Map<string, string>> {

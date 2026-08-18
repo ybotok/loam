@@ -18,6 +18,7 @@ import { parse } from "yaml";
 import type { FleetContext } from "../fleet-context.js";
 import type { PathableService } from "../kernel/ids/service.js";
 import { featureSpecPaths, servicePaths } from "../repo/paths.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /**
  * The path-item keys that hold operations. A path item also carries `summary`,
@@ -258,9 +259,9 @@ export async function operationIds(openapiPath: string, context?: FleetContext):
  * it.
  */
 export async function serviceOperationIds(
-  docsDir: string,
+  docsDir: DocsDir,
   service: PathableService,
-  featureDir?: string,
+  featureDir?: FeatureDir,
   context?: FleetContext,
 ): Promise<string[]> {
   const ids = new Set(

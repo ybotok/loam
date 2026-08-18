@@ -12,6 +12,7 @@ import { readAsyncapi } from "./read.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { PathableService } from "../kernel/ids/service.js";
 import { servicePaths } from "../repo/paths.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** Who produces what across the fleet, and whether that view is complete. */
 export interface FleetProducers {
@@ -49,7 +50,7 @@ export interface FleetProducers {
  * and a context memoizes these reads across the run.
  */
 export async function producersByMessage(
-  docsDir: string,
+  docsDir: DocsDir,
   services: readonly PathableService[],
   context?: FleetContext,
 ): Promise<FleetProducers> {

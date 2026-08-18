@@ -10,6 +10,7 @@
  * arbitrated.
  */
 import { existsSync } from "node:fs";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { fail } from "../../core/envelope/json.js";
 import { agentsPath } from "../../core/repo/paths.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -69,6 +70,6 @@ export function storedDocsDir(raw: string): string {
  * whole point: a single marker would make `init --docs ../srv` (a typo for
  * `../docs`) look like a join and adopt the service repo as the fleet.
  */
-export function isDocsRepo(dir: string): boolean {
+export function isDocsRepo(dir: DocsDir): boolean {
   return docsRepoState(dir).kind === "ok" && existsSync(agentsPath(dir));
 }

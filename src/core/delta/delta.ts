@@ -32,10 +32,11 @@ import { claimLookup } from "./claims.js";
 import { deltaDocumentIssues, livingDocumentIssues } from "./document.js";
 import { indexLiving, type DeltaScope } from "./scope.js";
 import { selectionIssues } from "./select.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 export async function deltaShapeIssues(
-  docsDir: string,
-  featureDir: string,
+  docsDir: DocsDir,
+  featureDir: FeatureDir,
   featureId: string,
   context?: FleetContext,
 ): Promise<Issue[]> {

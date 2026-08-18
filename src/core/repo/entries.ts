@@ -7,6 +7,8 @@
  * `compareIds` lives here for the same reason: sorting ids is what a renderer
  * does, and no renderer wants the enumeration.
  */
+import type { FeatureDir } from "../kernel/ids/dirs.js";
+import { rawFeatureId, type RawFeatureId } from "../kernel/ids/feature.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
 
 
@@ -60,11 +62,11 @@ export interface ServiceEntry {
 
 export interface FeatureEntry {
   /** Feature id, derived from the directory name (FEAT-1-split -> FEAT-1). */
-  id: string;
+  id: RawFeatureId;
   /** The directory name as it is on disk, slug and all. */
   dirName: string;
   /** Absolute path to the feature directory. */
-  dir: string;
+  dir: FeatureDir;
   archived: boolean;
   /** Services this feature carries a delta for, from specs/<svc>/. */
   services: RawServiceId[];
@@ -105,7 +107,7 @@ function tokenize(s: string): (string | number)[] {
  * these twenty-four lines. It belongs here because the ids being scored are
  * this module's ids — service directory names, feature ids — and because
  * `compareIds` right above is the tiebreak that keeps the list deterministic
- * when two candidates score equally. Not in `core/kernel/ids.ts`: `compareIds` lives
+ * when two candidates score equally. Not in `core/kernel/ids/`: `compareIds` lives
  * here and repo.ts imports ids.js, so putting it there would close a cycle.
  *
  * `arch.ts`'s `closeIds` looks similar and is not: substring and prefix, capped
@@ -142,7 +144,10 @@ function editDistance(a: string, b: string): number {
  * `<word>-<number>` head is its own id. Quirk: a dated slug keeps only its first
  * segment (`release-2024-01-x` -> `release-2024`) — ids are not meant to be dates.
  */
-export function featureIdFromDirName(dirName: string): string {
+export function featureIdFromDirName(dirName: string): RawFeatureId {
   const m = /^(.*?-\d+)(?:-|$)/.exec(dirName);
-  return m ? m[1]! : dirName;
+  // Constructed through the kernel helper, so this module holds no cast: the
+  // derived id's provenance is the repository — a directory the enumeration
+  // listed — which is exactly what `RawFeatureId` records.
+  return rawFeatureId(m ? m[1]! : dirName);
 }

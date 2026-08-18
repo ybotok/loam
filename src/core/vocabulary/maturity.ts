@@ -4,7 +4,7 @@
  *
  * This lived inside `commands/list.ts` while `list` was the only caller. It
  * moved here when `explore` needed the same answer, because the alternative is
- * the failure `core/kernel/ids.ts` already records for the service-id grammar: a
+ * the failure `core/kernel/ids/service.ts` already records for the service-id grammar: a
  * second, subtly different copy, so two commands grade the same directory
  * differently and nobody can tell which one is lying. The rung is a fleet dial
  * — `list` prints it per service and in a rollup, `explore` prints it for a

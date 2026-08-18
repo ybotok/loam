@@ -51,6 +51,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "arch:graph": "node scripts/package-graph.mjs",
+    "arch:check": "node scripts/arch-check.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:check:selftest": "node scripts/release-check.mjs --fixture-ready",

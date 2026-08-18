@@ -26,10 +26,11 @@ import {
   type ReqAt,
 } from "./facts.js";
 import { appendReason, compareReasons, dependencyFirstOrder, stronglyConnected } from "./graph.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** Derive the complete active-feature graph, or one feature and its transitive prerequisites. */
 export async function analyzeDependencies(
-  docsDir: string,
+  docsDir: DocsDir,
   featureId?: string,
   context = new FleetContext(),
 ): Promise<DependencyGraph> {
@@ -126,7 +127,10 @@ export async function analyzeDependencies(
     || compareIds(a.axis ?? "", b.axis ?? "")
     || compareIds(a.identity, b.identity));
 
-  let selected = new Set(features.map((feature) => feature.id));
+  // `Set<string>`, not the ids' own brand: `DependencyEdge.from`/`to` are plain
+  // strings, and the reassignment below rebuilds the set from a caller's
+  // argument.
+  let selected = new Set<string>(features.map((feature) => feature.id));
   if (featureId !== undefined) {
     selected = new Set<string>([featureId]);
     let changed = true;

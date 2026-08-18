@@ -29,6 +29,7 @@ import { type Maturity } from "../vocabulary/maturity.js";
 import { compareIds, nearestIds, type ServiceEntry } from "../repo/entries.js";
 import { landscapePath } from "../repo/paths.js";
 import { describe, newCommand, operationOwner } from "./describe.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** One end of a call the fleet map already draws. */
 export interface ExploreEdge {
@@ -127,7 +128,7 @@ export interface Exploration {
 }
 
 export interface ExploreRequest {
-  docsDir: string;
+  docsDir: DocsDir;
   /** Service ids to explore around. Checked at the command boundary. */
   services: ServiceEntry["id"][];
   /** operationIds to explore around; each resolves to the service that defines it. */

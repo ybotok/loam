@@ -17,17 +17,18 @@ No — but the tree does not show you why, and that gap is the real finding.
 - `src/commands/` owns the printing and the exit codes. Fifteen of the nineteen command modules are
   packages; four sit loose as files (`dependencies`, `doctor`, `explore`, `instructions`), and
   `commands/policy/` holds the two things in that directory which are not commands.
-- `src/core/` imports `commander` zero times, never imports `commands/`, and holds four `console`
-  calls in total — three in `core/envelope/json.ts`, which *is* the envelope emitter, and one stray
-  in `core/envelope/config.ts`.
-- `src/` is 214 modules in 58 packages, and its value-import graph has **zero cycles** at both the
-  file level and the package level (`npm run arch:graph`).
+- `src/core/` imports `commander` zero times, never imports `commands/`, and holds three
+  `console` calls in total — all in `core/envelope/json.ts`, which *is* the envelope emitter.
+- `src/` is 223 modules in 61 packages, and its value-import graph has **zero cycles** at both the
+  file level and the package level (`npm run arch:check` proves it, with the rest of this page's
+  boundary rules).
 
-So the layering is true. For a long time nothing in the repository expressed it: `docs/CODE-STYLE.md`
-stated it in prose, and no tool reads prose. The cost of "true but unexpressed" is not that a reader
-is confused — it is that the next violation lands silently, exactly as `config.ts`'s stray
-console did, and
-the eight import cycles the CHANGELOG records removing can come back the same way.
+So the layering is true, and since `scripts/arch-check.mjs` it is EXPRESSED: one command runs the
+file-cycle check, the package graph, the core→commands ban, the barrel ban, the console/process
+boundary, the child-process bounds and the brand-cast scan, each with a negative self-test in
+`test/arch-gate.test.ts`. The cost of "true but unexpressed" was never confusion — it was that the
+next violation landed silently, exactly as `config.ts`'s stray console once did, and the eight
+import cycles the CHANGELOG records removing could have come back the same way.
 
 This section used to end "folders would not close that gap; a lint flag and two greps would." The
 flag and the greps are still the sharper tools — but they check that the layering *holds*, and say
@@ -48,7 +49,7 @@ Inside `core/`, the DAG levels are a real division of labour:
 
 | Level | Modules | For |
 |---|---|---|
-| L0 | `ids` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
+| L0 | `ids/` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
 | L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
 | L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
 | L3 | `openapi/` `asyncapi/` `permissions/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
@@ -64,7 +65,7 @@ describes the tree rather than a plan for it.
 
 | Package | Holds | Depends on |
 |---|---|---|
-| `core/kernel/` | `ids` `path-safety` `records` `document-bytes` `concurrency` | nothing |
+| `core/kernel/` | `ids/` (service feature dirs) `path-safety` `records` `document-bytes` `concurrency` | nothing |
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
 | `core/envelope/` | `json` `config` `version` | kernel |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
@@ -142,16 +143,19 @@ only the workspace layout differs, and that part is already isolated.
 ### Boundaries and dependency direction
 
 1. **`core/` does not print.** Sole exception: `core/envelope/json.ts`, whose job is the envelope.
-   Checkable: `npx oxlint -D no-console src/core` must report `json.ts` only. Today it also
-   reports `core/envelope/config.ts`, which fires even under `--json` — so an unreadable `loam.json` is
-   reported twice, once outside the envelope.
+   Enforced by `arch:check`'s core-boundary scan (negative self-test included); the one historical
+   exception, `loadConfig`'s stray `console.error`, became a typed `ConfigLoad` outcome the command
+   layer renders.
 2. **`core/` does not read `process.argv`, call `process.exit`, or set `process.exitCode`.**
    Only `core/envelope/json.ts` touches `exitCode`.
-3. **`core/` never imports `commands/`.** Zero such imports today. Checkable with one grep.
+3. **`core/` never imports `commands/`.** Zero such imports, type-only included — `arch:check`'s
+   layering scan bans named and type-only forms alike, because a type edge is still a
+   reader-visible dependency pointing the wrong way. (A bare side-effect or dynamic `import()` is
+   outside the regex — honest-but-approximate, like the rest of the textual checks.)
 4. **No value-import cycles anywhere in `src/`.** `import type` is exempt — `verbatimModuleSyntax`
-   erases it, so a type-only edge is not a runtime edge. Checkable:
-   `npx oxlint -D import/no-cycle …` (verified: exits 0 today, and correctly ignores the type-only
-   `repo` ↔ `fleet-context` edge).
+   erases it, so a type-only edge is not a runtime edge. Enforced: `arch:check` runs
+   `oxlint -D import/no-cycle` over `src/` (it correctly ignores the type-only
+   `repo` ↔ `fleet-context` edge) and the package graph beside it.
 5. **Commands do not import commands**, except `format.ts` and `docs-repo-gate.ts`. One legacy
    exception: `unarchive.ts` imports `sayRecovery` from `archive.ts`. A second exception means a
    new shared module, not a second exception.
@@ -163,14 +167,15 @@ only the workspace layout differs, and that part is already isolated.
    target, through `core/repo/service-target.ts`: the enumeration of `services/` answers first,
    the grammar second, and a name that is neither refuses before any path is built
    (`test/validate-contract.test.ts`).
-7. **A shared grammar lives in exactly one module.** `core/kernel/ids.ts` now owns both — the service
-   id and the feature id. The feature-id regex used to be spelled twice (`commands/new.ts`,
+7. **A shared grammar lives in exactly one module.** The `core/kernel/ids/` package now owns both —
+   the service id (`service.ts`) and the feature id (`feature.ts`), with the directory brands beside
+   them (`dirs.ts`). The feature-id regex used to be spelled twice (`commands/new.ts`,
    `core/openspec/`) and was recorded here as a hazard; the third caller is what
    made it one. `loam explore --as <FEAT>` interpolates its argument into a `loam new` line loam
    *prints for an agent to run*, so a private copy meant `explore` handed back a command `new`
    refuses — and `test/agent-commands-runnable.test.ts` cannot see that class, because it scans
-   literal source strings and this line is built from argv. `core/kernel/ids.ts` already documented
-   what a second, stricter copy of the *service* grammar cost: the migration rejected ids the
+   literal source strings and this line is built from argv. The service grammar already documented
+   what a second, stricter copy of it cost: the migration rejected ids the
    authoring path accepted.
 
 ### Abstractions
@@ -178,7 +183,7 @@ only the workspace layout differs, and that part is already isolated.
 8. **Code moves to `core/` when it gets a second caller, or when half of one algorithm is
    already there.** Both clauses are live. The first: the adoption-maturity ladder sat inside
    `commands/list.ts` while `list` was the only caller and moved to `core/vocabulary/maturity.ts` the day
-   `explore` needed the same rung — a dial with two readings is not a dial, and `core/kernel/ids.ts`
+   `explore` needed the same rung — a dial with two readings is not a dial, and the id grammar
    already records what the second copy of a shared rule cost last time. The second:
    `core/c4/source-scan.ts` and `core/c4/source-mask.ts` are a source scanner whose only consumer
    in `src/` is the landscape splicer — which lived in `commands/archive.ts` until 2026-08-16 and
@@ -229,29 +234,25 @@ only the workspace layout differs, and that part is already isolated.
     looking for a record, take the entry that already exists rather than inventing an options
     object that holds the same two fields loosely.
 18. **A validated identifier or path carries a branded type; a raw one carries the raw type.**
-    This is the target invariant, not yet a completed migration. `ServiceId` and its raw/declared
-    variants carry the distinction today; `FeatureEntry.id`, `DocsDir` and several validated path
-    helpers are still plain strings. `docs/CODE-STYLE.md` holds the required end state and the four
-    rules that make a brand worth its annotations. Until the remaining values migrate, typecheck
-    cannot enforce the repository-wide claim by itself.
-
-    This rule used to say the opposite, and the objection it rested on is real and is what the
-    two-type split answers: `core/repo/repo.ts`'s `listServices` deliberately returns ids that *failed*
-    `serviceIdProblem`, reporting the failure as a field, because `loam list` must show you the
-    badly-named directory that exists on disk. Under a single brand meaning "this passed
-    validation", that one line would need a knowingly false cast — and a brand with one false cast
-    is not enforcing anything at the other call sites. So the raw form is its own type
-    (`RawServiceId`), `listServices` returns *that*, and the validating parse is the only bridge
-    between them. The badly-named directory is now unable to reach a path join by accident, which
-    is the whole point; rule 6 stops being a convention somebody has to remember at six command
-    boundaries.
+    Landed, not aspirational: `ServiceId` and its raw/declared variants, `FeatureId`/`RawFeatureId`
+    (`FeatureEntry.id` carries the raw form — the enumeration still lists illegal names),
+    `DocsDir`/`FeatureDir` through every builder in `core/repo/paths.ts`, and a thin `PortablePath`
+    consumed inside `path-safety.ts`. The smart constructors in `core/kernel/ids/` and
+    `path-safety.ts` are the only bridges, and `arch:check` fails a cast to any brand outside them.
+    Still deliberately unbranded: the stored loam.json spelling (`StoredConfig.docsDir` — the
+    relative form is not the resolved root), the staging-manifest paths (owned by the writer
+    formats), and every `docsDir` parameter that never reaches a paths.ts builder.
 
     Cost, so nobody re-opens this without knowing it: roughly 230 annotation sites, paid once.
-19. **Expected outcomes are return values; exceptions are for the unexpected.** Already the house
-    style. `loadConfig` returning `null` while printing the reason is the one place it half-holds.
-20. **Every `child_process` call carries a timeout.** `core/provenance/git.ts` uses `spawn` with a
-    10-second cap and a comment saying why. `commands/verify.ts`'s `git()` uses `execFile` with
-    neither `timeout` nor `maxBuffer`, on the `loam verify --record` path.
+
+19. **Expected outcomes are return values; exceptions are for the unexpected.** The house style,
+    now without its one exception: `loadConfig` returns a typed `ConfigLoad` union and prints
+    nothing.
+20. **Every `child_process` call in `src/` carries a timeout, and every buffering call an explicit
+    `maxBuffer`.** Enforced by `arch:check`'s child-process scan. `core/provenance/git.ts` caps its
+    streamed reads at a named output ceiling too — past it the child is killed and the doctrine
+    answers "git will not say", never a truncated denominator. Scope is `src/` — the product;
+    `scripts/` is dev tooling, held by review (the corpus gate's git call is bounded all the same).
 
 ### What not to do
 
@@ -297,16 +298,16 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 
 | Change | Buys | Costs | Verdict |
 |---|---|---|---|
-| Add `-D import/no-cycle` to the `lint` script | Freezes the zero-cycle property, currently only discipline | One flag; verified exit 0 today | **Do it** — best ratio here |
+| Add `-D import/no-cycle` to the `lint` script | Freezes the zero-cycle property, currently only discipline | One flag; verified exit 0 today | **Done** — in `arch:check`, not `lint`: the exit criterion asked for one command that runs every architecture check, and double-running oxlint bought nothing |
 | `assertServiceId` in `validate`'s service branches | Closes the only path from an unvalidated argv string to a filesystem path | ~10 lines, one file. Deliberate behaviour change: an existing badly-named service directory would now be refused | **Done** — but not as this row planned. `core/repo/service-target.ts` resolves against the enumeration of `services/` first and asks the grammar only for a name no directory matches, so the behaviour change this row predicted deliberately never happened: the badly-named directory keeps grading, because refusing on the grammar would make the one service `validate --all` complains about the one service `validate --service` cannot look at. The third test in `test/validate-contract.test.ts` fails if that order is ever reversed |
-| `timeout` + `maxBuffer` on `commands/verify/results.ts`'s `execFile` | Closes a hang — a blocking credential helper makes `verify --record` wait forever with no output | One line; `git()` already folds spawn failures to `-1`, so no new branch | **Do it** |
+| `timeout` + `maxBuffer` on `commands/verify/results.ts`'s `execFile` | Closes a hang — a blocking credential helper makes `verify --record` wait forever with no output | One line; `git()` already folds spawn failures to `-1`, so no new branch | **Done** — 10 s deadline that names itself, 64 MiB cap; `arch:check` statically prevents the regression |
 | Extract `issueFinding(i: Issue): Finding` into `core/vocabulary/issue.ts` | Removes the third copy of the `gatesArchive` defaulting rule, which `archive.ts` documents in prose while re-implementing twice | ~12 lines, 3 call sites. Two are identical; `validate`'s adds a `text` hint on top. Emitted shape unchanged | **Do it** |
 | Options objects for `pinOpenapiOperations` / `mergeOpenapiPaths` | Removes the one swap in the repo that silently corrupts a living document instead of crashing | 2 signatures, 2 production sites, ~30 test sites. Do **not** fix by reordering positionals — that edit is itself compile-clean and wrong | **Do it** |
 | `(docsDir, feature: FeatureEntry)` for the four triple-takers | Makes an inconsistent `(dir, id)` pair unrepresentable | 9 src sites (all already hold an entry) + 11 test sites needing a shared fixture helper — budget the helper | **Do it** |
 | Options objects for `writeSnapshot` / `readManifest` | Kills the only four-way positional swaps, on the undo path. Both also invert the `(docsDir, featureDir)` order every other function uses, and for a feature created without `--title` the swap is invisible in every fixture | 2 signatures, ~8 call sites | **Do it** |
 | Move `archive.ts`'s landscape splicer into `core/` | Un-strands it: the region has zero `console`/`fail`/`emitJson`/`exit` calls and its only escape is a thrown error — `LandscapeSpliceError` since 2026-08-16, exactly so the splicer names no CLI code | ~695 lines relocated, ~12 imports. Payoff only arrives if you then write the unit tests | **Done** 2026-08-16 — `core/c4/splice/` (`contract` `landscape-merge` `authored-source` `placement`); the unit tests it pays for are still owed |
 | Audit the six `serviceResolver` calls that omit `known` | Without it the resolver's last rung can resolve a container id to a service that never existed, so group-by-service joins find nothing | 6 sites to decide, plus a comment at each deliberate omission. Not confirmed against a fixture — audit before fixing | **Done** 2026-08-16 — confirmed against fixtures, the worst case being the removal gate answering "nobody calls it" for a container-drawn consumer. Every repository-aware site now passes the enumerated fleet (coherence, lookups, dependencies, arch coverage, the Covers matcher via `CoverageScope.known`, the verify checklist, `delta`'s projection); the two splice placement sites stay without it, each with its deliberate-omission comment — placement is cosmetic anchoring inside one document, safety-netted by the re-parse |
-| Fix `core/envelope/config.ts`'s stray `console.error` | Restores rule 1 to exceptionless | Three options: delete the print (check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in a lint override (two visible exceptions instead of one invisible) | **Your call** — all three are defensible; leaving it undecided is not |
+| Fix `core/envelope/config.ts`'s stray `console.error` | Restores rule 1 to exceptionless | Three options: delete the print (check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in a lint override (two visible exceptions instead of one invisible) | **Done** — option two: `ConfigLoad` returns the reason, the command layer renders it, and the `--json` envelope finally carries the parse detail |
 | Split `commands/validate/`'s rule functions into core | Nothing yet | ~1300 lines relocated — now isolated in `validate/checks/` and `validate/service/` rather than interleaved with two callers, so the cost is a move rather than an extraction. `core/status/` already needs these answers and does *not* re-derive them — it calls into core. Everything with two callers is already there | **Not worth it** until `loam status --service` exists |
 | A shared `withDocsRepo(…)` command frame | Removes a repeated 9–11 line prelude | ~0.5% of the command layer, and everything the frame must parameterise is the part that differs: four distinct consequence sentences, a conditional gate level, and `validate`'s per-target catch. Tests assert stdout, so the change would be invisible to the suite | **Not worth it.** The defect class that actually bit — four drifting errno readings — is already fixed by `docs-repo-gate.ts` |
 
@@ -324,19 +325,16 @@ each one names is the cost now being paid, and the next reader deserves to know 
 
 ## What enforces what
 
-**oxlint, today, with no new dependency:**
+**`scripts/arch-check.mjs` — one command, every architecture check, each with a negative
+self-test in `test/arch-gate.test.ts`:** rules 1–2 (the core boundary scan), rule 3 (layering,
+every import form), rule 4 (file cycles via `oxlint -D import/no-cycle` plus the package graph),
+the barrel ban, rule 20 (child-process bounds), and the brand-cast containment rule 18 rests on.
+CI runs it in place of the bare graph check; `npm run arch:graph` remains callable alone for
+move-a-module workflows. The textual checks are regex over source — honest-but-approximate, which
+is exactly what the negative self-tests exist to keep honest.
 
-- Rule 4 — `-D import/no-cycle` passes when run directly and leaves type-only edges alone, but is
-  **not yet present** in the `lint` script. `npm run arch:graph` checks the package graph separately;
-  making both part of one enforced `arch:check` remains open.
-- Rules 1–2 — need an `.oxlintrc.json` (there is none; the lint script is entirely flag-driven).
-  An `overrides` entry for `src/core/**` with `no-console`, excluding `json.ts`. That config would
-  fail on `core/envelope/config.ts` today, which is the point.
-
-**oxlint cannot express a path-boundary rule.** It ships no `import/no-restricted-paths` and no
-boundaries plugin; the only boundary-shaped rule bans all `../` imports, which would ban all 127
-legitimate `commands → core` edges. So rules 3 and 5 are one-line greps in CI or three lines in a
-test.
+**Review-only, and saying so:** rules 5, 8, 9, 13, and the "what not to do" rows 22–25 are
+judgment calls no scanner expresses; they are enforced by review against this page.
 
 **A test can hold what lint cannot.** `test/codes-drift.test.ts` is the precedent: it
 static-analyses `src/` from inside vitest with a recursive `readdir`, so it is layout-agnostic.
@@ -351,11 +349,9 @@ static-analyses `src/` from inside vitest with a recursive `readdir`, so it is l
   `invalid-option` through `--service` and the positional target alike, and a `treeHashes`
   before/after asserts the refusal wrote nothing.
 - Rule 7 — assert the feature-id regex source appears once across `src/`.
-- Rule 12 — generalise the `for (const withContext of [false, true])` loop in
-  `test/openapi.test.ts` into a parity suite over the ten context-accepting readers. This is the
-  only rule whose violation is already documented to have shipped and whose enforcement is
-  currently a comment.
-- Rule 20 — grep for `execFile(` / `spawn(` without a `timeout`.
+- Rule 12 — `test/fleet-context-parity.test.ts`: every `FleetContext` reader against its direct
+  core counterpart over one rich fixture, with a per-reader richness floor, a completeness check
+  over the prototype, and a negative control proving the comparator bites.
 
 **tsc holds rules 16–18 for free** once applied: an options object, a `FeatureEntry` parameter or
 a branded id makes every stale call site a compile error. Rule 18's brands are the strongest form

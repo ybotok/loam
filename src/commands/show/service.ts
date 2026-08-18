@@ -20,6 +20,7 @@ import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { plural } from "../policy/format.js";
 import { edgeNote, errorText, mark, scenarioCount } from "./marks.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export interface Edge {
   service: string;
@@ -28,7 +29,7 @@ export interface Edge {
 }
 
 export async function showService(
-  docsDir: string,
+  docsDir: DocsDir,
   id: PathableService,
   json: boolean,
   context: FleetContext,
@@ -183,7 +184,7 @@ export async function showService(
 
 /** Inbound/outbound edges for a service, read off the living landscape. */
 export async function landscapeEdges(
-  docsDir: string,
+  docsDir: DocsDir,
   service: string,
   context: FleetContext,
 ): Promise<{ inbound: Edge[]; outbound: Edge[] }> {

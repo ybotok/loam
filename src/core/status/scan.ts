@@ -10,6 +10,8 @@ import { repoPath } from "../envelope/json.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { FeatureEntry } from "../repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { PathableService } from "../kernel/ids/service.js";
 
 /**
  * One read of each per-service delta, answering the three questions the two
@@ -33,9 +35,9 @@ export interface DeltaScan {
 }
 
 export async function scanDeltas(
-  docsDir: string,
+  docsDir: DocsDir,
   feature: FeatureEntry,
-  services: string[],
+  services: PathableService[],
   context: FleetContext,
 ): Promise<DeltaScan[]> {
   const out: DeltaScan[] = [];

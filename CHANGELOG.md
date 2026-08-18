@@ -4,6 +4,13 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Changed — the architecture rules became one executable gate
+
+- **New contributor gate `npm run arch:check`** runs every architecture check the design docs state — file-level import cycles, the package graph, the core→commands ban (named and type-only imports; a bare side-effect or dynamic import is not seen), the barrel ban, the console/process boundary with `core/envelope/json.ts` as the one named exception, the child-process timeout/`maxBuffer` policy, and brand-cast containment — each with a negative self-test in `test/arch-gate.test.ts`. CI runs it in place of the bare package-graph check; `AGENTS.md`'s and `CONTRIBUTING.md`'s gate lines moved with it.
+- **Under `--json`, an unreadable loam.json no longer prints a stray line on stderr.** The `config-invalid` envelope message now carries the actual parse problem (stdout stays the single machine-readable stream); in text mode the same sentence prints from the command layer. `loadConfig` became a typed outcome — core's last print outside the envelope adapter is gone.
+- **`loam verify --record`'s git questions are bounded** — a 10-second deadline whose refusal says the deadline fired (a blocking credential helper used to hang the record forever), and a deliberate 64 MiB output cap in place of Node's implicit 1 MiB that refused sound evidence over 1 MiB. The provenance reads (`ls-files`, `check-ignore`, `config`) cap their streamed output the same way, answering "git will not say" rather than a truncated list.
+- **Validated identities are branded types end to end.** Feature ids, docs directories and feature directories join service ids: the smart constructors in `core/kernel/ids/` are the only bridge, the path builders in `core/repo/paths.ts` refuse raw strings at compile time, and `arch:check` fails a brand cast outside the constructor modules. Type-only — no behaviour, output, or format changes.
+
 ### Changed — every multi-file writer now commits through a journaled, crash-consistent transaction
 
 `loam archive` and `loam unarchive` have long committed through a lock, a byte-level compare-and-swap, a snapshot and a fsynced `.loam-commit` journal. Every other writer now has the same property, through a smaller roll-forward transaction: the staged bytes are already durable beside their targets before a journal is written, so a run killed between two renames is FINISHED by the next run — file by file, each verified against the digest recorded before the crash — instead of leaving a half-old, half-new tree nothing could see.

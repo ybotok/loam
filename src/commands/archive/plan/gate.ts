@@ -36,9 +36,10 @@ import { SEVERITY_MARK } from "../../../core/vocabulary/report.js";
 import { isRequirementsHeading, parseRequirements } from "../../../core/document/parse.js";
 import { refuseFindings, refuseJson, sayRecovery, type ArchiveOptions } from "./refusal.js";
 import { type Gated } from "./state.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 export async function gate(
-  config: { docsDir: string },
+  config: { docsDir: DocsDir },
   featureId: string,
   opts: ArchiveOptions,
   say: (line?: string) => void,

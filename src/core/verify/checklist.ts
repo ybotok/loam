@@ -33,6 +33,7 @@ import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
 import { scenarioBodyHash } from "../gherkin/digest.js";
+import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /**
  * What a claim is about. The order is the order the checklist comes back in,
@@ -84,8 +85,8 @@ const ACTOR_KINDS = new Set(["person", "actor", "user"]);
  * documents that do not change between runs.
  */
 export async function featureChecklist(
-  docsDir: string,
-  featureDir: string,
+  docsDir: DocsDir,
+  featureDir: FeatureDir,
   featureId: string,
 ): Promise<Checklist> {
   const seen = new Map<string, number>();

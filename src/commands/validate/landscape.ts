@@ -22,6 +22,7 @@ import { type Finding, type TargetReport } from "../../core/vocabulary/report.js
 import { FleetContext, landscapeConflictFinding } from "../../core/fleet-context.js";
 import { fleetShapeFindings, permissionFindings } from "./checks/fleet-shape.js";
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "./checks/vocabulary.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /**
  * A landscape that could not be READ, shaped as one that did not PARSE.
@@ -101,7 +102,7 @@ export async function readLandscape(load: () => Promise<LoadedDoc>): Promise<Loa
  * service check gets.
  */
 export async function validateLandscape(
-  docsDir: string,
+  docsDir: DocsDir,
   preloaded?: LoadedDoc | null,
   fleet?: FleetContext,
 ): Promise<TargetReport> {

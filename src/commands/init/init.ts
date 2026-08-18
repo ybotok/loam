@@ -7,8 +7,9 @@ import {
   loadConfig,
   localConfigPath,
   saveConfig,
-  type LoamConfig,
+  type StoredConfig,
 } from "../../core/envelope/config.js";
+import { docsDirOf } from "../../core/kernel/ids/dirs.js";
 import { emitJson, fail } from "../../core/envelope/json.js";
 import { plannedDocsFiles, scaffoldDocs } from "../../core/docs.js";
 import { docsRepoState } from "../../core/repo/state.js";
@@ -113,7 +114,11 @@ export function registerInit(program: Command): void {
       const docsSource: "flag" | "config" | "default" =
         docsTyped ? "flag" : committedDocs === undefined ? "default" : "config";
       const docsOption = !docsTyped && committedDocs !== undefined ? committedDocs : opts.docs;
-      const docsDir = resolve(cwd, docsOption);
+      // Branded at the resolution, because the guards below are what validate
+      // it — the brand's provenance is "an explicit --docs a command
+      // validated", and this command is the one that does. The STORED spelling
+      // (`storedDocsDir` below) deliberately stays a plain string.
+      const docsDir = docsDirOf(resolve(cwd, docsOption));
 
       // The one predictable failure: --docs naming a file. Refused here so the
       // caller gets a clean envelope/message instead of mkdir's ENOTDIR throw.
@@ -195,7 +200,7 @@ export function registerInit(program: Command): void {
       // on disk, and `agentTools` is a record of what the repo HOLDS. A run that
       // generated nothing adds nothing and erases nothing.
       const recordedTools = [...new Set([...(existing?.agentTools ?? []), ...generatedFor])];
-      const config: LoamConfig = {
+      const config: StoredConfig = {
         ...existing,
         docsDir: stored,
         ...(opts.service ? { service: opts.service } : {}),
