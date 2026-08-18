@@ -18,7 +18,7 @@ import { errorMessage, OpenapiMergeError } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { isRemoval } from "../digest.js";
 import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
-import { collectRefs, resolvePointer } from "./refs.js";
+import { mergeComponentClosure } from "./components.js";
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */
 export interface OpenapiMergeResult {
@@ -220,53 +220,7 @@ export function mergeOpenapiPaths(
     if (clean !== undefined) living.setIn(["paths", path], clean);
   }
 
-  const componentsModified: string[] = [];
-  const unresolved: OpenapiMergeResult["unresolved"] = [];
-  const visited = new Set<string>();
-  const copies: Array<{ kind: string; name: string; value: unknown }> = [];
-
-  const visitRef = (ref: string, from: string): void => {
-    if (!ref.startsWith("#/")) return;
-    const match = /^#\/components\/([^/]+)\/([^/]+)(?:\/|$)/.exec(ref);
-    if (!match) {
-      if (!resolvePointer(featPlain, ref).found && !resolvePointer(livingPlain, ref).found) {
-        unresolved.push({ ref, from });
-      }
-      return;
-    }
-    const kind = match[1]!;
-    const name = match[2]!;
-    const key = `${kind}/${name}`;
-    if (visited.has(key)) return;
-    visited.add(key);
-    const inFeature = resolvePointer(featPlain, `#/components/${kind}/${name}`);
-    if (inFeature.found) {
-      copies.push({ kind, name, value: inFeature.value });
-      walk(inFeature.value, `components/${key}`);
-      return;
-    }
-    if (!resolvePointer(livingPlain, `#/components/${kind}/${name}`).found) {
-      unresolved.push({ ref, from });
-    }
-  };
-
-  const walk = (node: unknown, from: string): void => {
-    for (const ref of collectRefs(node)) visitRef(ref, from);
-  };
-
-  for (const [path, featItemPlain] of featPathEntries) {
-    walk(withoutFeatureMarkers(featItemPlain), `paths ${path}`);
-  }
-
-  for (const { kind, name, value } of copies) {
-    const existing = living.getIn(["components", kind, name]);
-    if (existing !== undefined) {
-      const existingPlain = resolvePointer(livingPlain, `#/components/${kind}/${name}`);
-      if (existingPlain.found && isDeepStrictEqual(existingPlain.value, value)) continue;
-      componentsModified.push(`${kind}/${name}`);
-    }
-    living.setIn(["components", kind, name], value);
-  }
+  const { componentsModified, unresolved } = mergeComponentClosure(living, featPlain, livingPlain, featPathEntries);
 
   let text: string;
   try {

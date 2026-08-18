@@ -3,7 +3,7 @@ import { parse } from "yaml";
 import { OpenapiMergeError } from "../src/core/openapi/merge/error.js";
 import { stripOpenapiRemovalMarkers } from "../src/core/openapi/merge/markers.js";
 import { mergeOpenapiPaths } from "../src/core/openapi/merge/merge.js";
-import { collectRefs, resolvePointer } from "../src/core/openapi/merge/refs.js";
+import { collectRefs, resolvePointer } from "../src/core/openapi/merge/components.js";
 
 const LIVING = `# keep this comment
 openapi: 3.1.0
