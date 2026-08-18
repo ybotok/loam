@@ -48,7 +48,7 @@ function writePathLabel(residue: DoctorReport["writePath"]): string {
       ? ["interrupted commit (unreadable)"]
       : residue.intent === null
         ? []
-        : [`interrupted ${residue.intent.command} of ${residue.intent.feature}`]),
+        : [`interrupted ${residue.intent.command} of ${"feature" in residue.intent ? residue.intent.feature : residue.intent.target}`]),
     ...(residue.temps.length === 0 ? [] : [`${residue.temps.length} orphaned temp file(s)`]),
   ];
   return parts.length === 0 ? "clean" : parts.join(" · ");

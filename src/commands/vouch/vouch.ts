@@ -4,7 +4,7 @@ import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { gitIdentity } from "../../core/provenance/git.js";
 import { today } from "../../core/provenance/stamp.js";
-import { plural } from "../policy/format.js";
+import { plural, sayRecovered } from "../policy/format.js";
 import { vouch } from "./run.js";
 
 /**
@@ -172,6 +172,7 @@ export function registerVouch(program: Command): void {
         emitJson({
           service,
           path: repoPath(config.docsDir, spec.path),
+          ...(outcome.recovered === null ? {} : { recovered: outcome.recovered }),
           status: outcome.status,
           last_verified: outcome.lastVerified,
           vouched_by: outcome.vouchedBy,
@@ -200,6 +201,7 @@ export function registerVouch(program: Command): void {
       }
       // spec.md first, arch.spec.md behind it when present — the order the
       // person who vouched reads them in, and the order the axes are declared.
+      if (outcome.recovered !== null) console.log(`${sayRecovered(outcome.recovered)}\n`);
       for (const [i, s] of [spec, ...(arch === null ? [] : [arch])].entries()) {
         console.log(`${i > 0 ? "\n" : ""}${service} vouched — ${repoPath(config.docsDir, s.path)}\n`);
         console.log(`  status          ${outcome.status}`);

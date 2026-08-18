@@ -2,7 +2,9 @@ import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
 import { fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
-import { acquireDocsLockWaiting, DocsBusyError } from "../../core/staging/lock.js";
+import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
+import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
 import { readVerificationState } from "../../core/verify/file.js";
@@ -88,15 +90,30 @@ export function registerVerify(program: Command): void {
       // land: the second waits out the first's sub-second window and merges
       // over what it left. Reading stays lock-free — it writes nothing.
       let releaseLock: (() => Promise<void>) | null = null;
+      let recovered: CommitRecovery | null = null;
       if (recording) {
         try {
-          releaseLock = await acquireDocsLockWaiting(docsDir, RECORD_LOCK_WAIT_MS);
+          releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
         } catch (err) {
           if (err instanceof DocsBusyError) return fail(json, "docs-busy", err.message);
           throw err;
         }
       }
       try {
+        // A journal under the lock means the last writer never finished. The
+        // record's own authoritative read is about to happen; reading it over
+        // a half-commit would merge against bytes no run ever produced — the
+        // last docs-repo writer that could still silently treat a half-commit
+        // as healthy. INSIDE the try: this refusal must release the lock like
+        // every other path out, and once did not.
+        if (recording) {
+          try {
+            recovered = await recoverInterruptedCommit(docsDir);
+          } catch (err) {
+            if (!(err instanceof InterruptedCommitError)) throw err;
+            return fail(json, "commit-interrupted", err.message);
+          }
+        }
         // Archived features resolve too: a shipped feature's verification is worth
         // reading back, and it travelled into the archive with everything else.
         const feature = await resolveFeature(docsDir, featureId, "include");
@@ -160,7 +177,7 @@ export function registerVerify(program: Command): void {
           // there — a submodule or nested checkout under it would have named
           // somebody else's commit on this repository's attestation.
           await record(
-            { docsDir, featureDir: feature.dir, json },
+            { docsDir, featureDir: feature.dir, json, recovered },
             checklist,
             {
               service: opts.service ?? config.service,
@@ -183,14 +200,6 @@ export function registerVerify(program: Command): void {
       }
     });
 }
-
-/**
- * How long a `--record` waits for the docs lock before answering `docs-busy`.
- * Long enough to sit out another record's or an archive's commit window;
- * bounded so a wedged lock (a live holder that hangs) cannot hang this
- * command with it.
- */
-const RECORD_LOCK_WAIT_MS = 5_000;
 
 /* ------------------------------------------------------------------ */
 /* Reading                                                             */

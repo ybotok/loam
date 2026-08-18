@@ -9,6 +9,7 @@
  */
 import { type ErrorCode } from "../../core/envelope/json.js";
 import type { PathableService } from "../../core/kernel/ids.js";
+import type { CommitRecovery } from "../../core/staging/interrupted.js";
 import type { SkippedSource } from "../../core/provenance/walk.js";
 
 
@@ -58,6 +59,12 @@ export type VouchOutcome =
       /** The identity stamped into every file this vouch touched. */
       vouchedBy: string;
       /**
+       * Non-null when this run first rolled a predecessor's interrupted
+       * commit forward — the caller reports it, because docs changing beyond
+       * the stamp would otherwise read as this vouch's doing.
+       */
+      recovered: CommitRecovery | null;
+      /**
        * Every spec-axis file stamped. Named, not ordered: spec.md is required
        * for a vouch to happen at all, and arch.spec.md is the only other file
        * one can touch, so the type is what says which is which. An array said it
@@ -84,6 +91,11 @@ export type VouchOutcome =
         | "vouch-raced"
         | "merge-failed"
         | "rollback-incomplete"
+        // The commit window now takes the docs lock and reads the journal:
+        // another writer can hold the one, a predecessor's crash can leave
+        // the other. Both are the codes every other journaled writer answers.
+        | "docs-busy"
+        | "commit-interrupted"
       >;
       message: string;
     };

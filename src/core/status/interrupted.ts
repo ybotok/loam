@@ -1,13 +1,15 @@
 /**
- * The one state that outranks everything else: a `loam archive` or `unarchive`
- * killed mid-commit, read off the intent journal `.loam-commit` leaves in the
- * docs repo. The shape both report forms carry it in is `InterruptedCommit`
+ * The one state that outranks everything else: a journaled writer — archive,
+ * unarchive, rebase, vouch, new, or a record — killed mid-commit, read off
+ * the intent journal `.loam-commit` leaves in the docs repo. The shape both report forms carry it in is `InterruptedCommit`
  * (report.ts); this module is the cheap read behind it, and the recovery step
  * that leads every `next[]` while the journal exists.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { COMMIT_INTENT, readCommitIntent } from "../staging/recovery/intent.js";
+import { COMMIT_INTENT } from "../staging/interrupted.js";
+import { readCommitIntent } from "../staging/recovery/intent.js";
+import { readTxnIntent } from "../staging/txn/journal.js";
 import type { InterruptedCommit, NextStep } from "./report.js";
 
 /**
@@ -23,6 +25,22 @@ export async function readInterruptedCommit(docsDir: string): Promise<Interrupte
   const intent = await readCommitIntent(docsDir);
   if (intent === null) {
     if (!existsSync(join(docsDir, COMMIT_INTENT))) return null;
+    // Version 2 — the smaller journaled transaction. Its `rerun` field IS the
+    // recovering command: recovery runs at the start of that command's next
+    // invocation, exactly as archive's does under its own lock.
+    const txn = await readTxnIntent(docsDir);
+    if (txn !== null) {
+      return {
+        command: txn.command,
+        feature: txn.target,
+        host: txn.host,
+        pid: txn.pid,
+        at: txn.at,
+        files: txn.files.map((f) => f.path),
+        unreadable: false,
+        recover: txn.rerun,
+      };
+    }
     return {
       command: null,
       feature: null,

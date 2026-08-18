@@ -8,6 +8,7 @@
  * lens has to be told which of the others have not answered yet.
  */
 import { emitJson, repoPath } from "../../core/envelope/json.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
 import { type Checklist } from "../../core/verify/checklist.js";
 import {
@@ -86,6 +87,12 @@ export interface VerifyTarget {
   docsDir: string;
   featureDir: string;
   json: boolean;
+  /**
+   * Non-null when the record path first rolled a predecessor's interrupted
+   * commit forward under its lock. Only `record` reports it; the read path
+   * never recovers, so it never carries one.
+   */
+  recovered?: CommitRecovery | null;
 }
 
 export function report(

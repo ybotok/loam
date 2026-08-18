@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { emitJsonError, repoPath, type ErrorCode } from "../../../core/envelope/json.js";
 import { approveOverrides, gatesArchive, type Issue } from "../../../core/vocabulary/issue.js";
-import { type CommitRecovery } from "../../../core/staging/recovery/intent.js";
+import { type CommitRecovery } from "../../../core/staging/interrupted.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { findingJson, type Finding } from "../../../core/vocabulary/report.js";
 

@@ -23,6 +23,15 @@ import { quietRm, tempPath } from "./commit.js";
 /** The lock file, in the docs repo root — one writer at a time across the whole fleet. */
 export const DOCS_LOCK = ".loam-lock";
 
+/**
+ * How long a WAITING writer sits out a live holder before answering
+ * `docs-busy`. One spelling for every writer that waits — including gherkin,
+ * whose lock guards the SERVICE repo's emission root rather than the docs
+ * repo: long enough to cover another writer's sub-second commit window with a
+ * margin for a loaded host, bounded so a wedged lock cannot hang anyone.
+ */
+export const LOCK_WAIT_MS = 5_000;
+
 /** Another writer holds the docs repo. Commands map this to the `docs-busy` envelope code. */
 export class DocsBusyError extends Error {
   override readonly name = "DocsBusyError";

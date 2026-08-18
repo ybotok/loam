@@ -50,11 +50,12 @@ selected that tool. The map of which invocation surfaces what:
   or \`done\`. The payload's reason to exist is \`next[]\`: ordered, first entry
   first, each carrying a code and the literal command to run. \`next.recover-commit\`
   outranks every other step in both forms and is never elided: a \`.loam-commit\`
-  journal says an archive or unarchive was killed mid-commit, so some of the files
-  everything below is derived from may be half-written. Its command is that exact
-  archive/unarchive re-run, which repairs from the pre-image first, under the lock
-  — except when the journal itself cannot be read, where it is \`loam doctor\` and
-  the repair is a human's comparison against version control. Fleet-wide the rest are
+  journal says a writer was killed mid-commit, so some of the files everything
+  below is derived from may be half-written. Its command is the re-run the
+  journal itself names — archive/unarchive repair from the pre-image, every
+  other writer rolls its staged bytes forward — under the lock either way;
+  except when the journal cannot be read, where it is \`loam doctor\` and the
+  repair is a human's comparison against version control. Fleet-wide the rest are
   \`next.adopt-bound\` (this repository's own loam.json names a service the docs repo
   has no directory for at all — it outranks every other service's partial adoption,
   because it is the only step that is about the repo you are standing in, and it is
@@ -202,12 +203,12 @@ selected that tool. The map of which invocation surfaces what:
   and re-run, and a BLOCKER in the two shapes nothing will ever release: a holder
   that is a process no longer existing on this host, or a lock file that cannot
   name a holder at all — empty or unparseable, a crash between its create and
-  flush; either way every writer — archive,
-  unarchive, rebase, \`verify --record\` —
+  flush; either way every command that writes through the locked root
   refuses \`docs-busy\` until it is deleted), \`doctor.commit-interrupted\` (blocker:
-  a \`.loam-commit\` naming an archive or unarchive that was killed mid-commit, so
-  the living docs may be half-written — re-run that exact command and it recovers
-  first, under the lock), \`doctor.commit-unreadable\` (blocker, and the worst case:
+  a \`.loam-commit\` naming a writer that was killed mid-commit, so the files it
+  was committing may be half-written — re-run the command the finding prints and
+  it recovers first, under the lock; when this repo is a service repo the same
+  scan covers \`<gherkinDir>/loam/\`, the root \`loam gherkin\` commits into), \`doctor.commit-unreadable\` (blocker, and the worst case:
   the record of which files that commit had already written cannot be parsed, so
   nothing can grade it — compare against version control by hand) and
   \`doctor.staging-temps\` (warn: orphaned \`.loam-*.tmp\` scratch that was never

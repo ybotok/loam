@@ -9,32 +9,16 @@
  * the repair.
  */
 import { existsSync } from "node:fs";
-import { open, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { repoPath } from "../../envelope/json.js";
+import { isPathInside } from "../../kernel/path-safety.js";
+import { COMMIT_INTENT, writeDurable } from "../interrupted.js";
 import { isDigest, sha256, type StagedWrite } from "../writes.js";
 import { quietRm } from "../commit.js";
 
-/**
- * The journal that makes an interrupted commit detectable.
- *
- * `swapStaged` is N renames, and only each ONE of them is atomic. A kill
- * between two of them leaves the living docs half-merged — and nothing could
- * see it: `doctor` and `status` called the repo healthy, `validate --all`
- * blamed the delta, and the next archive cleared the one snapshot that could
- * have repaired it. So the swap loop now runs inside a record written and
- * fsynced BEFORE the first rename and removed after the last step of the
- * commit: its mere presence says a commit was in flight, and its per-path
- * digests say, file by file, whether that file's rename landed.
- *
- * It is deliberately NOT a source of truth and never disagrees with the files:
- * every judgement it supports is made by re-reading the living bytes and
- * comparing digests, and every byte a repair writes comes from the snapshot
- * and is verified against the digest recorded before the crash. Outside the
- * commit window it does not exist.
- */
-export const COMMIT_INTENT = ".loam-commit";
+/** The version-1 record: archive's and unarchive's snapshot-backed journal. */
 const COMMIT_INTENT_VERSION = 1;
 
 export interface CommitIntentFile {
@@ -66,25 +50,6 @@ export interface CommitIntent {
   /** …and TO. Both landed ⇒ every earlier step landed too. */
   moveTo: string;
   files: CommitIntentFile[];
-}
-
-/** An interrupted commit this loam must not silently write over. */
-export class InterruptedCommitError extends Error {
-  override readonly name = "InterruptedCommitError";
-}
-
-/** What `recoverInterruptedCommit` did, for the caller to print and put in `--json`. */
-export interface CommitRecovery {
-  command: "archive" | "unarchive";
-  feature: string;
-  /**
-   * `completed` — every step but the record's own removal landed;
-   * `consistent` — no file was left in the other state;
-   * `repaired` — files were put back, byte for byte, from the snapshot.
-   */
-  outcome: "completed" | "consistent" | "repaired";
-  /** Docs-repo-relative paths this recovery rewrote or removed. */
-  repaired: string[];
 }
 
 /**
@@ -123,25 +88,7 @@ export async function writeCommitIntent(
       after: s.content === null ? null : sha256(s.content),
     })),
   };
-  const path = join(docsDir, COMMIT_INTENT);
-  const handle = await open(path, "w");
-  try {
-    await handle.writeFile(JSON.stringify(intent, null, 2) + "\n", "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    const dir = await open(docsDir, "r");
-    try {
-      await dir.sync();
-    } finally {
-      await dir.close();
-    }
-  } catch {
-    // Not every platform lets a directory be opened; the record's own bytes are
-    // flushed either way, which is the part that carries the digests.
-  }
+  await writeDurable(join(docsDir, COMMIT_INTENT), JSON.stringify(intent, null, 2) + "\n");
 }
 
 /** The commit finished (or was rolled back): there is nothing left to recover from. */
@@ -166,9 +113,15 @@ export async function readCommitIntent(docsDir: string): Promise<CommitIntent | 
   if (i.restore !== "before" && i.restore !== "after") return null;
   if (typeof i.feature !== "string" || typeof i.moveFrom !== "string" || typeof i.moveTo !== "string") return null;
   if (!Array.isArray(i.files)) return null;
+  // The journal is untrusted input, and recovery writes over what it names —
+  // the same containment the version-2 reader enforces, because an entry
+  // escaping the docs repo would turn repair into an arbitrary write.
+  const inside = (rel: string): boolean => isPathInside(join(docsDir), join(docsDir, ...rel.split("/")));
+  if (!inside(i.moveFrom) || !inside(i.moveTo)) return null;
   for (const f of i.files) {
     if (typeof f?.path !== "string") return null;
     if (!isDigestOrNull(f.before) || !isDigestOrNull(f.after)) return null;
+    if (!inside(f.path)) return null;
   }
   return i as CommitIntent;
 }

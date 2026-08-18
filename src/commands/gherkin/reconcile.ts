@@ -42,7 +42,12 @@ export type Emission = PlannedFeature & { path: string };
  * up already knew.
  */
 export type ActionRow =
-  | (Emission & { action: "written" | "replaced" })
+  | (Emission & { action: "written" })
+  // A replaced row carries the exact bytes it was graded against, so the
+  // commit can prove the file did not move between the grading and the swap —
+  // planning and committing must compare the same read, or a mismatch is
+  // buried instead of refused.
+  | (Emission & { action: "replaced"; raw: Buffer })
   | (Emission & { action: "kept"; kept: StampedFeature })
   | (Emission & { action: "conflict"; kept: StampedFeature; owners: string[] });
 
@@ -55,7 +60,8 @@ export interface EmissionRoot {
 }
 
 export interface Reconciliation {
-  orphans: string[];
+  /** Each orphan with the bytes its grading read — the commit compares them before deleting. */
+  orphans: { path: string; raw: Buffer }[];
   actions: ActionRow[];
   /** Non-empty only in feature mode; one entry refuses the whole emission. */
   conflicts: Extract<ActionRow, { action: "conflict" }>[];
@@ -101,18 +107,19 @@ export async function reconcile(
   // `gherkin.orphaned` and the next run removes it); a deletion taken on an
   // unproven path is not.
   const rootReal = realOrNull(root);
-  const orphans: string[] = [];
+  const orphans: { path: string; raw: Buffer }[] = [];
   if (rootReal !== null) {
     for (const abs of await featureFilesUnder(root)) {
       if (planned.has(relative(root, abs).split(/[\\/]/).join("/"))) continue;
       const holder = realOrNull(dirname(abs));
       if (holder === null || !isPathInside(rootReal, holder)) continue;
-      const stamped = parseStampedFeature(await readFile(abs, "utf8"));
+      const raw = await readFile(abs);
+      const stamped = parseStampedFeature(raw.toString("utf8"));
       if (scope.mode === "feature") {
-        if (stamped !== null && stamped.tags.includes(scope.featureId)) orphans.push(abs);
+        if (stamped !== null && stamped.tags.includes(scope.featureId)) orphans.push({ path: abs, raw });
       } else {
         if (stamped !== null && stamped.tags.some((t) => activeIds.has(t))) continue;
-        orphans.push(abs);
+        orphans.push({ path: abs, raw });
       }
     }
   }
@@ -156,7 +163,8 @@ export async function reconcile(
       actions.push({ ...f, path, action: "written" });
       continue;
     }
-    const existing = parseStampedFeature(await readFile(path, "utf8"));
+    const raw = await readFile(path);
+    const existing = parseStampedFeature(raw.toString("utf8"));
     if (scope.mode === "living") {
       if (existing !== null && existing.tags.some((t) => activeIds.has(t))) {
         actions.push({ ...f, path, action: "kept", kept: existing });
@@ -172,7 +180,7 @@ export async function reconcile(
         continue;
       }
     }
-    actions.push({ ...f, path, action: "replaced" });
+    actions.push({ ...f, path, action: "replaced", raw });
   }
 
   // All or nothing: one conflicting file refuses the whole emission, so a

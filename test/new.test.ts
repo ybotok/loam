@@ -21,8 +21,13 @@
  *  - --json contract and failure modes
  */
 import { describe, expect, it } from "vitest";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
+import { spawnLoam } from "./helpers/cli-process.js";
+import { stageWrites, swapStaged } from "../src/core/staging/commit.js";
+import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
+import { writeTxnIntent } from "../src/core/staging/txn/journal.js";
 
 /**
  * The floor of a docs repo: `services/` exists, even when it is empty — that is
@@ -540,4 +545,170 @@ describe("--json contract and failures", () => {
       );
     });
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* A scaffold killed mid-commit                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `new` used to be a sequential `writeFile` loop with no plan, no lock and no
+ * journal: a crash left a partial feature directory that every later run
+ * refused as `already-exists`, so the half scaffold was permanent. It now
+ * builds the whole plan in memory, takes the docs lock, and commits through the
+ * journaled transaction — every write an exclusive create, because the feature
+ * must not exist.
+ */
+const NEW_ARGS = ["new", "FEAT-9", "--title", "Split", "--new-service", "svc-a"];
+const FEAT_9 = "features/FEAT-9-split";
+
+interface Scaffold {
+  tree: Record<string, string>;
+  created: string[];
+  bytes: string[];
+}
+
+/** A scaffold nothing interrupted: the tree it leaves, and the bytes of every file in it. */
+async function cleanScaffold(): Promise<Scaffold> {
+  const p = await makeProject(DOCS_REPO);
+  try {
+    const res = await runLoam(p.workDir, ...NEW_ARGS, "--json");
+    expect(res.code, res.out).toBe(0);
+    const created = JSON.parse(res.stdout).created as string[];
+    return {
+      tree: await treeHashes(p.docsDir),
+      created,
+      bytes: await Promise.all(created.map((rel) => p.read(rel))),
+    };
+  } finally {
+    await p.destroy();
+  }
+}
+
+/**
+ * Drive the scaffold's exclusive creates to a boundary and stop there, as a
+ * SIGKILL after the k-th link(2) would: the journal is fsynced, the temps hold
+ * the rest, and `links` of the files exist.
+ */
+async function killMidScaffold(p: Project, scaffold: Scaffold, links: number): Promise<void> {
+  const staged = await stageWrites(
+    scaffold.created.map((rel, i) => ({ path: join(p.docsDir, rel), content: scaffold.bytes[i]!, exclusive: true })),
+  );
+  await writeTxnIntent(
+    { root: p.docsDir, command: "new", rerun: "loam new FEAT-9", target: "FEAT-9" },
+    staged,
+  );
+  await swapStaged(staged.slice(0, links));
+}
+
+/** Only the killed feature's files — the rest of a docs repo is not under comparison. */
+function subtree(tree: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(tree).filter(([k]) => k.startsWith(FEAT_9)));
+}
+
+describe("a scaffold killed after the k-th link", () => {
+  it("leaves a journal, and doctor names the command that owns the repair", async () => {
+    const scaffold = await cleanScaffold();
+    await withProject({}, async (p) => {
+      await killMidScaffold(p, scaffold, 1);
+      // Half a feature: intent.md landed, the four files behind it did not.
+      expect(p.exists(`${FEAT_9}/intent.md`)).toBe(true);
+      expect(p.exists(`${FEAT_9}/delta.likec4`)).toBe(false);
+      expect(p.exists(COMMIT_INTENT)).toBe(true);
+
+      const finding = JSON.parse((await runLoam(p.workDir, "doctor", "--json")).stdout).findings.find(
+        (f: { code: string }) => f.code === "doctor.commit-interrupted",
+      );
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe("blocker");
+      expect(finding.fix).toContain("loam new FEAT-9");
+      expect(finding.message).toContain(`${FEAT_9}/delta.likec4`);
+    });
+  });
+
+  it("is completed by the re-run doctor prints, which then refuses already-exists over a WHOLE scaffold", async () => {
+    // Both halves of the pair, in one run and in this order. There is no
+    // unlocked existence fast-path: staging creates the feature directory at
+    // plan time, so a half-scaffold resolves like a finished feature, and an
+    // unlocked refusal here answered `already-exists` over the run's own
+    // wreckage without ever reaching the recovery that completes it — while
+    // `doctor` printed exactly this re-run as the fix. Existence is now asked
+    // once, under the lock, AFTER recovery: the refusal is still exit 1, but it
+    // is now true, and the scaffold behind it is whole.
+    const scaffold = await cleanScaffold();
+    await withProject({}, async (p) => {
+      await killMidScaffold(p, scaffold, 1);
+
+      const res = await runLoam(p.workDir, ...NEW_ARGS, "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("already-exists");
+
+      // Recovery ran first: every file the killed run planned is there, byte
+      // for byte what a clean scaffold writes, and the journal is gone.
+      for (const rel of scaffold.created) expect(p.exists(rel), rel).toBe(true);
+      expect(subtree(await treeHashes(p.docsDir))).toEqual(subtree(scaffold.tree));
+      expect(p.exists(COMMIT_INTENT)).toBe(false);
+    });
+  });
+
+  it("completes the scaffold from every boundary, including one where nothing had linked yet", async () => {
+    // The refusal is the same at k=0, k=1 and k=all — what differs is how much
+    // roll-forward had to do, and the answer must not depend on that.
+    const scaffold = await cleanScaffold();
+    for (const links of [0, scaffold.created.length]) {
+      await withProject({}, async (p) => {
+        await killMidScaffold(p, scaffold, links);
+        const res = await runLoam(p.workDir, ...NEW_ARGS, "--json");
+        expect(res.code, `links=${links}`).toBe(1);
+        expect(JSON.parse(res.stdout).error.code, `links=${links}`).toBe("already-exists");
+        expect(subtree(await treeHashes(p.docsDir)), `links=${links}`).toEqual(subtree(scaffold.tree));
+        expect(p.exists(COMMIT_INTENT), `links=${links}`).toBe(false);
+      });
+    }
+  });
+
+  it("is completed by the next `new` that gets as far as the lock, byte for byte", async () => {
+    // A different id passes the pre-check above, so this run reaches the
+    // recovery — and rolls the FEAT-9 scaffold forward to exactly the files a
+    // clean run wrote, before scaffolding its own.
+    const scaffold = await cleanScaffold();
+    await withProject({}, async (p) => {
+      await killMidScaffold(p, scaffold, 1);
+
+      const res = await runLoam(p.workDir, "new", "FEAT-10", "--title", "Other", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout).recovered).toMatchObject({
+        command: "new",
+        feature: "FEAT-9",
+        outcome: "repaired",
+      });
+      for (const rel of scaffold.created) expect(p.exists(rel), rel).toBe(true);
+      expect(subtree(await treeHashes(p.docsDir))).toEqual(subtree(scaffold.tree));
+      expect(p.exists(COMMIT_INTENT)).toBe(false);
+    });
+  });
+});
+
+describe("two real processes scaffolding one feature", () => {
+  it("produces exactly one scaffold, a stable refusal for the loser, and no residue", async () => {
+    const scaffold = await cleanScaffold();
+    await withProject({}, async (p) => {
+      const runs = await Promise.all([
+        spawnLoam(p.workDir, ...NEW_ARGS, "--json"),
+        spawnLoam(p.workDir, ...NEW_ARGS, "--json"),
+      ]);
+      const output = runs.map((r) => r.stdout + r.stderr).join("\n---\n");
+      expect(runs.filter((r) => r.code === 0), output).toHaveLength(1);
+
+      // The loser lost the under-lock re-check or the exclusive create; either
+      // way the answer is the same stable refusal, never a merged scaffold.
+      const loser = JSON.parse(runs.find((r) => r.code !== 0)!.stdout);
+      expect(loser.ok).toBe(false);
+      expect(["already-exists", "docs-busy"]).toContain(loser.error.code);
+
+      // One complete scaffold, byte for byte, with neither dotfile behind it.
+      expect(subtree(await treeHashes(p.docsDir))).toEqual(subtree(scaffold.tree));
+      expect((await readdir(p.docsDir)).filter((n) => n.startsWith("."))).toEqual([]);
+    });
+  }, 60_000);
 });

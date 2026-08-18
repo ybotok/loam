@@ -1,6 +1,11 @@
 import type { Command } from "commander";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { stageWrites } from "../../core/staging/commit.js";
+import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
+import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { commitStaged } from "../../core/staging/txn/transaction.js";
+import { type PlannedWrite } from "../../core/staging/writes.js";
+import { join } from "node:path";
 import { loadConfig } from "../../core/envelope/config.js";
 import { FEATURE_ID_RULE, isFeatureId, parseServiceIds } from "../../core/kernel/ids.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
@@ -10,6 +15,7 @@ import { featuresDir } from "../../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices, resolveFeature } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
+import { sayRecovered } from "../policy/format.js";
 import {
   archSpecTemplate,
   deltaTemplate,
@@ -87,25 +93,13 @@ export function registerNew(program: Command): void {
       // directory, so a run without it is guessing.
       if (!docsRepoReady(json, docsDir, "services")) return;
 
-      let existing: FeatureEntry | null;
-      try {
-        existing = await resolveFeature(docsDir, featureId, "include");
-      } catch (err) {
-        // The gate above already refused both broken states, so reaching here
-        // means the docs repo went away between that check and this read. Same
-        // breach, same two codes — the alternative is a stack trace under
-        // `internal` that names neither.
-        if (!(err instanceof DocsRepoUnavailableError)) throw err;
-        reportDocsRepoError(json, err);
-        return;
-      }
-      if (existing) {
-        return fail(
-          json,
-          "already-exists",
-          `Feature '${featureId}' already exists at ${repoPath(docsDir, existing.dir)}.`,
-        );
-      }
+      // No unlocked existence fast-path, deliberately: staging creates the
+      // feature directory at plan time, so a HALF-scaffold from a killed run
+      // resolves like a finished feature — and an unlocked refusal here made
+      // \`loam new <id>\` answer already-exists over its own wreckage without
+      // ever reaching the recovery that would complete it, while doctor's fix
+      // printed exactly that re-run. Existence is asked once, under the lock,
+      // after recovery has run.
 
       // A service named both ways is new — that is the more specific claim.
       const created = new Set(newServices.ids);
@@ -129,11 +123,14 @@ export function registerNew(program: Command): void {
         files[join("specs", svc, "arch.spec.md")] = archSpecTemplate(featureId, svc);
       }
 
-      const written: string[] = [];
+      // The COMPLETE plan in memory before a byte lands on disk: every path
+      // resolved (belt and braces over the id grammar — resolveInside proves
+      // containment at the moment of the write, symlink cases included), and
+      // every write an exclusive create, because the feature must not exist.
+      // The sequential writeFile loop this replaces could die mid-scaffold and
+      // leave a partial feature the next run refused as already-exists.
+      const writes: PlannedWrite[] = [];
       for (const [rel, content] of Object.entries(files)) {
-        // Belt and braces over the id check above: the id grammar is what makes
-        // this safe, and `resolveInside` is what proves it at the moment of the
-        // write — including the symlink cases a grammar cannot see.
         let path: string;
         try {
           path = resolveInside(docsDir, join("features", dirName, rel), "feature file");
@@ -141,10 +138,71 @@ export function registerNew(program: Command): void {
           if (!(err instanceof UnsafePathError)) throw err;
           return fail(json, "invalid-option", err.message);
         }
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, content, "utf8");
-        written.push(repoPath(docsDir, path));
+        writes.push({ path, content, exclusive: true });
       }
+
+      // The commit window holds the docs lock: two `new`s for one id serialise
+      // into a stable already-exists, and a predecessor's interrupted commit
+      // is rolled forward (or refused) before this one stages anything.
+      let releaseLock: () => Promise<void>;
+      try {
+        releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
+      } catch (err) {
+        if (err instanceof DocsBusyError) return fail(json, "docs-busy", err.message);
+        throw err;
+      }
+      let recovered: CommitRecovery | null = null;
+      try {
+        try {
+          recovered = await recoverInterruptedCommit(docsDir);
+        } catch (err) {
+          if (!(err instanceof InterruptedCommitError)) throw err;
+          return fail(json, "commit-interrupted", err.message);
+        }
+        // The one existence check, UNDER the lock and AFTER recovery: two
+        // racing runs serialise on it, and a recovered half-scaffold has been
+        // completed by the recovery above, so this refusal is truthful.
+        let existing: FeatureEntry | null;
+        try {
+          existing = await resolveFeature(docsDir, featureId, "include");
+        } catch (err) {
+          // The gate above already refused both broken states, so reaching
+          // here means the docs repo went away between that check and this
+          // read. Same breach, same two codes — the alternative is a stack
+          // trace under `internal` that names neither.
+          if (!(err instanceof DocsRepoUnavailableError)) throw err;
+          reportDocsRepoError(json, err);
+          return;
+        }
+        if (existing) {
+          // After a recovery the refusal must SAY the repair happened: doctor
+          // told the operator to re-run this exact command, and "already
+          // exists" alone reads as the fix having failed.
+          return fail(
+            json,
+            "already-exists",
+            `Feature '${featureId}' already exists at ${repoPath(docsDir, existing.dir)}.` +
+              (recovered === null ? "" : ` (${sayRecovered(recovered)} The scaffold is complete.)`),
+          );
+        }
+        const staged = await stageWrites(writes);
+        const committed = await commitStaged(
+          { root: docsDir, command: "new", rerun: `loam new ${featureId}`, target: featureId },
+          staged,
+          "scaffolded",
+        );
+        if (!committed.ok) {
+          // A lost exclusive-create race IS the feature existing: the other
+          // `new` won, and this refusal is the same stable answer the re-check
+          // above gives when it sees the winner first.
+          return committed.raced
+            ? fail(json, "already-exists", `Feature '${featureId}' already exists at ${repoPath(docsDir, dir)}.`)
+            : fail(json, committed.code, committed.message);
+        }
+      } finally {
+        await releaseLock();
+      }
+      const written = writes.map((w) => repoPath(docsDir, w.path));
 
       const notes = await unknownServiceNotes(docsDir, touched);
 
@@ -153,6 +211,7 @@ export function registerNew(program: Command): void {
           feature: featureId,
           path: repoPath(docsDir, dir),
           created: written,
+          ...(recovered === null ? {} : { recovered }),
           // Not an error and not a finding: `--touches` on a service that does
           // not exist yet is legal (adopt it later, or say `--new-service`).
           // It is reported because the silent alternative is a feature whose
