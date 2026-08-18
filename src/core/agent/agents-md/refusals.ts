@@ -136,8 +136,9 @@ changed between the read and the write, so nothing was written),
 \`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` / \`docs-busy\` /
 \`commit-interrupted\`
 (\`loam archive\` — see the
-archive gate below; \`docs-busy\` means another archive or unarchive holds the docs
-repo's lock, nothing was read or written, and re-running once it finishes works),
+archive gate below; \`docs-busy\` means another writer — an archive, unarchive,
+rebase, or a \`verify --record\` — holds the docs repo's lock, nothing was read or
+written, and re-running once it finishes works),
 \`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` / \`snapshot-corrupt\` /
 \`restore-failed\` / \`rollback-incomplete\` / \`docs-busy\` / \`commit-interrupted\`
 (\`loam unarchive\` — the
@@ -151,11 +152,21 @@ cannot be read. \`loam doctor\` names the same state as
 (\`loam gherkin <FEAT>\` would overwrite a \`.feature\` file owned by another
 feature still in flight — the whole emission refuses and names the owner),
 \`answers-unreadable\` / \`answers-mismatch\` /
-\`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\`
+\`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\` /
+\`record-raced\` / \`docs-busy\`
 (\`loam verify --record\` / \`--results\` — an unreadable or
 unrecognizable cucumber report refuses under \`answers-unreadable\` too;
 \`record-federated\` and \`record-unreadable\` are the two records loam will not
-overwrite), and
+overwrite. Recording holds the docs repo's lock and commits the record
+atomically over the exact bytes it read: \`record-raced\` means the file changed
+underneath anyway — an editor, or a writer that skipped the lock — and nothing
+was written, so re-running merges over the record as it now stands; \`docs-busy\`
+means another writer held the lock for longer than the record was willing to
+wait. Two records for different services land in either order — the later one
+waits, then merges, and both attestations survive. The shared commit path can
+also answer \`merge-failed\` (the swap itself failed — nothing was recorded,
+re-running can work) and \`rollback-incomplete\` (cleanup failed too; the named
+file needs a human), with exactly the meanings archive gives them), and
 \`internal\` — an unexpected throw, the one code with no stable meaning.
 
 \`--all\` reports a target per service, a target per feature in flight, and one target

@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "feature": "FEAT-088",
+  "dirName": "FEAT-088-refunds",
+  "archivedAt": "2026-08-18T08:01:34.290Z",
+  "files": [
+    {
+      "path": "services/order-service/spec.md",
+      "existed": true,
+      "after": "fcb80dc0121340860b3e9f26a65a5f4aa8966f3c57e1e89c22ea260a8b90c73f",
+      "before": "26db38f9c6ccfea240bc088f987343325a9b2e4b2d57df4b2aff212c27fee8c8"
+    },
+    {
+      "path": "services/payment-service/spec.md",
+      "existed": true,
+      "after": "97b2b1b0f0bee2dcd7005dd792622f05cc701ff8f12ff5f21e7d9a2b36441b06",
+      "before": "a6248de65c69d3e42625cdd9be2d259e29840ab2377adb2e5669dab8ef9231cb"
+    },
+    {
+      "path": "services/payment-service/openapi.yaml",
+      "existed": true,
+      "after": "220bfd52275c43f996e5d88a7fd93bcd3d6587cb08832d80530d5bd5b05a8270",
+      "before": "e39f80d7755cd6f7b4b8223f08e9746a8d47a9416e6f14225e7ef7abe5caa3c8"
+    },
+    {
+      "path": "architecture/landscape.likec4",
+      "existed": true,
+      "after": "f9931344156869c15ea3e17ce384f78a90403898a2c2a2b296641b8d4a8a0492",
+      "before": "701780cf4f72ec137e5b5e4e5d9eda741148948c484ca0ab9998828028ed2020"
+    }
+  ]
+}

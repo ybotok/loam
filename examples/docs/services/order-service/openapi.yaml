@@ -1,0 +1,257 @@
+# The HTTP contract. Written by an agent from the `loam adopt` brief, then curated;
+# forward-flow changes are authored in a feature's specs/order-service/openapi.yaml
+# and merged here by `loam archive`.
+#
+# `operationId` is the token the whole spine joins on: a landscape edge names it in
+# `metadata { op }`, a requirement names it on an `Operations:` line, and it is
+# defined here. loam reads only the eight HTTP methods of a path item, so an id
+# tucked into a vendor extension does not exist — a phantom id would mask a contract
+# break rather than declare an operation.
+openapi: 3.1.0
+info:
+  title: order-service
+  version: "2.0"
+  description: Order placement, retrieval and cancellation for the marketplace checkout.
+
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Place an order
+      # The idempotency key is part of the contract, not an implementation detail:
+      # ARCH-ORD-IDEMPOTENCY promises a replay of this header returns the first
+      # order, and a promise a caller cannot see is a promise nobody can rely on.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Caller-generated key; a repeat replays the first response.
+          schema:
+            type: string
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      # Every operation needs at least one response declaring a schema, or
+      # `openapi.response-undescribed` says the contract names the operation and
+      # nothing about what it returns. And every exact 4xx/5xx below has to be
+      # reachable from a scenario of a requirement whose `Operations:` names this
+      # operation — 409 is written as a scenario in spec.md's ORD-PLACE, not as a
+      # sentence about refusals, or `api.response-ungoverned` fires.
+      responses:
+        "201":
+          description: The order was accepted and is awaiting payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        "409":
+          description: The idempotency key was already used for a different basket.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Read an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The order as it currently stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        "404":
+          description: No order with that id was ever placed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The order is cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        "409":
+          description: The order has already been handed to fulfilment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /v1/orders:
+    post:
+      operationId: createOrderV1
+      summary: Place an order (v1, legacy)
+      description: >-
+        Superseded by createOrder. Takes a flat basket, assumes EUR and accepts no
+        idempotency key, so a replayed import places a second order. One caller left:
+        the partner batch importer.
+      # This one flag is the whole lifecycle signal on the spine. loam reads the
+      # standard per-operation `deprecated` and turns it into two warnings: every
+      # landscape edge whose `metadata { op }` names this operation gets
+      # `spine.op-deprecated` (the contract holds — the CONSUMER should be migrating,
+      # counted per inbound edge), and the requirement that governs only deprecated
+      # operations gets `api.requirement-deprecated` once — ORD-PLACE-V1 in spec.md,
+      # which is the demonstration this example ships. Deprecation is the first step
+      # of a removal; the last one is FEAT-112, which retires this path and method
+      # with an `x-loam-remove: true` marker in its own openapi delta plus a REMOVED
+      # requirement naming createOrderV1. Until that feature archives the operation is
+      # live, and deleting it here would break the importer today.
+      deprecated: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderV1Request'
+      responses:
+        "201":
+          description: The order was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderV1'
+
+# Every schema lives in this document. An external `$ref` is out of scope for the
+# reader and for the merge alike, and an internal one that resolves to nothing is
+# `openapi.ref-unresolved` — the operation validates while its payload is silently
+# absent, which is exactly the shape that reads as a complete contract and is not one.
+components:
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [customerId, currency, lines]
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderLine'
+
+    CreateOrderV1Request:
+      type: object
+      description: The v1 shape — no currency, no idempotency key.
+      required: [customer, items]
+      properties:
+        customer:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [sku, qty, unitPrice]
+            properties:
+              sku:
+                type: string
+              qty:
+                type: integer
+                minimum: 1
+              unitPrice:
+                type: integer
+                description: minor units, assumed EUR
+
+    OrderLine:
+      type: object
+      required: [sku, quantity, unitAmount]
+      properties:
+        sku:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        unitAmount:
+          type: integer
+          description: minor units
+
+    Order:
+      type: object
+      required: [orderId, customerId, state, currency, totalAmount, lines]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          description: The lifecycle state ORD-PLACE, ORD-CANCEL and ORD-ON-AUTHORIZED move between.
+          enum: [awaiting_payment, confirmed, fulfilling, cancelled]
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        totalAmount:
+          type: integer
+          description: minor units
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        placedAt:
+          type: string
+          format: date-time
+
+    OrderV1:
+      type: object
+      description: The v1 response — a flatter Order, kept for the one remaining caller.
+      required: [id, status, total]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        total:
+          type: integer
+          description: minor units, EUR
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details, the one refusal shape every 4xx here uses.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        idempotencyKey:
+          type: string
+          description: Present on the createOrder 409, naming the key that conflicted.

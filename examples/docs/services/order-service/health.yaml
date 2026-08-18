@@ -1,0 +1,57 @@
+# Service health model. Objectives and queries are authored; the dependency graph is
+# the C4 model's, restated here for the person who opens this file at 03:00.
+#
+# `loam validate` reads exactly three things out of it, and everything else — the
+# queries, the thresholds, the check URLs, the criticality — is prose no check grades:
+#
+#   - each `slis[].name` and `alerts[].name`, every one of which wants a requirement in
+#     arch.spec.md carrying `Covers: sli:<id>` / `Covers: alert:<id>`, or
+#     `health.uncovered` says the signal ships with nothing testing it;
+#   - each `dependencies[].service`, which must resolve in services/order-service/model.likec4
+#     by element id, `metadata { service }` binding or title, or
+#     `health.dependency-unmodelled` fires — the check that catches a dependency this
+#     file still swears by after the code stopped calling it;
+#   - the same dependency list is model-shape evidence: declared here and drawn nowhere
+#     is what makes `c4.no-relationships` a warning rather than a guess.
+#
+# A dependency a feature in flight introduces arrives with that feature. It is not a
+# dependency of the living service yet, and writing it here early makes the on-call
+# file describe a system nobody is running.
+service: order-service
+status: draft
+slis:
+  - name: availability
+    query: "sum(rate(http_requests_total{job='order-service',code!~'5..'}[5m])) / sum(rate(http_requests_total{job='order-service'}[5m]))"
+    slo: 0.999
+  - name: order_placement_latency_p95_ms
+    # Scoped to POST /orders on purpose. getOrder is a single indexed read and
+    # /v1/orders is one nightly batch importer; averaged in, either would pull
+    # the p95 away from the number that says whether checkout feels broken.
+    query: "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job='order-service',path='/orders',method='POST'}[5m]))) * 1000"
+    slo: 800
+alerts:
+  - name: order_placement_failures
+    # A ratio, not a bare rate. ARCH-ORD-SIGNALS' scenario and the runbook step
+    # below both say "more than 2% of placements", and `rate(5xx) > 0.02` says
+    # something else entirely — 0.02 failures per second, which is a different
+    # promise at every hour of the day and a silent one at 04:00. Nothing in
+    # loam grades this string: the arch requirement is the only thing that can
+    # catch it drifting from what it claims to measure.
+    expr: "sum(rate(http_requests_total{job='order-service',path='/orders',method='POST',code=~'5..'}[5m])) / sum(rate(http_requests_total{job='order-service',path='/orders',method='POST'}[5m])) > 0.02"
+    for: 5m
+    page: orders-oncall
+    runbook: runbook.md#placement-failures
+checks:
+  liveness: GET /actuator/health/liveness
+  readiness: GET /actuator/health/readiness
+# Critical runtime dependencies only, and the reconciliation with the model runs one
+# way: everything named here must be modelled, not everything modelled named here.
+# model.likec4 also draws the introspectToken call to identity-service, and it is
+# absent below on purpose — introspection results are cached, so a brief identity
+# outage degrades authorization rather than stopping placement, and a list that holds
+# everything the service touches stops being a blast-radius list.
+dependencies:
+  - service: kafka
+    criticality: critical        # no broker -> no OrderPlaced, and the outbox grows unbounded
+  - service: payment-service
+    criticality: critical        # no authorization -> no placement; ORD-PLACE cannot complete

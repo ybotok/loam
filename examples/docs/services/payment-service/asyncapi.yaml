@@ -26,6 +26,8 @@ channels:
     messages:
       PaymentAuthorized:
         $ref: '#/components/messages/PaymentAuthorized'
+      PaymentCaptured:
+        $ref: '#/components/messages/PaymentCaptured'
 
 operations:
   sendPaymentAuthorized:
@@ -34,6 +36,12 @@ operations:
       $ref: '#/channels/paymentEvents'
     messages:
       - $ref: '#/channels/paymentEvents/messages/PaymentAuthorized'
+  sendPaymentCaptured:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
 
 components:
   messages:
@@ -49,11 +57,13 @@ components:
       # everything below is opaque to loam.
       payload:
         type: object
-        required: [paymentId, amount, currency, authorizedAt]
+        required: [paymentId, orderId, amount, currency, authorizedAt]
         properties:
           paymentId:
             type: string
             format: uuid
+          orderId:
+            type: string
           amount:
             type: integer
             description: minor units
@@ -61,5 +71,26 @@ components:
             type: string
             pattern: '^[A-Z]{3}$'
           authorizedAt:
+            type: string
+            format: date-time
+    PaymentCaptured:
+      name: payment.PaymentCaptured
+      title: Payment captured
+      payload:
+        type: object
+        required: [paymentId, orderId, capturedAmount, currency, capturedAt]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          capturedAmount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          capturedAt:
             type: string
             format: date-time

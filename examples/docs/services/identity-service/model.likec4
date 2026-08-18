@@ -1,0 +1,83 @@
+// The identity-service C4 model: the containers behind the token API and the
+// two stores they reach.
+//
+// The `specification` block is repeated in every .likec4 file on purpose. loam
+// parses each document ALONE — it never stitches this file to
+// architecture/landscape.likec4 before reading it — so a kind declared only in
+// the landscape would resolve in the LikeC4 workspace and fail here, and the
+// failure surfaces as `c4.invalid` on a file whose text looks perfect.
+specification {
+  element softwareSystem
+  element container
+  element database
+}
+
+model {
+  identityService = softwareSystem 'identity-service' {
+    description 'Issues the access tokens the rest of the fleet presents, and answers whether one is still good'
+    // The binding — not the title — is what ties this element to
+    // services/identity-service/. With a title alone, renaming the box to
+    // 'Identity' would silently stop every join that reads this file (health
+    // dependencies, `Covers:` entries, the landscape spine) while `loam
+    // validate` stayed green, because a title that fails to match is only a
+    // guess at a binding and is graded as one.
+    metadata {
+      service 'identity-service'
+    }
+
+    api = container 'api' {
+      description 'HTTP surface: POST /tokens, POST /tokens/introspect, GET /tokens/{token}/valid'
+      technology 'Go'
+    }
+    tokens = container 'tokens' {
+      description 'Mints and signs tokens, and turns a recorded revocation into an inactive verdict'
+      technology 'Go'
+    }
+    // Everything durable is in ONE store on purpose, and the description says
+    // which things, because two documents downstream depend on it: the cache
+    // requirement in arch.spec.md falls back HERE for a verdict, and the
+    // stampede in runbook.md is issuance and introspection contending for this
+    // store's connection pool. Naming only the signing keys here would leave
+    // both of them reaching for state nothing in this model holds.
+    keyStore = database 'key-store' {
+      description 'Signing keys and their rotation state, the client registry, and the revocations a verdict is computed from — the only durable state this service owns'
+      technology 'PostgreSQL'
+    }
+    // Derived state, so a plain container rather than a `database`: losing every
+    // byte in here costs latency and never correctness, and ARCH-INTROSPECT-CACHE
+    // in arch.spec.md is the requirement that says so in a scenario.
+    //
+    // Both stores stay NESTED inside the service boundary. Lifting either into
+    // architecture/landscape.likec4 as a peer is `landscape.datastore-private`:
+    // drawn at fleet level a store reads as a system in its own right, available
+    // for somebody else's service to depend on, which is the one coupling that is
+    // hardest to undo once a second team believes the picture.
+    introspectionCache = container 'introspection-cache' {
+      description 'Short-TTL introspection verdicts, keyed by token id'
+      technology 'Redis'
+    }
+
+    api -> tokens 'Issues tokens, answers introspection and the legacy check'
+    // These three edges are the WHOLE runtime graph of this service:
+    // identity-service is the fleet's root of trust and calls nothing outside
+    // its own boundary, which is why health.yaml carries no `dependencies:`
+    // key. They still have to be drawn — with four nested elements and no edge
+    // joining any of them this model is `c4.no-relationships`, on the grounds
+    // that parts which reach nothing are almost never the truth. (The check is
+    // evidence-gated: one lone container proves nothing and stays silent, which
+    // is why the warning is about a model this shape and not about any model.)
+    tokens -> keyStore 'Signs with the active key; rotation promotes the next; introspection reads keys and revocations back'
+    tokens -> introspectionCache 'Caches introspection verdicts, invalidates on revocation'
+  }
+}
+
+// Views belong to LikeC4's renderer; no loam check reads anything below. One
+// view is enough here because the whole model fits inside one boundary — the
+// landscape splits its views only because a fleet-wide `include *` is the page
+// nobody can read.
+views {
+  view identity_service of identityService {
+    title 'identity-service — containers'
+    include *
+  }
+}

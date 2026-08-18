@@ -1,0 +1,138 @@
+// order-service's own C4 — the model behind `services/order-service/`.
+//
+// Every .likec4 file loam reads is parsed ON ITS OWN; nothing is concatenated and
+// nothing is inherited from architecture/landscape.likec4. So this document declares
+// the kinds it uses even though the landscape declares the same names: leaving them
+// out does not borrow them, it fails to parse (`c4.invalid`, an error), and the arch
+// axis, the `Covers:` resolution and health.yaml's dependency reconciliation all go
+// quiet behind that one failure.
+specification {
+  element softwareSystem
+  element container
+  element database
+  element topic
+}
+
+model {
+  orderService = softwareSystem 'order-service' {
+    description 'Owns the order lifecycle and orchestrates the payment behind it'
+    // The binding, not the title, is what ties this element to services/order-service/,
+    // and it is what every join downstream resolves through: health.yaml's dependency
+    // ids, an `arch.spec.md` edge entry written as `order-service -> payment-service`,
+    // the landscape's twin element. Rename the box without it and each of those stops
+    // matching in silence.
+    metadata {
+      service 'order-service'
+    }
+
+    api = container 'api' {
+      description 'REST API: createOrder, getOrder, cancelOrder, and the deprecated createOrderV1'
+      technology 'Spring Boot'
+    }
+    domain = container 'domain' {
+      description 'Order state machine; calls payment-service before an order is acknowledged'
+      technology 'Kotlin'
+    }
+    // The two background containers exist in this model because arch.spec.md has to
+    // be able to point at them: ARCH-ORD-OUTBOX and ARCH-ORD-DEDUPE cover them by id,
+    // and an obligation whose subject is not modelled is an obligation no `Covers:`
+    // line can name.
+    outbox = container 'outbox-relay' {
+      description 'Publishes committed outbox rows to order.events.v1 — at-least-once'
+      technology 'Kotlin'
+    }
+    consumer = container 'payment-consumer' {
+      description 'Applies payment.PaymentAuthorized once per paymentId, then advances the order'
+      technology 'Kotlin'
+    }
+    // The store is a NESTED container of this service, never a fleet-level peer: it
+    // has exactly one consumer, so drawn beside the services in the landscape it would
+    // read as a system in its own right (`landscape.datastore-private` is the check
+    // that pushes it back in here).
+    db = database 'db' {
+      description 'Orders, idempotency keys, the applied-payment ledger and the outbox table'
+      technology 'PostgreSQL'
+    }
+
+    api -> domain 'Places, reads and cancels'
+    domain -> db 'Writes the order, its idempotency key and its outbox row in one transaction'
+    outbox -> db 'Polls unpublished outbox rows and marks them sent'
+    consumer -> db 'Records the applied paymentId, then advances the order'
+  }
+
+  // Everything the service touches from outside its own boundary. The landscape
+  // carries only the boundary crossing; THIS file carries the whole reach, and it is
+  // the file `health.yaml`'s `dependencies:` are reconciled against — an id nothing
+  // here answers to is `health.dependency-unmodelled`, the check that catches a
+  // dependency the on-call file still swears by after the code stopped calling it.
+  paymentService = softwareSystem 'payment-service' {
+    description 'Authorizes and captures cards'
+    metadata {
+      service 'payment-service'
+    }
+  }
+  identityService = softwareSystem 'identity-service' {
+    description 'Issues and introspects access tokens'
+    metadata {
+      service 'identity-service'
+    }
+  }
+  kafka = softwareSystem 'kafka' {
+    description 'Event backbone (platform)'
+    // A topic per channel rather than one broker box. What a producer and a consumer
+    // actually share is the channel, and pointing every edge at the broker turns the
+    // fleet map into a star with one node in the middle the moment the fleet is
+    // bigger than this example.
+    orderEvents = topic 'order.events'
+    paymentEvents = topic 'payment.events'
+  }
+
+  // The edges, drawn from the container that really makes each call — which is the
+  // half of the truth the landscape cannot hold. A model with elements and no
+  // relationships beside a health.yaml declaring two dependencies is
+  // `c4.no-relationships`: a service that reaches nothing is almost never true.
+  //
+  // The `metadata` blocks below are not read for a service model — only landscape
+  // edges feed `spine.op-*` and the event spine — but they are written anyway so the
+  // two documents cannot drift into disagreeing about which operation and which
+  // message each edge stands for.
+  orderService.domain -> paymentService 'Calls authorizePayment' {
+    metadata {
+      op 'authorizePayment'
+    }
+  }
+  // ORD-CANCEL's `Requires: user/orders:cancel` has to be enforced somewhere, and this
+  // is that edge: the API introspects the caller's token before it will cancel anything.
+  // Drawn here and absent from health.yaml, which states the asymmetry and the reason.
+  orderService.api -> identityService 'Calls introspectToken' {
+    metadata {
+      op 'introspectToken'
+    }
+  }
+  orderService.outbox -> kafka.orderEvents 'Publishes OrderPlaced' {
+    metadata {
+      publishes 'order.OrderPlaced'
+    }
+  }
+  // Drawn topic → consumer, the direction the landscape uses and the one the
+  // event spine requires there: `consumes` binds the edge's TARGET, so the same
+  // edge drawn the other way round binds to nothing. Nothing grades it in a
+  // service model, which is exactly why it follows the same convention — a
+  // reader who learns the arrow here should not have to unlearn it upstairs.
+  kafka.paymentEvents -> orderService.consumer 'PaymentAuthorized advances the order' {
+    metadata {
+      consumes 'payment.PaymentAuthorized'
+    }
+  }
+}
+
+// Views are the LikeC4 renderer's, never loam's — no check reads this block. Scoped
+// to the system, because "what does an order stand on" is this file's question and
+// the fleet-wide one is already answered in architecture/landscape.likec4.
+views {
+  view order_service of orderService {
+    title 'order-service — containers, its store, and what it reaches'
+    include *
+    include paymentService, identityService, kafka, kafka.*
+  }
+}

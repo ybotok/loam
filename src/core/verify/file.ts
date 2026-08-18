@@ -2,14 +2,17 @@
  * `verification.yaml` itself: rendered, read back, and refused when it cannot
  * be trusted.
  *
- * Reading is not the inverse of writing here, which is why this is one module
- * and not two halves of a codec. A record loam wrote is re-graded on the way in
- * — unreadable YAML, a shape that is not a verification, a `summary` that
- * disagrees with the claims below it — because the file is data meant to
- * survive without loam, and anything may have edited it since.
+ * Reading is not the inverse of rendering here, which is why the two share a
+ * module instead of being two halves of a codec. A record loam wrote is
+ * re-graded on the way in — unreadable YAML, a shape that is not a
+ * verification, a `summary` that disagrees with the claims below it — because
+ * the file is data meant to survive without loam, and anything may have edited
+ * it since. Putting the rendered bytes ON DISK is a separate concern with its
+ * own failure modes (locks, races, kills mid-write) and lives in
+ * `store/commit.ts`; nothing here touches the filesystem except to read.
  */
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { parse, stringify } from "yaml";
 import { isRecord } from "../kernel/records.js";
 import { VERDICTS } from "./answers.js";
@@ -75,20 +78,27 @@ export type VerificationRead =
    * unreadable record refuses this one too, without a line of new code.
    */
   | { state: "unreadable"; reason: string; code?: "verify.record-miscounted" }
-  | { state: "ok"; verification: Verification };
+  /**
+   * `raw` is the exact bytes `verification` was parsed from. A writer merges
+   * over the PARSE, but commits over the BYTES: `commitVerification` compares
+   * these against the file immediately before its swap, so an edit that landed
+   * between this read and that write — an editor, a writer that ignored the
+   * docs lock — is refused and preserved instead of silently buried.
+   */
+  | { state: "ok"; verification: Verification; raw: Buffer };
 
 export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
   const path = verificationPath(featureDir);
   if (!existsSync(path)) return { state: "absent" };
-  let text: string;
+  let raw: Buffer;
   try {
-    text = await readFile(path, "utf8");
+    raw = await readFile(path);
   } catch (err) {
     return { state: "unreadable", reason: err instanceof Error ? err.message : String(err) };
   }
   let doc: unknown;
   try {
-    doc = parse(text);
+    doc = parse(raw.toString("utf8"));
   } catch (err) {
     return { state: "unreadable", reason: yamlReason(err) };
   }
@@ -101,7 +111,7 @@ export async function readVerificationState(featureDir: string): Promise<Verific
     };
   }
   const miscount = summaryDisagreement(verification);
-  if (miscount === null) return { state: "ok", verification };
+  if (miscount === null) return { state: "ok", verification, raw };
   return {
     state: "unreadable",
     // Spelled twice on purpose: the field is what a caller branches on, the
@@ -234,8 +244,3 @@ function isCount(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
-export async function writeVerification(featureDir: string, v: Verification): Promise<string> {
-  const path = verificationPath(featureDir);
-  await writeFile(path, renderVerification(v), "utf8");
-  return path;
-}

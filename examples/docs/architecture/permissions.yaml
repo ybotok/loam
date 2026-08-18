@@ -1,0 +1,50 @@
+# The fleet's authorization vocabulary, joined to requirements by `Requires:`.
+#
+# Opt-in: a fleet with no `Requires:` line owes no file at all. The first such line makes an
+# absent declaration an error rather than letting each service invent a permission locally,
+# which is how one capability ends up spelled three ways across three repositories.
+#
+# The unit is the pair `<subject>/<permission>`. The subject is the entity the check is
+# performed ON — `user` for a customer acting on their own data, `service` for a fleet service
+# acting on its own behalf — not necessarily the caller. `loam validate` grades exactly two
+# things here: that every `Requires:` pair is declared (`permissions.unknown`, error), and that
+# every declared pair is named by some requirement (`permissions.unenforced`, warning — the
+# authorization mirror of `api.ungoverned`).
+#
+# `owned_by` and `enforced_by` are explanatory and are NOT resolved against services/. This is a
+# spelling and coverage join, not an identity-provider audit: nothing here proves the running
+# system implements a declared permission, and pretending otherwise would be the most dangerous
+# green tick in the repository.
+subjects:
+  user:
+    description: a human account acting on its own data
+  service:
+    description: a fleet service acting on its own behalf, with a machine token
+
+permissions:
+  user:
+    payments:refund:
+      description: refund a captured payment
+      owned_by: identity-service
+      enforced_by: [payment-service]
+    orders:cancel:
+      description: cancel an order that has not shipped
+      owned_by: identity-service
+      enforced_by: [order-service]
+    # Declared, and named by no requirement anywhere in the fleet — the example's
+    # `permissions.unenforced` (warning) demonstration. It is the shape a vocabulary drifts
+    # into: a permission survives the feature that introduced it, the requirement that needed
+    # it is rewritten, and the declaration stays behind looking enforced.
+    profile:read:
+      description: read a customer's own profile
+      owned_by: identity-service
+      enforced_by: [identity-service]
+  service:
+    payments:capture:
+      description: capture funds a previous authorization reserved
+      owned_by: identity-service
+      enforced_by: [payment-service]
+    tokens:introspect:
+      description: ask identity-service what a token currently grants
+      owned_by: identity-service
+      enforced_by: [identity-service]

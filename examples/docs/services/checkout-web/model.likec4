@@ -1,22 +1,109 @@
-// A UI service. The UI is a first-class C4 container; its pages live under ui/pages/.
+// Per-service C4 for a UI service. A UI is a first-class C4 system: it has
+// containers, it has runtime dependencies, and its pages (ui/pages/*.page.yaml)
+// hang off the operations the edges below name.
+//
+// Every .likec4 file is parsed ON ITS OWN — loam never concatenates them — so
+// this document declares the kinds it uses even though architecture/landscape.likec4
+// declares the same ones. Leaving them out here does not inherit, it fails to parse
+// (`c4.invalid`, an error), and the spec/API joins that read the model go quiet with it.
 specification {
   element softwareSystem
   element container
+  element person
 }
 
 model {
+  // The actor belongs in a UI's own model in a way it does not in a backend's:
+  // the pages exist for this person, and the flows in ui/pages/ start at them.
+  // The landscape draws the same customer -> checkout-web edge at fleet scale;
+  // a person is exempt from the service/directory cross-check either way.
+  customer = person 'Customer'
+
   checkoutWeb = softwareSystem 'checkout-web' {
     description 'Customer-facing checkout UI'
 
     spa = container 'spa' {
-      description 'Checkout SPA'
+      description 'Checkout SPA — cart, payment and order status pages'
       technology 'React'
     }
+    // A backend-for-frontend, drawn because it is where the fleet call actually
+    // originates: the browser holds a session cookie, the fleet speaks bearer
+    // tokens, and something has to be the place that translation happens. Drawn
+    // as a container of checkout-web and not as a service of its own, because it
+    // is deployed and released with the SPA and has no consumer but the SPA —
+    // a services/checkout-bff/ would owe a spec, a contract and an owner nobody has.
+    bff = container 'bff' {
+      description 'Backend-for-frontend: session to bearer, response shaping'
+      technology 'Node.js'
+    }
+
+    customer -> spa 'Buys'
+    spa -> bff 'Calls the checkout BFF'
   }
+
+  // The services this one actually calls. A service model carries everything the
+  // service touches, cross-boundary included, drawn with the edge the service
+  // really has — the landscape carries only the boundary crossing (checkout-web ->
+  // order-service), while the edge below says WHICH container makes the call.
+  // Without these three edges this file would be two boxes and a hop, and
+  // `c4.no-relationships` would be right to say a model that reaches nothing is
+  // almost never true.
+  orderService = softwareSystem 'order-service' {
+    description 'Owns the order lifecycle'
+    // Bind rather than rely on the title. A renamed box silently stops matching
+    // its directory everywhere the two are joined — in the landscape that costs
+    // `landscape.binding-unknown` (error) when the id is wrong, and here it is
+    // what `health.dependency-unmodelled` resolves a declared dependency
+    // through in the services that have a health.yaml. checkout-web has none:
+    // a UI is nobody's runtime dependency, so it declares no SLIs, no alerts
+    // and no dependency graph, and owes no arch.spec.md to cover them.
+    metadata {
+      service 'order-service'
+    }
+  }
+  paymentService = softwareSystem 'payment-service' {
+    description 'Owns payment authorization/capture'
+    metadata {
+      service 'payment-service'
+    }
+  }
+
+  // `metadata { op }` is the C4 half of the operation join: the exact
+  // operationId order-service's openapi.yaml declares. What `loam validate`
+  // grades is the LANDSCAPE's twin of each edge below — `spine.op-undefined`
+  // (error) is what it says there when the id names no operation the callee
+  // defines. Carrying the op here anyway is what keeps the two documents from
+  // drifting into different answers about which operation this container calls;
+  // nothing would catch it if they did. Two calls to one service are two edges,
+  // not one edge with a list — a view has to be able to show that the status
+  // page and the checkout page stand on different operations.
+  checkoutWeb.bff -> orderService 'Calls createOrder' {
+    metadata {
+      op 'createOrder'
+    }
+  }
+  checkoutWeb.bff -> orderService 'Calls getOrder' {
+    metadata {
+      op 'getOrder'
+    }
+  }
+  // Card details go from the browser straight to payment-service and never
+  // through the BFF or order-service, which is why this edge starts at the SPA.
+  // It carries no `metadata { op }` deliberately: its twin in the landscape is
+  // the example's demonstration of `spine.op-link-missing` (warn) — the finding
+  // for an edge that SAYS it calls something and names no operation, so nothing
+  // can check the call still exists. Free here and one warning there, which is
+  // the asymmetry worth knowing: the fleet map is what the spine reads.
+  checkoutWeb.spa -> paymentService 'Calls the payment API'
 }
 
+// Views are the LikeC4 renderer's, never loam's — no check reads this block.
+// Scoped to the system so the page answers "what does the checkout UI stand on"
+// rather than redrawing the fleet, which architecture/landscape.likec4 already does.
 views {
   view checkout_web of checkoutWeb {
+    title 'checkout-web — containers and the services they call'
     include *
+    include orderService, paymentService
   }
 }

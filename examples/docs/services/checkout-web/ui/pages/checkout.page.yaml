@@ -1,0 +1,40 @@
+# Page-spec (source of truth). planned: `loam render` generates an HTML prototype from this (model A).
+# Links the architecture (consumes endpoints) and behavior (governing scenarios).
+# No command reads page-specs yet — the format is illustrative, not contract.
+page: checkout
+title: Checkout
+service: checkout-web
+status: draft
+layout:
+  - { type: heading, text: "Checkout" }
+  - { type: list, id: cart-lines, itemFields: [sku, quantity, amount] }
+  - { type: text, id: total, label: "Total" }
+  - { type: field, id: payment-method, label: "Card", required: true }
+  - { type: button, id: confirm, text: "Pay and place order" }
+  # Every branch a governing scenario describes needs somewhere on the page to
+  # happen. This one is where "Authorization is refused" lands: without it the
+  # scenario is satisfied by an alert box nobody designed.
+  - { type: banner, id: declined, text: "That card was declined — try another payment method" }
+consumes:
+  # `consumes:` names the FLEET operation the page depends on — the exact
+  # operationId the provider's openapi.yaml declares — not the hop the call
+  # takes to get there. The two hops differ: `createOrder` goes through the
+  # `bff` container in model.likec4, `authorizePayment` leaves the browser
+  # directly so card details never touch our servers. Naming the hop here would
+  # make one dependency look unlike the other when the thing that can actually
+  # break under them is the same: the provider's contract.
+  - { service: order-service, op: createOrder }         # POST /orders
+  # The one dependency here whose edge carries no `metadata { op }` — see
+  # model.likec4, and `spine.op-link-missing` on its landscape twin. Nothing
+  # joins this line to anything, so it is a claim rather than a check: that is
+  # what the missing link costs, written at the only place that still knows.
+  - { service: payment-service, op: authorizePayment }  # POST /payments
+behavior:
+  # "<service> / <requirement> / <scenario>" for a LIVING scenario: the three
+  # names that locate it in services/<service>/spec.md. A scenario that still
+  # lives in a feature carries the feature id in front instead (see
+  # split-payment.page.yaml) — until FEAT-101 archives, there is no living
+  # requirement to point at.
+  - "checkout-web / Checkout flow / Complete a checkout"
+  - "checkout-web / Checkout flow / Authorization is refused"
+  - "checkout-web / Checkout flow / The customer submits twice"

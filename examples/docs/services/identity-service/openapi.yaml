@@ -1,0 +1,197 @@
+# The HTTP contract. `operationId` is the join token that ties this file to the
+# other two axes: a landscape edge says `metadata { op 'introspectToken' }` and a
+# requirement says `Operations: introspectToken`, and all three spellings must be
+# byte-identical or the join is silently empty.
+#
+# loam reads operationIds from the eight HTTP methods of a path item and nowhere
+# else — an id parked under a vendor extension (`x-legacy:`) does not exist as far
+# as every check here is concerned, because a phantom id would mask a real
+# contract break rather than document one.
+openapi: 3.1.0
+info:
+  title: identity-service
+  version: "2.0"
+  description: >-
+    Token issuance and introspection for the marketplace fleet. Every service that
+    accepts a caller's token resolves it here; nothing in this contract calls out.
+
+paths:
+  /tokens:
+    post:
+      operationId: issueToken
+      summary: Exchange client credentials for a signed access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        "201":
+          description: A signed token, valid until its stated expiry
+          # Every operation needs at least one response declaring
+          # `content: <media>: schema:` — without one, `openapi.response-undescribed`
+          # says the contract names the operation and nothing about what it
+          # returns, so a reader still has to open the code. 204 and 304 are the
+          # only codes excused, since neither carries a body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessToken'
+        "401":
+          description: The credentials did not authenticate
+          # A declared 4xx/5xx is a promise about a refusal, and loam grades it as
+          # one: this exact number must appear as a bare number inside the body of
+          # a scenario belonging to a requirement whose `Operations:` line names
+          # issueToken, or `api.response-ungoverned` fires. IDN-ISSUE's
+          # "unknown client" and "revoked secret" scenarios are where 401 is paid
+          # for — written as scenarios rather than prose, because a scenario is
+          # what `loam gherkin` turns into a test.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthError'
+
+  /tokens/introspect:
+    post:
+      operationId: introspectToken
+      summary: Report whether a token is currently active and what it grants
+      description: >-
+        The authoritative answer, computed from revocation state — not from the
+        token's signature, which stays valid for the whole of a revoked token's
+        remaining lifetime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntrospectionRequest'
+      responses:
+        # RFC 7662's shape, deliberately: an unknown, expired or revoked token is
+        # `{"active": false}` with a 200, never a 4xx. There is consequently no
+        # failure code to govern here, and `api.response-ungoverned` has nothing
+        # to say about this operation.
+        "200":
+          description: The verdict for the presented token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Introspection'
+
+  /tokens/{token}/valid:
+    get:
+      operationId: validateToken
+      summary: Legacy boolean validity check
+      # `deprecated: true` is standard OpenAPI, and loam turns it into lifecycle
+      # visibility on the spine rather than leaving migration state to a wiki.
+      # Two findings come out of this one line, both warnings, both wanted here:
+      #
+      #   * `spine.op-deprecated` — the landscape's
+      #     `paymentService -> identityService` edge carries
+      #     `metadata { op 'validateToken' }`, and payment-service has not moved
+      #     yet. The finding is filed against the PROVIDER (this service, the
+      #     edge's target) because the contract lives here, and it names the
+      #     consumer that still has to migrate — one warning per inbound edge, so
+      #     a deprecated operation nobody calls stays silent.
+      #   * `api.requirement-deprecated` — IDN-VALIDATE-LEGACY governs only this
+      #     operation, so the behaviour it describes is on its way out.
+      #
+      # Deprecation is the FIRST step of retiring an operation, never the removal
+      # itself: the op stays defined and callable, because deleting it here would
+      # break payment-service's edge with nothing having proposed the break. The
+      # step that ends this state is a feature delta, and its recipe is written
+      # once, in adrs/0001-token-introspection-over-local-validation.md.
+      deprecated: true
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: The opaque token id being checked
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Whether the token is currently valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegacyValidity'
+
+components:
+  # Every schema this document references lives here, in the same file. An
+  # external `$ref` is out of scope on this axis — it does not travel with the
+  # contract when the contract is read on its own — and an internal one that
+  # points at nothing is `openapi.ref-unresolved`: the operation validates while
+  # its payload is silently absent, which reads exactly like a complete contract.
+  schemas:
+    TokenRequest:
+      type: object
+      required: [clientId, clientSecret]
+      properties:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+          format: password
+        scope:
+          type: string
+          description: Space-separated scopes; the issued token carries the intersection with what the client is granted
+    AccessToken:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          description: Seconds until expiry, counted from issuance
+        scope:
+          type: string
+    AuthError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          # One value, on purpose: the refusal must not tell a caller whether the
+          # client id exists. IDN-ISSUE's two 401 scenarios are what hold that
+          # promise, and this enum is what makes breaking it a contract change.
+          enum: [invalid_client]
+        errorDescription:
+          type: string
+          description: Human-readable, never distinguishing an unknown client from a bad secret
+    IntrospectionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    Introspection:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+        sub:
+          type: string
+          description: The client the token was issued to; absent when inactive
+        scope:
+          type: string
+        exp:
+          type: integer
+          description: Expiry as seconds since the epoch; absent when inactive
+    LegacyValidity:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+          description: >-
+            The only field this legacy shape carries beyond the boolean. Callers that
+            need scope or subject have to use introspectToken; this schema is frozen.

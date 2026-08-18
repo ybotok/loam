@@ -19,7 +19,7 @@ import {
   type DiscardedAnswer,
 } from "../../core/verify/build.js";
 import { type Checklist } from "../../core/verify/checklist.js";
-import { writeVerification } from "../../core/verify/file.js";
+import { commitVerification } from "../../core/verify/store/commit.js";
 import {
   tallyRecord,
   type ConsumedReport,
@@ -53,6 +53,13 @@ export interface Attestor {
   service: string | undefined;
   repoDir: string;
   previous: Verification | null;
+  /**
+   * The exact bytes `previous` was parsed from — null when there was no record.
+   * They travel together because they ARE the same read: the merge consumes the
+   * parse, the commit compares the bytes, and a pre-image from any other read
+   * would let the commit vouch for a document the merge never saw.
+   */
+  preImage: Buffer | null;
 }
 
 export async function record(
@@ -62,7 +69,7 @@ export async function record(
   opts: VerifyOptions,
 ): Promise<void> {
   const { docsDir, featureDir, json } = target;
-  const { service, repoDir, previous } = attestor;
+  const { service, repoDir, previous, preImage } = attestor;
   // The legacy all-at-once form answers the WHOLE checklist on one repository's
   // word and writes a schema-1 record — no attestations, no commits. Run over a
   // federated record it does not merge and it does not migrate: it erases every
@@ -176,7 +183,11 @@ export async function record(
     verification = built.verification;
     discarded = built.discarded;
   }
-  const path = await writeVerification(featureDir, verification);
+  // Staged, compared against the locked read's bytes, swapped in by one
+  // rename — see core/verify/store/commit.ts for what each refusal means.
+  const committed = await commitVerification(featureDir, verification, preImage);
+  if (!committed.ok) return fail(json, committed.code, committed.message);
+  const path = committed.path;
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
 
   // The same judgment read mode makes (see report): the record just written IS

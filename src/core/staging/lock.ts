@@ -78,6 +78,31 @@ export async function acquireDocsLock(docsDir: string): Promise<() => Promise<vo
   }
 }
 
+/**
+ * Take the docs lock, waiting out a live holder instead of refusing on first
+ * contact. Same lock, different caller contract: `archive` refuses fast because
+ * its holder may be mid-merge for seconds and its caller can re-run, but two
+ * `verify --record` runs for different services of one feature are BOTH
+ * supposed to land — the second must wait for the first's sub-second window and
+ * then merge over the record it left, or one service's attestation is refused
+ * for no reason a user can see. The wait is bounded: a holder that outlives
+ * `waitMs` yields the same `DocsBusyError` the fast form throws, so the caller
+ * maps it to `docs-busy` either way and nothing hangs on a wedged lock.
+ */
+export async function acquireDocsLockWaiting(docsDir: string, waitMs: number): Promise<() => Promise<void>> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      return await acquireDocsLock(docsDir);
+    } catch (err) {
+      if (!(err instanceof DocsBusyError) || Date.now() >= deadline) throw err;
+    }
+    // Short enough that a released lock is picked up before a human notices;
+    // long enough that the poll does not busy-spin the directory.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 /** Remove a lock whose holder is a dead process on this same host. Returns whether it did. */
 async function breakStaleLock(path: string): Promise<boolean> {
   let holder: unknown;

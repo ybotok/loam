@@ -14,21 +14,49 @@ each requirement's `Covers:` line names the C4 elements, edges and health signal
 its scenarios exercise, and `loam validate` checks every entry resolves
 (`covers.unknown`) and every declared alert/SLI is covered (`health.uncovered`).
 
+An edge entry resolves by exact element id **or** by the service an endpoint stands for, which
+is why the entries below name `payment-service` rather than `marketplace.paymentService`: the
+landscape draws this service inside a grouping element, and a `Covers:` line written against a
+group path would have to be rewritten the day somebody moves the box.
+
 ## Requirements
 
 ### Requirement: Events leave through the transactional outbox
+
+Requirement-ID: ARCH-PAY-OUTBOX
 The service SHALL write a domain event and the state change it reports in one
 database transaction, published to kafka by an outbox relay — never a dual write.
 
-Covers: paymentService.db, paymentService -> kafka.paymentEvents
-Publishes: payment.PaymentAuthorized
+Covers: paymentService.outbox, payment-service -> kafka.paymentEvents
+Publishes: payment.PaymentAuthorized, payment.PaymentCaptured
 
 #### Scenario: Broker down at commit time
 - **Given** an authorized payment whose `PaymentAuthorized` event is still in the outbox
 - **When** kafka is unavailable
 - **Then** the payment state stays committed and the event is published once kafka returns
 
+#### Scenario: The relay redelivers rather than dropping
+- **Given** an outbox row the relay published but could not mark as sent
+- **When** the relay restarts
+- **Then** the event is published a second time and consumers deduplicate on `paymentId`
+
+### Requirement: Card authorization survives an acquirer timeout
+
+Requirement-ID: ARCH-PAY-ACQUIRER
+The service SHALL send an idempotency key with every acquirer call and SHALL reconcile a
+timed-out authorization against the acquirer before deciding it failed — a timeout is an
+unknown outcome, never a decline.
+
+Covers: payment-service -> stripe
+
+#### Scenario: The acquirer times out and the money was in fact reserved
+- **Given** an authorization request that times out at the acquirer
+- **When** the reconciliation job replays the request with the same idempotency key
+- **Then** the acquirer returns the original authorization and no second charge exists
+
 ### Requirement: Authorization health is measured and paged
+
+Requirement-ID: ARCH-PAY-HEALTH
 The service SHALL export its availability and latency SLIs and page on a sustained
 authorization error rate.
 
