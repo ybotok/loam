@@ -18,12 +18,15 @@ import { join } from "node:path";
 import {
   coherentFixture,
   makeProject,
+  pinAsyncapi,
   pinFor,
   runLoam,
   treeHashes,
+  FEATURE_ASYNCAPI,
   FEATURE_DELTA,
   FEATURE_OPENAPI,
   FEATURE_SPEC,
+  LIVING_ASYNCAPI,
   LIVING_OPENAPI,
   LIVING_SPEC,
   SERVICE_MODEL,
@@ -496,6 +499,42 @@ describe("features that need a scenario, a pin, or a service", () => {
     );
     expect(codes((await statusJson(p, "FEAT-1")).next)).not.toContain("next.rebase");
     await p.destroy();
+  });
+
+  it("the event axis: an unpinned asyncapi delta yields next.rebase and turns its own artifact row draft", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/asyncapi.yaml"] = LIVING_ASYNCAPI;
+    files[`${FEAT_DIR}/specs/payment-service/asyncapi.yaml`] = FEATURE_ASYNCAPI;
+    const p = await makeProject(files);
+    try {
+      const payload = await statusJson(p, "FEAT-1");
+      // asyncapi.baseline-missing is a warning that GATES; UNPINNED maps it to
+      // the one fix, `loam rebase` — exactly like the other two axes.
+      expect(codes(payload.next)).toContain("next.rebase");
+      // The finding turns the responsible row draft. Never required: an event
+      // contract is genuinely optional, so the absent row elsewhere stays done.
+      expect(artifact(payload, "asyncapi", "payment-service")).toMatchObject({
+        required: false,
+        exists: true,
+        status: "draft",
+      });
+      expect(artifact(payload, "asyncapi", "payment-split-service")).toMatchObject({
+        required: false,
+        exists: false,
+        status: "done",
+      });
+
+      // Pinned via the same function `loam rebase` runs: the gate clears.
+      await p.write(
+        `${FEAT_DIR}/specs/payment-service/asyncapi.yaml`,
+        pinAsyncapi(FEATURE_ASYNCAPI, LIVING_ASYNCAPI),
+      );
+      const after = await statusJson(p, "FEAT-1");
+      expect(codes(after.next)).not.toContain("next.rebase");
+      expect(artifact(after, "asyncapi", "payment-service")).toMatchObject({ status: "done" });
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

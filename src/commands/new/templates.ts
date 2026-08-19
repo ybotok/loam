@@ -179,6 +179,14 @@ export function specTemplate(featureId: string, service: string): string {
      and \`loam archive\` refuses to merge a requirement that governs an
      operation nobody defines — add the line once the contract exists.
 
+     A \`Publishes:\` / \`Consumes:\` body line does the same for event messages:
+     it names what the requirement puts on or takes off the bus, checked
+     against the service's AsyncAPI contract. If ${featureId} changes that
+     contract, hand-create specs/${service}/asyncapi.yaml — a complete
+     AsyncAPI 3.0 document, messages declared under \`components.messages\`
+     (loam scaffolds none: an event contract is genuinely optional) — and run
+     \`loam rebase ${featureId}\` so every restated slot pins as a quote.
+
      Copy the block below out of this comment, unindent it, and replace the
      TODOs and every <angle-bracket> fill-in — \`loam archive\` refuses the
      scaffold's own wording (\`scaffold.placeholder\`):

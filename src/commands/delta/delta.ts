@@ -10,8 +10,8 @@ import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
-import { apiChanges, archSlice, introducedServices, livingServices, stripFrontmatter } from "./slices.js";
-import { printApi, printArchSlice, printRequirements } from "./print.js";
+import { apiChanges, archSlice, eventChanges, introducedServices, livingServices, stripFrontmatter } from "./slices.js";
+import { printApi, printArchSlice, printEvents, printRequirements } from "./print.js";
 import { indent } from "./print.js";
 
 // The summary walk below descends four levels into a document nobody has
@@ -137,6 +137,12 @@ export function registerDelta(program: Command): void {
       // endpoint" was the half of the work the brief left out.
       const api = await apiChanges(specPaths.openapi);
 
+      // The event axis, same reasoning: a feature's asyncapi.yaml is merged by
+      // archive and graded by validate, so the brief must name what it changes
+      // — a message the implementer was never told to publish is the same
+      // dropped work as an endpoint the brief left out.
+      const events = await eventChanges(specPaths.asyncapi);
+
       // C4 architecture slice. The fleet union mirrors coherence's: services/
       // plus the feature's own specs/ names, so the slice and the validator
       // resolve a container-targeted edge to the same owner.
@@ -150,12 +156,14 @@ export function registerDelta(program: Command): void {
       // stops a pipeline from building on it, so it is set BEFORE the format
       // fork — the guard is about the delta, not about how it is rendered.
       //
-      // The contract axis fails the same way and now earns the same guard: an
-      // openapi.yaml that does not parse projected as an empty operation list,
-      // and nothing upstream catches it either — `loam validate` grades
-      // `openapi.invalid` on LIVING service contracts only, never on a
-      // feature's delta.
-      if (arch.errors.length > 0 || api.unreadable) process.exitCode = 1;
+      // The two contract axes fail the same way and earn the same guard: an
+      // openapi.yaml or asyncapi.yaml that does not parse projects as an empty
+      // change list. `validate --feature` does catch both these days
+      // (`openapi.invalid` / `asyncapi.invalid` on the feature's own files),
+      // but the guard stays this command's own: the brief is consumed by
+      // agents that never ran validate, so the exit code must carry the
+      // failure itself.
+      if (arch.errors.length > 0 || api.unreadable || events.unreadable) process.exitCode = 1;
 
       if (json) {
         const reqJson = (r: Requirement): Record<string, unknown> => ({
@@ -190,6 +198,14 @@ export function registerDelta(program: Command): void {
             unreadable: api.unreadable,
             ...(api.error === undefined ? {} : { error: api.error }),
           },
+          // The event axis arrives after the api/openapi pair settled its
+          // split shape, so it is one additive key carrying both halves:
+          // the declarations and the document's readability.
+          events: {
+            changes: events.changes,
+            unreadable: events.unreadable,
+            ...(events.error === undefined ? {} : { error: events.error }),
+          },
           architecture: arch,
         });
         return;
@@ -204,6 +220,7 @@ export function registerDelta(program: Command): void {
       else console.log("Requirements: (none for this service)\n");
       if (existsSync(specPaths.archSpec)) printRequirements(archReqs, "Arch requirements");
       if (existsSync(specPaths.openapi)) printApi(api);
+      if (existsSync(specPaths.asyncapi)) printEvents(events);
       if (existsSync(paths.delta)) printArchSlice(arch, service);
     });
 }

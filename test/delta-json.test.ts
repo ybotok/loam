@@ -180,6 +180,80 @@ describe("--json contract", () => {
     });
   });
 
+  it("carries the AsyncAPI delta as message slots under the additive events key, and the text view prints it", async () => {
+    const files = coherentFixture();
+    // A small but complete event delta: one wired message, one declared but
+    // unwired, one removal marker — the three `direction` shapes at once.
+    files[`features/FEAT-1-split/specs/${NEW_SVC}/asyncapi.yaml`] = `asyncapi: 3.0.0
+info:
+  title: ${NEW_SVC} events
+  version: "1.0"
+channels:
+  splitEvents:
+    address: payment.splits.v1
+    messages:
+      SplitRecorded:
+        $ref: '#/components/messages/SplitRecorded'
+operations:
+  sendSplitRecorded:
+    action: send
+    channel:
+      $ref: '#/channels/splitEvents'
+components:
+  messages:
+    SplitRecorded:
+      name: payment.SplitRecorded
+      payload:
+        type: object
+        properties:
+          splitId:
+            type: string
+    SplitAudited:
+      name: payment.SplitAudited
+      payload:
+        type: object
+    Legacy:
+      x-loam-remove: true
+      name: payment.Legacy
+`;
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.events).toEqual({
+        changes: [
+          { slot: "components.messages.SplitRecorded", message: "payment.SplitRecorded", direction: "send", remove: false },
+          { slot: "components.messages.SplitAudited", message: "payment.SplitAudited", direction: null, remove: false },
+          { slot: "components.messages.Legacy", message: "payment.Legacy", direction: null, remove: true },
+        ],
+        unreadable: false,
+      });
+
+      const text = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC);
+      expect(text.code).toBe(0);
+      expect(text.out).toContain("Events (this feature's asyncapi.yaml for the service):");
+      expect(text.out).toContain("SEND payment.SplitRecorded  (components.messages.SplitRecorded)");
+      expect(text.out).toContain("REMOVE payment.Legacy  (components.messages.Legacy)");
+    });
+  });
+
+  it("an asyncapi.yaml that does not parse exits 1 exactly as the openapi path does", async () => {
+    const files = coherentFixture();
+    files[`features/FEAT-1-split/specs/${NEW_SVC}/asyncapi.yaml`] = "asyncapi: 3.0.0\nchannels: {\n";
+    await withProject(files, async (p) => {
+      // The delta exit-code parity the openapi guard below argues for: this
+      // payload IS the implementation task, so "no event work here" over a
+      // YAML error must not read as exit 0.
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.ok).toBe(true); // the command ran; the exit code carries the failure
+      expect(json.events.changes).toEqual([]);
+      expect(json.events.unreadable).toBe(true);
+      expect(typeof json.events.error).toBe("string");
+    });
+  });
+
   it("an openapi.yaml that does not parse exits 1 and reports the failure under its own key", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"] =
