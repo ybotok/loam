@@ -123,6 +123,29 @@ export function assertDistinctPlannedPaths(writes: PlannedWrite[]): void {
   }
 }
 
+/** The parser's own line shape (core/document/parse.ts), mirrored for the presence test. */
+const CAPABILITY_LINE_RE = /^\s*Capabilit(?:y|ies):/i;
+
+/**
+ * The requirement with a `Capability: <id>` body line — the join that keeps
+ * the source capability's identity on every requirement it routed, instead of
+ * dissolving it into service files and leaving the id only in legacy/. The
+ * serializeRequirements Requirement-ID pattern: never a second line when the
+ * author already wrote one (a rare but legal delta authored against a loam
+ * target), and appended after the body the way active.ts appends its
+ * OpenSpec-Living-Source annotation, so a MODIFIED requirement's wholesale
+ * replace carries the line into the living document rather than stripping it.
+ */
+export function requirementWithCapability(requirement: Requirement, capabilityId: string): Requirement {
+  if (requirement.text.some((line) => CAPABILITY_LINE_RE.test(line))) return requirement;
+  const line = `Capability: ${capabilityId}`;
+  return {
+    ...requirement,
+    capabilities: [capabilityId],
+    text: requirement.text.length === 0 ? [line] : [...requirement.text, "", line],
+  };
+}
+
 export function assertMaterializedRequirementIds(where: string, requirements: Requirement[]): void {
   const problems = requirementIdProblems(requirements);
   if (problems.length === 0) return;

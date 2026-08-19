@@ -6,6 +6,7 @@
  * behind, which is the question they opened it with.
  */
 import { MATURITY_LADDER, maturityRollup } from "../../core/vocabulary/maturity.js";
+import { type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { compareIds, type FeatureEntry } from "../../core/repo/entries.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
@@ -90,6 +91,34 @@ export function printWorklist(views: ServiceView[], total: number): void {
     console.log(
       `  ${v.entry.id.padEnd(width)}  ${v.maturity.padEnd(rungWidth)}  missing: ${v.missing.join(", ")}${note}`,
     );
+  }
+}
+
+/**
+ * The capability table: what the fleet promises, and how much of each promise
+ * anything claims to implement. The `0 — unrealized` marker is the row's whole
+ * point — a declared capability nothing realizes is the drift this section
+ * exists to make visible — and the draft/verified split says how much of a
+ * realized one rests on vouched documents rather than drafts.
+ */
+export function printCapabilities(rows: CapabilityRow[]): void {
+  console.log(`capabilities (${rows.length})`);
+  if (rows.length === 0) return;
+  const width = Math.max(0, ...rows.map((row) => row.id.length));
+  for (const row of rows) {
+    const count = row.realizedBy.length;
+    const cells =
+      count === 0
+        ? ["0 — unrealized"]
+        : [
+            `${count} requirement${count === 1 ? "" : "s"}`,
+            row.services.join(", "),
+            Object.entries(row.statuses)
+              .map(([status, n]) => `${n} ${status}`)
+              .join(" · "),
+          ];
+    const owner = row.owner === undefined ? "" : `  (owner: ${row.owner})`;
+    console.log(`  ${row.id.padEnd(width)}  ${cells.join("  ·  ")}${owner}`);
   }
 }
 

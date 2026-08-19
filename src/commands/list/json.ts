@@ -3,6 +3,7 @@
  * contract: the payload keys are frozen, the columns beside them are not.
  */
 import { repoPath } from "../../core/envelope/json.js";
+import { type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { servicesUnder } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
@@ -45,6 +46,25 @@ export function subsystemsJson(docsDir: string, tree: FleetTree): Record<string,
       title: sub.meta.title ?? null,
       memberCount: servicesUnder(tree, sub).length,
     }));
+}
+
+/**
+ * One `capabilities[]` row — additive payload, explicit `loam list
+ * capabilities` only, and diff-stable: the rollup already sorts rows,
+ * realizedBy and statuses' keys deterministically, and this projection adds
+ * nothing that could vary between machines. Optional keys are omitted rather
+ * than nulled so a declaration that never carried a description does not grow
+ * one in the diff.
+ */
+export function capabilityJson(row: CapabilityRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    ...(row.description !== undefined ? { description: row.description } : {}),
+    ...(row.owner !== undefined ? { owner: row.owner } : {}),
+    realizedBy: row.realizedBy,
+    services: row.services,
+    statuses: row.statuses,
+  };
 }
 
 export function featureJson(

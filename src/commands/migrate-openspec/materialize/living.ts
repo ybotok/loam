@@ -20,7 +20,7 @@ import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { planWrite, type PlannedWrite } from "../../../core/staging/writes.js";
 import { selectedServices } from "../openspec/decisions.js";
 import { OpenSpecCommandError } from "../openspec/error.js";
-import { assertMaterializedRequirementIds } from "./stage.js";
+import { assertMaterializedRequirementIds, requirementWithCapability } from "./stage.js";
 
 export async function materializeLivingSpecs(
   inventory: OpenSpecInventory,
@@ -56,7 +56,9 @@ export async function materializeLivingSpecs(
             `Mapped living specs collide in service '${service}' on ${identity}; refine the capability/requirement allocation before --apply.`,
           );
         }
-        existing.push({ ...requirement, kind: "BASE" });
+        // The capability id rides every routed requirement as a `Capability:`
+        // line, declared in the staged architecture/capabilities.yaml (target.ts).
+        existing.push(requirementWithCapability({ ...requirement, kind: "BASE" }, capability.id));
         byService.set(service, existing);
       }
     }

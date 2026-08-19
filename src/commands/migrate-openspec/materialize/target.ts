@@ -14,6 +14,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { DOCS_SUBDIRS, docsRepoFiles } from "../../../core/docs.js";
+import { compareIds } from "../../../core/repo/entries.js";
 import { ownValue } from "../../../core/kernel/records.js";
 import { inventoryOpenSpec } from "../../../core/openspec/inventory.js";
 import { type OpenSpecMapping } from "../../../core/openspec/model/mapping.js";
@@ -45,10 +46,42 @@ export async function planMigrationWrites(
     );
   }
   const livingWrites = await materializeLivingSpecs(inventory, mapping, target, livingByCapability);
+  const vocabulary = capabilitiesVocabularyWrite(inventory, target);
+  if (vocabulary !== null) livingWrites.push(vocabulary);
   const activeWrites = await materializeActiveChanges(inventory, mapping, target, livingByCapability);
   const legacyWrites = await copyLivingTree(inventory, target);
   assertDistinctPlannedPaths([...livingWrites, ...activeWrites, ...legacyWrites]);
   return { livingWrites, activeWrites, legacyWrites };
+}
+
+/**
+ * The staged fleet's capability vocabulary: the union of living and
+ * active-horizon capability ids, each declared with an EMPTY body — no
+ * description is invented, because the authored `## Purpose` prose stays
+ * verbatim under legacy/ (the no-prose-moves rule), and an empty mapping is a
+ * legal declaration. Keys sorted with compareIds over an insertion-ordered
+ * object, so the bytes are machine-independent; nested ids stay one flat key
+ * (`payments/refunds`), never collapsed. Null when the corpus names no
+ * capability at all — an empty vocabulary FILE would opt the staged fleet into
+ * an axis it has nothing to say on. assertDistinctPlannedPaths guards the path
+ * against every other planned write; the docs scaffold does not write it.
+ */
+function capabilitiesVocabularyWrite(inventory: OpenSpecInventory, target: string): PlannedWrite | null {
+  const ids = new Set<string>(inventory.living.capabilities.map((capability) => capability.id));
+  for (const change of inventory.changes.active) {
+    for (const spec of change.specs) ids.add(spec.capability);
+  }
+  if (ids.size === 0) return null;
+  const capabilities = Object.fromEntries([...ids].sort(compareIds).map((id) => [id, {}]));
+  return planWrite(
+    join(target, "architecture", "capabilities.yaml"),
+    "# Declared by `loam migrate-openspec`: every living and active-horizon OpenSpec\n" +
+      "# capability id, so capability identity survives migration as a checkable name\n" +
+      "# (each routed requirement carries a matching `Capability:` line). Descriptions\n" +
+      "# are deliberately absent — the authored Purpose prose is verbatim under\n" +
+      "# legacy/openspec/specs/, and no prose moves.\n" +
+      stringifyYaml({ capabilities }, { lineWidth: 0 }),
+  );
 }
 
 /**
