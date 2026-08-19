@@ -202,6 +202,7 @@ export function parseRequirements(md: string): Requirement[] {
         publishes: [],
         consumes: [],
         requires: [],
+        capabilities: [],
         scenarios: [],
         section,
         line: index + 1,
@@ -252,6 +253,13 @@ export function parseRequirements(md: string): Requirement[] {
       // to read it.
       const mreq = /^\s*Requires?:\s*(.+?)\s*$/i.exec(line);
       if (mreq) req.requires = mreq[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      // The capability axis. Same grammar, same keep-last quirk, same purely
+      // additive parse as Requires: above — but note the OPT-IN differs: the
+      // vocabulary FILE (architecture/capabilities.yaml) is the opt-in for this
+      // axis, not the line, so entries parsed here grade as nothing at all
+      // until a fleet writes that file (core/capabilities/findings.ts).
+      const mcap = /^\s*Capabilit(?:y|ies):\s*(.+?)\s*$/i.exec(line);
+      if (mcap) req.capabilities = mcap[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }
 

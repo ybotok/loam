@@ -22,6 +22,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readAsyncapi, type AsyncapiDoc } from "./asyncapi/read.js";
+import { readCapabilities, type CapabilityVocabulary } from "./capabilities/capabilities.js";
 import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
@@ -50,6 +51,12 @@ export interface FleetContextStats {
    * command instead of one per consuming edge.
    */
   asyncapiParses: number;
+  /**
+   * Reads of `architecture/capabilities.yaml`. One per invocation is the
+   * capability axis's exit criterion, and this counter is how a test pins it.
+   * (Permissions predates the memo and re-parses per service — do not copy that.)
+   */
+  capabilityParses: number;
   likec4Loads: number;
 }
 
@@ -67,6 +74,7 @@ export class FleetContext {
   private readonly requirements = new Map<string, Promise<Requirement[]>>();
   private readonly openapis = new Map<string, Promise<OpenapiDoc>>();
   private readonly asyncapis = new Map<string, Promise<AsyncapiDoc>>();
+  private readonly capabilityVocabularies = new Map<string, Promise<CapabilityVocabulary>>();
   private readonly likec4 = new Map<string, Promise<LoadedDoc>>();
 
   private readonly counts: FleetContextStats = {
@@ -77,6 +85,7 @@ export class FleetContext {
     requirementParses: 0,
     openapiParses: 0,
     asyncapiParses: 0,
+    capabilityParses: 0,
     likec4Loads: 0,
   };
 
@@ -200,6 +209,24 @@ export class FleetContext {
       this.counts.asyncapiParses += 1;
       pending = readAsyncapi(path);
       this.asyncapis.set(k, pending);
+    }
+    return pending;
+  }
+
+  /**
+   * The capability vocabulary, read once per invocation. Direction rule,
+   * load-bearing: this file imports `capabilities/capabilities.js`, so nothing
+   * under src/core/capabilities/ may import this module back — that edge is a
+   * core-root↔capabilities package cycle `import/no-cycle` cannot see, which is
+   * why the functions there take plain data or a `read` function, never a FleetContext.
+   */
+  capabilities(path: string): Promise<CapabilityVocabulary> {
+    const k = key(path);
+    let pending = this.capabilityVocabularies.get(k);
+    if (pending === undefined) {
+      this.counts.capabilityParses += 1;
+      pending = readCapabilities(path);
+      this.capabilityVocabularies.set(k, pending);
     }
     return pending;
   }

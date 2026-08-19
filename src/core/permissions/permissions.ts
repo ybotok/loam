@@ -19,7 +19,9 @@
  * What this is NOT, deliberately: a domain model. Permissions are a flat list
  * of names under a subject kind — no entities, no relations, no resources.
  * Everything past that has no ground truth to check against, which is the same
- * reason there is no capability layer (SCHEMA.md), and a vocabulary loam cannot
+ * reason the capability axis stops at declared names
+ * (core/capabilities/capabilities.ts) and there is still no AUTHORED capability
+ * layer (SCHEMA.md) — a vocabulary loam cannot
  * check is a vocabulary that drifts while looking authoritative. A permission
  * that varies by resource is separate names (`channel:send:sms`,
  * `channel:send:email`) or a column in a scenario's Examples table.
