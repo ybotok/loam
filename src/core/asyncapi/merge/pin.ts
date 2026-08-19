@@ -7,20 +7,20 @@
  * upserts both — the exact silent-revert the OpenAPI axis's pin closed, with
  * no overlap between two features required, just two deltas over one service.
  *
- * Separate from the (future) merge module because this is `loam rebase`'s
- * half: it plans the pins a delta is missing, while the merge only ever
- * reads pins already written. Slot-keyed over the three named sections
- * exactly as the merge upserts (core/asyncapi/digest.ts owns the walker and
- * the section→path spelling); an inline channel message is channel-slot
- * interior and is never pinned on its own — SCHEMA.md's recorded decision.
+ * Separate from `./merge.ts` because this is `loam rebase`'s half: it plans
+ * the pins a delta is missing, while the merge only ever reads pins already
+ * written. Slot-keyed over the three named sections exactly as the merge
+ * upserts (core/asyncapi/digest.ts owns the walker and the section→path
+ * spelling); an inline channel message is channel-slot interior and is never
+ * pinned on its own — SCHEMA.md's recorded decision.
  */
 import { isMap, parseDocument } from "yaml";
 import { AsyncapiMergeError, errorMessage } from "./error.js";
+import { refuseAmbiguousSlotKeys, slotPair } from "./markers.js";
 import {
   ASYNCAPI_BASELINE_KEY,
   asyncapiSlots,
   slotDigest,
-  slotPath,
   type AsyncapiSection,
 } from "../digest.js";
 
@@ -37,7 +37,7 @@ export interface AsyncapiSlotPin {
     | "unchanged"
     /** The living contract has no slot at this (section, key): this feature is adding it. */
     | "unresolved"
-    /** Written as a YAML alias — one shared value backs every use, so loam will not stamp through it. */
+    /** Written as a YAML alias (one shared value backs every use) or under a key no string can address — loam will not stamp through either. */
     | "unwritable";
   from: string | null;
   to: string | null;
@@ -64,6 +64,7 @@ export interface AsyncapiPinPlan {
 export function pinAsyncapiSlots(featureText: string, livingText: string, service: string): AsyncapiPinPlan {
   const doc = parseDocument(featureText);
   if (doc.errors.length > 0) throw new AsyncapiMergeError("feature", service, doc.errors[0]!.message);
+  refuseAmbiguousSlotKeys(doc, "feature", service);
   let featPlain: unknown;
   let livingPlain: unknown;
   try {
@@ -74,6 +75,7 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
   try {
     const parsed = parseDocument(livingText);
     if (parsed.errors.length > 0) throw new AsyncapiMergeError("living", service, parsed.errors[0]!.message);
+    refuseAmbiguousSlotKeys(parsed, "living", service);
     livingPlain = parsed.toJS() ?? {};
   } catch (error) {
     if (error instanceof AsyncapiMergeError) throw error;
@@ -101,15 +103,23 @@ export function pinAsyncapiSlots(featureText: string, livingText: string, servic
       pins.push({ ...at, status: "unchanged", from: digest, to: digest });
       continue;
     }
-    // One shared value backs every use of an anchor, so `setIn` through an
-    // alias would pin every other use of it too — the OpenAPI pin's refusal,
-    // copied for the same data-loss reason.
-    if (!isMap(doc.getIn(slotPath(slot.section, slot.key)))) {
+    // Located string-matched through the same door as every other slot
+    // access (markers.ts's slotPair): a channel written `404:` is the YAML
+    // number 404, which a raw `getIn("404")` misses — the miss used to grade
+    // every non-string-keyed slot `unwritable`, with an alias diagnosis
+    // nothing in the document backed, and the gate's own remedy was the
+    // command that had just refused. What stays refused: an aliased slot
+    // value (one shared value backs every use of an anchor, so stamping
+    // through it would pin every other use too — the OpenAPI pin's refusal,
+    // for the same data-loss reason) and a slot whose key is not a scalar,
+    // which no string can address.
+    const pair = slotPair(doc, slot.section, slot.key);
+    if (pair === undefined || !isMap(pair.value)) {
       pins.push({ ...at, status: "unwritable", from, to: null });
       continue;
     }
     pins.push({ ...at, status: from === null ? "pinned" : "repinned", from, to: digest });
-    doc.setIn([...slotPath(slot.section, slot.key), ASYNCAPI_BASELINE_KEY], digest);
+    pair.value.set(ASYNCAPI_BASELINE_KEY, digest);
     edited = true;
   }
 

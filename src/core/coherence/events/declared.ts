@@ -4,17 +4,22 @@
  *
  * The walk owns every check that reads ONE service's pair of contracts: the
  * feature document's readability (`asyncapi.invalid` suspends the rest, the
- * unreadableApis discipline), the baseline pins (slot-keyed, classified by
- * the one verdict function both axes share), removal-marker exactness, and
- * the removal↔REMOVED-requirement justification join. What it cannot answer
- * alone — who still consumes a message, what other features are adding —
- * lives in ./lookups.ts, and the cross-axis grading of edges and
- * requirement lines in ./events.ts.
+ * unreadableApis discipline), the baseline pins and removal-marker exactness
+ * (./grades.ts, slot-keyed), the removal↔REMOVED-requirement justification
+ * join, and the merge simulation (./merged.ts) the cross-axis checks grade
+ * against. What it cannot answer alone — who still consumes a message, what
+ * other features are adding — lives in ./lookups.ts, and the cross-axis
+ * grading of edges and requirement lines in ./events.ts.
  *
  * Slot identity is core/asyncapi/digest.ts's: three sections, and an inline
- * channel message is channel-slot interior — its nested marker makes the
- * channel an EDIT against the channel's pin, never a message removal, so
- * nothing here (and nothing in the justification join) reads it as one.
+ * channel message is channel-slot interior — a marker NESTED on one makes
+ * the channel an EDIT against the channel's pin, never a message removal,
+ * so nothing here reads it as one. A CHANNEL-slot removal, by contrast,
+ * takes its living inline interior with it (SCHEMA.md's decision), so the
+ * justification join counts those inline names as marked: without that, a
+ * message declared only inline was a deadlock — the sanctioned channel
+ * marker graded remove-marker-missing, and the components.messages marker
+ * the error suggested graded remove-target-missing.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -26,9 +31,10 @@ import { featureSpecPaths, servicePaths, SPEC_AXES } from "../../repo/paths.js";
 import { parseRequirements } from "../../document/parse.js";
 import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi, type AsyncapiDoc } from "../../asyncapi/read.js";
-import { classifyBaselineDigests, OPERATION_DIGEST_LENGTH, OPERATION_DIGEST_RE } from "../../openapi/digest.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
+import { gradeBaselines, gradeMarkers } from "./grades.js";
+import { mergedAsyncapiDoc } from "./merged.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -37,12 +43,46 @@ export interface EventDeltaScope {
   featureId: string;
 }
 
+/** One delta requirement's `Publishes:`/`Consumes:` claim — what ./events.ts grades against the contract. */
+export interface EventLink {
+  direction: "publishes" | "consumes";
+  message: string;
+  requirement: string;
+}
+
 /** Everything one feature's asyncapi deltas say about their own services. */
 export interface DeclaredEvents {
   /** Per touched service: the feature delta's parse — present only where the file exists and reads. */
   featureDocs: Map<PathableService, AsyncapiDoc>;
-  /** Per service: message names this feature genuinely retires (message-slot markers minus redeclarations). */
+  /**
+   * Per touched service: the living contract as the MERGE would leave it
+   * (./merged.ts) — present where a feature delta sits over a readable
+   * living contract and the simulation had an answer. What `declares()` and
+   * the consumer gate's wire half read, so the gate grades the post-archive
+   * contract rather than the union of two documents one of which is leaving.
+   */
+  mergedDocs: Map<PathableService, AsyncapiDoc>;
+  /**
+   * Per service: message names this feature genuinely retires — message-slot
+   * markers plus a removed channel's living INLINE interior (SCHEMA.md:
+   * retiring a whole channel retires its inline messages with it), minus
+   * redeclarations.
+   */
   netRemoved: Map<string, Set<string>>;
+  /**
+   * Per service: messages the living contract SENDS that the merged one
+   * would not — a channel or operation removal, or an edit, stopping
+   * production while the declaration may well survive. The wire half of the
+   * consumer question (./events.ts); empty where no simulation ran.
+   */
+  stoppedSending: Map<string, string[]>;
+  /**
+   * Per service in the walk: the delta's non-REMOVED `Publishes:`/`Consumes:`
+   * lines — read once HERE and graded in ./events.ts, the indexed-in-one-walk
+   * rule this record exists for (the same lines used to be re-read and
+   * re-parsed per question on the context-less archive-gate path).
+   */
+  links: Map<PathableService, EventLink[]>;
   /** Services whose FEATURE asyncapi.yaml exists but does not parse — every event check suspends for them. */
   unreadable: Set<string>;
 }
@@ -58,9 +98,9 @@ export async function deltaEventLines(
   scope: EventDeltaScope,
   service: PathableService,
   context?: FleetContext,
-): Promise<{ removed: Set<string>; links: { direction: "publishes" | "consumes"; message: string; requirement: string }[] }> {
+): Promise<{ removed: Set<string>; links: EventLink[] }> {
   const removed = new Set<string>();
-  const links: { direction: "publishes" | "consumes"; message: string; requirement: string }[] = [];
+  const links: EventLink[] = [];
   for (const axis of SPEC_AXES) {
     const p = featureSpecPaths(scope.featureDir, service)[axis.key];
     if (!existsSync(p)) continue;
@@ -97,11 +137,21 @@ export async function declaredEvents(
 ): Promise<DeclaredEvents> {
   const { docsDir, featureDir, featureId } = scope;
   const featureDocs = new Map<PathableService, AsyncapiDoc>();
+  const mergedDocs = new Map<PathableService, AsyncapiDoc>();
   const netRemoved = new Map<string, Set<string>>();
+  const stoppedSending = new Map<string, string[]>();
+  const links = new Map<PathableService, EventLink[]>();
   const unreadable = new Set<string>();
   for (const svc of svcNames) {
     const featPath = featureSpecPaths(featureDir, svc).asyncapi;
-    const { removed: justifiedMsgs } = await deltaEventLines(scope, svc, context);
+    const { removed: justifiedMsgs, links: svcLinks } = await deltaEventLines(scope, svc, context);
+    links.set(svc, svcLinks);
+    // The living contract is read only where a question will be asked of it:
+    // no event delta and no REMOVED line means no marker debt and no slot to
+    // grade. The unguarded read was an eager parse per touched service —
+    // paid on every archive, whose gate runs without a FleetContext — for an
+    // answer nothing consumed.
+    if (!existsSync(featPath) && justifiedMsgs.size === 0) continue;
     const livingPath = servicePaths(docsDir, svc).asyncapi;
     const livingDoc = await readAsyncapi(livingPath, context);
     if (!existsSync(featPath)) {
@@ -156,21 +206,38 @@ export async function declaredEvents(
     if (livingText !== undefined) {
       gradeBaselines({ featSlots, livingSlots, svc, featureId }, issues);
       gradeMarkers({ featDoc, livingDoc, featSlots, livingSlots }, svc, issues);
+      if (featText !== undefined) {
+        const merged = mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service: svc });
+        if (merged !== undefined) {
+          mergedDocs.set(svc, merged);
+          stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));
+        }
+      }
     }
 
     // A relocation — same message name, marker on the old key, declaration
     // at a new one — retires nothing. "Is this message going away" asks the
     // NET set; "did the author write a marker" asks the raw one,
-    // ../declared.ts's distinction verbatim.
+    // ../declared.ts's distinction verbatim. Two raw sets, because the two
+    // marker shapes carry different debts: a message-slot marker must be
+    // justified by a REMOVED requirement, while a channel-slot removal needs
+    // exactness only (requirements join on message names, never channel
+    // keys — SCHEMA.md) and its living inline interior leaves with it.
     const markerNames = new Set(
       featDoc.messages.filter((m) => m.remove === true && m.slot.startsWith("components.messages.")).map((m) => m.name),
     );
+    const channelRemovals = featSlots.filter((s) => s.section === "channels" && s.remove).map((s) => s.key);
+    const inlineRetired = new Set(
+      livingDoc.messages
+        .filter((m) => channelRemovals.some((ck) => m.slot.startsWith(`channels.${ck}.messages.`)))
+        .map((m) => m.name),
+    );
     const redeclared = new Set(featDoc.messages.filter((m) => m.remove !== true).map((m) => m.name));
-    const net = new Set([...markerNames].filter((name) => !redeclared.has(name)));
+    const net = new Set([...markerNames, ...inlineRetired].filter((name) => !redeclared.has(name)));
     netRemoved.set(svc, net);
 
-    for (const name of net) {
-      if (justifiedMsgs.has(name)) continue;
+    for (const name of markerNames) {
+      if (redeclared.has(name) || justifiedMsgs.has(name)) continue;
       issues.push({
         severity: "error",
         code: "asyncapi.remove-marker-unjustified",
@@ -180,10 +247,11 @@ export async function declaredEvents(
     }
     for (const m of justifiedMsgs) {
       // Owed only while the living contract still declares the message —
-      // and satisfied by ANY marker naming it, relocation included: a
-      // relocated message keeps its requirement, so the requirement being
-      // REMOVED alongside is the author's business, not a marker debt.
-      if (markerNames.has(m)) continue;
+      // and satisfied by ANY marker taking it out, relocation included: a
+      // message-slot marker naming it, or a channel-slot removal whose
+      // living inline interior declares it (the SCHEMA-sanctioned way to
+      // retire an inline declaration).
+      if (markerNames.has(m) || inlineRetired.has(m)) continue;
       if (livingDoc.unreadable || !livingDoc.messages.some((msg) => msg.name === m)) continue;
       issues.push({
         severity: "error",
@@ -193,98 +261,5 @@ export async function declaredEvents(
       });
     }
   }
-  return { featureDocs, netRemoved, unreadable };
-}
-
-/** One service's slot pins against the living contract — openapi/baseline/gate.ts's verdicts, slot-keyed. */
-function gradeBaselines(
-  input: { featSlots: AsyncapiSlot[]; livingSlots: Map<string, AsyncapiSlot>; svc: string; featureId: string },
-  issues: Issue[],
-): void {
-  const { featSlots, livingSlots, svc, featureId } = input;
-  let unpinned = 0;
-  for (const slot of featSlots) {
-    // A removal marker is not a restatement of anything; its own exactness
-    // checks guard the slot.
-    if (slot.remove) continue;
-    const label = `${slot.section}.${slot.key}`;
-    const living = livingSlots.get(`${slot.section}\0${slot.key}`);
-    if (slot.basedOn !== undefined && !OPERATION_DIGEST_RE.test(slot.basedOn)) {
-      issues.push({
-        severity: "error",
-        code: "asyncapi.baseline-invalid",
-        subject: svc,
-        message: `${svc}: ${label} has invalid x-loam-based-on '${slot.basedOn}' — expected ${OPERATION_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
-      });
-      continue;
-    }
-    const verdict = classifyBaselineDigests(slot.basedOn, slot.digest, living?.digest);
-    if (verdict === "unfounded") {
-      issues.push({
-        severity: "error",
-        code: "asyncapi.baseline-invalid",
-        subject: svc,
-        message: `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — a new channel, operation or message has no living version to be based on; drop the marker`,
-      });
-    } else if (verdict === "stale") {
-      issues.push({
-        severity: "error",
-        code: "asyncapi.baseline-stale",
-        subject: svc,
-        message: `${svc}: ${label} was written against living version ${slot.basedOn}, but the living contract now holds ${living!.digest} — somebody landed a change to it in between, and merging this would replace theirs outright. Re-read the living slot, fold in what you still mean, then run \`loam rebase ${featureId}\`.`,
-      });
-    } else if (verdict === "unpinned" && living !== undefined) {
-      // Counted, not listed — a delta quotes most of the contract it
-      // restates, and one warning per quote teaches people to filter the
-      // code out (openapi.baseline-missing's doctrine, verbatim).
-      unpinned += 1;
-    }
-  }
-  if (unpinned > 0) {
-    issues.push({
-      severity: "warn",
-      gates: true,
-      code: "asyncapi.baseline-missing",
-      subject: svc,
-      message: `${svc}: ${unpinned} slot(s) in this feature's asyncapi.yaml carry no baseline pin (x-loam-based-on), so the merge cannot tell which ones this delta EDITS from the ones it merely restates — it will upsert all of them, reverting anything that landed on the restated ones. Run \`loam rebase ${featureId} --service ${svc}\`, or archive with --approve to merge unpinned deliberately.`,
-    });
-  }
-}
-
-/** Marker exactness: the slot must exist, and a message marker must name the living declaration. */
-function gradeMarkers(
-  input: { featDoc: AsyncapiDoc; livingDoc: AsyncapiDoc; featSlots: AsyncapiSlot[]; livingSlots: Map<string, AsyncapiSlot> },
-  svc: string,
-  issues: Issue[],
-): void {
-  const { featDoc, livingDoc, featSlots, livingSlots } = input;
-  for (const slot of featSlots) {
-    if (!slot.remove) continue;
-    const label = `${slot.section}.${slot.key}`;
-    const living = livingSlots.get(`${slot.section}\0${slot.key}`);
-    if (living === undefined) {
-      issues.push({
-        severity: "error",
-        code: "asyncapi.remove-target-missing",
-        subject: svc,
-        message: `${svc}: removal marker at ${label} addresses no living slot — the contract has nothing there to retire; update the stale marker to the current key, or drop it if the slot is already gone`,
-      });
-      continue;
-    }
-    if (slot.section !== "components.messages") continue;
-    // Removal is exact for messages the way it is for operations: the
-    // marker names both the key and the message identity it expects to
-    // delete, so a slot whose NAME moved under the delta is caught here
-    // rather than deleting somebody else's message.
-    const markerName = featDoc.messages.find((m) => m.remove === true && m.slot === label)?.name ?? slot.key;
-    const livingName = livingDoc.messages.find((m) => m.slot === label)?.name ?? slot.key;
-    if (markerName !== livingName) {
-      issues.push({
-        severity: "error",
-        code: "asyncapi.remove-target-mismatch",
-        subject: svc,
-        message: `${svc}: removal marker at ${label} names message '${markerName}', but the living declaration there is '${livingName}' — loam never deletes a different message occupying the slot`,
-      });
-    }
-  }
+  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable };
 }

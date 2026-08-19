@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
-import { coherentFixture, FEATURE_SPEC, makeProject, type Project } from "./helpers/harness.js";
+import { coherentFixture, FEATURE_SPEC, makeProject, pinFor, type Project } from "./helpers/harness.js";
 
 /** coherentFixture's delta plus one tagged event edge: the split service announces completion. */
 const EVENT_DELTA = `specification {
@@ -194,5 +194,110 @@ describe("asyncapi.invalid — a broken feature contract suspends the service's 
     // The edge's claim is NOT graded against the unreadable contract — one
     // breach, one finding, the unreadableApis discipline on the event axis.
     expect(only(issues, "c4-event.message-undefined")).toEqual([]);
+  });
+});
+
+describe("a retired message stops answering the requirement-line join", () => {
+  /** payment-service's living pair: one requirement publishing payment.Legacy, one contract sending it. */
+  const LEGACY_LIVING_SPEC = `---
+service: payment-service
+status: verified
+---
+
+# payment-service
+
+## Requirements
+
+### Requirement: Legacy events
+The service SHALL publish the legacy payment event.
+
+Publishes: payment.Legacy
+
+#### Scenario: Legacy event leaves
+- **Given** a payment
+- **When** it settles
+- **Then** payment.Legacy is published
+`;
+
+  const LEGACY_EVENTS = `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/Legacy'
+operations:
+  sendLegacy:
+    action: send
+    channel:
+      $ref: '#/channels/legacyEvents'
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+`;
+
+  /** A justified, exact full retirement of payment.Legacy. */
+  const FULL_REMOVAL_EVENTS = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    x-loam-remove: true
+operations:
+  sendLegacy:
+    x-loam-remove: true
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`;
+
+  it("errors on a leftover Publishes: line in a SURVIVING requirement naming a message this feature retires", async () => {
+    // The retirement itself is justified and exact, so the gate used to
+    // answer the leftover line from LIVING's send set and pass — archive
+    // then deleted the declaration, and the next `validate --all` broke on
+    // spec-event.message-undefined over the merged living spec, in a repo
+    // nobody was working in. The join now grades the contract as the merge
+    // would leave it, so the same breach fails here, before anything writes.
+    const issues = await coherenceOf({
+      ...coherentFixture(),
+      "services/payment-service/spec.md": LEGACY_LIVING_SPEC,
+      "services/payment-service/asyncapi.yaml": LEGACY_EVENTS,
+      "features/FEAT-1-split/specs/payment-service/spec.md": `# payment-service — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Ledger export
+The service SHALL export a settlement ledger.
+
+Publishes: payment.Legacy
+
+#### Scenario: Ledger exported
+- **Given** a settled payment
+- **When** the ledger runs
+- **Then** an entry is exported
+
+## REMOVED Requirements
+
+### Requirement: Legacy events
+Based-On: ${pinFor(LEGACY_LIVING_SPEC, "Legacy events")}
+
+Publishes: payment.Legacy
+`,
+      "features/FEAT-1-split/specs/payment-service/asyncapi.yaml": FULL_REMOVAL_EVENTS,
+    });
+    // The removal owes nothing — the leftover line is the only breach.
+    expect(only(issues, "asyncapi.remove-marker-missing")).toEqual([]);
+    const [issue, ...rest] = only(issues, "spec-event.message-undefined");
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("error");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("'Ledger export'");
+    expect(issue!.message).toContain("payment.Legacy");
   });
 });

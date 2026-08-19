@@ -234,7 +234,7 @@ async function rebaseLocked(
     if (o.status === "unresolved") {
       console.log(`  · ${what} — not in the living docs yet, nothing to pin`);
     } else if (o.status === "unwritable") {
-      console.log(`  ! ${what} — written as a YAML alias; loam will not stamp through a shared anchor`);
+      console.log(`  ! ${what} — a YAML alias (or a key loam cannot address by name); loam will not stamp through it`);
     } else if (o.status === "unchanged") {
       console.log(`  = ${what} — already ${o.to}`);
     } else if (o.status === "pinned") {

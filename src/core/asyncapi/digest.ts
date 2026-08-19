@@ -3,12 +3,16 @@
  * slots hash to, and the markers `loam rebase` and the merge read from them.
  *
  * The digest RULE is imported from the OpenAPI axis (../openapi/digest.js)
- * rather than respelled: the same canonical JSON (keys sorted, arrays in
- * order), the same sha256 cut to the same 16 hex characters, classified by
- * the same verdict function. Two spellings of the one rule is the exact
- * drift that module's own header names as the failure mode. The import
- * direction is asyncapi → openapi only, verified cycle-free — no openapi
- * module imports asyncapi (openapi/depth.ts names it in a comment alone).
+ * rather than respelled: the marker keys, the removal test, the baseline
+ * accessors and the digest itself are ALIASES of that module's — one
+ * definition each, renamed to this axis's vocabulary. Two spellings of the
+ * one rule is the exact drift that module's own header names as the failure
+ * mode, and it is not hypothetical here: the deep strip filters on the
+ * OpenAPI key constants, so a second spelling of either key would be two
+ * definitions of "which keys are feature-only" — the marker leak the strip
+ * exists to close. The import direction is asyncapi → openapi only,
+ * verified cycle-free — no openapi module imports asyncapi
+ * (openapi/depth.ts names it in a comment alone).
  *
  * Identity is the SLOT: the pair (section, key) over the three named
  * sections `channels.<key>`, `operations.<key>` and
@@ -24,20 +28,27 @@
  * is content identity (a changed payload moves it), never a join on payload
  * fields — read.ts's header carries the full doctrine.
  */
-import { createHash } from "node:crypto";
-import { canonicalJson, OPERATION_DIGEST_LENGTH } from "../openapi/digest.js";
+import {
+  isRemoval,
+  OPENAPI_BASELINE_KEY,
+  OPENAPI_REMOVE_KEY,
+  operationBaselineOf,
+  operationDigest,
+  withoutOperationBaseline,
+} from "../openapi/digest.js";
 
 /**
  * The baseline marker: which living version of a slot a FEATURE delta was
- * written against. Same spelling and shape as the OpenAPI axis's, because a
- * feature's asyncapi.yaml is a complete document for the same reason its
- * openapi.yaml is: authors restate the living contract around the slot they
- * change, and the pin is what lets the merge tell a QUOTE from an EDIT.
+ * written against. The OpenAPI axis's key, not a restatement of its
+ * spelling, because a feature's asyncapi.yaml is a complete document for
+ * the same reason its openapi.yaml is: authors restate the living contract
+ * around the slot they change, and the pin is what lets the merge tell a
+ * QUOTE from an EDIT.
  */
-export const ASYNCAPI_BASELINE_KEY = "x-loam-based-on";
+export const ASYNCAPI_BASELINE_KEY = OPENAPI_BASELINE_KEY;
 
-/** The feature-only explicit removal marker's key — the OpenAPI axis's spelling. */
-export const ASYNCAPI_REMOVE_KEY = "x-loam-remove";
+/** The feature-only explicit removal marker's key — the OpenAPI axis's, aliased. */
+export const ASYNCAPI_REMOVE_KEY = OPENAPI_REMOVE_KEY;
 
 /** The three sections whose entries are slots. */
 export type AsyncapiSection = "channels" | "operations" | "components.messages";
@@ -57,43 +68,26 @@ export interface AsyncapiSlot {
   digest: string;
 }
 
-/** Is this slot value a feature-only explicit removal marker? */
-export function isSlotRemoval(node: unknown): boolean {
-  return node !== null &&
-    typeof node === "object" &&
-    !Array.isArray(node) &&
-    (node as Record<string, unknown>)[ASYNCAPI_REMOVE_KEY] === true;
-}
+/** Is this slot value a feature-only explicit removal marker? One test for both axes. */
+export const isSlotRemoval = isRemoval;
 
-/** The `x-loam-based-on` a slot declares, or undefined — mirror of `operationBaselineOf`. */
-export function slotBaselineOf(node: unknown): string | undefined {
-  if (node === null || typeof node !== "object" || Array.isArray(node)) return undefined;
-  const value = (node as Record<string, unknown>)[ASYNCAPI_BASELINE_KEY];
-  if (value === undefined) return undefined;
-  return typeof value === "string" ? value.trim() : String(value);
-}
+/** The `x-loam-based-on` a slot declares, or undefined — `operationBaselineOf`, aliased. */
+export const slotBaselineOf = operationBaselineOf;
 
 /**
  * The slot without its own baseline marker — what a digest is taken over. A
  * pin is a statement ABOUT a delta, never part of the slot it describes:
- * inside the digest input, no baseline could ever be self-consistent.
+ * inside the digest input, no baseline could ever be self-consistent. The
+ * OpenAPI rule, aliased — the key is the same key.
  */
-export function withoutSlotBaseline(node: unknown): unknown {
-  if (node === null || typeof node !== "object" || Array.isArray(node)) return node;
-  const record = node as Record<string, unknown>;
-  if (!(ASYNCAPI_BASELINE_KEY in record)) return node;
-  const rest = { ...record };
-  delete rest[ASYNCAPI_BASELINE_KEY];
-  return rest;
-}
+export const withoutSlotBaseline = withoutOperationBaseline;
 
-/** The identity of a slot's CONTENT: sha256 of its canonical form, pin excluded. */
-export function slotDigest(node: unknown): string {
-  return createHash("sha256")
-    .update(canonicalJson(withoutSlotBaseline(node)), "utf8")
-    .digest("hex")
-    .slice(0, OPERATION_DIGEST_LENGTH);
-}
+/**
+ * The identity of a slot's CONTENT: sha256 of its canonical form, pin
+ * excluded. `operationDigest` under this axis's name — the same canonical
+ * JSON, the same cut, so a pin either axis writes means the same thing.
+ */
+export const slotDigest = operationDigest;
 
 /** Entries of a mapping node, or nothing — the walker's one structural read. */
 function entriesOf(node: unknown): [string, unknown][] {
@@ -108,6 +102,29 @@ function entriesOf(node: unknown): [string, unknown][] {
  */
 export function slotPath(section: AsyncapiSection, key: string): string[] {
   return section === "components.messages" ? ["components", "messages", key] : [section, key];
+}
+
+/**
+ * Every path whose node carries `x-loam-remove: true`, at ANY depth — the
+ * three slot depths the format spec gives the key meaning at, inline channel
+ * messages, and every place the key means nothing at all: the document root,
+ * `info`, a `components` sibling, the inside of a payload. The reader's
+ * `markers` field is built from this walk so `asyncapi.remove-marker-living`
+ * can NAME a marker wherever one leaked: the strip removes the loam keys at
+ * document depth, and a sweep narrower than the strip is how the OpenAPI
+ * axis once published a marker invisible even to validate.
+ */
+export function removalMarkerPaths(node: unknown, at: string): string[] {
+  if (node === null || typeof node !== "object") return [];
+  const out: string[] = [];
+  if (isSlotRemoval(node)) out.push(at === "" ? "(document root)" : at);
+  const children = Array.isArray(node)
+    ? node.map((value, i) => [String(i), value] as const)
+    : Object.entries(node as Record<string, unknown>);
+  for (const [key, value] of children) {
+    out.push(...removalMarkerPaths(value, at === "" ? key : `${at}.${key}`));
+  }
+  return out;
 }
 
 /**

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
-import { isSlotRemoval } from "./digest.js";
+import { isSlotRemoval, removalMarkerPaths } from "./digest.js";
 import type { FleetContext } from "../fleet-context.js";
 
 /**
@@ -98,13 +98,14 @@ export interface AsyncapiDoc {
   /** Internal `#/` refs that resolve to nothing in this document (depth.ts). */
   danglingRefs: string[];
   /**
-   * Where `x-loam-remove: true` appears — the three slot depths the format
-   * spec gives the key meaning at (`channels.<key>`, `operations.<key>`,
-   * `components.messages.<key>`) plus inline channel messages
-   * (`channels.<ck>.messages.<mk>`), which are channel-slot interior the
-   * merge must strip at that nested depth. Feature-only bookkeeping either
-   * way: `validate` grades any of these in a LIVING contract as
-   * `asyncapi.remove-marker-living`, the openapi axis's discipline.
+   * Where `x-loam-remove: true` appears — at ANY depth (digest.ts's
+   * `removalMarkerPaths`): the three slot depths the format spec gives the
+   * key meaning at, inline channel messages (channel-slot interior the merge
+   * strips at that nested depth), and every place the key means nothing —
+   * the document root, `info`, a `components` sibling. Feature-only
+   * bookkeeping wherever it sits: `validate` grades any of these in a LIVING
+   * contract as `asyncapi.remove-marker-living`, and the sweep is as deep as
+   * the strip so a leaked marker can never be invisible to it.
    */
   markers: string[];
 }
@@ -160,6 +161,17 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   } catch (e) {
     return { ...empty(), unreadable: true, error: e instanceof Error ? e.message : String(e) };
   }
+  return asyncapiDocOf(doc);
+}
+
+/**
+ * The same read over an already-parsed root — what the coherence gate's
+ * merge simulation grades (core/coherence/events/), where the "file" is a
+ * document the merge computed and never wrote. One spelling of the walk for
+ * both entries, so a simulated contract can never read differently from the
+ * living file the archive would produce from it.
+ */
+export function asyncapiDocOf(doc: unknown): AsyncapiDoc {
   // A scalar or sequence document has no mapping to look `channels` up in, so
   // nothing can be concluded from it. null (an empty file) stays readable — it
   // declares nothing, and says so honestly.
@@ -171,13 +183,11 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   const root = doc as Record<string, unknown>;
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
-  const markers: string[] = [];
   const declare = (name: string, slot: string, node: unknown): void => {
     // A declaration carrying the removal marker asserts a slot rather than
     // declaring a message: it is listed (with `remove`) so the gate can see
     // it, but it joins nothing — not sent/received, not the duplicate count.
     if (isSlotRemoval(node)) {
-      markers.push(slot);
       messages.push({ name, slot, remove: true as const });
       return;
     }
@@ -200,7 +210,6 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
     // A channel-slot removal retires the whole channel, inline interior
     // included: nothing under it declares or joins anything any more.
     if (isSlotRemoval(channel)) {
-      markers.push(`channels.${ck}`);
       channelMessages.set(ck, []);
       continue;
     }
@@ -222,14 +231,11 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
 
   const sent = new Set<string>();
   const received = new Set<string>();
-  for (const [ok, operation] of entriesOf(root["operations"])) {
+  for (const [, operation] of entriesOf(root["operations"])) {
     const op = operation as Record<string, unknown> | null;
     // An operation-slot removal retires the operation: it contributes no
     // send/receive whatever its `action` says.
-    if (isSlotRemoval(op)) {
-      markers.push(`operations.${ok}`);
-      continue;
-    }
+    if (isSlotRemoval(op)) continue;
     const action = op?.["action"];
     if (action !== "send" && action !== "receive") continue;
     const into = action === "send" ? sent : received;
@@ -268,7 +274,11 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
     duplicateNames,
     unreadable: false,
     danglingRefs: danglingRefs(root),
-    markers,
+    // One deep scan rather than pushes scattered through the walk above: the
+    // walk only visits the depths that JOIN, and a marker leaked anywhere
+    // else (the root, `info`) was invisible to the living sweep while the
+    // strip still owed its removal.
+    markers: removalMarkerPaths(root, ""),
   };
 }
 

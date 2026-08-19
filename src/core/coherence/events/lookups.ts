@@ -4,11 +4,17 @@
  *
  * Both reach outside the delta: the consumer scan is a landscape spin-up
  * plus a walk of every other service's living requirements, and the
- * in-flight scan reads every active feature's asyncapi delta. A feature
- * that removes no message and declares none in conflict must pay for
- * neither, which is why these are closures over a cache rather than
- * arguments computed up front — the exact discipline the "validate --all
- * twice as fast" work measures, so nothing here reads eagerly.
+ * in-flight scan reads every active feature's asyncapi delta. Closures over
+ * a cache rather than arguments computed up front, so each is paid only
+ * when its question is first asked — but the two prices differ, and the
+ * difference is deliberate: the consumer scan is paid only by a feature
+ * that actually retires production, while the in-flight scan is paid by ANY
+ * feature that declares a message at all, because
+ * `asyncapi.message-conflict`'s question ("does an in-flight feature define
+ * this elsewhere?") is asked of every healthy declaration — unlike the
+ * OpenAPI mirror, whose `definedElsewhere` is reached only inside a breach
+ * branch. That standing cost matters most on `archive`'s gate, which runs
+ * without a FleetContext, so each read here is a real parse.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";

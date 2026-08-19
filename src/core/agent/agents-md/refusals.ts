@@ -87,7 +87,11 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`asyncapi.channel-modified\` / \`asyncapi.operation-modified\` (warn — the delta
   redefines a slot the living AsyncAPI already has, and the merge overwrites it
   wholesale), \`asyncapi.ref-unresolved\` (a validate warn, but an error here when
-  the MERGED document would carry the dangling reference)
+  the MERGED document would carry the dangling reference),
+  \`asyncapi.remove-marker-inline\` (error — an \`x-loam-remove: true\` nested on an
+  INLINE channel message: inline messages are channel interior, never slots, so
+  the marker retires nothing; retire the whole channel, or declare the message
+  under \`components.messages\` and mark that)
   and \`service.no-model\` (warn — the archive creates
   \`services/<id>/\`, or puts a service in the landscape the fleet has no directory
   for at all, and nothing writes its model.likec4).
