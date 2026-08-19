@@ -117,9 +117,12 @@ async function bothStages(src: string): Promise<{ parsed: LoadedDoc; computed: L
   const likec4 = await LikeC4.fromSource(src, { logger: false });
   try {
     expect(likec4.getErrors() ?? []).toEqual([]);
+    // `flows: []` is the shape's, not this suite's subject: RICH declares no
+    // views, and the two stages are compared here on the model alone —
+    // test/flows.test.ts owns what a dynamic view flattens to.
     return {
-      parsed: { errors: [], ...flattenModel(await likec4.parsedModel()) },
-      computed: { errors: [], ...flattenModel(await likec4.computedModel()) },
+      parsed: { errors: [], flows: [], ...flattenModel(await likec4.parsedModel()) },
+      computed: { errors: [], flows: [], ...flattenModel(await likec4.computedModel()) },
     };
   } finally {
     await likec4.dispose();

@@ -39,6 +39,8 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
+import { flattenFlows } from "./flows/flatten.js";
+import { type ReadableViews } from "./flows/parsed-view.js";
 import { flattenModel, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
 
 /** A staged document: the real path it came from, and its workspace project. */
@@ -114,10 +116,10 @@ function groupErrors(likec4: LikeC4, staged: StagedDoc[]): Map<string, LikeC4Err
  * Returns `resolve(path)` → LoadedDoc; paths are deduped through the same
  * resolution, and a path that could not be staged is absent from the result.
  *
- * A document with errors keeps `loadSource`'s exact rule — empty elements and
- * relationships, WITHOUT calling `parsedModel`: the parsed stage succeeds even
- * over unresolved references, so the "errors mean no model" boundary is loam's
- * to apply, not LikeC4's. A clean document is flattened from
+ * A document with errors keeps `loadSource`'s exact rule — empty elements,
+ * relationships and flows, WITHOUT calling `parsedModel`: the parsed stage
+ * succeeds even over unresolved references, so the "errors mean no model"
+ * boundary is loam's to apply, not LikeC4's. A clean document is flattened from
  * `parsedModel(project)` — parsed, never computed: the computed stage builds
  * every VIEW, which loam renders nowhere and which is superlinear in edge
  * count (see loadSource).
@@ -139,10 +141,11 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
       for (const { path, project } of staged) {
         const errors = grouped.get(project) ?? [];
         if (errors.length > 0) {
-          out.set(path, { errors, elements: [], relationships: [] });
+          out.set(path, { errors, elements: [], relationships: [], flows: [] });
         } else {
-          const model = (await likec4.parsedModel(project)) as ReadableModel;
-          out.set(path, { errors, ...flattenModel(model) });
+          const model = (await likec4.parsedModel(project)) as ReadableModel & ReadableViews;
+          const { elements, relationships } = flattenModel(model);
+          out.set(path, { errors, elements, relationships, flows: flattenFlows(model, relationships) });
         }
       }
     } finally {

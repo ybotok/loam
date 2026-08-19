@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
 import { declaredService } from "../kernel/ids/service.js";
+import { flattenFlows } from "./flows/flatten.js";
+import { type Flow } from "./flows/flow.js";
+import { type ReadableViews } from "./flows/parsed-view.js";
 import { type Elem, type Rel } from "./model/model.js";
 
 /** A parse/validation issue reported by LikeC4. */
@@ -14,6 +17,8 @@ export interface LoadedDoc {
   errors: LikeC4Error[];
   elements: Elem[];
   relationships: Rel[];
+  /** The document's dynamic views — the journeys drawn over the model above. */
+  flows: Flow[];
 }
 
 /**
@@ -101,7 +106,7 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // `?? []` it carried could never fire.
     const errors: LikeC4Error[] = likec4.getErrors();
     if (errors.length > 0) {
-      return { errors, elements: [], relationships: [] };
+      return { errors, elements: [], relationships: [], flows: [] };
     }
 
     // `parsedModel`, not `computedModel`: the computed stage additionally
@@ -109,9 +114,12 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
     // declares none), which loam never reads — it renders nothing. That work is
     // superlinear in the number of RELATIONSHIPS, so a landscape at fleet shape
     // turned `loam list` from under a second into minutes. The elements and
-    // relationships below are identical either way.
-    const model = (await likec4.parsedModel()) as ReadableModel;
-    return { errors, ...flattenModel(model) };
+    // relationships below are identical either way, and the dynamic views are
+    // read from the same parsed declaration (see flows/flatten.ts) rather than
+    // from the computed views the expensive stage would build.
+    const model = (await likec4.parsedModel()) as ReadableModel & ReadableViews;
+    const { elements, relationships } = flattenModel(model);
+    return { errors, elements, relationships, flows: flattenFlows(model, relationships) };
   } finally {
     await likec4.dispose();
   }
