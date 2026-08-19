@@ -75,6 +75,23 @@ export interface Requirement {
    */
   requires: string[];
   /**
+   * Fleet capabilities this requirement realizes part of, from a `Capability:`
+   * (also accepted: `Capabilities:`) line — ids declared in
+   * `architecture/capabilities.yaml`.
+   *
+   * A fourth join beside `Operations:`, `Covers:` and `Requires:`, and a LIST
+   * because the relation is many-to-many in both directions: one requirement
+   * commonly closes part of two capabilities, and a capability is realized by
+   * many requirements across several services — a single-valued field would
+   * force authors to pick a lie. Neither existing line can carry it: a
+   * capability is not an operation (it is behaviour above any one endpoint)
+   * and not a C4 element (it is a business fact, not a structural one).
+   * The parse is additive exactly as `requires` is — the line rides in
+   * `req.text` and therefore inside `requirementDigest`, so no living
+   * document's digest moves merely because loam learned to read it.
+   */
+  capabilities: string[];
+  /**
    * AsyncAPI message names this requirement governs on the PRODUCING side, from
    * a `Publishes:` line — the event-axis analog of `Operations:`.
    *

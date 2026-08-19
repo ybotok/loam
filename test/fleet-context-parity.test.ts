@@ -37,6 +37,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readAsyncapi } from "../src/core/asyncapi/read.js";
+import { readCapabilities } from "../src/core/capabilities/capabilities.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
@@ -114,10 +115,19 @@ The service SHALL capture an authorized payment.
 - **Then** the payment is captured
 `;
 
+/** A small capability vocabulary, so the capabilities row cannot pass vacuously. */
+const CAPABILITIES_YAML = `capabilities:
+  payments:
+    description: take money for an order
+    owner: payments-team
+  payments/refunds: {}
+`;
+
 /** `coherentFixture()` plus what the readers below need and it does not carry. */
 function parityFixture(): Record<string, string> {
   const files = coherentFixture();
   files["services/payment-service/asyncapi.yaml"] = ASYNCAPI;
+  files["architecture/capabilities.yaml"] = CAPABILITIES_YAML;
   files["services/checkout-web/spec.md"] = CONFLICTED;
   files["features/archive/FEAT-0-capture/intent.md"] =
     "---\nfeature: FEAT-0\nstatus: shipped\n---\n\n# Capture payments\n";
@@ -132,6 +142,7 @@ interface Fixture {
   spec: string;
   openapi: string;
   asyncapi: string;
+  capabilities: string;
   landscape: string;
   conflicted: string;
   /** Two documents no other row loads, so the prefetch row truly batches. */
@@ -234,6 +245,18 @@ const READERS: Reader[] = [
     },
   },
   {
+    name: "capabilities",
+    memo: (fleet, at) => fleet.capabilities(at.capabilities),
+    direct: (at) => readCapabilities(at.capabilities),
+    floor: (vocab) => {
+      expect(vocab.present).toBe(true);
+      // Both declaration shapes, so the parity covers the leaf-shape ladder:
+      // a full body and a bare `{}` (and the nested id stays one flat key).
+      expect(vocab.byId.get("payments")?.owner).toBe("payments-team");
+      expect(vocab.byId.has("payments/refunds")).toBe(true);
+    },
+  },
+  {
     name: "operations",
     memo: (fleet, at) => fleet.operations(at.openapi),
     direct: (at) => operations(at.openapi),
@@ -311,6 +334,7 @@ describe("every FleetContext reader answers exactly what the core module answers
       spec: join(docsDir, "services/payment-service/spec.md"),
       openapi: join(docsDir, "services/payment-service/openapi.yaml"),
       asyncapi: join(docsDir, "services/payment-service/asyncapi.yaml"),
+      capabilities: join(docsDir, "architecture/capabilities.yaml"),
       landscape: join(docsDir, "architecture/landscape.likec4"),
       conflicted: join(docsDir, "services/checkout-web/spec.md"),
       model: join(docsDir, "services/payment-service/model.likec4"),

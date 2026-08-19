@@ -75,6 +75,9 @@ describe("FleetContext", () => {
         // Nothing in this fixture reads the async axis, and the counter proves
         // it: the event checks must not make every command pay a fleet walk.
         asyncapiParses: 0,
+        // Same discipline for the capability vocabulary: nothing here asks
+        // for it, so nothing pays the read.
+        capabilityParses: 0,
         likec4Loads: 1,
       });
     });

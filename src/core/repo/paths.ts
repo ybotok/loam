@@ -187,6 +187,11 @@ export function permissionsPath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", "permissions.yaml");
 }
 
+/** The fleet's capability vocabulary — beside the other two fleet documents, for the same reason. */
+export function capabilitiesPath(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", "capabilities.yaml");
+}
+
 /**
  * The GENERATED subsystem views — beside the fleet map because the LikeC4
  * renderer merges the whole `architecture/` project, and a view can only
