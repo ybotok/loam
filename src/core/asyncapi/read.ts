@@ -109,8 +109,13 @@ export interface AsyncapiDoc {
   markers: string[];
 }
 
-/** A message's join token: its `name`, or the key it is declared under. */
-function messageName(node: unknown, key: string): string {
+/**
+ * A message's join token: its `name`, or the key it is declared under.
+ * Exported for the merge (./merge/merge.ts), whose removal exactness compares
+ * this same spelling — a second definition of the fallback rule is how a
+ * marker would delete a message the reader joins under a different name.
+ */
+export function messageName(node: unknown, key: string): string {
   if (node !== null && typeof node === "object" && !Array.isArray(node)) {
     const name = (node as Record<string, unknown>)["name"];
     if (typeof name === "string" && name.trim().length > 0) return name.trim();

@@ -2,15 +2,16 @@
  * Retiring a message through a feature delta — the GATE's half: marker
  * exactness, the removal↔REMOVED-requirement justification join, the
  * relocation exemption, and the fleet-consumer refusal
- * (core/coherence/events/). The MERGE's half — the marker deleting its slot
- * at archive and never reaching the living contract — lands with the
- * asyncapi merge and is pinned in its own suite then.
+ * (core/coherence/events/). The MERGE's half closes the file: `loam archive`
+ * deletes the marked slots from the living contract, and the marker itself
+ * never reaches it.
  */
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
-import { makeProject, pinFor, type Project } from "./helpers/harness.js";
+import { makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
 
 const LIVING_SPEC = `---
 service: payment-service
@@ -281,5 +282,72 @@ Consumes: payment.Legacy
     );
     const [issue] = only(issues, "asyncapi.remove-message-consumed");
     expect(issue!.message).toContain("billing-service's living requirement");
+  });
+});
+
+describe("the merge's half: archive retires the slots", () => {
+  // The whole retirement, exactness-only for the channel and operation slots:
+  // leaving either behind would strand a `$ref` at the message's grave, which
+  // the plan's own asyncapi.ref-unresolved gate would (rightly) refuse.
+  const FULL_REMOVAL_EVENTS = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    x-loam-remove: true
+operations:
+  sendLegacy:
+    x-loam-remove: true
+components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`;
+
+  it("a justified, exact removal deletes the slots at archive, and the marker never reaches living", async () => {
+    const p = await makeProject(
+      fixture({ "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": FULL_REMOVAL_EVENTS }),
+    );
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-40", "--json");
+      expect(res.code).toBe(0);
+      const payload = JSON.parse(res.stdout);
+      expect(payload.asyncapiRemovals).toEqual([
+        {
+          service: "payment-service",
+          slots: ["channels.legacyEvents", "operations.sendLegacy", "'payment.Legacy' (components.messages.Legacy)"],
+        },
+      ]);
+      // Removals are deletions, never overwrites — no *-modified warn rides along.
+      expect((payload.warnings as Array<{ code: string }>).some((w) => w.code.endsWith("-modified"))).toBe(false);
+      const living = await p.read("services/payment-service/asyncapi.yaml");
+      expect(living).not.toContain("x-loam-remove");
+      expect(living).not.toContain("Legacy");
+      const doc = parse(living);
+      // Every section emptied by its removal goes with its last slot.
+      expect(doc.channels).toBeUndefined();
+      expect(doc.operations).toBeUndefined();
+      expect(doc.components).toBeUndefined();
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("retiring only the message while its channel still $refs it gates as a dangling reference", async () => {
+    // REMOVAL_EVENTS retires just components.messages.Legacy; the living
+    // channel keeps `$ref: '#/components/messages/Legacy'`, so the MERGED
+    // document would point at a grave — the plan refuses before a byte moves.
+    const p = await makeProject(fixture());
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-40", "--json");
+      expect(res.code).toBe(1);
+      const refusal = JSON.parse(res.stdout);
+      expect(refusal.error.code).toBe("not-coherent");
+      expect(
+        (refusal.issues as Array<{ code: string }>).filter((i) => i.code === "asyncapi.ref-unresolved"),
+      ).toHaveLength(1);
+      expect(await p.read("services/payment-service/asyncapi.yaml")).toBe(LIVING_EVENTS);
+    } finally {
+      await p.destroy();
+    }
   });
 });
