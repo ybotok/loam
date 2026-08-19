@@ -93,7 +93,7 @@ describe("examples/docs vs loam validate --all", () => {
 });
 
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
-  it("plans a coherent six-file merge plus the move, warning only that the new service has no model", async () => {
+  it("plans a coherent seven-file merge plus the move, warning only that the new service has no model", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
@@ -116,18 +116,35 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
       },
     ]);
     expect(payload.overridden).toEqual([]);
+    // The asyncapi update is the event axis's half of the merge: the delta's
+    // pinned quotes leave the living slots alone (no *-modified warning above),
+    // and only the new payment.PaymentSplitAuthorized slots are written.
+    expect(payload.asyncapiRemovals).toEqual([]);
     expect(payload.plan).toEqual([
       { path: "services/checkout-web/spec.md", action: "update" },
       { path: "services/payment-service/spec.md", action: "update" },
       { path: "services/payment-split-service/spec.md", action: "create" },
       { path: "services/payment-split-service/arch.spec.md", action: "create" },
       { path: "services/payment-split-service/openapi.yaml", action: "create" },
+      { path: "services/payment-service/asyncapi.yaml", action: "update" },
       { path: "architecture/landscape.likec4", action: "update" },
       {
         path: "features/FEAT-101-payment-splitting",
         action: "move",
         to: "features/archive/FEAT-101-payment-splitting",
       },
+    ]);
+  });
+
+  it("derives the event.declares claim from the asyncapi delta — the new message only, never the pinned quotes", async () => {
+    const res = await runLoam(workDir, "verify", "FEAT-101", "--json");
+    expect(res.code).toBe(0);
+    const claims = JSON.parse(res.stdout).claims as Array<{ kind: string; subject: string; claim: string }>;
+    expect(claims.filter((c) => c.kind === "event.declares")).toEqual([
+      expect.objectContaining({
+        subject: "payment-service",
+        claim: "payment-service declares it sends message 'payment.PaymentSplitAuthorized'",
+      }),
     ]);
   });
 
@@ -154,6 +171,7 @@ describe("examples/docs vs loam archive FEAT-112 --dry-run", () => {
     expect(payload.openapiRemovals).toEqual([
       { service: "order-service", operations: ["'createOrderV1' (post /v1/orders)"] },
     ]);
+    expect(payload.asyncapiRemovals).toEqual([]);
     expect(payload.plan).toEqual([
       { path: "services/order-service/spec.md", action: "update" },
       { path: "services/order-service/openapi.yaml", action: "update" },

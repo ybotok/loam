@@ -74,13 +74,14 @@ model {
     #FEAT-101
     metadata { op 'createSplit' }
   }
-  // Drawn with the message in its title and no `metadata { publishes }`, and that is not an
-  // oversight: the async axis has no feature delta. There is no
-  // `features/<FEAT>/specs/<svc>/asyncapi.yaml`, no merge and no baseline pin, so a new
-  // service's contract for a message it will send is written into its living
-  // `services/payment-split-service/asyncapi.yaml` in the same reviewed PR that archives this
-  // feature. Carrying the metadata now would join the edge to a file that does not exist yet
-  // and fail the fleet on `spine.message-undefined` the moment the archive lands.
+  // Drawn with the message in its title and no `metadata { publishes }`, deliberately: the
+  // metadata is a JOIN, and the join demands a contract — an edge publishing a message its
+  // bound service's contract (feature ∪ living) declares no send for is refused as
+  // `c4-event.message-undefined`. The async axis has the full feature lifecycle
+  // (`specs/payment-service/asyncapi.yaml` beside this delta is its demonstration — the
+  // living contract restated under `loam rebase` pins, plus a new producer side), but
+  // payment-split-service's own contract is deferred until the consumer of `PaymentSplit`
+  // exists, so the edge stays title-only rather than pointing at a contract nobody wrote.
   marketplace.paymentSplitService -> kafka.paymentEvents 'Publishes PaymentSplit' {
     #FEAT-101
   }

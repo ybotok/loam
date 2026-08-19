@@ -262,8 +262,9 @@ Required change, and where each landed:
 
 Recorded while landing it: a components-only feature contract (no `paths` mapping) passes the gate
 but merges nothing — the merge answers no-op before the closure runs. Pre-existing, now written down
-here rather than silently true; the AsyncAPI lifecycle item touches the same merge entry point and
-should close it in passing.
+here rather than silently true. The AsyncAPI lifecycle item touched the same entry point and landed
+WITHOUT closing it — and mirrored the shape rather than fixing it: a slot-less asyncapi delta merges
+nothing too (that item's own leftovers record it). Still open on both axes.
 
 Exit criteria:
 
@@ -357,21 +358,49 @@ two-fleet pilot item's evidence, not this repository's.
 
 ### Complete the AsyncAPI feature lifecycle
 
-The current support in [src/core/asyncapi/](https://github.com/ybotok/loam/tree/main/src/core/asyncapi)
-reads a shallow message/channel spine, but there is no feature-local AsyncAPI delta, baseline pin,
-rebase, archive merge, undo, or verification claim. Event-driven fleets therefore do not have the same
-forward path as OpenAPI-backed work.
+Landed: the event axis has the feature lifecycle the OpenAPI axis has, mirrored axis-for-axis. A
+feature-local `features/<FEAT>/specs/<svc>/asyncapi.yaml` — a complete AsyncAPI 3.0 document,
+[SCHEMA.md](SCHEMA.md)'s format section is the design of record — carries slot identity over
+`channels.<key>` / `operations.<key>` / `components.messages.<key>` (inline channel messages are
+channel-slot interior by decision), with `x-loam-based-on` pins written by `loam rebase` and
+`x-loam-remove: true` markers. One digest spelling for both axes:
+[src/core/asyncapi/digest.ts](https://github.com/ybotok/loam/blob/main/src/core/asyncapi/digest.ts)
+imports the canonical-JSON rule from the OpenAPI axis (verified acyclic), so the pin grammars
+cannot drift apart.
 
-Exit criteria:
+Exit criteria, as landed:
 
-- A feature can add, modify, and retire a message/channel identity in a documented feature-local format.
-- `new`, `delta`, `rebase`, `validate`, `verify`, `archive`, and `unarchive` agree on the same AsyncAPI
-  identity and baseline semantics.
-- Producer/consumer references, conflicting active features, stale baselines, unjustified removals, and
-  orphaned references have stable findings and end-to-end tests.
-- Archive and undo use the same transactional guarantees as the other source-of-truth axes.
-- The scope remains explicit: payload-schema correctness that loam does not validate is documented and
-  can be delegated to an optional external CI validator without adding a runtime dependency.
+- ~~A feature can add, modify, and retire a message/channel identity in a documented feature-local
+  format~~ — the SCHEMA.md format spec, which explicitly supersedes the earlier recorded decision
+  against an event removal family (the consumer-lag rationale survives as an operational warning,
+  not a veto).
+- ~~`new`, `delta`, `rebase`, `validate`, `verify`, `archive`, and `unarchive` agree on the same
+  AsyncAPI identity and baseline semantics~~ — one slot walker and one digest rule end to end;
+  `delta` projects the `events` slice (unreadable ⇒ exit 1, the openapi parity), `status` carries
+  the `asyncapi` artifact row and names `loam rebase` on `asyncapi.baseline-missing`, and `new`
+  deliberately scaffolds nothing — the spec template and `/loam-feature` teach the format instead,
+  because the axis's absence-grading rests on the contract being genuinely optional.
+- ~~Producer/consumer references, conflicting active features, stale baselines, unjustified
+  removals, and orphaned references have stable findings and end-to-end tests~~ — the
+  `asyncapi.*` baseline/removal/conflict codes plus `c4-event.*`/`spec-event.*`, each in the
+  /loam-check fix table; test/asyncapi-baseline, -removal, -merge, -lifecycle and
+  test/coherence-events drive the real CLI.
+- ~~Archive and undo use the same transactional guarantees as the other source-of-truth axes~~ —
+  the merge writes ordinary planned writes, so snapshot, journal, rollback and byte-identical
+  `unarchive` apply unchanged; a fault-injected commit failure rolling the asyncapi swap back with
+  the rest of the plan is pinned in test/asyncapi-lifecycle.test.ts.
+- ~~The scope remains explicit~~ — SCHEMA.md states payload-schema correctness is delegated to an
+  optional external CI validator (e.g. `@asyncapi/parser`) with no runtime dependency; slot
+  digests hash payload bytes as content identity, never a join.
+
+Honest leftovers: a slot-less feature asyncapi.yaml merges nothing — content outside the three
+slot sections (`info`, `servers`, `components.schemas`) never merges, the sibling of the
+components-only openapi gap recorded above, with the one guard that a merged slot referencing a
+feature-only schema gates `asyncapi.ref-unresolved` at plan time instead of landing a dangling
+pointer. The example fleet demonstrates the merge half (FEAT-101's payment-service delta, pinned
+by a real `loam rebase` run); the create-a-living-contract branch is exercised by tests, not by
+examples/docs. And `spine.message-external`'s consumer-owned-copy convention predates this item
+and is unchanged by it.
 
 ### Subsystems: a navigable tree under `services/` that no identity depends on
 

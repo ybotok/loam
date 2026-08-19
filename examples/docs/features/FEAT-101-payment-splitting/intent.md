@@ -35,8 +35,10 @@ Payouts themselves. A split records who is owed what; moving the money is separa
 deliberately not smuggled in here — a feature whose intent and whose delta describe different
 scopes is one nobody can review as a diff.
 
-The `PaymentSplit` event is drawn in `delta.likec4` and joined to no contract yet, because the
-async axis has no feature delta: there is no `specs/<svc>/asyncapi.yaml`, no merge and no
-baseline pin. The new service's `asyncapi.yaml` is written into `services/payment-split-service/`
-in the same reviewed PR that archives this feature. That is a real limitation of loam today, not
-an omission in this example.
+The `PaymentSplit` event is drawn in `delta.likec4` with the message in its title and no
+contract join yet — deliberately, not for lack of machinery. The async axis has the full
+feature lifecycle, and this feature's `specs/payment-service/asyncapi.yaml` is its
+demonstration: the living contract restated under `loam rebase`'s pins, plus the new
+`payment.PaymentSplitAuthorized` producer side the archive will merge. The split service's own
+contract is deferred until a consumer of `PaymentSplit` exists, and the edge stays unjoined
+rather than pointing at a contract nobody wrote.

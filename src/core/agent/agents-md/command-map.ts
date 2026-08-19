@@ -160,6 +160,9 @@ selected that tool. The map of which invocation surfaces what:
   \`delta.removed-pending\`, \`delta.added-conflict\`, \`delta.modified-conflict\`,
   \`delta.living-duplicate-requirement\`, and the API-removal group:
   \`openapi.remove-marker-anonymous\`, \`openapi.remove-op-consumed\`.
+  The event axis is graded in feature scope too — the \`asyncapi.*\`
+  baseline/removal/conflict codes plus \`c4-event.*\` and \`spec-event.*\`, each
+  with its fix in the /loam-check table.
   Where a finding names another feature in flight (\`delta.*-pending\`,
   \`delta.added-conflict\`, \`delta.modified-conflict\`, \`spec-api.op-pending\`,
   \`c4-api.op-pending\`) the ORDER is the answer, and \`loam dependencies --json\`
