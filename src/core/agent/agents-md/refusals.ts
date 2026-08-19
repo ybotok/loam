@@ -83,7 +83,12 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`openapi.ref-unresolved\` (error), \`openapi.remove-marker-path-level\` (error —
   an \`x-loam-remove: true\` written at PATH level, beside the methods rather than
   inside one: it addresses no operation, so it retires nothing, and it is not a
-  contract key either) and \`service.no-model\` (warn — the archive creates
+  contract key either), the event axis's own trio \`asyncapi.message-modified\` /
+  \`asyncapi.channel-modified\` / \`asyncapi.operation-modified\` (warn — the delta
+  redefines a slot the living AsyncAPI already has, and the merge overwrites it
+  wholesale), \`asyncapi.ref-unresolved\` (a validate warn, but an error here when
+  the MERGED document would carry the dangling reference)
+  and \`service.no-model\` (warn — the archive creates
   \`services/<id>/\`, or puts a service in the landscape the fleet has no directory
   for at all, and nothing writes its model.likec4).
 

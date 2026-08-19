@@ -89,7 +89,7 @@ export type IssueCode =
   | "asyncapi.remove-message-consumed"
   /** another feature in flight adds or edits the same (service, message) — whichever archives second replaces the other's declaration wholesale */
   | "asyncapi.message-conflict"
-  /** internal `$ref`(s) resolving to nothing — validate's warn today; the archive merge will grade it as a plan gate when the merge lands */
+  /** internal `$ref`(s) resolving to nothing — validate's warn on a living contract; a gating plan issue at archive when the MERGED document would carry the dangling reference */
   | "asyncapi.ref-unresolved"
   /** a tagged edge publishes/consumes a message its bound service's contract (feature ∪ living) declares no matching send/receive operation for */
   | "c4-event.message-undefined"
@@ -151,6 +151,12 @@ export type IssueCode =
   | "openapi.ref-unresolved"
   /** the delta redefines a PATH-level key (parameters, servers, summary) the living OpenAPI already has — the overwrite applies to every operation on that path */
   | "openapi.path-item-modified"
+  /** the delta redefines a `components.messages` slot the living AsyncAPI already has — the merge overwrites the living message wholesale */
+  | "asyncapi.message-modified"
+  /** the delta redefines a `channels` slot the living AsyncAPI already has — the merge overwrites it wholesale, inline channel messages included */
+  | "asyncapi.channel-modified"
+  /** the delta redefines an `operations` slot the living AsyncAPI already has — the merge overwrites it wholesale */
+  | "asyncapi.operation-modified"
   /** an `x-loam-remove: true` marker with no operationId — loam cannot tell which operation it retires, and the marker itself would reach the living contract */
   | "openapi.remove-marker-anonymous"
   /** an `x-loam-remove: true` written at PATH level, beside the methods — it addresses no operation, so it retires nothing and is not a contract key either */

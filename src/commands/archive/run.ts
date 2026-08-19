@@ -31,6 +31,7 @@ import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
 import { planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
+import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { issueJson, refuseJson } from "./plan/refusal.js";
@@ -61,8 +62,9 @@ export async function archiveLocked(
   const planned = emptyPlan();
   await planSpecs(config, gated, planned, say);
   await planOpenapiContracts(config, gated, planned, say);
+  await planAsyncapiContracts(config, gated, planned, say);
   await planLandscape(config, gated, planned, say);
-  const { writes, planWarns, planGates, openapiRemovals } = planned;
+  const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
 
   // Gate on what only the plan could see: a merged operation pointing at a
   // component that exists nowhere, a removal marker addressing no operation.
@@ -71,19 +73,19 @@ export async function archiveLocked(
   // Checked after the whole plan so the refusal costs nothing: no write has
   // happened yet either way.
   if (planGates.length > 0 && !opts.approve) {
-    const msg = `archive ${id} — BLOCKED: ${planGates.length} issue(s) in the OpenAPI merge`;
+    const msg = `archive ${id} — BLOCKED: ${planGates.length} issue(s) in the contract merge`;
     if (json) {
       refuseJson("not-coherent", msg, [...issues, ...planWarns, ...planGates]);
       return;
     }
     console.error(`${msg}:`);
     for (const i of planGates) console.error(`  ✗ ${i.message}`);
-    console.error(`\nFix them in the feature's openapi.yaml — or re-run with --approve to merge anyway.`);
+    console.error(`\nFix them in the feature's openapi.yaml / asyncapi.yaml — or re-run with --approve to merge anyway.`);
     process.exitCode = 1;
     return;
   }
   if (planGates.length > 0) {
-    say(`\n  ⚠ archiving despite ${planGates.length} OpenAPI merge issue(s) (--approve):`);
+    say(`\n  ⚠ archiving despite ${planGates.length} contract merge issue(s) (--approve):`);
     for (const i of planGates) say(`      ✗ ${i.message}`);
   }
 
@@ -105,6 +107,7 @@ export async function archiveLocked(
     warnings: warnings.map(issueJson),
     overridden: overridden.map(issueJson),
     openapiRemovals,
+    asyncapiRemovals,
     // Present only when this run found an interrupted commit and dealt with it:
     // an agent that sees the docs change under it deserves to be told why, and
     // the absent field is the ordinary case.

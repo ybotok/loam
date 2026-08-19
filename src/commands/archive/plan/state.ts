@@ -36,13 +36,16 @@ export interface Plan {
   writes: PlannedWrite[];
   /**
    * Warnings born in the plan itself (openapi.op-modified,
-   * openapi.component-modified) — printed with the plan and carried into the
-   * `--json` envelope beside the coherence warnings.
+   * openapi.component-modified, the asyncapi.*-modified trio) — printed with
+   * the plan and carried into the `--json` envelope beside the coherence
+   * warnings.
    */
   planWarns: Issue[];
-  /** Gating issues born in the plan itself (openapi.ref-unresolved). */
+  /** Gating issues born in the plan itself (openapi.ref-unresolved, asyncapi.ref-unresolved). */
   planGates: Issue[];
   openapiRemovals: Array<{ service: string; operations: string[] }>;
+  /** Living asyncapi slots the plan deletes on removal markers, by their labels. */
+  asyncapiRemovals: Array<{ service: string; slots: string[] }>;
   /** Services this feature introduces on the architecture axis alone. */
   architectureServices: Set<PathableService>;
 }
@@ -53,6 +56,7 @@ export function emptyPlan(): Plan {
     planWarns: [],
     planGates: [],
     openapiRemovals: [],
+    asyncapiRemovals: [],
     architectureServices: new Set<PathableService>(),
   };
 }

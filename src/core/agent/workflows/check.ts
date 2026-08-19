@@ -219,10 +219,11 @@ intent.md, both modes:
 | \`content.stale\` (warn) | the spec's body changed since it was vouched — \`status: verified\` is standing over words nobody has read. Unlike \`sources.*\` it needs no service repo, so it fires from the docs repo too | if you edited the doc, that is the point: report it and ask a human to re-vouch. Never revert the doc or touch the digest just to silence it |
 
 \`loam archive\` — breaches the merge computation sees, reported at plan time.
-Most never appear in \`validate\`; the two that do are graded harder here,
+Most never appear in \`validate\`; the ones that do are graded harder here,
 because the merge is about to WRITE the breach into the living contract
-(\`openapi.ref-unresolved\` is a validate warn but a plan error;
-\`openapi.remove-marker-path-level\` fires in validate on a living contract too):
+(\`openapi.ref-unresolved\` and \`asyncapi.ref-unresolved\` are validate warns but
+plan errors; \`openapi.remove-marker-path-level\` fires in validate on a living
+contract too):
 
 | code | what it means | what to do |
 |---|---|---|
@@ -233,6 +234,10 @@ because the merge is about to WRITE the breach into the living contract
 | \`openapi.component-modified\` (warn) | a component the merged operations reference already exists in the living OpenAPI with different content — the merge copies the feature's version over it wholesale | make sure the redefinition is intended; if not, align the feature's component with the living one |
 | \`openapi.ref-unresolved\` | a \`$ref\` reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — the merge would write a dangling reference | define the missing component or fix the ref; \`--approve\` merges the dangling reference anyway. External refs (not starting \`#/\`) are never checked |
 | \`openapi.remove-marker-path-level\` | an \`x-loam-remove: true\` written at PATH level, beside the methods instead of inside the operation being retired — it names no operation, so it retires nothing, and it is not a contract key either | move the marker inside the operation (with its \`operationId\`), or delete it. The merge is safe either way — a feature-only key is never published into the living contract — but the removal you asked for will not happen |
+| \`asyncapi.message-modified\` (warn) | the delta redefines a \`components.messages\` slot the living AsyncAPI already has — the merge overwrites the living message wholesale | make sure the redefinition is intended; if not, align the feature's asyncapi.yaml with the living one, then \`loam rebase\` so the restatement classifies as a quote |
+| \`asyncapi.channel-modified\` (warn) | the delta redefines a \`channels\` slot the living AsyncAPI already has — the merge overwrites it wholesale, inline channel messages included (they are channel interior, never slots of their own) | make sure the redefinition is intended; if not, align the feature's channel with the living one |
+| \`asyncapi.operation-modified\` (warn) | the delta redefines an \`operations\` slot the living AsyncAPI already has — the merge overwrites it wholesale | make sure the redefinition is intended; if not, align the feature's operation with the living one |
+| \`asyncapi.ref-unresolved\` | a \`$ref\` the MERGED asyncapi.yaml would carry resolves in neither the feature's document nor the living one — including a removal that deletes a slot the living document still references | define the missing target, fix the pointer, or retire the referrer in the same delta; \`--approve\` merges the dangling reference anyway. External refs (not starting \`#/\`) are never checked |
 
 \`sources.stale\` and \`content.stale\` are the warnings you cannot close by yourself.
 Fix what the code now says, then hand it back — the stamp is a person's claim to
