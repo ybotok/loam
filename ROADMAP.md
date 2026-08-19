@@ -122,121 +122,241 @@ Exit criteria:
 The supported gate is the composition in
 [AGENTS.md](https://github.com/ybotok/loam/blob/main/AGENTS.md) and
 [.github/workflows/ci.yml](https://github.com/ybotok/loam/blob/main/.github/workflows/ci.yml): lint,
-typecheck, the package-level graph check, behavior tests, coverage, and installed-package smoke.
-File-level cycle and boundary enforcement is a P1 addition below, not a current gate claim. Forked CLI
-tests, current-working-directory isolation, and concurrent file writers must be stable at the
-configured Vitest parallelism; an isolated rerun is diagnostic evidence, not a green gate.
+typecheck, the architecture gate, behavior tests, coverage, and installed-package smoke. Landed —
+entirely in test/, scripts/ and CI, zero `src/` lines, so the coverage thresholds stood unmoved:
+stability is now a repeatable measurement rather than an impression, and every red run says what
+kind of red it is. An isolated rerun remains diagnostic evidence, not a green gate.
 
-Required change:
+Required change, and where each landed:
 
-- Reproduce and classify runner-policy failures separately from product races, without weakening the
-  test pool or turning failures into retries.
-- Audit module-level mutable state, shared temporary paths, `process.chdir`, and child-process cleanup in
-  the harness beginning with
-  [test/helpers/harness.ts](https://github.com/ybotok/loam/blob/main/test/helpers/harness.ts) and
-  [vitest.config.ts](https://github.com/ybotok/loam/blob/main/vitest.config.ts).
-- Add targeted stress coverage for concurrent verification, archive locking, Gherkin generation, and
-  CLI entry execution. Assertions must cover resulting bytes and trees, not only exit status.
-- Keep the Node runtime floor and the coverage job distinct where CI needs them, while ensuring both
-  exercise the same public command contracts.
+1. ~~Reproduce and classify runner-policy failures separately from product races, without weakening
+   the test pool or turning failures into retries~~ — done:
+   [scripts/gate-stress.mjs](https://github.com/ybotok/loam/blob/main/scripts/gate-stress.mjs) runs
+   N sequential full-suite runs at the CONFIGURED parallelism and
+   [scripts/gate-stress-classify.mjs](https://github.com/ybotok/loam/blob/main/scripts/gate-stress-classify.mjs)
+   grades each run as product, runner-policy, coverage-threshold or infrastructure — three runs are
+   three verdicts, never three attempts. A globalSetup host probe
+   ([test/helpers/host-probe.ts](https://github.com/ybotok/loam/blob/main/test/helpers/host-probe.ts))
+   makes a host that forbids a required primitive (O_EXCL, link(2), rename-over, symlink, spawn)
+   fail once with a classified `[loam-host]` cause instead of scattering EPERM failures that read
+   as flakes.
+2. ~~Audit module-level mutable state, shared temporary paths, `process.chdir`, and child-process
+   cleanup in the harness~~ — done: spawned children now live in one vocabulary
+   ([test/helpers/cli-process.ts](https://github.com/ybotok/loam/blob/main/test/helpers/cli-process.ts))
+   — a 60-second deadline, SIGKILL, and a live-child registry whose `assertNoLiveChildren` is the
+   executable form of "no leaked processes" — and in-process `runLoam` calls are serialised behind
+   one queue, because cwd, console and exit code are process-global. A refusal was tried first and
+   reverted on evidence: vitest cannot cancel a timed-out test's async work, so the queue keeps the
+   corruption impossible while a timeout stays one timeout.
+3. ~~Add targeted stress coverage for concurrent verification, archive locking, Gherkin generation,
+   and CLI entry execution, asserting on resulting bytes and trees rather than exit status~~ —
+   done: [test/stress-verify.test.ts](https://github.com/ybotok/loam/blob/main/test/stress-verify.test.ts)
+   (four simultaneous federated records: every winner's attestation whole, stragglers refuse
+   `docs-busy` and nothing else),
+   [test/stress-archive.test.ts](https://github.com/ybotok/loam/blob/main/test/stress-archive.test.ts)
+   (four simultaneous archives of one feature: exactly one winner, the surviving tree byte-equal to
+   a solo run's),
+   [test/stress-gherkin.test.ts](https://github.com/ybotok/loam/blob/main/test/stress-gherkin.test.ts)
+   (serial idempotence and four-way byte-convergence), and
+   [test/stress-cli-entry.test.ts](https://github.com/ybotok/loam/blob/main/test/stress-cli-entry.test.ts)
+   (eight concurrent read-only runs: parseable envelopes, duplicate invocations byte-identical, the
+   tree untouched).
+4. ~~Keep the Node runtime floor and the coverage job distinct where CI needs them~~ — done: the
+   dispatch/schedule-only `stability` job in ci.yml runs three sequential full-suite runs at the
+   Node floor and three under coverage on the current Node line, never retried, and
+   [AGENTS.md](https://github.com/ybotok/loam/blob/main/AGENTS.md) documents the runner and its
+   failure classes.
 
-Exit criteria:
+What completing this item surfaced, fixed in the same change: one real product defect — two
+concurrent lock acquires in one process and one millisecond shared a temp name, the first's cleanup
+deleted it under the second, and the second's link(2) surfaced ENOENT as `internal`; caught by the
+20-iteration archive overlap stress, fixed with a per-call sequence in the temp name.
 
-- The current full behavior count, including every CLI-entry case, passes in one uninterrupted run with
-  configured parallelism and no isolated rerun.
-- The same immutable commit completes three consecutive clean CI executions at the Node floor and three
-  consecutive clean coverage executions on the current Node line, with no retry or quarantine.
-- Targeted multi-process stress tests can be repeated locally and in CI without leaked processes,
-  sockets, locks, temporary files, or working-directory state.
-- A constrained host that forbids a required primitive fails once with a classified infrastructure
-  reason; it does not resemble a nondeterministic product failure.
+Exit criteria, as landed:
+
+- ~~The current full behavior count, including every CLI-entry case, passes in one uninterrupted
+  run with configured parallelism and no isolated rerun~~ — every gate-stress run is exactly that
+  shape, and each evidence run below passed the complete suite that way.
+- ~~The same immutable commit completes three consecutive clean executions at the Node floor and
+  three consecutive clean coverage executions on the current Node line, with no retry or
+  quarantine~~ — proven locally on the landing tree: three consecutive clean plain runs and three
+  consecutive clean coverage runs of the complete suite; observing the same in CI is the leftover
+  below.
+- ~~Targeted multi-process stress tests can be repeated without leaked processes, sockets, locks,
+  temporary files, or working-directory state~~ — `assertNoLiveChildren` and the harness teardown
+  enforce it on every suite, and the stress assertions cover the resulting tree delta, not only
+  exit codes.
+- ~~A constrained host that forbids a required primitive fails once with a classified
+  infrastructure reason~~ — the host probe fails the run once with its named cause; it no longer
+  resembles a nondeterministic product failure.
+
+Honest leftover: the CI half of the evidence is observation, not code. The stability job has to be
+seen green in CI, which needs a push — the same maintainer-observed remainder the OpenSpec
+rebaseline recorded — and the ci.yml comment records the chosen reading of "three consecutive CI
+executions" (three sequential runs inside one job execution per matrix leg), so the maintainer can
+dispatch three times for the stricter reading.
 
 ### P0 — crash-consistent multi-file writers
 
-`new` currently creates its scaffold sequentially in
-[src/commands/new/new.ts](https://github.com/ybotok/loam/blob/main/src/commands/new/new.ts). Gherkin
-computes conflicts before writing, but its write/delete loop in
-[src/commands/gherkin/gherkin.ts](https://github.com/ybotok/loam/blob/main/src/commands/gherkin/gherkin.ts)
-can still leave a half-old, half-new generated suite after an I/O failure. `vouch` and `rebase` already
-use `stageWrites → swapStaged → rollbackStaged`, but that is exception rollback, not crash
-consistency: [src/core/staging/commit.ts](https://github.com/ybotok/loam/blob/main/src/core/staging/commit.ts)
-swaps one file at a time, and a process killed between swaps never enters the catch block. `rebase`
-takes the docs lock; [src/commands/vouch/run.ts](https://github.com/ybotok/loam/blob/main/src/commands/vouch/run.ts)
-does not. The scope is therefore every multi-file writer, not only the two commands that still write
-sequentially.
+Archive and unarchive had long committed through a lock, a compare-and-swap, a snapshot and a
+fsynced journal; every other writer wrote plainly, and a process killed between two renames left a
+half-old, half-new tree nothing could see. Landed: every multi-file writer now commits through a
+smaller journaled transaction
+([src/core/staging/txn/](https://github.com/ybotok/loam/tree/main/src/core/staging/txn)) whose
+staged after-bytes are durable beside their targets before the journal is written, so recovery
+rolls FORWARD — file by file, each verified against the digest recorded before the crash — instead
+of needing a snapshot that exists nowhere. The shared vocabulary (the journal's name, the
+interrupted-commit refusal, the recovery report, the durable-write and temp-sweep disciplines)
+lives in
+[src/core/staging/interrupted.ts](https://github.com/ybotok/loam/blob/main/src/core/staging/interrupted.ts).
 
-Required change:
+Required change, and where each landed:
 
-- Inventory every command that can mutate more than one authoritative or generated file, beginning
-  with `new`, `gherkin`, `vouch`, and `rebase`; classify exception rollback, concurrent-writer safety,
-  and abrupt-process recovery separately.
-- Build and validate the complete write/delete plan in memory before touching disk.
-- Stage every output beside its destination, lock the smallest correct write scope, compare pre-images,
-  and commit with a durable intent journal plus guarded rollback/recovery.
-- Preserve existing no-clobber behavior: authored files and generated files changed since planning must
-  be refused, not buried.
-- Keep output deterministic and keep planning separate from rendering so failure tests can address each
-  commit boundary. Reuse archive recovery only where its assumptions hold; otherwise extract a smaller
-  journaled transaction rather than pretending a sequence of atomic renames is atomic as a group.
+1. ~~Inventory every command that can mutate more than one authoritative or generated file;
+   classify exception rollback, concurrent-writer safety, and abrupt-process recovery separately~~
+   — done: the inventory and each writer's guarantee are recorded in [CHANGELOG.md](CHANGELOG.md).
+   `rebase` journals its pin writes; `vouch` takes the docs lock for its commit window — the lock
+   this roadmap called missing — and rolls a predecessor's journal forward BEFORE verification
+   reads a byte; `verify --record` recovers under its held lock.
+2. ~~Build and validate the complete write/delete plan in memory before touching disk~~ — done:
+   `new` ([src/commands/new/new.ts](https://github.com/ybotok/loam/blob/main/src/commands/new/new.ts))
+   builds its whole scaffold in memory and commits it as exclusive creates under the lock, asking
+   "does this feature exist" exactly once — under the lock, after recovery — because an unlocked
+   fast path used to refuse already-exists over its own wreckage.
+3. ~~Stage every output beside its destination, lock the smallest correct write scope, compare
+   pre-images, and commit with a durable intent journal plus guarded rollback/recovery~~ — done:
+   `gherkin` ([src/commands/gherkin/commit.ts](https://github.com/ybotok/loam/blob/main/src/commands/gherkin/commit.ts))
+   commits into the service repo's own gherkin root through the same lock and journal, comparing
+   every write and delete against the exact bytes reconcile graded, and recovers before the feature
+   argument resolves, so the stored re-run works even after its feature archives.
+4. ~~Preserve existing no-clobber behavior: authored files and generated files changed since
+   planning must be refused, not buried~~ — done: pre-images are compared at commit, and a file
+   that appeared after planning is a refusal.
+5. ~~Keep planning separate from rendering; reuse archive recovery only where its assumptions hold,
+   otherwise extract a smaller journaled transaction~~ — done: txn/ is exactly that smaller
+   transaction, and archive keeps its own snapshot-backed path.
 
-Exit criteria:
+What the closing reviews surfaced, fixed in the same change: a journal entry escaping its root
+could turn roll-forward into an arbitrary write anywhere on the machine (both journal readers now
+fail closed on containment); the journal was cleared on `rollback-incomplete`, hiding the one tree
+that most needs describing (now retained, archive's own trade); a file whose before and after
+digests match was read as proof a rename landed (only a file that can tell the two states apart
+counts); the raced remap in three callers swallowed `rollback-incomplete` and its file list; and
+doctor's temp-litter warning advised deleting the very bytes roll-forward recovers from.
 
-- Injected exceptions and abrupt process termination at every staged write, swap, and deletion boundary
-  leave a tree byte-identical to either the complete pre-state or the complete post-state after the
-  documented recovery step.
-- Concurrent runs for the same target serialize or refuse with a stable result; runs for independent
-  targets do not block one another unnecessarily.
-- Existing user-authored files, symlinks, and files appearing after planning are never overwritten.
-- `doctor` reports an interrupted commit until recovery succeeds or names the files requiring human
-  repair; no command silently treats a half-commit as healthy.
-- Success output, JSON shape, generated bytes, and command-line compatibility remain unchanged unless an
-  additive contract change is explicitly documented.
+Exit criteria, as landed:
+
+- ~~Injected exceptions and abrupt process termination at every staged write, swap, and deletion
+  boundary leave either the complete pre-state or the complete post-state after the documented
+  recovery step~~ —
+  [test/staging-txn.test.ts](https://github.com/ybotok/loam/blob/main/test/staging-txn.test.ts)
+  pins the journal round-trip and recovery at every boundary, and
+  [test/gherkin-crash.test.ts](https://github.com/ybotok/loam/blob/main/test/gherkin-crash.test.ts)
+  plus [test/vouch-crash.test.ts](https://github.com/ybotok/loam/blob/main/test/vouch-crash.test.ts)
+  drive each writer's crash-and-rerun cycle through the real CLI — each test proven to discriminate
+  by reverting the behaviour it pins.
+- ~~Concurrent runs for the same target serialize or refuse with a stable result~~ — the docs lock
+  and `docs-busy` cover the docs repository; gherkin's service-repo commits take the same lock
+  beside their own root.
+- ~~Existing user-authored files, symlinks, and files appearing after planning are never
+  overwritten~~ — pinned in the crash suites and the write-path integrity tests.
+- ~~`doctor` reports an interrupted commit until recovery succeeds; no command silently treats a
+  half-commit as healthy~~ — `validate` leads every mode with the error finding
+  `docs.commit-interrupted` — including, in a service repo, over the gherkin root, where a
+  half-committed suite used to grade as merely stale warnings — and `doctor` scans the same roots
+  with the same codes, reported as the additive `serviceWritePath`.
+- ~~Success output, JSON shape, generated bytes, and command-line compatibility remain unchanged
+  unless an additive contract change is explicitly documented~~ — the new finding, doctor's
+  write-path rows, and the refusal texts are the CHANGELOG'd additions; generated bytes did not
+  move.
+
+The subsystems item later extended the same machinery rather than growing a second one: a
+subsystem move commits its N directory renames plus the generated views file through this same
+journaled transaction
+([src/commands/subsystem/txn/txn.ts](https://github.com/ybotok/loam/blob/main/src/commands/subsystem/txn/txn.ts)),
+and archive snapshots were re-keyed by `(service, artifact)` so restores survive later moves
+(snapshot version 3; version 2 restores forever). No open remainder is recorded against this item.
 
 ### P1 — make architecture invariants executable
 
 [docs/DESIGN.md](https://github.com/ybotok/loam/blob/main/docs/DESIGN.md) and
-[docs/CODE-STYLE.md](https://github.com/ybotok/loam/blob/main/docs/CODE-STYLE.md) describe a stronger
-system than the current gate proves. P1 closes that gap rather than adding another layer.
+[docs/CODE-STYLE.md](https://github.com/ybotok/loam/blob/main/docs/CODE-STYLE.md) used to describe a
+stronger system than the gate proved. Landed, in three commits — the standing violations removed
+first, then a move-only split of the id grammar into its own package, then the gate itself — so the
+gate landed green on the real tree rather than grandfathering itself in.
 
-Required change:
+Required change, and where each landed:
 
-- Add one architecture gate that enforces file-level `import/no-cycle`, runs
-  [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs), rejects
-  `commands` imports from `core`, rejects hidden barrel exports, and checks the documented
-  `console`/`process` boundary. The deliberate JSON output module remains the named exception.
-- Replace the `console.error` side effect in
-  [src/core/envelope/config.ts](https://github.com/ybotok/loam/blob/main/src/core/envelope/config.ts) with
-  a typed expected outcome. Command modules alone decide how that outcome is rendered.
-- Require a timeout for every child process and a bounded output policy wherever output is buffered.
-  Bring the unbounded Git call in
-  [src/commands/verify/results.ts](https://github.com/ybotok/loam/blob/main/src/commands/verify/results.ts)
-  up to the standard already demonstrated by
-  [src/core/provenance/git.ts](https://github.com/ybotok/loam/blob/main/src/core/provenance/git.ts), and
-  statically prevent the regression.
-- Finish the branded-type rule. Validated feature IDs, docs directories, feature directories, and
-  portable paths must be distinct from raw input from construction through the path builders in
-  [src/core/repo/paths.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/paths.ts). The smart
-  constructors in [src/core/kernel/ids/](https://github.com/ybotok/loam/tree/main/src/core/kernel/ids)
-  are the only bridge; directory entries such as
-  [src/core/repo/entries.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/entries.ts) retain an
-  explicit raw form when invalid names must still be reported.
-- Generalize context/no-context parity tests so memoization in
-  [src/core/fleet-context.ts](https://github.com/ybotok/loam/blob/main/src/core/fleet-context.ts) cannot
-  become a second implementation of a core rule.
+1. ~~Add one architecture gate that enforces file-level `import/no-cycle`, runs the package-graph
+   check, rejects `commands` imports from `core`, rejects hidden barrel exports, and checks the
+   documented `console`/`process` boundary~~ — done: `npm run arch:check`
+   ([scripts/arch-check.mjs](https://github.com/ybotok/loam/blob/main/scripts/arch-check.mjs)) runs
+   every stated invariant — file-level import cycles, the package graph, the core→commands ban
+   (named and type-only imports), the barrel ban, the `console`/`process` boundary with the JSON
+   envelope adapter as the named exception, the child-process timeout/output policy, and
+   brand-cast containment. CI, AGENTS.md and CONTRIBUTING.md all point at it.
+2. ~~Replace the `console.error` side effect in
+   [src/core/envelope/config.ts](https://github.com/ybotok/loam/blob/main/src/core/envelope/config.ts)
+   with a typed expected outcome~~ — done: the load returns loaded / absent / invalid-with-problem,
+   command modules alone decide the rendering, and under `--json` the config-invalid envelope
+   carries the actual parse problem with stderr empty. The one hidden barrel went in the same
+   change.
+3. ~~Require a timeout for every child process and a bounded output policy wherever output is
+   buffered, and statically prevent the regression~~ — done: the three streamed git reads in
+   [src/core/provenance/git.ts](https://github.com/ybotok/loam/blob/main/src/core/provenance/git.ts)
+   share one collector capped at a deliberate 64 MiB, the git calls in
+   [src/commands/verify/results.ts](https://github.com/ybotok/loam/blob/main/src/commands/verify/results.ts)
+   carry a deadline and cap (landed with the verification-record item above), the gate checks the
+   policy, and the bounds gained their missing tests: a git that never answers meets the deadline
+   that names itself, and one that answers past the cap is refused rather than presented truncated.
+4. ~~Finish the branded-type rule from construction through the path builders~~ — done:
+   FeatureId/RawFeatureId join the service brands, DocsDir and FeatureDir carry the two directory
+   provenances through every builder in
+   [src/core/repo/paths.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/paths.ts), the
+   loaded config is typed apart from the stored spelling, and the smart constructors in
+   [src/core/kernel/ids/](https://github.com/ybotok/loam/tree/main/src/core/kernel/ids) remain the
+   only bridge, with directory entries keeping their explicit raw form. The migration is
+   type-only: an A/B diff of the compiled output shows comments, import paths and identity
+   wrappers, and 45 CLI invocations produced byte-identical envelopes, exit codes and files.
+5. ~~Generalize context/no-context parity tests so memoization in
+   [src/core/fleet-context.ts](https://github.com/ybotok/loam/blob/main/src/core/fleet-context.ts)
+   cannot become a second implementation of a core rule~~ — done:
+   [test/fleet-context-parity.test.ts](https://github.com/ybotok/loam/blob/main/test/fleet-context-parity.test.ts)
+   runs every context reader against its direct core counterpart over one rich fixture, with a
+   per-reader richness floor, a prototype completeness check, and a negative control.
 
-Exit criteria:
+What building the gate surfaced, fixed in the same change: two real bugs in the gate itself —
+oxlint walking a symlinked root silently scans zero files and exits 0 (the gate realpaths first,
+and a fixture reaches it through a link), and a chained-regex comment stripper opened a phantom
+block comment on any `/*` inside a line comment, blanking 96 lines of new.ts from four of the
+seven checks (replaced with a single-state scanner, with a fixture whose violation hides exactly
+there). The hand-maintained brand list is pinned against the kernel's actual unique-symbol
+declarations, so the next brand cannot be forgotten silently.
 
-- A single documented command runs every architecture check used by CI, and each check has a negative
-  self-test proving that a representative violation fails it.
-- `core` contains no output or process-control side effects outside the explicitly named envelope
-  adapter, and no `core -> commands` import can pass the gate.
-- Every child-process call has a tested deadline, cleanup path, and deterministic error mapping; buffered
-  calls also declare an intentional maximum output size.
-- Raw identifiers and paths cannot reach validated path builders at compile time, and casts to a branded
-  type outside its constructor module fail a static check.
-- The module graph remains acyclic, the package graph remains acyclic, and the 300-line / four-parameter /
-  five-file limits retain an empty baseline.
-- Architecture prose states only invariants the gate proves or labels a rule explicitly as review-only.
+Exit criteria, as landed:
+
+- ~~A single documented command runs every architecture check used by CI, and each check has a
+  negative self-test~~ — `npm run arch:check`; twelve self-tests in
+  [test/arch-gate.test.ts](https://github.com/ybotok/loam/blob/main/test/arch-gate.test.ts) prove a
+  representative violation fails each check.
+- ~~`core` contains no output or process-control side effects outside the explicitly named envelope
+  adapter, and no `core -> commands` import can pass the gate~~ — the standing `console.error`
+  violation is gone, and the boundary checks enforce both directions.
+- ~~Every child-process call has a tested deadline, cleanup path, and deterministic error mapping;
+  buffered calls declare an intentional maximum~~ — as above, with the policy statically checked.
+- ~~Raw identifiers and paths cannot reach validated path builders at compile time, and casts to a
+  branded type outside its constructor module fail a static check~~ — the brand migration plus the
+  gate's cast-containment check.
+- ~~The module graph, the package graph, and the 300-line / four-parameter / five-file limits
+  retain an empty baseline~~ — all inside the one gate; new.ts crossing 300 lines under the wiring
+  split its commit window into
+  [src/commands/new/commit.ts](https://github.com/ybotok/loam/blob/main/src/commands/new/commit.ts),
+  the same seam vouch and gherkin sit on.
+- ~~Architecture prose states only invariants the gate proves or labels a rule explicitly as
+  review-only~~ — DESIGN.md and CODE-STYLE.md were rewritten to exactly that standard, and the
+  three open-decision rows this item closed read Done with the option chosen.
+
+No open remainder is recorded against this item.
 
 ### P1 — baseline semantics for OpenAPI path items and components
 
@@ -473,78 +593,81 @@ visible, harmless, and removed by hand.
 
 ### Name the capabilities the fleet promises, and join requirements to them
 
-Every axis loam checks has a fleet-level place where its parts add up, except the one analysts work in.
-Architecture has `architecture/landscape.likec4`, and a feature's C4 additions splice into it on archive.
-Authorization has `architecture/permissions.yaml`, graded against every `Requires:` line in the fleet.
-Business behaviour has 120 `services/<svc>/spec.md` files and nothing above them.
+Landed: business behaviour now has the fleet-level place where its parts add up, in the deliberate
+half that costs little — a declared vocabulary, a join line on requirements, two-way grading, and
+one readable rollup. "Which parts of registration does nothing in 120 services claim to implement"
+is one command instead of a grep across 120 directories. No prose moved and no authoring surface
+was added: that remains the evidence-gated Later item below, and this rollup is the evidence that
+decides it.
 
-The feature-level side is thinner than it looks. `verify` never reads `intent.md` — the claims in
-[src/core/verify/checklist.ts](https://github.com/ybotok/loam/blob/main/src/core/verify/checklist.ts)
-are derived from the delta, the contracts, and the scenarios. `archive` merges nothing out of it either.
-So a feature's `## Business acceptance` is the only authored content in loam that no check joins to
-anything and no merge accumulates: it is held to being non-empty (`intent.empty`) and to not being
-scaffold text (`scaffold.placeholder`), and then it is filed into `features/archive/`. An analyst can
-write five acceptance criteria, three can be implemented, and every gate stays green.
+Required change, and where each landed:
 
-This is a known concession, recorded in the wrong place. [COMPARISON.md](COMPARISON.md) states that
-OpenSpec's source of truth is capability-oriented while loam joins requirements to services, and
-[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) leaves capability→service mapping to a human
-and copies capability prose into `legacy/` because it has no loam equivalent. Both describe the missing
-axis as a migration caveat. Neither treats it as a gap in the product.
+1. ~~Add `architecture/capabilities.yaml` in the shape
+   [src/core/permissions/permissions.ts](https://github.com/ybotok/loam/blob/main/src/core/permissions/permissions.ts)
+   already proves~~ — done:
+   [src/core/capabilities/capabilities.ts](https://github.com/ybotok/loam/blob/main/src/core/capabilities/capabilities.ts)
+   walks the same defensive ladder — the FILE is the opt-in (the pinned divergence from
+   `Requires:`, where the line opts in), nested ids such as `payments/refunds` keep their slashes,
+   and an unreadable vocabulary is `capability.invalid`, the run's one finding about it,
+   suppressing the family behind it rather than answering from a file nobody can read.
+2. ~~Add a `Capability:` line to the requirement grammar in both spec files, a list, many-to-many
+   in both directions~~ — done: parsed beside `Requires:` with the same comma grammar in
+   [src/core/document/parse.ts](https://github.com/ybotok/loam/blob/main/src/core/document/parse.ts),
+   with one spelling (`CAPABILITY_LINE_RE` in
+   [src/core/document/spec.ts](https://github.com/ybotok/loam/blob/main/src/core/document/spec.ts))
+   and additively: the line rides in the requirement digest exactly as the other axis lines do, so
+   no living document's digest moved because loam learned to read it.
+3. ~~Grade both directions, as the authorization axis already does~~ — done
+   ([src/core/capabilities/findings.ts](https://github.com/ybotok/loam/blob/main/src/core/capabilities/findings.ts)):
+   `capability.unknown` errors with close-name suggestions, on the living spec documents at the
+   service target and, through coherence, on a feature's deltas — where it refuses `loam archive`
+   (`--approve`-overridable), the only new gate this axis added; `capability.unrealized` warns
+   once per declared-but-unnamed capability, never once per service.
+4. ~~Report the total through `list`, `explore` and the JSON envelope~~ — done: `loam list
+   capabilities` is a new explicit-only section (the no-argument default and every existing
+   section's payload stayed byte-identical) and `loam explore --capability` seeds the realizing
+   services, every miss landing in the additive `unresolvedCapabilities` field, refused never —
+   both over the one deterministic rollup
+   ([src/core/capabilities/rollup.ts](https://github.com/ybotok/loam/blob/main/src/core/capabilities/rollup.ts)).
+5. ~~Preserve capability identity through `migrate-openspec`~~ — done: every routed requirement —
+   living, delta, and rename-materialized alike — gains a `Capability:` line, and the staged
+   target declares the union of living and active-horizon ids, so migration stops being the step
+   where the analyst's structure is lost. The requirement→service mapping stays a human decision.
+6. ~~Nothing new gates `archive` in this item beyond the unknown-name error~~ — held.
 
-The documents in question already exist in most fleets, outside the docs repository: one long-lived
-page per user-facing capability — registration, sign-in, user profile, finding and adding friends,
-finding and adding products — each revised by changes that fan out first into API changes and then into
-per-service requirement changes. loam models the bottom of that cascade and nothing above it, which is
-why an analyst either edits `services/<svc>/spec.md` or works somewhere loam cannot see.
+[COMPARISON.md](COMPARISON.md) and [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) stopped
+filing the axis as a migration caveat, and [SCHEMA.md](SCHEMA.md) records what was rejected — an
+unchecked free-text label, and an authored prose layer, the second of which stays the Later item.
 
-This item takes the half that costs little: declare the names those documents already have, join the
-requirements the fleet already carries to them, and make the total readable — so "which parts of
-registration does nothing in 120 services claim to implement" is answerable before deciding whether the
-documents themselves should move here. No prose moves and no authoring surface is added; that is the
-Later item below, and this rollup is the evidence that decides it.
+Exit criteria, as landed:
 
-Required change:
+- ~~A vocabulary that does not parse produces exactly one error for the whole run, and the family
+  is suspended~~ — with the qualification the closing review forced into the prose: once per
+  `validate --all` run, with single-target runs silent about the file. Pinned end to end in
+  [test/capabilities.test.ts](https://github.com/ybotok/loam/blob/main/test/capabilities.test.ts).
+- ~~An undeclared capability name is an error naming close candidates; a declared capability
+  nothing realizes is one warning per capability, not one per service~~ — pinned, including the
+  arch-delta-only branch proven by reversion; the example fleet demonstrates both sides — three
+  realized capabilities across four requirements, plus payments/settlement declared and realized
+  by nothing, the eighth pinned demonstration warning.
+- ~~A fleet with no `architecture/capabilities.yaml` produces no capability findings at all~~ —
+  pinned as silence, hoisted into a guard so a silent axis does not even read the arch delta that
+  exists only to feed it.
+- ~~The rollup is deterministic with `--json` ordering stable enough to diff~~ — byte-identical
+  rollups pinned.
+- ~~A migrated OpenSpec workspace retains every capability id, and no requirement loses the
+  association its source file expressed~~ — pinned in the migrate-openspec suite: the declared
+  union plus the `Capability:` line on every routed requirement.
+- ~~`validate --all` pays one additional YAML parse per invocation and no additional per-service
+  cost~~ — the context memo counts the parse, the rollup's injected reader adds no per-service
+  parses, and the review made an empty vocabulary answer before the walk, so a vocabulary-less
+  fleet stops paying spec parses to build zero rows.
 
-- Add `architecture/capabilities.yaml` in the shape
-  [src/core/permissions/permissions.ts](https://github.com/ybotok/loam/blob/main/src/core/permissions/permissions.ts)
-  already proves: a declared vocabulary of ids with a description and an owner, nested ids such as
-  `payments/refunds` kept nested, and the same defensive read. An unparseable vocabulary is exactly one
-  error and suppresses the rest of the family, because a hundred findings about one broken file is a
-  cascade rather than a diagnosis. An absent file is silence, so no existing fleet gains a finding until
-  it writes one.
-- Add a `Capability:` line to the requirement grammar in both spec files, parsed by
-  [src/core/document/parse.ts](https://github.com/ybotok/loam/blob/main/src/core/document/parse.ts)
-  beside `Operations:`, `Requires:`, `Publishes:` and `Consumes:`. It is a **list**, and the relation is
-  many-to-many in both directions: one requirement commonly closes part of two capabilities, and a
-  capability is realized by many requirements across several services. A single-valued field would force
-  authors to pick a lie.
-- Grade both directions, as the authorization axis already does. A line naming an undeclared capability
-  is an error with close-name suggestions; a declared capability that no living non-`REMOVED` requirement
-  names is a warning — it is either a promise nobody implemented or a word nobody adopted, and both are
-  drift invisible from inside the file.
-- Report the total. `list`, `explore` and the JSON envelope answer "what does the fleet promise about
-  refunds" with the realizing requirements, their services, and the draft/verified split — one command
-  instead of a grep across 120 directories.
-- Preserve capability identity through `migrate-openspec`. Today the capability is dissolved into service
-  requirements and its id is kept only in the verbatim `legacy/` copy. The mapping of requirements to
-  services stays a human decision, but every OpenSpec capability id should survive as a declared name and
-  a `Capability:` line, so migration stops being the step where the analyst's structure is lost.
-- Nothing new gates `archive` in this item beyond the unknown-name error.
-
-Exit criteria:
-
-- A vocabulary that does not parse produces exactly one error for the whole run, never one per requirement,
-  and the rest of the capability family is suspended rather than answered from a file nobody can read.
-- An undeclared capability name is an error naming close candidates; a declared capability nothing realizes
-  is one warning per capability, not one per service.
-- A fleet with no `architecture/capabilities.yaml` produces no capability findings at all.
-- The rollup is deterministic: same tree, same bytes, and the `--json` ordering is stable enough for
-  consumers to diff.
-- A migrated OpenSpec workspace retains every capability id as a declared name, and no requirement loses
-  the capability association its source file expressed.
-- `validate --all` pays one additional YAML parse per invocation and no additional per-service cost, and
-  the assessed runtime target for a 120-service fleet is unaffected.
+Honest leftovers: the authored half stays deliberately unbuilt — `verify` still never reads
+`intent.md`, so a feature's `## Business acceptance` still joins to nothing until the Later
+authored-axis item is promoted on this rollup's evidence — and the vocabulary `migrate-openspec`
+declares carries empty bodies by design: no description is invented, because the authored Purpose
+prose stays verbatim under `legacy/` and no prose moves.
 
 ### Protect documentation, package contents, and links
 
