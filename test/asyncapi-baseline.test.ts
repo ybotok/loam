@@ -28,6 +28,8 @@ import {
 import { classifyBaselineDigests } from "../src/core/openapi/digest.js";
 import { pinAsyncapiSlots } from "../src/core/asyncapi/merge/pin.js";
 import { readAsyncapi } from "../src/core/asyncapi/read.js";
+import { featureCoherence } from "../src/core/coherence/coherence.js";
+import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
@@ -417,6 +419,124 @@ operations:`,
       expect(asyncapiPins(payload).map((pin) => pin.status)).toEqual(["pinned", "pinned", "pinned"]);
       expect(payload.written).toEqual([]);
       expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The gate                                                            */
+/* ------------------------------------------------------------------ */
+
+describe("the gate", () => {
+  /** What `loam rebase` would stamp — the real pin function, never a hand copy. */
+  const pinEvents = (feature: string, living: string): string =>
+    pinAsyncapiSlots(feature, living, "fixture").text ?? feature;
+
+  async function coherenceOf(files: Record<string, string>): Promise<Issue[]> {
+    const p = await makeProject(files);
+    try {
+      return await featureCoherence({
+        docsDir: p.docsDir,
+        featureDir: join(p.docsDir, "features", "FEAT-1-split"),
+        featureId: "FEAT-1",
+      });
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  const gateFixture = (featureEvents: string, livingEvents = LIVING_EVENTS): Record<string, string> => ({
+    ...coherentFixture(),
+    [`services/${SVC}/asyncapi.yaml`]: livingEvents,
+    [`features/FEAT-1-split/specs/${SVC}/asyncapi.yaml`]: featureEvents,
+  });
+
+  const only = (issues: Issue[], code: string): Issue[] => issues.filter((i) => i.code === code);
+
+  it("refuses a stale pin, naming both digests and the command that repins", async () => {
+    const delta = pinEvents(eventContract("Authorization landed, with splits"), LIVING_EVENTS);
+    const moved = eventContract("Someone else's change");
+    const [issue, ...rest] = only(await coherenceOf(gateFixture(delta, moved)), "asyncapi.baseline-stale");
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("error");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("components.messages.PaymentAuthorized");
+    expect(issue!.message).toContain("loam rebase FEAT-1");
+  });
+
+  it("says nothing about a quote, however far the living slot has moved", async () => {
+    const delta = pinEvents(LIVING_EVENTS, LIVING_EVENTS);
+    const moved = eventContract("Someone else's change");
+    const issues = await coherenceOf(gateFixture(delta, moved));
+    expect(only(issues, "asyncapi.baseline-stale")).toEqual([]);
+    expect(only(issues, "asyncapi.baseline-missing")).toEqual([]);
+  });
+
+  it("counts unpinned slots into ONE warning per service, and that warning gates", async () => {
+    const [issue, ...rest] = only(
+      await coherenceOf(gateFixture(eventContract("Authorization landed, with splits"))),
+      "asyncapi.baseline-missing",
+    );
+    expect(rest).toEqual([]);
+    // Warn, not error: the document is legal. Gating, because the merge is
+    // not safe — every unpinned restatement reverts whatever landed on it.
+    expect(issue!.severity).toBe("warn");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("3 slot(s)");
+    expect(issue!.message).toContain("loam rebase FEAT-1");
+  });
+
+  it("refuses a malformed pin, and does not ALSO call it stale", async () => {
+    const bad = LIVING_EVENTS.replace(
+      "    address: payment.events.v1",
+      "    address: payment.events.v1\n    x-loam-based-on: yesterday",
+    );
+    const issues = await coherenceOf(gateFixture(bad));
+    expect(only(issues, "asyncapi.baseline-invalid")).toHaveLength(1);
+    expect(only(issues, "asyncapi.baseline-stale")).toEqual([]);
+  });
+
+  it("refuses a pin on a slot the living contract has no counterpart for", async () => {
+    const added = LIVING_EVENTS.replace(
+      "operations:",
+      `  splitEvents:
+    address: payment.splits.v1
+    x-loam-based-on: 0123456789abcdef
+operations:`,
+    );
+    const [issue] = only(await coherenceOf(gateFixture(added)), "asyncapi.baseline-invalid");
+    expect(issue!.severity).toBe("error");
+    expect(issue!.message).toContain("no slot there");
+  });
+
+  it("asks nothing of a slot this feature is genuinely adding", async () => {
+    const added = pinEvents(
+      LIVING_EVENTS.replace(
+        "operations:",
+        `  splitEvents:
+    address: payment.splits.v1
+operations:`,
+      ),
+      LIVING_EVENTS,
+    );
+    const issues = await coherenceOf(gateFixture(added));
+    expect(only(issues, "asyncapi.baseline-missing")).toEqual([]);
+    expect(only(issues, "asyncapi.baseline-invalid")).toEqual([]);
+  });
+
+  it("archive refuses the unpinned delta at exit 1 under not-coherent, and --approve merges", async () => {
+    const p = await makeProject(gateFixture(eventContract("Authorization landed, with splits")));
+    try {
+      const refused = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+      expect(refused.code).toBe(1);
+      expect(JSON.parse(refused.stdout).error.code).toBe("not-coherent");
+      // Overriding the gate is what --approve means; the asyncapi MERGE is
+      // the next wave, so the assertion here is the refusal lifting, not
+      // living bytes changing.
+      const approved = await runLoam(p.workDir, "archive", "FEAT-1", "--approve");
+      expect(approved.code).toBe(0);
     } finally {
       await p.destroy();
     }

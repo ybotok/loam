@@ -10,6 +10,7 @@ import { serviceOperationIds } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
 import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
+import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -264,6 +265,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
         `and probe services/${e.service}/ with it. Bind the element to the services/<id>/ directory it means.`,
     });
   }
+
+  // The event axis — the same three-way agreement the operation checks above
+  // grade, joined on the message name instead of the operationId: the
+  // feature's asyncapi deltas (pins, markers, justification), the tagged
+  // edges' publishes/consumes metadata, and the requirement deltas'
+  // Publishes:/Consumes: lines (./events/events.ts owns the walk).
+  issues.push(...(await eventCoherence({ scope, svcNames, taggedRels, svcOf, context })));
 
   return issues;
 }
