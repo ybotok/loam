@@ -26,6 +26,7 @@ import {
   SnapshotClobberError,
   snapshotDir,
   writeSnapshot,
+  type ServiceKey,
 } from "../../core/staging/snapshot.js";
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
@@ -135,7 +136,25 @@ export async function archiveLocked(
   let snapshot = false;
   let createdArchiveDir: string | undefined;
   try {
-    await writeSnapshot(featureDir, config.docsDir, { featureId: id, dirName }, staged);
+    // The snapshot's resolver pair: how a docs-relative path decomposes into a
+    // service identity, and where that identity lives NOW. Built here — the
+    // command layer's view of the tree — and injected, so the snapshot module
+    // never learns the repo layout. Today the tree under services/ is flat, so
+    // both answers are the layout itself; when the subsystem tree lands, these
+    // become the enumeration's map and this seam is where it threads through.
+    const serviceKeyOf = (rel: string): ServiceKey | null => {
+      const m = /^services\/([^/]+)\/(.+)$/.exec(rel);
+      return m ? { service: m[1]!, artifact: m[2]! } : null;
+    };
+    const serviceDirOf = (service: string): string => `services/${service}`;
+    await writeSnapshot({
+      featureDir,
+      docsDir: config.docsDir,
+      feature: { featureId: id, dirName },
+      staged,
+      serviceKeyOf,
+      serviceDirOf,
+    });
     snapshot = true;
     // The journal, fsynced, BEFORE the first rename: swapStaged is N renames and
     // only each one of them is atomic, so a kill between two used to leave a

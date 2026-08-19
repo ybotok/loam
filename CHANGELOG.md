@@ -4,6 +4,10 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Changed — archive snapshots are re-keyed by service id (manifest version 2 → 3)
+
+The undo snapshot's manifest (`features/archive/<dir>/.loam-before/manifest.json`) bumps to **version 3**: every entry under `services/` now carries `(service, artifact)` — the service id and the artifact's path inside the service directory — beside the as-archived literal `path`, and `loam unarchive` resolves the write target through the **current** services enumeration, falling back to the literal path when the id is not enumerated. Landscape and `features/` entries stay literal-path-only. This is groundwork for the subsystem tree (a service directory that moves after a feature was archived must not make its undo restore into a path that is gone — re-cutting the tree is expected to be routine), landed first on purpose: every archive from this version on writes snapshots that survive a later move. The read side is additive: **version-2 snapshots — which already sit inside archived features and travel with them across loam upgrades — still restore, and still grade a retried archive's staleness question, under their own literal-path rules**; only version-1 snapshots remain refused (`snapshot-missing`). Internal on-disk format, no command, flag, envelope, or exit-code change.
+
 ### Added — the AsyncAPI feature lifecycle
 
 The event axis now has the same feature lifecycle the OpenAPI axis has, mirrored axis-for-axis: a documented feature-local delta format, slot identity and `rebase` pins, a coherence gate, an archive merge riding the same snapshot/journal transaction (so rollback and `loam unarchive` cover it with no new machinery), a verify claim, and agreement across every command surface. In lifecycle order:

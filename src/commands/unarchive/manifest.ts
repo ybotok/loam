@@ -15,6 +15,7 @@ import { type ErrorCode } from "../../core/envelope/json.js";
 import { resolveInside, resolvePortableFileInside } from "../../core/kernel/path-safety.js";
 import { isRecord } from "../../core/kernel/records.js";
 import {
+  SNAPSHOT_COMPAT_VERSION,
   SNAPSHOT_DIR,
   SNAPSHOT_MANIFEST,
   SNAPSHOT_VERSION,
@@ -46,12 +47,23 @@ export interface ValidatedSnapshotManifest extends Omit<SnapshotManifest, "files
   files: ValidatedSnapshotEntry[];
 }
 
-export async function readManifest(
-  featureDir: string,
-  docsDir: string,
-  featureId: string,
-  dirName: string,
-): Promise<ValidatedSnapshotManifest | null> {
+/**
+ * `readManifest`'s inputs, as one object. `serviceDirOf` is the restore-time
+ * half of the version-3 re-keying: a service id → its CURRENT docs-relative
+ * directory per the enumeration, or null when no such service is enumerated.
+ * Injected by the caller (which holds the enumeration) rather than resolved
+ * here, so this module keeps validating one file against one repo state.
+ */
+export interface ManifestRequest {
+  featureDir: string;
+  docsDir: string;
+  featureId: string;
+  dirName: string;
+  serviceDirOf: (service: string) => string | null;
+}
+
+export async function readManifest(request: ManifestRequest): Promise<ValidatedSnapshotManifest | null> {
+  const { featureDir, docsDir, featureId, dirName } = request;
   try {
     const path = resolveInside(
       featureDir,
@@ -61,7 +73,12 @@ export async function readManifest(
     if (!existsSync(path)) return null;
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     if (!isRecord(parsed)) return null;
-    if (parsed.version !== SNAPSHOT_VERSION) return null;
+    // Version 3 is what archive writes; version 2 is read forever under its own
+    // literal-path rules, because version-2 snapshots already sit in archived
+    // features and travel with them across loam upgrades. Version 1 stays
+    // refused: it records nothing about its restore source.
+    if (typeof parsed.version !== "number") return null;
+    if (parsed.version !== SNAPSHOT_VERSION && parsed.version !== SNAPSHOT_COMPAT_VERSION) return null;
     if (parsed.feature !== featureId || parsed.dirName !== dirName) return null;
     if (typeof parsed.archivedAt !== "string" || !isCanonicalIsoDate(parsed.archivedAt)) return null;
     if (!Array.isArray(parsed.files)) return null;
@@ -83,6 +100,24 @@ export async function readManifest(
       if (seen.has(raw.path)) return null;
       seen.add(raw.path);
 
+      // The version-3 shape rule, exact in both directions: a `services/` row
+      // carries its (service, artifact) key — that key is what version 3 IS,
+      // and a row without one is not a manifest this loam wrote — while a row
+      // anywhere else carries none, because nothing outside `services/` moves.
+      // Version-2 rows never carry the fields and are not asked to.
+      const key = readServiceKey(parsed.version, raw);
+      if (key === undefined) return null;
+
+      // Where the file lives NOW. A re-keyed row resolves through the current
+      // enumeration — the whole point of the bump: the bytes land wherever the
+      // service lives today, not where it lived on the day of the archive. An
+      // id the enumeration does not answer falls back to the literal path
+      // (an absent service restores as a create, exactly as before).
+      let targetRel = raw.path;
+      if (key !== null) {
+        const current = request.serviceDirOf(key.service);
+        if (current !== null) targetRel = `${current}/${key.artifact}`;
+      }
       // The realpath test stays on this side, and it is not negotiable: this
       // path is WRITTEN through. A symlink that leaves the repo is
       // indistinguishable, lexically, from a service directory the operator
@@ -92,7 +127,7 @@ export async function readManifest(
       // second. Restoring is the write; `staging.ts` only reads and compares a
       // digest, which is why its resolution of this same field can be lexical
       // and this one cannot.
-      const target = resolvePortableFileInside(docsDir, raw.path, `snapshot path '${raw.path}'`);
+      const target = resolvePortableFileInside(docsDir, targetRel, `snapshot path '${raw.path}'`);
       let snapshot: string | null = null;
       const snapshotRel = `${SNAPSHOT_DIR}/files/${raw.path}`;
       if (raw.existed) {
@@ -113,7 +148,9 @@ export async function readManifest(
     }
 
     return {
-      version: SNAPSHOT_VERSION,
+      // The version as WRITTEN, not as preferred: a caller looking at a
+      // validated manifest deserves to know which rules it was read under.
+      version: parsed.version,
       feature: featureId,
       dirName,
       archivedAt: parsed.archivedAt,
@@ -122,6 +159,29 @@ export async function readManifest(
   } catch {
     return null;
   }
+}
+
+/**
+ * The (service, artifact) key of one manifest row, under its version's shape
+ * rule. Three answers: the key; null when the row legitimately carries none (a
+ * non-`services/` row, or any version-2 row — the key postdates version 2);
+ * undefined when the row breaks the rule and the manifest must be refused
+ * whole, because a half-keyed or wrongly-keyed row is not a record this loam
+ * wrote and nothing can say what else in the file to distrust.
+ */
+function readServiceKey(
+  version: number,
+  raw: Record<string, unknown>,
+): { service: string; artifact: string } | null | undefined {
+  if (version !== SNAPSHOT_VERSION) return null;
+  const under = typeof raw.path === "string" && raw.path.startsWith("services/");
+  if (!under) return raw.service === undefined && raw.artifact === undefined ? null : undefined;
+  // The id is a lookup key into the enumeration and the artifact is joined
+  // under the resolved directory, so the id must be a single path segment; the
+  // artifact's own containment is `resolvePortableFileInside`'s question.
+  if (typeof raw.service !== "string" || raw.service.length === 0 || raw.service.includes("/")) return undefined;
+  if (typeof raw.artifact !== "string" || raw.artifact.length === 0) return undefined;
+  return { service: raw.service, artifact: raw.artifact };
 }
 
 export function isCanonicalIsoDate(value: string): boolean {
