@@ -1,23 +1,29 @@
 /**
  * What a feature's own delta DECLARES, per service, indexed once.
  *
- * Six indexes over the same three files, built in one walk because every check
- * downstream joins on the service id and would otherwise re-read the delta per
- * question. The distinctions here are the ones the checks cannot make for
- * themselves: an operation a REMOVED requirement governs is being retired, so
- * it neither claims the contract nor governs anything after the merge; a
- * removal marker that names an id also defined elsewhere in the delta is a
- * RELOCATION, not a retirement; and a marker with no `operationId` at all is a
- * shape only this walk can see.
+ * Seven indexes over the same four files (the delta spec.md, arch.spec.md,
+ * openapi.yaml, and the living contract they are graded against), built in one
+ * walk because every check downstream joins on the service id and would
+ * otherwise re-read the delta per question. The distinctions here are the ones
+ * the checks cannot make for themselves: an operation a REMOVED requirement
+ * governs is being retired, so it neither claims the contract nor governs
+ * anything after the merge; a removal marker that names an id also defined
+ * elsewhere in the delta is a RELOCATION, not a retirement; and a marker with
+ * no `operationId` at all is a shape only this walk can see. The capability
+ * gate rides the same loop: both delta spec documents are graded against the
+ * fleet vocabulary here, because coherence.ts and this package's file count
+ * are both at their limits and the walk already holds the parsed documents.
  */
 import { existsSync } from "node:fs";
 import { NotUtf8DocumentError } from "../kernel/document-bytes.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { featureSpecPaths } from "../repo/paths.js";
+import { capabilitiesPath, featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
+import { readCapabilities } from "../capabilities/capabilities.js";
+import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
@@ -71,6 +77,15 @@ export async function declaredByService(
     const anonymousMarkers = new Map<string, boolean>();
     const featureApiOps = new Set<string>();
     const unreadableApis = new Set<string>();
+    // The capability gate's vocabulary, once per call. Absent or invalid stays
+    // SILENT here — capability.invalid is validate --all's one finding about a
+    // broken file, and an absent file means the fleet never opted in — so with
+    // either, nothing new gates archive (the roadmap's own trade; the
+    // /loam-check row tells agents to fix the YAML first).
+    const capabilityVocab =
+      context === undefined
+        ? await readCapabilities(capabilitiesPath(docsDir))
+        : await context.capabilities(capabilitiesPath(docsDir));
     for (const svc of svcNames) {
       const paths = featureSpecPaths(featureDir, svc);
       if (existsSync(paths.spec)) {
@@ -84,6 +99,17 @@ export async function declaredByService(
           svc,
           new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
         );
+        issues.push(...capabilityUnknownIssues(reqs, { where: `${svc}: spec.md`, subject: svc }, capabilityVocab));
+      }
+      // The delta arch.spec.md carries the same grammar and merges the same
+      // way, so an undeclared capability in it gates identically. Read here —
+      // context-cached, the same parse validate --feature pays — because
+      // nothing else in this walk needs the arch delta.
+      if (existsSync(paths.archSpec)) {
+        const archReqs = context === undefined
+          ? parseRequirements(await readFile(paths.archSpec, "utf8"))
+          : await context.readRequirements(paths.archSpec);
+        issues.push(...capabilityUnknownIssues(archReqs, { where: `${svc}: arch.spec.md`, subject: svc }, capabilityVocab));
       }
       // Only operations genuinely NEW to this service count as feature-added: authors
       // restate the full living API in the delta file (it is a complete document, not a patch).
