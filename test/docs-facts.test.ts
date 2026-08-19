@@ -246,8 +246,6 @@ describe("public docs name only emitted codes", () => {
     "baselines.release": "check-openspec-corpus baseline selector, dev tooling not CLI output",
     "user.email": "git config key quoted in vouch's provenance prose",
     "user.name": "git config key, as above",
-    "console.error": "Node API name in ROADMAP's architecture item",
-    "process.chdir": "Node API name in ROADMAP's concurrency item",
     "components.messages": "AsyncAPI document section path (the slot grammar), not a finding",
     "components.schemas": "AsyncAPI document section path, as above",
     "loam.json.service": "config key path — the service binding inside loam.json",
