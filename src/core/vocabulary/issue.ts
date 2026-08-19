@@ -68,6 +68,37 @@ export type IssueCode =
   | "openapi.remove-marker-missing"
   /** an operation-removal marker is not justified by a REMOVED requirement */
   | "openapi.remove-marker-unjustified"
+  /* --- the event axis: C4 <-> requirements <-> AsyncAPI, joined on the message name --- */
+  /** the FEATURE's own asyncapi.yaml exists but does not parse — the same name validate gives a living contract in that state: every event-axis check for the service is suspended */
+  | "asyncapi.invalid"
+  /** an `x-loam-based-on` that is not a digest, or one on a slot the living contract does not have */
+  | "asyncapi.baseline-invalid"
+  /** a feature slot with no baseline pin — the merge cannot tell whether the delta EDITS it or merely quotes it; warn that gates, counted per service */
+  | "asyncapi.baseline-missing"
+  /** the living slot changed since this delta pinned it — merging would discard whoever landed in between */
+  | "asyncapi.baseline-stale"
+  /** a slot-removal marker addresses a (section, key) the living contract does not have */
+  | "asyncapi.remove-target-missing"
+  /** a message-removal marker's name differs from the living declaration at that key */
+  | "asyncapi.remove-target-mismatch"
+  /** a REMOVED requirement's Publishes:/Consumes: line names a message the living contract still declares, with no matching removal marker in the feature */
+  | "asyncapi.remove-marker-missing"
+  /** a message-removal marker no REMOVED requirement's Publishes:/Consumes: line justifies — message slots only; channel and operation slots need exactness alone */
+  | "asyncapi.remove-marker-unjustified"
+  /** the feature retires a message the LIVING fleet still consumes — a landscape consumes-edge, or another service's living requirement */
+  | "asyncapi.remove-message-consumed"
+  /** another feature in flight adds or edits the same (service, message) — whichever archives second replaces the other's declaration wholesale */
+  | "asyncapi.message-conflict"
+  /** internal `$ref`(s) resolving to nothing — validate's warn today; the archive merge will grade it as a plan gate when the merge lands */
+  | "asyncapi.ref-unresolved"
+  /** a tagged edge publishes/consumes a message its bound service's contract (feature ∪ living) declares no matching send/receive operation for */
+  | "c4-event.message-undefined"
+  /** softened — the message is introduced by another feature still in flight; archive that one first */
+  | "c4-event.message-pending"
+  /** a delta requirement's Publishes:/Consumes: line names a message the service's contract (feature ∪ living) does not declare in that direction — validate's living-side code, graded in feature scope too */
+  | "spec-event.message-undefined"
+  /** softened — the named message is introduced by another feature still in flight */
+  | "spec-event.message-pending"
   /** W1 — an operation is called but no requirement governs it */
   | "c4.op-ungoverned"
   /** W2 — the feature adds an operation no architecture edge consumes */
