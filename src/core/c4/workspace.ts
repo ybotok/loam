@@ -34,6 +34,7 @@
  * the next addition must open a subdirectory seam.
  */
 import { randomBytes } from "node:crypto";
+import { inOrder } from "../kernel/concurrency.js";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -56,20 +57,24 @@ interface StagedDoc {
  */
 async function stage(root: string, targets: string[]): Promise<StagedDoc[]> {
   const token = randomBytes(8).toString("hex");
-  const staged: StagedDoc[] = [];
-  for (const [i, path] of targets.entries()) {
+  // Concurrent, capped, in input order (kernel/concurrency's contract): the
+  // per-document folders share nothing, and on a network-mounted docs repo
+  // the sequential form paid three round-trips per document. Nulls mark the
+  // drops so indices — and with them the p<i> project names — stay aligned.
+  const results = await inOrder([...targets.entries()], async ([i, path]) => {
     const project = `p${i}_${token}`;
     const folder = join(root, project);
     try {
       await mkdir(folder);
       await writeFile(join(folder, "likec4.config.json"), JSON.stringify({ name: project }), "utf8");
       await copyFile(path, join(folder, basename(path)));
-      staged.push({ path, project });
+      return { path, project };
     } catch {
       await rm(folder, { recursive: true, force: true });
+      return null;
     }
-  }
-  return staged;
+  });
+  return results.filter((r): r is StagedDoc => r !== null);
 }
 
 /**
@@ -87,7 +92,16 @@ function groupErrors(likec4: LikeC4, staged: StagedDoc[]): Map<string, LikeC4Err
   const grouped = new Map<string, LikeC4Error[]>();
   for (const err of likec4.getErrors()) {
     const project = err.sourceFsPath.split(/[\\/]/).find((segment) => pathOf.has(segment));
-    if (project === undefined) continue;
+    if (project === undefined) {
+      // An error this walk cannot attribute would otherwise be DROPPED — and a
+      // dropped error grades its document clean, which is failing open in the
+      // fleet gate. Unreachable at the pinned likec4 version (every corpus
+      // error carries its project folder in sourceFsPath), so the one place a
+      // dependency upgrade could break the attribution is the one place that
+      // must reject the whole batch: the caller degrades to per-path loads,
+      // where the error reappears.
+      throw new Error(`unattributable LikeC4 error in batch workspace: ${err.message}`);
+    }
     const list = grouped.get(project) ?? [];
     list.push({ ...err, sourceFsPath: pathOf.get(project) });
     grouped.set(project, list);

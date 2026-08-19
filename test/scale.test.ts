@@ -23,11 +23,12 @@
  * tightened into it.
  *
  * It exists to catch pathological blowups — an accidental per-service re-parse
- * of the landscape, a return of the per-feature double-load, or the batch
- * prefetch silently dying so every document pays its own workspace spin again,
- * per service, turns one shared workspace into hundreds of private ones, and
- * THAT is what must never land silently. That class is an order of magnitude,
- * so it trips this ceiling under any load; vitest's own 120s testTimeout is
+ * of the landscape, or a return of the per-feature double-load — the class
+ * that turns one shared workspace into hundreds of private ones — is an order
+ * of magnitude, so it trips this ceiling under any load. (A batch prefetch
+ * that silently DIES is not caught here: the per-path fallback fits under
+ * this ceiling by design; the zero-fallback pin in
+ * test/validate-batch-fallback.test.ts is that tripwire.); vitest's own 120s testTimeout is
  * the hard backstop behind it, and the ceiling sits just under it so a blowup
  * fails with the message below rather than an opaque timeout.
  */

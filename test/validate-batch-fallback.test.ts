@@ -15,6 +15,23 @@ import { describe, expect, it, vi } from "vitest";
 import { coherentFixture, makeProject, runLoam } from "./helpers/harness.js";
 
 const batch = { denied: false, realCalls: 0, deniedCalls: 0 };
+const perPath = { loadFileCalls: 0, healthyRunCalls: -1 };
+
+vi.mock("../src/core/c4/likec4.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../src/core/c4/likec4.js")>();
+  return {
+    ...real,
+    loadFile: (path: string) => {
+      // Counts every per-document workspace spin. A healthy --all must show
+      // ZERO of these: the prefetch list covering every consumed document is
+      // exactly the property that silently rotted once — a hand-spelled model
+      // path beside two builder-spelled siblings — while every byte-compare
+      // stayed green at the old speed.
+      perPath.loadFileCalls += 1;
+      return real.loadFile(path);
+    },
+  };
+});
 
 vi.mock("../src/core/c4/workspace.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/core/c4/workspace.js")>();
@@ -39,6 +56,7 @@ describe("validate --all when the batch workspace cannot be created", () => {
     try {
       batch.denied = false;
       const healthy = await runLoam(p.workDir, "validate", "--all", "--json");
+      perPath.healthyRunCalls = perPath.loadFileCalls;
       batch.denied = true;
       const degraded = await runLoam(p.workDir, "validate", "--all", "--json");
       // The healthy run must be a real green that really batched, and the
@@ -46,6 +64,7 @@ describe("validate --all when the batch workspace cannot be created", () => {
       expect(healthy.code).toBe(0);
       expect(batch.realCalls).toBeGreaterThanOrEqual(1);
       expect(batch.deniedCalls).toBeGreaterThanOrEqual(1);
+      expect(perPath.healthyRunCalls).toBe(0);
       expect(degraded.code).toBe(healthy.code);
       expect(degraded.stdout).toBe(healthy.stdout);
       expect(degraded.stderr).toBe(healthy.stderr);

@@ -2,7 +2,7 @@
  * The checked-in `validate --all` benchmark behind docs/BENCHMARKS.md.
  *
  * Builds the synthetic fleet from test/helpers/fleet-fixture.ts at benchmark
- * shape (120 services / 20 features — the scale suite's proportions ×4), writes
+ * shape (120 services / 20 features — the scale suite's services ×4, features ×2), writes
  * a workdir whose loam.json mirrors test/helpers/harness.ts makeProject, and
  * measures the BUILT CLI the way scripts/pilot-harness.mjs run() does: a fresh
  * `node dist/cli.js <args> --json` child process per run, so every run pays
@@ -27,7 +27,7 @@ import { fleetFiles, serviceCount, type FleetShape } from "../test/helpers/fleet
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-/** The scale suite's 5/10/10/5 + 10, ×4 — recorded in docs/BENCHMARKS.md. */
+/** The scale suite's 5/10/10/5 shape, services ×4 and features ×2 — recorded in docs/BENCHMARKS.md. */
 const SHAPE: FleetShape = { apiless: 20, documented: 40, sourced: 40, vouched: 20, features: 20 };
 /** A mid-fleet documented service, for the single-service drift measurement. */
 const SINGLE_SERVICE = "svc-21";
