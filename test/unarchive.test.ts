@@ -281,31 +281,42 @@ describe("snapshot versions across the re-keying", () => {
 });
 
 describe("a service directory moved after the archive", () => {
-  /** The move, simulated by hand — the subsystem tree does not exist yet, so it is a plain mkdir+rename. */
+  /** The move, simulated by hand — what `loam subsystem move` will do (wave 3): mark the group, rename the service in. */
   async function moveServiceByHand(p: Project, service: string): Promise<void> {
     await mkdir(join(p.docsDir, "services/payments-group"), { recursive: true });
+    await writeFile(join(p.docsDir, "services/payments-group/subsystem.yaml"), "title: Payments\n", "utf8");
     await rename(join(p.docsDir, "services", service), join(p.docsDir, "services/payments-group", service));
   }
 
-  it("today: the flat enumeration does not see the moved directory, so unarchive refuses honestly", async () => {
+  it("restores into the directory the service lives in NOW — the walk resolves what the flat enumeration refused", async () => {
     const p = await makeProject(modifyFixture());
     try {
+      const before = await treeHashes(p.docsDir);
       expect((await runLoam(p.workDir, "archive", "FEAT-20")).code).toBe(0);
       await moveServiceByHand(p, "payment-service");
-      const moved = await treeHashes(p.docsDir);
 
-      // The enumeration is flat until the tree walk lands (wave 2), so the
-      // moved service is not enumerated, the v3 entry falls back to its literal
-      // path, and the file there is gone — which is the EXISTING refusal, not a
-      // silent restore into a directory nobody has any more. When the walk
-      // lands, this same run resolves the id and restores into the moved
-      // location; this test then flips to pin that.
-      const res = await runLoam(p.workDir, "unarchive", "FEAT-20", "--json");
-      expect(res.code).toBe(1);
-      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-stale");
-      expect(JSON.parse(res.stdout).error.message).toContain("services/payment-service/spec.md");
-      // Refused before anything was staged.
-      expect(await treeHashes(p.docsDir)).toEqual(moved);
+      // Flipped from the wave-2 waiting state it was born in: until the tree
+      // walk landed, the flat enumeration could not see the moved directory,
+      // the v3 entry fell back to its literal path, and this run pinned the
+      // honest `snapshot-stale` refusal. Now the enumeration answers where the
+      // service lives TODAY, so the same run restores — byte for byte, into
+      // the moved location, with no --force.
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-20")).code).toBe(0);
+      const after = await treeHashes(p.docsDir);
+      // The end state is the pre-archive bytes, relocated by exactly the move:
+      // every services/payment-service/* entry now sits under the group, plus
+      // the marker the move wrote. Nothing else may differ.
+      const relocated = Object.fromEntries(
+        Object.entries(before).map(([path, hash]) => [
+          path.replace(/^services\/payment-service\//, "services/payments-group/payment-service/"),
+          hash,
+        ]),
+      );
+      expect(after["services/payments-group/subsystem.yaml"]).toBeDefined();
+      expect(after["services/payments-group/"]).toBe("<dir>");
+      delete after["services/payments-group/subsystem.yaml"];
+      delete after["services/payments-group/"];
+      expect(after).toEqual(relocated);
     } finally {
       await p.destroy();
     }

@@ -16,7 +16,7 @@
  * held instead by `resolveInside` at the write.
  */
 import { join } from "node:path";
-import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
+import { serviceDirOf, type DocsDir, type FeatureDir, type ServiceDir } from "../kernel/ids/dirs.js";
 import type { PathableService } from "../kernel/ids/service.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
@@ -26,8 +26,33 @@ export const ARCHIVE_DIR = "archive";
 /* Paths — artifact filenames are spelled here and nowhere else        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The living artifact filenames, as one table, because two questions read
+ * them: `servicePathsAt` below spells the paths, and the tree walk classifies
+ * a directory as a service by whether any of these names sit in it. The walk
+ * cannot import this module — `repo → repo/tree` is the package direction, and
+ * an edge back would be the cycle `scripts/package-graph.mjs` refuses — so
+ * `repo.ts` injects `isServiceArtifactName` into the walk request instead.
+ */
+const ARTIFACT_FILES = {
+  model: "model.likec4",
+  spec: "spec.md",
+  archSpec: "arch.spec.md",
+  openapi: "openapi.yaml",
+  asyncapi: "asyncapi.yaml",
+  runbook: "runbook.md",
+  health: "health.yaml",
+} as const;
+const ADRS_DIR = "adrs";
+
+/** Does a directory entry name a living service artifact? The classification half of the table above. */
+export function isServiceArtifactName(name: string, kind: "file" | "dir"): boolean {
+  if (kind === "dir") return name === ADRS_DIR;
+  return Object.values(ARTIFACT_FILES).some((file) => file === name);
+}
+
 export interface ServicePaths {
-  dir: string;
+  dir: ServiceDir;
   model: string;
   spec: string;
   archSpec: string;
@@ -39,19 +64,29 @@ export interface ServicePaths {
   adrsDir: string;
 }
 
-export function servicePaths(docsDir: DocsDir, service: PathableService): ServicePaths {
-  const dir = join(docsDir, "services", service);
+/**
+ * The artifact paths of a service whose directory is already KNOWN — the
+ * enumeration's `dir`, at whatever depth the tree walk found it. This is the
+ * spelling every reader of an existing service must use: joining
+ * `services/<id>/` at the root is only true for a fleet nobody has filed, and
+ * a moved service would silently grade as absent through it.
+ */
+export function servicePathsAt(dir: ServiceDir): ServicePaths {
   return {
     dir,
-    model: join(dir, "model.likec4"),
-    spec: join(dir, "spec.md"),
-    archSpec: join(dir, "arch.spec.md"),
-    openapi: join(dir, "openapi.yaml"),
-    asyncapi: join(dir, "asyncapi.yaml"),
-    runbook: join(dir, "runbook.md"),
-    health: join(dir, "health.yaml"),
-    adrsDir: join(dir, "adrs"),
+    model: join(dir, ARTIFACT_FILES.model),
+    spec: join(dir, ARTIFACT_FILES.spec),
+    archSpec: join(dir, ARTIFACT_FILES.archSpec),
+    openapi: join(dir, ARTIFACT_FILES.openapi),
+    asyncapi: join(dir, ARTIFACT_FILES.asyncapi),
+    runbook: join(dir, ARTIFACT_FILES.runbook),
+    health: join(dir, ARTIFACT_FILES.health),
+    adrsDir: join(dir, ADRS_DIR),
   };
+}
+
+export function servicePaths(docsDir: DocsDir, service: PathableService): ServicePaths {
+  return servicePathsAt(serviceDirOf(join(docsDir, "services", service)));
 }
 
 /**

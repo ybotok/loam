@@ -29,7 +29,8 @@ import { loadBatch } from "./c4/workspace.js";
 import { readOpenapi, type OpenapiDoc, type Operation } from "./openapi/doc.js";
 import type { RawServiceId } from "./kernel/ids/service.js";
 import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
-import { featureSpecServices, listFeatures, listServices } from "./repo/repo.js";
+import { featureSpecServices, listFeatures, listFleetTree, serviceEntries } from "./repo/repo.js";
+import type { FleetTree } from "./repo/tree/walk.js";
 import { parseRequirements } from "./document/parse.js";
 import { type Requirement } from "./document/spec.js";
 import type { DocsDir, FeatureDir } from "./kernel/ids/dirs.js";
@@ -58,6 +59,7 @@ function key(path: string): string {
 
 /** One coherent filesystem snapshot for one command invocation. */
 export class FleetContext {
+  private readonly trees = new Map<string, Promise<FleetTree>>();
   private readonly services = new Map<string, Promise<ServiceEntry[]>>();
   private readonly features = new Map<string, Promise<FeatureEntry[]>>();
   private readonly featureServices = new Map<string, Promise<RawServiceId[]>>();
@@ -83,12 +85,30 @@ export class FleetContext {
     return { ...this.counts };
   }
 
+  /**
+   * The classified `services/` tree — the ONE enumeration this invocation
+   * performs. `listServices` below derives its entries from this memo, so a
+   * command that asks for both the fleet and the tree's findings (`validate
+   * --all` does) still walks the directories exactly once. The counter keeps
+   * its historical meaning — walks of `services/` — it just counts the walk
+   * where the walk now happens.
+   */
+  fleetTree(docsDir: DocsDir): Promise<FleetTree> {
+    const k = key(docsDir);
+    let pending = this.trees.get(k);
+    if (pending === undefined) {
+      this.counts.serviceEnumerations += 1;
+      pending = listFleetTree(docsDir);
+      this.trees.set(k, pending);
+    }
+    return pending;
+  }
+
   listServices(docsDir: DocsDir): Promise<ServiceEntry[]> {
     const k = key(docsDir);
     let pending = this.services.get(k);
     if (pending === undefined) {
-      this.counts.serviceEnumerations += 1;
-      pending = listServices(docsDir);
+      pending = this.fleetTree(docsDir).then(serviceEntries);
       this.services.set(k, pending);
     }
     return pending;

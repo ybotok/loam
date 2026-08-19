@@ -37,6 +37,22 @@ export type DocsDir = string & { readonly [provenance]: "docs-dir" };
  */
 export type FeatureDir = string & { readonly [provenance]: "feature-dir" };
 
+/**
+ * The absolute path of one service's directory — the value the artifact paths
+ * in `repo/paths.ts` are spelled under. Two provenances, both stated because
+ * both are load-bearing: the tree walk read it (`core/repo/tree/walk.ts`
+ * joined a name `readdir` returned onto the directory it was listed under, at
+ * whatever depth the service actually lives), or it is the canonical UNFILED
+ * spelling `<docsDir>/services/<id>/` that `unfiledServicePaths` builds from a
+ * validated id and a `DocsDir` — the one place creation lands, and the honest
+ * fallback for a service the enumeration does not answer. A path from a
+ * readdir is NARROWER than one built from a validated string: the directory
+ * demonstrably exists where the path says. Nothing else may construct this —
+ * in particular not a bare `join(docsDir, "services", name)` at a call site,
+ * which is exactly the root-level assumption the subsystem tree retired.
+ */
+export type ServiceDir = string & { readonly [provenance]: "service-dir" };
+
 /** The only constructor. `resolved` must carry `DocsDir`'s provenance, above. */
 export function docsDirOf(resolved: string): DocsDir {
   return resolved as DocsDir;
@@ -45,4 +61,9 @@ export function docsDirOf(resolved: string): DocsDir {
 /** The only constructor. `abs` must carry `FeatureDir`'s provenance, above. */
 export function featureDirOf(abs: string): FeatureDir {
   return abs as FeatureDir;
+}
+
+/** The only constructor. `abs` must carry one of `ServiceDir`'s two provenances, above. */
+export function serviceDirOf(abs: string): ServiceDir {
+  return abs as ServiceDir;
 }

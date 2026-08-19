@@ -6,46 +6,22 @@
  * live in `entries.ts`, the layout it walks in `paths.ts`, and whether there is
  * a repo to walk at all in `state.ts`.
  */
-import { existsSync, statSync, type Dirent } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { listField, readFrontmatter, stringField } from "../document/frontmatter.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureDirOf, type DocsDir, type FeatureDir } from "../kernel/ids/dirs.js";
 import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
-import type { Finding } from "../vocabulary/report.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
-import { ARCHIVE_DIR, featurePaths, featuresDir, servicePaths } from "./paths.js";
+import { ARCHIVE_DIR, featurePaths, featuresDir, isServiceArtifactName, servicePathsAt } from "./paths.js";
 import { requireDocsRepo } from "./state.js";
+import { countMarkdown, entryIs } from "./tree/fs.js";
+import { walkServicesTree, type FleetTree } from "./tree/walk.js";
 
 /* ------------------------------------------------------------------ */
 /* Enumeration                                                         */
 /* ------------------------------------------------------------------ */
-
-/**
- * What a directory entry IS, following a symlink to find out.
- *
- * `readdir(withFileTypes)` does not follow symlinks: for a symlink `Dirent`
- * every `isDirectory()`/`isFile()` is false, whatever it points at. That made a
- * symlinked `services/<id>/` or `features/<id>/` vanish from every enumeration
- * at once — `list`, `validate --all`, the fleet gate — with no diagnostic
- * anywhere, which is the one outcome a shared docs repo cannot survive: the
- * fleet gate reported a service that is not there as fine because it never saw
- * it. Composing a docs repo out of symlinks (a worktree, a submodule, one
- * service's directory shared between two checkouts) is legitimate, so they are
- * FOLLOWED rather than refused. A dangling link stats as nothing and is skipped
- * exactly as an absent directory is — it is not a service, and saying so would
- * mean inventing an entry to hang the complaint on.
- */
-function entryIs(dir: string, e: Dirent, want: "dir" | "file"): boolean {
-  if (!e.isSymbolicLink()) return want === "dir" ? e.isDirectory() : e.isFile();
-  try {
-    const s = statSync(join(dir, e.name));
-    return want === "dir" ? s.isDirectory() : s.isFile();
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Sorted names of the real subdirectories of `dir` (dot-dirs and files skipped).
@@ -63,20 +39,6 @@ async function subdirs(dir: string): Promise<string[]> {
     .sort(compareIds);
 }
 
-/**
- * Markdown files sitting directly in `dir` — the ADR count, and the only place
- * that rule is spelled. Exported because `show` kept a second copy that tested
- * `Dirent.isFile()` itself: always false for a symlink, whatever it points at,
- * so a docs repo composed of symlinks (the layout `entryIs` above exists to
- * support) had `loam list` and `loam show` reporting different ADR counts for
- * the same service. One rule, one answer.
- */
-export async function countMarkdown(dir: string): Promise<number> {
-  if (!existsSync(dir)) return 0;
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => e.name.endsWith(".md") && entryIs(dir, e, "file")).length;
-}
-
 /** Services a feature carries a delta for, ordered — the subdirs of its specs/. */
 export async function featureSpecServices(
   featureDir: FeatureDir,
@@ -86,21 +48,44 @@ export async function featureSpecServices(
   return (await subdirs(featurePaths(featureDir).specsDir)).map(rawServiceId);
 }
 
-/** Every service in the docs repo, ordered by id. */
+/**
+ * The classified `services/` tree — services at any depth, the subsystems
+ * grouping them, and the walk's own findings (`subsystem.*`). The walk itself
+ * lives in `./tree/walk.ts` and never imports back into this package; this
+ * function is where its two injected dependencies are built — the docs-repo
+ * precondition and the artifact-name table `paths.ts` owns.
+ */
+export async function listFleetTree(docsDir: DocsDir, context?: FleetContext): Promise<FleetTree> {
+  if (context !== undefined) return context.fleetTree(docsDir);
+  requireDocsRepo(docsDir, ["ok"]);
+  return walkServicesTree({ docsDir, isServiceArtifact: isServiceArtifactName });
+}
+
+/** Every service in the docs repo, at any depth of the tree, ordered by id. */
 export async function listServices(docsDir: DocsDir, context?: FleetContext): Promise<ServiceEntry[]> {
   if (context !== undefined) return context.listServices(docsDir);
-  requireDocsRepo(docsDir, ["ok"]);
-  // Branded at the readdir, not at the entry: everything below this line —
-  // servicePaths first — deals in names the enumeration produced.
-  const names = (await subdirs(join(docsDir, "services"))).map(rawServiceId);
-  return Promise.all(
-    names.map(async (id): Promise<ServiceEntry> => {
-      const p = servicePaths(docsDir, id);
+  return serviceEntries(await listFleetTree(docsDir));
+}
+
+/**
+ * The full entries for a walked tree — frontmatter, artifact presence, ADR
+ * count. Split from `listServices` so `FleetContext` can derive its services
+ * memo from its tree memo: one walk per invocation answers both questions.
+ * Ordering is `compareIds` over the id wherever the service sits — placement
+ * is never part of any identity, and `--json` consumers diff this order — with
+ * the directory as the tiebreak so a duplicated id (its own error finding)
+ * still lists deterministically.
+ */
+export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
+  const entries = await Promise.all(
+    tree.services.map(async (svc): Promise<ServiceEntry> => {
+      const p = servicePathsAt(svc.dir);
       const fm = await readFrontmatter(p.spec);
-      const idProblem = serviceIdProblem(id, "directory name");
+      const idProblem = serviceIdProblem(svc.id, "directory name");
       return {
-        id,
-        dir: p.dir,
+        id: svc.id,
+        dir: svc.dir,
+        subsystem: svc.subsystem,
         ...(idProblem === null ? {} : { idProblem }),
         has: {
           model: existsSync(p.model),
@@ -119,37 +104,7 @@ export async function listServices(docsDir: DocsDir, context?: FleetContext): Pr
       };
     }),
   );
-}
-
-/**
- * The directories under `services/` that no loam command can address.
- *
- * A finding rather than a silent skip, and an ERROR rather than a warning,
- * because the state is not survivable in either direction: `loam adopt`,
- * `loam delta`, `loam rebase` and `loam new --touches` all refuse the id with
- * `invalid-option`, so the documents in there can never be updated by loam
- * again, while `validate --all` used to grade the directory as an ordinary
- * service and demand `model.likec4`, a spec and a landscape binding for it. The
- * fix is a rename, and it is a rename loam cannot do for you — the id is
- * spelled in the landscape binding, in the frontmatter and in every feature
- * that touched the service — so the message names all three.
- *
- * Emitted from the fleet target (`validate --all`), where the SET of service
- * directories is the thing being checked; a per-service run is already refused
- * by its own `--service` guard before it gets here.
- */
-export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
-  return services
-    .filter((s) => s.idProblem !== undefined)
-    .map((s) => ({
-      severity: "error" as const,
-      code: "service.id-invalid",
-      subject: s.id,
-      message:
-        `services/${s.id}/ — ${s.idProblem} ` +
-        `Every authoring command refuses this id (\`loam adopt\`, \`loam delta\`, \`loam new --touches\`), so nothing in that directory can be changed through loam. ` +
-        `Rename the directory to a legal id, then update its \`service:\` frontmatter, its \`metadata { service '${s.id}' }\` binding in architecture/landscape.likec4, and any features/<FEAT>/specs/${s.id}/ that names it.`,
-    }));
+  return entries.sort((a, b) => compareIds(a.id, b.id) || compareIds(a.dir, b.dir));
 }
 
 async function readFeature(dir: FeatureDir, dirName: string, archived: boolean): Promise<FeatureEntry> {

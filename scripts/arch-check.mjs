@@ -186,7 +186,7 @@ for (const [file, source] of sources) {
 // ----------------------------------------------------------------- 7. brand casts
 // A brand is worth its annotations only while the cast inside the constructor
 // is the only one. The whitelist is the constructor modules themselves.
-const BRANDS = ["ServiceId", "RawServiceId", "DeclaredService", "PathableService", "FeatureId", "RawFeatureId", "DocsDir", "FeatureDir", "PortablePath"];
+const BRANDS = ["ServiceId", "RawServiceId", "DeclaredService", "PathableService", "FeatureId", "RawFeatureId", "DocsDir", "FeatureDir", "ServiceDir", "SubsystemName", "PortablePath"];
 const CAST_WHITELIST = [posix(join("src", "core", "kernel", "ids")) + "/", posix(join("src", "core", "kernel", "path-safety.ts"))];
 const castPattern = new RegExp(`\\bas\\s+(?:${BRANDS.join("|")})\\b`, "g");
 for (const [file, source] of sources) {
