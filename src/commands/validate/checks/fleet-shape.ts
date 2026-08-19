@@ -23,7 +23,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
+import { type LoadedDoc } from "../../../core/c4/likec4.js";
+import { type Elem, type Rel } from "../../../core/c4/model/model.js";
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";

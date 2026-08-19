@@ -27,8 +27,10 @@ export const UNVERIFIABLE = "sources.unverifiable-from-here";
  *
  * Three other modules hand-roll the same ternary (`commands/show.ts`,
  * `commands/delta.ts`, `core/c4/splice/landscape-merge.ts`). All four belong
- * beside `LikeC4Error` in `core/c4/likec4.ts`; that file sits nine lines under
- * the file limit, which is the only reason they are not there yet.
+ * beside `LikeC4Error` in `core/c4/likec4.ts`. The line budget that blocked
+ * that is gone — the neutral model view and its service join moved out to
+ * `core/c4/model/model.ts` — so what remains is a consolidation, which is a
+ * change of its own.
  */
 export function errorText(e: LikeC4Error): string {
   return typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message;

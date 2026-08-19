@@ -24,7 +24,7 @@
  */
 import { existsSync } from "node:fs";
 import { FleetContext } from "../fleet-context.js";
-import { serviceResolver, type Rel } from "../c4/likec4.js";
+import { serviceResolver, type Rel } from "../c4/model/model.js";
 import { type Maturity } from "../vocabulary/maturity.js";
 import { capabilityRollup, unresolvedCapabilities } from "../capabilities/rollup.js";
 import { compareIds, nearestIds, type ServiceEntry } from "../repo/entries.js";

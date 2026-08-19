@@ -1,4 +1,4 @@
-import type { Elem, Rel } from "../likec4.js";
+import type { Elem, Rel } from "../model/model.js";
 
 /**
  * A landscape merge the splicer could not compute. Every one is mechanical —

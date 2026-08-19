@@ -15,7 +15,7 @@
  * real, not cosmetic — everything here joins on a message name, nothing
  * there does.
  */
-import { type Rel } from "../../c4/likec4.js";
+import { type Rel } from "../../c4/model/model.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { locateServicePaths } from "../../repo/service-target.js";

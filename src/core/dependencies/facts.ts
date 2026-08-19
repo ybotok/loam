@@ -15,7 +15,7 @@
 import { existsSync } from "node:fs";
 import type { PathableService } from "../kernel/ids/service.js";
 import { FleetContext } from "../fleet-context.js";
-import { serviceResolver } from "../c4/likec4.js";
+import { serviceResolver } from "../c4/model/model.js";
 import { operations } from "../openapi/doc.js";
 import { type FeatureEntry } from "../repo/entries.js";
 import { SPEC_AXES, featurePaths, featureSpecPaths, type SpecAxis } from "../repo/paths.js";

@@ -1,4 +1,4 @@
-import { elementService, serviceOf, type Elem, type Rel } from "../likec4.js";
+import { elementService, serviceOf, type Elem, type Rel } from "../model/model.js";
 import type { ScannedElement, ScannedModel } from "../source-scan.js";
 
 /* ------------------------------------------------------------------ */

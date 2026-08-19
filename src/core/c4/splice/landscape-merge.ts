@@ -1,5 +1,6 @@
 
-import { elementService, loadSource, serviceOf, type Elem, type Rel } from "../likec4.js";
+import { loadSource } from "../likec4.js";
+import { elementService, serviceOf, type Elem, type Rel } from "../model/model.js";
 import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
 import { spliceSource } from "./authored-source.js";
 import { LandscapeSpliceError, type LandscapeMergeRequest, type LandscapePlan } from "./contract.js";

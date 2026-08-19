@@ -11,7 +11,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { elementService, loadFile, type LoadedDoc } from "../c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../c4/likec4.js";
+import { elementService } from "../c4/model/model.js";
 import { closeIds } from "../c4/arch.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { repoPath } from "../envelope/json.js";

@@ -15,14 +15,8 @@
  * one module is what stops "new" being decided differently in three places.
  */
 import { existsSync } from "node:fs";
-import {
-  elementService,
-  loadFile,
-  serviceResolver,
-  type Elem,
-  type LoadedDoc,
-  type Rel,
-} from "../../core/c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
+import { elementService, serviceResolver, type Elem, type Rel } from "../../core/c4/model/model.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";

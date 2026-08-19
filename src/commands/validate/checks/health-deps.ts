@@ -22,7 +22,7 @@
  * instead.
  */
 import { closeIds } from "../../../core/c4/arch.js";
-import { elementService, type Elem } from "../../../core/c4/likec4.js";
+import { elementService, type Elem } from "../../../core/c4/model/model.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 
 export interface HealthDeps {
