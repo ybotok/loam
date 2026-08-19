@@ -349,6 +349,7 @@ Rules (`loam validate`): every requirement has ≥1 scenario; every C4 edge `op`
 |---|---|---|
 | `service.exists` | tagged top-level element the delta introduces | `delta.likec4` |
 | `api.exposes` | operationId the feature's openapi delta adds that the living one lacks | `specs/<svc>/openapi.yaml` |
+| `event.declares` | (direction, message) the feature's asyncapi delta declares that the living contract's send/receive sets lack — quotes and removals are never questions | `specs/<svc>/asyncapi.yaml` |
 | `c4.calls` | tagged edge carrying `metadata { op }` | `delta.likec4` |
 | `scenario.tested` | scenario of every ADDED/MODIFIED requirement | `specs/<svc>/spec.md` + `specs/<svc>/arch.spec.md` |
 

@@ -26,6 +26,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { readAsyncapi } from "../asyncapi/read.js";
 import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
@@ -38,9 +39,10 @@ import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 /**
  * What a claim is about. The order is the order the checklist comes back in,
  * and it reads as the story of the feature: the service exists, it exposes its
- * operations, the calls into it are wired, the behaviour is tested.
+ * operations, it declares its messages, the calls into it are wired, the
+ * behaviour is tested.
  */
-export const CLAIM_KINDS = ["service.exists", "api.exposes", "c4.calls", "scenario.tested"] as const;
+export const CLAIM_KINDS = ["service.exists", "api.exposes", "event.declares", "c4.calls", "scenario.tested"] as const;
 export type ClaimKind = (typeof CLAIM_KINDS)[number];
 
 export interface Claim {
@@ -99,6 +101,7 @@ export async function featureChecklist(
 
   const exists: Claim[] = [];
   const exposes: Claim[] = [];
+  const declares: Claim[] = [];
   const calls: Claim[] = [];
   const scenarios: Claim[] = [];
 
@@ -164,6 +167,34 @@ export async function featureChecklist(
       }
     }
 
+    // Events — the same NEW-only discipline on the async axis: a delta's
+    // asyncapi.yaml is a complete document too, so what the living contract
+    // already sends or receives is restatement, not a promise. Removals are
+    // not questions either — the reader already keeps marked declarations out
+    // of the sent/received sets — and an unreadable delta promises nothing
+    // checkable, exactly like the broken C4 delta above.
+    const events = await readAsyncapi(paths.asyncapi);
+    if (events.sent.length > 0 || events.received.length > 0) {
+      const living = await readAsyncapi(servicePaths(docsDir, svc).asyncapi);
+      const directions = [
+        { direction: "sends", feat: events.sent, known: new Set(living.sent) },
+        { direction: "receives", feat: events.received, known: new Set(living.received) },
+      ] as const;
+      for (const d of directions) {
+        for (const name of d.feat) {
+          if (d.known.has(name)) continue;
+          declares.push(
+            claim(
+              "event.declares",
+              svc,
+              [svc, d.direction, name],
+              `${svc} declares it ${d.direction} message '${name}'`,
+            ),
+          );
+        }
+      }
+    }
+
     // Behaviour — the scenarios of the requirements this feature CHANGES. A BASE
     // requirement is the living state quoted inside the delta, and a REMOVED one
     // is being retired: neither is work anybody has to have done.
@@ -212,7 +243,7 @@ export async function featureChecklist(
     }
   }
 
-  const claims = [...exists, ...exposes, ...calls, ...scenarios];
+  const claims = [...exists, ...exposes, ...declares, ...calls, ...scenarios];
   return { feature: featureId, claims, digest: checklistDigest(claims) };
 }
 
