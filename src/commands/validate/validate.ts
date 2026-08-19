@@ -35,7 +35,8 @@ import {
   reportRepositoryUnavailable,
 } from "../policy/gate.js";
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
-import { readLandscape, validateLandscape } from "./landscape.js";
+import { validateLandscape } from "./fleet/landscape.js";
+import { readLandscape } from "./fleet/load.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
 import { ambiguousTarget, capDetails, guarded, renderText, summary } from "./report.js";
