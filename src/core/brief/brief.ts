@@ -23,7 +23,7 @@ import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
-import { landscapePath } from "../repo/paths.js";
+import { landscapePath, type ServicePaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
@@ -176,9 +176,20 @@ export interface Brief {
 const NEVER_OVERWRITE =
   "Do not overwrite an artifact that already exists. Read it, diff your findings against it, and report what disagrees — a document somebody wrote is evidence, and replacing it destroys the only copy of what they knew.";
 
-/** Assemble the brief for one service. Reads the docs repo; writes nothing. */
-export async function serviceBrief(docsDir: DocsDir, service: PathableService): Promise<Brief> {
-  const paths = await locateServicePaths(docsDir, service);
+/**
+ * Assemble the brief for one service. Reads the docs repo; writes nothing.
+ * `at` overrides where the artifacts are briefed to land — `adopt
+ * --subsystem`'s target inside a group — and is only ever passed for a
+ * service the enumeration does NOT answer: an existing service is briefed
+ * where it already lives, because the brief's one rule is to never overwrite,
+ * and a second address would brief a duplicate.
+ */
+export async function serviceBrief(
+  docsDir: DocsDir,
+  service: PathableService,
+  at?: ServicePaths,
+): Promise<Brief> {
+  const paths = at ?? (await locateServicePaths(docsDir, service));
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 
   // Read before the artifact loop, not after it: what the fleet already says

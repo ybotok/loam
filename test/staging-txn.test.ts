@@ -506,6 +506,9 @@ describe("every writer's stored rerun is a command loam has", () => {
       "loam gherkin ${scope.featureId}",
       "loam new ${featureId}",
       "loam rebase ${id}",
+      // Every `loam subsystem` writer — sync, new, rm, move, rename — stores
+      // the one repair spelling: sync recovers the journal and re-renders.
+      "loam subsystem sync",
       "loam vouch --service ${req.service} --yes",
     ]);
 

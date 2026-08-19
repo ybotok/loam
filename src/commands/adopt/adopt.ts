@@ -2,9 +2,11 @@ import type { Command } from "commander";
 import { closeIds } from "../../core/c4/arch.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { InvalidIdError, assertServiceId, type PathableService } from "../../core/kernel/ids/service.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { listServices } from "../../core/repo/repo.js";
+import { listFleetTree, listServices } from "../../core/repo/repo.js";
+import { findInTree, nearestTreeNames } from "../../core/repo/tree/find.js";
+import { servicePathsUnder, type ServicePaths } from "../../core/repo/paths.js";
 import { serviceBrief } from "../../core/brief/brief.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { render } from "./render.js";
@@ -24,7 +26,49 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 interface AdoptOptions {
   service?: string;
+  subsystem?: string;
   json?: boolean;
+}
+
+/**
+ * Where `--subsystem` points the brief: the target directory inside the
+ * group for a service that does not exist yet, or nothing — with a warning —
+ * for one that already does, because adopt writes nothing and MOVES nothing
+ * (`loam subsystem move` is the verb that relocates). An unknown subsystem
+ * refuses with close-name hints, exactly as a mistyped service id warns: a
+ * typo here would brief a whole baseline into a group nobody has.
+ */
+async function subsystemTarget(
+  docsDir: DocsDir,
+  name: string,
+  service: PathableService,
+  json: boolean,
+): Promise<{ at?: ServicePaths; warning?: string } | null> {
+  const tree = await listFleetTree(docsDir);
+  const hit = findInTree(tree, name);
+  if (hit === null) {
+    const close = nearestTreeNames(name, tree.subsystems.map((s) => s.name));
+    fail(
+      json,
+      "unknown-target",
+      `No subsystem '${name}' in the tree.` +
+        (close.length > 0 ? ` Close names: ${close.join(", ")}.` : " `loam subsystem new` creates one; `loam subsystem list` shows what exists."),
+    );
+    return null;
+  }
+  if (hit.kind === "service") {
+    fail(json, "invalid-option", `--subsystem names the service '${name}' — a service never contains other services.`);
+    return null;
+  }
+  const filed = tree.services.find((s) => s.id === service);
+  if (filed !== undefined) {
+    return {
+      warning:
+        `'${service}' already exists at ${repoPath(docsDir, filed.dir)}/ — --subsystem does not move a service ` +
+        `(\`loam subsystem move ${service} --into ${name}\` does), so the brief targets its existing directory.`,
+    };
+  }
+  return { at: servicePathsUnder(hit.subsystem.dir, service) };
 }
 
 /**
@@ -86,6 +130,7 @@ export function registerAdopt(program: Command): void {
     .command("adopt")
     .description("Brief an agent to write one service's baseline docs from its code, and say what will be checked")
     .option("--service <id>", "service to adopt (defaults to the configured service)")
+    .option("--subsystem <name>", "file the new service's baseline into this subsystem instead of the services/ root")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: AdoptOptions) => {
       const json = opts.json === true;
@@ -124,7 +169,14 @@ export function registerAdopt(program: Command): void {
       }
 
       const warnings = await invocationWarnings(config.docsDir, service, config.service);
-      const brief = await serviceBrief(config.docsDir, service);
+      let at: ServicePaths | undefined;
+      if (opts.subsystem !== undefined) {
+        const target = await subsystemTarget(config.docsDir, opts.subsystem, service, json);
+        if (target === null) return;
+        at = target.at;
+        if (target.warning !== undefined) warnings.push(target.warning);
+      }
+      const brief = await serviceBrief(config.docsDir, service, at);
       if (json) {
         emitJson({ ...brief, warnings });
         return;

@@ -20,9 +20,10 @@ import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { ARTIFACTS } from "./agents-md/artifacts.js";
 import { COMMAND_MAP } from "./agents-md/command-map.js";
+import { SUBSYSTEM_COMMANDS } from "./agents-md/map/subsystem.js";
 import { CYCLE } from "./agents-md/cycle.js";
 import { REFUSALS } from "./agents-md/refusals.js";
 import { SPINE } from "./agents-md/spine.js";
 
 export const AGENTS_MD =
-  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + COMMAND_MAP + REFUSALS;
+  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + COMMAND_MAP + SUBSYSTEM_COMMANDS + REFUSALS;

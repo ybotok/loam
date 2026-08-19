@@ -103,6 +103,17 @@ export function unfiledServicePaths(docsDir: DocsDir, service: PathableService):
 }
 
 /**
+ * The creation spelling INSIDE a subsystem — `<subsystemDir>/<id>/`, the
+ * target `adopt --subsystem` briefs so an adoption need not land unfiled and
+ * cost a second command. The same two provenances the unfiled spelling
+ * combines, one level down: the subsystem directory came off the tree walk's
+ * readdir, and the id passed the service grammar before it reached here.
+ */
+export function servicePathsUnder(subsystemDir: string, service: PathableService): ServicePaths {
+  return servicePathsAt(serviceDirOf(join(subsystemDir, service)));
+}
+
+/**
  * The pair of requirement-carrying spec files, living and delta alike: the
  * business spec and the architecture spec. Same grammar, same delta algebra,
  * same merge — everything that walks "the spec files" of a service walks this
@@ -175,6 +186,16 @@ export function subsystemViewsPath(docsDir: DocsDir): string {
 
 export function featuresDir(docsDir: DocsDir): string {
   return join(docsDir, "features");
+}
+
+/**
+ * The root of the tree that IS the fleet — where an unfiled service and a
+ * root-level subsystem both sit. The `subsystem` verbs join validated names
+ * under it; the enumerating walk spells the same join for itself
+ * (`repo/tree/walk.ts`), because it cannot import this module.
+ */
+export function servicesDir(docsDir: DocsDir): string {
+  return join(docsDir, "services");
 }
 
 /**

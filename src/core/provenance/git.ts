@@ -3,12 +3,14 @@
  * and who is working in it. Four spawns, one timeout, one doctrine — every way
  * git can decline to answer (not a repository, not installed, a non-zero exit,
  * a timeout) reads as "git will not say", never as an error a caller must
- * handle. No denominator, no finding.
+ * handle. No denominator, no finding. The subsystem surface's own questions
+ * (dirty paths, rename hops, the one blessed `git add`) live in `./gitq/`,
+ * sharing the timeout and the capped reader exported here.
  */
 import { spawn } from "node:child_process";
 
 /** How long the digest waits on git before deciding it learned nothing. */
-const GIT_TIMEOUT_MS = 10_000;
+export const GIT_TIMEOUT_MS = 10_000;
 
 /**
  * How much a git answer may SAY. The three streamed reads below accumulated
@@ -24,7 +26,7 @@ const MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
  * remember why. One helper because the three readers below had three copies
  * of the same `out += chunk` line, which is where an unbounded buffer hides.
  */
-function collectStdout(child: import("node:child_process").ChildProcess): { text: () => string; overflowed: () => boolean } {
+export function collectStdout(child: import("node:child_process").ChildProcess): { text: () => string; overflowed: () => boolean } {
   let out = "";
   let overflowed = false;
   child.stdout?.setEncoding("utf8");

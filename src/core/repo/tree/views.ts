@@ -39,6 +39,7 @@
  * bytes alone.
  */
 import { serviceResolver, type Elem } from "../../c4/likec4.js";
+import { servicesUnder } from "./find.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "./walk.js";
 
 /**
@@ -99,9 +100,7 @@ function elementByService(tree: FleetTree, elements: Elem[]): Map<string, string
 
 /** Services beneath this subsystem at any depth, ordered by id — the transitive membership. */
 function membersOf(tree: FleetTree, sub: SubsystemEntry): WalkedService[] {
-  return tree.services
-    .filter((s) => sub.path.every((name, i) => s.subsystem[i] === name))
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  return [...servicesUnder(tree, sub)].sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
 /** The sort key and the comment spelling: the subsystem's path from services/, joined. */

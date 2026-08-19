@@ -120,6 +120,12 @@ export type ErrorCode =
   | "services-missing"
   /** Another loam writer holds the docs repo's advisory lock: nothing was read or written, and re-running once it finishes works. `verify --record` waits out a short holder before giving this answer. */
   | "docs-busy"
+  /** `loam subsystem rm` refusing a subsystem that still holds members — services or child subsystems, named in the message. A destructive command never picks targets the caller did not name: move them out (or remove the children) first, then re-run. */
+  | "subsystem-not-empty"
+  /** `loam subsystem move`/`rename` refusing because git reports uncommitted changes under a directory being moved — the ONLY move-specific refusal: the rename would sweep those edits into a move nobody reviewed. Commit or stash them, then re-run. When git cannot answer at all the move proceeds — refusal needs positive evidence. */
+  | "move-uncommitted"
+  /** A subsystem move/rename failed and was rolled back cleanly: every rename undone, the generated views file restored, the docs unchanged — re-running can work. Distinct from `merge-failed` because no merge was computed; a failure that could NOT be fully undone is `rollback-incomplete`, exactly as for archive. */
+  | "move-failed"
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {

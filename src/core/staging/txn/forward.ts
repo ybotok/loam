@@ -20,10 +20,11 @@ import { dirname, join } from "node:path";
 import { quietRmdir } from "../commit.js";
 import { sha256 } from "../writes.js";
 import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError, sweepPidTemps } from "../interrupted.js";
-import { clearTxnIntent, type TxnIntent, type TxnIntentFile } from "./journal.js";
+import { clearTxnIntent, type TxnIntent, type TxnIntentFile, type TxnIntentMove } from "./journal.js";
 
 export async function recoverForward(root: string, intent: TxnIntent): Promise<CommitRecovery> {
   const target = (f: TxnIntentFile): string => join(root, ...f.path.split("/"));
+  const abs = (rel: string): string => join(root, ...rel.split("/"));
   const done: TxnIntentFile[] = [];
   const pending: TxnIntentFile[] = [];
   const unknown: string[] = [];
@@ -33,6 +34,20 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
     if (now === f.after) done.push(f);
     else if (now === f.before) pending.push(f);
     else unknown.push(f.path);
+  }
+  // A directory rename is classified by pure existence — a rename moves the
+  // inode, so "which end exists" is exactly as discriminating as a digest is
+  // for a file. Both ends existing (or neither) is a state no step of the
+  // commit produces: somebody made a directory since the crash, and choosing
+  // which tree to keep is the refuse-to-choose case below.
+  const movesDone: TxnIntentMove[] = [];
+  const movesPending: TxnIntentMove[] = [];
+  for (const m of intent.moves) {
+    const fromExists = existsSync(abs(m.from));
+    const toExists = existsSync(abs(m.to));
+    if (toExists && !fromExists) movesDone.push(m);
+    else if (fromExists && !toExists) movesPending.push(m);
+    else unknown.push(`${m.from} -> ${m.to}`);
   }
   if (unknown.length > 0) {
     throw new InterruptedCommitError(
@@ -51,9 +66,10 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
     // A file whose before and after digests are EQUAL — an unchanged file
     // carried through a commit — reads as "done" in whichever state it is in,
     // so it is not evidence that any rename landed. Only a file that could
-    // tell the two states apart counts as one.
+    // tell the two states apart counts as one — and a landed directory MOVE
+    // always can, so it counts too.
     const evidence = done.filter((f) => f.before !== f.after);
-    if (evidence.length === 0) {
+    if (evidence.length === 0 && movesDone.length === 0) {
       // Nothing ever swapped and the temps are gone — this is the tree a
       // completed ROLLBACK leaves when the crash landed between the rollback
       // and the journal's removal. The complete pre-state is on disk, which
@@ -80,6 +96,23 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
       await rename(join(root, ...f.tmp!.split("/")), file);
     }
     repaired.push(f.path);
+  }
+  // Renames after the file swaps, in recorded order — the order the commit
+  // itself performs them. One that cannot land now (the destination's parent
+  // deleted since the crash, a Windows EPERM on an open handle) is a refusal
+  // naming the pair, not a half-finished loop: nothing before it is undone,
+  // and the journal stays for the next attempt.
+  for (const m of movesPending) {
+    try {
+      await rename(abs(m.from), abs(m.to));
+    } catch (err) {
+      throw new InterruptedCommitError(
+        `a \`${intent.rerun}\` was interrupted mid-commit and the rename ${m.from} -> ${m.to} that would finish it ` +
+          `cannot be performed now (${err instanceof Error ? err.message : String(err)}). ` +
+          `Complete or undo it by hand against version control, delete ${COMMIT_INTENT}, then re-run.`,
+      );
+    }
+    repaired.push(m.to);
   }
   await finish(root, intent);
   return {
