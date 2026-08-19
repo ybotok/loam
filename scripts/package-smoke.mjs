@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { PACKAGED_MARKDOWN, auditPageLinks } from "./package-docs.mjs";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = await mkdtemp(join(tmpdir(), "loam-package-smoke-"));
@@ -184,6 +185,42 @@ try {
     || manifest.engines?.node !== ">=22.22.3") {
     throw new Error("installed package identity, engine contract, or loam bin mapping is incorrect");
   }
+  // Every shipped Markdown page, and every link in each, proven from the
+  // artifact users install rather than inferred from the working tree. First
+  // the page SET: an unreviewed page and a dropped one both fail, where the
+  // required-list check above only catches absence.
+  const shippedMarkdown = paths.filter((path) => path.endsWith(".md")).sort();
+  const reviewedMarkdown = [...PACKAGED_MARKDOWN].sort();
+  if (JSON.stringify(shippedMarkdown) !== JSON.stringify(reviewedMarkdown)) {
+    throw new Error(
+      `tarball Markdown set [${shippedMarkdown.join(", ")}] does not equal the reviewed set [${reviewedMarkdown.join(", ")}] — review the change in package.json files[] AND scripts/package-docs.mjs together`,
+    );
+  }
+  // Then every link, read from the INSTALLED package root: a relative link must
+  // name a file the tarball carries, an anchor must slug-match a heading in the
+  // shipped target, and a canonical github.com/ybotok/loam link must name a
+  // path that exists in this repository — proving "intentionally canonical" is
+  // not a euphemism for rotten. Other absolute URLs are allowed and never
+  // fetched; no network is added beyond the npm install above.
+  const installedPages = new Map();
+  for (const page of PACKAGED_MARKDOWN) {
+    installedPages.set(page, await readFile(join(installedPackageRoot, page), "utf8"));
+  }
+  const tarballPaths = new Set(paths);
+  const linkFailures = [];
+  for (const [page, text] of installedPages) {
+    linkFailures.push(
+      ...auditPageLinks(page, text, {
+        hasFile: (path) => tarballPaths.has(path),
+        readDoc: (path) => installedPages.get(path) ?? null,
+        hasRepoPath: (path) => existsSync(join(projectRoot, path)),
+      }),
+    );
+  }
+  if (linkFailures.length > 0) {
+    throw new Error(`installed-package link check failed:\n${linkFailures.join("\n")}`);
+  }
+
   const cli = resolve(installedPackageRoot, manifest.bin.loam);
   run(process.execPath, [cli, "--help"], installDir, true);
   const version = run(process.execPath, [cli, "--version"], installDir, true).trim();
@@ -292,7 +329,7 @@ try {
   }
 
   console.log(
-    `ok: verified ${packedFilename} (${paths.length} entries), installed it with an isolated strict-engine npm cache, and completed init/new/list plus OpenSpec audit/dry-run/apply through the tarball binary`,
+    `ok: verified ${packedFilename} (${paths.length} entries, ${installedPages.size} Markdown pages link-checked from the installed tree), installed it with an isolated strict-engine npm cache, and completed init/new/list plus OpenSpec audit/dry-run/apply through the tarball binary`,
   );
 } finally {
   // Only a mkdtemp-created, task-specific directory is removed.

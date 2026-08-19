@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { REVIEWED_PACKAGE_FILES } from "./package-docs.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -117,20 +118,21 @@ check(
   `package-lock root version (${lockfile.version ?? "missing"}/${lockfile.packages?.[""]?.version ?? "missing"}) does not match package.json ${manifest.version}`,
 );
 
-const requiredPackageFiles = [
-  "dist",
-  "CHANGELOG.md",
-  "COMPARISON.md",
-  "CONTRIBUTING.md",
-  "MIGRATING-from-OpenSpec.md",
-  "ROADMAP.md",
-  "SCHEMA.md",
-  "SECURITY.md",
-  "WORKFLOW.md",
-];
+// The single reviewed package-file list lives in scripts/package-docs.mjs; the
+// per-entry checks stay so a missing file is named individually, and the
+// set-equality check makes an UNREVIEWED addition to files[] a blocker too.
+const requiredPackageFiles = REVIEWED_PACKAGE_FILES;
 for (const path of requiredPackageFiles) {
   check(manifest.files?.includes(path), `tarball allow-list includes ${path}`);
 }
+const unreviewed = (Array.isArray(manifest.files) ? manifest.files : []).filter(
+  (path) => !requiredPackageFiles.includes(path),
+);
+check(
+  unreviewed.length === 0 && Array.isArray(manifest.files) && manifest.files.length === requiredPackageFiles.length,
+  "package.json files[] set-equals the reviewed package-file list",
+  `package.json files[] does not set-equal REVIEWED_PACKAGE_FILES in scripts/package-docs.mjs${unreviewed.length > 0 ? ` (unreviewed: ${unreviewed.join(", ")})` : ""}; edit both together — the list is the review`,
+);
 
 // The fixture waives the requirement that a canonical repository be CONFIGURED.
 // It cannot waive which repository the manifest names, so the runner cross-check

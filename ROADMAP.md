@@ -216,7 +216,7 @@ Required change:
 - Finish the branded-type rule. Validated feature IDs, docs directories, feature directories, and
   portable paths must be distinct from raw input from construction through the path builders in
   [src/core/repo/paths.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/paths.ts). The smart
-  constructors in [src/core/kernel/ids.ts](https://github.com/ybotok/loam/blob/main/src/core/kernel/ids.ts)
+  constructors in [src/core/kernel/ids/](https://github.com/ybotok/loam/tree/main/src/core/kernel/ids)
   are the only bridge; directory entries such as
   [src/core/repo/entries.ts](https://github.com/ybotok/loam/blob/main/src/core/repo/entries.ts) retain an
   explicit raw form when invalid names must still be reported.
@@ -343,7 +343,8 @@ document.
 Exit criteria, as landed:
 
 - ~~A checked-in, documented benchmark~~ — [scripts/bench-validate.ts](https://github.com/ybotok/loam/blob/main/scripts/bench-validate.ts)
-  + [docs/BENCHMARKS.md](docs/BENCHMARKS.md): fixture shape, edge count, cold/warm policy,
+  + [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md): fixture
+  shape, edge count, cold/warm policy,
   repetitions, medians, sampled peak RSS; [test/scale.test.ts](https://github.com/ybotok/loam/blob/main/test/scale.test.ts)
   stays a blow-up alarm.
 - ~~Twice as fast~~ — measured **18.8x** on the committed 120-service fixture (13 748 ms → 731 ms
