@@ -14,7 +14,7 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
-import { planAxis, planOpenapi, type PinOutcome } from "./plan.js";
+import { planAsyncapi, planAxis, planOpenapi, type PinOutcome } from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /**
@@ -161,6 +161,15 @@ async function rebaseLocked(
         outcomes.push(...planned.outcomes);
         if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
       }
+      // The event axis, for the openapi reason: a feature's asyncapi.yaml is
+      // a complete document too, so its quotes need pins or the merge cannot
+      // tell them from edits.
+      const asyncapiPath = featureSpecPaths(feature.dir, service).asyncapi;
+      if (existsSync(asyncapiPath)) {
+        const planned = await planAsyncapi(docsDir, service, asyncapiPath);
+        outcomes.push(...planned.outcomes);
+        if (planned.content !== null) writes.push({ path: asyncapiPath, content: planned.content });
+      }
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;
@@ -213,7 +222,7 @@ async function rebaseLocked(
 
   if (outcomes.length === 0) {
     console.log(
-      `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key or a component that already exists in the living docs.`,
+      `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key, a component or an event slot that already exists in the living docs.`,
     );
     return;
   }

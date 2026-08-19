@@ -90,6 +90,8 @@ export interface FeatureSpecPaths {
   spec: string;
   archSpec: string;
   openapi: string;
+  /** The async contract delta — the event axis's sibling of `openapi`. */
+  asyncapi: string;
 }
 
 export function featureSpecPaths(featureDir: FeatureDir, service: PathableService): FeatureSpecPaths {
@@ -99,6 +101,7 @@ export function featureSpecPaths(featureDir: FeatureDir, service: PathableServic
     spec: join(dir, "spec.md"),
     archSpec: join(dir, "arch.spec.md"),
     openapi: join(dir, "openapi.yaml"),
+    asyncapi: join(dir, "asyncapi.yaml"),
   };
 }
 

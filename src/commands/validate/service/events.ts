@@ -123,6 +123,17 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
       ...(events.error === undefined ? {} : { details: [events.error] }),
     });
   } else {
+    // Feature-only bookkeeping published to the fleet — the openapi axis's
+    // `openapi.remove-marker-living` discipline, one code for every depth the
+    // reader collects markers at (slots and inline channel messages alike).
+    if (events.markers.length > 0) {
+      findings.push({
+        severity: "error",
+        code: "asyncapi.remove-marker-living",
+        subject: service,
+        message: `${service}: living asyncapi.yaml carries x-loam-remove: true at ${events.markers.join(", ")} — removal markers are valid only in feature deltas; retire a slot through a feature's asyncapi.yaml instead`,
+      });
+    }
     for (const name of events.duplicateNames) {
       findings.push({
         severity: "warn",
