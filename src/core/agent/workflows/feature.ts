@@ -76,13 +76,21 @@ export const LOAM_FEATURE: CommandContent = {
      idempotency, alerts), same grammar; a \`Covers:\` line per requirement naming the
      tagged elements/edges it accounts for, or \`c4.uncovered\` says nothing does
    - \`specs/<svc>/openapi.yaml\` — define every operationId the edges reference
+   - \`specs/<svc>/asyncapi.yaml\` — the event axis, only when the feature changes
+     what a service puts on or takes off the bus: a complete AsyncAPI 3.0
+     document restating the living contract around the slots you change, new
+     messages under \`components.messages\`, and a \`Publishes:\`/\`Consumes:\` line
+     on each requirement that names them. \`loam new\` scaffolds none — an event
+     contract is genuinely optional
 5. **\`loam rebase $1\`** — the step between authoring and checking, and the one that
    stops two features in flight from silently deleting each other's work. It pins
-   every MODIFIED/REMOVED requirement (\`Based-On:\`) and every operation in the
-   contract delta (\`x-loam-based-on\`) to the living version you wrote against.
-   Run it on the contract axis even if you changed exactly one endpoint: that is
+   every MODIFIED/REMOVED requirement (\`Based-On:\`), every operation in the
+   contract delta and every asyncapi channel/operation/message slot
+   (\`x-loam-based-on\`) to the living version you wrote against.
+   Run it on the contract axes even if you changed exactly one endpoint: that is
    what marks the REST of the document as quotation the merge must not write back.
-   Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` GATE
+   Without the pins, \`delta.baseline-missing\` / \`openapi.baseline-missing\` /
+   \`asyncapi.baseline-missing\` GATE
    the archive: before they did, the second feature to archive reverted the
    first — with \`+0 ~1 -0\`, exit 0, and nobody told. Rebase clears them; a
    human's \`--approve\` is the only other way past.

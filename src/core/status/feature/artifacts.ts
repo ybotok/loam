@@ -21,10 +21,12 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  *
  * Attribution is by code family, because that is the only machine-readable
  * pointer an `Issue` carries: `subject` narrows to a service, never to a file.
- * The families are unambiguous — `c4-api.*`/`c4.*` and the two `delta.*` codes
- * about the LikeC4 document itself grade the architecture axis, `openapi.*`
- * grades the contract, and the remaining `delta.*` codes are the delta-shape
- * checks, every one of which is about a requirement in a spec delta.
+ * The families are unambiguous — `c4-api.*`/`c4-event.*`/`c4.*` and the two
+ * `delta.*` codes about the LikeC4 document itself grade the architecture
+ * axis, `openapi.*` grades the API contract, `asyncapi.*` the event contract,
+ * and the remaining `delta.*` codes plus `spec-api.*`/`spec-event.*` are the
+ * delta-shape checks, every one of which is about a requirement in a spec
+ * delta.
  *
  * An error that maps to nothing (or whose subject is unknown) still lands in
  * `checks.issues` and still drives `next.fix-coherence` — it just does not turn
@@ -33,9 +35,10 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  */
 function faultedArtifact(code: string, subject?: string): ArtifactId | null {
   if (code === "delta.invalid" || code === "delta.nothing-tagged") return "delta";
-  if (code.startsWith("c4-api.") || code.startsWith("c4.")) return "delta";
+  if (code.startsWith("c4-api.") || code.startsWith("c4-event.") || code.startsWith("c4.")) return "delta";
   if (code.startsWith("openapi.")) return "openapi";
-  if (code.startsWith("delta.") || code.startsWith("spec-api.")) return "spec";
+  if (code.startsWith("asyncapi.")) return "asyncapi";
+  if (code.startsWith("delta.") || code.startsWith("spec-api.") || code.startsWith("spec-event.")) return "spec";
   // The two families validate contributes: the frontmatter checks read only
   // intent.md, and a requirement with no scenario is a requirement in a spec
   // delta. Both name exactly one file, so both may turn a row `draft`.
@@ -99,6 +102,17 @@ export function featureArtifacts(
         faulted("openapi", svc),
       ),
     );
+    // Never required: an event contract is genuinely optional — the axis's own
+    // absence-grading rests on that — so absence is `done`, exactly like
+    // arch.spec.md. Present and faulted still turns the row `draft`.
+    out.push(
+      fileState(
+        "asyncapi",
+        { service: svc, path: rel(p.asyncapi), exists: existsSync(p.asyncapi) },
+        false,
+        faulted("asyncapi", svc),
+      ),
+    );
   }
 
   // The record is the one artifact with a real prerequisite: its checklist is
@@ -113,7 +127,7 @@ export function featureArtifacts(
     exists: verification.state !== "absent",
     required: true,
     status: feeders.length === 0 ? "blocked" : verificationStatus(verification),
-    blockedBy: feeders.length === 0 ? ["delta", "spec", "openapi"] : [],
+    blockedBy: feeders.length === 0 ? ["delta", "spec", "openapi", "asyncapi"] : [],
   });
   return out;
 }

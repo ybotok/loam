@@ -30,8 +30,8 @@ export function unshippable(f: Finding): boolean {
   return f.severity === "error" || f.gates === true;
 }
 
-/** Codes whose one fix is `loam rebase`: a pin nobody ever wrote, on either axis. */
-const UNPINNED = new Set(["delta.baseline-missing", "openapi.baseline-missing"]);
+/** Codes whose one fix is `loam rebase`: a pin nobody ever wrote, on any of the three axes. */
+const UNPINNED = new Set(["delta.baseline-missing", "openapi.baseline-missing", "asyncapi.baseline-missing"]);
 
 export function featureNext(state: FeatureState, boundService: string | undefined): NextStep[] {
   const { feature, services, artifacts, findings, blockedBy, verification, scans, interrupted } = state;

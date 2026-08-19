@@ -6,7 +6,7 @@
  * also what `--json` emits.
  */
 import { type Requirement } from "../../core/document/spec.js";
-import { type ApiSlice, type ArchSlice } from "./slices.js";
+import { type ApiSlice, type ArchSlice, type EventSlice } from "./slices.js";
 
 export function printRequirements(reqs: Requirement[], label: string): void {
   if (reqs.length === 0) {
@@ -36,9 +36,11 @@ export function printRequirements(reqs: Requirement[], label: string): void {
 export function printApi(api: ApiSlice): void {
   if (api.unreadable) {
     // Worded like `loam show`'s answer for the same failure on a living
-    // contract, and deliberately WITHOUT a "run `loam validate`" hint: validate
-    // grades `openapi.invalid` on living service contracts only, so it has
-    // nothing to say about this file and sending the reader there is a dead end.
+    // contract, and deliberately WITHOUT a "run `loam validate`" hint: the
+    // parser's own message is already quoted below and the exit code carries
+    // the failure, so another command adds a hop, not information.
+    // (`validate --feature` does grade `openapi.invalid` on this same file
+    // these days; the fix is still in the YAML, not in its output.)
     console.log("API: openapi.yaml does not parse");
     if (api.error !== undefined) console.log(`  ${api.error}`);
     console.log();
@@ -54,6 +56,28 @@ export function printApi(api: ApiSlice): void {
     console.log(
       `  ${marker}${op.method} ${op.path}  ${op.operationId}${op.summary === null ? "" : ` — ${op.summary}`}`,
     );
+  }
+  console.log();
+}
+
+export function printEvents(events: EventSlice): void {
+  if (events.unreadable) {
+    // Same wording stance as printApi above, `asyncapi.invalid` being the
+    // validate finding on this file.
+    console.log("Events: asyncapi.yaml does not parse");
+    if (events.error !== undefined) console.log(`  ${events.error}`);
+    console.log();
+    return;
+  }
+  if (events.changes.length === 0) {
+    console.log("Events: (the asyncapi delta declares no messages)\n");
+    return;
+  }
+  console.log("Events (this feature's asyncapi.yaml for the service):");
+  for (const m of events.changes) {
+    const marker = m.remove ? "REMOVE " : "";
+    const direction = m.direction === null ? "" : `${m.direction.toUpperCase()} `;
+    console.log(`  ${marker}${direction}${m.message}  (${m.slot})`);
   }
   console.log();
 }

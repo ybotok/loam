@@ -81,8 +81,8 @@ export type ArtifactStatus = (typeof ARTIFACT_STATUSES)[number];
 
 /**
  * The artifact kinds a feature can owe, in the order the cycle authors them.
- * `spec`, `arch-spec` and `openapi` are per-service and repeat once per service
- * the feature touches; the rest are feature-wide.
+ * `spec`, `arch-spec`, `openapi` and `asyncapi` are per-service and repeat
+ * once per service the feature touches; the rest are feature-wide.
  */
 export const ARTIFACT_IDS = [
   "intent",
@@ -90,6 +90,7 @@ export const ARTIFACT_IDS = [
   "spec",
   "arch-spec",
   "openapi",
+  "asyncapi",
   "verification",
 ] as const;
 export type ArtifactId = (typeof ARTIFACT_IDS)[number];
@@ -104,7 +105,8 @@ export interface ArtifactState {
   /**
    * Whether ABSENCE is a defect. False for the artifacts a feature may
    * legitimately not have: `delta.likec4` (a requirements-only change deletes
-   * it), `arch.spec.md` (optional everywhere), and `openapi.yaml` for a service
+   * it), `arch.spec.md` and `asyncapi.yaml` (optional everywhere), and
+   * `openapi.yaml` for a service
    * the living docs already carry. An absent optional artifact is `done` —
    * nothing is owed — and `exists: false` beside it is how a reader tells that
    * from a file that is present and fine.
