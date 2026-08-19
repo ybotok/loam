@@ -54,8 +54,15 @@ export function elementService(e: Elem): DeclaredService {
  * what made those edges invisible: the spine check silently skipped them, and
  * the no-openapi grace treated a service with a dozen inbound container calls as
  * one nobody calls at all.
+ *
+ * Exported because `../flows/resolve.ts` joins a dynamic-view step to its
+ * declared relationship over the same chain, for the same reason: a step may be
+ * drawn at `paymentService.api` while the relationship carrying the operation
+ * was declared on `paymentService`. Two walks up the same tree that disagreed
+ * about what an ancestor is would put the operation spine and the flow spine on
+ * different graphs.
  */
-function ancestorIds(id: string): string[] {
+export function ancestorIds(id: string): string[] {
   const out = [id];
   for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) {
     out.push(id.slice(0, dot));

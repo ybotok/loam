@@ -46,6 +46,7 @@ export function unreadableLandscape(err: unknown): LoadedDoc {
     errors: [{ message: err instanceof Error ? err.message : String(err) }],
     elements: [],
     relationships: [],
+    flows: [],
   };
 }
 
