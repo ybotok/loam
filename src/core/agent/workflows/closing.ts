@@ -30,6 +30,8 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
 
 1. \`loam verify $1 --json\`. \`claims[]\` is the checklist, derived from the feature's
    own artifacts — one claim per new service, per operation its openapi delta adds,
+   per (direction, message) its asyncapi delta newly declares against the living
+   contract's send/receive sets (quotes and removals are never questions),
    per tagged edge that names an operation, and per scenario of every changed
    requirement, arch.spec.md deltas included. Each has a stable \`id\` and a
    \`subject\` (the service whose code answers it); a claim that says arch.spec.md
@@ -56,6 +58,8 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    - \`service.exists\` — the service is deployable: its build, its entry point.
    - \`api.exposes\` — the route handler serving that operationId, not the spec that
      declares it.
+   - \`event.declares\` — the code that puts the message on the wire (sends) or
+     handles it off the wire (receives), not the contract that names it.
    - \`c4.calls\` — the call site in the CALLER.
 4. Write those answers as JSON — evidence is \`file:line\`, one entry per place it can
    be seen:

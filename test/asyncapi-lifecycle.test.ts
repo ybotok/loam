@@ -10,6 +10,7 @@
  * graph's own node:fs/promises `rename` faults exactly one swap).
  */
 import { describe, expect, it, vi } from "vitest";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -248,6 +249,42 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
       // no snapshot-stale: the merge wrote exactly what the snapshot recorded.
       expect((await runLoam(p.workDir, "unarchive", "FEAT-60")).code).toBe(0);
       expect(await treeHashes(p.docsDir), "unarchive must be a byte-for-byte round trip").toEqual(pristine);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the verify checklist asks the event question, and a recorded answer round-trips", async () => {
+    const p = await makeProject(lifecycleFixture());
+    try {
+      const res = await runLoam(p.workDir, "verify", "FEAT-60", "--json");
+      expect(res.code).toBe(0);
+      const claims = JSON.parse(res.stdout).claims as Array<{ id: string; kind: string; subject: string; claim: string }>;
+      // One claim per genuinely NEW (direction, message). The delta also
+      // restates the living payment.Authorized send — a quote of the living
+      // contract is never a question, so exactly one claim comes back.
+      const declares = claims.filter((c) => c.kind === "event.declares");
+      expect(declares).toHaveLength(1);
+      expect(declares[0]!.subject).toBe("payment-service");
+      expect(declares[0]!.claim).toBe("payment-service declares it sends message 'payment.Refunded'");
+
+      // The answer round-trips through the record: `--record` accepts the new
+      // kind (all-at-once form — no attestations exist here to erase), the
+      // written verification.yaml carries it, and a re-read is not stale.
+      const answers = claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["src/refunds/publisher.ts:12"] }));
+      await writeFile(join(p.workDir, "answers.json"), JSON.stringify({ answers }), "utf8");
+      expect((await runLoam(p.workDir, "verify", "FEAT-60", "--record", "answers.json")).code).toBe(0);
+      const record = parse(await p.read("features/FEAT-60-refunds/verification.yaml")) as {
+        claims: Array<{ id: string; kind: string; verdict: string; evidence?: string[] }>;
+      };
+      const recorded = record.claims.find((c) => c.kind === "event.declares");
+      expect(recorded).toMatchObject({ id: declares[0]!.id, verdict: "confirmed" });
+      const back = JSON.parse((await runLoam(p.workDir, "verify", "FEAT-60", "--json")).stdout);
+      expect(back.recorded.stale).not.toBe(true);
+      const readBack = (back.claims as Array<{ kind: string; verdict: string }>).find((c) => c.kind === "event.declares");
+      expect(readBack?.verdict).toBe("confirmed");
+      expect(back.verified).toBe(false); // the scenario claim rests on an agent's word: attested
+      expect(back.verdict).toBe("attested");
     } finally {
       await p.destroy();
     }
