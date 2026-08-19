@@ -89,9 +89,11 @@ The strongest foundations to preserve are:
 
 ## Now
 
-The current priority is the pilot. Every integrity, enforcement and lifecycle item that preceded it
-has landed (see [Recently landed](#recently-landed)); what the product still lacks is evidence from
-fleets that are not its own.
+The pilot remains the first priority: every integrity, enforcement and lifecycle item that preceded
+it has landed (see [Recently landed](#recently-landed)), and what the product still lacks is evidence
+from fleets that are not its own. One build item runs beside it — cross-service use cases — promoted
+by an explicit product decision rather than by the evidence rule that governs the Later section.
+Nothing in it may delay the pilot's exit criteria or change what the pilot measures.
 
 ### Complete the two-fleet pilot
 
@@ -117,6 +119,112 @@ Exit criteria:
   more than 10% of classified findings.
 - The reviewed scorecards link the machine evidence and give every failure or waiver an owner and an
   explicit release disposition. Blank or `not-assessed` fields cannot be called completion.
+
+### Cross-service use cases: flows as fleet-level dynamic views
+
+Every scenario loam can test today belongs to exactly one service. `loam gherkin` writes only into
+the repository whose `loam.json` names that service, `--results` answers only `scenario.tested`, and
+[src/core/results.ts](https://github.com/ybotok/loam/blob/main/src/core/results.ts) REFUSES a digest
+two services word identically — so a journey written once per participant is not merely duplicated,
+it is unanswerable. An integration suite over a handful of services, an API run against a deployed
+stand, and a UI journey are the same object at different widths: an ordered interaction across
+several services. Which of them a given run is depends on whether the participants are doubles or
+deployed, and that is a property of the RUN, not of the document; acceptance versus cross-service is
+already derivable from the artifact a scenario came from. No test-level field is proposed here, and
+none should be added.
+
+LikeC4 dynamic views are that object. Four facts about the pinned `likec4` version decide the shape,
+and each was read out of the dependency rather than assumed:
+
+- [examples/docs/likec4.config.json](https://github.com/ybotok/loam/blob/main/examples/docs/likec4.config.json)
+  scopes the project to `architecture/` — it excludes `services/**` and `features/**` — so a dynamic
+  view stored under a service resolves only that service's own containers. The slot
+  [SCHEMA.md](SCHEMA.md) reserves under `services/<svc>/` can hold intra-service sequences and nothing
+  else: a cross-service journey resolves at fleet level or not at all. Correcting that reservation,
+  and the registry entry that owns it in
+  [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts), is part
+  of this item.
+- A view carries tags, so it carries `#FEAT-101` exactly as an element or a relationship does. The
+  feature-delta projection needs no new concept, and `delta.nothing-tagged` keeps its meaning.
+- A PARSED step carries source, target and title but no `metadata`, and the step-to-relationship join
+  that would reach `metadata { op }` exists only on the COMPUTED stage —
+  [src/core/c4/workspace.ts](https://github.com/ybotok/loam/blob/main/src/core/c4/workspace.ts)
+  deliberately never enters it, because computing builds every view and is superlinear in edge count.
+  loam must resolve a step to its relationship itself, by source and target, at the parsed stage.
+  Entering the computed stage would forfeit the `validate --all` work already landed, and is a
+  non-goal of this item.
+- [src/core/c4/splice/landscape-merge.ts](https://github.com/ybotok/loam/blob/main/src/core/c4/splice/landscape-merge.ts)
+  splices `model { ... }` only. No path merges a `views { ... }` block, so the feature lifecycle for
+  flows does not exist yet and is the expensive half of the work.
+
+The division of authorship is the design decision the rest follows from. A dynamic view states the
+interaction — participants, order, and the `alt` / `try` / `loop` / `par` branches LikeC4 already
+models — and states no outcome. The outcome stays where outcomes are graded today: a scenario under
+an architecture requirement, which SCHEMA.md already maps to the integration and operational test
+level. The two are joined by one new entry form on the existing `Covers:` line, naming a view id, and
+an id that resolves to nothing is the existing `covers.unknown`. Assertions do not move into step
+notes: a diagram carrying its own expectations is a second requirement corpus that can disagree with
+the first.
+
+Grouping is by TAG rather than by directory, which is where this departs from the subsystem tree it
+otherwise copies. A subsystem groups services and exactly-one-place is correct for them; suites are
+many-to-many, since one journey belongs to a smoke suite and a payments suite at once, and a
+directory cannot say so. LikeC4 refuses an undeclared tag, so a group declared once in a
+`specification` block makes a mistyped group a parse error, where a mistyped directory name would
+silently open a second group. Because feature tags and group tags sit on the same view, a group tag
+may not take the feature-id grammar.
+
+Required changes:
+
+1. Read dynamic views at the parsed stage and resolve each step to its declared relationship by
+   source and target, reusing the resolution the operation spine already performs. A step matching no
+   declared relationship is `flow.step-unresolved` (warn) — the drawn-but-joined-to-nothing state
+   `c4.op-link-missing` already names for landscape edges.
+2. Accept a view id as a `Covers:` entry form alongside the element, edge and `alert:` / `sli:` forms,
+   graded by the existing `covers.unknown` on a miss.
+3. Emit `flow.uncovered` (warn) for a branch of a flow that no architecture scenario covers, on the
+   grading `c4.uncovered` already sets: a warning that never gates, with `--strict` as the CI
+   escalation. This is the check that makes the branch structure a test matrix rather than a picture.
+4. Emit `flow.unrepresented` (warn) when a feature delta adds a cross-service relationship carrying
+   `metadata { op }` that no flow step covers. A fleet-level artifact nobody is told to update is a
+   fleet-level artifact that rots; this is the derived staleness signal that stops it.
+5. Store flows as one authored file per journey under `architecture/`, and generate one views file
+   holding one view per group whose members are the union of that group's participants — the
+   structure, regenerator and byte-comparison staleness of
+   [src/commands/validate/fleet/views-stale.ts](https://github.com/ybotok/loam/blob/main/src/commands/validate/fleet/views-stale.ts)
+   and `subsystem.views-stale`, reused rather than reinvented, under its own `flow.views-stale`. The
+   ownership rule must be explicit in SCHEMA.md: within `architecture/`, generated files are loam's
+   and flow files are the author's, and neither regenerator touches the other.
+6. Expose a group's participant union as machine output. It is the definition of the environment a
+   run needs — which services must be up — and it is the answer the fleet currently maintains by hand.
+7. Merge a `views { ... }` block in `archive` and restore it in `unarchive`, through the same
+   journaled transaction and snapshot every other writer commits through. A view is a small
+   self-contained object, so the merge rule is replace-or-add keyed on view id rather than the splice
+   the model requires; two features editing one flow need the protection `rebase` already gives
+   requirements, or the second archive silently discards the first.
+8. Say what did NOT survive into a suite, in the emission's own voice, as the Gherkin writer already
+   does for step-less scenarios and malformed example tables.
+
+Exit criteria:
+
+- A journey across at least three services is authored once, generates one suite, and its scenarios
+  are answered by a green run through the existing digest-tagged report path — with no scenario text
+  duplicated across the participants' living specs, and no contested digest.
+- Removing a branch from a flow, or adding a cross-service operation without touching any flow,
+  produces exactly the finding that names it, and neither gates.
+- The participant union of a group reproduces byte-identically on a second machine, and the generated
+  views file compares byte-equal after a regeneration that changed nothing.
+- A feature that edits a flow archives, unarchives, and leaves the living views file byte-identical to
+  its pre-image; a fault injected between staging and swap leaves either the complete old file or the
+  complete new one.
+- `validate --all` stays on the parsed stage: the fleet timing predeclared for the pilot is met with
+  flows present, and no run enters LikeC4's computed stage.
+- SCHEMA.md's reserved per-service flows slot is corrected rather than left standing, and the
+  known-gap registry entry that owns it is updated in the same change.
+
+Explicit non-goals for this item: no test runner, no pact or contract-test file generation, no
+environment or deployment model inside loam, no second requirement corpus, and no new runtime
+dependency — LikeC4 is already one of the three.
 
 ## Recently landed
 

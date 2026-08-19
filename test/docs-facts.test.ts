@@ -252,6 +252,14 @@ describe("public docs name only emitted codes", () => {
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
     "capability.uncovered":
       "named as FUTURE work in ROADMAP's Later authored-capability item — remove this entry when that item lands (the code becomes emitted) or is dropped",
+    "flow.step-unresolved":
+      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
+    "flow.uncovered":
+      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
+    "flow.unrepresented":
+      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
+    "flow.views-stale":
+      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */
