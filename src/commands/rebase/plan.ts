@@ -11,7 +11,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../../core/kernel/document-bytes.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
-import { servicePaths, type SpecAxis } from "../../core/repo/paths.js";
+import { type SpecAxis } from "../../core/repo/paths.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
 import { parseRequirements, readRequirementsDocument } from "../../core/document/parse.js";
 import { requirementDigest, type Requirement } from "../../core/document/spec.js";
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
@@ -83,7 +84,7 @@ export async function planAxis(
   // because it is what every digest below is taken over.
   const raw = await readRequirementsDocument(specPath);
   const reqs = parseRequirements(raw);
-  const livingPath = servicePaths(docsDir, service)[axis.key];
+  const livingPath = (await locateServicePaths(docsDir, service))[axis.key];
   const living = existsSync(livingPath)
     ? parseRequirements(await readRequirementsDocument(livingPath))
     : [];
@@ -136,7 +137,7 @@ export async function planAxis(
  * path the contract does not serve yet.
  */
 export async function planOpenapi(docsDir: DocsDir, service: PathableService, openapiPath: string): Promise<AxisPlan> {
-  const livingPath = servicePaths(docsDir, service).openapi;
+  const livingPath = (await locateServicePaths(docsDir, service)).openapi;
   // Decoded, not `readFile(…, "utf8")`, for the requirement axes' reason: a
   // contract read with U+FFFD substituted in defines no operation loam can
   // match, so every pin would come out `unresolved` — "this feature adds them
@@ -198,7 +199,7 @@ export async function planAsyncapi(
   service: PathableService,
   asyncapiPath: string,
 ): Promise<AxisPlan> {
-  const livingPath = servicePaths(docsDir, service).asyncapi;
+  const livingPath = (await locateServicePaths(docsDir, service)).asyncapi;
   // Decoded, not `readFile(…, "utf8")`, for planOpenapi's reason: a contract
   // read with U+FFFD substituted in defines no slot loam can match, so every
   // pin would come out `unresolved` over a living contract that already

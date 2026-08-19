@@ -14,7 +14,8 @@ import { listField, readFrontmatter, stringField } from "../../core/document/fro
 import { loadFile, serviceResolver } from "../../core/c4/likec4.js";
 import { readOpenapi } from "../../core/openapi/doc.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
-import { landscapePath, servicePaths } from "../../core/repo/paths.js";
+import { landscapePath } from "../../core/repo/paths.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
 import { listServices } from "../../core/repo/repo.js";
 import { countMarkdown } from "../../core/repo/tree/fs.js";
 import { parseRequirements } from "../../core/document/parse.js";
@@ -35,7 +36,7 @@ export async function showService(
   json: boolean,
   context: FleetContext,
 ): Promise<void> {
-  const paths = servicePaths(docsDir, id);
+  const paths = await locateServicePaths(docsDir, id, context);
   const has = {
     model: existsSync(paths.model),
     spec: existsSync(paths.spec),

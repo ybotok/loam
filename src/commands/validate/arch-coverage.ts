@@ -24,7 +24,8 @@ import {
   type Rel,
 } from "../../core/c4/likec4.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
-import { landscapePath as landscapeFile, servicePaths } from "../../core/repo/paths.js";
+import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
 import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { type Finding } from "../../core/vocabulary/report.js";
 import { type Requirement } from "../../core/document/spec.js";
@@ -206,11 +207,11 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       // An unreadable living health.yaml mutes the alert:/sli: entries here
       // exactly as in service scope — the health.invalid finding itself
       // belongs to the service target, which owns the file's diagnosis.
-      const health = await readHealth(servicePaths(docsDir, svc).health);
+      const health = await readHealth((await locateServicePaths(docsDir, svc, fleet)).health);
       let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids, known };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
-        const modelPath = servicePaths(docsDir, svc).model;
+        const modelPath = (await locateServicePaths(docsDir, svc, fleet)).model;
         const model = existsSync(modelPath)
           ? fleet === undefined
             ? await loadFile(modelPath)

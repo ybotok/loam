@@ -74,7 +74,7 @@ export function registerExplore(program: Command): void {
       }
 
       // Rule 6 in docs/DESIGN.md: a raw argv string that reaches a path join is
-      // guarded at the command boundary. Every id here reaches `servicePaths`.
+      // guarded at the command boundary. Every id here reaches the service path builders.
       // Before `loadConfig`, exactly as `loam new` guards its `--touches` list:
       // the grammar is a fact about the argument, not about the repository, so
       // an unusable id should answer the same whether or not you are standing

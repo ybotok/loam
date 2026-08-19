@@ -15,7 +15,8 @@ import { NotUtf8DocumentError } from "../kernel/document-bytes.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featureSpecPaths } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
@@ -133,7 +134,7 @@ export async function declaredByService(
         });
       }
 
-      const livingDoc = await readOpenapi(servicePaths(docsDir, svc).openapi, context);
+      const livingDoc = await readOpenapi((await locateServicePaths(docsDir, svc, context)).openapi, context);
       const livingOps = livingDoc.ops;
       for (const id of livingDoc.duplicateIds) {
         const slots = livingOps.filter((op) => op.id === id).map((op) => `${op.method} ${op.path}`);
@@ -150,7 +151,7 @@ export async function declaredByService(
       // read when there is one, mirroring the readRequirements pattern above;
       // the gate itself never touches the filesystem.
       if (existsSync(paths.openapi)) {
-        const livingOpenapiPath = servicePaths(docsDir, svc).openapi;
+        const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
         // `context.readText` DECODES and THROWS on non-UTF-8 bytes, where the
         // no-context `readFile` substitutes U+FFFD and lets `readOpenapi`
         // flag the document unreadable. Uncaught, one service's UTF-16 living

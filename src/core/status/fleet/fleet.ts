@@ -15,7 +15,7 @@ import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { type DependencyGraph } from "../../dependencies/facts.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
-import { compareIds, type FeatureEntry } from "../../repo/entries.js";
+import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
 import { listFeatures, listServices } from "../../repo/repo.js";
 import { contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
@@ -69,6 +69,7 @@ export async function fleetStatus(
       fleetFeature(docsDir, f, {
         graph,
         contracted: contractsHeldElsewhere(owners, f.id),
+        living: new Map(all.map((s) => [s.id, s])),
         context,
         interrupted,
       }),
@@ -100,6 +101,8 @@ interface FleetView {
   graph: DependencyGraph;
   /** Operations some other feature's contract already holds. */
   contracted: ReadonlySet<string>;
+  /** The enumeration's entries by id — where each living service is and what it has (owesContract reads both). */
+  living: ReadonlyMap<string, ServiceEntry>;
   context: FleetContext;
   interrupted: InterruptedCommit | null;
 }
@@ -109,7 +112,7 @@ async function fleetFeature(
   feature: FeatureEntry,
   view: FleetView,
 ): Promise<FleetFeatureState> {
-  const { graph, contracted, context, interrupted } = view;
+  const { graph, contracted, living, context, interrupted } = view;
   const paths = featurePaths(feature.dir);
   const missing: string[] = [];
   if (!existsSync(paths.intent)) missing.push("intent");
@@ -124,7 +127,7 @@ async function fleetFeature(
     if (!existsSync(p.spec)) missing.push(`${svc}/spec`);
     // The same question featureArtifacts asks, through the same function: the
     // two forms must never disagree about whether a feature owes a contract.
-    if (owesContract(docsDir, svc, contracted, governs.has(svc)) && !existsSync(p.openapi)) {
+    if (owesContract(living.get(svc), contracted.has(svc), governs.has(svc)) && !existsSync(p.openapi)) {
       missing.push(`${svc}/openapi`);
     }
   }

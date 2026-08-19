@@ -25,7 +25,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { type FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
-import { featureSpecPaths, servicePaths, SPEC_AXES } from "../repo/paths.js";
+import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { type Issue } from "../vocabulary/issue.js";
 import { claimLookup } from "./claims.js";
@@ -74,7 +75,7 @@ export async function deltaShapeIssues(
       const reqs = context === undefined ? parseRequirements(raw) : await context.readRequirements(specPath);
       issues.push(...deltaDocumentIssues(scope, raw, reqs));
 
-      const livingPath = servicePaths(docsDir, service)[axis.key];
+      const livingPath = (await locateServicePaths(docsDir, service, context))[axis.key];
       const living = indexLiving(
         existsSync(livingPath)
           ? context === undefined

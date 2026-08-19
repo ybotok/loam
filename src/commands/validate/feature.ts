@@ -16,7 +16,8 @@ import { readFile } from "node:fs/promises";
 import { elementService, loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
-import { featurePaths, featureSpecPaths, servicePaths } from "../../core/repo/paths.js";
+import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
+import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { featureSpecServices, listServices } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
@@ -90,17 +91,20 @@ export async function validateFeature(
   // not parse proves neither (`delta.invalid` is that finding), so the question
   // is suspended there rather than answered by guessing.
   //
-  // `services/<svc>/` is asked for directly rather than through the
-  // enumeration: `validate --feature` is allowed to run in a docs repo with no
-  // services/ at all (repo.ts takes the same position), where enumerating is a
-  // refusal, not an answer.
+  // Existence is enumeration MEMBERSHIP through the no-services-tolerant
+  // spelling, never `existsSync(services/<svc>/)` at the root: a service filed
+  // into a subsystem exists wherever the tree walk found it, and the root
+  // probe graded every filed service `delta.service-unknown`. The tolerance
+  // carries the old carve-out forward — `validate --feature` is allowed to run
+  // in a docs repo with no services/ at all, where enumerating is a refusal;
+  // `enumeratedServiceIds` swallows exactly that refusal to an empty list, in
+  // which every service is honestly absent.
   const featureServices = await featureSpecServices(featureDir, fleet);
   const introduces: ReadonlySet<string> = new Set(taggedEls.map(elementService));
   const deltaReadable = deltaDoc === undefined || deltaDoc.errors.length === 0;
+  const enumerated = new Set<string>(await enumeratedServiceIds(docsDir, fleet));
   const unknownServices = deltaReadable
-    ? featureServices.filter(
-        (svc) => !existsSync(servicePaths(docsDir, svc).dir) && !introduces.has(svc),
-      )
+    ? featureServices.filter((svc) => !enumerated.has(svc) && !introduces.has(svc))
     : [];
   // The near-miss hint, on the same rule `service.unknown` uses — a typo is
   // only diagnosable against the ids that DO exist.

@@ -12,7 +12,8 @@ import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parseRequirements } from "../document/parse.js";
 import type { PathableService } from "../kernel/ids/service.js";
-import { servicePaths, SPEC_AXES } from "../repo/paths.js";
+import { SPEC_AXES } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { listFeatures } from "../repo/repo.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { Finding } from "../vocabulary/report.js";
@@ -96,7 +97,7 @@ export async function gherkinFindings(ctx: {
     digests: Set<string>;
     scenarios: Array<{ req: string; name: string; digest: string }>;
   }
-  const paths = servicePaths(ctx.docsDir, ctx.service);
+  const paths = await locateServicePaths(ctx.docsDir, ctx.service, ctx.fleet);
   const axes = new Map<"business" | "arch", AxisState>();
   for (const axis of SPEC_AXES) {
     const label = axisLabel(axis);

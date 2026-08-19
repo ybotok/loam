@@ -1,13 +1,13 @@
 /**
  * Turning a name a caller typed into a name loam may join into a path.
  *
- * `servicePaths(docsDir, name)` spells `<docsDir>/services/<name>/`, and its
- * parameter is `PathableService`: an unchecked name at that call site no
- * longer compiles, and this module is where a name a caller typed EARNS the
+ * `unfiledServicePaths(docsDir, name)` spells `<docsDir>/services/<name>/`,
+ * and its parameter is `PathableService`: an unchecked name at that call site
+ * no longer compiles, and this module is where a name a caller typed EARNS the
  * type. The history is why it exists. Six commands guard their argument with
  * `assertServiceId` at the boundary; `validate` never did, and both of its
  * entry points — `--service <id>` and the positional `<target>` — reached
- * `servicePaths` with whatever argv held. `--service ../../outside/services/x`
+ * the path builder with whatever argv held. `--service ../../outside/services/x`
  * resolved ABOVE the docs repo, and where a `spec.md` happened to sit there
  * loam opened it, graded it, and reported its frontmatter through `--json`.
  *
@@ -36,33 +36,65 @@
  * for the same input.
  */
 import { listServices } from "./repo.js";
-import { parseServiceId, type RawServiceId } from "../kernel/ids/service.js";
+import { parseServiceId, type PathableService, type RawServiceId } from "../kernel/ids/service.js";
 import type { FleetContext } from "../fleet-context.js";
-import type { DocsDir } from "../kernel/ids/dirs.js";
+import type { DocsDir, ServiceDir } from "../kernel/ids/dirs.js";
+import { servicePathsAt, unfiledServicePaths, type ServicePaths } from "./paths.js";
+import type { ServiceEntry } from "./entries.js";
 
 export type ServiceTarget =
-  | { readonly ok: true; readonly id: RawServiceId }
+  | { readonly ok: true; readonly id: RawServiceId; readonly dir?: ServiceDir }
   | { readonly ok: false; readonly problem: string };
 
 /**
- * The enumerated service ids, or the empty list when `services/` cannot be
+ * The enumerated services, or the empty list when `services/` cannot be
  * enumerated at all. The swallow is deliberate and spelled ONCE: every
  * repository-aware resolver wants "which services exist" as context, and an
  * unenumerable `services/` is that repository's own diagnosis
  * (`services-missing`), never the asking check's. Six call sites each carried
  * this try/catch in their own spelling before it lived here — which is exactly
  * the shape docs/CODE-STYLE.md warns about: an errno fix lands in one copy and
- * the other five keep the old behaviour.
+ * the other five keep the old behaviour. The existence probes that used to ask
+ * `existsSync(services/<id>/)` ask membership HERE for the same tolerance:
+ * `validate --feature` must run in a docs repo with no `services/` at all,
+ * where enumerating is a refusal but "does this service exist" still has the
+ * honest answer no.
  */
+export async function enumeratedServices(
+  docsDir: DocsDir,
+  fleet?: FleetContext,
+): Promise<ServiceEntry[]> {
+  try {
+    return await listServices(docsDir, fleet);
+  } catch {
+    return [];
+  }
+}
+
+/** The id projection of `enumeratedServices` — most membership asks want only the names. */
 export async function enumeratedServiceIds(
   docsDir: DocsDir,
   fleet?: FleetContext,
 ): Promise<RawServiceId[]> {
-  try {
-    return (await listServices(docsDir, fleet)).map((s) => s.id);
-  } catch {
-    return [];
-  }
+  return (await enumeratedServices(docsDir, fleet)).map((s) => s.id);
+}
+
+/**
+ * The artifact paths of a service wherever it lives: the enumeration's own
+ * directory when the id exists anywhere in the tree, the unfiled root
+ * spelling otherwise — so an absent service still probes, grades
+ * (`service.unknown`) and CREATES exactly as it did when the tree was flat.
+ * This is the one bridge the ~40 former `servicePaths` call sites resolve
+ * through; a caller that already holds a `ServiceEntry` should spell
+ * `servicePathsAt(entry.dir)` directly instead of paying a second lookup.
+ */
+export async function locateServicePaths(
+  docsDir: DocsDir,
+  service: PathableService,
+  fleet?: FleetContext,
+): Promise<ServicePaths> {
+  const entry = (await enumeratedServices(docsDir, fleet)).find((s) => s.id === service);
+  return entry === undefined ? unfiledServicePaths(docsDir, service) : servicePathsAt(entry.dir);
 }
 
 export async function resolveServiceTarget(
@@ -73,9 +105,12 @@ export async function resolveServiceTarget(
 ): Promise<ServiceTarget> {
   // The enumeration is asked first, and its answer is the value that travels
   // on: `entry.id` rather than `name`. They are equal as strings, and only one
-  // of them carries the fact that a `readdir` produced it.
+  // of them carries the fact that a `readdir` produced it. The resolved `dir`
+  // travels too, so a caller that goes on to read artifacts can spell
+  // `servicePathsAt(dir)` without a second enumeration; it is absent exactly
+  // when the name resolved by grammar alone — nothing exists to point at.
   const entry = (await listServices(docsDir, fleet)).find((s) => s.id === name);
-  if (entry !== undefined) return { ok: true, id: entry.id };
+  if (entry !== undefined) return { ok: true, id: entry.id, dir: entry.dir };
   return parseServiceId(name, label);
 }
 

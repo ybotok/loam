@@ -10,7 +10,8 @@ import { existsSync } from "node:fs";
 import { parse } from "yaml";
 import { repoPath } from "../../../../core/envelope/json.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
-import { featureSpecPaths, servicePaths } from "../../../../core/repo/paths.js";
+import { featureSpecPaths } from "../../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../../core/repo/service-target.js";
 import { readAsyncapi } from "../../../../core/asyncapi/read.js";
 import { asyncapiSlots, type AsyncapiSection } from "../../../../core/asyncapi/digest.js";
 import { AsyncapiMergeError } from "../../../../core/asyncapi/merge/error.js";
@@ -71,7 +72,7 @@ export async function planAsyncapiContracts(
         message: `${svc}: '${m.slot}' carries x-loam-remove nested on an inline channel message — inline messages are channel interior, not slots, so this retires nothing. Retire the whole channel (x-loam-remove: true at channels.${channel}), or declare the message under components.messages (the channel $ref-ing it) and put the marker there.`,
       });
     }
-    const livingAsyncapi = servicePaths(config.docsDir, svc).asyncapi;
+    const livingAsyncapi = (await locateServicePaths(config.docsDir, svc)).asyncapi;
     try {
       if (!existsSync(livingAsyncapi)) {
         // A removal against a non-existent contract is gated by coherence;

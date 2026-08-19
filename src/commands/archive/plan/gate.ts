@@ -22,9 +22,9 @@ import {
   archiveDir as archiveRoot,
   featurePaths,
   featureSpecPaths,
-  servicePaths,
   SPEC_AXES,
 } from "../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";
 import { featureCoherence } from "../../../core/coherence/coherence.js";
 import {
@@ -237,7 +237,7 @@ export async function gate(
   for (const svc of deltaServices) {
     for (const axis of SPEC_AXES) {
       if (!existsSync(featureSpecPaths(featureDir, svc)[axis.key])) continue;
-      const livingPath = servicePaths(config.docsDir, svc)[axis.key];
+      const livingPath = (await locateServicePaths(config.docsDir, svc))[axis.key];
       if (!existsSync(livingPath)) continue;
       for (const r of parseRequirements(await readUtf8(livingPath))) {
         // The ONE definition of the heading (spec.ts): the guard and the rewrite

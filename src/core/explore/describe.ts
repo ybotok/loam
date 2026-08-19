@@ -13,16 +13,14 @@ import { FleetContext } from "../fleet-context.js";
 import { type Elem, type Rel } from "../c4/likec4.js";
 import { maturityGaps, serviceMaturity } from "../vocabulary/maturity.js";
 import { compareIds, type ServiceEntry } from "../repo/entries.js";
-import { servicePaths } from "../repo/paths.js";
+import { servicePathsAt } from "../repo/paths.js";
 // Type-only, so it is erased and no runtime edge points back at the walk.
 import { type ExploreEdge, type ExploreReason, type ExploreService } from "./explore.js";
-import type { DocsDir } from "../kernel/ids/dirs.js";
 
 interface DescribeRequest {
   id: string;
   reason: ExploreReason;
   entry: ServiceEntry | undefined;
-  docsDir: DocsDir;
   relationships: Rel[];
   svcOf: (id: string) => string;
   elements: Elem[];
@@ -32,7 +30,7 @@ interface DescribeRequest {
 }
 
 export async function describe(req: DescribeRequest): Promise<ExploreService> {
-  const { id, reason, entry, docsDir, relationships, svcOf } = req;
+  const { id, reason, entry, relationships, svcOf } = req;
 
   const inbound: ExploreEdge[] = [];
   const outbound: ExploreEdge[] = [];
@@ -64,7 +62,7 @@ export async function describe(req: DescribeRequest): Promise<ExploreService> {
     };
   }
 
-  const archSpec = existsSync(servicePaths(docsDir, entry.id).archSpec);
+  const archSpec = existsSync(servicePathsAt(entry.dir).archSpec);
   // Positive evidence only, and the rule is `list`'s verbatim: an inbound edge
   // carrying an operation is proof somebody calls this service, while a
   // landscape that is absent or does not parse proves nothing about who calls
@@ -78,7 +76,7 @@ export async function describe(req: DescribeRequest): Promise<ExploreService> {
   // parse comes back from the id list as an EMPTY set, indistinguishable from a
   // service with no endpoints — and "this service offers nothing" is the worst
   // possible lie to tell somebody deciding whether to call it.
-  const api = await req.context.readOpenapi(servicePaths(docsDir, entry.id).openapi);
+  const api = await req.context.readOpenapi(servicePathsAt(entry.dir).openapi);
   const operations = api.ops.filter((o) => !o.remove).map((o) => o.id);
 
   return {
@@ -106,14 +104,13 @@ export async function describe(req: DescribeRequest): Promise<ExploreService> {
  * codebase — and it happens only when somebody passes `--op`.
  */
 export async function operationOwner(
-  docsDir: DocsDir,
   entries: ServiceEntry[],
   op: string,
   context: FleetContext,
 ): Promise<ServiceEntry["id"] | null> {
   for (const entry of entries) {
     if (!entry.has.openapi) continue;
-    const api = await context.readOpenapi(servicePaths(docsDir, entry.id).openapi);
+    const api = await context.readOpenapi(servicePathsAt(entry.dir).openapi);
     if (api.ops.some((o) => o.id === op && !o.remove)) return entry.id;
   }
   return null;

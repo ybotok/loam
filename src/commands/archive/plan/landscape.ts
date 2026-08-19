@@ -13,7 +13,8 @@ import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
 import { titleOf } from "../../../core/c4/splice/placement.js";
 import { parseServiceId } from "../../../core/kernel/ids/service.js";
-import { landscapePath as landscapeFile, servicePaths } from "../../../core/repo/paths.js";
+import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
+import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
 import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";
 import { featurePaths } from "../../../core/repo/paths.js";
@@ -61,7 +62,7 @@ export async function planLandscape(
       // this very archive had just made red. Read off the ADDED elements, not
       // the tagged ones: an element the living landscape already had is not
       // arriving, and one that is never merged is not there to demand anything.
-      // A binding is document text, which `servicePaths` no longer accepts.
+      // A binding is document text, which the service path builders no longer accept.
       // The parse cannot actually filter anything here: an illegal binding is
       // `c4.service-binding-invalid`, a coherence ERROR `--approve` does not
       // override, refused before any merge is planned — so the `ok` test only
@@ -89,8 +90,12 @@ export async function planLandscape(
   // stops claiming the docs are complete. Non-gating: the feature is coherent
   // and the merge is correct; what is missing is the next step, and refusing
   // here would make onboarding a new service impossible in one command.
+  // "New" is enumeration membership, not an existsSync of services/<svc>/ at
+  // the root: a FILED service exists wherever the tree walk found it, and the
+  // root probe would grade every filed service as newly created here.
+  const enumerated = new Set<string>(await enumeratedServiceIds(config.docsDir));
   const newServices = [...new Set([...deltaServices, ...architectureServices])].filter(
-    (svc) => !existsSync(servicePaths(config.docsDir, svc).dir),
+    (svc) => !enumerated.has(svc),
   );
   for (const svc of newServices) {
     // Two shapes of the same debt: a service with a requirement delta gets its

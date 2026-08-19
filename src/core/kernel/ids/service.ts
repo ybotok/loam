@@ -6,7 +6,7 @@
  * new. That makes it caller-controlled path input, so it is validated in exactly
  * one place — here — rather than by each command inventing its own guard. The
  * failure mode this closes is not theoretical: `--service ../../etc` would have
- * had `servicePaths()` hand a writer a directory outside the docs repo, and
+ * had `unfiledServicePaths()` hand a writer a directory outside the docs repo, and
  * `--service ''` would have made `services//spec.md` collapse to a file the
  * enumeration in repo.ts can never see again.
  *
@@ -50,7 +50,7 @@
  *
  * `path.join` is NOT the enforcement point and cannot be made one: node types it
  * `join(...paths: string[])`, so every brand satisfies it. The guarantee lives
- * in `servicePaths`' own parameter type — `PathableService`, declared below and
+ * in `unfiledServicePaths`' own parameter type — `PathableService`, declared below and
  * demanded by that signature — so a `DeclaredService` at the call site is a
  * compile error, not a review finding. Code that spells `services/<svc>/` with
  * a bare join is outside the guarantee; `repo/paths.ts`'s banner names it.
@@ -77,7 +77,7 @@ export type ServiceId = RawServiceId & { readonly [checked]: true };
  */
 export type DeclaredService = string & { readonly [provenance]: "document" };
 
-/** What `servicePaths` accepts: a name whose provenance is the repository. */
+/** What `unfiledServicePaths` accepts: a name whose provenance is the repository. */
 export type PathableService = RawServiceId;
 
 /** The one grammar: alphanumeric head, then alphanumerics, dot, underscore, hyphen. */

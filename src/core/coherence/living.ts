@@ -16,9 +16,10 @@ import { closeIds } from "../c4/arch.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { repoPath } from "../envelope/json.js";
 import type { Finding } from "../vocabulary/report.js";
-import { featurePaths, landscapePath, servicePaths, SPEC_AXES } from "../repo/paths.js";
+import { featurePaths, landscapePath, SPEC_AXES } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { featureSpecServices, listServices } from "../repo/repo.js";
+import { enumeratedServices, locateServicePaths } from "../repo/service-target.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import { documentConflictFinding, landscapeConflictFinding } from "../conflict-markers.js";
 import type { FleetContext } from "../fleet-context.js";
@@ -67,8 +68,15 @@ export async function unknownDeltaServices(
   const introduces: ReadonlySet<string> = new Set(
     (delta?.elements ?? []).filter((e) => e.tags.includes(featureId)).map(elementService),
   );
+  // Enumeration MEMBERSHIP, not an existsSync of services/<svc>/ at the root:
+  // a service filed into a subsystem exists wherever the tree walk found it,
+  // and the root probe would grade it unknown. `enumeratedServices` swallows
+  // an unenumerable services/ to [] on purpose — this also runs under archive
+  // in repos validate --feature tolerates (no services/ at all), where every
+  // probe would have found nothing there anyway.
+  const known: ReadonlySet<string> = new Set((await enumeratedServices(docsDir, context)).map((s) => s.id));
   const unknown = (await featureSpecServices(featureDir, context)).filter(
-    (svc) => !existsSync(servicePaths(docsDir, svc).dir) && !introduces.has(svc),
+    (svc) => !known.has(svc) && !introduces.has(svc),
   );
   if (unknown.length === 0) return [];
 
@@ -174,7 +182,7 @@ export async function livingMergeConflicts(
     context === undefined ? readFile(path, "utf8") : context.readText(path);
 
   for (const svc of services) {
-    const paths = servicePaths(docsDir, svc);
+    const paths = await locateServicePaths(docsDir, svc, context);
     for (const axis of SPEC_AXES) {
       const path = paths[axis.key];
       if (!existsSync(path)) continue;

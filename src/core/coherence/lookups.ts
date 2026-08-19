@@ -17,9 +17,9 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadFile, serviceResolver, type LoadedDoc } from "../c4/likec4.js";
 import { type PathableService } from "../kernel/ids/service.js";
-import { featureSpecPaths, landscapePath, servicePaths } from "../repo/paths.js";
+import { featureSpecPaths, landscapePath } from "../repo/paths.js";
 import { operations } from "../openapi/doc.js";
-import { enumeratedServiceIds } from "../repo/service-target.js";
+import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { activeOpAdditions } from "./pending.js";
 import { parseRequirements } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
@@ -42,7 +42,7 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
     const livingRequirements = async (service: PathableService): Promise<Requirement[]> => {
       let reqs = livingReqs.get(service);
       if (reqs === undefined) {
-        const p = servicePaths(docsDir, service).spec;
+        const p = (await locateServicePaths(docsDir, service, context)).spec;
         reqs = existsSync(p)
           ? context === undefined
             ? parseRequirements(await readFile(p, "utf8"))
@@ -131,7 +131,7 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
     const deprecatedInLiving = async (service: PathableService, op: string): Promise<boolean> => {
       let set = livingDeprecated.get(service);
       if (!set) {
-        const list = await operations(servicePaths(docsDir, service).openapi, context);
+        const list = await operations((await locateServicePaths(docsDir, service, context)).openapi, context);
         set = new Set(list.filter((o) => o.deprecated).map((o) => o.id));
         livingDeprecated.set(service, set);
       }

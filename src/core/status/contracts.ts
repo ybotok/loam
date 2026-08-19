@@ -5,8 +5,8 @@
  */
 import { existsSync } from "node:fs";
 import type { FleetContext } from "../fleet-context.js";
-import type { PathableService } from "../kernel/ids/service.js";
-import { featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featureSpecPaths } from "../repo/paths.js";
+import type { ServiceEntry } from "../repo/entries.js";
 import { listFeatures } from "../repo/repo.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -40,14 +40,22 @@ import type { DocsDir } from "../kernel/ids/dirs.js";
  * an error about that very file.
  */
 export function owesContract(
-  docsDir: DocsDir,
-  svc: PathableService,
-  contracted: ReadonlySet<string>,
+  entry: ServiceEntry | undefined,
+  contracted: boolean,
   governsOperations: boolean,
 ): boolean {
-  if (existsSync(servicePaths(docsDir, svc).openapi)) return false;
-  if (contracted.has(svc)) return false;
-  return !existsSync(servicePaths(docsDir, svc).dir) || governsOperations;
+  // Both living facts come off the ENUMERATION's entry rather than root
+  // existsSync probes: a service filed into a subsystem lives wherever the
+  // tree walk found it, so the root probe read every filed service as "living
+  // docs have never heard of it" and demanded a contract from all of them.
+  // `undefined` IS that never-heard-of case — nothing enumerated the id
+  // anywhere. `contracted` arrives resolved by the caller, and deliberately
+  // not through the entry: another feature in flight discharges the debt for
+  // a service the living docs have NOT heard of yet — that is the ordinary
+  // introduce-then-build ordering, and it must keep answering "none owed".
+  if (entry?.has.openapi === true) return false;
+  if (contracted) return false;
+  return entry === undefined || governsOperations;
 }
 
 /**

@@ -17,6 +17,7 @@ import { FleetContext } from "../../fleet-context.js";
 import { featureProvenance } from "../../provenance/findings.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featureSpecServices } from "../../repo/repo.js";
+import { enumeratedServices } from "../../repo/service-target.js";
 import { gatesArchive, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { contractOwners, contractsHeldElsewhere } from "../contracts.js";
@@ -76,6 +77,10 @@ export async function featureStatus(
     verification,
     contracted: contractsHeldElsewhere(await contractOwners(docsDir, context), feature.id),
     governs,
+    // Tolerant on purpose: status must keep answering in a docs repo whose
+    // services/ is broken or missing — an unenumerable fleet is doctor's
+    // diagnosis, and here it simply means every service reads as never-adopted.
+    living: new Map((await enumeratedServices(docsDir, context)).map((s) => [s.id, s])),
   });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);

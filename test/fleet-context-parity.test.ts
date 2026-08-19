@@ -45,7 +45,7 @@ import { FleetContext } from "../src/core/fleet-context.js";
 import { decodeDocument } from "../src/core/kernel/document-bytes.js";
 import { operationIds, operations, readOpenapi } from "../src/core/openapi/doc.js";
 import { type FeatureEntry } from "../src/core/repo/entries.js";
-import { featureSpecServices, listFeatures, listServices } from "../src/core/repo/repo.js";
+import { featureSpecServices, listFeatures, listFleetTree, listServices } from "../src/core/repo/repo.js";
 import { coherentFixture, makeProject, type Project } from "./helpers/harness.js";
 
 /** payment-service's async contract: one message, produced. */
@@ -161,6 +161,15 @@ const READERS: Reader[] = [
     floor: (services) => {
       expect(services.length).toBeGreaterThanOrEqual(2);
       expect(services.map((s: { id: string }) => s.id)).toContain("payment-service");
+    },
+  },
+  {
+    name: "fleetTree",
+    memo: (fleet, at) => fleet.fleetTree(at.docsDir),
+    direct: (at) => listFleetTree(at.docsDir),
+    floor: (tree) => {
+      expect(tree.services.length).toBeGreaterThanOrEqual(2);
+      expect(tree.services.map((s: { id: string }) => s.id)).toContain("payment-service");
     },
   },
   {

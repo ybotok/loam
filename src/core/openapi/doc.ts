@@ -17,7 +17,8 @@ import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import type { FleetContext } from "../fleet-context.js";
 import type { PathableService } from "../kernel/ids/service.js";
-import { featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featureSpecPaths } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 /**
@@ -265,7 +266,7 @@ export async function serviceOperationIds(
   context?: FleetContext,
 ): Promise<string[]> {
   const ids = new Set(
-    (await operations(servicePaths(docsDir, service).openapi, context)).filter((op) => !op.remove).map((op) => op.id),
+    (await operations((await locateServicePaths(docsDir, service, context)).openapi, context)).filter((op) => !op.remove).map((op) => op.id),
   );
   // Absence is `undefined`, the shape the optional parameter declares. The
   // truthiness test also read "" as "no feature", which is a caller mistake
