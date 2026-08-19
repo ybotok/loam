@@ -187,6 +187,9 @@ export type IssueCode =
   | "delta.baseline-stale"
   /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete */
   | "service.no-model"
+  /* --- capability axis: the Capability: join against architecture/capabilities.yaml --- */
+  /** a delta requirement's `Capability:` entry that the fleet vocabulary does not declare — the merge would land a join that resolves to nothing, so it blocks archive like other errors, and `--approve` overrides it */
+  | "capability.unknown"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

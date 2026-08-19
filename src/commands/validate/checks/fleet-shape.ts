@@ -27,8 +27,11 @@ import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js"
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
-import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
+import { capabilitiesPath, permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
+import { readCapabilities } from "../../../core/capabilities/capabilities.js";
+import { invalidVocabularyFinding, unrealizedFindings } from "../../../core/capabilities/findings.js";
+import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/rollup.js";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -214,6 +217,40 @@ export async function permissionFindings(
 async function readRequirementsAt(path: string): Promise<Requirement[]> {
   if (!existsSync(path)) return [];
   return parseRequirements(await readFile(path, "utf8"));
+}
+
+/**
+ * The capability vocabulary graded against the fleet that realizes it — the
+ * axis's fleet half, beside permissionFindings and shaped by the same two
+ * verdicts. `capability.invalid` is the whole run's ONE finding about an
+ * unreadable file, and it suppresses the rest of the family (the unknown
+ * grades at every service target return [] for the same vocabulary — one
+ * breach, one finding, never a cascade). `capability.unrealized` is one warn
+ * PER declared-but-unnamed capability, subject = the id, because the roadmap's
+ * criterion is 'one warning per capability, not one per service'. An absent
+ * file is total silence: the FILE is this axis's opt-in.
+ *
+ * The used set comes through capabilityRollup with the fleet's own cached
+ * reader, so under --all the walk re-parses nothing the service targets have
+ * not already paid for — and the rollup, the warn and `loam list capabilities`
+ * can never disagree about what "realized" means.
+ */
+export async function capabilityFleetFindings(
+  docsDir: DocsDir,
+  services: ServiceEntry[],
+  fleet: FleetContext | undefined,
+): Promise<Finding[]> {
+  const path = capabilitiesPath(docsDir);
+  const vocab = fleet === undefined ? await readCapabilities(path) : await fleet.capabilities(path);
+  if (!vocab.present) return [];
+  const invalid = invalidVocabularyFinding(vocab);
+  if (invalid !== null) return [invalid];
+  const rows = await capabilityRollup({
+    services,
+    vocab,
+    read: fleet === undefined ? readRequirementsAt : (p) => fleet.readRequirements(p),
+  });
+  return unrealizedFindings(vocab, usedCapabilities(rows));
 }
 
 export function externalProducerOf(

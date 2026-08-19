@@ -12,9 +12,11 @@
 import { existsSync } from "node:fs";
 import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
-import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
+import { capabilitiesPath, landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
+import { readCapabilities } from "../../../core/capabilities/capabilities.js";
+import { capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
@@ -222,13 +224,21 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
 
   // The authorization axis. Both requirement documents are graded against one
   // fleet vocabulary — a permission is a fleet fact, and an arch requirement
-  // gates on one exactly as a business requirement does.
+  // gates on one exactly as a business requirement does. The capability axis
+  // rides the same loop against ITS fleet vocabulary; under --all the fleet
+  // memo makes that one parse for the whole run.
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
+  const capabilities =
+    fleet === undefined
+      ? await readCapabilities(capabilitiesPath(docsDir))
+      : await fleet.capabilities(capabilitiesPath(docsDir));
   for (const [label, docReqs] of [
     ["spec.md", reqs],
     ["arch.spec.md", archReqs],
   ] as const) {
-    findings.push(...requiresUnknownFindings(docReqs, { where: `${service}: ${label}`, subject: service }, vocabulary));
+    const target = { where: `${service}: ${label}`, subject: service };
+    findings.push(...requiresUnknownFindings(docReqs, target, vocabulary));
+    findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
   }
 
   // Provenance last: who vouched for this, and what code it was written from.
