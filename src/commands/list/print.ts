@@ -7,6 +7,7 @@
  */
 import { MATURITY_LADDER, maturityRollup } from "../../core/vocabulary/maturity.js";
 import { compareIds, type FeatureEntry } from "../../core/repo/entries.js";
+import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
 
 function serviceFlags(v: ServiceView): string {
@@ -25,7 +26,7 @@ function serviceFlags(v: ServiceView): string {
   ].join(" ");
 }
 
-export function printServices(views: ServiceView[]): void {
+export function printServices(views: ServiceView[], tree?: FleetTree): void {
   console.log(
     `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [R]unbook [H]ealth`,
   );
@@ -59,6 +60,13 @@ export function printServices(views: ServiceView[]): void {
     const rollup = maturityRollup(views);
     const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map((m) => `${rollup[m]} ${m}`);
     console.log(`  maturity: ${rungs.join(" · ")}`);
+    // The tree dial, only once a tree exists: unfiled is permanent and normal
+    // (a count, never a finding), and a flat fleet has nothing to say here —
+    // printing "5 unfiled" over a fleet nobody groups would read as work.
+    if (tree !== undefined && tree.subsystems.length > 0) {
+      const unfiled = tree.services.filter((s) => s.subsystem.length === 0).length;
+      console.log(`  subsystems: ${tree.subsystems.length} · unfiled: ${unfiled}`);
+    }
   }
 }
 

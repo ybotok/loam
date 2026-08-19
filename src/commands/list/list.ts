@@ -2,11 +2,12 @@ import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
 import { maturityRollup } from "../../core/vocabulary/maturity.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { listFeatures, listServices } from "../../core/repo/repo.js";
+import { listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews } from "./views.js";
-import { featureJson, serviceJson } from "./json.js";
+import { featureJson, serviceJson, subsystemsJson } from "./json.js";
 import { printFeatures, printServices, printWorklist } from "./print.js";
 
 type Section = "services" | "features";
@@ -59,10 +60,14 @@ export function registerList(program: Command): void {
       if (!docsRepoReady(json, docsDir, wanted.includes("services") ? "services" : "docs")) return;
 
       try {
-        const services = wanted.includes("services") ? await listServices(docsDir) : undefined;
+        // One context, one walk: the tree memo answers both the service
+        // entries and the subsystem/unfiled counts beside them.
+        const fleet = new FleetContext();
+        const tree = wanted.includes("services") ? await listFleetTree(docsDir, fleet) : undefined;
+        const services = wanted.includes("services") ? await listServices(docsDir, fleet) : undefined;
         const views = services ? await serviceViews(docsDir, services, config.service) : undefined;
         const features = wanted.includes("features")
-          ? await listFeatures(docsDir, { includeArchived: opts.archived })
+          ? await listFeatures(docsDir, { includeArchived: opts.archived }, fleet)
           : undefined;
         const verification = features
           ? await Promise.all(features.map((f) => featureVerification(docsDir, f)))
@@ -77,6 +82,12 @@ export function registerList(program: Command): void {
               ? {
                   services: (opts.needsWork ? worklist! : views).map((v) => serviceJson(docsDir, v)),
                   maturity: maturityRollup(views),
+                  // The tree beside the table — additive keys, wave 3 of the
+                  // subsystem item: the groups, and how many services sit
+                  // unfiled (a permanent, normal state, so a count, never a
+                  // finding).
+                  subsystems: subsystemsJson(docsDir, tree!),
+                  unfiledServices: tree!.services.filter((s) => s.subsystem.length === 0).length,
                 }
               : {}),
             ...(features
@@ -90,7 +101,7 @@ export function registerList(program: Command): void {
           printWorklist(worklist!, views!.length);
           return;
         }
-        if (views) printServices(views);
+        if (views) printServices(views, tree);
         if (views && features) console.log("");
         if (features) printFeatures(features, verification!);
       } catch (err) {

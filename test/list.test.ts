@@ -398,6 +398,7 @@ describe("--json contract", () => {
         },
         adrs: 1,
         status: null,
+        subsystem: [],
         // every artifact, no sources: presence says documented, nothing more
         maturity: "documented",
         missing: ["sources: in the spec.md frontmatter"],
@@ -486,6 +487,8 @@ describe("--json contract", () => {
         docsDir: p.docsDir,
         services: [],
         maturity: { empty: 0, partial: 0, documented: 0, sourced: 0, vouched: 0 },
+        subsystems: [],
+        unfiledServices: 0,
         features: [],
       });
     });
@@ -506,6 +509,57 @@ describe("failure modes", () => {
       expect(res.code).toBe(0);
       expect(res.out).toContain("payment-service");
       expect(res.out).toContain("FEAT-1");
+    });
+  });
+});
+
+describe("the subsystem tree in list — additive keys, wave 3 of the tree item", () => {
+  /** fleetFixture with payment-service filed into a marked group; checkout-web stays unfiled. */
+  function filedFleet(): Record<string, string> {
+    const files: Record<string, string> = {};
+    for (const [path, content] of Object.entries(fleetFixture())) {
+      files[path.replace(/^services\/payment-service\//, "services/payments/payment-service/")] = content;
+    }
+    files["services/payments/subsystem.yaml"] = "title: Payments\n";
+    return files;
+  }
+
+  it("--json gains services[].subsystem, subsystems[] and unfiledServices — and nothing else moves", async () => {
+    await withProject(filedFleet(), async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
+      const filed = json.services.find((s: { id: string }) => s.id === "payment-service");
+      expect(filed.subsystem).toEqual(["payments"]);
+      expect(filed.path).toBe("services/payments/payment-service");
+      const unfiled = json.services.find((s: { id: string }) => s.id === "checkout-web");
+      expect(unfiled.subsystem).toEqual([]);
+      expect(json.subsystems).toEqual([
+        { name: "payments", path: "services/payments", title: "Payments", memberCount: 1 },
+      ]);
+      expect(json.unfiledServices).toBe(1);
+    });
+  });
+
+  it("service ordering stays compareIds-global regardless of placement — the --json ordering contract", async () => {
+    await withProject(filedFleet(), async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
+      expect(json.services.map((s: { id: string }) => s.id)).toEqual([
+        "checkout-web",
+        "payment-service",
+      ]);
+    });
+  });
+
+  it("text gains the unfiled count line — and only once a tree exists", async () => {
+    await withProject(filedFleet(), async (p) => {
+      const res = await runLoam(p.workDir, "list", "services");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("subsystems: 1 · unfiled: 1");
+    });
+    // A flat fleet says nothing: unfiled is the permanent normal state, and a
+    // count over a fleet nobody groups would read as work.
+    await withProject(fleetFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "list", "services");
+      expect(res.out).not.toContain("unfiled");
     });
   });
 });

@@ -174,6 +174,20 @@ feature still in flight — the whole emission refuses and names the owner;
 \`gherkin\` commits into the service repo's own \`<gherkinDir>/loam/\` through the
 same lock and journal, so it can answer \`docs-busy\`, \`commit-interrupted\`,
 \`merge-failed\` and \`rollback-incomplete\` about that root),
+\`subsystem-not-empty\` / \`move-uncommitted\` / \`move-failed\` / \`unknown-target\` /
+\`already-exists\` / \`invalid-option\` / \`docs-busy\` / \`commit-interrupted\` /
+\`rollback-incomplete\` (\`loam subsystem\` — \`rm\` refuses a group that still
+holds members, naming them; \`move\`/\`rename\` refuse ONLY when git reports
+uncommitted changes under a directory being moved — commit or stash and
+re-run, and where git cannot say at all the move proceeds, because that
+refusal needs positive evidence; \`move-failed\` means the move's transaction
+rolled back cleanly — renames undone, the generated views file restored,
+nothing changed, re-running can work — kept distinct from \`merge-failed\`
+because no merge was computed, while \`rollback-incomplete\` keeps archive's
+meaning: some of it could not be taken back, and the message lists what to
+check by hand. Names that resolve to nothing, collide in the flat namespace,
+or break the grammar reuse \`unknown-target\`, \`already-exists\` and
+\`invalid-option\`),
 \`answers-unreadable\` / \`answers-mismatch\` /
 \`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\` /
 \`record-raced\` / \`docs-busy\`

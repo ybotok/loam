@@ -10,51 +10,23 @@
  * of the tree and the committed landscape, so a second run reports `current`
  * and writes nothing.
  *
- * The helpers here (`landscapeElements`, `expectedViews`) are exported for
- * the sibling verbs: `new`, `rm`, `move` and `rename` regenerate the same
- * file inside their own transactions, and a second spelling of "what should
- * the views say" would be a second chance to disagree with the staleness
- * check.
+ * The expected bytes come from `./txn/views.ts` — the same module every
+ * writer verb renders from, so sync and the transactions cannot disagree
+ * about what the file should say.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, type Elem } from "../../core/c4/likec4.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { emitJson, fail } from "../../core/envelope/json.js";
-import { landscapePath, subsystemViewsPath } from "../../core/repo/paths.js";
+import { subsystemViewsPath } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
-import { renderSubsystemViews } from "../../core/repo/tree/views.js";
-import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { stageWrites } from "../../core/staging/commit.js";
 import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
 import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { sameBytes } from "../../core/staging/writes.js";
-
-/**
- * The landscape's elements for the member join, or the empty list when the
- * map is absent or does not parse. Tolerant on purpose: sync must stay
- * runnable in a repo whose landscape is broken — it renders what the
- * committed bytes resolve (no includes), deterministically, and the next sync
- * after the landscape is repaired catches the file up. `validate` skips the
- * staleness question in exactly those states, so the two never contradict.
- */
-export async function landscapeElements(docsDir: DocsDir): Promise<Elem[]> {
-  const path = landscapePath(docsDir);
-  if (!existsSync(path)) return [];
-  try {
-    const doc = await loadFile(path);
-    return doc.errors.length > 0 ? [] : doc.elements;
-  } catch {
-    return [];
-  }
-}
-
-/** The bytes the views file must hold for this tree, or null for "must be absent". */
-export async function expectedViews(docsDir: DocsDir, tree: FleetTree): Promise<string | null> {
-  return renderSubsystemViews(tree, await landscapeElements(docsDir));
-}
+import { expectedViews } from "./txn/views.js";
 
 /** What one sync did to the file. */
 type SyncAction = "current" | "created" | "updated" | "removed";

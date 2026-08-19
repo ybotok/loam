@@ -26,6 +26,23 @@ import { COMMIT_INTENT, writeDurable } from "../interrupted.js";
 import { isDigest, sha256, type StagedWrite } from "../writes.js";
 
 const TXN_VERSION = 2;
+/**
+ * The version whose records CARRY DIRECTORY MOVES — `subsystem move`'s
+ * journal, the first consumer whose commit renames directories beside its one
+ * staged file. A version of its own, and version 2 is still what every
+ * move-less writer stamps, deliberately: an old binary must keep recovering
+ * the version-2 records it always could, and it must REFUSE a record with
+ * moves rather than roll the file half forward and leave the renames behind —
+ * an unknown version already reads as "a commit this loam cannot read", which
+ * is `doctor`'s honest blocker, not a silent half-repair.
+ */
+const TXN_MOVES_VERSION = 3;
+
+/** One directory rename inside a transaction: root-relative, forward slashes. */
+export interface TxnIntentMove {
+  from: string;
+  to: string;
+}
 
 export interface TxnIntentFile {
   /** Root-relative path, forward slashes. */
@@ -50,6 +67,13 @@ export interface TxnIntent {
   host: string;
   at: string;
   files: TxnIntentFile[];
+  /**
+   * Directory renames the commit performs AFTER its file swaps, in this
+   * order. `[]` on every version-2 record (the reader normalises absence):
+   * only `subsystem move`/`rename` write any, and their presence is what
+   * bumps the record to version 3.
+   */
+  moves: TxnIntentMove[];
 }
 
 /** What a transaction tells the journal about itself; the caller's one spelling of its identity. */
@@ -59,6 +83,8 @@ export interface TxnSpec {
   command: string;
   rerun: string;
   target: string;
+  /** Directory renames to perform after the swaps — ABSOLUTE paths; the journal stores them root-relative. */
+  moves?: { from: string; to: string }[];
 }
 
 /** Root-relative with forward slashes — the journal must survive being read on another machine. */
@@ -67,8 +93,9 @@ function rel(root: string, abs: string): string {
 }
 
 export async function writeTxnIntent(spec: TxnSpec, staged: StagedWrite[]): Promise<void> {
+  const moves = (spec.moves ?? []).map((m) => ({ from: rel(spec.root, m.from), to: rel(spec.root, m.to) }));
   const intent: TxnIntent = {
-    version: TXN_VERSION,
+    version: moves.length > 0 ? TXN_MOVES_VERSION : TXN_VERSION,
     command: spec.command,
     rerun: spec.rerun,
     target: spec.target,
@@ -81,6 +108,7 @@ export async function writeTxnIntent(spec: TxnSpec, staged: StagedWrite[]): Prom
       after: s.content === null ? null : sha256(s.content),
       tmp: s.tmp === null ? null : rel(spec.root, s.tmp),
     })),
+    moves,
   };
   await writeDurable(join(spec.root, COMMIT_INTENT), JSON.stringify(intent, null, 2) + "\n");
 }
@@ -105,10 +133,21 @@ export async function readTxnIntent(root: string): Promise<TxnIntent | null> {
   }
   const i = parsed as Partial<TxnIntent>;
   if (i === null || typeof i !== "object") return null;
-  if (i.version !== TXN_VERSION) return null;
+  if (i.version !== TXN_VERSION && i.version !== TXN_MOVES_VERSION) return null;
   if (typeof i.command !== "string" || typeof i.rerun !== "string" || typeof i.target !== "string") return null;
   if (typeof i.pid !== "number" || typeof i.host !== "string" || typeof i.at !== "string") return null;
   if (!Array.isArray(i.files)) return null;
+  // A version-2 record predates the field; normalise so recovery reads one
+  // shape. A version-3 record's moves are validated exactly as its files are:
+  // recovery RENAMES what they name, so an entry escaping the root fails the
+  // whole record closed.
+  if (i.moves === undefined) i.moves = [];
+  if (!Array.isArray(i.moves)) return null;
+  if (i.version === TXN_VERSION && i.moves.length > 0) return null;
+  for (const m of i.moves) {
+    if (typeof m?.from !== "string" || typeof m?.to !== "string") return null;
+    if (!insideRoot(root, m.from) || !insideRoot(root, m.to)) return null;
+  }
   for (const f of i.files) {
     if (typeof f?.path !== "string") return null;
     if (!digestOrNull(f.before) || !digestOrNull(f.after)) return null;
