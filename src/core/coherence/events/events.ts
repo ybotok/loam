@@ -22,7 +22,7 @@ import { servicePaths } from "../../repo/paths.js";
 import { enumeratedServiceIndex } from "../../repo/service-target.js";
 import { readAsyncapi, type AsyncapiDoc } from "../../asyncapi/read.js";
 import type { FleetContext } from "../../fleet-context.js";
-import { declaredEvents, deltaEventLines, type EventDeltaScope } from "./declared.js";
+import { declaredEvents, type EventDeltaScope } from "./declared.js";
 import { eventLookups } from "./lookups.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
@@ -61,6 +61,27 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     }
   }
 
+  // The WIRE half of the same question: a channel or operation removal (or
+  // an edit) can stop the service SENDING a message whose declaration
+  // survives — the merge applies cleanly, and the next `validate --all`
+  // breaks on the consumer's repository (spine.message-unproduced) exactly
+  // as a deleted declaration would. Asked of the simulated merge's sent-set
+  // diff; a name the net-removal loop above already asked keeps one finding.
+  for (const [svc, stopped] of declared.stoppedSending) {
+    const net = declared.netRemoved.get(svc);
+    for (const message of stopped) {
+      if (net?.has(message) === true) continue;
+      const consumers = await lookups.messageConsumers(svc, message);
+      if (consumers.length === 0) continue;
+      issues.push({
+        severity: "error",
+        code: "asyncapi.remove-message-consumed",
+        subject: svc,
+        message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Keep an operation sending it, retire the consumer in the same feature, or archive with --approve to break it deliberately.`,
+      });
+    }
+  }
+
   // Two features declaring one (service, message): both deltas apply
   // cleanly, so whichever archives second replaces the other's declaration
   // wholesale — delta.added-conflict's shape on the message join.
@@ -78,9 +99,17 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     }
   }
 
-  // The bound service's contract as the feature would leave it: feature ∪
-  // living send/receive sets, living read lazily per service — an edge may
-  // bind a service the feature carries no specs/ directory for.
+  // The bound service's contract as the feature would leave it. Where the
+  // feature carries a delta over a readable living contract, that is the
+  // SIMULATED merge (declared.mergedDocs): a slot the delta retires or edits
+  // away stops answering here BEFORE archive — a leftover Publishes: line on
+  // a surviving requirement used to pass this gate on living's say-so, then
+  // break `validate --all` on the post-archive docs. Everywhere the
+  // simulation has no answer — no delta for the service, a side that does
+  // not read, a document the merge refuses — the feature ∪ living union
+  // stands in, which can only be too lenient, never wrongly red; the living
+  // side is read lazily per service, since an edge may bind a service the
+  // feature carries no specs/ directory for.
   const livingDocs = new Map<PathableService, AsyncapiDoc>();
   const livingOf = async (svc: PathableService): Promise<AsyncapiDoc> => {
     let doc = livingDocs.get(svc);
@@ -99,6 +128,10 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
     direction: "publishes" | "consumes",
     message: string,
   ): Promise<boolean | undefined> => {
+    const merged = declared.mergedDocs.get(svc);
+    if (merged !== undefined) {
+      return direction === "publishes" ? merged.sent.includes(message) : merged.received.includes(message);
+    }
     const living = await livingOf(svc);
     if (living.unreadable) return undefined;
     const feat = declared.featureDocs.get(svc);
@@ -151,11 +184,12 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
 
   // The requirement deltas' own lines, graded the same way — the same
   // sentence validate gives the living-side breach, under the same code, so
-  // one breach keeps one name across scopes.
+  // one breach keeps one name across scopes. The lines were read once by
+  // ./declared.ts's walk (declared.links); re-reading them here per service
+  // was a second parse of both spec files on the context-less archive path.
   for (const svc of svcNames) {
     if (declared.unreadable.has(svc)) continue;
-    const { links } = await deltaEventLines(scope, svc, context);
-    for (const link of links) {
+    for (const link of declared.links.get(svc) ?? []) {
       const ok = await declares(svc, link.direction, link.message);
       if (ok !== false) continue;
       const other = await lookups.messageDefinedElsewhere(svc, link.message);

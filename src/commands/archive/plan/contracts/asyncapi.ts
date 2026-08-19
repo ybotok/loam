@@ -51,6 +51,26 @@ export async function planAsyncapiContracts(
       );
     }
     const names = featDoc.messages.filter((m) => m.remove !== true).map((m) => m.name);
+    // An `x-loam-remove` NESTED on an inline channel message retires nothing:
+    // an inline message is channel-slot interior (SCHEMA.md's decision), so
+    // the marker is just channel content — and when the restated channel is
+    // otherwise identical to living, not even that: the merge deduplicates it
+    // away and the marker lands in no bucket at all. The merge is safe either
+    // way (the deep strip keeps the key out of living), but the author asked
+    // for a removal that will not happen, and silence there is how a retired
+    // message would stay on the wire — openapi.remove-marker-path-level's
+    // lesson at the nested depth. Gated like the other plan-visible breaches,
+    // --approve and all.
+    for (const m of featDoc.messages) {
+      if (m.remove !== true || !m.slot.startsWith("channels.")) continue;
+      const channel = m.slot.slice("channels.".length, m.slot.lastIndexOf(".messages."));
+      planGates.push({
+        severity: "error",
+        code: "asyncapi.remove-marker-inline",
+        subject: svc,
+        message: `${svc}: '${m.slot}' carries x-loam-remove nested on an inline channel message — inline messages are channel interior, not slots, so this retires nothing. Retire the whole channel (x-loam-remove: true at channels.${channel}), or declare the message under components.messages (the channel $ref-ing it) and put the marker there.`,
+      });
+    }
     const livingAsyncapi = servicePaths(config.docsDir, svc).asyncapi;
     try {
       if (!existsSync(livingAsyncapi)) {

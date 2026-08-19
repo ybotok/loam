@@ -27,7 +27,14 @@ import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { errorMessage, AsyncapiMergeError } from "./error.js";
-import { deleteSlot, sectionAstPath, setSlotValue, slotLabel, withoutFeatureMarkers } from "./markers.js";
+import {
+  deleteSlot,
+  refuseAmbiguousSlotKeys,
+  sectionAstPath,
+  setSlotValue,
+  slotLabel,
+  withoutFeatureMarkers,
+} from "./markers.js";
 
 /** One slot the merge acted on — the section decides which per-section code the plan reports. */
 export interface AsyncapiSlotOutcome {
@@ -81,6 +88,10 @@ export function mergeAsyncapiSlots(
   if (feature.errors.length > 0) {
     throw new AsyncapiMergeError("feature", service, feature.errors[0]!.message);
   }
+  // Two pairs whose keys stringify identically (404 and "404") would make
+  // the resolved walk and the string-matched writers disagree about which
+  // node a slot names — refused on either side, before any verdict is taken.
+  refuseAmbiguousSlotKeys(feature, "feature", service);
   let featPlain: unknown;
   try {
     // Resolve aliases once with the document's own anchor context. Calling an
@@ -97,6 +108,7 @@ export function mergeAsyncapiSlots(
   if (living.errors.length > 0) {
     throw new AsyncapiMergeError("living", service, living.errors[0]!.message);
   }
+  refuseAmbiguousSlotKeys(living, "living", service);
   let livingPlain: unknown;
   try {
     livingPlain = living.toJS() ?? {};

@@ -388,6 +388,28 @@ describe("validate --service: the event axis", () => {
     });
   });
 
+  it("sees a living marker ANYWHERE in the document — the root and info, not only slot depth", async () => {
+    // The strip removes loam keys at document depth, so the sweep must be as
+    // deep as the strip: a marker at the root or under `info` used to reach
+    // a living contract with zero diagnosis — invisible to this very check.
+    const files = fleet({
+      "services/payment-service/asyncapi.yaml": PRODUCER.replace(
+        "info:\n  title: payment-service events",
+        "x-loam-remove: true\ninfo:\n  x-loam-remove: true\n  title: payment-service events",
+      ),
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const finding = JSON.parse(res.stdout).targets[0].findings.find(
+        (f: { code: string }) => f.code === "asyncapi.remove-marker-living",
+      );
+      expect(finding.severity).toBe("error");
+      expect(finding.message).toContain("(document root)");
+      expect(finding.message).toContain("info");
+      expect(res.code).toBe(1);
+    });
+  });
+
   it("errors on a landscape edge the service's own contract does not declare", async () => {
     const files = fleet({
       "architecture/landscape.likec4": LANDSCAPE.replace(

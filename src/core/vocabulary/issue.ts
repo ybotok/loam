@@ -91,11 +91,11 @@ export type IssueCode =
   | "asyncapi.message-conflict"
   /** internal `$ref`(s) resolving to nothing — validate's warn on a living contract; a gating plan issue at archive when the MERGED document would carry the dangling reference */
   | "asyncapi.ref-unresolved"
-  /** a tagged edge publishes/consumes a message its bound service's contract (feature ∪ living) declares no matching send/receive operation for */
+  /** a tagged edge publishes/consumes a message its bound service's contract — as the feature's merge would leave it, feature ∪ living where no delta exists — declares no matching send/receive operation for */
   | "c4-event.message-undefined"
   /** softened — the message is introduced by another feature still in flight; archive that one first */
   | "c4-event.message-pending"
-  /** a delta requirement's Publishes:/Consumes: line names a message the service's contract (feature ∪ living) does not declare in that direction — validate's living-side code, graded in feature scope too */
+  /** a delta requirement's Publishes:/Consumes: line names a message the service's contract — as the feature's merge would leave it, so a retired declaration stops answering — does not declare in that direction; validate's living-side code, graded in feature scope too */
   | "spec-event.message-undefined"
   /** softened — the named message is introduced by another feature still in flight */
   | "spec-event.message-pending"
@@ -161,6 +161,8 @@ export type IssueCode =
   | "openapi.remove-marker-anonymous"
   /** an `x-loam-remove: true` written at PATH level, beside the methods — it addresses no operation, so it retires nothing and is not a contract key either */
   | "openapi.remove-marker-path-level"
+  /** an `x-loam-remove: true` nested on an INLINE channel message — inline messages are channel interior, never slots, so it retires nothing; when the channel is otherwise unchanged the marker surfaces nowhere else at all */
+  | "asyncapi.remove-marker-inline"
   /** the living OpenAPI defines one operationId in two (path, method) slots — every join on the id picks one arbitrarily */
   | "openapi.duplicate-operationid"
   /** the FEATURE's own openapi.yaml exists but does not parse — the same name validate gives a living contract in that state: every contract-axis check for the service is suspended, and the archive plan refuses the merge mechanically */

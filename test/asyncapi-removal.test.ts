@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
+import { pinAsyncapiSlots } from "../src/core/asyncapi/merge/pin.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
 import { makeProject, pinFor, runLoam, type Project } from "./helpers/harness.js";
 
@@ -229,6 +230,72 @@ components:
   });
 });
 
+/**
+ * The living contract with payment.Legacy declared ONLY inline under its
+ * channel — the shape SCHEMA.md retires through the channel's own marker,
+ * because an inline message is channel interior and has no slot of its own.
+ */
+const LIVING_EVENTS_INLINE = `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        name: payment.Legacy
+        payload:
+          type: object
+operations:
+  sendLegacy:
+    action: send
+    channel:
+      $ref: '#/channels/legacyEvents'
+`;
+
+/** The SCHEMA-sanctioned retirement of an inline-declared message: the channel goes, interior and all. */
+const CHANNEL_REMOVAL_EVENTS = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    x-loam-remove: true
+operations:
+  sendLegacy:
+    x-loam-remove: true
+`;
+
+/** The consumer the retirement would strand: a living landscape consumes-edge. */
+const CONSUMES_LANDSCAPE = `specification {
+  element softwareSystem
+}
+
+model {
+  paymentService = softwareSystem 'payment-service'
+  billingService = softwareSystem 'billing-service'
+
+  paymentService -> billingService 'Delivers legacy events' {
+    metadata { consumes 'payment.Legacy' }
+  }
+}
+`;
+
+describe("retiring an inline-declared message — the channel marker IS the marker", () => {
+  it("a channel-slot removal satisfies the REMOVED requirement's marker debt for its inline interior", async () => {
+    // This shape used to be a two-sided deadlock: the SCHEMA-sanctioned
+    // channel marker graded asyncapi.remove-marker-missing (the message-slot
+    // set could not see it), and the components.messages marker that error's
+    // own advice suggested graded asyncapi.remove-target-missing — no
+    // authoring passed the gate short of --approve.
+    const issues = await coherenceOf(
+      fixture({
+        "services/payment-service/asyncapi.yaml": LIVING_EVENTS_INLINE,
+        "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": CHANNEL_REMOVAL_EVENTS,
+      }),
+    );
+    expect(asyncapiCodes(issues)).toEqual([]);
+  });
+});
+
 describe("asyncapi.remove-message-consumed — the fleet still consumes the message", () => {
   it("fires for a living landscape consumes-edge", async () => {
     const issues = await coherenceOf(
@@ -283,6 +350,51 @@ Consumes: payment.Legacy
     const [issue] = only(issues, "asyncapi.remove-message-consumed");
     expect(issue!.message).toContain("billing-service's living requirement");
   });
+
+  it("fires when a channel removal deletes an INLINE declaration a live consumer depends on", async () => {
+    // The declaration leaves with its channel (no components.messages marker
+    // exists to look at), so the components-only set used to stay silent:
+    // coherence said ✓, archive merged, and `validate --all` went red on
+    // billing-service — a repository whose author was never in this feature.
+    const issues = await coherenceOf(
+      fixture({
+        "services/payment-service/asyncapi.yaml": LIVING_EVENTS_INLINE,
+        "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": CHANNEL_REMOVAL_EVENTS,
+        "architecture/landscape.likec4": CONSUMES_LANDSCAPE,
+      }),
+    );
+    const [issue, ...rest] = only(issues, "asyncapi.remove-message-consumed");
+    // The net-removal set and the wire diff agree here — one finding, not two.
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("error");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("payment.Legacy");
+    expect(issue!.message).toContain("billing-service");
+  });
+
+  it("fires when the feature retires only the send OPERATION — the declaration survives, production stops", async () => {
+    // No declaration is deleted and no justification is owed (operation
+    // slots need exactness only), but the merged contract no longer sends
+    // the message: the post-archive fleet is red with
+    // spine.message-unproduced on the consumer. The wire half of the
+    // consumer question, asked of the simulated merge's sent-set diff.
+    const issues = await coherenceOf(
+      fixture({
+        "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+operations:
+  sendLegacy:
+    x-loam-remove: true
+`,
+        "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": null,
+        "architecture/landscape.likec4": CONSUMES_LANDSCAPE,
+      }),
+    );
+    const [issue, ...rest] = only(issues, "asyncapi.remove-message-consumed");
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("error");
+    expect(issue!.message).toContain("would no longer declare an action: send operation for 'payment.Legacy'");
+    expect(issue!.message).toContain("billing-service");
+  });
 });
 
 describe("the merge's half: archive retires the slots", () => {
@@ -327,6 +439,50 @@ components:
       expect(doc.channels).toBeUndefined();
       expect(doc.operations).toBeUndefined();
       expect(doc.components).toBeUndefined();
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("asyncapi.remove-marker-inline — a marker nested on an inline channel message gates the archive by name", async () => {
+    // The nested marker retires nothing (an inline message is channel
+    // interior, not a slot), and with the channel otherwise unchanged the
+    // merge deduplicates the restatement away — before this code existed the
+    // removal was silently dropped: no write, no plan line, no finding on
+    // any surface. openapi.remove-marker-path-level's discipline, nested.
+    const nested = `asyncapi: 3.0.0
+channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        name: payment.Legacy
+        x-loam-remove: true
+        payload:
+          type: object
+`;
+    // Pinned as `loam rebase` would, so the refusal under test is the only
+    // gate in play — an unpinned delta would trip asyncapi.baseline-missing
+    // first and this test would pass for the wrong reason.
+    const pinned = pinAsyncapiSlots(nested, LIVING_EVENTS_INLINE, "payment-service").text!;
+    const p = await makeProject(
+      fixture({
+        "services/payment-service/asyncapi.yaml": LIVING_EVENTS_INLINE,
+        "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": pinned,
+        "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": null,
+      }),
+    );
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-40", "--json");
+      expect(res.code).toBe(1);
+      const refusal = JSON.parse(res.stdout);
+      expect(refusal.error.code).toBe("not-coherent");
+      const inline = (refusal.issues as Array<{ code: string; message: string }>).filter(
+        (i) => i.code === "asyncapi.remove-marker-inline",
+      );
+      expect(inline).toHaveLength(1);
+      expect(inline[0]!.message).toContain("channels.legacyEvents.messages.Legacy");
+      expect(await p.read("services/payment-service/asyncapi.yaml")).toBe(LIVING_EVENTS_INLINE);
     } finally {
       await p.destroy();
     }

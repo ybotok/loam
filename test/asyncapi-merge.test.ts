@@ -319,6 +319,57 @@ channels:
     expect(result.text!.match(/404:/g)).toHaveLength(1);
     expect(parse(result.text!).channels[404].address).toBe("dead.letter.v2");
   });
+
+  it("refuses a section spelling one slot key in two pairs that stringify identically", () => {
+    // `404:` (the YAML number) beside `"404":` (the string) is legal YAML —
+    // distinct keys — but `toJS()` collapses them, so the slot walker grades
+    // the SECOND pair while the string-matched writers find the FIRST: the
+    // merge would report modifying one pair and overwrite the other. No read
+    // discipline can make the two agree about which node the slot names, so
+    // every entry point refuses the document by name instead.
+    const ambiguous = `asyncapi: 3.0.0
+channels:
+  404:
+    address: numeric.pair
+  "404":
+    address: string.pair
+`;
+    const clean = `asyncapi: 3.0.0
+channels:
+  404:
+    address: string.pair.v2
+`;
+    expect(() => mergeAsyncapiSlots(ambiguous, clean, "payment-service")).toThrowError(AsyncapiMergeError);
+    expect(() => mergeAsyncapiSlots(ambiguous, clean, "payment-service")).toThrowError(/living asyncapi .* is ambiguous: 'channels' spells the key '404'/);
+    // The feature side is refused the same way, before any verdict is taken.
+    expect(() => mergeAsyncapiSlots(clean, ambiguous, "payment-service")).toThrowError(/feature asyncapi .* is ambiguous/);
+  });
+});
+
+describe("pinAsyncapiSlots over a non-string scalar key", () => {
+  it("pins a numeric-keyed channel through the existing pair — never a false alias verdict, never a duplicate", () => {
+    // `channels.404` resolves to the string key "404", but the AST pair's
+    // key is the YAML number 404 — the raw getIn/setIn pin missed it, graded
+    // the slot `unwritable` with an alias diagnosis nothing in the document
+    // backed, and `asyncapi.baseline-missing` then told the author to run
+    // the rebase that had just refused. The pin now goes through markers.ts's
+    // string-matched slotPair, the same door as every merge write.
+    const living = `asyncapi: 3.0.0
+channels:
+  404:
+    address: dead.letter.v1
+`;
+    const delta = `asyncapi: 3.0.0
+channels:
+  404:
+    address: dead.letter.v2
+`;
+    const plan = pinAsyncapiSlots(delta, living, "payment-service");
+    const digest = slotDigest(parse(living).channels[404]);
+    expect(plan.pins).toEqual([{ section: "channels", key: "404", status: "pinned", from: null, to: digest }]);
+    expect(plan.text!.match(/404:/g)).toHaveLength(1);
+    expect(parse(plan.text!).channels[404]["x-loam-based-on"]).toBe(digest);
+  });
 });
 
 describe("stripAsyncapiMarkers (the creation branch's strip)", () => {
@@ -361,6 +412,39 @@ components:
 
   it("returns the input verbatim when there is nothing to strip", () => {
     expect(stripAsyncapiMarkers(LIVING, "payment-service")).toBe(LIVING);
+  });
+
+  it("strips loam keys OUTSIDE the three sections — the document root, info, and components siblings", () => {
+    // The create branch publishes this text verbatim as a living contract. A
+    // marker at the root or a pin under `info` sits outside every section,
+    // and the section-scoped strip used to ship both into the fleet's living
+    // docs — unseen even by validate's marker sweep at the time.
+    const feature = `asyncapi: 3.0.0
+x-loam-remove: true
+info:
+  title: payment-service events
+  version: "1.0"
+  x-loam-based-on: "0123456789abcdef"
+channels:
+  paymentEvents:
+    address: payment.events.v1
+components:
+  x-loam-remove: true
+  schemas:
+    Payment:
+      type: object
+      x-loam-based-on: "0123456789abcdef"
+  messages:
+    Authorized:
+      name: payment.Authorized
+`;
+    const stripped = stripAsyncapiMarkers(feature, "payment-service");
+    expect(stripped).not.toContain("x-loam");
+    const doc = parse(stripped);
+    expect(doc.info).toEqual({ title: "payment-service events", version: "1.0" });
+    expect(doc.components.schemas.Payment).toEqual({ type: "object" });
+    expect(doc.components.messages.Authorized).toEqual({ name: "payment.Authorized" });
+    expect(doc.channels.paymentEvents).toEqual({ address: "payment.events.v1" });
   });
 });
 
