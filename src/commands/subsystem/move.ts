@@ -9,8 +9,9 @@
  * uncommitted changes under a directory being moved — and only on positive
  * evidence: where git will not say, the move proceeds. After a landed move
  * loam performs the roadmap's one blessed git write, a best-effort `git add`
- * of the rename pairs, so git records them as renames and `subsystem
- * history` stays answerable once the user commits. Nothing is ever committed.
+ * of the rename pairs and the regenerated views file, so git records the
+ * renames as renames and `subsystem history` stays answerable once the user
+ * commits. Nothing is ever committed.
  */
 import { existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -19,7 +20,7 @@ import { serviceDirOf } from "../../core/kernel/ids/dirs.js";
 import { parseSubsystemName } from "../../core/kernel/ids/subsystem.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { gitDirtyPaths, gitStageRenames } from "../../core/provenance/gitq/moves.js";
-import { servicesDir } from "../../core/repo/paths.js";
+import { servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
 import { findInTree, nearestTreeNames, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { commitWindow, reportViews, type SubsystemTxn } from "./txn/txn.js";
@@ -226,12 +227,19 @@ async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean
   return true;
 }
 
-/** Stage the rename pairs (both ends — the delete side and the add side), silently. */
+/**
+ * Stage the move's whole delta, silently: the rename pairs (both ends — the
+ * delete side and the add side) AND the regenerated views file. The views
+ * file rides along for the same reason the transaction writes it in the same
+ * commit: a user whose next `git commit` captured the renames without it
+ * would commit a tree `validate --all` fails (`subsystem.views-stale`) — the
+ * exact "failing between two commits" state the roadmap forbids.
+ */
 async function stageInGit(docsDir: DocsDir, renames: { from: string; to: string }[]): Promise<void> {
-  await gitStageRenames(
-    docsDir,
-    renames.flatMap((r) => [repoPath(docsDir, r.from), repoPath(docsDir, r.to)]),
-  );
+  await gitStageRenames(docsDir, [
+    ...renames.flatMap((r) => [repoPath(docsDir, r.from), repoPath(docsDir, r.to)]),
+    repoPath(docsDir, subsystemViewsPath(docsDir)),
+  ]);
 }
 
 /**

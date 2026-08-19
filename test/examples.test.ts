@@ -92,6 +92,35 @@ describe("examples/docs vs loam validate --all", () => {
   });
 });
 
+describe("examples/docs vs the subsystem tree", () => {
+  it("files two services into platform/ and keeps the committed views file exactly current", async () => {
+    // The permitted filing set is {identity-service, notification-service,
+    // checkout-web}: FEAT-088's committed VERSION-2 snapshot restores
+    // order-service and payment-service by literal path, so filing either
+    // would break the README's `loam unarchive FEAT-088` walkthrough.
+    const list = JSON.parse((await runLoam(workDir, "list", "--json")).stdout);
+    expect(list.subsystems).toEqual([
+      { name: "platform", path: "services/platform", title: "Platform", memberCount: 2 },
+    ]);
+    expect(list.unfiledServices).toBe(3);
+    const filed = (id: string) =>
+      list.services.find((s: { id: string }) => s.id === id).subsystem;
+    expect(filed("identity-service")).toEqual(["platform"]);
+    expect(filed("notification-service")).toEqual(["platform"]);
+    expect(filed("order-service")).toEqual([]);
+
+    // The generated file in the tree is byte-exact: sync answers `current`
+    // and writes nothing, which is also what keeps `validate --all` above at
+    // zero errors — a stale (or hand-edited) copy would be
+    // `subsystem.views-stale`.
+    const before = await treeHashes(docsDir);
+    const sync = await runLoam(workDir, "subsystem", "sync", "--json");
+    expect(sync.code).toBe(0);
+    expect(JSON.parse(sync.stdout).action).toBe("current");
+    expect(await treeHashes(docsDir)).toEqual(before);
+  });
+});
+
 describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
   it("plans a coherent seven-file merge plus the move, warning only that the new service has no model", async () => {
     const res = await runLoam(workDir, "archive", "FEAT-101", "--dry-run", "--json");

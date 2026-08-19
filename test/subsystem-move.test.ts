@@ -396,3 +396,99 @@ describe("crash recovery at the move's commit boundaries", () => {
     expect(outcome.outcome).toBe("repaired");
   });
 });
+
+describe("concurrent moves, adjudicated by git itself", () => {
+  /** A git repo with two groups, two filed-ready services, views synced and committed. */
+  async function gitFleet(): Promise<Project> {
+    const files = coherentFixture();
+    files["services/ga/subsystem.yaml"] = "";
+    files["services/gb/subsystem.yaml"] = "";
+    files["services/checkout-web/spec.md"] = "---\nservice: checkout-web\n---\n\n# checkout-web\n";
+    // A model too: the post-merge assertion below runs the full fleet gate,
+    // and a service without its C4 center is an error unrelated to the tree.
+    files["services/checkout-web/model.likec4"] =
+      "specification {\n  element softwareSystem\n}\n\nmodel {\n  checkoutWeb = softwareSystem 'checkout-web' {\n" +
+      "    description 'Customer-facing checkout UI'\n  }\n}\n\nviews {\n  view of checkoutWeb {\n    include *\n  }\n}\n";
+    const p = await project(files);
+    await runLoam(p.workDir, "subsystem", "sync");
+    gitInit(p.docsDir);
+    return p;
+  }
+
+  it("two moves into DIFFERENT groups merge without intervention — the generated file's lines are disjoint", async () => {
+    const p = await gitFleet();
+    const d = p.docsDir;
+    git(d, "checkout", "-qb", "move-a");
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "ga")).code).toBe(0);
+    git(d, "commit", "-qm", "file payment-service into ga");
+    git(d, "checkout", "-q", "main");
+    git(d, "checkout", "-qb", "move-b");
+    expect((await runLoam(p.workDir, "subsystem", "move", "checkout-web", "--into", "gb")).code).toBe(0);
+    git(d, "commit", "-qm", "file checkout-web into gb");
+
+    // The merge is git's, untouched: different groups touched different
+    // include lines, so no human and no loam is needed.
+    git(d, "merge", "-q", "--no-edit", "move-a");
+    expect(p.exists("services/ga/payment-service/spec.md")).toBe(true);
+    expect(p.exists("services/gb/checkout-web/spec.md")).toBe(true);
+    // And the merged generated file is EXACTLY what the merged tree renders:
+    // the fleet gate stays green, with no sync needed after the merge.
+    expect((await runLoam(p.workDir, "validate", "--all")).code).toBe(0);
+  });
+
+  it("two moves of the SAME service conflict visibly rather than resolving silently", async () => {
+    const p = await gitFleet();
+    const d = p.docsDir;
+    git(d, "checkout", "-qb", "same-a");
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "ga")).code).toBe(0);
+    git(d, "commit", "-qm", "into ga");
+    git(d, "checkout", "-q", "main");
+    git(d, "checkout", "-qb", "same-b");
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "gb")).code).toBe(0);
+    git(d, "commit", "-qm", "into gb");
+
+    // git refuses: both branches moved the same lines of the generated file
+    // (and the same directory), so the merge stops for a human instead of one
+    // branch's placement silently winning.
+    expect(() => git(d, "merge", "-q", "--no-edit", "same-a")).toThrow();
+    const conflicted = git(d, "status", "--porcelain");
+    expect(conflicted).toMatch(/^(UU|AA|DD|AU|UA|DU|UD)/m);
+  });
+});
+
+describe("subsystem history across chained moves", () => {
+  it("answers both hops of two chained moves, oldest first, and follows a subsystem rename too", async () => {
+    const files = coherentFixture();
+    files["services/ga/subsystem.yaml"] = "";
+    files["services/gb/subsystem.yaml"] = "";
+    const p = await project(files);
+    await runLoam(p.workDir, "subsystem", "sync");
+    gitInit(p.docsDir);
+
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "ga")).code).toBe(0);
+    git(p.docsDir, "commit", "-qm", "hop 1");
+    expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "gb")).code).toBe(0);
+    git(p.docsDir, "commit", "-qm", "hop 2");
+
+    const res = await runLoam(p.workDir, "subsystem", "history", "payment-service", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.answered).toBe(true);
+    expect(payload.moves.map((m: { from: string; to: string }) => `${m.from} -> ${m.to}`)).toEqual([
+      "services/payment-service -> services/ga/payment-service",
+      "services/ga/payment-service -> services/gb/payment-service",
+    ]);
+    for (const m of payload.moves) expect(m.commit).toMatch(/^[0-9a-f]{40}$/);
+
+    // A subsystem's own history follows its marker.
+    expect((await runLoam(p.workDir, "subsystem", "rename", "gb", "payments")).code).toBe(0);
+    git(p.docsDir, "commit", "-qm", "rename gb");
+    const sub = JSON.parse(
+      (await runLoam(p.workDir, "subsystem", "history", "payments", "--json")).stdout,
+    );
+    expect(sub.kind).toBe("subsystem");
+    expect(sub.moves).toEqual([
+      { from: "services/gb", to: "services/payments", commit: expect.stringMatching(/^[0-9a-f]{40}$/) },
+    ]);
+  });
+});
