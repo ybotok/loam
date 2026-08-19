@@ -188,6 +188,29 @@ describe("the marker", () => {
     }
   });
 
+  it("a marker beside artifacts still walks the subtree: services beneath stay enumerated and the finding names them", async () => {
+    // A subsystem that GAINED stray artifacts (one errant mv into the group
+    // directory) still holds real services. Classifying it a service and
+    // returning without descent made every one of them vanish from the fleet
+    // — list shrank, archive graded them absent — with only the marker
+    // finding, which named nobody, to hint why. The walk's own header forbids
+    // exactly that: the fleet is never reported smaller.
+    const files = coherentFixture();
+    files["services/payment-service/subsystem.yaml"] = "";
+    files["services/payment-service/inner-svc/spec.md"] = "---\nservice: inner-svc\nstatus: draft\n---\n\n# inner-svc\n";
+    const p = await makeProject(files);
+    try {
+      expect(await listedIds(p.workDir)).toContain("inner-svc");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const misplaced = subsystemFindings(res.stdout).filter((f) => f.code === "subsystem.marker-misplaced");
+      expect(misplaced).toHaveLength(1);
+      expect(misplaced[0]!.details).toEqual(["services/payment-service/inner-svc"]);
+      expect(misplaced[0]!.message).toContain("inner-svc");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("an unreadable marker still classifies the directory as a subsystem — exactly one subsystem.invalid, services beneath enumerated", async () => {
     const files = coherentFixture();
     files["services/broken-group/subsystem.yaml"] = "{{{ not yaml";

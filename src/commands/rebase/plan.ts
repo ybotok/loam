@@ -22,6 +22,20 @@ import { AsyncapiMergeError } from "../../core/asyncapi/merge/error.js";
 import { pinAsyncapiSlots, type AsyncapiPinPlan } from "../../core/asyncapi/merge/pin.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import type { FleetContext } from "../../core/fleet-context.js";
+
+/**
+ * How a planner reaches the living documents: the repo root plus the
+ * command's shared read index. One record on purpose — `rebase` calls these
+ * planners in a services × axes loop, and each `locateServicePaths` without
+ * a context is a FULL fleet walk (readdir + a frontmatter read per service),
+ * so a 20-service feature paid ~80 re-enumerations of a fleet that did not
+ * change between them. The context makes that one walk per invocation.
+ */
+export interface RepoRead {
+  docsDir: DocsDir;
+  fleet?: FleetContext;
+}
 
 export type PinStatus =
   /** It had none and now has one. */
@@ -74,7 +88,7 @@ export interface AxisPlan {
 
 /** Pin every MODIFIED/REMOVED requirement in one delta file against one living document. */
 export async function planAxis(
-  docsDir: DocsDir,
+  repo: RepoRead,
   service: PathableService,
   axis: SpecAxis,
   specPath: string,
@@ -84,7 +98,7 @@ export async function planAxis(
   // because it is what every digest below is taken over.
   const raw = await readRequirementsDocument(specPath);
   const reqs = parseRequirements(raw);
-  const livingPath = (await locateServicePaths(docsDir, service))[axis.key];
+  const livingPath = (await locateServicePaths(repo.docsDir, service, repo.fleet))[axis.key];
   const living = existsSync(livingPath)
     ? parseRequirements(await readRequirementsDocument(livingPath))
     : [];
@@ -136,8 +150,8 @@ export async function planAxis(
  * `unresolved` and correct: there is no living version of an operation at a
  * path the contract does not serve yet.
  */
-export async function planOpenapi(docsDir: DocsDir, service: PathableService, openapiPath: string): Promise<AxisPlan> {
-  const livingPath = (await locateServicePaths(docsDir, service)).openapi;
+export async function planOpenapi(repo: RepoRead, service: PathableService, openapiPath: string): Promise<AxisPlan> {
+  const livingPath = (await locateServicePaths(repo.docsDir, service, repo.fleet)).openapi;
   // Decoded, not `readFile(…, "utf8")`, for the requirement axes' reason: a
   // contract read with U+FFFD substituted in defines no operation loam can
   // match, so every pin would come out `unresolved` — "this feature adds them
@@ -195,11 +209,11 @@ export async function planOpenapi(docsDir: DocsDir, service: PathableService, op
  * channel interior and never pinned on their own).
  */
 export async function planAsyncapi(
-  docsDir: DocsDir,
+  repo: RepoRead,
   service: PathableService,
   asyncapiPath: string,
 ): Promise<AxisPlan> {
-  const livingPath = (await locateServicePaths(docsDir, service)).asyncapi;
+  const livingPath = (await locateServicePaths(repo.docsDir, service, repo.fleet)).asyncapi;
   // Decoded, not `readFile(…, "utf8")`, for planOpenapi's reason: a contract
   // read with U+FFFD substituted in defines no slot loam can match, so every
   // pin would come out `unresolved` over a living contract that already

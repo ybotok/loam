@@ -5,6 +5,8 @@
  * asserts the stable code, exit 1, and — for the write verbs — that nothing
  * was written (treeHashes before/after).
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { coherentFixture, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
@@ -48,6 +50,41 @@ describe("subsystem new", () => {
     });
   });
 
+  it("refuses fail-closed when the disk already answers to the name the tree cannot see", async () => {
+    // A plain FILE at the services/ root is invisible to the tree walk (only
+    // directories are classified), so the flat-namespace check misses it —
+    // but `join(services/, name)` lands exactly on it, and without the probe
+    // the marker write detonated inside the transaction instead of refusing.
+    const files = coherentFixture();
+    files["services/billing"] = "not a directory\n";
+    await withProject(files, async (p) => {
+      const res = await refuses(p, ["subsystem", "new", "billing"], "already-exists");
+      expect(res.message).toContain("already exists on disk");
+    });
+  });
+
+  it("refuses fail-closed where the filesystem folds case: 'Billing' must not write a marker into services/billing", async () => {
+    const files = coherentFixture();
+    files["services/billing/spec.md"] = "---\nservice: billing\n---\n\n# billing\n";
+    await withProject(files, async (p) => {
+      // Whether this volume folds case is a fact about the machine, probed
+      // rather than assumed, so the test discriminates on macOS/Windows and
+      // still asserts the create is not over-refused on Linux.
+      const folded = existsSync(join(p.docsDir, "services", "BILLING"));
+      const res = await runLoam(p.workDir, "subsystem", "new", "Billing", "--json");
+      if (folded) {
+        expect(res.code).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("already-exists");
+        // The live service was not invaded: no marker beside its artifacts —
+        // the exact subsystem.marker-misplaced state this probe fails closed on.
+        expect(p.exists("services/billing/subsystem.yaml")).toBe(false);
+      } else {
+        expect(res.code).toBe(0);
+        expect(p.exists("services/Billing/subsystem.yaml")).toBe(true);
+      }
+    });
+  });
+
   it("an empty marker is a valid marker: no metadata flags, empty file", async () => {
     await withProject(coherentFixture(), async (p) => {
       expect((await runLoam(p.workDir, "subsystem", "new", "payments")).code).toBe(0);
@@ -61,7 +98,7 @@ describe("subsystem new", () => {
       const res = await runLoam(p.workDir, "subsystem", "new", "billing", "--under", "payments", "--json");
       expect(res.code).toBe(0);
       expect(JSON.parse(res.stdout).path).toBe("services/payments/billing");
-      expect(await p.read("architecture/subsystems.likec4")).toContain("view subsystem_payments_billing");
+      expect(await p.read("architecture/subsystems.likec4")).toContain("view subsystem_payments__billing");
     });
   });
 
@@ -107,6 +144,13 @@ describe("subsystem rm", () => {
       const res = await refuses(p, ["subsystem", "rm", "payments"], "subsystem-not-empty");
       expect(res.message).toContain("service payment-service");
       expect(res.message).toContain("subsystem billing");
+      // Each member ONCE, as what it is: the tree's members are also readdir
+      // entries of this directory, and the un-discriminated stray scan listed
+      // payment-service a second time as "file payment-service" — 4 member(s)
+      // for a group holding 2.
+      expect(res.message).toContain("2 member(s)");
+      expect(res.message).not.toContain("file payment-service");
+      expect(res.message).not.toContain("file billing");
     });
   });
 

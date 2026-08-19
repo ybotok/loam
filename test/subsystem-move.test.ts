@@ -113,12 +113,12 @@ describe("moving services and subtrees", () => {
     expect((await runLoam(p.workDir, "subsystem", "move", "payments", "--into", "money")).code).toBe(0);
     expect(p.exists("services/money/payments/payment-service/spec.md")).toBe(true);
     const views = await p.read("architecture/subsystems.likec4");
-    expect(views).toContain("view subsystem_money_payments {");
+    expect(views).toContain("view subsystem_money__payments {");
 
     // Rename the outer group; the inner path follows.
     expect((await runLoam(p.workDir, "subsystem", "rename", "money", "cash")).code).toBe(0);
     expect(p.exists("services/cash/payments/payment-service/spec.md")).toBe(true);
-    expect(await p.read("architecture/subsystems.likec4")).toContain("view subsystem_cash_payments {");
+    expect(await p.read("architecture/subsystems.likec4")).toContain("view subsystem_cash__payments {");
 
     // Unfile: root is a place, spelled `.`.
     expect((await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", ".")).code).toBe(0);
@@ -456,6 +456,29 @@ describe("concurrent moves, adjudicated by git itself", () => {
   });
 });
 
+describe("archived version-2 snapshots and the move", () => {
+  it("notices a v2 snapshot addressing a directory being moved — a warning, and the move proceeds", async () => {
+    // A version-2 manifest addresses services by literal pre-move path, so an
+    // `unarchive --force` of that feature AFTER the move restores into the old
+    // location, resurrecting the directory beside the moved one. The move must
+    // say so at plan time — a notice, never a refusal.
+    const files = coherentFixture();
+    files["services/payments/subsystem.yaml"] = "";
+    files["features/archive/FEAT-0-legacy/intent.md"] = "# legacy\n";
+    files["features/archive/FEAT-0-legacy/.loam-before/manifest.json"] =
+      JSON.stringify({ version: 2, files: [{ path: "services/payment-service/spec.md" }] }) + "\n";
+    const p = await project(files);
+    await runLoam(p.workDir, "subsystem", "sync");
+    const res = await runLoam(p.workDir, "subsystem", "move", "payment-service", "--into", "payments", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.warnings).toHaveLength(1);
+    expect(payload.warnings[0]).toContain("FEAT-0");
+    expect(payload.warnings[0]).toContain("services/payment-service");
+    expect(p.exists("services/payments/payment-service/spec.md")).toBe(true);
+  });
+});
+
 describe("subsystem history across chained moves", () => {
   it("answers both hops of two chained moves, oldest first, and follows a subsystem rename too", async () => {
     const files = coherentFixture();
@@ -490,5 +513,32 @@ describe("subsystem history across chained moves", () => {
     expect(sub.moves).toEqual([
       { from: "services/gb", to: "services/payments", commit: expect.stringMatching(/^[0-9a-f]{40}$/) },
     ]);
+  });
+
+  it("refuses to repeat a hop git paired by guesswork: identical markers moved together answer nothing", async () => {
+    // Two subsystems with byte-identical (empty) markers, both renamed in ONE
+    // commit: `git log --follow` pairs old and new paths by CONTENT, so the
+    // hop it reports for gx can start from gy's old directory — a place the
+    // followed marker never lived. The cross-check reads the commit's own
+    // rename record, finds two entries carrying one blob, and the whole
+    // answer becomes "git will not say" — never a phantom hop.
+    const files = coherentFixture();
+    files["services/ga/subsystem.yaml"] = "";
+    files["services/gb/subsystem.yaml"] = "";
+    const p = await project(files);
+    await runLoam(p.workDir, "subsystem", "sync");
+    gitInit(p.docsDir);
+    git(p.docsDir, "mv", "services/ga", "services/gx");
+    git(p.docsDir, "mv", "services/gb", "services/gy");
+    git(p.docsDir, "commit", "-qm", "multi-name move");
+
+    const res = await runLoam(p.workDir, "subsystem", "history", "gx", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.answered).toBe(false);
+    expect(payload.moves).toEqual([]);
+    const text = await runLoam(p.workDir, "subsystem", "history", "gx");
+    expect(text.code).toBe(0);
+    expect(text.out).toContain("git will not say");
   });
 });

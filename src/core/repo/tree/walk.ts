@@ -3,9 +3,11 @@
  * `services/`, in one walk.
  *
  * A directory holding `subsystem.yaml` is a SUBSYSTEM and is walked; one
- * holding any service artifact is a SERVICE and is not walked deeper; one
- * holding neither while containing subdirectories is an ERROR that still
- * names every service found beneath it. The third branch is the whole point:
+ * holding any service artifact is a SERVICE and is not walked deeper — unless
+ * a marker sits BESIDE the artifacts, where the walk descends anyway (the
+ * marker says a group was here, and its members must not vanish); one holding
+ * neither while containing subdirectories is an ERROR that still names every
+ * service found beneath it. The third branch is the whole point:
  * two-way classification loses a service silently on an ordinary clean merge —
  * one branch deletes an emptied subsystem's marker while another moves a
  * service into it, and the group directory is then read as a service whose
@@ -127,10 +129,7 @@ function guardDescent(dir: string, ctx: WalkContext): boolean {
 /** Sorted non-dot subdirectory names — the walk's deterministic child order. */
 async function subdirNames(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir"))
-    .map((e) => e.name)
-    .sort();
+  return entries.filter((e) => !e.name.startsWith(".") && entryIs(dir, e, "dir")).map((e) => e.name).sort();
 }
 
 /** Classify one directory and, for the group kinds, walk what is inside it. */
@@ -138,10 +137,7 @@ async function visitDir(spot: Spot, ctx: WalkContext): Promise<void> {
   const rel = ["services", ...spot.chain, spot.name].join("/");
   const entries = (await readdir(spot.dir, { withFileTypes: true })).filter((e) => !e.name.startsWith("."));
   const files = entries.filter((e) => entryIs(spot.dir, e, "file")).map((e) => e.name);
-  const dirs = entries
-    .filter((e) => entryIs(spot.dir, e, "dir"))
-    .map((e) => e.name)
-    .sort();
+  const dirs = entries.filter((e) => entryIs(spot.dir, e, "dir")).map((e) => e.name).sort();
   const marker = files.includes(SUBSYSTEM_MARKER);
   const artifact =
     files.some((f) => ctx.request.isServiceArtifact(f, "file")) ||
@@ -151,7 +147,13 @@ async function visitDir(spot: Spot, ctx: WalkContext): Promise<void> {
     // Artifacts win the classification: the documents are somebody's work and
     // the marker is one stray file, so the directory stays an addressable
     // service and the finding names the contradiction instead of the walk
-    // quietly picking a reading.
+    // quietly picking a reading. But the walk STILL descends (the module
+    // invariant: no reinterpretation may shrink the fleet) — the marker says
+    // a GROUP was here, and returning without walking made every service
+    // beneath it vanish with only this finding to hint why. Child directories
+    // that are themselves artifacts (`adrs/`) are service interior, not walked.
+    recordService(spot, ctx);
+    const stranded = await descendInto(spot, dirs.filter((d) => !ctx.request.isServiceArtifact(d, "dir")), ctx);
     ctx.tree.findings.push({
       severity: "error",
       code: "subsystem.marker-misplaced",
@@ -159,9 +161,10 @@ async function visitDir(spot: Spot, ctx: WalkContext): Promise<void> {
       message:
         `${rel}/ holds ${SUBSYSTEM_MARKER} BESIDE service artifacts — a directory is a subsystem or a service, never both. ` +
         `It stays classified as a service; delete ${rel}/${SUBSYSTEM_MARKER}, ` +
-        `or move the artifacts into a service directory of their own inside the group.`,
+        `or move the artifacts into a service directory of their own inside the group.` +
+        (stranded.length > 0 ? ` ${stranded.length} service(s) beneath it stay enumerated meanwhile: ${stranded.map((s) => s.id).join(", ")}.` : ""),
+      ...(stranded.length > 0 ? { details: stranded.map((s) => ["services", ...s.subsystem, s.id].join("/")) } : {}),
     });
-    recordService(spot, ctx);
     return;
   }
   if (marker) {
@@ -225,10 +228,22 @@ async function visitSubsystem(spot: Spot, at: { rel: string; dirs: string[] }, c
     meta,
   });
   claimName(spot, ctx);
-  if (!guardDescent(spot.dir, ctx)) return;
-  for (const child of at.dirs) {
-    await visitDir({ dir: join(spot.dir, child), name: child, chain: [...spot.chain, spot.name] }, ctx);
+  await descendInto(spot, at.dirs, ctx);
+}
+
+/**
+ * Walk the children of a group directory (symlink-cycle guarded), returning
+ * the services newly recorded beneath it — the ONE spelling of descent, so
+ * the three descending branches agree about the guard and the chain.
+ */
+async function descendInto(spot: Spot, dirs: string[], ctx: WalkContext): Promise<WalkedService[]> {
+  const before = ctx.tree.services.length;
+  if (guardDescent(spot.dir, ctx)) {
+    for (const child of dirs) {
+      await visitDir({ dir: join(spot.dir, child), name: child, chain: [...spot.chain, spot.name] }, ctx);
+    }
   }
+  return ctx.tree.services.slice(before);
 }
 
 /**
@@ -237,13 +252,7 @@ async function visitSubsystem(spot: Spot, at: { rel: string; dirs: string[] }, c
  * can name them: the fleet must never be reported smaller than it is.
  */
 async function visitUnmarked(spot: Spot, at: { rel: string; dirs: string[] }, ctx: WalkContext): Promise<void> {
-  const before = ctx.tree.services.length;
-  if (guardDescent(spot.dir, ctx)) {
-    for (const child of at.dirs) {
-      await visitDir({ dir: join(spot.dir, child), name: child, chain: [...spot.chain, spot.name] }, ctx);
-    }
-  }
-  const stranded = ctx.tree.services.slice(before);
+  const stranded = await descendInto(spot, at.dirs, ctx);
   ctx.tree.findings.push({
     severity: "error",
     code: "subsystem.unmarked",
@@ -255,9 +264,7 @@ async function visitUnmarked(spot: Spot, at: { rel: string; dirs: string[] }, ct
       `Without the marker this directory would be read as a service and everything under it would vanish from the fleet — ` +
       `the shape an ordinary merge produces when one branch deletes an emptied subsystem's marker while another moves a service in. ` +
       `Restore ${at.rel}/${SUBSYSTEM_MARKER} (an empty file is a valid marker), or move the directories out.`,
-    ...(stranded.length > 0
-      ? { details: stranded.map((s) => ["services", ...s.subsystem, s.id].join("/")) }
-      : {}),
+    ...(stranded.length > 0 ? { details: stranded.map((s) => ["services", ...s.subsystem, s.id].join("/")) } : {}),
   });
 }
 

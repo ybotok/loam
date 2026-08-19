@@ -15,7 +15,10 @@
  * flag may name or a path a spec's frontmatter may claim — `--into <name>` and
  * `--service <id>` must not be satisfiable by each other's values. Placement is
  * never part of any identity, and the type system is where that stops being a
- * review comment.
+ * review comment — `repo/paths.ts`'s `subsystemPathUnder` is the consumer that
+ * DEMANDS the brand, so the joins `subsystem new` and `rename` build cannot be
+ * fed a raw argv string: a brand no signature requires is a validator with
+ * good intentions, which is exactly what this one briefly was.
  */
 import { dirNameHazard } from "./service.js";
 

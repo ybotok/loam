@@ -58,12 +58,22 @@ export function gradeWritePathResidue(
     // test/staging-txn.test.ts parses every writer's rerun template against
     // the real program instead.
     const i = residue.intent;
+    // Both halves of the journal are named, because a version-3 record can be
+    // rename-only (`subsystem move` where the views bytes did not change): a
+    // blocker that said "0 file(s) may be half-written" and named nothing sent
+    // the operator hunting for files while the pending damage was directories.
+    const halves = [
+      ...(i.files.length > 0 ? [`${i.files.length} file(s) may be half-written: ${i.files.map((f) => f.path).join(", ")}`] : []),
+      ...(i.moves.length > 0
+        ? [`${i.moves.length} directory move(s) pending: ${i.moves.map((m) => `${m.from} -> ${m.to}`).join(", ")}`]
+        : []),
+    ];
     findings.push({
       severity: "blocker",
       code: "doctor.commit-interrupted",
       message:
         `A \`${i.rerun}\` was killed mid-commit (${i.host}, pid ${i.pid}, ${i.at}) — `
-        + `${i.files.length} file(s) may be half-written: ${i.files.map((f) => f.path).join(", ")}`,
+        + (halves.length > 0 ? halves.join("; ") : "its journal records no pending file or directory"),
       fix: `Re-run \`${i.rerun}\` — it recovers first, rolling the staged bytes forward, and refuses with \`commit-interrupted\` rather than guessing if a file has been edited since.`,
     });
   } else if (residue.intent !== null) {

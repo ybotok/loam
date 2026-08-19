@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
-import { gitRenameHops } from "../../core/provenance/gitq/moves.js";
+import { gitRenameHops, gitRenamePairingAmbiguous } from "../../core/provenance/gitq/moves.js";
 import { servicePathsAt } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
 import { findInTree, nearestTreeNames, servicesUnder, treeNames } from "../../core/repo/tree/find.js";
@@ -67,13 +67,35 @@ export async function runHistory(docsDir: DocsDir, name: string, json: boolean):
   }
   const kind = hit.kind;
   const file = representativeFile(hit);
-  const hops = file === null ? null : await gitRenameHops(docsDir, repoPath(docsDir, file));
+  const followed = file === null ? null : await gitRenameHops(docsDir, repoPath(docsDir, file));
+  // Every hop is cross-checked against its own commit before it is repeated:
+  // `--follow` pairs paths by content, and identical files moved together
+  // (empty markers above all) make that pairing a guess — a hop from a
+  // directory this subsystem never inhabited. A guessed hop, or a commit the
+  // check cannot read, poisons the whole answer, because the hops chain: one
+  // untrusted link makes every earlier "from" untrustworthy too.
+  let ambiguous = false;
+  for (const h of followed ?? []) {
+    if ((await gitRenamePairingAmbiguous(docsDir, h.commit, h.to)) !== false) {
+      ambiguous = true;
+      break;
+    }
+  }
+  const hops = ambiguous ? null : followed;
   const parent = (rel: string): string => rel.slice(0, Math.max(0, rel.lastIndexOf("/")));
   const moves = (hops ?? []).map((h) => ({ from: parent(h.from), to: parent(h.to), commit: h.commit }));
   if (json) {
     // Additive honesty key: `answered: false` is git DECLINING (or nothing to
-    // follow), not git answering "never moved" — exit 0 either way, no finding.
+    // follow, or a rename record too ambiguous to trust), not git answering
+    // "never moved" — exit 0 either way, no finding.
     emitJson({ name, kind, moves, answered: hops !== null });
+    return;
+  }
+  if (ambiguous) {
+    console.log(
+      `git will not say — a commit in this file's history moved identical files together, ` +
+        `so \`git log --follow\` pairs them by guesswork and the hops cannot be trusted. No finding either way.`,
+    );
     return;
   }
   if (hops === null) {

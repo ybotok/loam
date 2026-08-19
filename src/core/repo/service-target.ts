@@ -85,8 +85,13 @@ export async function enumeratedServiceIds(
  * spelling otherwise — so an absent service still probes, grades
  * (`service.unknown`) and CREATES exactly as it did when the tree was flat.
  * This is the one bridge the ~40 former `servicePaths` call sites resolve
- * through; a caller that already holds a `ServiceEntry` should spell
- * `servicePathsAt(entry.dir)` directly instead of paying a second lookup.
+ * through — and it is NOT free: without a `fleet` context every call is a
+ * fresh fleet enumeration (one readdir per directory walked plus a
+ * frontmatter read and several existence probes per service), which measured
+ * ~13 ms per call on a 120-service fleet. A call site inside a loop must
+ * thread the command's `FleetContext`; a caller that already holds a
+ * `ServiceEntry` should spell `servicePathsAt(entry.dir)` directly and pay
+ * nothing.
  */
 export async function locateServicePaths(
   docsDir: DocsDir,

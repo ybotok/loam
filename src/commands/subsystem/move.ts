@@ -14,16 +14,21 @@
  * commits. Nothing is ever committed.
  */
 import { existsSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, sep } from "node:path";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
-import { serviceDirOf } from "../../core/kernel/ids/dirs.js";
 import { parseSubsystemName } from "../../core/kernel/ids/subsystem.js";
+import { isRecord } from "../../core/kernel/records.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { gitDirtyPaths, gitStageRenames } from "../../core/provenance/gitq/moves.js";
-import { servicesDir, subsystemViewsPath } from "../../core/repo/paths.js";
+import type { FeatureEntry } from "../../core/repo/entries.js";
+import { servicesDir, subsystemPathUnder, subsystemViewsPath } from "../../core/repo/paths.js";
+import { listFeatures } from "../../core/repo/repo.js";
 import { findInTree, nearestTreeNames, treeNames, withinSubsystem } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
+import { SNAPSHOT_COMPAT_VERSION, SNAPSHOT_MANIFEST, snapshotDir } from "../../core/staging/snapshot.js";
 import { commitWindow, reportViews, type SubsystemTxn } from "./txn/txn.js";
+import { movedTree } from "./txn/views.js";
 
 /** What one name resolved to for a move: where it is, and where it goes. */
 interface Moved {
@@ -67,7 +72,7 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
       );
     }
     for (const m of moved) {
-      if (m.kind === "subsystem" && withinSubsystem({ ...dummy, name: m.name, path: [...m.parent, m.name] }, target.path)) {
+      if (m.kind === "subsystem" && withinSubsystem([...m.parent, m.name], target.path)) {
         fail(json, "invalid-option", `'${m.name}' cannot move into itself or its own subtree.`);
         return null;
       }
@@ -91,6 +96,7 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
       }
     }
     if (await refuseUncommitted(docsDir, moved.map((m) => m.dir), json)) return null;
+    const notices = await v2SnapshotNotices(docsDir, moved.map((m) => m.dir));
     const renames = moved.map((m) => ({ from: m.dir, to: join(target.dir, m.name) }));
     return {
       target: names.join(", "),
@@ -108,10 +114,17 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
           to: repoPath(docsDir, renames[i]!.to),
         }));
         if (json) {
-          emitJson({ into, moved: rows, views, ...(recovered === null ? {} : { recovered }) });
+          emitJson({
+            into,
+            moved: rows,
+            views,
+            ...(notices.length === 0 ? {} : { warnings: notices }),
+            ...(recovered === null ? {} : { recovered }),
+          });
           return;
         }
         for (const row of rows) console.log(`moved ${row.from} -> ${row.to}`);
+        for (const n of notices) console.log(`note: ${n}`);
         console.log(`Renames staged where git answers; nothing committed${reportViews(views)}.`);
       },
     };
@@ -152,7 +165,8 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
       return null;
     }
     if (await refuseUncommitted(docsDir, [hit.subsystem.dir], json)) return null;
-    const rename = { from: hit.subsystem.dir, to: join(hit.subsystem.dir, "..", to) };
+    const notices = await v2SnapshotNotices(docsDir, [hit.subsystem.dir]);
+    const rename = { from: hit.subsystem.dir, to: subsystemPathUnder(dirname(hit.subsystem.dir), parsed.name) };
     return {
       target: `${from} -> ${to}`,
       writes: [],
@@ -168,25 +182,20 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
             to,
             path: repoPath(docsDir, rename.to),
             views,
+            ...(notices.length === 0 ? {} : { warnings: notices }),
             ...(recovered === null ? {} : { recovered }),
           });
           return;
         }
         console.log(`renamed subsystem '${from}' -> '${to}' (${repoPath(docsDir, rename.to)}/)${reportViews(views)}`);
+        for (const n of notices) console.log(`note: ${n}`);
       },
     };
   });
 }
 
-/** A placeholder SubsystemEntry shape for `withinSubsystem` — only `path` is read. */
-const dummy = { name: "", path: [] as string[], dir: "", meta: {} };
-
 /** Where `--into` points: the services/ root for `.`, an existing subsystem otherwise. */
-function resolveTarget(
-  tree: FleetTree,
-  into: string,
-  at: { docsDir: DocsDir; json: boolean },
-): { dir: string; path: string[] } | null {
+function resolveTarget(tree: FleetTree, into: string, at: { docsDir: DocsDir; json: boolean }): { dir: string; path: string[] } | null {
   if (into === ".") return { dir: servicesDir(at.docsDir), path: [] };
   const hit = findInTree(tree, into);
   if (hit === null) {
@@ -212,16 +221,17 @@ function resolveTarget(
  * say) proceeds — a fleet that does not use git must not be refused over it.
  */
 async function refuseUncommitted(docsDir: DocsDir, dirs: string[], json: boolean): Promise<boolean> {
-  const dirty = await gitDirtyPaths(
-    docsDir,
-    dirs.map((d) => repoPath(docsDir, d)),
-  );
+  const dirty = await gitDirtyPaths(docsDir, dirs.map((d) => repoPath(docsDir, d)));
   if (dirty === null || dirty.length === 0) return false;
   fail(
     json,
     "move-uncommitted",
-    `git reports uncommitted changes under the directory(ies) being moved: ${dirty.join(", ")}. ` +
-      "Renaming now would sweep those edits into a move nobody reviewed — commit or stash them, then re-run. " +
+    // "or untracked", and `git stash -u` by name: the check fires on ANY
+    // porcelain entry, untracked files included, and plain `git stash` does
+    // not stash those — advice that said "stash" sent the user in a loop,
+    // refused again with the same sentence after doing what it asked.
+    `git reports ${dirty.length} uncommitted or untracked path(s) under the directory(ies) being moved: ${dirty.join(", ")}. ` +
+      "Renaming now would sweep them into a move nobody reviewed — commit them, `git stash -u`, or remove them, then re-run. " +
       "Nothing was moved.",
   );
   return true;
@@ -243,31 +253,46 @@ async function stageInGit(docsDir: DocsDir, renames: { from: string; to: string 
 }
 
 /**
- * The tree AS THE RENAMES LEAVE IT, computed in memory: every dir under a
- * moved root is remapped by prefix, and each entry's placement chain is
- * re-derived from its remapped dir. The views file is rendered from this, so
- * the commit lands file and renames agreeing — never from a re-walk that
- * would have to happen between two states.
+ * Which archived features hold a VERSION-2 snapshot addressing a path under
+ * one of these directories — the notice, never a refusal, a move prints
+ * before it proceeds. A version-2 manifest predates the tree and records
+ * literal `services/<id>/…` paths, so after this move an `unarchive --force`
+ * of that feature restores into the OLD path, resurrecting the pre-move
+ * directory beside the moved one (two claimants, `subsystem.name-collision`
+ * — loud, but avoidable by being told now). Version-3 manifests key rows by
+ * service id and follow the enumeration, so they are not named. Every
+ * failure to read reads as "nothing to warn about": a warning needs positive
+ * evidence exactly as the move's one refusal does.
  */
-function movedTree(tree: FleetTree, renames: { from: string; to: string }[], servicesRoot: string): FleetTree {
-  const remap = (dir: string): string => {
-    for (const r of renames) {
-      if (dir === r.from || dir.startsWith(r.from + sep)) return r.to + dir.slice(r.from.length);
+async function v2SnapshotNotices(docsDir: DocsDir, dirs: string[]): Promise<string[]> {
+  const rels = dirs.map((d) => repoPath(docsDir, d));
+  const notices: string[] = [];
+  let features: FeatureEntry[];
+  try {
+    features = await listFeatures(docsDir, { includeArchived: true });
+  } catch {
+    return notices;
+  }
+  for (const f of features.filter((entry) => entry.archived)) {
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(await readFile(join(snapshotDir(f.dir), SNAPSHOT_MANIFEST), "utf8"));
+    } catch {
+      continue;
     }
-    return dir;
-  };
-  const chainOf = (dir: string): string[] => relative(servicesRoot, dir).split(sep);
-  return {
-    findings: tree.findings,
-    services: tree.services.map((s) => {
-      const dir = remap(s.dir);
-      // The constructor call records provenance: a readdir-established
-      // directory carried through a rename this same commit performs.
-      return { ...s, dir: serviceDirOf(dir), subsystem: chainOf(dir).slice(0, -1) };
-    }),
-    subsystems: tree.subsystems.map((s) => {
-      const dir = remap(s.dir);
-      return { ...s, dir, path: chainOf(dir) };
-    }),
-  };
+    if (!isRecord(manifest) || manifest.version !== SNAPSHOT_COMPAT_VERSION || !Array.isArray(manifest.files)) continue;
+    const addressed = rels.filter((rel) =>
+      (manifest.files as unknown[]).some(
+        (row) => isRecord(row) && typeof row.path === "string" && row.path.startsWith(`${rel}/`),
+      ),
+    );
+    if (addressed.length > 0) {
+      notices.push(
+        `${f.id}'s archived snapshot is version 2 and addresses ${addressed.join(", ")} by literal path — ` +
+          `\`loam unarchive ${f.id} --force\` after this move would restore into the old location, ` +
+          `resurrecting the pre-move directory beside the moved one.`,
+      );
+    }
+  }
+  return notices;
 }

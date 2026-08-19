@@ -19,6 +19,7 @@ import { stripAsyncapiMarkers } from "../../../../core/asyncapi/merge/markers.js
 import { mergeAsyncapiSlots, type AsyncapiMergeResult } from "../../../../core/asyncapi/merge/merge.js";
 import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
+import type { FleetContext } from "../../../../core/fleet-context.js";
 import type { IssueCode } from "../../../../core/vocabulary/issue.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
@@ -29,7 +30,7 @@ function modifiedCode(section: AsyncapiSection): IssueCode {
 }
 
 export async function planAsyncapiContracts(
-  config: { docsDir: DocsDir },
+  config: { docsDir: DocsDir; fleet?: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -72,7 +73,9 @@ export async function planAsyncapiContracts(
         message: `${svc}: '${m.slot}' carries x-loam-remove nested on an inline channel message — inline messages are channel interior, not slots, so this retires nothing. Retire the whole channel (x-loam-remove: true at channels.${channel}), or declare the message under components.messages (the channel $ref-ing it) and put the marker there.`,
       });
     }
-    const livingAsyncapi = (await locateServicePaths(config.docsDir, svc)).asyncapi;
+    // The shared context, for the OpenAPI planner's reason: once per delta
+    // service must not mean one fleet walk per delta service.
+    const livingAsyncapi = (await locateServicePaths(config.docsDir, svc, config.fleet)).asyncapi;
     try {
       if (!existsSync(livingAsyncapi)) {
         // A removal against a non-existent contract is gated by coherence;

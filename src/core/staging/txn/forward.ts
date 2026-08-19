@@ -1,6 +1,7 @@
 /**
- * Roll a version-2 journal FORWARD: finish the renames a killed commit did
- * not reach, from the staged temps that are already durable on disk.
+ * Roll a version-2 or version-3 journal FORWARD: finish the renames a killed
+ * commit did not reach, from the staged temps that are already durable on
+ * disk (and, for a version-3 record, the directory renames after them).
  *
  * Forward and not undo, because that is what is actually durable: the
  * after-bytes were written and (per stageWrites) fully on disk before the
@@ -42,19 +43,43 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
   // which tree to keep is the refuse-to-choose case below.
   const movesDone: TxnIntentMove[] = [];
   const movesPending: TxnIntentMove[] = [];
+  const unknownMoves: string[] = [];
   for (const m of intent.moves) {
     const fromExists = existsSync(abs(m.from));
     const toExists = existsSync(abs(m.to));
     if (toExists && !fromExists) movesDone.push(m);
     else if (fromExists && !toExists) movesPending.push(m);
-    else unknown.push(`${m.from} -> ${m.to}`);
+    else unknownMoves.push(`${m.from} -> ${m.to}`);
   }
-  if (unknown.length > 0) {
+  if (unknown.length > 0 || unknownMoves.length > 0) {
+    // Two vocabularies on purpose: a FILE in neither recorded state holds
+    // edited bytes, while a DIRECTORY rename in neither state means both ends
+    // exist (or neither does) — nothing was "edited", somebody made or
+    // restored a directory since the crash. One sentence covering both told
+    // the operator to hunt for edited bytes in a directory pair. And the
+    // interrupted work is named by what it WAS (`command` + `target`), not by
+    // `intent.rerun` — that string is the REPAIR spelling (`loam subsystem
+    // sync` repairs all four subsystem verbs), so "a `loam subsystem sync`
+    // was interrupted" named a command nobody ran.
+    const parts = [
+      ...(unknown.length > 0
+        ? [
+            `${unknown.length} of the file(s) it was writing now hold bytes that are neither what it found ` +
+              `nor what it wrote — somebody edited them since: ${unknown.join(", ")}`,
+          ]
+        : []),
+      ...(unknownMoves.length > 0
+        ? [
+            `the directory rename(s) ${unknownMoves.join(", ")} are in neither recorded state — both ends ` +
+              `exist, or neither does, so loam cannot tell which tree to keep`,
+          ]
+        : []),
+    ];
     throw new InterruptedCommitError(
-      `a \`${intent.rerun}\` was interrupted mid-commit (pid ${intent.pid} on ${intent.host}, ${intent.at}) and ` +
-        `${unknown.length} of the file(s) it was writing now hold bytes that are neither what it found nor what it ` +
-        `wrote — somebody edited them since: ${unknown.join(", ")}. loam will not choose between those two truths. ` +
-        `Reconcile them against version control, delete ${COMMIT_INTENT}, then re-run.`,
+      `a \`${intent.command}\` commit for '${intent.target}' was interrupted mid-commit ` +
+        `(pid ${intent.pid} on ${intent.host}, ${intent.at}) and ${parts.join("; ")}. ` +
+        `loam will not choose between those two truths. ` +
+        `Reconcile them against version control, delete ${COMMIT_INTENT}, then re-run \`${intent.rerun}\`.`,
     );
   }
 
@@ -79,10 +104,10 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
       return { command: intent.command, feature: intent.target, outcome: "consistent", repaired: [] };
     }
     throw new InterruptedCommitError(
-      `a \`${intent.rerun}\` was interrupted mid-commit and ${missing.map((f) => f.path).join(", ")} ` +
+      `a \`${intent.command}\` commit for '${intent.target}' was interrupted and ${missing.map((f) => f.path).join(", ")} ` +
         `${missing.length === 1 ? "is" : "are"} still in the pre-commit state, but the staged bytes that would ` +
         `finish ${missing.length === 1 ? "it" : "them"} are gone or no longer match the digest recorded before the ` +
-        `crash. Restore the tree from version control, delete ${COMMIT_INTENT}, then re-run.`,
+        `crash. Restore the tree from version control, delete ${COMMIT_INTENT}, then re-run \`${intent.rerun}\`.`,
     );
   }
 
@@ -107,9 +132,9 @@ export async function recoverForward(root: string, intent: TxnIntent): Promise<C
       await rename(abs(m.from), abs(m.to));
     } catch (err) {
       throw new InterruptedCommitError(
-        `a \`${intent.rerun}\` was interrupted mid-commit and the rename ${m.from} -> ${m.to} that would finish it ` +
-          `cannot be performed now (${err instanceof Error ? err.message : String(err)}). ` +
-          `Complete or undo it by hand against version control, delete ${COMMIT_INTENT}, then re-run.`,
+        `a \`${intent.command}\` commit for '${intent.target}' was interrupted and the rename ${m.from} -> ${m.to} ` +
+          `that would finish it cannot be performed now (${err instanceof Error ? err.message : String(err)}). ` +
+          `Complete or undo it by hand against version control, delete ${COMMIT_INTENT}, then re-run \`${intent.rerun}\`.`,
       );
     }
     repaired.push(m.to);

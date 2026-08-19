@@ -6,7 +6,8 @@
  * generated file's contract refuses to leave behind.
  *
  * `rm` refuses a subsystem with members — services, child subsystems, or any
- * stray non-dot file beside the marker — naming them (`subsystem-not-empty`):
+ * stray non-dot entry beside the marker the tree does not already count —
+ * naming each once, as what it is (`subsystem-not-empty`):
  * a destructive command never picks targets the caller did not name, and a
  * directory emptied of its marker but not of its contents would re-enter the
  * walk as a phantom service.
@@ -18,8 +19,9 @@ import { stringify } from "yaml";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { parseSubsystemName } from "../../core/kernel/ids/subsystem.js";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
-import { servicesDir } from "../../core/repo/paths.js";
+import { servicesDir, subsystemPathUnder } from "../../core/repo/paths.js";
 import { findInTree, nearestTreeNames, servicesUnder, subsystemsUnder } from "../../core/repo/tree/find.js";
+import { entryIs } from "../../core/repo/tree/fs.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { planWrite } from "../../core/staging/writes.js";
@@ -74,7 +76,25 @@ export async function runNew(
       parentDir = parent.subsystem.dir;
       parentPath = parent.subsystem.path;
     }
-    const dir = join(parentDir, name);
+    const dir = subsystemPathUnder(parentDir, parsed.name);
+    // The flat-namespace check above compares exact strings; the FILESYSTEM
+    // may not. On a case-folding volume (macOS APFS by default) `Billing`
+    // and an existing `services/billing` are one directory, so the marker
+    // write below would land subsystem.yaml INSIDE the live service — the
+    // exact marker-beside-artifacts state `subsystem.marker-misplaced`
+    // refuses after the fact, created by a blessed command. A plain file of
+    // the same name reaches here too (files at the root are not walked). So
+    // the disk is probed directly and anything already there refuses closed.
+    if (existsSync(dir)) {
+      fail(
+        json,
+        "already-exists",
+        `${repoPath(docsDir, dir)} already exists on disk — the tree resolves no entry by that exact name, ` +
+          `so either this filesystem folds case (the directory answers to another spelling of the name) ` +
+          `or something non-loam created it. Pick another name, or move what is there first. Nothing was created.`,
+      );
+      return null;
+    }
     const meta = {
       ...(opts.title === undefined ? {} : { title: opts.title }),
       ...(opts.description === undefined ? {} : { description: opts.description }),
@@ -134,16 +154,26 @@ export async function runRm(docsDir: DocsDir, name: string, json: boolean): Prom
     const sub = hit.subsystem;
     const services = servicesUnder(tree, sub).map((s) => s.id);
     const children = subsystemsUnder(tree, sub).map((s) => s.name);
-    // Stray non-dot files beside the marker count as members too: after the
-    // marker is gone the directory would re-enter the walk as an empty
-    // "service" the moment anything keeps rmdir from removing it.
+    // Stray entries beside the marker count as members too: after the marker
+    // is gone the directory would re-enter the walk as an empty "service" the
+    // moment anything keeps rmdir from removing it. But only entries the tree
+    // has NOT already counted — a member service or child subsystem is also a
+    // readdir entry here, and listing it a second time as "file X" made the
+    // count wrong and the same name appear under two kinds. What remains is
+    // discriminated by what it is (`entryIs`, the walk's own symlink-aware
+    // question): a file, or a directory the tree does not claim (an unmarked
+    // group, already its own `subsystem.unmarked` finding).
+    const counted = new Set<string>([
+      ...servicesUnder(tree, sub).filter((s) => s.subsystem.length === sub.path.length).map((s) => s.id as string),
+      ...subsystemsUnder(tree, sub).filter((c) => c.path.length === sub.path.length + 1).map((c) => c.name),
+    ]);
     const strays = (await readdir(sub.dir, { withFileTypes: true }))
-      .filter((e) => !e.name.startsWith(".") && e.name !== SUBSYSTEM_MARKER)
-      .map((e) => e.name);
+      .filter((e) => !e.name.startsWith(".") && e.name !== SUBSYSTEM_MARKER && !counted.has(e.name))
+      .map((e) => `${entryIs(sub.dir, e, "dir") ? "directory" : "file"} ${e.name}`);
     const members = [
       ...services.map((s) => `service ${s}`),
       ...children.map((c) => `subsystem ${c}`),
-      ...strays.map((f) => `file ${f}`),
+      ...strays,
     ];
     if (members.length > 0) {
       fail(

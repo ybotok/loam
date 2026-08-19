@@ -29,6 +29,7 @@ import {
   type ServiceKey,
 } from "../../core/staging/snapshot.js";
 import { enumeratedServices } from "../../core/repo/service-target.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
 import { planSpecs } from "./plan/specs.js";
@@ -53,7 +54,15 @@ export async function archiveLocked(
     if (!json) console.log(line);
   };
 
-  const gated = await gate(config, featureId, opts, say);
+  // One read index for the whole run, threaded through every planner's
+  // config record: gate, the spec merge and both contract merges each hold
+  // per-service loops that resolve living paths through the enumeration, and
+  // without a shared context every one of those calls re-walks the fleet —
+  // O(services²) work under a lock that guarantees the tree is not moving.
+  // The snapshot resolver below reads through the same context, so it pays
+  // for that enumeration too.
+  const read = { docsDir: config.docsDir, fleet: new FleetContext() };
+  const gated = await gate(read, featureId, opts, say);
   if (gated === null) return;
   const { id, dirName, featureDir, gating, advisory, archiveDir, archiveDest, recovered, issues } = gated;
 
@@ -62,9 +71,9 @@ export async function archiveLocked(
   // PLAN — compute every merge in memory. Nothing is written until the whole plan
   // succeeds, so a failure on any axis leaves the living docs untouched.
   const planned = emptyPlan();
-  await planSpecs(config, gated, planned, say);
-  await planOpenapiContracts(config, gated, planned, say);
-  await planAsyncapiContracts(config, gated, planned, say);
+  await planSpecs(read, gated, planned, say);
+  await planOpenapiContracts(read, gated, planned, say);
+  await planAsyncapiContracts(read, gated, planned, say);
   await planLandscape(config, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
 
@@ -152,7 +161,7 @@ export async function archiveLocked(
     // is empty, every row keys by the flat fallback, and the missing
     // directory stays doctor's diagnosis rather than a merge-failed here.
     const dirOf = new Map(
-      (await enumeratedServices(config.docsDir)).map((s) => [s.id as string, repoPath(config.docsDir, s.dir)]),
+      (await enumeratedServices(config.docsDir, read.fleet)).map((s) => [s.id as string, repoPath(config.docsDir, s.dir)]),
     );
     const serviceKeyOf = (rel: string): ServiceKey | null => {
       for (const [service, dir] of dirOf) {

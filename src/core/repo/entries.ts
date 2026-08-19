@@ -108,7 +108,11 @@ export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
       code: "service.id-invalid",
       subject: s.id,
       message:
-        `services/${s.id}/ — ${s.idProblem} ` +
+        // The path is spelled from the entry's own placement chain, not a
+        // `services/<id>/` join: a FILED service with an illegal name lives at
+        // services/<subsystem>/…/<id>/, and a finding naming a root directory
+        // that does not exist sends the fix to the wrong place.
+        `${["services", ...s.subsystem, s.id].join("/")}/ — ${s.idProblem} ` +
         `Every authoring command refuses this id (\`loam adopt\`, \`loam delta\`, \`loam new --touches\`), so nothing in that directory can be changed through loam. ` +
         `Rename the directory to a legal id, then update its \`service:\` frontmatter, its \`metadata { service '${s.id}' }\` binding in architecture/landscape.likec4, and any features/<FEAT>/specs/${s.id}/ that names it.`,
     }));

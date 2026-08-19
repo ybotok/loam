@@ -33,6 +33,7 @@ import { featurePaths, featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
+import { FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
 import { scenarioBodyHash } from "../gherkin/digest.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
@@ -91,7 +92,14 @@ export async function featureChecklist(
   docsDir: DocsDir,
   featureDir: FeatureDir,
   featureId: string,
+  fleet?: FleetContext,
 ): Promise<Checklist> {
+  // The per-service loop below resolves living contracts through the
+  // enumeration twice per service; without a shared context each of those is
+  // a full fleet walk, so deriving one checklist cost O(services²) reads. A
+  // caller-supplied context is used when given; otherwise one is created for
+  // this derivation alone — the loop still pays a single walk either way.
+  const ctx = fleet ?? new FleetContext();
   const seen = new Map<string, number>();
   const claim = (kind: ClaimKind, subject: string, parts: string[], text: string): Claim => ({
     id: claimId(featureId, kind, parts, seen),
@@ -134,7 +142,7 @@ export async function featureChecklist(
       // container. Unenumerable services/ degrades to the feature's names.
       const svcOf = serviceResolver(
         elements,
-        new Set<string>([...(await enumeratedServiceIds(docsDir)), ...specServices]),
+        new Set<string>([...(await enumeratedServiceIds(docsDir, ctx)), ...specServices]),
       );
       for (const r of res.relationships) {
         // Untagged edges are context for the diagram; an edge with no operation
@@ -159,7 +167,7 @@ export async function featureChecklist(
       .filter((operation) => !operation.remove)
       .map((operation) => operation.id);
     if (featOps.length > 0) {
-      const living = new Set(await operationIds((await locateServicePaths(docsDir, svc)).openapi));
+      const living = new Set(await operationIds((await locateServicePaths(docsDir, svc, ctx)).openapi));
       for (const op of featOps) {
         if (living.has(op)) continue;
         exposes.push(
@@ -176,7 +184,7 @@ export async function featureChecklist(
     // checkable, exactly like the broken C4 delta above.
     const events = await readAsyncapi(paths.asyncapi);
     if (events.sent.length > 0 || events.received.length > 0) {
-      const living = await readAsyncapi((await locateServicePaths(docsDir, svc)).asyncapi);
+      const living = await readAsyncapi((await locateServicePaths(docsDir, svc, ctx)).asyncapi);
       const directions = [
         { direction: "sends", feat: events.sent, known: new Set(living.sent) },
         { direction: "receives", feat: events.received, known: new Set(living.received) },

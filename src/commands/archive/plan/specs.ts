@@ -28,9 +28,10 @@ import { type Requirement } from "../../../core/document/spec.js";
 import { ArchiveFailure } from "./refusal.js";
 import { type Gated, type Plan } from "./state.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function planSpecs(
-  config: { docsDir: DocsDir },
+  config: { docsDir: DocsDir; fleet?: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -48,7 +49,9 @@ export async function planSpecs(
       if (!existsSync(deltaPath)) continue;
       const deltaReqs = parseRequirements(await readUtf8(deltaPath));
 
-      const livingPath = (await locateServicePaths(config.docsDir, svc))[axis.key];
+      // The shared context: this is a deltaServices × SPEC_AXES loop, and a
+      // context-less locate is a full fleet walk per iteration.
+      const livingPath = (await locateServicePaths(config.docsDir, svc, config.fleet))[axis.key];
       if (!existsSync(livingPath)) {
         // New service (or first arch spec) — create the living file from the
         // ADDED/MODIFIED requirements.
