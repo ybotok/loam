@@ -23,7 +23,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { LikeC4 } from "likec4";
-import { flattenModel, loadSource, serviceOf, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { flattenModel, loadSource, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { serviceOf } from "../src/core/c4/model/model.js";
 
 /**
  * Everything loam's adapter reads, in one document: nested/dotted container

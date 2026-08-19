@@ -10,7 +10,8 @@
  * instead of re-deriving it against a file it would open a second time.
  */
 import { existsSync } from "node:fs";
-import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { loadFile } from "../../../core/c4/likec4.js";
+import { serviceResolver, type Elem, type Rel } from "../../../core/c4/model/model.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { capabilitiesPath, landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";

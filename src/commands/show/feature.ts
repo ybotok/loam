@@ -10,7 +10,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { emitJson, repoPath } from "../../core/envelope/json.js";
-import { loadFile, type Elem } from "../../core/c4/likec4.js";
+import { loadFile } from "../../core/c4/likec4.js";
+import { type Elem } from "../../core/c4/model/model.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { parseRequirements } from "../../core/document/parse.js";

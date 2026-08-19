@@ -38,7 +38,7 @@
  * the committed landscape resolves keeps the output a function of committed
  * bytes alone.
  */
-import { serviceResolver, type Elem } from "../../c4/likec4.js";
+import { serviceResolver, type Elem } from "../../c4/model/model.js";
 import { servicesUnder } from "./find.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "./walk.js";
 

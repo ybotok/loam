@@ -7,7 +7,8 @@
  */
 import { existsSync } from "node:fs";
 import { relative, sep } from "node:path";
-import { loadFile, type Elem } from "../../../core/c4/likec4.js";
+import { loadFile } from "../../../core/c4/likec4.js";
+import { type Elem } from "../../../core/c4/model/model.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { landscapePath } from "../../../core/repo/paths.js";
 import { renderSubsystemViews } from "../../../core/repo/tree/views.js";

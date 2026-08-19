@@ -7,7 +7,8 @@
  * from a second read is a footer that can contradict the rows above it.
  */
 import { existsSync } from "node:fs";
-import { loadFile, serviceResolver } from "../../core/c4/likec4.js";
+import { loadFile } from "../../core/c4/likec4.js";
+import { serviceResolver } from "../../core/c4/model/model.js";
 import {
   maturityGaps,
   serviceMaturity,

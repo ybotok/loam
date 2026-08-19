@@ -10,13 +10,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import {
-  elementService,
-  loadFile,
-  serviceResolver,
-  type Elem,
-  type LoadedDoc,
-} from "../../../core/c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../../core/c4/likec4.js";
+import { elementService, serviceResolver, type Elem } from "../../../core/c4/model/model.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
 import { serviceIdFindings } from "../../../core/repo/entries.js";
 import { listFleetTree, listServices } from "../../../core/repo/repo.js";

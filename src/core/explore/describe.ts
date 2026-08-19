@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { FleetContext } from "../fleet-context.js";
-import { type Elem, type Rel } from "../c4/likec4.js";
+import { type Elem, type Rel } from "../c4/model/model.js";
 import { maturityGaps, serviceMaturity } from "../vocabulary/maturity.js";
 import { compareIds, type ServiceEntry } from "../repo/entries.js";
 import { servicePathsAt } from "../repo/paths.js";

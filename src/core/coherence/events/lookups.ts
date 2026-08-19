@@ -18,7 +18,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, serviceResolver, type LoadedDoc } from "../../c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../c4/likec4.js";
+import { serviceResolver } from "../../c4/model/model.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import { featureSpecPaths, landscapePath, SPEC_AXES } from "../../repo/paths.js";
 import { enumeratedServiceIds, locateServicePaths } from "../../repo/service-target.js";

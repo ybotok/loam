@@ -24,7 +24,7 @@
  * guard (`covers.unknown`, warn); the emitters live with the other validate
  * checks, this module owns only the grammar and the matching.
  */
-import { elementService, serviceResolver, type Elem, type Rel } from "./likec4.js";
+import { elementService, serviceResolver, type Elem, type Rel } from "./model/model.js";
 import type { HealthIds } from "../vocabulary/health.js";
 
 export type CoversEntry =

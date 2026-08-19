@@ -8,7 +8,8 @@
  * them.
  */
 import { existsSync } from "node:fs";
-import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
+import { loadFile } from "../c4/likec4.js";
+import { elementService, serviceResolver, type Elem } from "../c4/model/model.js";
 import { landscapePath } from "../repo/paths.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
 import type { BriefTarget } from "./targets.js";
