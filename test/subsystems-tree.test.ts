@@ -66,6 +66,10 @@ describe("three-way classification", () => {
     const p = await makeProject(nestedFixture());
     try {
       expect(await listedIds(p.workDir)).toContain("payment-service");
+      // A fleet WITH subsystems owes the generated views file (its absence is
+      // `subsystem.views-stale` — test/subsystems-views.test.ts pins that);
+      // one sync writes it, and the rest of this test is about the walk.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(0);
       expect(subsystemFindings(res.stdout)).toEqual([]);
@@ -241,6 +245,9 @@ describe("what is NOT a finding", () => {
     files["services/empty-group/subsystem.yaml"] = "title: Empty on purpose\n";
     const p = await makeProject(files);
     try {
+      // The one obligation a subsystem brings is the generated views file —
+      // an empty group renders an empty view, and the fleet is then green.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(0);
       expect(subsystemFindings(res.stdout)).toEqual([]);
@@ -266,6 +273,10 @@ describe("placement is never part of any identity", () => {
     const flat = await makeProject(coherentFixture());
     const nested = await makeProject(nestedFixture());
     try {
+      // The filed fleet carries its generated views file (the one artifact
+      // filing adds); it appears in no command's output below, so the sweep
+      // still compares byte for byte.
+      expect((await runLoam(nested.workDir, "subsystem", "sync")).code).toBe(0);
       // The sweep: same fleet, same feature, same service — one filed, one
       // not. Identical answers, byte for byte, because every join runs on the
       // id and every path resolves through the enumeration. `list --json` is

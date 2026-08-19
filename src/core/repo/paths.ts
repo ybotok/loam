@@ -162,6 +162,17 @@ export function permissionsPath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", "permissions.yaml");
 }
 
+/**
+ * The GENERATED subsystem views — beside the fleet map because the LikeC4
+ * renderer merges the whole `architecture/` project, and a view can only
+ * `include` elements the landscape beside it defines. `loam subsystem sync`
+ * owns the bytes (`core/repo/tree/views.ts` renders them); nothing in loam
+ * ever parses the file, and staleness against the tree is a byte compare.
+ */
+export function subsystemViewsPath(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", "subsystems.likec4");
+}
+
 export function featuresDir(docsDir: DocsDir): string {
   return join(docsDir, "features");
 }

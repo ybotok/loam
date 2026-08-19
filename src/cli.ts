@@ -8,6 +8,7 @@ import { registerList } from "./commands/list/list.js";
 import { registerNew } from "./commands/new/new.js";
 import { registerShow } from "./commands/show/show.js";
 import { registerStatus } from "./commands/status/status.js";
+import { registerSubsystem } from "./commands/subsystem/subsystem.js";
 import { registerDelta } from "./commands/delta/delta.js";
 import { registerGherkin } from "./commands/gherkin/gherkin.js";
 import { registerRebase } from "./commands/rebase/rebase.js";
@@ -56,6 +57,7 @@ export function buildProgram(): Command {
   registerNew(program);
   registerShow(program);
   registerStatus(program);
+  registerSubsystem(program);
   registerDelta(program);
   registerGherkin(program);
   registerRebase(program);
