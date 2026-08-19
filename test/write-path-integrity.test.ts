@@ -33,8 +33,17 @@ import { writeCommitIntent } from "../src/core/staging/recovery/intent.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { recoverInterruptedCommit } from "../src/core/staging/recovery/recover.js";
 import { scanWritePathResidue } from "../src/core/staging/recovery/residue.js";
-import { SNAPSHOT_DIR, SNAPSHOT_MANIFEST, SNAPSHOT_VERSION, SnapshotClobberError, snapshotDir, writeSnapshot } from "../src/core/staging/snapshot.js";
-import { NotUtf8Error, planWrite, readUtf8, sha256 } from "../src/core/staging/writes.js";
+import {
+  SNAPSHOT_DIR,
+  SNAPSHOT_MANIFEST,
+  SNAPSHOT_VERSION,
+  SnapshotClobberError,
+  snapshotDir,
+  writeSnapshot,
+  type ServiceKey,
+  type SnapshotRequest,
+} from "../src/core/staging/snapshot.js";
+import { NotUtf8Error, planWrite, readUtf8, sha256, type StagedWrite } from "../src/core/staging/writes.js";
 import {
   coherentFixture,
   LANDSCAPE,
@@ -104,6 +113,27 @@ function archOnlyFixture(): Record<string, string> {
 
 function json(out: string): Record<string, unknown> {
   return JSON.parse(out) as Record<string, unknown>;
+}
+
+/**
+ * The request `archive` hands `writeSnapshot`, with the same flat-layout
+ * resolver pair the command builds today (src/commands/archive/run.ts): a
+ * `services/<id>/<artifact>` path decomposes into its (service, artifact) key,
+ * and a service's current directory is the flat spelling. Tests that model a
+ * MOVED service override `serviceDirOf` per call.
+ */
+function snapshotRequest(featureDir: string, docsDir: string, staged: StagedWrite[]): SnapshotRequest {
+  return {
+    featureDir,
+    docsDir,
+    feature: { featureId: "FEAT-1", dirName: "FEAT-1-split" },
+    staged,
+    serviceKeyOf: (rel: string): ServiceKey | null => {
+      const m = /^services\/([^/]+)\/(.+)$/.exec(rel);
+      return m ? { service: m[1]!, artifact: m[2]! } : null;
+    },
+    serviceDirOf: (service: string): string => `services/${service}`,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -197,7 +227,14 @@ describe("bytes loam cannot decode", () => {
 
 interface Manifest {
   version: number;
-  files: Array<{ path: string; existed: boolean; after: string; before: string | null }>;
+  files: Array<{
+    path: string;
+    existed: boolean;
+    after: string;
+    before: string | null;
+    service?: string;
+    artifact?: string;
+  }>;
 }
 
 async function readSnapshotManifest(p: Project, dirName: string): Promise<Manifest> {
@@ -222,6 +259,28 @@ describe("the snapshot pre-image", () => {
       const created = manifest.files.find((f) => f.path === "services/payment-split-service/spec.md")!;
       expect(created.existed).toBe(false);
       expect(created.before).toBeNull();
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("re-keys services/ entries by (service, artifact), and leaves everything else literal", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const manifest = await readSnapshotManifest(p, "FEAT-1-split");
+      // Version 3 is the re-keying: a services/ entry names its service by id —
+      // the one name a subsystem re-cut never changes — so unarchive can put
+      // the bytes back wherever that service lives at restore time.
+      expect(manifest.version).toBe(3);
+      for (const f of manifest.files.filter((x) => x.path.startsWith("services/"))) {
+        expect(f.service).toBe("payment-split-service");
+        expect(`services/${f.service}/${f.artifact}`).toBe(f.path);
+      }
+      // The landscape does not move; its entry stays a literal path, keyless.
+      const landscape = manifest.files.find((f) => f.path === "architecture/landscape.likec4")!;
+      expect(landscape.service).toBeUndefined();
+      expect(landscape.artifact).toBeUndefined();
     } finally {
       await p.destroy();
     }
@@ -309,7 +368,7 @@ async function killMidCommit(
     planWrite(landscape, before.toString("utf8").replace("model {", "model {\n  // merged by FEAT-1")),
   ];
   const staged = await stageWrites(writes);
-  await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged);
+  await writeSnapshot(snapshotRequest(featureDir, p.docsDir, staged));
   await writeCommitIntent(
     p.docsDir,
     {
@@ -502,11 +561,112 @@ describe("a commit killed between two renames", () => {
       // never took them back: its pre-images no longer match what is there.
       await killMidCommit(p, { swaps: 2 });
       const staged = await stageWrites([planWrite(join(p.docsDir, "architecture/landscape.likec4"), "rewritten\n")]);
-      await expect(writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged)).rejects.toThrow(
+      await expect(writeSnapshot(snapshotRequest(featureDir, p.docsDir, staged))).rejects.toThrow(
         SnapshotClobberError,
       );
       // The pre-images are still there to repair from.
       expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/architecture/landscape.likec4"))).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Leftover snapshots from older layouts                               */
+/* ------------------------------------------------------------------ */
+
+/** Rewrite an ACTIVE feature's leftover manifest to the version-2 layout: no (service, artifact) keys. */
+async function downgradeActiveManifest(p: Project, dirName: string): Promise<void> {
+  const path = join(p.docsDir, "features", dirName, SNAPSHOT_DIR, SNAPSHOT_MANIFEST);
+  const manifest = JSON.parse(await readFile(path, "utf8")) as Manifest;
+  manifest.version = 2;
+  for (const f of manifest.files) {
+    delete f.service;
+    delete f.artifact;
+  }
+  await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+}
+
+describe("a version-2 leftover snapshot in an active feature", () => {
+  it("is graded by staleness and replaced when nothing of its run landed, not refused as a different loam", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      // A run killed before its first rename, under the PREVIOUS loam: snapshot
+      // written, nothing swapped, so its pre-images still match the living docs.
+      await killMidCommit(p, { swaps: 0 });
+      await downgradeActiveManifest(p, "FEAT-1-split");
+      // The version bump must not strand it: version 2 answers the staleness
+      // question through its literal paths, and stale bookkeeping is replaced.
+      const retry = await stageWrites([
+        planWrite(join(p.docsDir, "services/payment-split-service/spec.md"), "# retry\n"),
+      ]);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, retry));
+      const rewritten = JSON.parse(
+        await readFile(join(featureDir, SNAPSHOT_DIR, SNAPSHOT_MANIFEST), "utf8"),
+      ) as Manifest;
+      expect(rewritten.version).toBe(SNAPSHOT_VERSION);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still guards a version-2 leftover whose merge DID land — the refusal, under the old rules", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      // Both swaps landed and nothing rolled back: the v2 pre-images are the
+      // only copies of what the living docs said. The bump must not weaken this.
+      await killMidCommit(p, { swaps: 2 });
+      await downgradeActiveManifest(p, "FEAT-1-split");
+      const retry = await stageWrites([planWrite(join(p.docsDir, "architecture/landscape.likec4"), "rewritten\n")]);
+      await expect(writeSnapshot(snapshotRequest(featureDir, p.docsDir, retry))).rejects.toThrow(
+        SnapshotClobberError,
+      );
+      expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/architecture/landscape.likec4"))).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a leftover snapshot whose service directory moved", () => {
+  it("grades staleness at the service's CURRENT directory when the resolver knows it", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const featureDir = join(p.docsDir, "features/FEAT-1-split");
+      const spec = join(p.docsDir, "services/payment-service/spec.md");
+      const living = await readFile(spec);
+      // A run killed before its first rename: pre-image of payment-service's
+      // spec parked, living docs untouched.
+      const first = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged -->\n")]);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, first));
+
+      // The service moves — by hand, since no tree feature exists yet. Its
+      // bytes do not change, so nothing of the killed run has landed.
+      await mkdir(join(p.docsDir, "services/payments-group"), { recursive: true });
+      await rename(join(p.docsDir, "services/payment-service"), join(p.docsDir, "services/payments-group/payment-service"));
+
+      // Through the flat resolver the literal path is simply ABSENT, which
+      // reads as "the merge landed and the file was then deleted" — a refusal.
+      // That is today's honest CLI behaviour (archive builds the flat map until
+      // the tree walk exists) and the misgrading the re-keying exists to end.
+      const moved = join(p.docsDir, "services/payments-group/payment-service/spec.md");
+      const flatRetry = await stageWrites([planWrite(moved, living.toString("utf8") + "\n<!-- merged -->\n")]);
+      await expect(writeSnapshot(snapshotRequest(featureDir, p.docsDir, flatRetry))).rejects.toThrow(
+        SnapshotClobberError,
+      );
+
+      // A resolver that enumerates the moved directory — what the tree walk
+      // will hand archive — grades the SAME snapshot at the service's current
+      // home, finds the bytes untouched, and lets the retry replace it.
+      const treeRetry = await stageWrites([planWrite(moved, living.toString("utf8") + "\n<!-- merged -->\n")]);
+      const request = snapshotRequest(featureDir, p.docsDir, treeRetry);
+      request.serviceDirOf = (service: string): string | null =>
+        service === "payment-service" ? "services/payments-group/payment-service" : null;
+      await writeSnapshot(request);
+      expect(existsSync(join(featureDir, SNAPSHOT_DIR, SNAPSHOT_MANIFEST))).toBe(true);
     } finally {
       await p.destroy();
     }
@@ -551,7 +711,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       // naming a file that lives on the far side of the mount, and living docs
       // that still say exactly what its pre-image does.
       const first = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
-      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, first);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, first));
       const manifest = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
       expect(manifest.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
 
@@ -561,7 +721,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       // again, the operator was told an intact snapshot was unreadable, and the
       // half-merge it is the only record of could never be repaired.
       const second = await stageWrites([planWrite(spec, living.toString("utf8") + "\n<!-- merged by FEAT-1 -->\n")]);
-      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, second);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, second));
       const rewritten = JSON.parse(await readFile(activeManifestPath(p, "FEAT-1-split"), "utf8")) as Manifest;
       expect(rewritten.files.map((f) => f.path)).toContain("services/payment-service/spec.md");
       expect(existsSync(join(featureDir, SNAPSHOT_DIR, "files/services/payment-service/spec.md"))).toBe(true);
@@ -577,7 +737,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
       const featureDir = join(p.docsDir, "features/FEAT-1-split");
       const spec = join(p.docsDir, "services/payment-service/spec.md");
       const staged = await stageWrites([planWrite(spec, "# rewritten\n")]);
-      await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, staged);
+      await writeSnapshot(snapshotRequest(featureDir, p.docsDir, staged));
       const manifestFile = activeManifestPath(p, "FEAT-1-split");
       const original = JSON.parse(await readFile(manifestFile, "utf8")) as Manifest;
 
@@ -596,7 +756,7 @@ describe("a docs repo whose services are mounted by symlink", () => {
           "utf8",
         );
         const retry = await stageWrites([planWrite(spec, "# rewritten again\n")]);
-        const rejection: unknown = await writeSnapshot(featureDir, p.docsDir, { featureId: "FEAT-1", dirName: "FEAT-1-split" }, retry).then(
+        const rejection: unknown = await writeSnapshot(snapshotRequest(featureDir, p.docsDir, retry)).then(
           () => undefined,
           (err: unknown) => err,
         );

@@ -12,7 +12,8 @@ import { readdir, readFile, rename, rmdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { archiveDir as archiveRoot, featuresDir as featuresRoot } from "../../core/repo/paths.js";
-import { resolveFeature } from "../../core/repo/repo.js";
+import { listServices, resolveFeature } from "../../core/repo/repo.js";
+import { docsRepoState } from "../../core/repo/state.js";
 import { sayRecovery } from "../archive/plan/refusal.js";
 import {
   quietRm,
@@ -64,7 +65,24 @@ export async function unarchiveLocked(
     return;
   }
 
-  const manifest = await readManifest(feature.dir, docsDir, feature.id, feature.dirName);
+  // The restore-time half of the snapshot's (service, artifact) re-keying: a
+  // version-3 entry restores into wherever its service lives TODAY, and the
+  // enumeration is the only thing that may say where that is. Built once here,
+  // as a map, so the manifest validation stays a pure question of one file
+  // against one repo state. "no-services" is tolerated the way `listFeatures`
+  // tolerates it: a docs repo whose `services/` is gone still restores by the
+  // literal paths (every id resolves to null), and it is `doctor`'s job to say
+  // the directory is missing — refusing the undo here would add a second,
+  // contradictory diagnosis.
+  const enumerated = docsRepoState(docsDir).kind === "ok" ? await listServices(docsDir) : [];
+  const serviceDirs = new Map<string, string>(enumerated.map((s) => [s.id, repoPath(docsDir, s.dir)]));
+  const manifest = await readManifest({
+    featureDir: feature.dir,
+    docsDir,
+    featureId: feature.id,
+    dirName: feature.dirName,
+    serviceDirOf: (service: string): string | null => serviceDirs.get(service) ?? null,
+  });
   if (manifest === null) {
     fail(
       json,

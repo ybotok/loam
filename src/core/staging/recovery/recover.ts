@@ -95,6 +95,12 @@ export async function recoverInterruptedCommit(docsDir: string): Promise<CommitR
 
   // The pre-images travel inside the feature directory, so they are at one of
   // the two ends of the move depending on how far the interrupted run got.
+  // Deliberately NOT the snapshot's (service, artifact) re-keying: the journal
+  // and the snapshot were written seconds apart under the same docs lock, so
+  // the journal's literal paths and the pre-image keys cannot have diverged —
+  // a service directory moved by hand between the crash and this repair leaves
+  // its files "in neither recorded state", which is the refusal below, not a
+  // resolution question.
   const roots = [join(moveFrom, SNAPSHOT_DIR, "files"), join(moveTo, SNAPSHOT_DIR, "files")];
   const repaired: string[] = [];
   for (const f of pending) {

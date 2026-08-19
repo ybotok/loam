@@ -20,7 +20,8 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { join } from "node:path";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { readManifest } from "../src/commands/unarchive/manifest.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import {
   coherentFixture,
@@ -220,6 +221,120 @@ describe("the round trip", () => {
       await runLoam(p.workDir, "unarchive", "FEAT-1");
       expect((await runLoam(p.workDir, "list", "--json")).stdout).toBe(listed.stdout);
       expect((await runLoam(p.workDir, "validate", "--all", "--json")).stdout).toBe(validated.stdout);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The (service, artifact) re-keying — snapshot version 3              */
+/* ------------------------------------------------------------------ */
+
+describe("snapshot versions across the re-keying", () => {
+  it("still restores a version-2 snapshot byte for byte, under its literal-path rules", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      const before = await treeHashes(p.docsDir);
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      // Exactly what a pre-re-keying loam archived: version 2, literal paths,
+      // no (service, artifact) keys. Such snapshots sit in archived features
+      // forever and travel across upgrades — they must keep restoring.
+      const path = join(p.docsDir, "features/archive/FEAT-1-split/.loam-before/manifest.json");
+      const manifest = JSON.parse(await readFile(path, "utf8")) as {
+        version: number;
+        files: Array<{ service?: string; artifact?: string }>;
+      };
+      manifest.version = 2;
+      for (const f of manifest.files) {
+        delete f.service;
+        delete f.artifact;
+      }
+      await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+
+      expect((await runLoam(p.workDir, "unarchive", "FEAT-1")).code).toBe(0);
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("refuses a version-3 manifest whose services/ row lost its key — that is not a manifest loam wrote", async () => {
+    const p = await makeProject(coherentFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-1")).code).toBe(0);
+      const path = join(p.docsDir, "features/archive/FEAT-1-split/.loam-before/manifest.json");
+      const manifest = JSON.parse(await readFile(path, "utf8")) as {
+        files: Array<{ path: string; service?: string }>;
+      };
+      const row = manifest.files.find((f) => f.path.startsWith("services/"))!;
+      delete row.service;
+      await writeFile(path, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-1", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-missing");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("a service directory moved after the archive", () => {
+  /** The move, simulated by hand — the subsystem tree does not exist yet, so it is a plain mkdir+rename. */
+  async function moveServiceByHand(p: Project, service: string): Promise<void> {
+    await mkdir(join(p.docsDir, "services/payments-group"), { recursive: true });
+    await rename(join(p.docsDir, "services", service), join(p.docsDir, "services/payments-group", service));
+  }
+
+  it("today: the flat enumeration does not see the moved directory, so unarchive refuses honestly", async () => {
+    const p = await makeProject(modifyFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-20")).code).toBe(0);
+      await moveServiceByHand(p, "payment-service");
+      const moved = await treeHashes(p.docsDir);
+
+      // The enumeration is flat until the tree walk lands (wave 2), so the
+      // moved service is not enumerated, the v3 entry falls back to its literal
+      // path, and the file there is gone — which is the EXISTING refusal, not a
+      // silent restore into a directory nobody has any more. When the walk
+      // lands, this same run resolves the id and restores into the moved
+      // location; this test then flips to pin that.
+      const res = await runLoam(p.workDir, "unarchive", "FEAT-20", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("snapshot-stale");
+      expect(JSON.parse(res.stdout).error.message).toContain("services/payment-service/spec.md");
+      // Refused before anything was staged.
+      expect(await treeHashes(p.docsDir)).toEqual(moved);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("resolves a v3 entry through the enumeration it is HANDED — the restore-time target follows the service", async () => {
+    const p = await makeProject(modifyFixture());
+    try {
+      expect((await runLoam(p.workDir, "archive", "FEAT-20")).code).toBe(0);
+      await moveServiceByHand(p, "payment-service");
+
+      // The manifest reader with an enumeration that DOES know the moved
+      // directory — what the tree walk will hand it. The entry's write target
+      // follows the service; the pre-image stays keyed by the as-archived path.
+      const featureDir = join(p.docsDir, "features/archive/FEAT-20-faster");
+      const manifest = await readManifest({
+        featureDir,
+        docsDir: p.docsDir,
+        featureId: "FEAT-20",
+        dirName: "FEAT-20-faster",
+        serviceDirOf: (service: string): string | null =>
+          service === "payment-service" ? "services/payments-group/payment-service" : null,
+      });
+      expect(manifest).not.toBeNull();
+      const entry = manifest!.files.find((f) => f.path === "services/payment-service/spec.md")!;
+      expect(entry.target).toBe(join(p.docsDir, "services/payments-group/payment-service/spec.md"));
+      expect(entry.snapshot).toBe(
+        join(featureDir, ".loam-before/files/services/payment-service/spec.md"),
+      );
     } finally {
       await p.destroy();
     }
