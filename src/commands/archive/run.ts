@@ -4,7 +4,8 @@
  * The order is the command's whole safety property. Every refusal happens before
  * a byte is planned (`./plan/gate.ts`), the plan is computed entirely in memory
  * so a failure on any axis leaves the living docs untouched (`./plan/specs.ts`,
- * `./plan/landscape.ts`), and only a plan that succeeded on every axis is staged
+ * `./plan/contracts/`, `./plan/landscape.ts`), and only a plan that succeeded
+ * on every axis is staged
  * and swapped. `--dry-run` returns between the second and the third.
  */
 import { existsSync } from "node:fs";
@@ -29,6 +30,7 @@ import {
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
 import { planSpecs } from "./plan/specs.js";
+import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { issueJson, refuseJson } from "./plan/refusal.js";
@@ -58,6 +60,7 @@ export async function archiveLocked(
   // succeeds, so a failure on any axis leaves the living docs untouched.
   const planned = emptyPlan();
   await planSpecs(config, gated, planned, say);
+  await planOpenapiContracts(config, gated, planned, say);
   await planLandscape(config, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals } = planned;
 
