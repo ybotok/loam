@@ -44,6 +44,7 @@ import { parseRequirements } from "../../src/core/document/parse.js";
 import { requirementDigest } from "../../src/core/document/spec.js";
 import { pinOpenapiOperations } from "../../src/core/openapi/merge/pin.js";
 import { planOpenapiBaselines } from "../../src/core/openapi/baseline/plan.js";
+import { pinAsyncapiSlots } from "../../src/core/asyncapi/merge/pin.js";
 
 /**
  * The identity `loam vouch` stamps in tests.
@@ -109,6 +110,17 @@ export function pinFor(livingMarkdown: string, name: string): string {
 export function pinOpenapi(featureYaml: string, livingYaml: string): string {
   const ops = pinOpenapiOperations(featureYaml, livingYaml, "fixture").text ?? featureYaml;
   return planOpenapiBaselines(ops, livingYaml, "fixture").text ?? ops;
+}
+
+/**
+ * A feature event contract with every slot pinned against `living` — byte for
+ * byte what `loam rebase` writes on the AsyncAPI axis, for `pinOpenapi`'s
+ * reason: this IS the function that command calls, so a fixture pinning
+ * itself by hand would be a second implementation of the digest rule, free to
+ * agree with the merge right up until the day it quietly did not.
+ */
+export function pinAsyncapi(featureYaml: string, livingYaml: string): string {
+  return pinAsyncapiSlots(featureYaml, livingYaml, "fixture").text ?? featureYaml;
 }
 
 /** Create a temp dir (caller owns cleanup unless using makeProject().destroy()). */
@@ -441,6 +453,89 @@ paths:
                 properties:
                   splitId:
                     type: string
+`;
+
+/**
+ * Living AsyncAPI for payment-service: one send — payment.Authorized reaches
+ * the wire through a channel, an operation and a components message, the
+ * fully factored shape (the channel entry aliasing the components
+ * declaration by `$ref`), so fixtures built on it exercise every join the
+ * reader makes.
+ */
+export const LIVING_ASYNCAPI = `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    messages:
+      Authorized:
+        $ref: '#/components/messages/Authorized'
+operations:
+  sendAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+components:
+  messages:
+    Authorized:
+      name: payment.Authorized
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+
+/**
+ * Feature asyncapi delta for payment-service: a complete document, as the
+ * format spec requires — it QUOTES the living Authorized slots verbatim
+ * (which is what makes `loam rebase`'s pins load-bearing at the merge) and
+ * adds the refund producer side: channel, send operation and message for
+ * payment.Refunded. Unpinned as authored; `pinAsyncapi` (or a real
+ * `loam rebase` run) stamps the pins.
+ */
+export const FEATURE_ASYNCAPI = `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    messages:
+      Authorized:
+        $ref: '#/components/messages/Authorized'
+  refundEvents:
+    address: payment.refunds.v1
+    messages:
+      Refunded:
+        $ref: '#/components/messages/Refunded'
+operations:
+  sendAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+  sendRefunded:
+    action: send
+    channel:
+      $ref: '#/channels/refundEvents'
+components:
+  messages:
+    Authorized:
+      name: payment.Authorized
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+    Refunded:
+      name: payment.Refunded
+      payload:
+        type: object
+        properties:
+          refundId:
+            type: string
 `;
 
 /**
