@@ -13,7 +13,7 @@
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../kernel/document-bytes.js";
 import {
-  BASED_ON_LINE_RE, KIND_RE, REQUIREMENT_ID_LINE_RE,
+  BASED_ON_LINE_RE, CAPABILITY_LINE_RE, KIND_RE, REQUIREMENT_ID_LINE_RE,
   type DeltaKind, type Requirement, type Scenario,
 } from "./spec.js";
 
@@ -258,7 +258,7 @@ export function parseRequirements(md: string): Requirement[] {
       // vocabulary FILE (architecture/capabilities.yaml) is the opt-in for this
       // axis, not the line, so entries parsed here grade as nothing at all
       // until a fleet writes that file (core/capabilities/findings.ts).
-      const mcap = /^\s*Capabilit(?:y|ies):\s*(.+?)\s*$/i.exec(line);
+      const mcap = CAPABILITY_LINE_RE.exec(line);
       if (mcap) req.capabilities = mcap[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }

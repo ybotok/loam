@@ -6,6 +6,7 @@ import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { capabilitiesPath } from "../../core/repo/paths.js";
 import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/rollup.js";
+import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
 import { listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews } from "./views.js";
@@ -84,23 +85,19 @@ export function registerList(program: Command): void {
           : undefined;
 
         // The capability section: the vocabulary's own verdict decides the shape.
-        // An INVALID file refuses through the repository-unavailable path — an
+        // An INVALID file refuses with `repository-unavailable` — an
         // empty-looking success over a broken file is the silent hole this
         // command already refuses elsewhere — while an ABSENT one is an honest
-        // empty answer, because the file is the axis's opt-in.
+        // empty answer, because the file is the axis's opt-in. The message is
+        // `capability.invalid`'s own sentence, not the fs-error helper's: the
+        // file WAS read, it just is not a vocabulary, and one diagnosis should
+        // have one spelling wherever it surfaces.
         const capabilityVocab = wanted.includes("capabilities")
           ? await fleet.capabilities(capabilitiesPath(docsDir))
           : undefined;
-        if (capabilityVocab?.invalid !== undefined) {
-          reportRepositoryUnavailable(
-            json,
-            Object.assign(
-              new Error(`it does not read as a capability vocabulary — ${capabilityVocab.invalid}`),
-              { path: capabilitiesPath(docsDir) },
-            ),
-            "the capability rollup would be built from a file nobody can read",
-            docsDir,
-          );
+        const brokenVocab = capabilityVocab === undefined ? null : invalidVocabularyFinding(capabilityVocab);
+        if (brokenVocab !== null) {
+          fail(json, "repository-unavailable", brokenVocab.message);
           return;
         }
         const capabilities: CapabilityRow[] | undefined =

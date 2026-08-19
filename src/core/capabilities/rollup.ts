@@ -60,6 +60,11 @@ export interface CapabilityRollupInput {
  */
 export async function capabilityRollup(input: CapabilityRollupInput): Promise<CapabilityRow[]> {
   const { services, vocab, read } = input;
+  // Rows exist only for DECLARED ids, so an empty vocabulary (absent file, or
+  // present with nothing declared) can build nothing — walking every service's
+  // two spec files to produce zero rows is what a vocabless 120-service fleet
+  // would otherwise pay on every `list`/`explore` that asks.
+  if (vocab.byId.size === 0) return [];
   const rows = new Map<string, CapabilityRow>();
   for (const id of [...vocab.byId.keys()].sort(compareIds)) {
     const decl = vocab.byId.get(id)!;

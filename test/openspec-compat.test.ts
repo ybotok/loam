@@ -603,6 +603,9 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       // digest moves because loam learned to read one more line, which is what
       // this file exists to keep true.
       "requires",
+      // The capability axis — the same additive parse for the same reason:
+      // `Capability:` stays in `text`, so the digest guarantee above holds.
+      "capabilities",
       "scenarios",
       "section",
       // Where the heading was, so `loam rebase` can rewrite one body line by

@@ -275,6 +275,42 @@ describe("the archive gate", () => {
     expect(approved.code, approved.out).toBe(0);
   });
 
+  it("an undeclared capability in the delta arch.spec.md gates archive identically", async () => {
+    // The gate's OTHER branch: coherence reads the feature's arch.spec.md
+    // delta solely for this grade (core/coherence/declared.ts), so only a case
+    // whose bad entry lives in the arch delta — the spec.md delta left
+    // untouched and clean — can tell that read from dead code.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/arch.spec.md"] = `# arch delta
+
+## ADDED Requirements
+
+### Requirement: Split arrives exactly once
+The service SHALL treat createSplit as idempotent.
+
+Covers: paymentSplitService
+Capability: shipping
+
+#### Scenario: Retry is a no-op
+- **Given** a recorded split
+- **When** the call is retried
+- **Then** nothing is recorded twice
+`;
+    const p = await project({ ...files, "architecture/capabilities.yaml": CAPABILITIES });
+    const found = await findings(p, "capability.unknown", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("arch.spec.md");
+    expect(found[0]!.message).toContain("shipping");
+
+    const refused = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.stdout).error.code).toBe("not-coherent");
+    expect(refused.stdout).toContain("capability.unknown");
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+  });
+
   it("with no vocabulary the same feature archives clean, and the line lands in living verbatim", async () => {
     const p = await project(featureWithCapability());
     const res = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
