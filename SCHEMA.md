@@ -31,9 +31,10 @@ docs/
   likec4.config.json               one LikeC4 project, scoped to architecture/       [init --create]
   architecture/
     landscape.likec4                    global C4 (fleet landscape)
+    subsystems.likec4                   one view per subsystem, views only    [GENERATED: loam subsystem sync]
     permissions.yaml                    fleet authorization vocabulary        [authored, opt-in]
     landscape.health.yaml            composed health model              [derived, later]
-  services/<svc>/
+  services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
     model.likec4                        service C4 (containers/components)  [adopt]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
     arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
@@ -100,7 +101,33 @@ Names share **one flat namespace**: every subsystem name and service id, unique 
 tree at any depth, never colliding with each other (`subsystem.name-collision` names every
 claimant). Subsystem names take the service-id grammar (`subsystem.name-invalid` otherwise);
 depth is unbounded and is the author's problem, not the tool's. A service directly under
-`services/` is **unfiled** — permanent, normal, and never a finding.
+`services/` is **unfiled** — permanent, normal, and never a finding; `loam list` carries the
+count (`unfiledServices`, plus `services[].subsystem` and `subsystems[]`), and an empty
+subsystem is legal, since `loam subsystem new` must be usable before anything moves in.
+
+The tree is mirrored into **one generated file, never into the authored landscape**:
+`architecture/subsystems.likec4` holds LikeC4 **views only** — no model, no tags, no
+`specification` — one view per subsystem, transitively enumerating the services beneath it as
+`include` lines naming landscape *element* ids (resolved through the same
+`metadata { service }`-then-title join every check uses; a member nothing models is omitted,
+which `landscape.service-unmodelled` already reports). The output is deterministic and
+line-oriented — subsystems sorted by path, members by id, one `include` per line, no
+timestamps, no absolute paths — so it is byte-reproducible on any machine and two concurrent
+moves into different groups merge in git without intervention. `loam subsystem sync` is the one
+regenerator (it also *removes* the file when the tree has no subsystems), every
+`loam subsystem` write verb regenerates it inside the same transaction, and `validate --all`
+grades staleness by **byte comparison** — exactly one error, `subsystem.views-stale`, on
+exactly that file; nothing in loam ever parses it (a views-only document does not parse
+standalone — only the LikeC4 renderer, which merges the whole `architecture/` project, resolves
+its includes).
+
+A move is **one journaled transaction over N directory renames plus the regenerated views
+file** (`loam subsystem move <name>... --into <sub|.>`; `rename` is a one-rename move; whole
+subtrees move as one rename). It refuses only when git reports uncommitted changes under a
+directory being moved (`move-uncommitted` — where git will not say, it proceeds), and after
+landing it stages the renames and the views file in git without committing. Archive snapshots
+survive any of this: a version-3 snapshot re-keys `services/` entries by `(service, artifact)`
+and restores wherever the service lives *today*.
 
 ## Canonical joins
 

@@ -15,8 +15,8 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   [--owner]\` creates a group (an empty one is legal — its \`subsystem.yaml\` is a
   marker, never a member list); \`move <name>... --into <sub|.>\` relocates
   services and whole subtrees in ONE journaled transaction over the renames
-  plus the regenerated views file (\`--into .\` unfiles; the renames are staged
-  in git without committing where git answers); \`rename <old> <new>\` renames a
+  plus the regenerated views file (\`--into .\` unfiles; the renames and the
+  regenerated views file are staged in git without committing, where git answers); \`rename <old> <new>\` renames a
   group through the same transaction (services are never renamed — the id is
   the identity); \`rm <name>\` removes an EMPTY group; \`list\` shows the tree
   with member counts and the unfiled count (unfiled is permanent and normal —
