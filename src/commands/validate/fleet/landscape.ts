@@ -27,6 +27,7 @@ import { fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "../checks/vocabulary.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { unreadableLandscape } from "./load.js";
+import { viewsStaleFindings } from "./views-stale.js";
 
 /**
  * The fleet cross-check: `services/` and the landscape both claim to name the
@@ -75,7 +76,8 @@ export async function validateLandscape(
   // colliding or mismarked directory is a fact about `services/` that holds
   // whether or not a landscape exists or parses — and a broken tree must make
   // the fleet gate refuse while still naming every service it found.
-  findings.push(...(await listFleetTree(docsDir, fleet)).findings);
+  const tree = await listFleetTree(docsDir, fleet);
+  findings.push(...tree.findings);
   // Before the landscape's own early returns: the authorization vocabulary is a
   // fleet fact that does not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));
@@ -137,6 +139,11 @@ export async function validateLandscape(
     });
     return report;
   }
+
+  // The generated subsystem views, graded only now that the landscape has
+  // parsed: the expected bytes are a function of (tree, landscape elements) —
+  // `views-stale.ts` says why a byte compare and why exactly one finding.
+  findings.push(...(await viewsStaleFindings(docsDir, tree, land.elements)));
 
   const services: ReadonlySet<string> = new Set(entries.map((s) => s.id));
   // Depth is not a fact about a service. This used to keep only top-level
