@@ -32,6 +32,7 @@ The service SHALL send exactly one order-confirmation notification per order, ad
 contact details it holds for the customer at the moment the confirmation is rendered.
 
 Consumes: order.OrderPlaced
+Capability: order-notifications
 
 #### Scenario: First delivery of an order event
 - **Given** an `order.OrderPlaced` carrying an `orderId` this service has never sent a confirmation for
@@ -52,6 +53,7 @@ The service SHALL send a receipt for every captured payment, stating the capture
 currency exactly as the capture reported them.
 
 Consumes: payment.PaymentCaptured
+Capability: order-notifications
 
 #### Scenario: Receipt follows a capture
 - **Given** a `payment.PaymentCaptured` for an order this service has already confirmed

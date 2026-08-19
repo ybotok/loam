@@ -280,7 +280,11 @@ selected that tool. The map of which invocation surfaces what:
   is mechanical — the one-hop ring, each service's rung, its living operations,
   who already calls whom, and which active features cover the same services. It
   does NOT decide which of those neighbours you actually change; that is a
-  judgement about intent, and loam does not make those.
+  judgement about intent, and loam does not make those. \`--op <operationId>\`
+  seeds from the operation's defining service; \`--capability <id>\` (repeatable)
+  seeds from a declared capability's realizing services, and an id that seeds
+  nothing lands in the additive \`unresolvedCapabilities\` — beside
+  \`loam list capabilities\`, the rollup those seeds are read from.
 - \`loam instructions [<workflow>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you

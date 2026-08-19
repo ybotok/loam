@@ -831,6 +831,42 @@ describe("OpenSpec audit and mapping-driven migration commands", () => {
     expect(await treeHashes(fixture.root)).toEqual(before);
   });
 
+  it("preserves capability identity: the declared vocabulary plus a Capability: line on every routed requirement", async () => {
+    // The union of living and active-horizon ids, nested ids kept nested —
+    // `payments/refunds` from the living tree, `platform/reports` seen only in
+    // an active delta — declared with EMPTY bodies (no description is invented;
+    // Purpose prose stays verbatim under legacy/), and each staged requirement
+    // joined back by the line, living and delta alike.
+    const fixture = await workspace({
+      "config.yaml": "schema: spec-driven\n",
+      "specs/payments/refunds/spec.md": LIVING,
+      "changes/add-reports/specs/platform/reports/spec.md": DELTA,
+    });
+    const inventory = await inventoryOpenSpec(fixture.root);
+    const mapping = await mappingFile(inventory);
+    const target = join(await makeTmpDir("loam-openspec-capability-target-"), "target");
+    cleanups.push(() => rm(join(target, ".."), { recursive: true, force: true }));
+
+    const result = await runLoam(
+      fixture.root, "migrate-openspec", fixture.root, "--map", mapping.path, "--apply", "--target", target, "--json",
+    );
+    expect(result.code, result.out).toBe(0);
+
+    const vocabulary = await readFile(join(target, "architecture", "capabilities.yaml"), "utf8");
+    expect(parseYaml(vocabulary)).toEqual({ capabilities: { "payments/refunds": {}, "platform/reports": {} } });
+    // compareIds order, byte-stable across machines.
+    expect(vocabulary.indexOf("payments/refunds")).toBeLessThan(vocabulary.indexOf("platform/reports"));
+
+    const living = await readFile(join(target, "services", "refunds", "spec.md"), "utf8");
+    expect(living).toContain("Capability: payments/refunds");
+    const delta = await readFile(
+      join(target, "features", "FEAT-1-add-reports", "specs", "reports", "spec.md"),
+      "utf8",
+    );
+    expect(delta).toContain("### Requirement: Refund");
+    expect(delta).toContain("Capability: platform/reports");
+  });
+
   it.skipIf(process.platform === "win32")(
     "rejects a symlink leaf target without writing through it",
     async () => {

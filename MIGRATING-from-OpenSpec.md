@@ -94,6 +94,8 @@ artifacts:
 
 OpenSpec's unit is a capability; loam's unit is a service bound to the C4 landscape. A nested capability id stays nested (`payments/refunds`) rather than collapsing to `payments`. Mapping scope is the union of living capabilities and capabilities found only in active deltas, so a brand-new nested capability cannot disappear merely because it has not reached `specs/` yet.
 
+The mapping of requirements to services stays a human decision — but the capability ids and their associations are preserved mechanically. Apply declares every living and active-horizon capability id in the target's `architecture/capabilities.yaml`, and every routed requirement carries a `Capability: <id>` line joining it back to that declaration, so migration is no longer the step where the analyst's capability structure is lost to everything but `legacy/`. `loam list capabilities` in the staged target answers "what realizes payments/refunds now" from day one.
+
 - With one selected service, every requirement in the capability goes there.
 - With several selected services, `requirementServices` must allocate every living **and active** requirement to one or more of them. Apply refuses an omitted allocation or a service outside the declared list.
 - If two mapped capabilities would create the same heading/`Requirement-ID` in one service, apply refuses instead of guessing which requirement wins.
@@ -141,7 +143,8 @@ Before apply, loam repeats the audit and compares the fresh source root/digest w
 
 The target contains:
 
-- `services/<service>/spec.md` with mapped living requirements and `status: draft`;
+- `services/<service>/spec.md` with mapped living requirements and `status: draft`, each requirement carrying a `Capability:` line for the capability it was routed from;
+- `architecture/capabilities.yaml` declaring the union of living and active-horizon capability ids (empty bodies — no description is invented, the authored `## Purpose` prose stays verbatim under `legacy/`);
 - `features/<FEAT>-<slug>/intent.md` for every active change;
 - `features/<FEAT>-<slug>/specs/<service>/spec.md` with routed ADDED/MODIFIED/REMOVED sections for every non-`skip_specs` change;
 - feature ADR/legacy files according to the explicit proposal/design/tasks dispositions, plus an exact read-only copy of the complete source change tree under `legacy/openspec/`, **and the living capability tree verbatim under `legacy/openspec/specs/`** — `## Purpose` prose, section prose between a heading and its first requirement, and capability `design.md` have no loam equivalent, so they are copied rather than converted and nothing is silently lost;
@@ -185,7 +188,7 @@ Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “
 | OpenSpec artifact | Migration treatment |
 |---|---|
 | `config.yaml` (`schema`, `context`, `rules`, optional `store`) | Inventory and review. Move durable operating context into the docs contract; do not silently convert workflow rules into different validator semantics. |
-| `specs/<nested/capability>/spec.md` | Map requirements to one or more services. Apply stages combined `services/<svc>/spec.md` files. |
+| `specs/<nested/capability>/spec.md` | Map requirements to one or more services. Apply stages combined `services/<svc>/spec.md` files, declares the capability id in `architecture/capabilities.yaml`, and stamps each routed requirement with a `Capability:` line. |
 | `specs/<capability>/design.md` | Review as a service ADR; do not mark accepted merely because the file existed. |
 | `changes/<id>/.openspec.yaml` | Preserve schema/`skip_specs`/created and all inventoried field names in the plan and exact feature-local legacy tree. Current fields such as `retire_capabilities` are not silently converted into loam lifecycle actions. |
 | `changes/<id>/proposal.md` | Explicit `convert-to-intent`, or retain/manual-review in feature legacy material; the original is also preserved. |

@@ -15,6 +15,7 @@ arch behavior│ arch.spec.md ──(covers)──► C4 · health        source
 contract     │ OpenAPI  ◄──(detail of C4 "exposes/calls")    hybrid
 async        │ AsyncAPI ◄──(detail of C4 "publishes/consumes")  hybrid
 authorization│ permissions.yaml ◄──(required by)── requirements source [fleet vocabulary]
+capability   │ capabilities.yaml ◄──(realized by)── requirements source [fleet vocabulary, opt-in]
 structure    │ C4 model — services, relationships            source (adopt-seeded)
 ops / why    │ ADR · runbook · health                        source
 truth        │ code                                          ground truth
@@ -33,6 +34,7 @@ docs/
     landscape.likec4                    global C4 (fleet landscape)
     subsystems.likec4                   one view per subsystem, views only    [GENERATED: loam subsystem sync]
     permissions.yaml                    fleet authorization vocabulary        [authored, opt-in]
+    capabilities.yaml                   fleet capability vocabulary           [authored, opt-in]
     landscape.health.yaml            composed health model              [derived, later]
   services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
     model.likec4                        service C4 (containers/components)  [adopt]
@@ -139,6 +141,7 @@ and restores wherever the service lives *today*.
 | Asynchronous message | LikeC4 edge `publishes` / `consumes` | requirement `Publishes:` / `Consumes:` and AsyncAPI 3 operation/message | exact message id |
 | Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
+| Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` | declared capability id, `/` allowed for nesting |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred from a feature directory. A file can therefore be structurally valid while a join is broken; the broken join is the finding loam reports.
 
@@ -352,15 +355,27 @@ Each axis may be legitimately empty, and the checks grade absence differently fr
 
 `intent.md` is where the "why" lives — the delta says what changed, and nothing else says what for — and the archive gate holds it to that: `intent.empty` (a warning that gates, `--approve` overridable) fires when the file is missing or says nothing outside the scaffold's own comments, so a feature cannot fold into the living docs with its reason unwritten. Its sibling `scaffold.placeholder` refuses the rest of an unedited `loam new` scaffold the same way — the exact template strings, a requirement or description nobody authored, must not become living truth.
 
-### Where a capability lives (and why there is no capability layer)
+### Where a capability lives (declared names, and why there is still no authored layer)
 
-A business capability — "payment splitting" — is spread across the living specs of every service that carries part of it. The obvious fix is a `capabilities/` layer holding the whole story in one place. **There is none, and there should not be one.**
+A business capability — "payment splitting" — is spread across the living specs of every service that carries part of it. What was rejected here, and stays rejected, was an UNCHECKED free-text label and an authored `capabilities/` prose layer: a hand-written `capability:` field has no ground truth, so it would end up on some features and not others, in three spellings of the same theme, never revisited — while creating the impression that an index exists. And a prose layer would be a second copy of text that already exists in the living specs and the archived features, which is a second thing that can disagree with the first.
 
-The story is already whole and already derivable. Every requirement in a living spec arrived through exactly one feature, and that feature is still on disk under `features/archive/` with its intent, its C4 delta and its requirement deltas intact. "Which feature introduced this requirement" is a search, not a record — so a capabilities layer would be a second copy of text that already exists, which is a second thing that can disagree with the first. That is the same reason there is no service manifest.
+A DECLARED name is different in exactly the way that mattered: it is checkable. `architecture/capabilities.yaml` declares the fleet's capability vocabulary — ids with an optional `description` and `owner`, nested ids such as `payments/refunds` kept as one flat key — and a requirement joins it with a `Capability:` list line in either spec file. The file is the opt-in: a fleet without it gets no capability findings at all, and once it exists the axis is graded both ways:
 
-A hand-written `capability:` label on a feature was considered and rejected for a sharper reason: **nothing could check it.** `sources` is hand-written too, but it is checkable — the paths exist or they do not, the digest matches or it does not. There is no ground truth for what counts as a capability, so the field would end up on some features and not others, in three spellings of the same theme, never revisited — while creating the impression that an index exists.
+```yaml
+capabilities:
+  payments:
+    description: take money for an order
+    owner: payments-team
+  payments/refunds: {}
+```
 
-For a theme that genuinely crosses services and matches no structural unit, the mechanism already exists and is checkable: **a LikeC4 tag**. Tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift; `validate` already reads them, `archive` already handles them, and they show up in the diagram.
+- `capability.unknown` (**error**) — a `Capability:` entry the vocabulary does not declare, with close-name suggestions; in a feature delta it gates `loam archive` (`--approve` overrides). Silent when the vocabulary is absent or invalid.
+- `capability.invalid` (**error**, fleet scope) — the file exists but does not read as a vocabulary; reported exactly once per run, the rest of the family suspended, because grading a fleet against a file nobody can read is a cascade rather than a diagnosis.
+- `capability.unrealized` (**warning**, fleet scope) — a declared capability no living non-`REMOVED` requirement names, one warning per capability: either a promise nobody implemented or a word nobody adopted.
+
+The total is readable — `loam list capabilities` reports each capability's realizing requirements, services and draft/verified split, and `loam explore --capability <id>` seeds an exploration from the realizing services. `migrate-openspec` preserves capability identity through this same file: every routed requirement carries a `Capability:` line, and the staged target declares every living and active-horizon OpenSpec capability id (empty bodies — descriptions are not invented, the authored `## Purpose` prose stays verbatim under `legacy/`).
+
+The AUTHORED capability layer — one long-lived page per capability, revised by features — remains deliberately outside loam. That is the roadmap's evidence-gated Later item, and the rollup over these declared names is the evidence that will decide it. For a theme that crosses services and matches no structural unit, a **LikeC4 tag** also remains available and checkable: tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift.
 
 ### Considered and rejected: the rest of the OpenSpec feature set
 

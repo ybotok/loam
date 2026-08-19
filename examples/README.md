@@ -65,7 +65,7 @@ edges. Nothing in loam reports that today, which is why the landscape says so in
 
 ## The warnings are the lesson
 
-`loam validate --all` reports **0 errors and 7 warnings** here, and every one of them is
+`loam validate --all` reports **0 errors and 8 warnings** here, and every one of them is
 deliberate. An example that reported nothing would teach nothing about what these checks catch:
 
 | finding | what it is demonstrating |
@@ -75,6 +75,7 @@ deliberate. An example that reported nothing would teach nothing about what thes
 | `spine.op-deprecated` | payment-service still calls identity-service's `validateToken`, which that contract marks `deprecated: true` — the consumer, not the provider, is the one being told |
 | `api.requirement-deprecated` (×2) | `IDN-VALIDATE-LEGACY` and `ORD-PLACE-V1` each govern only a deprecated operation: promised behaviour on its way out |
 | `permissions.unenforced` | `user/profile:read` is declared in the vocabulary and named by no requirement — the shape a vocabulary drifts into |
+| `capability.unrealized` | `payments/settlement` is declared in `architecture/capabilities.yaml` and no living requirement's `Capability:` line names it — a promise nobody implemented, or a word nobody adopted; `loam list capabilities` shows it as `0 — unrealized` beside the realized ones |
 | `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
 
 **Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is

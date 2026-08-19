@@ -68,7 +68,7 @@ The product reference and the compatibility pin are now the same release: [OpenS
 
 | | OpenSpec v1.9 | loam |
 |---|---|---|
-| System model | capability specs; beta Stores provide Git-owned planning roots and read-only references, but no service discovery or task routing | C4 topology + checked joins across behavior, architecture, OpenAPI, AsyncAPI and permissions |
+| System model | capability specs; beta Stores provide Git-owned planning roots and read-only references, but no service discovery or task routing | C4 topology + checked joins across behavior, architecture, OpenAPI, AsyncAPI, permissions and declared capabilities |
 | Executability | `/opsx:verify` asks an agent to inspect completeness, correctness and coherence; useful, advisory and not persisted as an archive gate | digest-stamped Gherkin; a digest-matched passing report confirms the record mechanically, while execution provenance remains outside loam's proof. Agent answers are **attested, not verified** |
 | Drift control | structural CLI validation plus agent-led verification on demand; no persisted digests to compare against later | persisted source/content digests + human vouch. `content.stale` is checkable fleet-wide; `sources.stale` only inside each service's own repo. Both are warnings — `--strict` is the CI escalation |
 | Change merge | robust spec-delta archive with destination reservation, scenario-loss guards and restoration on failure | transactional multi-axis merge, digest-checked byte undo, journal recovery and `unarchive` |
