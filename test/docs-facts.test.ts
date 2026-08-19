@@ -64,6 +64,36 @@ async function testFileCount(): Promise<number> {
 }
 
 /**
+ * src/commands/ modules and, for each core hub DESIGN.md's rule 23 names, how
+ * many of them import it — the rule's evidence, derived rather than trusted.
+ * An importer is a module with a `from "…/<hub>.js"` statement, matching how
+ * the prose says "imported by".
+ */
+async function commandsHubCounts(): Promise<{
+  modules: number;
+  json: number;
+  config: number;
+  repo: number;
+}> {
+  const files: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) await walk(join(dir, entry.name));
+      else if (entry.name.endsWith(".ts")) files.push(join(dir, entry.name));
+    }
+  };
+  await walk(join(ROOT, "src", "commands"));
+  const counts = { modules: files.length, json: 0, config: 0, repo: 0 };
+  for (const file of files) {
+    const text = await readFile(file, "utf8");
+    if (/from "[^"]*\/core\/envelope\/json\.js"/.test(text)) counts.json += 1;
+    if (/from "[^"]*\/core\/envelope\/config\.js"/.test(text)) counts.config += 1;
+    if (/from "[^"]*\/core\/repo\/repo\.js"/.test(text)) counts.repo += 1;
+  }
+  return counts;
+}
+
+/**
  * ROADMAP's "## Current assessment" is an audit snapshot governed by the
  * document's leading `_Assessed YYYY-MM-DD._` line — exactly the "assessment
  * context" the roadmap's own criterion prescribes for measured facts. Counted
@@ -132,6 +162,25 @@ describe("counted facts are live or dated", () => {
     const design = await read("docs/DESIGN.md");
     const live = `${await commandModuleCount()} command modules, ${commandNames().length} commands`;
     expect(design, `docs/DESIGN.md's layers table must carry the live "${live}" row`).toContain(live);
+  });
+
+  it("DESIGN's rule-23 hub tally is present and live — its four counts are derivable, so they must derive", async () => {
+    // "imported by 43 of the 91 modules … by 18 and 24 of them" rots on the
+    // next file added to commands/. toMatch (not a loop grade) so a reworded
+    // sentence fails loudly instead of passing vacuously; \s+ so reflowing the
+    // paragraph does not.
+    const design = await read("docs/DESIGN.md");
+    const live = await commandsHubCounts();
+    expect(design).toMatch(
+      new RegExp(
+        String.raw`\`core/envelope/json\.ts\`\s+is\s+imported\s+by\s+${live.json}\s+of\s+the\s+${live.modules}\s+modules\s+in\s+\`commands/\``,
+      ),
+    );
+    expect(design).toMatch(
+      new RegExp(
+        String.raw`\`core/envelope/config\.ts\`\s+and\s+\`core/repo/repo\.ts\`\s+by\s+${live.config}\s+and\s+${live.repo}\s+of\s+them`,
+      ),
+    );
   });
 });
 
@@ -264,12 +313,15 @@ describe("public docs name only emitted codes", () => {
 
 describe("known gaps carry owners", () => {
   /**
-   * Every honest known-gap sentence in the shipped pages, paired with the
-   * ROADMAP sentence that owns closing it. BOTH must exist: shipping a roadmap
-   * item deletes its owner sentence, which fails here until the gap prose AND
-   * this registry entry are removed in the same change — that coupling is the
-   * criterion, so later sessions: when you close a roadmap item, THIS registry
-   * and the doc prose it names are part of your change, not someone else's.
+   * The REGISTERED known-gap sentences in the shipped pages, each paired with
+   * the ROADMAP sentence that owns closing it. Registration is opt-in for
+   * ordinary prose, with one forced class: every `[later]` marker in SCHEMA.md
+   * must be covered by an entry here (asserted below), so a deferral cannot
+   * ship ownerless. BOTH sides must exist: shipping a roadmap item deletes its
+   * owner sentence, which fails here until the gap prose AND this registry
+   * entry are removed in the same change — that coupling is the criterion, so
+   * later sessions: when you close a roadmap item, THIS registry and the doc
+   * prose it names are part of your change, not someone else's.
    */
   const KNOWN_GAPS: { doc: string; gap: string; owner: string }[] = [
     {
@@ -302,6 +354,21 @@ describe("known gaps carry owners", () => {
       gap: "**Page-specs** (`ui/pages/*.page.yaml`) are `[later]`",
       owner: "**UI generation:**",
     },
+    {
+      doc: "SCHEMA.md",
+      gap: "UI page-prototypes ─(consume)─► endpoints",
+      owner: "**UI generation:**",
+    },
+    {
+      doc: "SCHEMA.md",
+      gap: "page-specs (UI services)",
+      owner: "**UI generation:**",
+    },
+    {
+      doc: "SCHEMA.md",
+      gap: "interaction flows -> sequence views",
+      owner: "**Rendering:**",
+    },
   ];
 
   it("each gap sentence exists in its page AND its owner sentence exists in ROADMAP.md", async () => {
@@ -317,5 +384,22 @@ describe("known gaps carry owners", () => {
       }
     }
     expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("every `[later]` marker in SCHEMA.md is registered above — a deferral cannot ship ownerless", async () => {
+    const schema = await read("SCHEMA.md");
+    const registered = KNOWN_GAPS.filter((entry) => entry.doc === "SCHEMA.md").map(
+      (entry) => entry.gap,
+    );
+    const orphans = schema
+      .split("\n")
+      .map((text, index) => ({ text: text.trim(), line: index + 1 }))
+      .filter(({ text }) => text.includes("[later]"))
+      .filter(({ text }) => !registered.some((gap) => text.includes(gap)))
+      .map(({ line, text }) => `SCHEMA.md:${line} "${text}"`);
+    expect(
+      orphans,
+      `[later] line(s) no KNOWN_GAPS entry covers:\n${orphans.join("\n")}\n— register each with its ROADMAP owner, or close the deferral`,
+    ).toEqual([]);
   });
 });

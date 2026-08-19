@@ -5,7 +5,12 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { PACKAGED_MARKDOWN, auditPageLinks } from "./package-docs.mjs";
+import {
+  AUTO_PACKAGED,
+  PACKAGED_MARKDOWN,
+  REVIEWED_PACKAGE_FILES,
+  auditPageLinks,
+} from "./package-docs.mjs";
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = await mkdtemp(join(tmpdir(), "loam-package-smoke-"));
@@ -122,18 +127,12 @@ try {
       .filter(Boolean);
   }
 
+  // Derived from the ONE reviewed list, not restated: npm's automatic trio,
+  // every reviewed Markdown page, and the binary. A literal copy here was the
+  // fourth place the shipped set lived, and the one no test pinned.
   for (const required of [
-    "package.json",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md",
-    "COMPARISON.md",
-    "CONTRIBUTING.md",
-    "MIGRATING-from-OpenSpec.md",
-    "ROADMAP.md",
-    "SCHEMA.md",
-    "SECURITY.md",
-    "WORKFLOW.md",
+    ...AUTO_PACKAGED,
+    ...REVIEWED_PACKAGE_FILES.filter((path) => path.endsWith(".md")),
     "dist/cli.js",
   ]) {
     if (!paths.includes(required)) throw new Error(`tarball is missing ${required}`);

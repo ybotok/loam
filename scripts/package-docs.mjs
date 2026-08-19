@@ -64,9 +64,10 @@ function maskMarkdownCode(text) {
  * Every inline Markdown link (images included — a badge is a link too) outside
  * code, as `{ target, anchor, line }`. `target` is the path half, `""` for a
  * same-page `#anchor` link; `anchor` is `null` when the link carries none.
- * Reference-style links are deliberately unsupported: none exist in any
- * packaged page, and an extractor that half-reads them would vouch for links it
- * never checked.
+ * Reference-style links and angle-bracketed `](<…>)` targets are deliberately
+ * unsupported: none exist in any packaged page, and an extractor that
+ * half-reads them would vouch for links it never checked. auditPageLinks
+ * therefore REFUSES both spellings outright rather than skipping them.
  */
 export function markdownLinks(text) {
   const masked = maskMarkdownCode(text);
@@ -123,7 +124,11 @@ const CANONICAL_REPO = /^https:\/\/github\.com\/ybotok\/loam\/(?:blob|tree)\/mai
  *   relative  — a path; inside the tarball it must name a shipped file.
  *   canonical — https://github.com/ybotok/loam/(blob|tree)/main/<path>; the
  *               intentional way a shipped page points at repository files the
- *               tarball does not carry. `path` is the repo-relative half.
+ *               tarball does not carry. `path` is the repo-relative half. Only
+ *               the path is verified: a `#anchor` on a canonical link is NOT
+ *               checked, because the target renders on GitHub and this audit
+ *               does not model GitHub's anchor generation for arbitrary
+ *               repository files (source, YAML, directory listings).
  *   external  — any other absolute URL; allowed, never fetched.
  */
 export function classifyLink(target) {
@@ -158,6 +163,22 @@ function anchorFailure(anchor, text) {
  */
 export function auditPageLinks(page, text, resolve) {
   const failures = [];
+  // Fail CLOSED on the two link spellings markdownLinks() cannot read. Left
+  // unrefused, a reference-style definition or an angle-bracketed target would
+  // be silently skipped — a page of unaudited links reported clean.
+  const masked = maskMarkdownCode(text);
+  for (const match of masked.matchAll(/^\[[^\]]+\]:\s/gm)) {
+    const line = masked.slice(0, match.index).split("\n").length;
+    failures.push(
+      `${page}:${line} reference-style link definition — this audit reads only inline [text](target) links, so it cannot vouch for reference-style ones; rewrite the link inline`,
+    );
+  }
+  for (const match of masked.matchAll(/\]\(</g)) {
+    const line = masked.slice(0, match.index).split("\n").length;
+    failures.push(
+      `${page}:${line} angle-bracketed link target ](<…>) — this audit reads only plain [text](target) links; drop the angle brackets (and any spaces in the path)`,
+    );
+  }
   for (const { target, anchor, line } of markdownLinks(text)) {
     const at = `${page}:${line}`;
     const link = anchor === null ? target : `${target}#${anchor}`;
