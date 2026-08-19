@@ -52,6 +52,41 @@ describe("mutable release facts", () => {
   });
 });
 
+describe("the released range and the unreleased head", () => {
+  /** CHANGELOG's dated release headings, newest first — the derivation. */
+  async function releasedVersions(): Promise<string[]> {
+    const changelog = await read("CHANGELOG.md");
+    return [...changelog.matchAll(/^## \[(\d[^\]]*)\] - \d{4}-\d{2}-\d{2}$/gm)].map(
+      (match) => match[1]!,
+    );
+  }
+
+  it("README's Docs bullet names the range CHANGELOG actually released", async () => {
+    // Derived, not pinned: the moment a "## [0.1.0-beta.4] - …" heading lands
+    // (the project plan's next release event), the range below stops matching
+    // and README's Docs bullet must move in the same change.
+    const versions = await releasedVersions();
+    expect(versions.length, "CHANGELOG must carry at least one dated release heading").toBeGreaterThan(0);
+    const tail = (version: string): string => version.split("-").slice(1).join("-");
+    const range = `released ${tail(versions[versions.length - 1]!)}–${tail(versions[0]!)}`;
+    expect(await read("README.md")).toContain(`${range} plus the changes on \`main\` under \`[Unreleased]\``);
+  });
+
+  it("while README claims `main` is ahead, CHANGELOG's [Unreleased] section backs it", async () => {
+    const readme = await read("README.md");
+    if (!readme.includes("`main` is ahead under `[Unreleased]`")) return;
+    const changelog = await read("CHANGELOG.md");
+    const start = changelog.indexOf("## [Unreleased]");
+    expect(start, "README claims `main` is ahead, so CHANGELOG needs an [Unreleased] section").toBeGreaterThan(-1);
+    const end = changelog.indexOf("\n## [", start + 1);
+    const section = changelog.slice(start + "## [Unreleased]".length, end === -1 ? undefined : end);
+    expect(
+      /\S/.test(section),
+      "README claims `main` is ahead while CHANGELOG's [Unreleased] section is empty — move both lines together",
+    ).toBe(true);
+  });
+});
+
 describe("private vulnerability reporting status", () => {
   it("marks the intended private route as unavailable and release-blocking", async () => {
     const [security, readiness] = await Promise.all([
