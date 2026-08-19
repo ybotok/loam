@@ -12,8 +12,9 @@
  * resolving cross-project imports must fail here before it lands. Every corpus
  * document is asserted equal across both modes on elements, relationships and
  * every error's {message, line}; sourceFsPath is asserted to be the document's
- * REAL path, because findings carry it to users who will open the file it
- * names.
+ * REAL path to keep the field honest for a future consumer — nothing renders
+ * it today (errorText prints only `L<line>: <message>`), so `message` is the
+ * pass-through a tmp path could still leak into.
  *
  * The sibling-import case is the one that looks paranoid and is not: in a
  * shared workspace an author-written `import ... from '<name>'` resolves if any

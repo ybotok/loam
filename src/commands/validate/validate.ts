@@ -11,7 +11,6 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { agentsStaleFinding } from "../../core/agent/agents-stamp.js";
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
@@ -19,7 +18,7 @@ import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { agentsPath as agentsFile, featurePaths, landscapePath as landscapeFile } from "../../core/repo/paths.js";
+import { agentsPath as agentsFile, featurePaths, landscapePath as landscapeFile, servicePaths } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import {
   countSeverity,
@@ -132,7 +131,7 @@ export function registerValidate(program: Command): void {
           const features = await listFeatures(docsDir, {}, fleet);
           await fleet.prefetchLikeC4([
             ...(existsSync(lp) ? [lp] : []),
-            ...services.filter((svc) => svc.has.model).map((svc) => join(svc.dir, "model.likec4")),
+            ...services.filter((svc) => svc.has.model).map((svc) => servicePaths(docsDir, svc.id).model),
             ...features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
           ]);
           const land = existsSync(lp) ? await readLandscape(() => fleet.loadLikeC4(lp)) : null;

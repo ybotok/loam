@@ -331,26 +331,29 @@ Exit criteria:
 
 ### Make `validate --all` fit the fleet gate
 
-The current measured baseline is approximately 13–14 seconds for 120 services because a fresh LikeC4
-workspace is parsed per service. The read model in
-[src/core/fleet-context.ts](https://github.com/ybotok/loam/blob/main/src/core/fleet-context.ts) already
-memoizes within an invocation, and
-[src/core/c4/likec4.ts](https://github.com/ybotok/loam/blob/main/src/core/c4/likec4.ts) deliberately
-avoids computed views; the optimization must preserve those boundaries.
+The measured baseline was 13–14 seconds for 120 services — one fresh LikeC4/Langium workspace per
+service model. Landed: the run's C4 documents (service models, feature deltas, the landscape) are
+parsed in ONE temporary LikeC4 workspace ([src/core/c4/workspace.ts](https://github.com/ybotok/loam/blob/main/src/core/c4/workspace.ts)),
+seeded into `FleetContext`'s existing per-invocation memo via `prefetchLikeC4`, with a silent
+per-document fallback where a temp workspace cannot be created — findings can never change because a
+sandbox denied tmpdir writes, and a parity suite pins batch-vs-single equivalence document by
+document.
 
-Exit criteria:
+Exit criteria, as landed:
 
-- A checked-in, documented benchmark records fixture shape, edge count, runtime, cold/warm policy,
-  repetitions, median, and peak memory;
-  [test/scale.test.ts](https://github.com/ybotok/loam/blob/main/test/scale.test.ts) remains a blow-up alarm,
-  not the only performance evidence.
-- On the same machine and generated 120-service fixture, median `validate --all --json` time is at least
-  twice as fast as the assessed baseline, with no more than a 10% regression in `list` or single-service
-  validation. Both pilot fleets also meet their predeclared `maxValidateMs` thresholds.
-- Before/after runs produce the same targets, summary, stable finding codes, and semantically identical
-  findings. Faster parsing cannot skip a service or weaken a rule.
-- Cache lifetime remains one invocation, memory stays bounded by the fleet being read, and repeated runs
-  observe changes on disk.
+- ~~A checked-in, documented benchmark~~ — [scripts/bench-validate.ts](https://github.com/ybotok/loam/blob/main/scripts/bench-validate.ts)
+  + [docs/BENCHMARKS.md](docs/BENCHMARKS.md): fixture shape, edge count, cold/warm policy,
+  repetitions, medians, sampled peak RSS; [test/scale.test.ts](https://github.com/ybotok/loam/blob/main/test/scale.test.ts)
+  stays a blow-up alarm.
+- ~~Twice as fast~~ — measured **18.8x** on the committed 120-service fixture (13 748 ms → 731 ms
+  median), with `list` and single-service validation within 0.2%, and peak RSS halved.
+- ~~Same findings before/after~~ — the scale suite's construction-derived pins run through the
+  batch path end to end, and the fallback pin proves a failed batch leaves output byte-identical.
+- ~~Cache lifetime one invocation~~ — the memo lives on the `FleetContext` instance; a second
+  context re-reads the disk.
+
+Still owed from elsewhere: both pilot fleets meeting their predeclared `maxValidateMs` is the
+two-fleet pilot item's evidence, not this repository's.
 
 ### Complete the AsyncAPI feature lifecycle
 

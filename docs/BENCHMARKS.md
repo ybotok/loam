@@ -10,7 +10,7 @@ built CLI, and is committed together with the change it measures — a claim lik
 - **Fixture** — the synthetic fleet from `test/helpers/fleet-fixture.ts` at
   benchmark shape: **120 services** (20 apiless / 40 documented / 40 sourced /
   20 vouched) and **20 active features** — the scale suite's 5/10/10/5 + 10
-  proportions ×4. That is **141 `.likec4` documents** (1 landscape + 120 service
+  shape with services ×4 and features ×2 (20/40/40/20 + 20). That is **141 `.likec4` documents** (1 landscape + 120 service
   models + 20 feature deltas) and **119 op-linked edges** (the landscape's
   99-call chain + 20 tagged feature edges). The fleet is clean: `validate --all`
   exits 0, so the runs measure grading, not error rendering.
