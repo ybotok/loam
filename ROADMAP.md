@@ -548,28 +548,62 @@ Exit criteria:
 
 ### Protect documentation, package contents, and links
 
-Public prose currently carries several facts that code can derive but the existing
-[test/docs-drift.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-drift.test.ts) does not
-protect. Package composition and link integrity should be checked from the tarball users install, not
-inferred from the working tree.
+Landed: public prose is now graded by the same kind of machinery that grades a fleet's documents.
+One reviewed package-file list lives in
+[scripts/package-docs.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-docs.mjs) beside
+the Markdown-link helpers (inline-link extraction outside code, GitHub heading slugs with an
+ambiguity refusal instead of modelling `-1` suffixes, and the anchor/relative/canonical/external
+classification). package.json's `files[]`, the release preflight and the installed-package smoke all
+consume that one list, and
+[test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) plus
+[test/package-docs.test.ts](https://github.com/ybotok/loam/blob/main/test/package-docs.test.ts) run
+the fact and link guards inside `npm test`, so drift fails the gate developers actually run before
+push. The first run of the audit convicted two shipped links (a pointer at the pre-split
+`src/core/kernel/ids.ts`, and a relative `docs/BENCHMARKS.md` link that dangled for every installed
+user) and a run of stale claims — README still calling the AsyncAPI lifecycle living-only, the
+OpenAPI baselines unpinned and the fleet gate slow after all three landed, plus DESIGN's command and
+hub counts — which is the item's own thesis demonstrated: unguarded derived facts rot.
 
-Exit criteria:
+Exit criteria, as landed:
 
-- README, schema, workflow, design, migration, comparison, and this roadmap agree on released status,
-  implemented gates, branded types, command/package counts, known gaps, and the
-  `architecture/permissions.yaml` vocabulary in
-  [src/core/permissions/permissions.ts](https://github.com/ybotok/loam/blob/main/src/core/permissions/permissions.ts).
-- Derived facts are generated or pinned by focused tests; measured facts carry an assessment context
-  rather than masquerading as timeless constants.
-- The installed-package smoke in
-  [scripts/package-smoke.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-smoke.mjs) checks
-  every Markdown file intended for npm, and a link check proves that each relative link resolves inside
-  the tarball or is intentionally a canonical repository link.
-- [package.json](package.json),
-  [scripts/release-check.mjs](https://github.com/ybotok/loam/blob/main/scripts/release-check.mjs), and the
-  public documentation share one reviewed list of package-facing documents. No published page links to
-  an omitted local file.
-- Known-gap prose has a test or an owner and is removed in the same change that closes the gap.
+- ~~README, schema, workflow, design, migration, comparison, and this roadmap agree on released
+  status, implemented gates, branded types, command/package counts, known gaps, and the
+  `architecture/permissions.yaml` vocabulary~~ — the stale claims above were corrected honestly
+  rather than shielded, the fleet-scale numbers now carry their measurement date, and SCHEMA's
+  authorization example round-trips
+  [src/core/permissions/permissions.ts](https://github.com/ybotok/loam/blob/main/src/core/permissions/permissions.ts)'s
+  real reader in a fixture, so the documented `owned_by`/`enforced_by`/`description` spellings are
+  executable, not illustrative.
+- ~~Derived facts are generated or pinned by focused tests; measured facts carry an assessment
+  context rather than masquerading as timeless constants~~ — counted facts must equal a live
+  derivation (modules/packages by the package-graph rules, test files by readdir, commands by the
+  built program, command modules by cli.ts's import specifiers) or sit under this document's dated
+  `_Assessed_` Current assessment, which stays byte-identical as the audit snapshot it is; the
+  README command table is set-equal to the registered commands with a row-count backstop; and every
+  dotted backticked token in the nine shipped pages must be a code loam emits, a verify claim kind,
+  or a reasoned allowlist entry — "implemented gates" prose is now executable.
+- ~~The installed-package smoke checks every Markdown file intended for npm, and a link check proves
+  that each relative link resolves inside the tarball or is intentionally a canonical repository
+  link~~ — [scripts/package-smoke.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-smoke.mjs)
+  reads all nine shipped pages from the installed package root, requires the tarball's Markdown set
+  to equal the reviewed set (an unreviewed page and a dropped one both fail), and proves every
+  relative link resolves inside the tarball, every used anchor slug-matches exactly one heading in
+  the shipped target, and every canonical repository link names a path that exists in the source
+  tree; other absolute URLs are never fetched, so the smoke gains no network beyond its existing
+  npm install. Verified green against the real tarball.
+- ~~package.json, the release preflight, and the public documentation share one reviewed list of
+  package-facing documents; no published page links to an omitted local file~~ — `files[]`
+  set-inequality with the reviewed list is now a release blocker in
+  [scripts/release-check.mjs](https://github.com/ybotok/loam/blob/main/scripts/release-check.mjs)
+  and an `npm test` failure, and every reviewed page must be relatively linked from README, so
+  adding a shipped document is deliberately a three-place edit whose blocker text names all three
+  places.
+- ~~Known-gap prose has a test or an owner and is removed in the same change that closes the gap~~ —
+  the registry in test/docs-facts.test.ts pairs each shipped gap sentence with the roadmap sentence
+  that owns closing it, and both are asserted to exist: shipping an item deletes its owner prose,
+  which fails the gate until the gap sentence and the registry entry leave in the same change. That
+  coupling is deliberate friction for whoever closes the next item, and the registry's comment says
+  so in place.
 
 ## Later — promote only from evidence
 
