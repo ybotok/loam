@@ -51,15 +51,20 @@ configurable graph, because a fleet needs one lifecycle and one meaning of green
 | `specs/<svc>/spec.md` | service | yes | The behaviour delta — `ADDED` / `MODIFIED` / `REMOVED` requirements, each with Given/When/Then scenarios |
 | `specs/<svc>/arch.spec.md` | service | no | The architectural obligations a business spec never mentions: outbox, retries, idempotency, alerts. Same grammar, plus `Covers:` lines tying each to the C4 elements it accounts for |
 | `specs/<svc>/openapi.yaml` | service | conditional | The contract delta. Required where the fleet map shows somebody calls this service |
+| `specs/<svc>/asyncapi.yaml` | service | no | The event-contract delta: a complete AsyncAPI 3.0 document restating the living contract around the changed slots. `loam rebase` pins restated slots (`x-loam-based-on`), `x-loam-remove: true` retires one |
 | `verification.yaml` | feature | yes | The done-check record: every claim, its answer, its evidence, and who gave it |
 
 Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
-`publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, but has no feature delta or
-merge yet. `architecture/permissions.yaml` is the opt-in authorization vocabulary: requirements
+`publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, and the event axis
+carries the full feature lifecycle: the delta above is slot-pinned by `loam rebase`, graded by
+`validate --feature` (baseline, removal-justification and conflict findings), merged by
+`loam archive` inside the same transaction as every other write, undone by `loam unarchive`,
+and asked about by `loam verify` (`event.declares`). `architecture/permissions.yaml` is the
+opt-in authorization vocabulary: requirements
 name `<subject>/<permission>` pairs with `Requires:`; unknown pairs are errors and unused
 declarations are warnings. [SCHEMA.md](SCHEMA.md#canonical-joins) is the canonical join table.
 
-Two of those "no"s are load-bearing. An artifact that is legitimately absent reads `done` — nothing
+Three of those "no"s are load-bearing. An artifact that is legitimately absent reads `done` — nothing
 is owed — with `exists: false` beside it, so a reader can tell that from a file that is present and
 fine. Marking everything required is how an axis that is optional everywhere gets reported as
 missing everywhere and then ignored.

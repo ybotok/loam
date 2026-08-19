@@ -40,6 +40,7 @@ features/<FEAT>/                  a change in flight
   specs/<svc>/spec.md             the requirement change for one service
   specs/<svc>/arch.spec.md        the architectural requirement change, same delta grammar
   specs/<svc>/openapi.yaml        the endpoints this feature adds
+  specs/<svc>/asyncapi.yaml       the event-contract delta (optional; a complete AsyncAPI 3 document)
   verification.yaml               what was checked once the code was built
 features/archive/<FEAT>/          shipped changes — the evolution history
 \`\`\`

@@ -52,8 +52,12 @@ edges. Nothing in loam reports that today, which is why the landscape says so in
   the same thing.
 - **`features/FEAT-101-payment-splitting/`** — in flight, and the big one: a new service arriving
   with its own requirements, architecture requirements and contract, a C4 delta that splices a
-  nested element into the living landscape, and a `MODIFIED` requirement that **renames its
-  heading** while keeping its `Requirement-ID` — loam's rename mechanism.
+  nested element into the living landscape, a `MODIFIED` requirement that **renames its
+  heading** while keeping its `Requirement-ID` — loam's rename mechanism — and an
+  **event-contract delta** (`specs/payment-service/asyncapi.yaml`): a complete AsyncAPI 3.0
+  document restating payment-service's living contract under `loam rebase`-written
+  `x-loam-based-on` pins and adding one new producer side, so the archive merges the new
+  slots and leaves every pinned quote to the living contract's own copy.
 - **`features/FEAT-112-retire-order-v1/`** — in flight, and the smallest legal shape: no
   `delta.likec4` at all, because retiring an operation moves no boxes. It carries the two halves
   loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true`
@@ -83,11 +87,14 @@ service repo is what closes it.
 - **`AGENTS.md` and `loam.json`.** A real docs repo has both, written by `loam init --docs .
   --create`. They are left out here so the tree stays a pure set of documents, and so the
   version stamp in a generated `AGENTS.md` cannot go stale against the running binary.
-- **An `asyncapi.yaml` delta.** There is no `features/<FEAT>/specs/<svc>/asyncapi.yaml` in loam
-  today: the async axis has no feature delta, no merge and no baseline pin. FEAT-101 therefore
-  draws its `PaymentSplit` edge with the message in the title and no `metadata { publishes }`,
-  and the new service's living async contract is written in the same reviewed PR that archives
-  the feature. The comment in `delta.likec4` says so rather than leaving it to be discovered.
+- **`payment-split-service`'s own `asyncapi.yaml`.** The async axis has the full feature
+  lifecycle now — FEAT-101's `specs/payment-service/asyncapi.yaml` demonstrates the merge half
+  on a living contract — but the NEW service's contract for the drawn `PaymentSplit` edge is
+  deliberately deferred: the edge keeps the message in its title and no `metadata { publishes }`,
+  because that metadata is a join and the join demands a contract declaring the send
+  (`c4-event.message-undefined` refuses one without it). A `specs/payment-split-service/asyncapi.yaml`
+  would ride the archive's creation branch once the consumer of `PaymentSplit` exists. The
+  comment in `delta.likec4` says so rather than leaving it to be discovered.
 - **A generated Gherkin suite.** `loam gherkin` writes into a *service's* repository, and there
   are none here — this fleet is six repositories, and `docs/` is one of them. The same reason
   leaves `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code

@@ -1,0 +1,129 @@
+# The event-contract delta: what FEAT-101 changes about the messages
+# payment-service puts on the bus.
+#
+# Like the openapi delta, this is a COMPLETE AsyncAPI 3.0 document, not a
+# patch: the living contract is restated around the one change. Identity is
+# the slot — `channels.<key>`, `operations.<key>`, `components.messages.<key>`
+# — and `x-loam-based-on` (written by `loam rebase`, never by hand) is what
+# lets the merge tell a restated slot from an edited one: a pinned QUOTE is
+# never a merge input, so a change that lands on the living contract after
+# this delta was written survives the archive. The new slots below carry no
+# pin — there is no living version for them to be based on.
+asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    description: Payment lifecycle events, published by the outbox relay
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+      PaymentCaptured:
+        $ref: '#/components/messages/PaymentCaptured'
+    x-loam-based-on: 036cbb7e0245e1a9
+  # NEW: split authorizations are announced on their own topic, so a consumer
+  # that only reconciles splits does not filter the whole lifecycle stream.
+  paymentSplitEvents:
+    address: payment.splits.v1
+    description: Split-authorization events, published by the outbox relay
+    messages:
+      PaymentSplitAuthorized:
+        $ref: '#/components/messages/PaymentSplitAuthorized'
+
+operations:
+  sendPaymentAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentAuthorized'
+    x-loam-based-on: 72934fd7ed7f6df9
+  sendPaymentCaptured:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
+    x-loam-based-on: 01ac447e38a868cc
+  sendPaymentSplitAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentSplitEvents'
+
+components:
+  messages:
+    PaymentAuthorized:
+      # Namespaced by the domain that owns it. One message has exactly one
+      # producer: two services declaring they send this name is
+      # `asyncapi.message-contested`, and then which contract a consumer reads
+      # is a coin flip.
+      name: payment.PaymentAuthorized
+      title: Payment authorized
+      # JSON Schema today, because this fleet runs no schema registry. An Avro
+      # record here later needs a `schemaFormat:` line and no other change:
+      # everything below is opaque to loam.
+      payload:
+        type: object
+        required: [ paymentId, orderId, amount, currency, authorizedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          amount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          authorizedAt:
+            type: string
+            format: date-time
+      x-loam-based-on: 0e5a230802d1573b
+    PaymentCaptured:
+      name: payment.PaymentCaptured
+      title: Payment captured
+      payload:
+        type: object
+        required: [ paymentId, orderId, capturedAmount, currency, capturedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          capturedAmount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          capturedAt:
+            type: string
+            format: date-time
+      x-loam-based-on: 449d5409ccf1b59f
+    # NEW: the split-aware half of an authorization. The split itself is
+    # payment-split-service's business; this event says the reservation on the
+    # payer's card is covered by a recorded split.
+    PaymentSplitAuthorized:
+      name: payment.PaymentSplitAuthorized
+      title: Split authorization completed
+      payload:
+        type: object
+        required: [ paymentId, orderId, splitId, authorizedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          splitId:
+            type: string
+            format: uuid
+          authorizedAt:
+            type: string
+            format: date-time
