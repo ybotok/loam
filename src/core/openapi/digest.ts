@@ -109,8 +109,15 @@ export const OPERATION_DIGEST_RE = new RegExp(`^[0-9a-f]{${OPERATION_DIGEST_LENG
  * digest that disagreed with that comparison would go stale over a reordered
  * `summary`/`operationId` pair the merge itself calls identical — a false
  * collision on the one check whose worth is that it fires only for real ones.
+ *
+ * Exported for the ASYNCAPI axis (core/asyncapi/digest.ts), whose slot
+ * digests are the same rule over different sections: one spelling of the
+ * canonical form for both axes, because two spellings would eventually
+ * disagree — the exact drift this module's own header names as the failure
+ * mode. The import direction is asyncapi → openapi only; nothing under
+ * core/openapi/ may import from core/asyncapi/, or the package graph cycles.
  */
-function canonicalJson(node: unknown): string {
+export function canonicalJson(node: unknown): string {
   if (node === null || typeof node !== "object") return JSON.stringify(node) ?? "null";
   if (Array.isArray(node)) return `[${node.map(canonicalJson).join(",")}]`;
   const entries = Object.entries(node as Record<string, unknown>)

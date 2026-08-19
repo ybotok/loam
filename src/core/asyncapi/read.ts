@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { danglingRefs, deref, payloadUndeclared } from "./depth.js";
+import { isSlotRemoval } from "./digest.js";
 import type { FleetContext } from "../fleet-context.js";
 
 /**
@@ -29,7 +30,11 @@ import type { FleetContext } from "../fleet-context.js";
  * Avro migration stops being free. The one look the reader takes inside is
  * `payloadUndeclared` (depth.ts) — a presence probe that checks whether any
  * shape was declared at all, reads key existence and never a value, and skips
- * any payload declaring a non-JSON `schemaFormat`, so the stance holds.
+ * any payload declaring a non-JSON `schemaFormat`, so the stance holds. The
+ * slot digests (./digest.ts) are COMPATIBLE with it, not an exception: they
+ * hash payload bytes as content equality — a changed payload moves the slot's
+ * identity — and content equality is not a join; nothing a digest reads ever
+ * contributes a name to the spine.
  */
 
 /** One message declaration, as the reader sees it. */
@@ -57,6 +62,14 @@ export interface EventMessage {
    * never set for a payload declaring a non-JSON `schemaFormat`.
    */
   payloadEmpty?: true;
+  /**
+   * Present when the declaration carries `x-loam-remove: true` — a FEATURE
+   * delta retiring it. A marker asserts a slot rather than declaring a
+   * message, so it joins nothing: excluded from sent/received and from
+   * duplicate counting, the discipline `core/openapi/doc.ts` set for
+   * operation markers. Set only when true, like `payloadEmpty`.
+   */
+  remove?: true;
 }
 
 /** The parse of one AsyncAPI document: what it declares, and whether it could be read at all. */
@@ -84,6 +97,16 @@ export interface AsyncapiDoc {
   error?: string;
   /** Internal `#/` refs that resolve to nothing in this document (depth.ts). */
   danglingRefs: string[];
+  /**
+   * Where `x-loam-remove: true` appears — the three slot depths the format
+   * spec gives the key meaning at (`channels.<key>`, `operations.<key>`,
+   * `components.messages.<key>`) plus inline channel messages
+   * (`channels.<ck>.messages.<mk>`), which are channel-slot interior the
+   * merge must strip at that nested depth. Feature-only bookkeeping either
+   * way: `validate` grades any of these in a LIVING contract as
+   * `asyncapi.remove-marker-living`, the openapi axis's discipline.
+   */
+  markers: string[];
 }
 
 /** A message's join token: its `name`, or the key it is declared under. */
@@ -143,7 +166,16 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   const root = doc as Record<string, unknown>;
   const messages: EventMessage[] = [];
   const seen = new Map<string, string[]>();
+  const markers: string[] = [];
   const declare = (name: string, slot: string, node: unknown): void => {
+    // A declaration carrying the removal marker asserts a slot rather than
+    // declaring a message: it is listed (with `remove`) so the gate can see
+    // it, but it joins nothing — not sent/received, not the duplicate count.
+    if (isSlotRemoval(node)) {
+      markers.push(slot);
+      messages.push({ name, slot, remove: true as const });
+      return;
+    }
     messages.push({ name, slot, ...(payloadUndeclared(root, node) ? { payloadEmpty: true as const } : {}) });
     seen.set(name, [...(seen.get(name) ?? []), slot]);
   };
@@ -160,13 +192,24 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
   // spec's own examples use.
   const channelMessages = new Map<string, string[]>();
   for (const [ck, channel] of entriesOf(root["channels"])) {
+    // A channel-slot removal retires the whole channel, inline interior
+    // included: nothing under it declares or joins anything any more.
+    if (isSlotRemoval(channel)) {
+      markers.push(`channels.${ck}`);
+      channelMessages.set(ck, []);
+      continue;
+    }
     const names: string[] = [];
     for (const [mk, entry] of entriesOf((channel as Record<string, unknown> | null)?.["messages"])) {
       const isAlias =
         entry !== null && typeof entry === "object" && !Array.isArray(entry) && "$ref" in (entry as object);
       const { node, key } = deref(root, entry, mk);
       const name = messageName(node, key);
-      names.push(name);
+      // A name whose declaration is being retired stays off the channel's
+      // list, whether the marker sits on the aliased components entry or on
+      // the inline declaration itself — the operation fallback below must
+      // not join through a message the feature is removing.
+      if (!isSlotRemoval(node)) names.push(name);
       if (!isAlias) declare(name, `channels.${ck}.messages.${mk}`, node);
     }
     channelMessages.set(ck, names);
@@ -174,8 +217,14 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
 
   const sent = new Set<string>();
   const received = new Set<string>();
-  for (const [, operation] of entriesOf(root["operations"])) {
+  for (const [ok, operation] of entriesOf(root["operations"])) {
     const op = operation as Record<string, unknown> | null;
+    // An operation-slot removal retires the operation: it contributes no
+    // send/receive whatever its `action` says.
+    if (isSlotRemoval(op)) {
+      markers.push(`operations.${ok}`);
+      continue;
+    }
     const action = op?.["action"];
     if (action !== "send" && action !== "receive") continue;
     const into = action === "send" ? sent : received;
@@ -191,6 +240,9 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
         // empty one: a phantom "" would join to nothing and read as a message
         // the service produces.
         if (node === undefined && key === "") continue;
+        // A pointer into a declaration being retired joins nothing either —
+        // the marker means the message is leaving the contract.
+        if (isSlotRemoval(node)) continue;
         const name = messageName(node, key);
         if (name.length > 0) into.add(name);
       }
@@ -211,11 +263,12 @@ export async function readAsyncapi(asyncapiPath: string, context?: FleetContext)
     duplicateNames,
     unreadable: false,
     danglingRefs: danglingRefs(root),
+    markers,
   };
 }
 
 function empty(): AsyncapiDoc {
-  return { messages: [], sent: [], received: [], duplicateNames: [], unreadable: false, danglingRefs: [] };
+  return { messages: [], sent: [], received: [], duplicateNames: [], unreadable: false, danglingRefs: [], markers: [] };
 }
 
 /** The slots one message name is declared in — what `asyncapi.duplicate-message` names. */

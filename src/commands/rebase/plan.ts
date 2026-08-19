@@ -17,6 +17,8 @@ import { requirementDigest, type Requirement } from "../../core/document/spec.js
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
 import { pinOpenapiOperations, type OpenapiPinPlan } from "../../core/openapi/merge/pin.js";
 import { planOpenapiBaselines, type OpenapiBaselinePlan } from "../../core/openapi/baseline/plan.js";
+import { AsyncapiMergeError } from "../../core/asyncapi/merge/error.js";
+import { pinAsyncapiSlots, type AsyncapiPinPlan } from "../../core/asyncapi/merge/pin.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
@@ -45,15 +47,16 @@ export type PinStatus =
 
 export interface PinOutcome {
   service: string;
-  /** The axis's filename — "spec.md", "arch.spec.md" or "openapi.yaml". */
+  /** The axis's filename — "spec.md", "arch.spec.md", "openapi.yaml" or "asyncapi.yaml". */
   file: string;
   /**
    * MODIFIED/REMOVED for a requirement; the upper-case HTTP method for an
    * operation; COMPONENT for a `components/<kind>/<name>`; PATH-ITEM for a
-   * path-item non-method key.
+   * path-item non-method key; the AsyncAPI section name (`channels`,
+   * `operations`, `components.messages`) for an event slot.
    */
   kind: string;
-  /** The requirement heading, `/path ('operationId')`, `<kind>/<name>`, or `/path '<key>'`. */
+  /** The requirement heading, `/path ('operationId')`, `<kind>/<name>`, `/path '<key>'`, or the asyncapi slot key. */
   target: string;
   status: PinStatus;
   /** The pin as it was, or null when there was none. */
@@ -179,6 +182,50 @@ export async function planOpenapi(docsDir: DocsDir, service: PathableService, op
       })),
     ],
     content: baselines.text ?? plan.text,
+  };
+}
+
+/**
+ * Pin every slot in one feature event contract against the living contract —
+ * `planOpenapi`'s mirror on the event axis, one axis lower in ceremony
+ * because the event pin has no root record: every slot value is a mapping,
+ * so the in-value `x-loam-based-on` reaches everything there is to pin
+ * (core/asyncapi/digest.ts owns the slot model; inline channel messages are
+ * channel interior and never pinned on their own).
+ */
+export async function planAsyncapi(
+  docsDir: DocsDir,
+  service: PathableService,
+  asyncapiPath: string,
+): Promise<AxisPlan> {
+  const livingPath = servicePaths(docsDir, service).asyncapi;
+  // Decoded, not `readFile(…, "utf8")`, for planOpenapi's reason: a contract
+  // read with U+FFFD substituted in defines no slot loam can match, so every
+  // pin would come out `unresolved` over a living contract that already
+  // carries them.
+  const living = existsSync(livingPath) ? decodeDocument(await readFile(livingPath), livingPath) : "";
+  const delta = decodeDocument(await readFile(asyncapiPath), asyncapiPath);
+  let plan: AsyncapiPinPlan;
+  try {
+    plan = pinAsyncapiSlots(delta, living, service);
+  } catch (err) {
+    // A document loam cannot read is validate's diagnosis to make
+    // (`asyncapi.invalid`), not this command's to guess at — and stamping
+    // into a broken parse would write a file nobody asked for.
+    if (!(err instanceof AsyncapiMergeError)) throw err;
+    return { outcomes: [], content: null };
+  }
+  return {
+    outcomes: plan.pins.map((pin) => ({
+      service,
+      file: "asyncapi.yaml",
+      kind: pin.section,
+      target: pin.key,
+      status: pin.status,
+      from: pin.from,
+      to: pin.to,
+    })),
+    content: plan.text,
   };
 }
 

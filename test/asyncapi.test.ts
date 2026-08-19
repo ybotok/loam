@@ -278,6 +278,7 @@ channels:
       duplicateNames: [],
       unreadable: false,
       danglingRefs: [],
+      markers: [],
     });
   });
 
@@ -361,6 +362,29 @@ describe("validate --service: the event axis", () => {
       // link, which is what grading against an empty parse would produce.
       expect(codes).not.toContain("spine.message-undefined");
       expect(codes).not.toContain("spec-event.message-undefined");
+    });
+  });
+
+  it("errors on a living contract carrying x-loam-remove, naming the slot", async () => {
+    // The marker is feature-delta bookkeeping; published into a living
+    // contract it is `openapi.remove-marker-living`'s breach on the event
+    // axis. The marker also stops the declaration joining (that is its
+    // meaning in a delta), so the test asserts this finding by name rather
+    // than an exact set — the newly stranded edge is the marker's own doing.
+    const files = fleet({
+      "services/payment-service/asyncapi.yaml": PRODUCER.replace(
+        "    PaymentAuthorized:\n      name: payment.PaymentAuthorized",
+        "    PaymentAuthorized:\n      x-loam-remove: true\n      name: payment.PaymentAuthorized",
+      ),
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const finding = JSON.parse(res.stdout).targets[0].findings.find(
+        (f: { code: string }) => f.code === "asyncapi.remove-marker-living",
+      );
+      expect(finding.severity).toBe("error");
+      expect(finding.message).toContain("components.messages.PaymentAuthorized");
+      expect(res.code).toBe(1);
     });
   });
 
