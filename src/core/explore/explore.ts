@@ -26,8 +26,9 @@ import { existsSync } from "node:fs";
 import { FleetContext } from "../fleet-context.js";
 import { serviceResolver, type Rel } from "../c4/likec4.js";
 import { type Maturity } from "../vocabulary/maturity.js";
+import { capabilityRollup, unresolvedCapabilities } from "../capabilities/rollup.js";
 import { compareIds, nearestIds, type ServiceEntry } from "../repo/entries.js";
-import { landscapePath } from "../repo/paths.js";
+import { capabilitiesPath, landscapePath } from "../repo/paths.js";
 import { describe, newCommand, operationOwner } from "./describe.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -102,6 +103,14 @@ export interface Exploration {
   unknown: Array<{ id: string; nearest: string[] }>;
   /** Operation seeds that resolved to no service's living contract. */
   unresolvedOperations: string[];
+  /**
+   * Capability seeds that seeded nothing: not declared in
+   * architecture/capabilities.yaml (the file may not exist at all — explore
+   * refuses nothing, every miss is a field), or declared and realized by no
+   * living requirement. One list on purpose; splitting the two miss kinds
+   * waits for a consumer to ask.
+   */
+  unresolvedCapabilities: string[];
   /** Seeds first, then the ring, each in id order. */
   services: ExploreService[];
   /** Ids the ring added that were not asked for — the candidates to weigh. */
@@ -133,6 +142,8 @@ export interface ExploreRequest {
   services: ServiceEntry["id"][];
   /** operationIds to explore around; each resolves to the service that defines it. */
   operations: string[];
+  /** Declared capability ids to explore around; each seeds its realizing services. */
+  capabilities: string[];
   /** Placeholder feature id for the suggested command line. */
   featureId: string;
   context?: FleetContext;
@@ -171,7 +182,22 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
     else opSeeds.push(owner);
   }
 
-  const seeds = [...new Set([...req.services, ...opSeeds])];
+  // Capability seeds resolve through the vocabulary and the fleet rollup —
+  // one rollup pass for ALL requested ids, through this exploration's shared
+  // context cache, never a fresh walk per capability. A realizing service is
+  // by construction an enumerated one, so every seed it adds is `known`.
+  const capSeeds: ServiceEntry["id"][] = [];
+  let unresolvedCaps: string[] = [];
+  if (req.capabilities.length > 0) {
+    const vocab = await context.capabilities(capabilitiesPath(docsDir));
+    const rows = await capabilityRollup({ services: entries, vocab, read: (p) => context.readRequirements(p) });
+    const wanted = new Set(req.capabilities);
+    const realizing = new Set(rows.filter((r) => wanted.has(r.id)).flatMap((r) => r.services));
+    capSeeds.push(...entries.filter((e) => realizing.has(e.id)).map((e) => e.id));
+    unresolvedCaps = unresolvedCapabilities(rows, req.capabilities);
+  }
+
+  const seeds = [...new Set([...req.services, ...opSeeds, ...capSeeds])];
   const unknown = seeds
     .filter((id) => !known.has(id))
     .map((id) => ({ id, nearest: nearestIds(id, [...known]) }));
@@ -240,6 +266,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
     seeds,
     unknown,
     unresolvedOperations,
+    unresolvedCapabilities: unresolvedCaps,
     services,
     neighbours: [...ring.keys()].sort(compareIds),
     overlaps,

@@ -28,6 +28,7 @@ const PLACEHOLDER = "FEAT-000";
 interface ExploreOptions {
   json?: boolean;
   op?: string[];
+  capability?: string[];
   as?: string;
 }
 
@@ -42,11 +43,17 @@ export function registerExplore(program: Command): void {
       "seed from an operation instead of a service; repeatable",
       (value: string, prev: string[] = []) => [...prev, value],
     )
+    .option(
+      "--capability <id>",
+      "seed from a declared capability's realizing services; repeatable",
+      (value: string, prev: string[] = []) => [...prev, value],
+    )
     .option("--as <FEAT>", `feature id for the suggested command line (default: ${PLACEHOLDER})`)
     .action(async (serviceArgs: string[], opts: ExploreOptions) => {
       const json = opts.json === true;
       const services = serviceArgs ?? [];
       const operations = opts.op ?? [];
+      const capabilities = opts.capability ?? [];
 
       // `--as` is interpolated into the `loam new` line this command prints
       // under `next:` and returns as `scaffold`, and `loam-feature` teaches an
@@ -63,12 +70,13 @@ export function registerExplore(program: Command): void {
           return;
         }
       }
-      if (services.length === 0 && operations.length === 0) {
+      if (services.length === 0 && operations.length === 0 && capabilities.length === 0) {
         fail(
           json,
           "invalid-option",
-          "Nothing to explore from. Name at least one service, or pass --op <operationId>. " +
-            "`loam list services` is the fleet; `loam show <service>` is one of them.",
+          "Nothing to explore from. Name at least one service, or pass --op <operationId> or --capability <id>. " +
+            "`loam list services` is the fleet; `loam show <service>` is one of them; " +
+            "`loam list capabilities` is what the fleet promises.",
         );
         return;
       }
@@ -106,6 +114,7 @@ export function registerExplore(program: Command): void {
           docsDir,
           services: seeds.ids,
           operations,
+          capabilities,
           featureId: opts.as ?? PLACEHOLDER,
           context: new FleetContext(),
         });
@@ -182,6 +191,13 @@ function print(r: Exploration): void {
     console.log(
       `! no living contract defines ${r.unresolvedOperations.join(", ")} — ` +
         `the feature is adding ${r.unresolvedOperations.length === 1 ? "it" : "them"}, or the id is wrong\n`,
+    );
+  }
+
+  if (r.unresolvedCapabilities.length > 0) {
+    console.log(
+      `! no realizing service seeds ${r.unresolvedCapabilities.join(", ")} — ` +
+        `not declared in architecture/capabilities.yaml, or declared and realized by nothing\n`,
     );
   }
 

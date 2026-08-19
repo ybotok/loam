@@ -27,7 +27,7 @@ import {
   serializeDeltaRequirements,
   type AuthoredArtifactCopy,
 } from "./feature.js";
-import { assertMaterializedRequirementIds } from "./stage.js";
+import { assertMaterializedRequirementIds, requirementWithCapability } from "./stage.js";
 
 export async function materializeActiveChanges(
   inventory: OpenSpecInventory,
@@ -184,8 +184,12 @@ export async function materializeActiveChanges(
           routingName = rename.from;
           materializedRenameKeys.add(rename.key);
         }
+        // Every delta kind uniformly: REMOVED is harmless (every check exempts
+        // it), and a MODIFIED body MUST carry the line or its wholesale
+        // replace would strip the one the living side was staged with.
+        const withCapability = requirementWithCapability(requirement, spec.capability);
         for (const service of selectedServices(mapping, spec.capability, routingName)) {
-          addDelta(service, requirement, spec.path);
+          addDelta(service, withCapability, spec.path);
         }
       }
     }
@@ -206,7 +210,7 @@ export async function materializeActiveChanges(
         section: "## MODIFIED Requirements",
       };
       for (const service of selectedServices(mapping, rename.capability, rename.from)) {
-        addDelta(service, modified, rename.path);
+        addDelta(service, requirementWithCapability(modified, rename.capability), rename.path);
       }
     }
     for (const [service, requirements] of [...deltaByService].sort(([a], [b]) => a.localeCompare(b))) {

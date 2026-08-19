@@ -4,14 +4,22 @@ import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
 import { maturityRollup } from "../../core/vocabulary/maturity.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
+import { capabilitiesPath } from "../../core/repo/paths.js";
+import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews } from "./views.js";
-import { featureJson, serviceJson, subsystemsJson } from "./json.js";
-import { printFeatures, printServices, printWorklist } from "./print.js";
+import { capabilityJson, featureJson, serviceJson, subsystemsJson } from "./json.js";
+import { printCapabilities, printFeatures, printServices, printWorklist } from "./print.js";
 
-type Section = "services" | "features";
-const SECTIONS: Section[] = ["services", "features"];
+type Section = "services" | "features" | "capabilities";
+const SECTIONS: Section[] = ["services", "features", "capabilities"];
+/**
+ * What a bare `loam list` shows. `capabilities` is explicit-only, NEVER part
+ * of this default: the no-argument output and its `--json` payload are a
+ * frozen contract, byte-identical whether or not a fleet declares capabilities.
+ */
+const DEFAULT_SECTIONS: Section[] = ["services", "features"];
 
 interface ListOptions {
   json?: boolean;
@@ -22,7 +30,7 @@ interface ListOptions {
 export function registerList(program: Command): void {
   program
     .command("list")
-    .argument("[section]", "services | features (default: both)")
+    .argument("[section]", "services | features | capabilities (default: services + features)")
     .description("List the services and features in the docs repo")
     .option("--json", "emit the machine contract instead of the human view")
     .option("--archived", "include archived features")
@@ -33,10 +41,10 @@ export function registerList(program: Command): void {
     .action(async (section: string | undefined, opts: ListOptions) => {
       const json = opts.json === true;
       const wanted = opts.needsWork
-        ? SECTIONS.filter((s) => s === "services")
+        ? DEFAULT_SECTIONS.filter((s) => s === "services")
         : section
           ? SECTIONS.filter((s) => s === section)
-          : SECTIONS;
+          : DEFAULT_SECTIONS;
       if (section && !SECTIONS.includes(section as Section)) {
         // `invalid-option`, same as show's bad --type: one mistake class, one code.
         fail(json, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
@@ -56,8 +64,10 @@ export function registerList(program: Command): void {
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as an empty
       // fleet — the whole point of the gate (see docs-repo-gate.ts).
-      // `list features` alone does not need services/, so it asks for less.
-      if (!docsRepoReady(json, docsDir, wanted.includes("services") ? "services" : "docs")) return;
+      // `list features` alone does not need services/, so it asks for less;
+      // the capability rollup walks every service's spec files, so it asks for them.
+      const needsServices = wanted.includes("services") || wanted.includes("capabilities");
+      if (!docsRepoReady(json, docsDir, needsServices ? "services" : "docs")) return;
 
       try {
         // One context, one walk: the tree memo answers both the service
@@ -72,6 +82,35 @@ export function registerList(program: Command): void {
         const verification = features
           ? await Promise.all(features.map((f) => featureVerification(docsDir, f)))
           : undefined;
+
+        // The capability section: the vocabulary's own verdict decides the shape.
+        // An INVALID file refuses through the repository-unavailable path — an
+        // empty-looking success over a broken file is the silent hole this
+        // command already refuses elsewhere — while an ABSENT one is an honest
+        // empty answer, because the file is the axis's opt-in.
+        const capabilityVocab = wanted.includes("capabilities")
+          ? await fleet.capabilities(capabilitiesPath(docsDir))
+          : undefined;
+        if (capabilityVocab?.invalid !== undefined) {
+          reportRepositoryUnavailable(
+            json,
+            Object.assign(
+              new Error(`it does not read as a capability vocabulary — ${capabilityVocab.invalid}`),
+              { path: capabilitiesPath(docsDir) },
+            ),
+            "the capability rollup would be built from a file nobody can read",
+            docsDir,
+          );
+          return;
+        }
+        const capabilities: CapabilityRow[] | undefined =
+          capabilityVocab === undefined
+            ? undefined
+            : await capabilityRollup({
+                services: await listServices(docsDir, fleet),
+                vocab: capabilityVocab,
+                read: (p) => fleet.readRequirements(p),
+              });
 
         const worklist = views?.filter((v) => v.maturity !== "vouched");
 
@@ -93,6 +132,7 @@ export function registerList(program: Command): void {
             ...(features
               ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
               : {}),
+            ...(capabilities ? { capabilities: capabilities.map(capabilityJson) } : {}),
           });
           return;
         }
@@ -104,6 +144,10 @@ export function registerList(program: Command): void {
         if (views) printServices(views, tree);
         if (views && features) console.log("");
         if (features) printFeatures(features, verification!);
+        if (capabilities) {
+          if (capabilityVocab!.present) printCapabilities(capabilities);
+          else console.log("no architecture/capabilities.yaml — the fleet declares no capabilities");
+        }
       } catch (err) {
         if (err instanceof DocsRepoUnavailableError) {
           reportDocsRepoError(json, err);
