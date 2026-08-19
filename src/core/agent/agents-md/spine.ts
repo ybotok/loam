@@ -39,7 +39,10 @@ The other joins use the same discipline:
 - \`Covers:\` in an architecture requirement ↔ a C4 element/edge or
   \`alert:<id>\` / \`sli:<id>\` from health.yaml;
 - \`Requires: <subject>/<permission>\` in either requirement file ↔ the fleet
-  declaration in \`architecture/permissions.yaml\`.
+  declaration in \`architecture/permissions.yaml\`;
+- \`Capability:\` in either requirement file ↔ a declared id in
+  \`architecture/capabilities.yaml\`. A LIST, comma-separated — the relation is
+  many-to-many in both directions.
 
 The permissions file is opt-in: a fleet with no \`Requires:\` line owes none.
 Once a requirement names a permission, an undeclared pair is
@@ -49,6 +52,21 @@ Once a requirement names a permission, an undeclared pair is
 ON (user, profile, service), not necessarily the caller. \`owned_by\` and
 \`enforced_by\` are explanatory and are not resolved against services; this is
 a checked document join, not proof that the identity provider implements it.
+
+The capability axis opts in the OTHER way: the FILE is the opt-in, not the
+line. A fleet with no \`architecture/capabilities.yaml\` gets no capability
+findings at all, however many \`Capability:\` lines its requirements already
+carry. Once the file declares the vocabulary — \`capabilities: {<id>:
+{description, owner}}\`, nested ids such as \`payments/refunds\` kept as one
+flat key — an undeclared name is \`capability.unknown\` (error; in a feature
+delta it gates \`loam archive\`, \`--approve\`-overridable), an unreadable file
+is \`capability.invalid\` exactly once per run with the rest of the family
+suspended, and a declared capability no living requirement realizes is
+\`capability.unrealized\` (warn, one per capability). The fleet total is
+readable: \`loam list capabilities\` reports each capability's realizing
+requirements, their services and the draft/verified split, and
+\`loam explore --capability <id>\` seeds an exploration from the realizing
+services.
 
 ## The requirement baseline — \`Based-On:\`
 

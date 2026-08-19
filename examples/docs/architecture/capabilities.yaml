@@ -1,0 +1,31 @@
+# The fleet's capability vocabulary, joined to requirements by `Capability:`.
+#
+# Opt-in the OTHER way round from permissions.yaml: the FILE is the opt-in, not the line.
+# A fleet without this file gets no capability findings at all, however many `Capability:`
+# lines its requirements carry; writing it is the moment the axis turns on. `loam validate`
+# then grades both directions — an undeclared name is `capability.unknown` (error, with
+# close-name suggestions), an unreadable file is `capability.invalid` exactly once per run,
+# and a declared capability nothing realizes is `capability.unrealized` (warning, one per
+# capability). `loam list capabilities` reports the whole rollup: which requirements realize
+# each capability, in which services, and how much of that rests on drafts.
+#
+# Ids are flat keys with `/` allowed for nesting — `identity/tokens` is ONE id, exactly the
+# token a requirement writes, never collapsed to `identity`. Descriptions and owners are
+# explanatory; nothing resolves them.
+capabilities:
+  checkout:
+    description: carry a customer from a filled cart to a confirmed, paid order
+    owner: checkout-team
+  identity/tokens:
+    description: issue and answer for the access tokens every fleet call presents
+    owner: platform-identity
+  order-notifications:
+    description: tell the customer what happened to their order, exactly once per event
+    owner: growth-team
+  # Declared, and realized by no living requirement anywhere in the fleet — the example's
+  # `capability.unrealized` (warning) demonstration. It is the shape this axis exists to
+  # make visible: a capability page was agreed in a meeting, the word entered the fleet's
+  # vocabulary, and no requirement anywhere claims to implement any part of it.
+  payments/settlement:
+    description: pay merchants out for captured orders
+    owner: payments-team

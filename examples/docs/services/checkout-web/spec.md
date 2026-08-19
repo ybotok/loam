@@ -30,6 +30,8 @@ The UI SHALL carry a customer from a filled cart to a confirmed order in one pas
 show a confirmation only for an order `order-service` has acknowledged — never for one the
 client assumed went through.
 
+Capability: checkout
+
 #### Scenario: Complete a checkout
 - **Given** a cart holding at least one line and a payment method the customer has entered
 - **When** the customer confirms the purchase
@@ -54,6 +56,8 @@ Requirement-ID: WEB-ORDER-STATUS
 The UI SHALL show the current state of an order from `order-service`, and SHALL answer
 identically for an order that does not exist and for one that belongs to somebody else, so a
 guessed id cannot confirm that an order is real.
+
+Capability: checkout
 
 #### Scenario: Show the current state of an order
 - **Given** a placed order the signed-in customer owns

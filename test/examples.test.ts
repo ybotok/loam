@@ -54,13 +54,13 @@ const findings = (payload: {
 }): Array<{ severity: string; code: string }> => payload.targets.flatMap((t) => t.findings);
 
 describe("examples/docs vs loam validate --all", () => {
-  it("is valid: zero errors, and exactly the seven demonstration warnings", async () => {
+  it("is valid: zero errors, and exactly the eight demonstration warnings", async () => {
     const res = await runLoam(workDir, "validate", "--all", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.valid).toBe(true);
-    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 7 });
+    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 8 });
 
     const bySeverity = (sev: string) =>
       findings(payload)
@@ -76,6 +76,7 @@ describe("examples/docs vs loam validate --all", () => {
       "api.requirement-deprecated",
       "api.requirement-deprecated",
       "c4.uncovered",
+      "capability.unrealized",
       "permissions.unenforced",
       "sources.absent",
       "spine.op-deprecated",
