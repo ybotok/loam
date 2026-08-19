@@ -18,7 +18,8 @@ import {
   type LoadedDoc,
 } from "../../../core/c4/likec4.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
-import { listServices, serviceIdFindings } from "../../../core/repo/repo.js";
+import { serviceIdFindings } from "../../../core/repo/entries.js";
+import { listFleetTree, listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
 import { landscapeConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -69,6 +70,12 @@ export async function validateLandscape(
   // what the rename fixes.
   const entries = await listServices(docsDir, fleet);
   findings.push(...serviceIdFindings(entries));
+  // The tree walk's own findings ride the same fleet target, before the map's
+  // early returns for the same reason `service.id-invalid` does: a stranded,
+  // colliding or mismarked directory is a fact about `services/` that holds
+  // whether or not a landscape exists or parses — and a broken tree must make
+  // the fleet gate refuse while still naming every service it found.
+  findings.push(...(await listFleetTree(docsDir, fleet)).findings);
   // Before the landscape's own early returns: the authorization vocabulary is a
   // fleet fact that does not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));

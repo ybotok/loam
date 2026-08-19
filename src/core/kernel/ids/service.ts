@@ -90,6 +90,31 @@ const SERVICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  */
 const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/;
 
+/**
+ * Why `name` cannot be a directory name in the docs repo, as a discriminated
+ * fact rather than a sentence. Split out of `serviceIdProblem` when subsystem
+ * names arrived (`./subsystem.ts`): both kinds of name become directories in
+ * the same tree and share one flat namespace, so they must share ONE grammar
+ * and one set of Windows rules — a name legal as one and illegal as the other
+ * would make the namespace-collision refusal incoherent. Each caller keeps its
+ * own prose, because "a service id" and "a subsystem name" point the reader at
+ * different fixes; the CHECKS are what may never fork.
+ */
+export type DirNameHazard =
+  | { kind: "grammar" }
+  | { kind: "windows-device"; stem: string }
+  | { kind: "windows-trailing" };
+
+export function dirNameHazard(name: string): DirNameHazard | null {
+  // `..` produces the same verdict the pattern would; it is not special-cased
+  // here — the CALLERS' prose is where "no '..'" gets its own words.
+  if (name.includes("..") || !SERVICE_ID.test(name)) return { kind: "grammar" };
+  const stem = name.split(".")[0]!;
+  if (WINDOWS_DEVICE.test(stem.toUpperCase())) return { kind: "windows-device", stem };
+  if (/[. ]$/.test(name)) return { kind: "windows-trailing" };
+  return null;
+}
+
 /** Prose form of the rule, shown verbatim in every refusal so the fix is obvious. */
 const SERVICE_ID_RULE =
   "a service id must start with a letter or digit and contain only letters, digits, '.', '_' or '-' " +
@@ -115,32 +140,25 @@ export function serviceIdProblem(id: unknown, label = "--service"): string | nul
   if (typeof id !== "string" || id === "") {
     return `${label} must name a service: ${SERVICE_ID_RULE}.`;
   }
-  // Checked ahead of the pattern purely for the message: '..' is the case a
-  // human is most likely to have typed on purpose, and "no '..'" is a more
-  // useful answer than "does not match the id grammar".
-  if (id.split(/[\\/]/).includes("..") || id.includes("..")) {
-    return `Invalid ${label} '${id}': ${SERVICE_ID_RULE}.`;
+  const hazard = dirNameHazard(id);
+  if (hazard === null) return null;
+  switch (hazard.kind) {
+    case "grammar":
+      return `Invalid ${label} '${id}': ${SERVICE_ID_RULE}.`;
+    // Both refusals below are about Windows, and both get their own sentence:
+    // "does not match the id grammar" is true and useless, because the id
+    // LOOKS fine and the problem is what the filesystem does with it.
+    case "windows-device":
+      return (
+        `Invalid ${label} '${id}': '${hazard.stem}' is a reserved device name on Windows — ` +
+        `services/${id}/ cannot be created there at all, so the docs repo would only work on some of the machines that clone it.`
+      );
+    case "windows-trailing":
+      return (
+        `Invalid ${label} '${id}': a service id may not end with '.' or a space — ` +
+        `Windows strips both when creating a directory, so '${id}' and '${id.replace(/[. ]+$/, "")}' would silently become one directory there and two everywhere else.`
+      );
   }
-  if (!SERVICE_ID.test(id)) {
-    return `Invalid ${label} '${id}': ${SERVICE_ID_RULE}.`;
-  }
-  // Both refusals below are about Windows, and both get their own sentence for
-  // the same reason `..` does: "does not match the id grammar" is true and
-  // useless, because the id LOOKS fine and the problem is what the filesystem
-  // does with it.
-  if (WINDOWS_DEVICE.test(id.split(".")[0]!.toUpperCase())) {
-    return (
-      `Invalid ${label} '${id}': '${id.split(".")[0]}' is a reserved device name on Windows — ` +
-      `services/${id}/ cannot be created there at all, so the docs repo would only work on some of the machines that clone it.`
-    );
-  }
-  if (/[. ]$/.test(id)) {
-    return (
-      `Invalid ${label} '${id}': a service id may not end with '.' or a space — ` +
-      `Windows strips both when creating a directory, so '${id}' and '${id.replace(/[. ]+$/, "")}' would silently become one directory there and two everywhere else.`
-    );
-  }
-  return null;
 }
 
 /**

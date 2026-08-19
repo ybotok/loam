@@ -7,9 +7,10 @@
  * `compareIds` lives here for the same reason: sorting ids is what a renderer
  * does, and no renderer wants the enumeration.
  */
-import type { FeatureDir } from "../kernel/ids/dirs.js";
+import type { FeatureDir, ServiceDir } from "../kernel/ids/dirs.js";
 import { rawFeatureId, type RawFeatureId } from "../kernel/ids/feature.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
+import type { Finding } from "../vocabulary/report.js";
 
 
 export interface ServiceArtifacts {
@@ -29,10 +30,17 @@ export interface ServiceArtifacts {
 }
 
 export interface ServiceEntry {
-  /** Canonical service id — the directory name under services/. */
+  /** Canonical service id — the LEAF directory name, at whatever depth the tree walk found it. */
   id: RawServiceId;
-  /** Absolute path to services/<id>/. */
-  dir: string;
+  /** Absolute path to the service's directory, as enumerated — the value every artifact path is resolved from. */
+  dir: ServiceDir;
+  /**
+   * Names of the subsystem directories between `services/` and the service,
+   * outermost first. Empty = unfiled — directly under `services/`, which is
+   * permanent, normal and never a finding. Placement only: no identity, no
+   * check and no join may branch on it.
+   */
+  subsystem: string[];
   has: ServiceArtifacts;
   /** Number of ADR files under adrs/. */
   adrs: number;
@@ -71,6 +79,39 @@ export interface FeatureEntry {
   /** Services this feature carries a delta for, from specs/<svc>/. */
   services: RawServiceId[];
   has: { intent: boolean; delta: boolean };
+}
+
+/**
+ * The directories in the `services/` tree that no loam command can address.
+ *
+ * A finding rather than a silent skip, and an ERROR rather than a warning,
+ * because the state is not survivable in either direction: `loam adopt`,
+ * `loam delta`, `loam rebase` and `loam new --touches` all refuse the id with
+ * `invalid-option`, so the documents in there can never be updated by loam
+ * again, while `validate --all` used to grade the directory as an ordinary
+ * service and demand `model.likec4`, a spec and a landscape binding for it. The
+ * fix is a rename, and it is a rename loam cannot do for you — the id is
+ * spelled in the landscape binding, in the frontmatter and in every feature
+ * that touched the service — so the message names all three.
+ *
+ * Emitted from the fleet target (`validate --all`), where the SET of service
+ * directories is the thing being checked; a per-service run is already refused
+ * by its own `--service` guard before it gets here. Lives beside the entry
+ * shape rather than the enumeration because it is a projection of `idProblem`,
+ * not a read — the entry docblock already points here.
+ */
+export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
+  return services
+    .filter((s) => s.idProblem !== undefined)
+    .map((s) => ({
+      severity: "error" as const,
+      code: "service.id-invalid",
+      subject: s.id,
+      message:
+        `services/${s.id}/ — ${s.idProblem} ` +
+        `Every authoring command refuses this id (\`loam adopt\`, \`loam delta\`, \`loam new --touches\`), so nothing in that directory can be changed through loam. ` +
+        `Rename the directory to a legal id, then update its \`service:\` frontmatter, its \`metadata { service '${s.id}' }\` binding in architecture/landscape.likec4, and any features/<FEAT>/specs/${s.id}/ that names it.`,
+    }));
 }
 
 /**
