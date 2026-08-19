@@ -503,6 +503,7 @@ describe("path helpers", () => {
       spec: join("/docs/features/FEAT-1-split", "specs", "payment-service", "spec.md"),
       archSpec: join("/docs/features/FEAT-1-split", "specs", "payment-service", "arch.spec.md"),
       openapi: join("/docs/features/FEAT-1-split", "specs", "payment-service", "openapi.yaml"),
+      asyncapi: join("/docs/features/FEAT-1-split", "specs", "payment-service", "asyncapi.yaml"),
     });
   });
 
