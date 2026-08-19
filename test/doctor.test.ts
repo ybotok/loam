@@ -257,4 +257,38 @@ describe("an interrupted commit's own record names its repair", () => {
     expect(result.out).toContain("interrupted vouch of payment-service");
     expect(result.out).toContain(INTERRUPTED_VOUCH.rerun);
   });
+
+  it("a rename-only version-3 journal: the blocker names the pending directory moves, not zero files", async () => {
+    // `subsystem move` can journal renames with NO file swap (the views bytes
+    // happened not to change). The blocker used to render only `files` — "0
+    // file(s) may be half-written:" naming nothing — sending the operator
+    // hunting for files while the pending damage was directories.
+    const interruptedMove = {
+      version: 3,
+      command: "subsystem",
+      rerun: "loam subsystem sync",
+      target: "payment-service",
+      pid: 4243,
+      host: "build-box",
+      at: "2026-08-01T10:00:00.000Z",
+      files: [],
+      moves: [{ from: "services/payment-service", to: "services/payments/payment-service" }],
+    };
+    const project = await makeProject(coherentFixture());
+    cleanups.push(() => project.destroy());
+    await project.write(".loam-commit", JSON.stringify(interruptedMove, null, 2) + "\n");
+
+    const result = await runLoam(project.workDir, "doctor", "--json");
+    expect(result.code).toBe(1);
+    const report = JSON.parse(result.stdout);
+    const finding = report.findings.find((f: { code: string }) => f.code === "doctor.commit-interrupted");
+    expect(finding, result.stdout).toBeDefined();
+    expect(finding.message).toContain(
+      "1 directory move(s) pending: services/payment-service -> services/payments/payment-service",
+    );
+    expect(finding.message).not.toContain("0 file(s)");
+    expect(finding.fix).toContain(interruptedMove.rerun);
+    // Graded as a record loam understands, exactly like version 2.
+    expect(report.findings.map((f: { code: string }) => f.code)).not.toContain("doctor.commit-unreadable");
+  });
 });

@@ -20,6 +20,7 @@
 import { join } from "node:path";
 import { serviceDirOf, type DocsDir, type FeatureDir, type ServiceDir } from "../kernel/ids/dirs.js";
 import type { PathableService } from "../kernel/ids/service.js";
+import type { SubsystemName } from "../kernel/ids/subsystem.js";
 
 /** Directory under features/ holding shipped features. Never a feature itself. */
 export const ARCHIVE_DIR = "archive";
@@ -111,6 +112,19 @@ export function unfiledServicePaths(docsDir: DocsDir, service: PathableService):
  */
 export function servicePathsUnder(subsystemDir: string, service: PathableService): ServicePaths {
   return servicePathsAt(serviceDirOf(join(subsystemDir, service)));
+}
+
+/**
+ * The directory a SUBSYSTEM occupies (or will occupy) under a parent — the
+ * spelling `subsystem new` creates and `subsystem rename` renames into. The
+ * same guarantee-by-brand as the service spellings above: the parent came off
+ * the tree walk's readdir (or is `servicesDir` itself), and demanding
+ * `SubsystemName` here is what makes the validator unskippable — a raw argv
+ * string at this call site does not compile, so no future verb can hoist the
+ * join above the check that earns it.
+ */
+export function subsystemPathUnder(parentDir: string, name: SubsystemName): string {
+  return join(parentDir, name);
 }
 
 /**

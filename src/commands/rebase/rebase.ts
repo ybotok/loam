@@ -14,6 +14,7 @@ import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { planAsyncapi, planAxis, planOpenapi, type PinOutcome } from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
@@ -141,6 +142,11 @@ async function rebaseLocked(
   }
   const services = (chosen === undefined ? [...feature.services] : [chosen]).sort(compareIds);
 
+  // One read index for the whole loop below: every planner resolves its
+  // living document through `locateServicePaths`, and without a shared
+  // context each of those calls is a fresh fleet walk — services × axes of
+  // them per run, on a tree that cannot change under the lock this holds.
+  const repo = { docsDir, fleet: new FleetContext() };
   const outcomes: PinOutcome[] = [];
   const writes: PlannedWrite[] = [];
   try {
@@ -148,7 +154,7 @@ async function rebaseLocked(
       for (const axis of SPEC_AXES) {
         const specPath = featureSpecPaths(feature.dir, service)[axis.key];
         if (!existsSync(specPath)) continue;
-        const planned = await planAxis(docsDir, service, axis, specPath);
+        const planned = await planAxis(repo, service, axis, specPath);
         outcomes.push(...planned.outcomes);
         if (planned.content !== null) writes.push({ path: specPath, content: planned.content });
       }
@@ -157,7 +163,7 @@ async function rebaseLocked(
       // openapi delta is a COMPLETE document and spells the whole contract.
       const openapiPath = featureSpecPaths(feature.dir, service).openapi;
       if (existsSync(openapiPath)) {
-        const planned = await planOpenapi(docsDir, service, openapiPath);
+        const planned = await planOpenapi(repo, service, openapiPath);
         outcomes.push(...planned.outcomes);
         if (planned.content !== null) writes.push({ path: openapiPath, content: planned.content });
       }
@@ -166,7 +172,7 @@ async function rebaseLocked(
       // tell them from edits.
       const asyncapiPath = featureSpecPaths(feature.dir, service).asyncapi;
       if (existsSync(asyncapiPath)) {
-        const planned = await planAsyncapi(docsDir, service, asyncapiPath);
+        const planned = await planAsyncapi(repo, service, asyncapiPath);
         outcomes.push(...planned.outcomes);
         if (planned.content !== null) writes.push({ path: asyncapiPath, content: planned.content });
       }

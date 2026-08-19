@@ -160,6 +160,31 @@ describe("loam subsystem sync — the renderer", () => {
     expect(addedA.filter((l) => addedB.includes(l))).toEqual([]);
   });
 
+  it("view identifiers are injective: a_b, and b under a, render three distinct ids the renderer accepts", async () => {
+    // The old folding (every non-identifier byte AND the join separator to a
+    // single `_`) rendered `subsystem_a_b` for BOTH the subsystem named `a_b`
+    // and the subsystem `b` nested under `a` — three distinct healthy names,
+    // a green `validate --all`, and a duplicate view id the LikeC4 renderer
+    // refuses the whole architecture/ project over. The encoding escapes
+    // every such byte to `_` + two hex digits and joins nesting on `__`, so
+    // no two legal paths can share an id.
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/a/subsystem.yaml": "",
+      "services/a/b/subsystem.yaml": "",
+      "services/a_b/subsystem.yaml": "",
+    });
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      const ids = [...bytes.matchAll(/^ {2}view (\S+) \{/gm)].map((m) => m[1]!);
+      expect(ids).toEqual(["subsystem_a", "subsystem_a__b", "subsystem_a_5fb"]);
+      expect(new Set(ids).size).toBe(ids.length);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("an empty subsystem renders an empty view body, and a member nothing models is omitted from the includes", async () => {
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
@@ -172,7 +197,7 @@ describe("loam subsystem sync — the renderer", () => {
     try {
       expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const bytes = await p.read(VIEWS);
-      expect(bytes).toContain("  view subsystem_empty_group {\n  }\n");
+      expect(bytes).toContain("  view subsystem_empty_2dgroup {\n  }\n");
       expect(bytes).not.toContain("unmodelled");
     } finally {
       await p.destroy();

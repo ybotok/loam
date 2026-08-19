@@ -2,8 +2,10 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FleetContext } from "../src/core/fleet-context.js";
+import { docsDirOf, featureDirOf } from "../src/core/kernel/ids/dirs.js";
 import { operationIds, operations, readOpenapi } from "../src/core/openapi/doc.js";
 import { featureSpecServices, listFeatures, listServices } from "../src/core/repo/repo.js";
+import { featureChecklist } from "../src/core/verify/checklist.js";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 
 async function withRepo(fn: (root: string) => Promise<void>): Promise<void> {
@@ -92,6 +94,39 @@ describe("FleetContext", () => {
       const nextCommand = new FleetContext();
       expect(await nextCommand.readText(path)).toBe("# changed by the next command\n");
     });
+  });
+});
+
+describe("featureChecklist threads the context", () => {
+  it("derives a multi-service checklist through ONE fleet enumeration", async () => {
+    // The checklist's per-service loop resolves living contracts through the
+    // enumeration twice per service; before the context was threaded each of
+    // those calls was a fresh fleet walk, so a checklist over N services cost
+    // O(N × fleet) reads and no test noticed — the enumeration count is the
+    // pin that would have.
+    const root = await makeTmpDir("loam-checklist-fleet-");
+    try {
+      const api = (op: string): string =>
+        `openapi: 3.1.0\ninfo: { title: t, version: 1.0.0 }\npaths:\n  /x:\n    post:\n      operationId: ${op}\n      responses: {}\n`;
+      await writeFiles(root, {
+        "services/payments/spec.md": "# payments\n",
+        "services/payments/openapi.yaml": api("authorizePayment"),
+        "services/billing/spec.md": "# billing\n",
+        "features/FEAT-9-split/specs/payments/openapi.yaml": api("refundPayment"),
+        "features/FEAT-9-split/specs/billing/openapi.yaml": api("invoiceCustomer"),
+      });
+      const fleet = new FleetContext();
+      const checklist = await featureChecklist(
+        docsDirOf(root),
+        featureDirOf(join(root, "features/FEAT-9-split")),
+        "FEAT-9",
+        fleet,
+      );
+      expect(checklist.claims.filter((c) => c.kind === "api.exposes")).toHaveLength(2);
+      expect(fleet.stats().serviceEnumerations).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -23,7 +23,7 @@ export async function interruptedCommitFinding(docsDir: string): Promise<Finding
     intent === null
       ? `a commit this loam cannot read — check the living docs against version control, delete ${COMMIT_INTENT}, then re-run`
       : "rerun" in intent
-        ? `an interrupted \`${intent.rerun}\` — re-running it recovers first, and \`loam doctor\` names the files`
+        ? `an interrupted \`${intent.rerun}\` — re-running it recovers first, and \`loam doctor\` names the pending files and directory moves`
         : `an interrupted \`loam ${intent.command} ${intent.feature}\` — re-running it recovers first, and \`loam doctor\` names the files`;
   return {
     severity: "error",

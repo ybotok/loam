@@ -463,8 +463,10 @@ Exit criteria, as landed:
   finding; the tree memo in `FleetContext` keeps the walk at one enumeration per invocation.
 
 Honest leftovers: the move refuses on ANY `git status --porcelain` entry under a moved
-directory, untracked files included — stricter than "uncommitted changes to tracked files", and
-recorded in the refusal's prose; and a `subsystem rm` killed in the instant between its marker
+directory, untracked files included — stricter than "uncommitted changes to tracked files"; the
+refusal's prose says "uncommitted or untracked" and its remedy names `git stash -u`, because a
+plain `git stash` leaves untracked files behind and would loop the user back into the same
+refusal; and a `subsystem rm` killed in the instant between its marker
 unlink and its rmdir can leave an empty marker-less directory that lists as an unfiled service —
 visible, harmless, and removed by hand.
 

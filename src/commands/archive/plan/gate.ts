@@ -37,9 +37,10 @@ import { isRequirementsHeading, parseRequirements } from "../../../core/document
 import { refuseFindings, refuseJson, sayRecovery, type ArchiveOptions } from "./refusal.js";
 import { type Gated } from "./state.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function gate(
-  config: { docsDir: DocsDir },
+  config: { docsDir: DocsDir; fleet?: FleetContext },
   featureId: string,
   opts: ArchiveOptions,
   say: (line?: string) => void,
@@ -237,7 +238,9 @@ export async function gate(
   for (const svc of deltaServices) {
     for (const axis of SPEC_AXES) {
       if (!existsSync(featureSpecPaths(featureDir, svc)[axis.key])) continue;
-      const livingPath = (await locateServicePaths(config.docsDir, svc))[axis.key];
+      // The shared context, because this sits in a deltaServices × SPEC_AXES
+      // loop: without it every iteration re-walks and re-reads the fleet.
+      const livingPath = (await locateServicePaths(config.docsDir, svc, config.fleet))[axis.key];
       if (!existsSync(livingPath)) continue;
       for (const r of parseRequirements(await readUtf8(livingPath))) {
         // The ONE definition of the heading (spec.ts): the guard and the rewrite

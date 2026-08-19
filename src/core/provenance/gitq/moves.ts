@@ -111,6 +111,68 @@ export async function gitRenameHops(repoDir: string, rel: string): Promise<Renam
 }
 
 /**
+ * Was the rename record that produced a hop into `dest` at `commit` a GUESS?
+ * `git log --follow` pairs old and new paths by CONTENT similarity, and two
+ * identical files moved (or one moved while its twin is created or deleted)
+ * in the same commit give it a coin to flip — subsystem markers are routinely
+ * byte-identical (often empty), so a multi-directory move can report a hop
+ * from a directory the followed file never occupied. The cross-check asks the
+ * commit itself: if two or more of its diff entries carry the same blob as
+ * the one `dest` received, the pairing chose between equals and the hop is
+ * not evidence. `false` = unambiguous; `true` = a guess; null = git will not
+ * say — and the caller must treat BOTH non-false answers as "will not say",
+ * because repeating a maybe-phantom hop is worse than answering nothing.
+ */
+export async function gitRenamePairingAmbiguous(
+  repoDir: string,
+  commit: string,
+  dest: string,
+): Promise<boolean | null> {
+  return new Promise<boolean | null>((done) => {
+    const child = spawn("git", ["diff-tree", "-r", "-M", "-z", commit], {
+      cwd: repoDir,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: GIT_TIMEOUT_MS,
+    });
+    const out = collectStdout(child);
+    child.on("error", () => done(null));
+    child.on("close", (code) => {
+      if (code !== 0 || out.overflowed()) {
+        done(null);
+        return;
+      }
+      // `-z` raw form: `:<mode> <mode> <sha> <sha> <status>` NUL, then one
+      // path token — two for a rename/copy. The leading token is the commit.
+      const tokens = out.text().split("\0").filter((t) => t !== "");
+      const entries: { srcSha: string; dstSha: string; status: string; paths: string[] }[] = [];
+      for (let i = 0; i < tokens.length; i += 1) {
+        const token = tokens[i]!;
+        if (!token.startsWith(":")) continue;
+        const fields = token.slice(1).split(" ");
+        const status = fields[4] ?? "";
+        const paths = status.startsWith("R") || status.startsWith("C") ? [tokens[i + 1], tokens[i + 2]] : [tokens[i + 1]];
+        entries.push({
+          srcSha: fields[2] ?? "",
+          dstSha: fields[3] ?? "",
+          status,
+          paths: paths.filter((p): p is string => p !== undefined),
+        });
+        i += paths.length;
+      }
+      const own = entries.find((e) => e.status.startsWith("R") && e.paths[1] === dest);
+      if (own === undefined) {
+        // The hop's own rename is not in the commit's record — an answer this
+        // check cannot ground is an answer git will not give.
+        done(null);
+        return;
+      }
+      const twins = entries.filter((e) => e.srcSha === own.dstSha || e.dstSha === own.dstSha);
+      done(twins.length > 1);
+    });
+  });
+}
+
+/**
  * Best-effort `git add -A` over these repo-relative paths — the ONE write
  * (module banner): after a `subsystem move` lands its renames, staging the
  * delete-side and add-side together is what lets git record the pair as a

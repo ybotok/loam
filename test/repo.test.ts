@@ -21,7 +21,8 @@ import { join } from "node:path";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 import { rawServiceId } from "../src/core/kernel/ids/service.js";
 import { featureIdFromDirName } from "../src/core/repo/entries.js";
-import { featurePaths, featureSpecPaths, servicePaths } from "../src/core/repo/paths.js";
+import { featurePaths, featureSpecPaths, unfiledServicePaths } from "../src/core/repo/paths.js";
+import { docsDirOf } from "../src/core/kernel/ids/dirs.js";
 import { DocsRepoUnavailableError, docsRepoState } from "../src/core/repo/state.js";
 import { ambiguousFeatureMessage, featureCandidates, featureSpecServices, listFeatures, listServices, resolveFeature } from "../src/core/repo/repo.js";
 
@@ -470,8 +471,8 @@ describe("featureSpecServices", () => {
 });
 
 describe("path helpers", () => {
-  it("servicePaths spells every living service artifact under services/<id>/", () => {
-    const p = servicePaths("/docs", rawServiceId("payment-service"));
+  it("unfiledServicePaths spells every living service artifact under services/<id>/", () => {
+    const p = unfiledServicePaths(docsDirOf("/docs"), rawServiceId("payment-service"));
     expect(p).toEqual({
       dir: join("/docs", "services", "payment-service"),
       model: join("/docs", "services", "payment-service", "model.likec4"),

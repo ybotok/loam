@@ -19,9 +19,10 @@ import { mergeOpenapiPaths, type OpenapiMergeResult } from "../../../../core/ope
 import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
+import type { FleetContext } from "../../../../core/fleet-context.js";
 
 export async function planOpenapiContracts(
-  config: { docsDir: DocsDir },
+  config: { docsDir: DocsDir; fleet?: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -33,7 +34,9 @@ export async function planOpenapiContracts(
     const featOpenapi = featureSpecPaths(featureDir, svc).openapi;
     if (!existsSync(featOpenapi)) continue;
     const featText = await readUtf8(featOpenapi);
-    const livingOpenapi = (await locateServicePaths(config.docsDir, svc)).openapi;
+    // The shared context: this planner runs once per delta service, and a
+    // context-less locate is a full fleet walk per service.
+    const livingOpenapi = (await locateServicePaths(config.docsDir, svc, config.fleet)).openapi;
     const featDoc = await readOpenapi(featOpenapi);
     // Every other reader of this flag suspends its own judgement when it is set
     // — validate grades `openapi.invalid`, show and status print that the file

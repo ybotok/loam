@@ -39,9 +39,16 @@ export function nearestTreeNames(name: string, pool: string[]): string[] {
   return closeIds(name, pool);
 }
 
-/** Is `inner` this subsystem itself, or anywhere beneath it? The move-into-own-subtree refusal. */
-export function withinSubsystem(sub: SubsystemEntry, path: string[]): boolean {
-  return sub.path.length <= path.length && sub.path.every((name, i) => path[i] === name);
+/**
+ * Does the subsystem at `subPath` contain `path` — itself, or anywhere beneath
+ * it? The move-into-own-subtree refusal. The parameter is the name chain, not
+ * a `SubsystemEntry`, because a chain is all this comparison reads — the one
+ * caller outside this module (`move`) has a chain it just composed and no
+ * entry to hand, and a structural parameter it never reads would force a
+ * placeholder there.
+ */
+export function withinSubsystem(subPath: string[], path: string[]): boolean {
+  return subPath.length <= path.length && subPath.every((name, i) => path[i] === name);
 }
 
 /** Services anywhere beneath a subsystem — the transitive membership the views and counts share. */
@@ -51,5 +58,5 @@ export function servicesUnder(tree: FleetTree, sub: SubsystemEntry): WalkedServi
 
 /** Child subsystems anywhere beneath one — `rm`'s other half of "empty". */
 export function subsystemsUnder(tree: FleetTree, sub: SubsystemEntry): SubsystemEntry[] {
-  return tree.subsystems.filter((c) => c !== sub && withinSubsystem(sub, c.path));
+  return tree.subsystems.filter((c) => c !== sub && withinSubsystem(sub.path, c.path));
 }

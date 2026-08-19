@@ -475,11 +475,22 @@ describe("two service repos, one docs repo", () => {
 
       // The other repo's vouch lands the instant this one has read the spec —
       // so the bytes about to be written were computed from a document that no
-      // longer exists.
+      // longer exists. The read that matters is VERIFICATION's read, not the
+      // first read of the file: `locateServicePaths`' enumeration reads every
+      // spec.md's frontmatter before `verifySpec` ever runs, and a swap landed
+      // on that earlier read sits BEFORE the race window — verification then
+      // reads the new bytes and the stamp is sound, so the guard never fires
+      // and this test stops testing it. Skip the enumeration's read and land
+      // the swap on the second, which is verifySpec's. If the read order ever
+      // shifts again, the swap lands outside the window and the `vouch-raced`
+      // assertion below fails loudly — this pin cannot disarm silently.
       const theirs = `---\nservice: ${SVC}\nstatus: verified\nowner: payments-team\nsources:\n  - src/\nsources_digest: "1111111111111111"\n---\n\n# ${SVC}\n`;
       const specPath = join(p.docsDir, "services", SVC, "spec.md");
+      let specReads = 0;
       fsHook.afterRead = async (path) => {
         if (path !== specPath) return;
+        specReads += 1;
+        if (specReads < 2) return;
         fsHook.afterRead = undefined;
         await writeFile(specPath, theirs, "utf8");
       };
