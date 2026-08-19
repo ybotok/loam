@@ -865,7 +865,7 @@ describe("the strip: feature bookkeeping stays in the feature", () => {
 
   it("a components-only delta has no paths to strip, and still loses the record", () => {
     // The other early return, over the function archive's create branch
-    // publishes verbatim (commands/archive/plan/specs.ts): a delta whose whole
+    // publishes verbatim (commands/archive/plan/contracts/openapi.ts): a delta whose whole
     // change is a component has no `paths` mapping at all.
     const componentsOnly = `openapi: 3.1.0
 info: { title: payment-split-service, version: "1.0" }
