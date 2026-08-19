@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
-import { servicePaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { SPEC_AXES } from "../../../core/repo/paths.js";
+import type { FleetContext } from "../../../core/fleet-context.js";
+import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { listField, readFrontmatter } from "../../../core/document/frontmatter.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { missingSources, patternSources, unsafeSources } from "../../../core/provenance/sources.js";
@@ -34,8 +36,9 @@ export async function sourceScopeFindings(
   docsDir: DocsDir,
   service: PathableService,
   repoDir: string | undefined,
+  fleet?: FleetContext,
 ): Promise<Finding[]> {
-  const paths = servicePaths(docsDir, service);
+  const paths = await locateServicePaths(docsDir, service, fleet);
   const out: Finding[] = [];
   // The axis pair is SPEC_AXES', not this function's: `serviceProvenance` grades
   // the same two files from the same list, and a scope check that walked a

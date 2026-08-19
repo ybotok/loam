@@ -24,7 +24,9 @@ import {
 } from "../document/frontmatter.js";
 import type { PathableService } from "../kernel/ids/service.js";
 import type { Finding } from "../vocabulary/report.js";
-import { featurePaths, servicePaths, SPEC_AXES } from "../repo/paths.js";
+import { featurePaths, SPEC_AXES } from "../repo/paths.js";
+import type { FleetContext } from "../fleet-context.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { sourceFindings } from "./sources.js";
 import { contentDigest } from "./stamp.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
@@ -39,6 +41,8 @@ export interface ProvenanceOptions {
    * which case the paths are not ours to resolve and are left alone.
    */
   repoDir?: string;
+  /** The invocation's read index, when the caller holds one — resolves the service's directory without a second walk. */
+  fleet?: FleetContext;
 }
 
 export async function serviceProvenance(
@@ -46,7 +50,7 @@ export async function serviceProvenance(
   service: PathableService,
   opts: ProvenanceOptions = {},
 ): Promise<Finding[]> {
-  const paths = servicePaths(docsDir, service);
+  const paths = await locateServicePaths(docsDir, service, opts.fleet);
   const findings: Finding[] = [];
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
   // spec.md's frontmatter conventions exactly, so the checks are one loop —

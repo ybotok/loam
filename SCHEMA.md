@@ -58,6 +58,50 @@ docs/
   .loam-commit                       transient: the commit intent journal [archive/unarchive only]
 ```
 
+## Subsystems — a navigable tree under `services/`
+
+`services/` may be one flat level (the compatibility case, and forever legal) or an unbounded tree
+of **subsystem** directories grouping the service directories. The whole design turns on one
+invariant: **a service id is the leaf directory name, and placement is never part of any
+identity.** `loam.json`'s `service`, `metadata { service }`, spec frontmatter,
+`features/<FEAT>/specs/<svc>/` and every digest are byte-identical before and after a service
+moves; `--service` never takes a path, and no `subsystem` field exists in any frontmatter. The
+tree exists so a human can find a service and so views can be scoped — it carries **no policy**,
+and nothing branches on it.
+
+A directory under `services/` is classified **three ways, never two**:
+
+1. holding `subsystem.yaml` it is a **subsystem**, and is walked;
+2. holding any service artifact (`model.likec4`, `spec.md`, `arch.spec.md`, `openapi.yaml`,
+   `asyncapi.yaml`, `runbook.md`, `health.yaml`, `adrs/`) it is a **service**, and is not walked
+   deeper;
+3. holding neither while containing subdirectories it is an **error** (`subsystem.unmarked`)
+   naming every service found beneath it — which stays enumerated. The third branch exists
+   because two-way classification loses services silently on an ordinary clean merge: one branch
+   deletes an emptied subsystem's marker while another moves a service in, and the group
+   directory would otherwise be read as one empty service. The fleet is never reported smaller
+   than it is.
+
+`subsystem.yaml` is a **marker, not a manifest**:
+
+```yaml
+title: Payments             # optional
+description: Money movement # optional
+owner: payments-team        # optional
+```
+
+An empty file is a valid marker — presence classifies; content is metadata. It **never** lists
+members: the directory itself is the membership record, kept exactly once. A `members` key is
+`subsystem.invalid`; a marker beside service artifacts is `subsystem.marker-misplaced` (the
+directory stays a service); an unreadable marker still classifies its directory as a subsystem
+and reports exactly one `subsystem.invalid`.
+
+Names share **one flat namespace**: every subsystem name and service id, unique across the whole
+tree at any depth, never colliding with each other (`subsystem.name-collision` names every
+claimant). Subsystem names take the service-id grammar (`subsystem.name-invalid` otherwise);
+depth is unbounded and is the author's problem, not the tool's. A service directly under
+`services/` is **unfiled** — permanent, normal, and never a finding.
+
 ## Canonical joins
 
 | Meaning | Producer | Consumer | Join key |

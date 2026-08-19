@@ -29,7 +29,8 @@ import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
 import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
 import { operationIds, operations } from "../openapi/doc.js";
-import { featurePaths, featureSpecPaths, servicePaths } from "../repo/paths.js";
+import { featurePaths, featureSpecPaths } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { enumeratedServiceIds } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
@@ -158,7 +159,7 @@ export async function featureChecklist(
       .filter((operation) => !operation.remove)
       .map((operation) => operation.id);
     if (featOps.length > 0) {
-      const living = new Set(await operationIds(servicePaths(docsDir, svc).openapi));
+      const living = new Set(await operationIds((await locateServicePaths(docsDir, svc)).openapi));
       for (const op of featOps) {
         if (living.has(op)) continue;
         exposes.push(
@@ -175,7 +176,7 @@ export async function featureChecklist(
     // checkable, exactly like the broken C4 delta above.
     const events = await readAsyncapi(paths.asyncapi);
     if (events.sent.length > 0 || events.received.length > 0) {
-      const living = await readAsyncapi(servicePaths(docsDir, svc).asyncapi);
+      const living = await readAsyncapi((await locateServicePaths(docsDir, svc)).asyncapi);
       const directions = [
         { direction: "sends", feat: events.sent, known: new Set(living.sent) },
         { direction: "receives", feat: events.received, known: new Set(living.received) },

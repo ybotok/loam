@@ -11,7 +11,7 @@
 import { readAsyncapi } from "./read.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { PathableService } from "../kernel/ids/service.js";
-import { servicePaths } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /** Who produces what across the fleet, and whether that view is complete. */
@@ -57,7 +57,7 @@ export async function producersByMessage(
   const byMessage = new Map<string, string[]>();
   const unreadable: string[] = [];
   for (const service of services) {
-    const doc = await readAsyncapi(servicePaths(docsDir, service).asyncapi, context);
+    const doc = await readAsyncapi((await locateServicePaths(docsDir, service, context)).asyncapi, context);
     if (doc.unreadable) {
       unreadable.push(service);
       continue;

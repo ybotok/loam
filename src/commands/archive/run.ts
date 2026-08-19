@@ -28,6 +28,7 @@ import {
   writeSnapshot,
   type ServiceKey,
 } from "../../core/staging/snapshot.js";
+import { enumeratedServices } from "../../core/repo/service-target.js";
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
 import { planSpecs } from "./plan/specs.js";
@@ -139,14 +140,28 @@ export async function archiveLocked(
     // The snapshot's resolver pair: how a docs-relative path decomposes into a
     // service identity, and where that identity lives NOW. Built here — the
     // command layer's view of the tree — and injected, so the snapshot module
-    // never learns the repo layout. Today the tree under services/ is flat, so
-    // both answers are the layout itself; when the subsystem tree lands, these
-    // become the enumeration's map and this seam is where it threads through.
+    // never learns the repo layout. The seam the flat wave left is now
+    // threaded: both answers come from the enumeration, so a service filed
+    // into a subsystem keys its snapshot rows by the directory it actually
+    // lives in, and the clobber guard grades a leftover claim at that same
+    // address. The root-level parse stays as the fallback for the one path
+    // shape the enumeration cannot know yet — a service this archive CREATES,
+    // which always materialises unfiled at services/<id>/.
+    // Tolerant on purpose: a docs repo whose services/ is absent still
+    // archives a landscape-only feature exactly as before — the enumeration
+    // is empty, every row keys by the flat fallback, and the missing
+    // directory stays doctor's diagnosis rather than a merge-failed here.
+    const dirOf = new Map(
+      (await enumeratedServices(config.docsDir)).map((s) => [s.id as string, repoPath(config.docsDir, s.dir)]),
+    );
     const serviceKeyOf = (rel: string): ServiceKey | null => {
+      for (const [service, dir] of dirOf) {
+        if (rel.startsWith(`${dir}/`)) return { service, artifact: rel.slice(dir.length + 1) };
+      }
       const m = /^services\/([^/]+)\/(.+)$/.exec(rel);
       return m ? { service: m[1]!, artifact: m[2]! } : null;
     };
-    const serviceDirOf = (service: string): string => `services/${service}`;
+    const serviceDirOf = (service: string): string | null => dirOf.get(service) ?? null;
     await writeSnapshot({
       featureDir,
       docsDir: config.docsDir,

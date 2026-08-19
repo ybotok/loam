@@ -137,7 +137,7 @@ export function resolvePortableFileInside(root: string, candidate: string, label
  * between two checkouts — is a supported layout that every walk of the repo
  * FOLLOWS rather than refuses (repo.ts's `entryIs` says so in full), and that
  * `archive` already writes through: its living-document writes are planned from
- * `servicePaths()` and never see this file. With the realpath test in force on
+ * `unfiledServicePaths()`/`servicePathsAt()` and never see this file. With the realpath test in force on
  * the manifest's `path` field, a `services/<svc>/` mounted that way made an
  * interrupted archive permanently unrepairable — the retry was told the
  * snapshot could not be read when it was perfectly intact, and the half-merge it

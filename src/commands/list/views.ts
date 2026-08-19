@@ -15,7 +15,7 @@ import {
   type MaturityInput,
 } from "../../core/vocabulary/maturity.js";
 import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js";
-import { landscapePath, servicePaths } from "../../core/repo/paths.js";
+import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
 import { readVerification } from "../../core/verify/file.js";
 import { tallyRecord, type VerificationVerdict, verificationVerdict } from "../../core/verify/record.js";
@@ -58,7 +58,7 @@ export async function serviceViews(
   }
 
   return services.map((entry) => {
-    const archSpec = existsSync(servicePaths(docsDir, entry.id).archSpec);
+    const archSpec = existsSync(servicePathsAt(entry.dir).archSpec);
     const apiExpected = !proven || called.has(entry.id);
     const view = {
       entry,

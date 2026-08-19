@@ -18,7 +18,7 @@
 import { type Rel } from "../../c4/likec4.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
-import { servicePaths } from "../../repo/paths.js";
+import { locateServicePaths } from "../../repo/service-target.js";
 import { enumeratedServiceIndex } from "../../repo/service-target.js";
 import { readAsyncapi, type AsyncapiDoc } from "../../asyncapi/read.js";
 import type { FleetContext } from "../../fleet-context.js";
@@ -114,7 +114,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   const livingOf = async (svc: PathableService): Promise<AsyncapiDoc> => {
     let doc = livingDocs.get(svc);
     if (doc === undefined) {
-      doc = await readAsyncapi(servicePaths(scope.docsDir, svc).asyncapi, context);
+      doc = await readAsyncapi((await locateServicePaths(scope.docsDir, svc, context)).asyncapi, context);
       livingDocs.set(svc, doc);
     }
     return doc;

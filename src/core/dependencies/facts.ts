@@ -18,7 +18,8 @@ import { FleetContext } from "../fleet-context.js";
 import { serviceResolver } from "../c4/likec4.js";
 import { operations } from "../openapi/doc.js";
 import { type FeatureEntry } from "../repo/entries.js";
-import { SPEC_AXES, featurePaths, featureSpecPaths, servicePaths, type SpecAxis } from "../repo/paths.js";
+import { SPEC_AXES, featurePaths, featureSpecPaths, type SpecAxis } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { enumeratedServiceIds, enumeratedServiceIndex } from "../repo/service-target.js";
 import type { Requirement } from "../document/spec.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
@@ -175,7 +176,7 @@ export async function readFacts(
     let ids = livingByService.get(service);
     if (ids === undefined) {
       ids = new Set(
-        (await operations(servicePaths(docsDir, service).openapi, context))
+        (await operations((await locateServicePaths(docsDir, service, context)).openapi, context))
           .filter((op) => !op.remove)
           .map((op) => op.id),
       );

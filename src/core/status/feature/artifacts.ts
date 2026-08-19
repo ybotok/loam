@@ -12,6 +12,7 @@ import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
 import { verificationPath } from "../../verify/record.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
+import type { ServiceEntry } from "../../repo/entries.js";
 import type { ArtifactId, ArtifactState, ArtifactStatus, VerificationState } from "../report.js";
 import { verificationStatus } from "../verification.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
@@ -69,6 +70,8 @@ export interface Grading {
   contracted: ReadonlySet<string>;
   /** Operations this feature's own requirements govern. */
   governs: ReadonlySet<string>;
+  /** The enumeration's entries by id — where each living service is and what it has (owesContract reads both). */
+  living: ReadonlyMap<string, ServiceEntry>;
 }
 
 export function featureArtifacts(
@@ -77,7 +80,7 @@ export function featureArtifacts(
   services: readonly PathableService[],
   grading: Grading,
 ): ArtifactState[] {
-  const { blocking, verification, contracted, governs } = grading;
+  const { blocking, verification, contracted, governs, living } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
@@ -98,7 +101,7 @@ export function featureArtifacts(
       fileState(
         "openapi",
         { service: svc, path: rel(p.openapi), exists: existsSync(p.openapi) },
-        owesContract(docsDir, svc, contracted, governs.has(svc)),
+        owesContract(living.get(svc), contracted.has(svc), governs.has(svc)),
         faulted("openapi", svc),
       ),
     );

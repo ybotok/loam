@@ -20,8 +20,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadFile, serviceResolver, type LoadedDoc } from "../../c4/likec4.js";
 import { type PathableService } from "../../kernel/ids/service.js";
-import { featureSpecPaths, landscapePath, servicePaths, SPEC_AXES } from "../../repo/paths.js";
-import { enumeratedServiceIds } from "../../repo/service-target.js";
+import { featureSpecPaths, landscapePath, SPEC_AXES } from "../../repo/paths.js";
+import { enumeratedServiceIds, locateServicePaths } from "../../repo/service-target.js";
 import { listFeatures } from "../../repo/repo.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import { parseRequirements } from "../../document/parse.js";
@@ -69,7 +69,7 @@ export function eventLookups(scope: EventScope, context?: FleetContext): EventLo
     if (reqs === undefined) {
       reqs = [];
       for (const axis of SPEC_AXES) {
-        const p = servicePaths(docsDir, service)[axis.key];
+        const p = (await locateServicePaths(docsDir, service, context))[axis.key];
         if (!existsSync(p)) continue;
         reqs.push(
           ...(context === undefined

@@ -10,7 +10,8 @@
 import { existsSync } from "node:fs";
 import { repoPath } from "../../../../core/envelope/json.js";
 import { planWrite, readUtf8 } from "../../../../core/staging/writes.js";
-import { featureSpecPaths, servicePaths } from "../../../../core/repo/paths.js";
+import { featureSpecPaths } from "../../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../../core/repo/service-target.js";
 import { readOpenapi } from "../../../../core/openapi/doc.js";
 import { OpenapiMergeError } from "../../../../core/openapi/merge/error.js";
 import { stripOpenapiRemovalMarkers } from "../../../../core/openapi/merge/markers.js";
@@ -32,7 +33,7 @@ export async function planOpenapiContracts(
     const featOpenapi = featureSpecPaths(featureDir, svc).openapi;
     if (!existsSync(featOpenapi)) continue;
     const featText = await readUtf8(featOpenapi);
-    const livingOpenapi = servicePaths(config.docsDir, svc).openapi;
+    const livingOpenapi = (await locateServicePaths(config.docsDir, svc)).openapi;
     const featDoc = await readOpenapi(featOpenapi);
     // Every other reader of this flag suspends its own judgement when it is set
     // — validate grades `openapi.invalid`, show and status print that the file

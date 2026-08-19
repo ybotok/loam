@@ -23,7 +23,8 @@ import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { PathableService } from "../kernel/ids/service.js";
-import { landscapePath, servicePaths } from "../repo/paths.js";
+import { landscapePath } from "../repo/paths.js";
+import { locateServicePaths } from "../repo/service-target.js";
 import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
 import { landscapeArtifact, landscapeContext, type LandscapeContext } from "./landscape.js";
@@ -177,7 +178,7 @@ const NEVER_OVERWRITE =
 
 /** Assemble the brief for one service. Reads the docs repo; writes nothing. */
 export async function serviceBrief(docsDir: DocsDir, service: PathableService): Promise<Brief> {
-  const paths = servicePaths(docsDir, service);
+  const paths = await locateServicePaths(docsDir, service);
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 
   // Read before the artifact loop, not after it: what the fleet already says

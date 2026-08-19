@@ -35,7 +35,8 @@ import {
   NO_SERVICE_MESSAGE,
   reportNoConfig,
 } from "../../core/envelope/json.js";
-import { featureSpecPaths, servicePaths, SPEC_AXES, type SpecAxis } from "../../core/repo/paths.js";
+import { featureSpecPaths, SPEC_AXES, type SpecAxis } from "../../core/repo/paths.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
 import { listFeatures, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
@@ -163,7 +164,7 @@ export function registerGherkin(program: Command): void {
         } else {
           // The guard above proved `service` IS `config.service`; only the
           // latter carries the load-time parse, so it is the pathable spelling.
-          const paths = servicePaths(config.docsDir, config.service);
+          const paths = await locateServicePaths(config.docsDir, config.service);
           if (!existsSync(paths.spec)) {
             return fail(
               json,

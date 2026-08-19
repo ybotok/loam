@@ -3,14 +3,16 @@
  * else, so a rename is one edit rather than a grep.
  *
  * This is also the module that carries loam's one path guarantee.
- * `servicePaths(docsDir, service)` spells `<docsDir>/services/<service>/`, so
- * both parts are caller-controlled path input, and `node:path` cannot help:
+ * `unfiledServicePaths(docsDir, service)` spells `<docsDir>/services/<service>/`,
+ * so both parts are caller-controlled path input, and `node:path` cannot help:
  * `join(...paths: string[])` accepts every string there is. The guarantee IS
  * the parameter brands and nothing else — `PathableService` for the id (a name
- * whose provenance is the repository, unconstructible from document text) and
+ * whose provenance is the repository, unconstructible from document text),
  * `DocsDir`/`FeatureDir` for the roots (a resolved config or validated
- * `--docs`; a directory an enumeration read) — the `kernel/ids/` package holds
- * the only casts, so an unchecked value at these call sites does not compile.
+ * `--docs`; a directory an enumeration read), and `ServiceDir` for
+ * `servicePathsAt` (the enumeration's own resolved directory, narrower still)
+ * — the `kernel/ids/` package holds the only casts, so an unchecked value at
+ * these call sites does not compile.
  * Code that spells `services/<id>/` or a feature layout with a bare join is
  * outside the guarantee — `commands/new.ts` and the openspec migrator both do,
  * held instead by `resolveInside` at the write.
@@ -85,7 +87,18 @@ export function servicePathsAt(dir: ServiceDir): ServicePaths {
   };
 }
 
-export function servicePaths(docsDir: DocsDir, service: PathableService): ServicePaths {
+/**
+ * The UNFILED spelling — `<docsDir>/services/<id>/`, the tree's root level.
+ * This is where creation lands (`adopt`'s brief, a new service materialised by
+ * `archive`, the OpenSpec migration) and the honest fallback for a service the
+ * enumeration does not answer; for a service that EXISTS, resolve through the
+ * enumeration instead (`servicePathsAt(entry.dir)`, or
+ * `locateServicePaths` in `service-target.ts`, which chooses between the two).
+ * Renamed from `servicePaths` when the tree landed, precisely so the compiler
+ * would put every remaining caller in front of a reviewer: a root join that
+ * survives unreviewed is a moved service silently grading as absent.
+ */
+export function unfiledServicePaths(docsDir: DocsDir, service: PathableService): ServicePaths {
   return servicePathsAt(serviceDirOf(join(docsDir, "services", service)));
 }
 

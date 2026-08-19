@@ -12,7 +12,8 @@
 import { existsSync } from "node:fs";
 import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
-import { landscapePath as landscapeFile, permissionsPath, servicePaths } from "../../../core/repo/paths.js";
+import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
@@ -84,7 +85,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const me: string = service;
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "service", id: service, findings };
-  const paths = servicePaths(docsDir, service);
+  const paths = await locateServicePaths(docsDir, service, fleet);
 
   // A directory that does not exist is a different fact from a directory with
   // everything missing: validating a typo must say "typo", not "unadopted".
@@ -231,8 +232,8 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   }
 
   // Provenance last: who vouched for this, and what code it was written from.
-  findings.push(...(await serviceProvenance(docsDir, service, { repoDir })));
-  findings.push(...(await sourceScopeFindings(docsDir, service, repoDir)));
+  findings.push(...(await serviceProvenance(docsDir, service, { repoDir, fleet })));
+  findings.push(...(await sourceScopeFindings(docsDir, service, repoDir, fleet)));
 
   // The generated-gherkin freshness chain, service-repo-scoped like sources.*:
   // it needs the repo (the suite lives there), and it stays quiet until

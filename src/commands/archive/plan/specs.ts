@@ -14,7 +14,8 @@
  */
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
-import { featureSpecPaths, servicePaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { locateServicePaths } from "../../../core/repo/service-target.js";
 import {
   isRequirementsHeading,
   parseRequirements,
@@ -47,7 +48,7 @@ export async function planSpecs(
       if (!existsSync(deltaPath)) continue;
       const deltaReqs = parseRequirements(await readUtf8(deltaPath));
 
-      const livingPath = servicePaths(config.docsDir, svc)[axis.key];
+      const livingPath = (await locateServicePaths(config.docsDir, svc))[axis.key];
       if (!existsSync(livingPath)) {
         // New service (or first arch spec) — create the living file from the
         // ADDED/MODIFIED requirements.

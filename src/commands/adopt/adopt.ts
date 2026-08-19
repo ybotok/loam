@@ -1,10 +1,8 @@
 import type { Command } from "commander";
-import { existsSync } from "node:fs";
 import { closeIds } from "../../core/c4/arch.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { InvalidIdError, assertServiceId, type PathableService } from "../../core/kernel/ids/service.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
-import { servicePaths } from "../../core/repo/paths.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices } from "../../core/repo/repo.js";
 import { serviceBrief } from "../../core/brief/brief.js";
@@ -56,9 +54,11 @@ async function invocationWarnings(
     );
   }
 
-  if (existsSync(servicePaths(docsDir, service).dir)) return warnings;
-
-  // A near-miss is only computable when the docs repo can be enumerated at all;
+  // "Does the service already exist" is enumeration MEMBERSHIP, not an
+  // existsSync of services/<id>/ at the root: a service filed into a subsystem
+  // exists wherever the tree walk found it, and the root probe read every
+  // filed service as new — the near-miss warning then accused its own name of
+  // being a typo. One enumeration answers both this and the near-miss list;
   // a repo that refuses enumeration is a different problem, reported by every
   // other command, and adopt has nothing useful to add to it.
   let known: string[] = [];
@@ -68,6 +68,7 @@ async function invocationWarnings(
     if (!(err instanceof DocsRepoUnavailableError)) throw err;
     return warnings;
   }
+  if (known.includes(service)) return warnings;
   const close = closeIds(service, known);
   if (close.length > 0) {
     warnings.push(

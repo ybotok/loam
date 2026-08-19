@@ -9,7 +9,8 @@
 import { existsSync } from "node:fs";
 import { withFrontmatterFields } from "../../core/document/frontmatter.js";
 import { contentDigest, encodeSourceIndex } from "../../core/provenance/stamp.js";
-import { SPEC_AXES, servicePaths } from "../../core/repo/paths.js";
+import { SPEC_AXES } from "../../core/repo/paths.js";
+import { locateServicePaths } from "../../core/repo/service-target.js";
 import { rollbackStaged, stageWrites } from "../../core/staging/commit.js";
 import { join } from "node:path";
 import { COMMIT_INTENT, type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
@@ -45,7 +46,7 @@ export async function vouch(req: VouchRequest): Promise<VouchOutcome> {
       await release();
     }
   }
-  const paths = servicePaths(req.docsDir, req.service);
+  const paths = await locateServicePaths(req.docsDir, req.service);
   if (!existsSync(paths.spec)) {
     return {
       ok: false,

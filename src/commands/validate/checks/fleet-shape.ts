@@ -27,7 +27,7 @@ import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js"
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
-import { permissionsPath, servicePaths } from "../../../core/repo/paths.js";
+import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
@@ -184,7 +184,7 @@ export async function permissionFindings(
   }
   const used = new Set<string>();
   for (const entry of services) {
-    const paths = servicePaths(docsDir, entry.id);
+    const paths = servicePathsAt(entry.dir);
     for (const path of [paths.spec, paths.archSpec]) {
       // Existence first, and for BOTH readers: arch.spec.md is optional (most
       // of a legacy fleet has none) and spec.md is missing on a half-adopted

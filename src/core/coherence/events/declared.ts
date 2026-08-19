@@ -27,7 +27,8 @@ import { parse } from "yaml";
 import { NotUtf8DocumentError } from "../../kernel/document-bytes.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
-import { featureSpecPaths, servicePaths, SPEC_AXES } from "../../repo/paths.js";
+import { featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
+import { locateServicePaths } from "../../repo/service-target.js";
 import { parseRequirements } from "../../document/parse.js";
 import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi, type AsyncapiDoc } from "../../asyncapi/read.js";
@@ -152,7 +153,7 @@ export async function declaredEvents(
     // paid on every archive, whose gate runs without a FleetContext — for an
     // answer nothing consumed.
     if (!existsSync(featPath) && justifiedMsgs.size === 0) continue;
-    const livingPath = servicePaths(docsDir, svc).asyncapi;
+    const livingPath = (await locateServicePaths(docsDir, svc, context)).asyncapi;
     const livingDoc = await readAsyncapi(livingPath, context);
     if (!existsSync(featPath)) {
       // No event delta — but a REMOVED requirement may still be walking away

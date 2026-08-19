@@ -4,8 +4,9 @@
  * this file are.
  *
  * `repo/paths.ts` interpolates caller-controlled ids into these roots, and its
- * guarantee is only as good as the root it starts from: a `servicePaths(dir,
- * id)` whose `dir` is whatever string happened to be in scope spells paths
+ * guarantee is only as good as the root it starts from: an
+ * `unfiledServicePaths(dir, id)` whose `dir` is whatever string happened to
+ * be in scope spells paths
  * into whatever tree that string names. Honestly stated: these constructors
  * VALIDATE nothing — they RECORD a provenance the caller must already have
  * established, and what the gate contributes is that the cast appears in

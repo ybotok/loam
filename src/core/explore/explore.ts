@@ -166,7 +166,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   const opSeeds: ServiceEntry["id"][] = [];
   const unresolvedOperations: string[] = [];
   for (const op of req.operations) {
-    const owner = await operationOwner(docsDir, entries, op, context);
+    const owner = await operationOwner(entries, op, context);
     if (owner === null) unresolvedOperations.push(op);
     else opSeeds.push(owner);
   }
@@ -220,7 +220,6 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
         id,
         reason,
         entry: byId.get(id),
-        docsDir,
         relationships,
         svcOf,
         elements,
