@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   AUTO_PACKAGED,
@@ -72,9 +72,9 @@ describe("working-tree link integrity for the shipped pages", () => {
       failures.push(
         ...auditPageLinks(page, text, {
           hasFile: (path: string) => linkable.has(path),
-          readDoc: (path: string) =>
-            pages.get(path) ??
-            (PACKAGED_MARKDOWN.includes(path) ? readFileSync(join(ROOT, path), "utf8") : null),
+          // `pages` already holds every PACKAGED_MARKDOWN page, so a miss IS
+          // "not a shipped Markdown page" — no second read exists to fall to.
+          readDoc: (path: string) => pages.get(path) ?? null,
           hasRepoPath: (path: string) => existsSync(join(ROOT, path)),
         }),
       );
