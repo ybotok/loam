@@ -17,7 +17,7 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { findConfigPath, parseConfig } from "../../../core/envelope/config.js";
 import { docsDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
+import { CAPABILITY_LINE_RE, requirementIdProblems, type Requirement } from "../../../core/document/spec.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { type OpenSpecInventory } from "../../../core/openspec/model/model.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
@@ -122,9 +122,6 @@ export function assertDistinctPlannedPaths(writes: PlannedWrite[]): void {
     writePaths.set(collisionKey, write.path);
   }
 }
-
-/** The parser's own line shape (core/document/parse.ts), mirrored for the presence test. */
-const CAPABILITY_LINE_RE = /^\s*Capabilit(?:y|ies):/i;
 
 /**
  * The requirement with a `Capability: <id>` body line — the join that keeps

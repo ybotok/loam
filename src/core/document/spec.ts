@@ -131,6 +131,15 @@ export const KIND_RE = /^##\s+(ADDED|MODIFIED|REMOVED)\s+Requirements\s*$/i;
 export const REQUIREMENT_ID_LINE_RE = /^\s*Requirement-ID:\s*(.*?)\s*$/i;
 export const BASED_ON_LINE_RE = /^\s*Based-On:\s*(.*?)\s*$/i;
 
+/**
+ * The `Capability:` body line (also accepted: `Capabilities:`), exactly as the
+ * parser reads it — `./parse.ts` consumes the capture, migrate-openspec's
+ * materializer tests presence with it before appending its own line. One
+ * spelling on purpose: two copies of a grammar is how a "presence" test and
+ * the parse quietly stop agreeing about what counts as the line.
+ */
+export const CAPABILITY_LINE_RE = /^\s*Capabilit(?:y|ies):\s*(.+?)\s*$/i;
+
 /** Portable, review-friendly stable IDs. Case-sensitive by design. */
 export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 

@@ -222,8 +222,9 @@ async function readRequirementsAt(path: string): Promise<Requirement[]> {
 /**
  * The capability vocabulary graded against the fleet that realizes it — the
  * axis's fleet half, beside permissionFindings and shaped by the same two
- * verdicts. `capability.invalid` is the whole run's ONE finding about an
- * unreadable file, and it suppresses the rest of the family (the unknown
+ * verdicts. `capability.invalid` is a `validate --all` run's ONE finding about
+ * an unreadable file — fleet scope, so single-target runs stay silent about
+ * it — and it suppresses the rest of the family (the unknown
  * grades at every service target return [] for the same vocabulary — one
  * breach, one finding, never a cascade). `capability.unrealized` is one warn
  * PER declared-but-unnamed capability, subject = the id, because the roadmap's

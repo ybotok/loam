@@ -81,11 +81,14 @@ export async function declaredByService(
     // SILENT here — capability.invalid is validate --all's one finding about a
     // broken file, and an absent file means the fleet never opted in — so with
     // either, nothing new gates archive (the roadmap's own trade; the
-    // /loam-check row tells agents to fix the YAML first).
+    // /loam-check row tells agents to fix the YAML first). `grading` is that
+    // silence hoisted into a guard, so a silent axis also skips the reads that
+    // exist only to feed it.
     const capabilityVocab =
       context === undefined
         ? await readCapabilities(capabilitiesPath(docsDir))
         : await context.capabilities(capabilitiesPath(docsDir));
+    const grading = capabilityVocab.present && capabilityVocab.invalid === undefined;
     for (const svc of svcNames) {
       const paths = featureSpecPaths(featureDir, svc);
       if (existsSync(paths.spec)) {
@@ -99,13 +102,17 @@ export async function declaredByService(
           svc,
           new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
         );
-        issues.push(...capabilityUnknownIssues(reqs, { where: `${svc}: spec.md`, subject: svc }, capabilityVocab));
+        if (grading) {
+          issues.push(...capabilityUnknownIssues(reqs, { where: `${svc}: spec.md`, subject: svc }, capabilityVocab));
+        }
       }
       // The delta arch.spec.md carries the same grammar and merges the same
-      // way, so an undeclared capability in it gates identically. Read here —
-      // context-cached, the same parse validate --feature pays — because
-      // nothing else in this walk needs the arch delta.
-      if (existsSync(paths.archSpec)) {
+      // way, so an undeclared capability in it gates identically. Nothing else
+      // in this walk needs the arch delta, so the read itself sits behind
+      // `grading` — and it is NOT always cached: `validate --feature` passes a
+      // context, but archive's plan gate (commands/archive/plan/gate.ts) calls
+      // featureCoherence without one, so this parse is paid fresh there.
+      if (grading && existsSync(paths.archSpec)) {
         const archReqs = context === undefined
           ? parseRequirements(await readFile(paths.archSpec, "utf8"))
           : await context.readRequirements(paths.archSpec);

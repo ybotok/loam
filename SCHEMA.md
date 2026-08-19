@@ -370,7 +370,7 @@ capabilities:
 ```
 
 - `capability.unknown` (**error**) — a `Capability:` entry the vocabulary does not declare, with close-name suggestions; in a feature delta it gates `loam archive` (`--approve` overrides). Silent when the vocabulary is absent or invalid.
-- `capability.invalid` (**error**, fleet scope) — the file exists but does not read as a vocabulary; reported exactly once per run, the rest of the family suspended, because grading a fleet against a file nobody can read is a cascade rather than a diagnosis.
+- `capability.invalid` (**error**, fleet scope) — the file exists but does not read as a vocabulary; reported exactly once per `validate --all` run (single-target runs stay silent about the file), the rest of the family suspended, because grading a fleet against a file nobody can read is a cascade rather than a diagnosis.
 - `capability.unrealized` (**warning**, fleet scope) — a declared capability no living non-`REMOVED` requirement names, one warning per capability: either a promise nobody implemented or a word nobody adopted.
 
 The total is readable — `loam list capabilities` reports each capability's realizing requirements, services and draft/verified split, and `loam explore --capability <id>` seeds an exploration from the realizing services. `migrate-openspec` preserves capability identity through this same file: every routed requirement carries a `Capability:` line, and the staged target declares every living and active-horizon OpenSpec capability id (empty bodies — descriptions are not invented, the authored `## Purpose` prose stays verbatim under `legacy/`).

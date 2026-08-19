@@ -27,6 +27,7 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
+import { isRecord } from "../kernel/records.js";
 
 /** One declared capability. The id is the full key, slashes preserved. */
 export interface Capability {
@@ -92,8 +93,4 @@ export async function readCapabilities(path: string): Promise<CapabilityVocabula
     });
   }
   return { present: true, byId };
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
