@@ -1,0 +1,44 @@
+// A cross-service USE CASE, as a LikeC4 dynamic view. One journey per file, at
+// FLEET level — `likec4.config.json` scopes the project to `architecture/`, so a
+// view stored under `services/<svc>/` would resolve only that service's own
+// containers and could never draw a journey across the fleet.
+//
+// The view states the INTERACTION and states no outcome. What must be true at
+// each branch lives where outcomes are graded — an architecture requirement,
+// joined to this view by `Covers: view:checkoutJourney` (see
+// services/order-service/arch.spec.md). A diagram carrying its own expectations
+// would be a second requirement corpus that can disagree with the first.
+//
+// `#smoke` is a GROUP: groups are tags rather than directories, because one
+// journey belongs to several suites at once. The tag is declared once in the
+// landscape's `specification` block — LikeC4 refuses an undeclared tag, so a
+// mistyped group is a parse error rather than a silently-created second suite.
+// `loam flow env smoke` answers which services must be up to run it, and
+// `loam flow sync` regenerates architecture/flow-groups.likec4 from it.
+views {
+  dynamic view checkoutJourney {
+    #smoke
+    title 'Checkout: place an order and authorize its payment'
+    description '''
+      Every step below matches a relationship the landscape declares, which is
+      what lets loam reach the operationId behind it — a parsed step carries no
+      `metadata { op }` of its own, so the join is by (source, target).
+    '''
+
+    marketplace.checkoutWeb -> marketplace.orderService 'places the order'
+    marketplace.orderService -> marketplace.identityService 'introspects the caller token'
+    marketplace.orderService -> marketplace.paymentService 'authorizes the payment'
+    alt {
+      // Two branches, so this journey has TWO outcomes, and `flow.uncovered`
+      // wants at least two covering scenarios. It never says WHICH outcome is
+      // uncovered: loam does not read tests, so a shortfall is all it can prove.
+      when 'authorized' {
+        marketplace.paymentService -> kafka.paymentEvents 'PaymentAuthorized'
+        kafka.paymentEvents -> marketplace.orderService 'advances the order once'
+      }
+      else {
+        marketplace.orderService -> marketplace.paymentService 'refunds what was taken'
+      }
+    }
+  }
+}

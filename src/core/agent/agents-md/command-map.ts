@@ -153,7 +153,9 @@ selected that tool. The map of which invocation surfaces what:
   service scope, graded on the feature's spec.md and arch.spec.md deltas —
   both breaches merge into the living document),
   the architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
-  feature's arch.spec.md deltas), and
+  feature's arch.spec.md deltas),
+  \`flow.unrepresented\` (a tagged cross-service edge carrying \`metadata { op }\` that
+  no view this delta draws puts on a journey; asked only of a fleet drawing one), and
   the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
   \`delta.requirement-not-merged\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
   \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,

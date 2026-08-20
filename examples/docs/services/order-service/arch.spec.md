@@ -125,3 +125,26 @@ Covers: sli:availability, sli:order_placement_latency_p95_ms, alert:order_placem
 - **Given** payment-service answering `authorizePayment` slowly but successfully
 - **When** placements queue behind it
 - **Then** `order_placement_latency_p95_ms` rises above its objective before any request times out
+
+### Requirement: The checkout journey settles either way
+
+Requirement-ID: ARCH-ORD-CHECKOUT-JOURNEY
+The service SHALL leave the fleet consistent on BOTH outcomes of the checkout journey: an
+authorized payment advances the order exactly once however many times the event is delivered,
+and a refused one leaves no funds reserved and no order that claims to be paid. The journey is
+the only place the two outcomes are written down together — each service's own spec sees its
+half and cannot say what the other half owes — which is what the drawn interaction is for.
+
+Covers: view:checkoutJourney
+
+#### Scenario: The authorized branch advances the order exactly once
+- **Given** a placed order whose `authorizePayment` was approved
+- **When** `payment.PaymentAuthorized` is delivered, redelivered after a rebalance, and delivered again
+- **Then** the order advances once and the later deliveries are acknowledged without a write
+- **And** no second authorization is requested for it
+
+#### Scenario: The refused branch leaves nothing reserved
+- **Given** a placed order whose `authorizePayment` was refused by the issuer
+- **When** the placement path gives up on it
+- **Then** the order is not advanced and reports no payment
+- **And** any funds an earlier attempt reserved are refunded, so the customer holds no reservation for an order that will never ship

@@ -4,6 +4,44 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Added — a new cross-service operation owes a journey: `flow.unrepresented`
+
+The fleet's journey map is the one artifact nobody is told to update when the architecture moves
+under it. Every other coverage signal loam has is derived rather than requested, and this is the
+derived one that keeps the map honest.
+
+- **New stable finding code `flow.unrepresented`** (warn, feature scope) — a `delta.likec4` edge
+  tagged `#<FEAT>` that crosses a service boundary and carries `metadata { op '<id>' }`, where no
+  step of any dynamic view **that same delta draws** puts it on a journey. Graded exactly as
+  `c4.uncovered` is: a warning that never gates `loam archive`, with `--strict` as the CI
+  escalation. Silence it by drawing the step in a `dynamic view` inside `delta.likec4` tagged
+  `#<FEAT>` — the view archive already merges into the fleet's journeys.
+- **It is ADOPT-GATED: a fleet that has drawn no journey at all is never asked.** The check is
+  silent until `architecture/` declares at least one dynamic view — in the fleet map's own
+  `views { }` block, or in a document under `architecture/flows/`. This is the rule the rest of
+  loam already follows: gherkin staleness needs `<gherkinDir>/loam/` to exist before a service can
+  be stale, and `health.uncovered` manufactures no obligation without a `health.yaml`. A fleet
+  drawing no journey could not discharge the warning except by adopting the whole axis, and a
+  per-feature tax people cannot pay is how a team learns to ignore a warning. **The gate asks about
+  the FLEET, never about the feature** — a fleet WITH journeys whose new feature draws none is
+  precisely the staleness this exists to catch, and it still fires there.
+- **Its limit is stated in the finding's own message rather than left to the code**, because it is
+  a trade an author has to be able to weigh: the step→relationship join is deliberately
+  granularity-blind and hands a step EVERY relationship declared between its endpoints, so ONE step
+  drawn `orderService -> paymentService` covers all three container-level calls between them. That
+  is what stops the check from demanding every journey be redrawn at container granularity — and it
+  is why the warning UNDER-reports: a genuinely new operation between two services some drawn step
+  already joins is never named. It can show that a journey draws the INTERACTION; it can never show
+  that anybody weighed the operation.
+- The delta's OWN views alone are consulted, never the fleet's existing journeys. That is the rule
+  `c4.uncovered` already follows for obligations, and it is what makes
+  `loam validate --feature <id>` and `loam validate --all` give the same answer — an obligation
+  visible only under `--all` is one the author who could act on it never sees.
+- **A repo that has adopted journeys may newly report warnings** on features already in flight: a
+  delta that adds a cross-service call and draws no dynamic view is exactly the state this names.
+  **A repo with no dynamic view anywhere reports nothing new and is unaffected.** Nothing gates,
+  and no exit code changes without `--strict`.
+
 ### Added — a journey has a feature lifecycle: `archive` merges dynamic views, `unarchive` takes them back
 
 A cross-service journey could be authored, grouped and graded, but nothing could **change** one

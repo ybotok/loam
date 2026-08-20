@@ -1,34 +1,40 @@
 /**
- * Whether the architecture a delta INTRODUCES is covered by a requirement that
- * will actually merge.
+ * Whether the architecture a delta INTRODUCES is accounted for by something
+ * that will actually merge with it.
  *
- * Three findings, one question asked three ways: `archedge.uncovered` (a
- * scenario names the new edge — heuristic, warn-only), `c4.uncovered` (an
- * arch.spec.md requirement covers the new element or edge — mechanical), and
- * `covers.unknown` (the `Covers:` line resolves to something real). This is
+ * Two of the findings ask that of a REQUIREMENT: `archedge.uncovered` (a
+ * scenario names the new edge — heuristic, warn-only) and `c4.uncovered` (an
+ * arch.spec.md requirement covers the new element or edge — mechanical). This is
  * where agent-built code cuts its corners — the outbox, the retries, the alerts
  * — because no business scenario was ever going to mention them.
+ *
+ * The third asks it of a JOURNEY — `flow.unrepresented`, adopt-gated, with its
+ * reasoning at the emission below. The fleet's journey map is the one artifact
+ * nobody is told to update when the architecture moves under it.
  *
  * Split out of `validateFeature` because it is the only part of the feature
  * target that needs the LIVING landscape: everything else there reads the
  * feature directory alone. Keeping the lazy load and its two exemption sets in
- * one module is what stops "new" being decided differently in three places.
+ * one module is what stops "new" being decided differently in three places —
+ * and `./covers-scope.ts` holds the phase that follows, where an entry somebody
+ * WROTE is resolved rather than an obligation derived (`covers.unknown`).
  */
 import { existsSync } from "node:fs";
 import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
 import { type Flow } from "../../core/c4/flows/flow.js";
+import { drawnRelationships } from "../../core/c4/flows/steps.js";
+import { flowDocuments } from "../../core/flows/project.js";
 import { elementService, serviceResolver, type Elem, type Rel } from "../../core/c4/model/model.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
-import { locateServicePaths } from "../../core/repo/service-target.js";
 import { enumeratedServiceIds } from "../../core/repo/service-target.js";
 import { type Finding } from "../../core/vocabulary/report.js";
 import { type Requirement } from "../../core/document/spec.js";
-import { coversEdge, coversElement, type CoverageScope } from "../../core/c4/arch.js";
-import { readHealth } from "../../core/vocabulary/health.js";
+import { coversEdge, coversElement } from "../../core/c4/arch.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "./checks/vocabulary.js";
-import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
+import { coversEntries } from "./checks/requirements.js";
+import { coversScopeFindings } from "./covers-scope.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /** One feature delta's architecture, and everything needed to decide what in it is new. */
@@ -38,7 +44,11 @@ export interface DeltaArch {
   elements: Elem[];
   /** Every relationship the delta declares. */
   relationships: Rel[];
-  /** Every dynamic view the delta declares — what a `Covers: view:<id>` entry may name. */
+  /**
+   * Every dynamic view the delta declares — what a `Covers: view:<id>` entry may
+   * name, and what `flow.unrepresented` asks a new cross-service operation to
+   * appear in a step of.
+   */
   flows: Flow[];
   /**
    * The fleet's journeys — every dynamic view the `architecture/` project
@@ -48,8 +58,8 @@ export interface DeltaArch {
    *
    * Separate from `flows` above rather than unioned by the caller because the
    * two answer different questions: a delta's own views are what this feature
-   * DRAWS, and a `c4.uncovered` obligation is about them alone, while these are
-   * what it may legitimately point at.
+   * DRAWS, and an obligation — `c4.uncovered`, `flow.unrepresented` — is about
+   * them alone, while these are what it may legitimately point at.
    */
   fleetFlows: Flow[];
   /** The delta's own additions: elements and edges carrying the feature id as a tag. */
@@ -192,66 +202,87 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       message: `delta adds '${e.title}' (${e.id}) but no arch requirement covers it — add 'Covers: ${e.id}' to a specs/<svc>/arch.spec.md delta, or its architectural obligations ship unchecked`,
     });
   }
+
+  // `flow.unrepresented` rides the SAME walk over the tagged edges: it grades
+  // the relationships this loop already holds, through the one `svcOf` the
+  // feature shares. A pass of its own would be a second place turning an
+  // endpoint into a service name, and two such disagreeing is exactly how the
+  // already-living exemption below once stopped matching anything.
+  //
+  // `metadata { op }` is the filter and the whole question — an edge naming no
+  // operation has nothing to be represented, and `c4.op-link-missing` grades
+  // that state. Cross-service only: `likec4.config.json` scopes the flows
+  // project to `architecture/`, so an intra-service call is not something a
+  // fleet journey can draw at all.
+  //
+  // THIS DELTA'S OWN VIEWS ALONE, never the fleet's — the rule
+  // `DeltaArch.fleetFlows` already states for `c4.uncovered`: a delta's own
+  // views are what this feature DRAWS, and an obligation is about those. It
+  // also keeps the answer identical under `validate --feature <id>`, which
+  // reads no fleet journey; an obligation visible only under `--all` is one the
+  // author who could act on it never sees.
+  //
+  // AND IT IS ADOPT-GATED. An axis nobody has adopted is quiet everywhere else
+  // in loam — gherkin staleness needs `<gherkinDir>/loam/` to exist first, and
+  // `health.uncovered` manufactures no obligation without a health.yaml,
+  // because an absent file must not manufacture obligations. A fleet drawing no
+  // journey cannot discharge this warning except by adopting the whole axis, so
+  // firing there taxes people who have not opted in, and a signal people route
+  // around is worth less than no signal. The gate asks about the FLEET, never
+  // about this delta: a fleet WITH journeys whose feature draws none is the rot
+  // being named. Both halves are asked, in the shape `loadFlowProject` states —
+  // the map's own `views { }` block, plus the documents under
+  // `architecture/flows/` — by EXISTENCE rather than content, so `--feature`
+  // (which parses no fleet journey) answers as `--all` does, and a delta with
+  // no tagged edge pays nothing.
+  const drawn = drawnRelationships(flows);
+  const fleetDrawsJourneys =
+    taggedRels.length > 0 && ((base?.flows.length ?? 0) > 0 || (await flowDocuments(docsDir)).length > 0);
   for (const r of taggedRels) {
-    if (baseEdges.has(edgeKey(svcOf(r.source), svcOf(r.target)))) continue;
+    const source = svcOf(r.source);
+    const target = svcOf(r.target);
+    if (fleetDrawsJourneys && r.op !== undefined && source !== target && !drawn.has(r)) {
+      findings.push({
+        severity: "warn",
+        code: "flow.unrepresented",
+        subject: target,
+        message:
+          `delta adds ${source} → ${target} calling '${r.op}', and no step of a dynamic view this ` +
+          "delta draws carries it — the fleet's journey map will not show where this call happens, " +
+          "and nothing else asks it to. Draw the step in a dynamic view in delta.likec4 tagged with " +
+          "the feature id; archive merges it into the fleet's journeys. One step drawn between two " +
+          "services carries every relationship declared between them, so drawing this pair once " +
+          "answers for every operation on it — and, equally, an operation added between a pair some " +
+          "drawn step already joins is never named here",
+      });
+    }
+    if (baseEdges.has(edgeKey(source, target))) continue;
     if (activeCovers.some((c) => coversEdge(c, r, elements, known))) continue;
     findings.push({
       severity: "warn",
       code: "c4.uncovered",
-      subject: svcOf(r.target),
-      message: `delta adds edge ${svcOf(r.source)} → ${svcOf(r.target)} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
+      subject: target,
+      message: `delta adds edge ${source} → ${target} ("${r.title ?? ""}") but no arch requirement covers it — add 'Covers: ${r.source} -> ${r.target}' to a specs/<svc>/arch.spec.md delta`,
     });
   }
 
-  // covers.unknown, feature scope. Resolution looks at the delta itself, the
-  // living landscape, the service's own model and its health.yaml — a delta's
-  // arch requirement may cover an element it adds, one that already exists, or
-  // an alert the service declares. The landscape and each model are loaded
-  // lazily, and only when an entry fails against what is already in hand: the
-  // clean path never pays for a workspace spin.
+  // covers.unknown, feature scope — the resolution phase, in ./covers-scope.ts.
+  // Guarded here rather than there because this is where the living landscape
+  // is loaded: a delta whose arch requirements write no `Covers:` line at all
+  // must not pay for the parse, and the guard is the only thing that knows.
   if (archDeltas.some(({ reqs }) => coversEntries(reqs).length > 0)) {
     const land = await livingLandscape();
-    const landParses = land !== null && land.errors.length === 0 ? land : null;
-    const baseElements = [...elements, ...(landParses?.elements ?? [])];
-    const baseRels = [...relationships, ...(landParses?.relationships ?? [])];
-    // Flows follow elements: the delta's own views, the fleet's journeys and
-    // the living landscape's own views, so a delta requirement may cover a
-    // journey this feature draws or one the fleet already has — wherever the
-    // fleet stores it. The landscape's own views stay in the union for the two
-    // states in which `fleetFlows` is empty and the map's journeys are not: a
-    // `validate --feature <id>` run, which never reads them, and a run where a
-    // document under `architecture/flows/` did not parse. Where both are
-    // present the fleet set already contains the map's views, and the duplicate
-    // costs nothing (resolution is `some`, the hint de-duplicates). The
-    // per-service model retry below unions the service's own views for the same
-    // reason it unions its elements.
-    const baseFlows = [...flows, ...fleetFlows, ...(landParses?.flows ?? [])];
-    for (const { service: svc, reqs } of archDeltas) {
-      // An unreadable living health.yaml mutes the alert:/sli: entries here
-      // exactly as in service scope — the health.invalid finding itself
-      // belongs to the service target, which owns the file's diagnosis.
-      const health = await readHealth((await locateServicePaths(docsDir, svc, fleet)).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, flows: baseFlows, health: health.ids, known };
-      const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
-      if (unresolved.length > 0) {
-        const modelPath = (await locateServicePaths(docsDir, svc, fleet)).model;
-        const model = existsSync(modelPath)
-          ? fleet === undefined
-            ? await loadFile(modelPath)
-            : await fleet.loadLikeC4(modelPath)
-          : null;
-        if (model !== null && model.errors.length === 0) {
-          scope = {
-            elements: [...baseElements, ...model.elements],
-            relationships: [...baseRels, ...model.relationships],
-            flows: [...baseFlows, ...model.flows],
-            health: health.ids,
-            known,
-          };
-        }
-        findings.push(...coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable));
-      }
-    }
+    findings.push(
+      ...(await coversScopeFindings({
+        docsDir,
+        archDeltas,
+        delta: { elements, relationships, flows },
+        fleetFlows,
+        living: land !== null && land.errors.length === 0 ? land : null,
+        known,
+        fleet,
+      })),
+    );
   }
 
   return findings;
