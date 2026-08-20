@@ -38,7 +38,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parseCoversEntry } from "../../../core/c4/arch.js";
-import type { Flow, FlowNode, FlowStep } from "../../../core/c4/flows/flow.js";
+import type { Flow, FlowNode } from "../../../core/c4/flows/flow.js";
+import { stepsInOrder } from "../../../core/c4/flows/steps.js";
 import { inOrder } from "../../../core/kernel/concurrency.js";
 import { parseRequirements } from "../../../core/document/parse.js";
 import type { Requirement } from "../../../core/document/spec.js";
@@ -115,24 +116,6 @@ function stepFindings(flow: Flow): Finding[] {
     });
   }
   return findings;
-}
-
-/** Every step of a flow, in document order — the tree flattened for counting alone. */
-function stepsInOrder(nodes: FlowNode[]): FlowStep[] {
-  return nodes.flatMap((node): FlowStep[] => {
-    switch (node.kind) {
-      case "step":
-        return [node];
-      case "alt":
-        return node.branches.flatMap((branch) => stepsInOrder(branch.steps));
-      case "try":
-        return [node.try, node.catch, node.finally].flatMap((section) =>
-          section === undefined ? [] : stepsInOrder(section.steps),
-        );
-      default:
-        return stepsInOrder(node.steps);
-    }
-  });
 }
 
 /**

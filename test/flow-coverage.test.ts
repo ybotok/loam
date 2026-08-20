@@ -1,13 +1,17 @@
 /**
- * Flows as GRADED objects: the two fleet findings a drawn journey earns, and
- * the `Covers: view:<id>` line that joins one to the scenarios answering it.
+ * Flows as GRADED objects: the findings a drawn journey earns, the ones its
+ * ABSENCE earns, and the `Covers: view:<id>` line that joins a journey to the
+ * scenarios answering it.
  *
  * test/flows.test.ts pins the reader — that a dynamic view flattens with its
  * branch tree intact and its steps joined to the relationships they exercise.
- * This file pins what `loam validate --all` then DOES with that: a step joined
- * to nothing is named (`flow.step-unresolved`), a journey with more branch
- * outcomes than covering scenarios is named (`flow.uncovered`), and neither
- * gates — `--strict` is the CI escalation, exactly as `c4.uncovered` has it.
+ * This file pins what `loam validate` then DOES with that. Two grades are fleet
+ * scope: a step joined to nothing is named (`flow.step-unresolved`), and a
+ * journey with more branch outcomes than covering scenarios is named
+ * (`flow.uncovered`). The third is FEATURE scope and asks the mirror question —
+ * a delta that adds a cross-service operation and draws no journey over it is
+ * named (`flow.unrepresented`). None of the three gates: `--strict` is the CI
+ * escalation, exactly as `c4.uncovered` has it.
  *
  * The outcome arithmetic gets a fixture of its own, because the counting rule
  * is a decision rather than a derivation: outcomes are SUMMED across sub-flows
@@ -18,7 +22,7 @@
  * cannot drift into a product by accident.
  */
 import { describe, expect, it } from "vitest";
-import { makeProject, runLoam, type Project } from "./helpers/harness.js";
+import { coherentFixture, LANDSCAPE, makeProject, runLoam, type Project } from "./helpers/harness.js";
 
 interface Finding {
   severity: "ok" | "warn" | "error";
@@ -649,6 +653,201 @@ describe("branch outcomes are summed across sub-flows, never multiplied", () => 
         // set of ways the journey can end — so the flow falls back to its one.
         loops: 1,
       });
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* flow.unrepresented — feature scope                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The third flow grade, and the only one graded on a FEATURE rather than on the
+ * fleet: a delta that adds a cross-service call and draws no journey over it
+ * leaves the fleet's use-case map behind, and nothing but this says so.
+ *
+ * The delta is built here rather than taken from harness.ts's FEATURE_DELTA
+ * because these tests turn exactly two knobs — which cross-service edges the
+ * feature adds, and which journey it draws over them — and the shipped fixture
+ * fixes both.
+ */
+function splitDelta(rels: string, views: string): string {
+  return `specification {
+  element softwareSystem
+  element container
+  tag FEAT-1
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    api = container 'api'
+  }
+  paymentSplitService = softwareSystem 'payment-split-service' {
+    #FEAT-1
+    description 'Splits a payment across payees'
+    api = container 'api'
+    worker = container 'worker'
+  }
+${rels}
+}
+
+views {
+  view feat_1 {
+    include *
+  }
+${views}
+}
+`;
+}
+
+/**
+ * One journey, stored the way a fleet stores journeys — a document under
+ * `architecture/flows/`. Its CONTENT is not what the tests below turn on:
+ * `validate --feature <id>` parses no fleet journey, so the adoption gate reads
+ * this directory by existence alone. It is written to parse anyway, because a
+ * fixture that could not is a fixture making a claim it has not earned.
+ */
+const FLEET_JOURNEY = `views {
+  dynamic view fleetCheckout {
+    checkoutWeb -> paymentService 'authorizes the payment'
+  }
+}
+`;
+
+/** The fixture's own fleet map with a journey drawn in its OWN `views { }` block. */
+const LANDSCAPE_DRAWING_ONE = LANDSCAPE.replace(
+  "  view landscape {\n    include *\n  }\n",
+  "  view landscape {\n    include *\n  }\n  dynamic view mapCheckout {\n    checkoutWeb -> paymentService 'authorizes'\n  }\n",
+);
+
+/**
+ * The coherent fixture with FEAT-1's delta replaced by one these tests wrote,
+ * on a fleet that HAS adopted journeys — `flow.unrepresented` is silent
+ * otherwise, and the gate test below is what pins that.
+ */
+function featureFiles(rels: string, views = ""): Record<string, string> {
+  return {
+    ...coherentFixture(),
+    "features/FEAT-1-split/delta.likec4": splitDelta(rels, views),
+    "architecture/flows/checkout.likec4": FLEET_JOURNEY,
+  };
+}
+
+async function validateFeature(p: Project): Promise<{ code: number; findings: Finding[] }> {
+  const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+  const json = JSON.parse(res.stdout) as { targets: Target[] };
+  return { code: res.code, findings: json.targets.flatMap((t) => t.findings) };
+}
+
+/** One tagged cross-service edge carrying an operation the feature's OpenAPI defines. */
+const CREATE_SPLIT = `  paymentService -> paymentSplitService 'Calls createSplit' {
+    #FEAT-1
+    metadata { op 'createSplit' }
+  }`;
+
+/** A journey drawn service to service — the granularity a fleet map is read at. */
+const SPLIT_JOURNEY = `  dynamic view splitJourney {
+    #FEAT-1
+    paymentService -> paymentSplitService 'records the split'
+  }`;
+
+describe("a new cross-service operation no journey draws", () => {
+  it("says nothing at all until the FLEET has adopted journeys", async () => {
+    // THE ADOPTION GATE, and it is the whole shape of this finding. An axis
+    // nobody has adopted is quiet everywhere else in loam — gherkin staleness
+    // needs `<gherkinDir>/loam/` to exist before a service can be stale, and
+    // `health.uncovered` manufactures no obligation without a health.yaml. A
+    // fleet that draws no journey cannot discharge this warning except by
+    // adopting the whole axis, and a per-feature tax people cannot pay is how a
+    // team learns to ignore a warning — the same argument that made
+    // `flow.uncovered` sum its outcomes rather than multiply them.
+    const unadopted = featureFiles(CREATE_SPLIT);
+    delete unadopted["architecture/flows/checkout.likec4"];
+    await withProject(unadopted, async (p) => {
+      const { code, findings } = await validateFeature(p);
+      expect(byCode(findings, "flow.unrepresented")).toEqual([]);
+      expect(code).toBe(0);
+    });
+
+    // The SAME feature on a fleet that HAS drawn one — here in the fleet map's
+    // own `views { }` block rather than under `architecture/flows/`, because
+    // the gate asks both halves and each has to be able to open it alone. The
+    // map now exists to rot, so the warning does its work.
+    await withProject({ ...unadopted, "architecture/landscape.likec4": LANDSCAPE_DRAWING_ONE }, async (p) => {
+      expect(byCode((await validateFeature(p)).findings, "flow.unrepresented")).toHaveLength(1);
+    });
+  });
+
+  it("names the operation and both services, and never gates", async () => {
+    await withProject(featureFiles(CREATE_SPLIT), async (p) => {
+      const { code, findings } = await validateFeature(p);
+      const fs = byCode(findings, "flow.unrepresented");
+      expect(fs).toHaveLength(1);
+      expect(fs[0]!.severity).toBe("warn");
+      // The subject is the service being called, as `c4.uncovered`'s is: the
+      // fleet map's gap is on that side of the arrow.
+      expect(fs[0]!.subject).toBe("payment-split-service");
+      expect(fs[0]!.message).toContain("payment-service → payment-split-service");
+      expect(fs[0]!.message).toContain("'createSplit'");
+      // The trade is stated where an AUTHOR reads it, not only in the code:
+      // this warning cannot see an operation added between a pair some step
+      // already draws, and the message is where it admits that.
+      expect(fs[0]!.message).toContain("carries every relationship declared between them");
+      // Graded exactly as `c4.uncovered` is — a warning that never gates.
+      expect(code).toBe(0);
+    });
+  });
+
+  it("goes quiet once the delta's own dynamic view draws the step", async () => {
+    await withProject(featureFiles(CREATE_SPLIT, SPLIT_JOURNEY), async (p) => {
+      const { findings } = await validateFeature(p);
+      expect(byCode(findings, "flow.unrepresented")).toEqual([]);
+    });
+  });
+
+  it("counts ONE service-to-service step as drawing every operation declared between the pair", async () => {
+    // THE DECISION, and it is a trade rather than a derivation. The
+    // step→relationship join is granularity-blind (src/core/c4/flows/resolve.ts)
+    // and hands a step EVERY match, so this one arrow carries both
+    // container-level calls and both count as drawn. Demanding a step per
+    // declared edge would force every journey to be redrawn at container
+    // granularity the moment anybody modelled a container — which defeats the
+    // point of a FLEET-level map.
+    //
+    // The cost is on the same line and is deliberate: `getSplit` is a genuinely
+    // new operation nobody drew, covered because the PAIR is drawn. That is the
+    // under-report, and the message in the first test above is where an author
+    // is told about it.
+    const rels = `  paymentService.api -> paymentSplitService.api 'Calls createSplit' {
+    #FEAT-1
+    metadata { op 'createSplit' }
+  }
+  paymentService.api -> paymentSplitService.api 'Calls createSplit again' {
+    #FEAT-1
+    metadata { op 'createSplit' }
+  }`;
+    await withProject(featureFiles(rels, SPLIT_JOURNEY), async (p) => {
+      const { findings } = await validateFeature(p);
+      expect(byCode(findings, "flow.unrepresented")).toEqual([]);
+    });
+  });
+
+  it("asks nothing of an edge naming no operation, or of one inside a single service", async () => {
+    // No `metadata { op }` means no operation to be represented, and
+    // `c4.op-link-missing` already grades that state. An intra-service call is
+    // not something a fleet journey can draw at all: likec4.config.json scopes
+    // the flows project to `architecture/`, which excludes `services/**`.
+    const rels = `  paymentService -> paymentSplitService 'Calls the splitter' {
+    #FEAT-1
+  }
+  paymentSplitService.api -> paymentSplitService.worker 'Calls createSplit' {
+    #FEAT-1
+    metadata { op 'createSplit' }
+  }`;
+    await withProject(featureFiles(rels), async (p) => {
+      const { findings } = await validateFeature(p);
+      expect(byCode(findings, "flow.unrepresented")).toEqual([]);
+      expect(byCode(findings, "c4.op-link-missing")).toHaveLength(1);
     });
   });
 });

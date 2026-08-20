@@ -65,7 +65,7 @@ edges. Nothing in loam reports that today, which is why the landscape says so in
 
 ## The warnings are the lesson
 
-`loam validate --all` reports **0 errors and 8 warnings** here, and every one of them is
+`loam validate --all` reports **0 errors and 11 warnings** here, and every one of them is
 deliberate. An example that reported nothing would teach nothing about what these checks catch:
 
 | finding | what it is demonstrating |
@@ -77,6 +77,7 @@ deliberate. An example that reported nothing would teach nothing about what thes
 | `permissions.unenforced` | `user/profile:read` is declared in the vocabulary and named by no requirement — the shape a vocabulary drifts into |
 | `capability.unrealized` | `payments/settlement` is declared in `architecture/capabilities.yaml` and no living requirement's `Capability:` line names it — a promise nobody implemented, or a word nobody adopted; `loam list capabilities` shows it as `0 — unrealized` beside the realized ones |
 | `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
+| `flow.unrepresented` (×3) | FEAT-101 adds three cross-service calls carrying `metadata { op }` — `createSplit` and `getSplit` into the new service, and `checkout-web`'s own `createSplit` — and draws no `dynamic view` over any of them, so `architecture/flows/checkout-journey.likec4` still shows a fleet this feature is about to change. Nobody is told to redraw a journey when the architecture moves under it; this is the derived signal that says so. It is asked here only because this fleet HAS adopted journeys: a repo with no dynamic view anywhere is never asked, the way `health.uncovered` asks nothing of a service with no `health.yaml`. Drawing the pair once in the delta answers for every operation on it |
 
 **Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is
 the marker — title and description, never members) groups `identity-service` and

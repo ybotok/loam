@@ -54,13 +54,13 @@ const findings = (payload: {
 }): Array<{ severity: string; code: string }> => payload.targets.flatMap((t) => t.findings);
 
 describe("examples/docs vs loam validate --all", () => {
-  it("is valid: zero errors, and exactly the eight demonstration warnings", async () => {
+  it("is valid: zero errors, and exactly the eleven demonstration warnings", async () => {
     const res = await runLoam(workDir, "validate", "--all", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.valid).toBe(true);
-    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 8 });
+    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 11 });
 
     const bySeverity = (sev: string) =>
       findings(payload)
@@ -72,11 +72,21 @@ describe("examples/docs vs loam validate --all", () => {
     // `api.requirement-deprecated` twice: IDN-VALIDATE-LEGACY and ORD-PLACE-V1
     // each govern only an operation their contract marks deprecated, and only
     // one of the two has a feature open to retire it.
+    // `flow.unrepresented` three times: FEAT-101 adds three cross-service calls
+    // carrying `metadata { op }` and draws no dynamic view over any of them, so
+    // the fleet's journey map does not show the architecture it is about to
+    // have — the corpus's demonstration of the derived staleness signal. It is
+    // asked at all only because this corpus HAS a journey
+    // (architecture/flows/checkout-journey.likec4); the finding is adopt-gated,
+    // and test/flow-coverage.test.ts is what pins that.
     expect(bySeverity("warn")).toEqual([
       "api.requirement-deprecated",
       "api.requirement-deprecated",
       "c4.uncovered",
       "capability.unrealized",
+      "flow.unrepresented",
+      "flow.unrepresented",
+      "flow.unrepresented",
       "permissions.unenforced",
       "sources.absent",
       "spine.op-deprecated",
@@ -119,6 +129,39 @@ describe("examples/docs vs the subsystem tree", () => {
     expect(sync.code).toBe(0);
     expect(JSON.parse(sync.stdout).action).toBe("current");
     expect(await treeHashes(docsDir)).toEqual(before);
+  });
+
+  it("carries a cross-service journey whose suite names the services it needs up", async () => {
+    // The example's reason for holding a flow at all: the axis is unusable if
+    // the shipped corpus never shows one, and a journey nothing covers would
+    // demonstrate the warning rather than the feature. `validate --all` above
+    // holds its count BECAUSE this journey resolves every step and its
+    // two branch outcomes are answered by ARCH-ORD-CHECKOUT-JOURNEY's two
+    // scenarios — delete either half and `flow.uncovered` or
+    // `flow.step-unresolved` appears, which is what makes that count a check
+    // on this file rather than a coincidence.
+    const flowSync = await runLoam(workDir, "flow", "sync", "--json");
+    expect(flowSync.code).toBe(0);
+    expect(JSON.parse(flowSync.stdout).action).toBe("current");
+
+    // The union of a group's participants IS the environment a run needs, and
+    // the one participant that resolves to no directory is REPORTED rather
+    // than dropped: an external broker is a double to stand up, not a service
+    // somebody forgot to document, and a suite list that silently omitted it
+    // would be short by exactly the dependency hardest to fake.
+    const env = await runLoam(workDir, "flow", "env", "smoke", "--json");
+    expect(env.code).toBe(0);
+    const group = JSON.parse(env.stdout).groups[0];
+    expect(group.services).toEqual([
+      "checkout-web",
+      "identity-service",
+      "order-service",
+      "payment-service",
+    ]);
+    expect(group.flows).toEqual(["checkoutJourney"]);
+    expect(group.unresolved).toEqual([
+      { participant: "kafka.paymentEvents", service: "payment.events", external: true },
+    ]);
   });
 });
 

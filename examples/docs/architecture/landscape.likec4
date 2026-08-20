@@ -48,6 +48,11 @@ specification {
   // depends on it" answerable during an incident. LikeC4 refuses an undeclared
   // tag, so the declaration here and the tag on the element are both needed.
   tag platform
+  // A flow GROUP — a suite of journeys, declared here because LikeC4 refuses an
+  // undeclared tag. That refusal is the whole reason groups are tags and not
+  // directories: a mistyped group name fails to parse, where a mistyped
+  // directory would silently open a second suite nobody is running.
+  tag smoke
 }
 
 model {
