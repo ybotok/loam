@@ -2,7 +2,7 @@
 
 All notable project changes are recorded here. The format follows Keep a Changelog, and release versions follow Semantic Versioning.
 
-## [Unreleased]
+## [0.1.0-beta.4] - 2026-08-20
 
 ### Added — `loam flow` says which journeys reached no suite
 
