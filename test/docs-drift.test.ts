@@ -88,23 +88,33 @@ describe("the released range and the unreleased head", () => {
 });
 
 describe("private vulnerability reporting status", () => {
-  it("marks the intended private route as unavailable and release-blocking", async () => {
-    const [security, readiness] = await Promise.all([
+  /**
+   * The route is live — the repository's public advisories page offers "Report
+   * a vulnerability" — so these assertions are the inverse of what they were,
+   * and the coupling they enforce is unchanged: SECURITY, README and the
+   * readiness list say ONE thing about the route, and a document left behind
+   * fails here rather than misdirecting a reporter. The blocker constant stays
+   * because absence is now the invariant: re-adding the marker would silently
+   * re-block `release-check` from prose nobody re-read.
+   */
+  it("names the live private route, and no document still calls it unavailable", async () => {
+    const [security, readiness, readme] = await Promise.all([
       read("SECURITY.md"),
       read("docs/pilot/RELEASE-READINESS.md"),
+      read("README.md"),
     ]);
-    expect(security).toContain(PRIVATE_ROUTE_BLOCKER);
-    expect(security).toMatch(/Private Vulnerability Reporting[\s\S]{0,240}not currently confirmed or enabled/i);
-    expect(security).toMatch(/detail-free issue/i);
-    expect(security).toMatch(/release prerequisite/i);
-    expect(readiness).toMatch(/enable and test GitHub Private Vulnerability Reporting/i);
+    expect(security).not.toContain(PRIVATE_ROUTE_BLOCKER);
+    expect(security).toMatch(/security\/advisories\/new/);
+    expect(security).not.toMatch(/not currently confirmed or enabled/i);
+    // The public-issue fallback existed only while the private form did not.
+    // Leaving it standing would offer a reporter a public route beside a
+    // private one, which is the one mistake this file exists to prevent.
+    expect(security).not.toMatch(/detail-free issue/i);
+    expect(readiness).not.toMatch(/enable and test GitHub Private Vulnerability Reporting/i);
     expect(readiness).not.toMatch(/currently has no remote/i);
     expect(readiness).not.toMatch(/first-publication bootstrap/i);
-  });
-
-  it("does not tell readers that private reporting is already enabled", async () => {
-    const readme = await read("README.md");
-    expect(readme).toMatch(
+    expect(readme).toMatch(/security\/advisories\/new/);
+    expect(readme).not.toMatch(
       /Private Vulnerability Reporting[\s\S]{0,240}not (?:currently )?(?:confirmed|enabled|switched on)/i,
     );
   });
