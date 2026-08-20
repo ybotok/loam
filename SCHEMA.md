@@ -210,6 +210,18 @@ reads such a tag as the feature tag it looks like, so it names no suite, and say
 `flow.group-invalid` (warn) rather than leaving a suite that silently contains nothing. A flow in
 no group is legal and normal — it is simply not part of any suite yet.
 
+**Both `flow` verbs say which journeys reached no suite**, because everything either of them
+prints is per group: `sync` writes one view per group and `env` answers one environment per group,
+so a journey with no group tag is missing from all of it while both report success and a correct
+group count. Each closes with `N of M journey(s) in no suite` naming the ids, and carries them
+under `--json` as the additive keys `journeys` (how many the run read) and `ungrouped` (the ids,
+sorted) — unfiltered even when `env` was given one group, since which journeys are unsuited is a
+fact about the fleet and not about the suite you asked after. A view tagged only with a feature id
+is unsuited as well, since loam reads that tag as the feature tag it looks like. **It is a note,
+never a finding**: `validate --all` says nothing about it and nothing gates, exactly as an unfiled
+service is a count in `subsystem list` rather than a code. Nothing runs an unsuited journey, and
+before this nothing said so — but the repair is a group tag, never deleting the journey.
+
 ### The generated group views, and who owns what inside `architecture/`
 
 The groups are mirrored into **one generated file, never into an authored one**:

@@ -88,6 +88,36 @@ export function reservedGroupTags(flows: Flow[]): ReservedTag[] {
   return out.sort((a, b) => compare(a.flow, b.flow) || compare(a.tag, b.tag));
 }
 
+/**
+ * The journeys in NO suite — every flow whose tags declare no group, sorted by
+ * id.
+ *
+ * The exact complement of `flowGroups` over the same `groupTags` filter, and
+ * sharing that filter is the whole point: a tag taking the feature-id grammar
+ * is read as a FEATURE tag and groups nothing, so a journey carrying only such
+ * a tag is as unsuited as one carrying no tag at all. A second spelling of
+ * "which tags group" would let the two disagree about exactly that journey —
+ * the one an author is most likely to believe is suited.
+ *
+ * WHY THIS IS ANSWERED AT ALL, since a flow in no group is legal and normal
+ * (the header above says so, and `subsystem`'s unfiled services are the same
+ * shape): everything downstream of this module is per-GROUP. `./views.ts`
+ * renders one view per group and `groupEnvironments` below answers one
+ * environment per group, so a journey in none of them is absent from every line
+ * either command prints — and absent in the one way an output cannot show. The
+ * emission names them (`commands/flow/render.ts`); nothing grades them.
+ *
+ * Sorted here rather than trusted from the caller: `flattenFlows` does sort by
+ * id, but this takes any `Flow[]`, and a list two machines print in two orders
+ * is a diff nobody can read.
+ */
+export function ungroupedFlows(flows: Flow[]): string[] {
+  return flows
+    .filter((flow) => groupTags(flow).length === 0)
+    .map((flow) => flow.id)
+    .sort(compare);
+}
+
 /** What a run of one group needs standing up — the machine answer to "which services". */
 export interface GroupEnvironment {
   group: string;

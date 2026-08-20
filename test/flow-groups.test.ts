@@ -20,7 +20,8 @@
  *    environment output rather than absent from it.
  */
 import { describe, expect, it } from "vitest";
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { makeProject, runLoam, treeHashes } from "./helpers/harness.js";
 
@@ -88,6 +89,33 @@ const REFUND = `views {
     #payments
     title 'Refund'
     paymentService -> stripe 'refund'
+  }
+}
+`;
+
+/**
+ * A journey carrying NO group tag: drawn, graded, and in no suite. Legal — a
+ * journey may be drawn before anybody suites it — and invisible in both verbs'
+ * per-group output, which is the loss the emission has to name.
+ */
+const UNSUITED = `views {
+  dynamic view lonelyJourney {
+    title 'Lonely'
+    checkoutWeb -> paymentService 'authorize'
+  }
+}
+`;
+
+/**
+ * A journey whose ONLY tag takes the feature-id grammar. loam reads it as the
+ * feature tag it looks like, so it groups nothing — the case that separates
+ * "carries no tag" from "carries no GROUP tag".
+ */
+const FEATURE_TAGGED = `views {
+  dynamic view featureJourney {
+    #FEAT-101
+    title 'Tagged for a feature, in no suite'
+    paymentService -> checkoutWeb 'notify'
   }
 }
 `;
@@ -258,6 +286,35 @@ describe("loam flow sync — the renderer", () => {
       expect(res.code).toBe(0);
       expect(JSON.parse(res.stdout).action).toBe("removed");
       expect(p.exists(VIEWS)).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("sync writes through the same lock as every other writer", () => {
+  it("refuses visibly under contention: a held docs lock answers docs-busy, and nothing is written", async () => {
+    const p = await makeProject(fleetFiles());
+    try {
+      const before = await treeHashes(p.docsDir);
+      // A LIVE holder — this process's own pid — so the stale-lock breaker must
+      // not reclaim it. Without the refusal `flow sync` would regenerate the
+      // views file underneath whichever writer holds the repo, which is the
+      // whole reason it commits through `commitStaged` in the first place.
+      await writeFile(
+        join(p.docsDir, ".loam-lock"),
+        JSON.stringify({ pid: process.pid, host: hostname(), at: new Date().toISOString() }) + "\n",
+        "utf8",
+      );
+      const res = await runLoam(p.workDir, "flow", "sync", "--json");
+      expect(res.code).toBe(1);
+      expect(JSON.parse(res.stdout).error.code).toBe("docs-busy");
+      await rm(join(p.docsDir, ".loam-lock"));
+      expect(await treeHashes(p.docsDir)).toEqual(before);
+      // And the same command succeeds once the holder is gone: the refusal was
+      // contention, not a broken repo.
+      expect((await runLoam(p.workDir, "flow", "sync")).code).toBe(0);
+      expect(p.exists(VIEWS)).toBe(true);
     } finally {
       await p.destroy();
     }
@@ -453,6 +510,33 @@ describe("an unreadable flow document suspends the axis rather than emptying it"
     }
   });
 
+  it("env refuses it too, and answers NO environment rather than a short one", async () => {
+    // The refusal `sync` and `env` share, for two different reasons — and this
+    // is env's: a journey nobody can read still names participants, so the
+    // environment derived around it would be missing exactly whatever the
+    // unreadable document mentions. A list silently one service short is the
+    // one wrong answer this command exists to stop being given, so it must
+    // refuse rather than answer the groups it can still see.
+    const p = await makeProject(fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/refund.likec4": REFUND }));
+    try {
+      await p.write(FLOW, CHECKOUT.replace("paymentService -> stripe", "paymentService -> nosuchThing"));
+      const res = await runLoam(p.workDir, "flow", "env", "--json");
+      expect(res.code).toBe(1);
+      const payload = JSON.parse(res.stdout);
+      expect(payload.ok).toBe(false);
+      expect(payload.error.code).toBe("flow-invalid");
+      // The document is named, and the readable `payments` group is NOT
+      // answered around the broken one.
+      expect(payload.error.message).toContain(FLOW);
+      expect(payload.groups).toBeUndefined();
+      // Naming a group does not talk it into answering either.
+      const named = await runLoam(p.workDir, "flow", "env", "payments", "--json");
+      expect(JSON.parse(named.stdout).error.code).toBe("flow-invalid");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("sync refuses `flow-invalid` and leaves the generated file exactly as it was", async () => {
     const p = await makeProject(fleetFiles());
     try {
@@ -558,6 +642,169 @@ describe("loam flow env — the participant union as machine output", () => {
       const arity = await runLoam(p.workDir, "flow", "sync", "smoke", "--json");
       expect(arity.code).toBe(1);
       expect(JSON.parse(arity.stdout).error.code).toBe("invalid-option");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/**
+ * Required change #8: say what did NOT survive into a suite, in the emission's
+ * own voice — the shape `loam gherkin` already uses for a step-less scenario.
+ *
+ * The loss is structural rather than exceptional. Everything either verb prints
+ * is per GROUP: `sync` writes one view per group, `env` answers one environment
+ * per group. So a journey carrying no group tag is missing from every line of
+ * both — while both report success and a group count that is perfectly correct
+ * — and it is missing in the one way an output cannot show. The journey is real
+ * (`flow.uncovered` and `flow.step-unresolved` grade it), it belongs to no
+ * suite, so nothing will ever run it, and before this nothing said so.
+ *
+ * A NOTE AND NOT A FINDING, which is what the last test here pins: being in no
+ * group is legal and normal — the same shape as an unfiled service, which
+ * `subsystem list` also answers with a count rather than a code — so `validate
+ * --all` must stay silent about it. A finding would be a standing obligation to
+ * suite every journey, and the only way to discharge one on a journey nobody is
+ * ready to suite is to delete the journey.
+ */
+describe("what did not reach a suite", () => {
+  it("`flow sync` names the journey in no group, and it really is in no view", async () => {
+    const p = await makeProject(
+      fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/lonely.likec4": UNSUITED }),
+    );
+    try {
+      const res = await runLoam(p.workDir, "flow", "sync");
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain("wrote architecture/flow-groups.likec4 — 2 group view(s).");
+      // The count is out of the journeys READ, so the note carries its own
+      // denominator: "1 of 2" is what tells an author the other one is fine.
+      expect(res.stdout).toContain("⚠ 1 of 2 journey(s) in no suite: lonelyJourney");
+      expect(res.stdout).toContain("A journey with no group tag joins no suite");
+      // Not a defect in the journey — an author who reads this as a validation
+      // failure repairs it by deleting the drawn journey, which is the one
+      // artifact this whole axis exists to make worth maintaining.
+      expect(res.stdout).toContain("not a defect in the journey");
+      // The claim the note makes about the file is true of the file.
+      expect(await p.read(VIEWS)).not.toContain("lonelyJourney");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("carries it under --json as additive keys, on a run that wrote nothing too", async () => {
+    const p = await makeProject(
+      fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/lonely.likec4": UNSUITED }),
+    );
+    try {
+      const first = await runLoam(p.workDir, "flow", "sync", "--json");
+      const payload = JSON.parse(first.stdout);
+      expect(payload.ok).toBe(true);
+      // `groups` is untouched — the frozen key a consumer already reads.
+      expect(payload.groups).toBe(2);
+      expect(payload.journeys).toBe(2);
+      expect(payload.ungrouped).toEqual(["lonelyJourney"]);
+      // A second run writes nothing and answers `current`; what did not reach
+      // the file is no less true of it, and this is the run an author makes
+      // when they are asking why their journey is missing.
+      const again = JSON.parse((await runLoam(p.workDir, "flow", "sync", "--json")).stdout);
+      expect(again.action).toBe("current");
+      expect(again.ungrouped).toEqual(["lonelyJourney"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("`flow env` names it too, and does NOT filter it by a named group", async () => {
+    const p = await makeProject(
+      fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/lonely.likec4": UNSUITED }),
+    );
+    try {
+      const all = await runLoam(p.workDir, "flow", "env");
+      expect(all.code).toBe(0);
+      expect(all.stdout).toContain("⚠ 1 of 2 journey(s) in no suite: lonelyJourney");
+
+      // Which journeys reached no suite is a fact about the fleet's flows, not
+      // about the suite being asked after: filtering it by the argument would
+      // let `flow env smoke` report every journey suited whenever smoke's is.
+      const one = await runLoam(p.workDir, "flow", "env", "smoke", "--json");
+      const payload = JSON.parse(one.stdout);
+      expect(payload.groups.map((g: { group: string }) => g.group)).toEqual(["smoke"]);
+      expect(payload.journeys).toBe(2);
+      expect(payload.ungrouped).toEqual(["lonelyJourney"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("counts a view tagged ONLY with a feature id as unsuited — it groups nothing", async () => {
+    const files = fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/feature.likec4": FEATURE_TAGGED });
+    files["architecture/landscape.likec4"] = FLEET.replace("  tag external", "  tag external\n  tag FEAT-101");
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "flow", "sync", "--json");
+      expect(res.code).toBe(0);
+      // A tag-count test would call this journey suited: it carries a tag, and
+      // the tag is declared. Only the group-tag filter gets it right, and it is
+      // the very journey an author is most likely to believe is in a suite.
+      expect(JSON.parse(res.stdout).ungrouped).toEqual(["featureJourney"]);
+      const text = await runLoam(p.workDir, "flow", "env");
+      expect(text.stdout).toContain("featureJourney");
+      // Said where the author is looking at the list, rather than left to the
+      // finding: without it the entry reads as loam having lost a tag the
+      // document plainly carries.
+      expect(text.stdout).toContain("flow.group-invalid");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("names every journey when NO flow declares a group — the run that deletes the file", async () => {
+    const p = await makeProject(fleetFiles());
+    try {
+      expect((await runLoam(p.workDir, "flow", "sync")).code).toBe(0);
+      await p.write(FLOW, CHECKOUT.replace("    #smoke, #payments\n", ""));
+      const res = await runLoam(p.workDir, "flow", "sync");
+      expect(res.stdout).toContain("removed architecture/flow-groups.likec4");
+      expect(res.stdout).toContain("⚠ 1 of 1 journey(s) in no suite: checkoutJourney");
+      // `flow env` has nothing to filter and still owes the same answer.
+      const env = await runLoam(p.workDir, "flow", "env");
+      expect(env.stdout).toContain("no flow groups");
+      expect(env.stdout).toContain("⚠ 1 of 1 journey(s) in no suite: checkoutJourney");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("says NOTHING when every journey is in a suite, and is never a finding", async () => {
+    const p = await makeProject(fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/refund.likec4": REFUND }));
+    try {
+      // A note that fires on a fleet with nothing to say is a note people learn
+      // to skip, and this one has to survive being read on the day it matters.
+      const sync = await runLoam(p.workDir, "flow", "sync", "--json");
+      expect(JSON.parse(sync.stdout).ungrouped).toEqual([]);
+      const text = await runLoam(p.workDir, "flow", "env");
+      expect(text.stdout).not.toContain("no suite");
+      expect(text.stdout).not.toContain("⚠");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("validate --all stays silent about it: being in no suite is legal, not a debt", async () => {
+    const p = await makeProject(
+      fleetFiles({ [FLOW]: CHECKOUT, "architecture/flows/lonely.likec4": UNSUITED }),
+    );
+    try {
+      expect((await runLoam(p.workDir, "flow", "sync")).code).toBe(0);
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      // The unsuited journey is present and graded — it is in the fleet's flow
+      // set — and nothing about its SUITE is a finding. If a code ever appears
+      // here, the note above became an obligation nobody agreed to take on.
+      // The fixture's own services carry no model.likec4 and no contract, so the
+      // RUN is red for reasons that have nothing to do with flows — which is
+      // why the assertion is on the flow axis alone, exactly as every other
+      // validate assertion in this file is.
+      expect(flowFindings(res.stdout)).toEqual([]);
     } finally {
       await p.destroy();
     }

@@ -24,6 +24,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { ungroupedFlows } from "../../core/flows/groups.js";
 import { flowErrorLine, readFlowState } from "../../core/flows/project.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { emitJson, fail } from "../../core/envelope/json.js";
@@ -34,9 +35,29 @@ import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { sameBytes } from "../../core/staging/writes.js";
+import { printUngrouped } from "./render.js";
 
 /** What one sync did to the file. */
 type SyncAction = "current" | "created" | "updated" | "removed";
+
+/**
+ * What one sync has to say: what it did to the file, and what did not reach a
+ * view of it.
+ *
+ * Named rather than spelled inline at both call sites, because `groups`,
+ * `journeys` and `ungrouped` are three readings of ONE `FlowState` and are only
+ * true together — a report assembled from two reads could say a fleet has two
+ * groups and three journeys none of which is in one.
+ */
+interface SyncReport {
+  action: SyncAction;
+  groups: number;
+  /** Every dynamic view the `architecture/` project declares — the denominator `ungrouped` is out of. */
+  journeys: number;
+  /** The journeys in no group, sorted: drawn, graded, and in none of the views this file holds. */
+  ungrouped: string[];
+  recovered: CommitRecovery | null;
+}
 
 export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
   let releaseLock: () => Promise<void>;
@@ -72,11 +93,18 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
       );
       return;
     }
+    // Taken from the SAME state the expected bytes come from, so what the report
+    // says and what the file holds cannot describe two different reads.
+    const counted = {
+      groups: state.groups.length,
+      journeys: state.flows.length,
+      ungrouped: ungroupedFlows(state.flows),
+    };
     const path = flowGroupViewsPath(docsDir);
     const expectedBytes = state.expected === null ? null : Buffer.from(state.expected, "utf8");
     const actual = existsSync(path) ? await readFile(path) : null;
     if (sameBytes(actual, expectedBytes)) {
-      report(json, { action: "current", groups: state.groups.length, recovered });
+      report(json, { action: "current", ...counted, recovered });
       return;
     }
     const action: SyncAction = actual === null ? "created" : expectedBytes === null ? "removed" : "updated";
@@ -90,21 +118,23 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
       fail(json, committed.code, committed.message);
       return;
     }
-    report(json, { action, groups: state.groups.length, recovered });
+    report(json, { action, ...counted, recovered });
   } finally {
     await releaseLock();
   }
 }
 
-function report(
-  json: boolean,
-  out: { action: SyncAction; groups: number; recovered: CommitRecovery | null },
-): void {
+function report(json: boolean, out: SyncReport): void {
   if (json) {
+    // `journeys` and `ungrouped` are ADDITIVE keys on a frozen envelope: a
+    // consumer reading `groups` is untouched, and one that wants to know what
+    // the generated file leaves out no longer has to parse the text view.
     emitJson({
       path: "architecture/flow-groups.likec4",
       action: out.action,
       groups: out.groups,
+      journeys: out.journeys,
+      ungrouped: out.ungrouped,
       ...(out.recovered === null ? {} : { recovered: out.recovered }),
     });
     return;
@@ -121,4 +151,9 @@ function report(
     removed: `removed architecture/flow-groups.likec4 — no flow declares a group, so the generated file must be absent.`,
   };
   console.log(sentence[out.action]);
+  // AFTER the sentence, including on `current` and `removed`: the sentence is
+  // about the file, this is about what never reached it, and a run that wrote
+  // nothing is exactly when an author is most likely to be asking why their
+  // journey is missing.
+  printUngrouped(out.ungrouped, out.journeys);
 }
