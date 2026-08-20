@@ -14,6 +14,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
+import { type Flow } from "../../core/c4/flows/flow.js";
 import { elementService, type Elem, type Rel } from "../../core/c4/model/model.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
@@ -39,12 +40,31 @@ import { coverageFinding, repeatedListLineFindings } from "./checks/requirements
 import { deltaArchCoverage } from "./arch-coverage.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
-export async function validateFeature(
-  docsDir: DocsDir,
-  feature: FeatureEntry,
-  preloadedLand?: LoadedDoc | null,
-  fleet?: FleetContext,
-): Promise<TargetReport> {
+/**
+ * One feature target, and what the RUN already knows that this delta must be
+ * graded against. An input record rather than four positionals because the
+ * fleet's journeys made it five — `ServiceCheck` in `./service/service.ts` took
+ * the same turn for the same reason.
+ */
+export interface FeatureCheck {
+  docsDir: DocsDir;
+  feature: FeatureEntry;
+  /** The living landscape under --all; undefined means "load it if you need it", null "there is none". */
+  preloaded?: LoadedDoc | null;
+  /**
+   * The fleet's journeys, read once by the fleet target under --all — what a
+   * delta's `Covers: view:<id>` resolves against besides the views the delta
+   * itself draws. Absent on `validate --feature <id>`, which grades one
+   * directory and pays for no fleet parse; a `view:` entry naming a fleet
+   * journey is then `covers.unknown` there and correct under --all, which is
+   * the same asymmetry `preloaded` already has (see `CoverageScope.flows`).
+   */
+  fleetFlows?: Flow[];
+  fleet?: FleetContext;
+}
+
+export async function validateFeature(check: FeatureCheck): Promise<TargetReport> {
+  const { docsDir, feature, preloaded: preloadedLand, fleet } = check;
   const findings: Finding[] = [];
   const featureDir = feature.dir;
   const featureId = feature.id;
@@ -56,6 +76,10 @@ export async function validateFeature(
   let taggedRels: Rel[] = [];
   let elements: Elem[] = [];
   let deltaRels: Rel[] = [];
+  // A delta may declare its own dynamic views — a journey the feature adds. The
+  // arch axis has to resolve `Covers: view:<id>` against them, or a requirement
+  // covering the flow the feature itself draws reads as a typo.
+  let deltaFlows: Flow[] = [];
   let deltaDoc: LoadedDoc | undefined;
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
@@ -71,6 +95,7 @@ export async function validateFeature(
     } else {
       elements = res.elements;
       deltaRels = res.relationships;
+      deltaFlows = res.flows;
       taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
       findings.push({
@@ -167,6 +192,8 @@ export async function validateFeature(
       docsDir,
       elements,
       relationships: deltaRels,
+      flows: deltaFlows,
+      fleetFlows: check.fleetFlows ?? [],
       taggedEls,
       taggedRels,
       archDeltas,

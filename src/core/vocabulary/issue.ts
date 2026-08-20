@@ -187,6 +187,11 @@ export type IssueCode =
   | "delta.baseline-stale"
   /** the archive creates `services/<id>/` but nothing writes its `model.likec4` — the fleet gate will report the service incomplete */
   | "service.no-model"
+  /* --- flows: the cross-service journeys drawn as LikeC4 dynamic views --- */
+  /** another feature in flight changes the same dynamic view — a view is replaced whole and carries no `Based-On:` pin, so whichever archives second discards the other's journey */
+  | "flow.view-conflict"
+  /** `architecture/flow-groups.likec4` no longer matches the flows — validate's fleet finding, emitted by the archive PLAN when the merge is what leaves it stale; `loam flow sync` is the one repair */
+  | "flow.views-stale"
   /* --- capability axis: the Capability: join against architecture/capabilities.yaml --- */
   /** a delta requirement's `Capability:` entry that the fleet vocabulary does not declare — the merge would land a join that resolves to nothing, so it blocks archive like other errors, and `--approve` overrides it */
   | "capability.unknown"

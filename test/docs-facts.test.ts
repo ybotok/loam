@@ -252,13 +252,7 @@ describe("public docs name only emitted codes", () => {
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
     "capability.uncovered":
       "named as FUTURE work in ROADMAP's Later authored-capability item — remove this entry when that item lands (the code becomes emitted) or is dropped",
-    "flow.step-unresolved":
-      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
-    "flow.uncovered":
-      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
     "flow.unrepresented":
-      "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
-    "flow.views-stale":
       "named as FUTURE work in ROADMAP's cross-service use-cases item — remove this entry when that item lands (the code becomes emitted) or is dropped",
   };
 
@@ -371,8 +365,13 @@ describe("known gaps carry owners", () => {
       owner: "**UI generation:**",
     },
     {
+      // The reservation was CORRECTED rather than closed: the cross-service
+      // half of it moved to `architecture/flows/` (a view under `services/**`
+      // is outside the LikeC4 project and resolves only that service's own
+      // containers), and what is still deferred is the intra-service sequence
+      // — a rendering question, which is why the owner is unchanged.
       doc: "SCHEMA.md",
-      gap: "interaction flows -> sequence views",
+      gap: "intra-service sequence views only",
       owner: "**Rendering:**",
     },
   ];

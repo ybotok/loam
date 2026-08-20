@@ -39,6 +39,7 @@
  * bytes alone.
  */
 import { serviceResolver, type Elem } from "../../c4/model/model.js";
+import { likec4Identifier } from "../../kernel/likec4-ident.js";
 import { servicesUnder } from "./find.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "./walk.js";
 
@@ -112,24 +113,15 @@ function pathKey(sub: SubsystemEntry): string {
  * A LikeC4 identifier for the view, derived from the subsystem's path so
  * nesting reads in the name — and INJECTIVE over every path the name grammar
  * admits, because the renderer refuses the whole `architecture/` project over
- * a duplicate view id. The naive folding (every non-identifier byte and the
- * join separator alike becoming `_`) collided three DISTINCT healthy names
- * onto one identifier — `a_b`, and `b` under `a`, both rendered
- * `subsystem_a_b` — so `validate --all` was green while the renderer refused
- * the fleet map; `subsystem.name-collision` never fires because the flat
- * namespace really is intact. Hence the encoding: an identifier byte
- * (`[A-Za-z0-9]`) passes through, any other byte becomes `_` + two lowercase
- * hex digits (`.` → `_2e`, `-` → `_2d`, `_` itself → `_5f` — the underscore
- * must be escaped precisely because it is BOTH legal in a name and the
- * separator), and segments join on `__`. Underscore runs then decode
- * uniquely — one is an escape, two a separator, three a separator followed
- * by an escape — so no two distinct legal paths share an identifier. A name
- * `subsystem.name-invalid` already flagged may hold a code point above 0xff
- * whose longer hex could in principle re-collide; it is deterministic still,
- * and that directory is already an error finding by name.
+ * a duplicate view id. The encoding and the defect it closed live in
+ * `core/kernel/likec4-ident.ts`, shared with the flow-group renderer since
+ * both mint view ids from authored names; the `subsystem_` prefix stays here,
+ * because keeping each generator's prefix its own is what stops two of them
+ * minting one id for two different things. A name
+ * `subsystem.name-invalid` already flagged may hold a code point whose longer
+ * escape could in principle re-collide; it is deterministic still, and that
+ * directory is already an error finding by name.
  */
 function viewName(sub: SubsystemEntry): string {
-  const segment = (name: string): string =>
-    [...name].map((ch) => (/[A-Za-z0-9]/.test(ch) ? ch : `_${ch.codePointAt(0)!.toString(16).padStart(2, "0")}`)).join("");
-  return `subsystem_${sub.path.map(segment).join("__")}`;
+  return `subsystem_${likec4Identifier(sub.path)}`;
 }

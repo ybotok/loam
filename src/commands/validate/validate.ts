@@ -138,8 +138,10 @@ export function registerValidate(program: Command): void {
           const land = existsSync(lp) ? await readLandscape(() => fleet.loadLikeC4(lp)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
-          targets.push(await validateLandscape(docsDir, land, fleet));
-          const landscape = targets[0]!;
+          // It also reads the fleet's journeys once and hands that one set down: a
+          // `Covers: view:<id>` resolved per target could be a typo here, correct there.
+          const graded = await validateLandscape(docsDir, land, fleet);
+          targets.push(graded.report);
           // The agent contract check, --all only: AGENTS.md is written once and
           // never refreshed (the ownership contract), so the one thing the
           // docs-repo-wide mode owes it is detection — a stamp older than the
@@ -151,7 +153,7 @@ export function registerValidate(program: Command): void {
             existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
             LOAM_VERSION,
           );
-          if (agents !== null) landscape.findings.push(agents);
+          if (agents !== null) graded.report.findings.push(agents);
           targets.push(
             ...(await inOrder(services, (svc) =>
               guarded({ kind: "service", id: svc.id }, () =>
@@ -159,7 +161,7 @@ export function registerValidate(program: Command): void {
                   docsDir,
                   service: svc.id,
                   repoDir: repoOf(svc.id),
-                  preloaded: land,
+                  preloaded: land, fleetFlows: graded.flows,
                   gherkinDir: config.gherkinDir,
                   fleet,
                   landscapeReported: true,
@@ -170,7 +172,7 @@ export function registerValidate(program: Command): void {
           targets.push(
             ...(await inOrder(features, (feat) =>
               guarded({ kind: "feature", id: feat.id }, () =>
-                validateFeature(docsDir, feat, land, fleet),
+                validateFeature({ docsDir, feature: feat, preloaded: land, fleetFlows: graded.flows, fleet }),
               ),
             )),
           );
@@ -182,7 +184,7 @@ export function registerValidate(program: Command): void {
           }
           targets.push(
             await guarded({ kind: "feature", id: feature.id }, () =>
-              validateFeature(docsDir, feature, undefined, fleet),
+              validateFeature({ docsDir, feature, fleet }),
             ),
           );
         } else if (target !== undefined) {
@@ -196,7 +198,7 @@ export function registerValidate(program: Command): void {
           if (feature) {
             resolvedKind = "feature";
             const report = await guarded({ kind: "feature", id: feature.id }, () =>
-              validateFeature(docsDir, feature, undefined, fleet),
+              validateFeature({ docsDir, feature, fleet }),
             );
             if (isService) report.findings.unshift(ambiguousTarget(target, "feature"));
             targets.push(report);

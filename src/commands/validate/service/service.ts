@@ -11,6 +11,7 @@
  */
 import { existsSync } from "node:fs";
 import { loadFile } from "../../../core/c4/likec4.js";
+import { type Flow } from "../../../core/c4/flows/flow.js";
 import { serviceResolver, type Elem, type Rel } from "../../../core/c4/model/model.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { capabilitiesPath, landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
@@ -64,6 +65,15 @@ interface ServiceCheck {
   repoDir?: string;
   /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
   preloaded?: LoadedDoc | null;
+  /**
+   * The fleet's journeys, read once by the fleet target under --all — every
+   * dynamic view the `architecture/` project declares, wherever it is written.
+   * Absent on a single-service run, which grades one directory and pays for no
+   * fleet parse: a `Covers: view:<id>` naming a journey stored under
+   * `architecture/flows/` is then `covers.unknown` there and resolved under
+   * --all, the same asymmetry `preloaded` already carries.
+   */
+  fleetFlows?: Flow[];
   gherkinDir?: string;
   fleet?: FleetContext;
   /**
@@ -118,6 +128,11 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const hasModel = existsSync(paths.model);
   let elements: Elem[] = [];
   let relationships: Rel[] = [];
+  // The model's own dynamic views. Read here with its elements because the
+  // arch axis resolves `Covers: view:<id>` against them; a model that did not
+  // parse yields none, which is the same "conclude nothing" every other axis
+  // takes from an unreadable document.
+  let flows: Flow[] = [];
   if (!hasModel) {
     findings.push({
       severity: "error",
@@ -137,6 +152,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
         details: model.errors.map(errorText),
       });
     } else {
+      flows = model.flows;
       findings.push({
         severity: "ok",
         code: "c4.valid",
@@ -218,6 +234,8 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       archReqs,
       elements,
       relationships,
+      flows,
+      fleetFlows: check.fleetFlows ?? [],
       land,
       known,
     })),

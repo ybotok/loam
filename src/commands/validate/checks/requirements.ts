@@ -159,7 +159,7 @@ export function coversUnknownFindings(
           `${where}: requirement '${r.name}' — Covers: '${raw}' resolves to nothing` +
           (close.length > 0
             ? `. Did you mean: ${close.join(", ")}?`
-            : " in the model, the landscape or health.yaml"),
+            : " in the model, the landscape, the fleet's journeys or health.yaml"),
       });
     }
   }

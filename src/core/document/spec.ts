@@ -55,7 +55,8 @@ export interface Requirement {
   /**
    * What this requirement's scenarios exercise, from a `Covers:` line — the
    * architecture analog of `Operations:`. Entries are C4 element ids, edges
-   * (`source -> target`), or health signals (`alert:<id>` / `sli:<id>`);
+   * (`source -> target`), health signals (`alert:<id>` / `sli:<id>`), or
+   * dynamic views (`view:<id>` — a drawn journey, by its view id);
    * core/c4/arch.ts owns the grammar and the resolution. Parsed everywhere for one
    * grammar's sake, meaningful in arch.spec.md.
    */

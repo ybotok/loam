@@ -126,6 +126,8 @@ export type ErrorCode =
   | "move-uncommitted"
   /** A subsystem move/rename failed and was rolled back cleanly: every rename undone, the generated views file restored, the docs unchanged — re-running can work. Distinct from `merge-failed` because no merge was computed; a failure that could NOT be fully undone is `rollback-incomplete`, exactly as for archive. */
   | "move-failed"
+  /** `loam flow` refusing because a document under `architecture/flows/` does not parse — the refusal mirrors the `flow.invalid` finding, as `sources-*` mirrors `sources.*`. Nothing was written or answered: an unreadable journey declares no group, so regenerating from it would DELETE the group views of every journey that is readable, and an environment derived from it would silently omit whatever it names. Re-running works once the document parses. */
+  | "flow-invalid"
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {

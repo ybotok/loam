@@ -21,7 +21,9 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
 import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "../checks/vocabulary.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { unreadableLandscape } from "./load.js";
+import { flowGroupFindings } from "./flow-groups.js";
+import { flowFindings } from "./flows.js";
+import { readFleetFlows, unreadableLandscape, type FleetGrade } from "./load.js";
 import { viewsStaleFindings } from "./views-stale.js";
 
 /**
@@ -53,10 +55,15 @@ export async function validateLandscape(
   docsDir: DocsDir,
   preloaded?: LoadedDoc | null,
   fleet?: FleetContext,
-): Promise<TargetReport> {
+): Promise<FleetGrade> {
   const path = landscapeFile(docsDir);
   const findings: Finding[] = [];
   const report: TargetReport = { kind: "landscape", id: "landscape", findings };
+  // Every early return below is a map nothing may be concluded from, so each
+  // hands the run no journeys: a flow document resolves its participants and
+  // its group tags through this map, and grading journeys against a map nobody
+  // could read would report the author's correct work as broken.
+  const ungraded: FleetGrade = { report, flows: [] };
 
   // The SET of service directories is this target's other subject, so it is
   // graded before the map is even opened: `service.id-invalid` is a fact about
@@ -92,7 +99,7 @@ export async function validateLandscape(
         "write a `specification { element softwareSystem }` + `model { … }` document there " +
         "with one element per services/<id>/, bound with `metadata { service '<id>' }`.",
     });
-    return report;
+    return ungraded;
   }
 
   // Conflict markers before the parse — `loam doctor`'s order, and for its
@@ -118,7 +125,7 @@ export async function validateLandscape(
     );
     if (conflict !== null) {
       findings.push(conflict);
-      return report;
+      return ungraded;
     }
     land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
   } catch (err) {
@@ -133,13 +140,28 @@ export async function validateLandscape(
       message: `landscape: architecture/landscape.likec4 has ${land.errors.length} error(s) — cross-check with services/ impossible`,
       details: land.errors.map(errorText),
     });
-    return report;
+    return ungraded;
   }
 
   // The generated subsystem views, graded only now that the landscape has
   // parsed: the expected bytes are a function of (tree, landscape elements) —
   // `views-stale.ts` says why a byte compare and why exactly one finding.
   findings.push(...(await viewsStaleFindings(docsDir, tree, land.elements)));
+  // THE FLEET'S JOURNEYS, READ ONCE — here, on the same gate and for the same
+  // reason as the views above: the documents under architecture/flows/ are read
+  // as one LikeC4 project WITH this map, so a map that did not parse would make
+  // every participant an unresolved reference and report the author's correct
+  // journeys as broken.
+  //
+  // One read, and everything that grades a journey shares it: the storage
+  // checks below, `flowFindings` at the bottom of this function, and — through
+  // this function's return — the `Covers: view:<id>` scope of every service and
+  // feature target the run goes on to grade. `land.flows` rides in as the fleet
+  // map's own `views { }` block, which is the whole answer for a fleet storing
+  // no journeys elsewhere, and is unioned with the flow documents' views
+  // otherwise.
+  const state = await readFleetFlows(docsDir, land.flows);
+  findings.push(...(await flowGroupFindings(docsDir, state)));
 
   const services: ReadonlySet<string> = new Set(entries.map((s) => s.id));
   // Depth is not a fact about a service. This used to keep only top-level
@@ -243,6 +265,19 @@ export async function validateLandscape(
     ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf }),
   );
 
+  // The journeys drawn over the map, graded last because they are graded
+  // against everything above: a step resolves through the same declared
+  // relationships, and a flow's coverage is counted over the fleet's
+  // arch.spec.md files. Nothing here can run before the landscape parses —
+  // `state.flows` is empty on documents nobody could read, which is the same
+  // "conclude nothing" the early returns above state outright.
+  //
+  // The flows are the ARGUMENT rather than something `./flows.ts` reads for
+  // itself, which is what let their storage move from this document's own
+  // `views { }` block to `architecture/flows/` by changing where `state` comes
+  // from and nothing in the walk, the arithmetic or the messages.
+  findings.push(...(await flowFindings(state.flows, entries, fleet)));
+
   if (findings.length === 0) {
     findings.push({
       severity: "ok",
@@ -250,5 +285,5 @@ export async function validateLandscape(
       message: `landscape: ${services.size} service(s) modelled — architecture/landscape.likec4 and services/ agree`,
     });
   }
-  return report;
+  return { report, flows: state.flows };
 }

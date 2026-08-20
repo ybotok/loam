@@ -27,12 +27,39 @@ function stripFeatureTag(block: string, featureId: string): string {
     if (code.slice(m.index, m.index + m[0].length) !== m[0]) continue;
     let s = m.index;
     let e = s + m[0].length;
+    // A tag list may be COMMA-SEPARATED — `#FEAT-1, #smoke` and `#smoke,
+    // #FEAT-1` are both legal wherever tags are, elements and relationships
+    // included — so the separator has to leave with the token. Stripping the
+    // tag alone leaves `{ , #smoke }`, which does not parse: the merge then
+    // died at its own parse net blaming the living document's specification
+    // for a comma the strip had just made. Trailing separator first, so
+    // `#FEAT-1, #smoke` leaves `#smoke` where it stood; one separator only,
+    // because two commas around one tag were two tags' worth of syntax.
+    let sep = e;
+    while (block[sep] === " " || block[sep] === "\t") sep += 1;
+    const trailingSep = block[sep] === ",";
+    let leadingSep = false;
+    if (trailingSep) {
+      e = sep + 1;
+    } else {
+      let back = s;
+      while (back > 0 && (block[back - 1] === " " || block[back - 1] === "\t")) back -= 1;
+      leadingSep = block[back - 1] === ",";
+      if (leadingSep) s = back - 1;
+    }
     // Take the whitespace on ONE side with the token — trailing first, so
     // `#FEAT-1 #critical` leaves `#critical` at its own indent, and a token at
     // the end of a line does not leave a trailing space behind.
+    //
+    // A separator already taken settles the question, and taking whitespace as
+    // well would move what is left: with a TRAILING one, walking backwards
+    // would swallow the line's own indentation and re-home the surviving tag
+    // (`#FEAT-1,#smoke` two columns to the left); with a LEADING one, the
+    // token's own place in the list is already gone, so `{ #smoke, #FEAT-1 }`
+    // keeps the space before its closing brace.
     if (block[e] === " " || block[e] === "\t") {
-      while (block[e] === " " || block[e] === "\t") e += 1;
-    } else {
+      if (!leadingSep) while (block[e] === " " || block[e] === "\t") e += 1;
+    } else if (!trailingSep) {
       while (s > 0 && (block[s - 1] === " " || block[s - 1] === "\t")) s -= 1;
     }
     removals.push([s, e]);

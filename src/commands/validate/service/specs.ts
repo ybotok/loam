@@ -18,6 +18,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
+import { type Flow } from "../../../core/c4/flows/flow.js";
 import { type Elem, type Rel } from "../../../core/c4/model/model.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
@@ -155,6 +156,19 @@ export interface ArchAxis {
   /** The service's own C4 model, empty when it has none. */
   elements: Elem[];
   relationships: Rel[];
+  /**
+   * The dynamic views the service's own model.likec4 declares. Carried for the
+   * `Covers: view:<id>` form only — an intra-service sequence is coverable by
+   * this service's own arch requirements exactly as a fleet journey is.
+   */
+  flows: Flow[];
+  /**
+   * The fleet's journeys, read once for the whole run — every dynamic view the
+   * `architecture/` project declares, `architecture/flows/` included. Empty
+   * when this run never read them (a single-service target), which is why the
+   * landscape's own views stay in the union below.
+   */
+  fleetFlows: Flow[];
   /** The living landscape, or null when the repo has none. */
   land: LoadedDoc | null;
   /**
@@ -166,7 +180,7 @@ export interface ArchAxis {
 }
 
 export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
-  const { service, paths, archText, archReqs, elements, relationships, land, known } = axis;
+  const { service, paths, archText, archReqs, elements, relationships, flows, fleetFlows, land, known } = axis;
   const findings: Finding[] = [];
 
   // The architecture spec axis — the obligations a business spec never carries
@@ -240,6 +254,19 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   const scope: CoverageScope = {
     elements: [...elements, ...(landParses?.elements ?? [])],
     relationships: [...relationships, ...(landParses?.relationships ?? [])],
+    // Every dynamic view in scope, unioned exactly as the elements are: a
+    // service's arch requirement covers its own intra-service sequences AND the
+    // fleet journeys it takes part in, and only fleet-level documents can hold
+    // the second (the LikeC4 project scope excludes `services/**`, so a
+    // cross-service journey resolves at fleet level or not at all).
+    // The landscape's own views are unioned in as well, for the two states in
+    // which `fleetFlows` is empty and the map's journeys are not: a
+    // single-service run (the map is read, no flow document is), and a run
+    // where a document under `architecture/flows/` did not parse — one typo
+    // there must not cost every journey drawn in the map its coverage. Where
+    // both are present the fleet set already contains the map's views, and the
+    // duplicate is free (resolution is `some`, the hint de-duplicates).
+    flows: [...flows, ...fleetFlows, ...(landParses?.flows ?? [])],
     health: health.ids,
     known,
   };
