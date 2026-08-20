@@ -16,13 +16,16 @@
  *
  * Unresolved participants are carried, never dropped — `core/flows/groups.ts`
  * says why at length: a silently shorter list is the one failure mode invisible
- * from the output itself.
+ * from the output itself. A journey in NO group is the same failure one level
+ * up — every line below is per-group, so an unsuited journey is missing from
+ * all of them — and `./render.ts` is the sentence that closes it.
  */
 import { emitJson, fail } from "../../core/envelope/json.js";
-import { groupEnvironments, type GroupEnvironment } from "../../core/flows/groups.js";
+import { groupEnvironments, ungroupedFlows, type GroupEnvironment } from "../../core/flows/groups.js";
 import { flowErrorLine, readFlowState } from "../../core/flows/project.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { listServices } from "../../core/repo/repo.js";
+import { printUngrouped } from "./render.js";
 
 export async function runEnv(docsDir: DocsDir, group: string | undefined, json: boolean): Promise<void> {
   const state = await readFlowState(docsDir);
@@ -52,11 +55,17 @@ export async function runEnv(docsDir: DocsDir, group: string | undefined, json: 
     );
     return;
   }
+  // UNFILTERED, even when a group was named, and both views agree about that.
+  // Which journeys reached no suite is a fact about the fleet's flows, not
+  // about the suite being asked after — filtering it by the argument would make
+  // `flow env smoke` claim every journey is suited whenever the smoke one is.
+  const ungrouped = ungroupedFlows(state.flows);
   if (json) {
-    emitJson({ groups: environments });
+    emitJson({ groups: environments, journeys: state.flows.length, ungrouped });
     return;
   }
   print(environments);
+  printUngrouped(ungrouped, state.flows.length);
 }
 
 /**

@@ -4,6 +4,35 @@ All notable project changes are recorded here. The format follows Keep a Changel
 
 ## [Unreleased]
 
+### Added — `loam flow` says which journeys reached no suite
+
+Everything either flow verb printed was per GROUP — `sync` writes one view per group, `env`
+answers one environment per group — so a journey carrying no group tag was missing from every line
+of both while both reported success and a group count that was perfectly correct. The journey is
+real (it is graded by `flow.uncovered` and `flow.step-unresolved`), it belongs to no suite, so
+nothing will ever run it, and nothing said so. The emission is the only place that absence can be
+seen at all, which is the same reason `loam gherkin` reports step-less scenarios and malformed
+example tables itself.
+
+- **Both `loam flow sync` and `loam flow env` now close with `N of M journey(s) in no suite`**,
+  naming the view ids, followed by one sentence saying what it costs and how to fix it. Printed
+  on a run that wrote nothing (`current`) and on the run that deletes the file (`removed`) too —
+  those are exactly when an author is asking why their journey is missing.
+- **Two additive `--json` keys on both verbs**: `journeys` (how many dynamic views the run read)
+  and `ungrouped` (the ids in no group, sorted). Nothing existing changed — `groups` still means
+  what it meant.
+- **Unfiltered even when `flow env <group>` names one group.** Which journeys are unsuited is a
+  fact about the fleet's flows, not about the suite being asked after; filtering it by the
+  argument would let `flow env smoke` report every journey suited whenever the smoke one is.
+- **A view tagged only with a feature id counts as unsuited**, since loam reads such a tag as the
+  feature tag it looks like (`flow.group-invalid` names it). It is the journey an author is most
+  likely to believe is in a suite, and a tag-count test would call it grouped.
+- **It is a NOTE and not a finding, deliberately.** Being in no group is legal and normal —
+  the same shape as an unfiled service, which `subsystem list` answers with a count rather than a
+  code — so `validate --all` stays silent, no code was added, and nothing gates. A finding would
+  be a standing obligation to suite every journey, and the only way to discharge one on a journey
+  nobody is ready to suite is to delete the journey.
+
 ### Added — a new cross-service operation owes a journey: `flow.unrepresented`
 
 The fleet's journey map is the one artifact nobody is told to update when the architecture moves

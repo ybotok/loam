@@ -28,7 +28,17 @@ export const FLOW_COMMANDS = `- \`loam flow <verb>\` reads the fleet's cross-ser
   IDS (never paths — a filed service's directory is wherever the subsystem tree
   puts it): which services must be up for a suite's flows to
   run, with every participant that models no service directory NAMED under
-  \`unresolved\` rather than dropped. Ownership inside \`architecture/\`: generated
+  \`unresolved\` rather than dropped. BOTH verbs then say what reached NO suite:
+  everything either of them prints is per group, so a journey carrying no group
+  tag is in none of it, and both close that with
+  \`N of M journey(s) in no suite\` naming the ids — additive \`journeys\` and
+  \`ungrouped\` keys under \`--json\`, and unfiltered even when \`env\` was given
+  one group, since which journeys are unsuited is a fact about the fleet rather
+  than about the suite you asked after. A view tagged ONLY with a feature id is
+  unsuited too: loam reads that tag as the feature tag it looks like. It is a
+  NOTE and never a finding — being in no group is legal and normal, exactly as
+  an unfiled service is, so \`validate --all\` says nothing about it and nothing
+  gates. Ownership inside \`architecture/\`: generated
   files are loam's (\`flow-groups.likec4\`, \`subsystems.likec4\`) and the flow
   documents are yours — never edit the generated ones, and no regenerator
   writes into \`flows/\`. Refusals: \`flow-invalid\` is a document under
