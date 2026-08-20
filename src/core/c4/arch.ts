@@ -9,7 +9,7 @@
  * scenarios exercise, so coverage can be derived mechanically instead of
  * trusted to an author who was never going to write the outbox down.
  *
- * Three entry forms, resolved against the documents loam already reads:
+ * Four entry forms, resolved against the documents loam already reads:
  *
  *   paymentService.db               a C4 element id — resolved against the
  *                                   in-scope elements the way every check joins
@@ -18,19 +18,30 @@
  *   paymentService -> kafka         an edge — each side resolved the same way,
  *                                   against the declared relationships;
  *   alert:<id> / sli:<id>           a health signal — ids `health.yaml`
- *                                   declares (core/vocabulary/health.ts).
+ *                                   declares (core/vocabulary/health.ts);
+ *   view:<id>                       a flow — a LikeC4 dynamic view, by its view
+ *                                   id (core/c4/flows/).
+ *
+ * The `view:` form is what joins a drawn journey to the outcomes nobody can
+ * derive from it. A dynamic view states the interaction and states no outcome;
+ * the outcome stays where outcomes are graded — a scenario under an
+ * architecture requirement — and this line is the only join between the two.
+ * Assertions deliberately do NOT move into step notes: a diagram carrying its
+ * own expectations is a second requirement corpus that can disagree with the
+ * first.
  *
  * Resolution never reads code. An entry that resolves to nothing is the typo
  * guard (`covers.unknown`, warn); the emitters live with the other validate
  * checks, this module owns only the grammar and the matching.
  */
 import { elementService, serviceResolver, type Elem, type Rel } from "./model/model.js";
+import type { Flow } from "./flows/flow.js";
 import type { HealthIds } from "../vocabulary/health.js";
 
 export type CoversEntry =
   | { form: "element"; id: string; raw: string }
   | { form: "edge"; source: string; target: string; raw: string }
-  | { form: "alert" | "sli"; id: string; raw: string };
+  | { form: "alert" | "sli" | "view"; id: string; raw: string };
 
 /** Parse one comma-separated `Covers:` entry into its form. Never fails: an
  * unclassifiable string is an element entry that will not resolve, and the
@@ -40,6 +51,12 @@ export function parseCoversEntry(raw: string): CoversEntry {
   if (alert) return { form: "alert", id: alert[1]!.trim(), raw };
   const sli = /^sli:\s*(.+)$/.exec(raw);
   if (sli) return { form: "sli", id: sli[1]!.trim(), raw };
+  // Before the edge form, with its prefixed siblings rather than after them: a
+  // LikeC4 view id is one identifier and can hold no `->`, so `view:a -> b`
+  // is a mistyped view id and is diagnosed as one, not silently re-read as an
+  // edge between elements called `view:a` and `b`.
+  const view = /^view:\s*(.+)$/.exec(raw);
+  if (view) return { form: "view", id: view[1]!.trim(), raw };
   const edge = /^(.+?)\s*->\s*(.+)$/.exec(raw);
   if (edge) return { form: "edge", source: edge[1]!.trim(), target: edge[2]!.trim(), raw };
   return { form: "element", id: raw, raw };
@@ -54,6 +71,30 @@ export interface CoverageScope {
   elements: Elem[];
   relationships: Rel[];
   health: HealthIds;
+  /**
+   * The dynamic views in view — what a `view:` entry resolves against.
+   *
+   * REQUIRED, so that a scope builder which never learned about flows fails to
+   * compile instead of quietly answering "resolves to nothing" for every
+   * `view:` line it sees. What that buys is SUPPLIED, not COMPLETE: the field
+   * makes every builder state what it can see, and a builder that can see no
+   * flow document legitimately says `[]` — a `Covers: view:<id>` naming a
+   * journey outside its scope is then `covers.unknown` on a correct document,
+   * which is a gap in the scope the caller assembled, not in this type. Two
+   * modules build scopes today (`validate/service/specs.ts` and
+   * `validate/arch-coverage.ts`, the latter twice), and both union every
+   * document they hold.
+   *
+   * That gap has one live instance, stated rather than hidden: the fleet's
+   * journeys (`architecture/flows/`) are read once by the fleet target and
+   * handed down, so `validate --all` resolves them everywhere while
+   * `validate --service <id>` and `validate --feature <id>` see only the
+   * documents they were already opening. A single-target run buying the fleet
+   * parse would cost every one of them a Langium workspace to answer a question
+   * most of them never ask — and the fleet gate, which is where
+   * `flow.uncovered` DEMANDS these lines, is the run that resolves them.
+   */
+  flows: Flow[];
   /**
    * The enumerated fleet (plus the feature's own `specs/` names, where the
    * caller has them). The Covers matcher resolves edge ENDPOINTS with it, and
@@ -147,6 +188,10 @@ export function entryResolves(entry: CoversEntry, scope: CoverageScope): boolean
       return scope.health.alerts.includes(entry.id);
     case "sli":
       return scope.health.slis.includes(entry.id);
+    case "view":
+      // By id alone, never by title: the id is what LikeC4 refuses to duplicate
+      // within a project, so it is the only name that identifies one journey.
+      return scope.flows.some((flow) => flow.id === entry.id);
     case "edge":
       return scope.relationships.some((r) => coversEdge(entry, r, scope.elements, scope.known));
     case "element":
@@ -161,6 +206,13 @@ export function coversCandidates(entry: CoversEntry, scope: CoverageScope): stri
       return closeIds(entry.id, scope.health.alerts).map((id) => `alert:${id}`);
     case "sli":
       return closeIds(entry.id, scope.health.slis).map((id) => `sli:${id}`);
+    case "view":
+      // Prefixed, like alert:/sli:, so the hint is a line the author can paste.
+      // An unprefixed id would resolve as an ELEMENT and quietly cost them the
+      // coverage the hint was offered to restore.
+      return closeIds(entry.id, [...new Set(scope.flows.map((flow) => flow.id))]).map(
+        (id) => `view:${id}`,
+      );
     case "edge":
       // Cheap on purpose: no pairwise edge fuzzing — the sides are element
       // names, so the element hint is the useful one.

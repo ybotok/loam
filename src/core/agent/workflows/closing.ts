@@ -157,8 +157,12 @@ export const LOAM_SHIP: CommandContent = {
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
    contract already defines gets overwritten wholesale (\`openapi.component-modified\`
    is the same story for a component the merged operations carry),
-   \`service.no-model\` means a service arrives with no C4 centre behind it, and
-   \`delta.added-conflict\`
+   \`service.no-model\` means a service arrives with no C4 centre behind it,
+   \`flow.views-stale\` means this merge left \`architecture/flow-groups.likec4\`
+   behind and \`loam flow sync\` is the one repair, \`flow.view-conflict\` means
+   another feature in flight changes the same dynamic view — and a view is
+   replaced whole with no \`Based-On:\` pin, so the second archive discards the
+   first's journey entirely — and \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive
    lands it, and the other's archive is then refused (\`delta.added-duplicate\`: its
    ADDED now collides with the living spec) unless a human \`--approve\`s the
@@ -166,7 +170,11 @@ export const LOAM_SHIP: CommandContent = {
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
    elements and edges into \`architecture/landscape.likec4\` — then moves the feature
-   under \`features/archive/\`. Success is \`ok: true\`; on \`ok: false\`, branch on
+   under \`features/archive/\`. A delta's dynamic views ride the architecture axis:
+   each one tagged \`#<FEAT>\` is merged REPLACE-OR-ADD on its view id, into the
+   document that already declares it or into a new
+   \`architecture/flows/<view id>.likec4\`, and \`flowViews[]\` in the envelope says
+   which journey landed where. Success is \`ok: true\`; on \`ok: false\`, branch on
    \`error.code\`:
    - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,
      each with \`gates\` and \`overridable\` resolved (advisory warnings do not block).

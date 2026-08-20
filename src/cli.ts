@@ -9,6 +9,7 @@ import { registerNew } from "./commands/new/new.js";
 import { registerShow } from "./commands/show/show.js";
 import { registerStatus } from "./commands/status/status.js";
 import { registerSubsystem } from "./commands/subsystem/subsystem.js";
+import { registerFlow } from "./commands/flow/flow.js";
 import { registerDelta } from "./commands/delta/delta.js";
 import { registerGherkin } from "./commands/gherkin/gherkin.js";
 import { registerRebase } from "./commands/rebase/rebase.js";
@@ -58,6 +59,7 @@ export function buildProgram(): Command {
   registerShow(program);
   registerStatus(program);
   registerSubsystem(program);
+  registerFlow(program);
   registerDelta(program);
   registerGherkin(program);
   registerRebase(program);

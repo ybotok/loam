@@ -203,6 +203,30 @@ export function subsystemViewsPath(docsDir: DocsDir): string {
   return join(docsDir, "architecture", "subsystems.likec4");
 }
 
+/**
+ * Where a fleet's JOURNEYS are authored: one LikeC4 dynamic view per file,
+ * under the fleet map rather than under any service. The placement is forced,
+ * not stylistic — `likec4.config.json` scopes the project to `architecture/`
+ * and excludes `services/**`, so a cross-service journey stored under a
+ * service would resolve only that service's own containers.
+ */
+export function flowsDir(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", "flows");
+}
+
+/**
+ * The GENERATED flow-group views — one view per group, members the union of
+ * that group's flows' participants. Beside the fleet map for
+ * `subsystemViewsPath`'s reason, and deliberately NOT inside `flows/`: within
+ * `architecture/`, generated files are loam's and the flow documents are the
+ * author's, and neither regenerator may touch the other's. `loam flow sync`
+ * owns these bytes; nothing in loam ever parses the file, and staleness is a
+ * byte compare (`flow.views-stale`).
+ */
+export function flowGroupViewsPath(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", "flow-groups.likec4");
+}
+
 export function featuresDir(docsDir: DocsDir): string {
   return join(docsDir, "features");
 }

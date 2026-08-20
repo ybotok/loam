@@ -10,12 +10,12 @@ checks it is given.
 
 No — but the tree does not show you why, and that gap is the real finding.
 
-- `src/cli.ts` is registration and nothing else. It makes 20 `register*` calls, which produce
-  **21** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
+- `src/cli.ts` is registration and nothing else. It makes 21 `register*` calls, which produce
+  **22** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
   and `migrate-openspec`), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations. (Both numbers are pinned
   live by `test/docs-facts.test.ts`, so this sentence moves when the CLI does.)
-- `src/commands/` owns the printing and the exit codes. Sixteen of the twenty command modules are
+- `src/commands/` owns the printing and the exit codes. Seventeen of the twenty-one command modules are
   packages; four sit loose as files (`dependencies`, `doctor`, `explore`, `instructions`), and
   `commands/policy/` holds the two things in that directory which are not commands.
 - `src/core/` imports `commander` zero times, never imports `commands/`, and holds three
@@ -43,7 +43,7 @@ the compiler does not check.
 | Layer | Modules | Job |
 |---|---|---|
 | Entry | `src/cli.ts` | Register commands; decide the process exit |
-| Command | `src/commands/` — 20 command modules, 21 commands | Parse flags, refuse, print, set `process.exitCode` |
+| Command | `src/commands/` — 21 command modules, 22 commands | Parse flags, refuse, print, set `process.exitCode` |
 | Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 5 and 6 commands |
 | Core | `src/core/` | Compute and return. Never print, never exit |
 
@@ -285,9 +285,9 @@ only the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how
     many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
     it. It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 43 of the 91
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 46 of the 96
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 18 and 24 of them. Slices would duplicate the hubs or
+    and `core/repo/repo.ts` by 19 and 25 of them. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

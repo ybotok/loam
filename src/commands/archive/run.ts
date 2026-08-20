@@ -75,7 +75,7 @@ export async function archiveLocked(
   await planOpenapiContracts(read, gated, planned, say);
   await planAsyncapiContracts(read, gated, planned, say);
   await planLandscape(config, gated, planned, say);
-  const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
+  const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals, flowViews } = planned;
 
   // Gate on what only the plan could see: a merged operation pointing at a
   // component that exists nowhere, a removal marker addressing no operation.
@@ -119,6 +119,10 @@ export async function archiveLocked(
     overridden: overridden.map(issueJson),
     openapiRemovals,
     asyncapiRemovals,
+    // Which journey landed in which document. `plan` above names the files;
+    // only this says which view id put each one there, which is the whole
+    // point of one journey per file.
+    flowViews,
     // Present only when this run found an interrupted commit and dealt with it:
     // an agent that sees the docs change under it deserves to be told why, and
     // the absent field is the ordinary case.
@@ -245,7 +249,10 @@ export async function archiveLocked(
   // next `validate --all` will fail on — a service with no model, or a gate the
   // caller told it to merge past. Printing it over either is how a red fleet
   // gets reported as a finished one.
-  const incomplete = planWarns.filter((w) => w.code === "service.no-model");
+  // `flow.views-stale` joins `service.no-model` here for the same reason: both
+  // are things THIS archive left for the next `validate --all` to report, and
+  // the closing line claims there are none.
+  const incomplete = planWarns.filter((w) => w.code === "service.no-model" || w.code === "flow.views-stale");
   if (incomplete.length === 0 && overridden.length === 0) {
     console.log("  living spec + landscape are now complete + current.");
     return;

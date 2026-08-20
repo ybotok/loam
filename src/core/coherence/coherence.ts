@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
+import { type Flow } from "../c4/flows/flow.js";
 import { loadFile, type LoadedDoc } from "../c4/likec4.js";
 import { elementService, serviceResolver, type Elem, type Rel } from "../c4/model/model.js";
+import { flowViewConflicts } from "../flows/conflict.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
@@ -49,6 +51,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   let elements: Elem[] = [];
   let taggedEls: Elem[] = [];
   let taggedRels: Rel[] = [];
+  let taggedFlows: Flow[] = [];
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
     const res = preloadedDelta ?? (context === undefined ? await loadFile(deltaPath) : await context.loadLikeC4(deltaPath));
@@ -63,23 +66,35 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
       elements = res.elements;
       taggedEls = res.elements.filter((e) => e.tags.includes(featureId));
       taggedRels = res.relationships.filter((r) => r.tags.includes(featureId));
+      // A DYNAMIC VIEW carries tags exactly as an element does, and `archive`
+      // merges the tagged ones exactly as it merges tagged elements — so an
+      // untagged view is invisible to the merge for the same reason, and is
+      // graded by the same rule.
+      taggedFlows = res.flows.filter((f) => f.tags.includes(featureId));
       // Every rule below filters by the feature tag, so a delta whose author
       // forgot the tags entirely passes every check and archives while merging
       // nothing. Whole-file only: once ANYTHING is tagged, deciding that an
       // untagged edge "looks intended" would be guessing.
       if (
-        (res.elements.length > 0 || res.relationships.length > 0) &&
+        (res.elements.length > 0 || res.relationships.length > 0 || res.flows.length > 0) &&
         taggedEls.length === 0 &&
-        taggedRels.length === 0
+        taggedRels.length === 0 &&
+        taggedFlows.length === 0
       ) {
         issues.push({
           severity: "error",
           code: "delta.nothing-tagged",
-          message: `delta.likec4 declares elements/relationships but none are tagged #${featureId}; loam cannot see untagged changes`,
+          message: `delta.likec4 declares elements/relationships/views but none are tagged #${featureId}; loam cannot see untagged changes`,
         });
       }
     }
   }
+  // Two features replacing one journey. Asked here rather than at the archive
+  // plan because the answer is only useful BEFORE either author gets there:
+  // the merge itself applies cleanly either way (../flows/conflict.ts).
+  issues.push(
+    ...(await flowViewConflicts({ docsDir, featureId, viewIds: taggedFlows.map((f) => f.id), context })),
+  );
   // --- per-service specs (requirement operations) + openapi deltas ---
   const svcNames = await featureSpecServices(featureDir, context);
 

@@ -303,7 +303,16 @@ describe("covers.unknown on the living arch.spec.md", () => {
     await withProject(files, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
       const [f] = ofCode(findings(res.stdout), "covers.unknown");
-      expect(f!.message).toContain("resolves to nothing in the model, the landscape or health.yaml");
+      // Every document resolution actually consults, named in one breath — the
+      // fleet's journeys included, since `view:<id>` became an entry form and a
+      // sentence that omitted them would send an author looking in the wrong
+      // file. "The fleet's journeys" and not "the landscape's dynamic views",
+      // because a journey is authored under `architecture/flows/` as often as
+      // in the map, and a reader told only about the map would move a perfectly
+      // correct document to make loam see it.
+      expect(f!.message).toContain(
+        "resolves to nothing in the model, the landscape, the fleet's journeys or health.yaml",
+      );
     });
   });
 

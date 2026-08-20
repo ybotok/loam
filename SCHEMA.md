@@ -32,7 +32,9 @@ docs/
   likec4.config.json               one LikeC4 project, scoped to architecture/       [init --create]
   architecture/
     landscape.likec4                    global C4 (fleet landscape)
+    flows/<journey>.likec4              ONE cross-service journey per file: a LikeC4 dynamic view  [authored]
     subsystems.likec4                   one view per subsystem, views only    [GENERATED: loam subsystem sync]
+    flow-groups.likec4                  one view per flow group, views only   [GENERATED: loam flow sync]
     permissions.yaml                    fleet authorization vocabulary        [authored, opt-in]
     capabilities.yaml                   fleet capability vocabulary           [authored, opt-in]
     landscape.health.yaml            composed health model              [derived, later]
@@ -46,7 +48,7 @@ docs/
     runbook.md                       operational runbook                 [adopt-draft / authored]
     health.yaml                      SLI/SLO, checks, critical deps       [authored]
     ui/pages/*.page.yaml             page-specs (UI services)            [later]
-    flows/                           interaction flows -> sequence views  [later]
+    flows/                           intra-service sequence views only    [later]
   features/<FEAT>/
     intent.md                        business intent / proposal (why)     [authored]
     delta.likec4                     C4 delta (architecture)             [authored]
@@ -131,6 +133,157 @@ landing it stages the renames and the views file in git without committing. Arch
 survive any of this: a version-3 snapshot re-keys `services/` entries by `(service, artifact)`
 and restores wherever the service lives *today*.
 
+## Flows — cross-service journeys under `architecture/`
+
+A **flow** is one LikeC4 **dynamic view**: an ordered interaction across several services, with
+the `alt` / `try` / `loop` / `par` branches LikeC4 already models. It states the interaction and
+states no outcome — outcomes stay where they are graded today, in a scenario under an
+architecture requirement — so a flow is never a second requirement corpus.
+
+Flows are authored **one journey per file** under `architecture/flows/<journey>.likec4` (a `.c4`
+document there is read too — the LikeC4 renderer reads both extensions, so ignoring one would
+hide a suite from loam that the renderer can see). Both halves are forced rather than stylistic:
+
+- **Under `architecture/`**, because `likec4.config.json` scopes the LikeC4 project there and
+  excludes `services/**` and `features/**`. A dynamic view stored under a service resolves only
+  that service's own containers, so a cross-service journey resolves at fleet level or not at
+  all. The scope reaches a *subdirectory* of `architecture/` — the config carries excludes, never
+  an include list — which is what makes one-file-per-journey possible. This is also why the
+  per-service `services/<svc>/flows/` slot above is reserved for **intra-service sequences only**
+  and can never hold a fleet journey.
+- **One file per journey**, because the single landscape's documented conflict trigger is exactly
+  what a shared flows file would hit sooner: two features touching two different journeys never
+  meet in the same file, and git merges them without anyone arbitrating.
+
+A flow document declares no model of its own — every participant it names is an element the
+landscape declares, and every group tag is declared in a `specification` block there — so loam
+reads the flows and the fleet map together, as one LikeC4 project, exactly as the renderer does:
+
+```likec4
+views {
+  dynamic view checkoutJourney {
+    #smoke, #payments
+    title 'Checkout'
+    checkoutWeb -> paymentService 'authorize'
+    paymentService -> stripe 'charge'
+  }
+}
+```
+
+A flow document that does not parse is one error, `flow.invalid`, reported alone — an unreadable
+journey declares no group, and grading anything behind it would conclude that a correct generated
+file must be deleted.
+
+### What a flow is graded on
+
+`loam validate --all` asks two things of every journey the fleet declares — wherever it is
+written, since the map's own `views { }` block and the documents under `flows/` are one project
+and one flow set:
+
+- `flow.step-unresolved` (**warning**, fleet scope): a step drawn between elements that no
+  declared relationship joins — drawn and joined to nothing, so no operation is reachable through
+  it. One finding per step, naming the flow, the step's position in document order and both
+  endpoints. `c4.op-link-missing`'s grade for the same state on a landscape edge.
+- `flow.uncovered` (**warning**, fleet scope): the journey has more branch outcomes than there are
+  architecture scenarios covering it, counted over every service's `arch.spec.md` through the
+  `Covers: view:<id>` line that names it (`spec.md` never counts — the outcome of a cross-service
+  journey is an integration or operational fact). Outcomes are **summed** across sub-flows, never
+  multiplied. loam reads no test, so the message says only that at least N−M outcomes have no
+  scenario, never which; with M ≥ N it is silent, and silence is no shortfall rather than proof.
+
+Both are the grade `c4.uncovered` already sets: warnings that never gate `archive`, with
+`--strict` as the CI escalation.
+
+### Suites are TAGS, not directories
+
+A flow joins a group by carrying a tag. Grouping by tag rather than by directory is the one place
+this departs from the subsystem tree it otherwise copies, and the reason is that suites are
+**many-to-many**: one journey belongs to a smoke suite and a payments suite at once, and a
+directory cannot say so. The tag also buys the typo check — LikeC4 **refuses an undeclared tag**,
+so a group declared once in a `specification` block makes a mistyped group a *parse error*, where
+a mistyped directory name would silently open a second, empty group.
+
+Feature tags ride the same view (`#FEAT-101` marks a view a feature is changing exactly as it
+marks an element), so the two vocabularies share one namespace and only the shape of the name can
+tell them apart. **A group tag may not take the feature-id grammar** (`<word>-<number>`): loam
+reads such a tag as the feature tag it looks like, so it names no suite, and says so as
+`flow.group-invalid` (warn) rather than leaving a suite that silently contains nothing. A flow in
+no group is legal and normal — it is simply not part of any suite yet.
+
+### The generated group views, and who owns what inside `architecture/`
+
+The groups are mirrored into **one generated file, never into an authored one**:
+`architecture/flow-groups.likec4` holds LikeC4 **views only** — one view per group, its members
+the union of that group's flows' participants, as `include` lines naming the elements the flows
+draw. The output is deterministic and line-oriented — groups sorted by name, members by id, one
+`include` per line, no timestamps, no absolute paths — so it is byte-reproducible on any machine
+and two features adding two different journeys to two different suites merge in git without
+intervention. `loam flow sync` is the one regenerator (it also *removes* the file when no flow
+declares a group), and `validate --all` grades staleness by **byte comparison** — exactly one
+error, `flow.views-stale`, on exactly that file; nothing in loam ever parses it, exactly as
+nothing parses `subsystems.likec4`.
+
+**Ownership inside `architecture/` is exact, and it is what makes generated and authored files
+safe as neighbours: the generated files are loam's — `flow-groups.likec4` and
+`subsystems.likec4` — and everything else there is the author's, `flows/` included. Neither
+regenerator touches the other's file, and no regenerator writes into `architecture/flows/`.**
+Never hand-edit a generated file; authored views belong in the landscape or in a file of your
+own. `loam archive` is not a regenerator and is the one exception to the second half: it merges a
+*feature's* authored journeys into `architecture/flows/` once, as the next section describes, and
+it never rewrites `flow-groups.likec4` — it reports that file as stale and leaves it to
+`loam flow sync`.
+
+### The feature lifecycle: how a journey changes
+
+A journey changes the way everything else does — through a feature. `features/<FEAT>/delta.likec4`
+declares a dynamic view and **tags it with the feature id**, exactly as it tags an element or a
+relationship, and `loam archive` merges the tagged ones. An untagged view in a delta is *context*:
+invisible to the merge, and — like an untagged element — the reason a delta that tags nothing at
+all is refused as `delta.nothing-tagged`. The feature's own tag is stripped on the way over; the
+merged view is baseline now.
+
+**The merge rule is REPLACE-OR-ADD keyed on the view id, not the splice the model requires.** The
+landscape's `model { }` is spliced because a rebuild would destroy authored detail *around* the
+addition; a view is a small self-contained object whose whole text is the thing being changed, so
+it is carried over whole (byte for byte, minus the feature tag) and:
+
+- a view the living fleet **already declares** is replaced **in the document that declares it** —
+  `architecture/landscape.likec4` or whichever file under `architecture/flows/` holds it. Moving
+  it to loam's preferred file would rewrite two documents to change one view, and the second
+  rewrite would be a deletion nobody asked for;
+- a view **nothing declares yet** lands at `architecture/flows/<view id>.likec4` — one journey per
+  file, named for the view, because that is the only spelling that answers "which file do I edit"
+  from the flow's own name. A document already standing at that path that declares no such view is
+  a refusal (`merge-failed`), never an overwrite.
+
+Two consequences follow, and both are reported rather than discovered later:
+
+- **Two features changing one journey** are told about each other, on both features' `loam
+  validate` and in `loam archive`'s warnings: `flow.view-conflict` (warn, never gating). A view
+  carries no `Based-On:` pin, so nothing else would notice that whichever archives second discards
+  the other's journey entirely — branches and all.
+- **The generated group views go stale** the moment a merged journey changes a group's membership,
+  and `loam archive` says so as a non-gating `flow.views-stale` warning naming `loam flow sync`.
+  It is `service.no-model`'s shape exactly: the merge is correct, and the regeneration is the next
+  step by somebody who owns that file.
+
+A merge that would leave `architecture/` unparseable — most often a group tag the *landscape's*
+`specification` block does not declare, since a delta declares its own — refuses at plan time with
+nothing written, exactly as the fleet-map splice does. `loam unarchive` restores every flow
+document the merge touched byte for byte from the `.loam-before/` snapshot, and deletes a journey
+file the archive created.
+
+### The participant union as the environment a run needs
+
+`loam flow env [group] --json` answers the same union to a machine, resolved to service IDS
+through the same `metadata { service }`-then-title join every other check uses (ids, never paths —
+a filed service's directory is wherever the subsystem tree puts it): it is
+the definition of the environment a suite's run needs — which services must be **up** — and it is
+the answer a fleet maintains by hand today. A participant that resolves to no service directory
+is carried under `unresolved` (with the name the join produced, and whether the element is
+`#external`) rather than dropped: an environment list that is silently one service short is the
+one wrong answer that cannot be noticed from the output itself.
+
 ## Canonical joins
 
 | Meaning | Producer | Consumer | Join key |
@@ -139,7 +292,7 @@ and restores wherever the service lives *today*.
 | Service identity | `services/<svc>/`, `loam.json.service` | LikeC4 element metadata and feature deltas | service id / `metadata { service }` |
 | Synchronous operation | LikeC4 edge `metadata { op }` | requirement `Operations:` and provider OpenAPI | exact `operationId` |
 | Asynchronous message | LikeC4 edge `publishes` / `consumes` | requirement `Publishes:` / `Consumes:` and AsyncAPI 3 operation/message | exact message id |
-| Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
+| Architecture coverage | arch requirement `Covers:` | C4 element/edge, `health.yaml` signal, or a flow (dynamic view) | element/edge id, `alert:<id>`, `sli:<id>`, `view:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` | declared capability id, `/` allowed for nesting |
 
@@ -297,11 +450,12 @@ The business spec will never mention the transactional outbox — that is archit
 
 Frontmatter follows `spec.md`'s conventions exactly (`service`, `status`, `sources` — the same provenance pass reads both, only the label differs), and `loam vouch` stamps the pair in one all-or-nothing run when this file is present. **Absence is not a finding**: partial adoption is supported, and the obligations below fire only when there is something to cover.
 
-**The `Covers:` line** is the architecture analog of `Operations:` — where a business requirement declares the operations it governs, an architecture requirement declares the model objects its scenarios exercise. Comma-separated, same keep-last-line quirk (and the same repeated-line warning, `spec.repeated-covers`), three entry forms:
+**The `Covers:` line** is the architecture analog of `Operations:` — where a business requirement declares the operations it governs, an architecture requirement declares the model objects its scenarios exercise. Comma-separated, same keep-last-line quirk (and the same repeated-line warning, `spec.repeated-covers`), four entry forms:
 
 - a **C4 element** — its id (`paymentService.db`), or the service a bound/titled element stands for; resolved against the service's own model plus the landscape (for a feature delta: the feature's `delta.likec4`, the landscape, and the service's model);
 - an **edge** — `paymentService -> kafka`, each side resolved the same way against the declared relationships;
-- a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares.
+- a **health signal** — `alert:<id>` / `sli:<id>`, ids the service's `health.yaml` declares;
+- a **flow** — `view:<id>`, a LikeC4 dynamic view by its **view id** (never its title: the id is what LikeC4 refuses to duplicate within a project). This is the only join between a drawn journey and the outcomes nobody can derive from it — see [Flows](#flows--cross-service-journeys-under-architecture). Resolved against the fleet's journeys (the map's own `views { }` block and every document under `architecture/flows/`, read as one project), the service's own model views, and in feature scope the delta's own. The fleet's journeys are read once per `loam validate --all` run and shared by every target, so the run that DEMANDS these lines through `flow.uncovered` is the run that resolves them; a single-target `validate --service <id>` / `--feature <id>` reads only the documents it already opens, so a `view:<id>` naming a journey stored under `architecture/flows/` is a `covers.unknown` warning there and resolved under `--all`.
 
 An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where they exist): the typo guard, because a mistyped entry silently costs exactly the coverage it was written for.
 

@@ -1,17 +1,29 @@
 /**
- * The fleet map merge, and the services this archive brings into existence.
+ * The ARCHITECTURE axis merge — the fleet map, the journeys drawn over it, and
+ * the services this archive brings into existence.
  *
  * The landscape is the one document every feature writes into, so it is spliced
  * rather than rewritten: the authored file keeps its shape and the delta's
- * elements are placed into it. A service arriving on the architecture axis alone
- * has no `model.likec4` yet, and the warning for that is carried out of the plan
- * — `validate` would report it next, and reporting it here is what stops that
- * being a surprise.
+ * elements are placed into it. A DYNAMIC VIEW is the same axis and the opposite
+ * merge — replaced or added whole, keyed on its id — because it is a small
+ * self-contained object with no neighbours inside it to preserve
+ * (`core/flows/merge.ts` and `core/c4/splice/view-splice.ts` argue both halves).
+ * The two run in that order and share one landscape text, because a view merged
+ * beside elements the same delta adds must be checked against a landscape that
+ * has them, and because two writes to one path would stage two swaps of the
+ * same file.
+ *
+ * A service arriving on the architecture axis alone has no `model.likec4` yet,
+ * and the warning for that is carried out of the plan — `validate` would report
+ * it next, and reporting it here is what stops that being a surprise. The
+ * generated flow-group views are the same shape of debt and are reported the
+ * same way, never repaired here: `loam flow sync` is that file's one writer.
  */
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
 import { titleOf } from "../../../core/c4/splice/placement.js";
+import { planFlowMerge } from "../../../core/flows/merge.js";
 import { parseServiceId } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
 import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
@@ -28,7 +40,7 @@ export async function planLandscape(
 ): Promise<void> {
   const { id, featureDir, deltaDoc, deltaServices } = gated;
   const deltaLikec4 = featurePaths(featureDir).delta;
-  const { writes, planWarns, architectureServices } = plan;
+  const { writes, planWarns, architectureServices, flowViews } = plan;
   const landscapePath = landscapeFile(config.docsDir);
   if (deltaDoc !== undefined) {
     const delta = deltaDoc;
@@ -45,9 +57,14 @@ export async function planLandscape(
     const newEls = delta.elements.filter((e) => e.tags.includes(id));
     const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
-      const plan = await planLandscapeMerge({
-        landscapeText: await readUtf8(landscapePath),
-        deltaText: await readUtf8(deltaLikec4),
+      const landscapeText = await readUtf8(landscapePath);
+      const deltaText = await readUtf8(deltaLikec4);
+      // Named `merge`, not `plan`: the outer `Plan` parameter is still in scope
+      // here, and the shadow that used to stand made every later line in this
+      // block correct only by accident of the destructure above it.
+      const merge = await planLandscapeMerge({
+        landscapeText,
+        deltaText,
         deltaElements: delta.elements,
         newEls,
         newRels,
@@ -67,18 +84,52 @@ export async function planLandscape(
       // `c4.service-binding-invalid`, a coherence ERROR `--approve` does not
       // override, refused before any merge is planned — so the `ok` test only
       // carries the compiler's proof that document text never reaches a path.
-      for (const e of plan.addedEls) {
+      for (const e of merge.addedEls) {
         const parsed = e.service === undefined ? undefined : parseServiceId(e.service);
         if (parsed?.ok === true) architectureServices.add(parsed.id);
       }
-      if (plan.content !== null) writes.push(planWrite(landscapePath, plan.content));
-      say(`\n  architecture: merged into landscape.likec4 — +${plan.addedEls.length} element(s), +${plan.addedRels.length} relationship(s)`);
-      for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
-      for (const r of plan.addedRels) {
+      // The journeys, over the landscape this merge is about to leave behind.
+      // One landscape write either way: the flow merge hands back the fleet
+      // map's text because a view the fleet map itself declares is replaced
+      // there, and two `planWrite`s of one path would stage two swaps of it.
+      const flows = await planFlowMerge({
+        docsDir: config.docsDir,
+        deltaText,
+        newFlows: delta.flows.filter((f) => f.tags.includes(id)),
+        featureId: id,
+        landscapeText: merge.content ?? landscapeText,
+      });
+      if (flows.landscapeText !== landscapeText) writes.push(planWrite(landscapePath, flows.landscapeText));
+      for (const write of flows.writes) writes.push(planWrite(write.path, write.content));
+      say(`\n  architecture: merged into landscape.likec4 — +${merge.addedEls.length} element(s), +${merge.addedRels.length} relationship(s)`);
+      for (const e of merge.addedEls) say(`      + ${e.title} (${e.kind})`);
+      for (const r of merge.addedRels) {
         say(`      + ${titleOf(delta.elements, r.source)} -> ${titleOf(delta.elements, r.target)}  "${r.title ?? ""}"`);
       }
+      for (const view of flows.merged) {
+        flowViews.push(view);
+        say(`      ${view.action === "added" ? "+" : "~"} flow ${view.id} ${view.action} in ${view.path}`);
+      }
+      if (flows.groupViewsStale) {
+        planWarns.push({
+          severity: "warn",
+          code: "flow.views-stale",
+          message:
+            `architecture/flow-groups.likec4 no longer matches the fleet's journeys after this merge — ` +
+            `'loam validate --all' reports it until it is regenerated. Run 'loam flow sync': that file has ` +
+            `exactly one writer, and this merge is deliberately not a second one.`,
+        });
+      }
     } else {
-      say(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);
+      // The views are named here too, and not silently dropped: a journey
+      // resolves only against the fleet map, so with no map there is nothing
+      // for one to be merged INTO — and a merge that happens to be empty must
+      // still say what it did not carry.
+      const skipped = delta.flows.filter((f) => f.tags.includes(id)).length;
+      say(
+        `\n  architecture: no landscape.likec4 — ${newEls.length} element(s)` +
+          `${skipped === 0 ? "" : ` and ${skipped} journey(s)`} not merged`,
+      );
     }
   }
 

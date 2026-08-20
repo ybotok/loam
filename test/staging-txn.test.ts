@@ -502,6 +502,10 @@ describe("every writer's stored rerun is a command loam has", () => {
     // The corpus is regex over source: a canary, so a broken extraction fails
     // here rather than passing vacuously. One line per journaled writer.
     expect(templates).toEqual([
+      // `loam flow sync` regenerates architecture/flow-groups.likec4 through
+      // this same transaction, so it stores the repair that recovers its own
+      // journal — the flows' half of the `subsystem sync` line below.
+      "loam flow sync",
       "loam gherkin",
       "loam gherkin ${scope.featureId}",
       "loam new ${featureId}",

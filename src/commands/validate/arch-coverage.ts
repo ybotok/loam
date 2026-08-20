@@ -16,6 +16,7 @@
  */
 import { existsSync } from "node:fs";
 import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
+import { type Flow } from "../../core/c4/flows/flow.js";
 import { elementService, serviceResolver, type Elem, type Rel } from "../../core/c4/model/model.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
@@ -37,6 +38,20 @@ export interface DeltaArch {
   elements: Elem[];
   /** Every relationship the delta declares. */
   relationships: Rel[];
+  /** Every dynamic view the delta declares — what a `Covers: view:<id>` entry may name. */
+  flows: Flow[];
+  /**
+   * The fleet's journeys — every dynamic view the `architecture/` project
+   * declares, the documents under `architecture/flows/` included. Read once by
+   * the fleet target and handed down; EMPTY on a `validate --feature <id>` run,
+   * which grades one directory and pays for no fleet parse.
+   *
+   * Separate from `flows` above rather than unioned by the caller because the
+   * two answer different questions: a delta's own views are what this feature
+   * DRAWS, and a `c4.uncovered` obligation is about them alone, while these are
+   * what it may legitimately point at.
+   */
+  fleetFlows: Flow[];
   /** The delta's own additions: elements and edges carrying the feature id as a tag. */
   taggedEls: Elem[];
   taggedRels: Rel[];
@@ -62,6 +77,8 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     docsDir,
     elements,
     relationships,
+    flows,
+    fleetFlows,
     taggedEls,
     taggedRels,
     archDeltas,
@@ -197,12 +214,24 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     const landParses = land !== null && land.errors.length === 0 ? land : null;
     const baseElements = [...elements, ...(landParses?.elements ?? [])];
     const baseRels = [...relationships, ...(landParses?.relationships ?? [])];
+    // Flows follow elements: the delta's own views, the fleet's journeys and
+    // the living landscape's own views, so a delta requirement may cover a
+    // journey this feature draws or one the fleet already has — wherever the
+    // fleet stores it. The landscape's own views stay in the union for the two
+    // states in which `fleetFlows` is empty and the map's journeys are not: a
+    // `validate --feature <id>` run, which never reads them, and a run where a
+    // document under `architecture/flows/` did not parse. Where both are
+    // present the fleet set already contains the map's views, and the duplicate
+    // costs nothing (resolution is `some`, the hint de-duplicates). The
+    // per-service model retry below unions the service's own views for the same
+    // reason it unions its elements.
+    const baseFlows = [...flows, ...fleetFlows, ...(landParses?.flows ?? [])];
     for (const { service: svc, reqs } of archDeltas) {
       // An unreadable living health.yaml mutes the alert:/sli: entries here
       // exactly as in service scope — the health.invalid finding itself
       // belongs to the service target, which owns the file's diagnosis.
       const health = await readHealth((await locateServicePaths(docsDir, svc, fleet)).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids, known };
+      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, flows: baseFlows, health: health.ids, known };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = (await locateServicePaths(docsDir, svc, fleet)).model;
@@ -215,6 +244,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
           scope = {
             elements: [...baseElements, ...model.elements],
             relationships: [...baseRels, ...model.relationships],
+            flows: [...baseFlows, ...model.flows],
             health: health.ids,
             known,
           };

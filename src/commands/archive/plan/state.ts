@@ -48,6 +48,13 @@ export interface Plan {
   asyncapiRemovals: Array<{ service: string; slots: string[] }>;
   /** Services this feature introduces on the architecture axis alone. */
   architectureServices: Set<PathableService>;
+  /**
+   * The dynamic views this merge lands, with the docs-relative document each
+   * one lands in. `writes` already names those documents, but not which
+   * journey put them there — and "which file holds view X" is the question the
+   * one-journey-per-file layout exists to make answerable.
+   */
+  flowViews: Array<{ id: string; path: string; action: "replaced" | "added" }>;
 }
 
 export function emptyPlan(): Plan {
@@ -58,5 +65,6 @@ export function emptyPlan(): Plan {
     openapiRemovals: [],
     asyncapiRemovals: [],
     architectureServices: new Set<PathableService>(),
+    flowViews: [],
   };
 }

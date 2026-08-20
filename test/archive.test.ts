@@ -1645,6 +1645,38 @@ describe("landscape splice fidelity (the merge copies authored source, it does n
     }
   });
 
+  it("a COMMA-separated tag list survives the strip — the separator leaves with the tag, not after it", async () => {
+    // LikeC4 accepts `#FEAT-20, #critical` exactly as it accepts the
+    // space-separated form above, and it is the form an author writing two tags
+    // reaches for. Removing the token alone left `{ , #critical }`, which does
+    // not parse: the merge then died at its own parse net blaming the LIVING
+    // landscape's specification for a comma the strip had just introduced, and
+    // the delta looked correct in every reader.
+    const p = await makeProject({
+      "architecture/landscape.likec4": RICH_LANDSCAPE,
+      "features/FEAT-20-ledger/delta.likec4": RICH_ELEMENT_DELTA.replace(
+        "#FEAT-20 #critical",
+        "#FEAT-20, #critical",
+      ).replace("    #FEAT-20\n    metadata { op 'postEntry' }", "    #critical, #FEAT-20\n    metadata { op 'postEntry' }"),
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-20", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const landText = await p.read(LANDSCAPE_REL);
+      // Leading and trailing separator alike: the surviving tag keeps its own
+      // indentation and no stray comma is left on either side of it.
+      expect(landText).toContain("  ledgerService = softwareSystem 'ledger-service' {\n    #critical\n");
+      expect(landText).toContain("  paymentService -> ledgerService 'Posts entries' {\n    #critical\n");
+      expect(landText).not.toContain(", #");
+      expect(landText).not.toContain("#FEAT-20");
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors, "the merged landscape must still parse").toEqual([]);
+      expect(elementsTitled(land, "ledger-service")[0]!.tags).toEqual(["critical"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("a relationship keeps its title and metadata { op } verbatim; one whose body held only the tag collapses to a bodyless statement", async () => {
     const p = await makeProject({
       "architecture/landscape.likec4": RICH_LANDSCAPE,
