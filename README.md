@@ -7,7 +7,7 @@
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.1.0-beta.3`**, the latest published npm version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). `main` is ahead under `[Unreleased]`; do not treat a tarball built from it as beta.3. See [Status](#status).
+> **Pre-release: `0.1.0-beta.4`**, the latest published npm version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). See [Status](#status).
 
 `loam` briefs an agent to document an existing service **by reading its code**, then checks the resulting C4, requirements and contracts without pretending to extract their meaning itself. Forward changes start from an authored C4 delta: `loam` projects it onto each affected service, generates digest-stamped Gherkin, and checks that behavior, architecture, APIs, events and authorization vocabulary still join.
 
@@ -215,7 +215,7 @@ The shape that has been measured — 2026-08, on a generated 120-service fleet w
 - [COMPARISON.md](COMPARISON.md) — current product comparison with OpenSpec v1.9, kept separate from the pinned v1.7 compatibility corpus.
 - [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) — moving an OpenSpec repo onto loam: what maps, what is lost, what must be added.
 - [ROADMAP.md](ROADMAP.md) — the evidence-backed improvement plan, priorities, non-goals and exit criteria.
-- [CHANGELOG.md](CHANGELOG.md) — released beta.1–beta.3 plus the changes on `main` under `[Unreleased]`.
+- [CHANGELOG.md](CHANGELOG.md) — released beta.1–beta.4 plus the changes on `main` under `[Unreleased]`.
 
 ## Development
 
@@ -241,7 +241,7 @@ npm run test:openspec-corpus -- --baseline release /path/to/OpenSpec
 
 Every command in the table is implemented, including `verify --results`, the full AsyncAPI feature lifecycle (slot pins, coherence gate, transactional merge, `event.declares` claims), OpenAPI path-item and component baselines, the `architecture/permissions.yaml` authorization vocabulary and the declared-capability axis, response-governance warnings and Markdown-table → Scenario Outline generation. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): a components-only OpenAPI delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing, and the two-fleet production pilot has not been completed. Speculative `render`, health composition and UI generation come later. Behind that status stand **107 test files** (counted 2026-08-20): the count is graded against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it trails the tree.
 
-The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently `0.1.0-beta.3`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only ([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a drift test, so it cannot silently trail a release.
+The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently `0.1.0-beta.4`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only ([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a drift test, so it cannot silently trail a release.
 
 ## Contributing
 
