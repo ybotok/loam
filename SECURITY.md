@@ -4,12 +4,10 @@ Loam is pre-release software and has no supported stable line. Security fixes ta
 
 ## Reporting a vulnerability
 
-Do not disclose a suspected vulnerability in a public issue, pull request, discussion, or pilot scorecard. GitHub Private Vulnerability Reporting is the intended durable route, but it is **not currently confirmed or enabled** for this repository. Do not assume that a GitHub form or link is private unless it explicitly opens a private vulnerability report.
+Do not disclose a suspected vulnerability in a public issue, pull request, discussion, or pilot scorecard. Report it privately through **GitHub Private Vulnerability Reporting**, which is enabled for this repository: [open a private report](https://github.com/ybotok/loam/security/advisories/new), or reach the same form from the repository's **Security** tab under **Advisories**. The report stays visible to you and the maintainers alone until an advisory is published, so details belong in it rather than in a public request for contact.
 
-<!-- loam-release-blocker: private-security-route -->
+Include the affected Loam version, the impact, a minimal reduced reproduction, and any known workaround. Leave out credentials, customer data, and proprietary fleet documents: a reduction against [`examples/docs`](https://github.com/ybotok/loam/tree/main/examples/docs) is worth more than a real fleet's files and is the one form of evidence nobody has to redact afterwards.
 
-Until that private route is confirmed, the temporary fallback is to [open a detail-free issue](https://github.com/ybotok/loam/issues/new) requesting private contact from a maintainer. Include no vulnerability details, affected component, impact, reproduction, logs, credentials, customer data, or proprietary fleet documents in the issue. After a maintainer establishes a private channel, send the affected Loam version, impact, a minimal reduced reproduction, and any known workaround there.
-
-A tested, durable private reporting route remains a release prerequisite. The release blocker above must not be removed merely because the temporary public issue fallback exists.
+The private form is the only route that is private. A GitHub issue, pull request or discussion is public the moment it is opened, and nothing about a form's appearance says otherwise — check that the page you are on is the advisory form above before typing anything you would not publish.
 
 Please allow the maintainers time to confirm receipt and coordinate remediation before public disclosure. Never include production credentials, customer data, or proprietary fleet documents in a report; use a reduced fixture.

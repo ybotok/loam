@@ -249,7 +249,7 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 ## Security
 
-Do not put vulnerability details in a public issue. GitHub Private Vulnerability Reporting is intended but is not currently confirmed as enabled; [SECURITY.md](SECURITY.md) documents the temporary detail-free contact request and the release blocker for a durable private route.
+Do not put vulnerability details in a public issue. Report privately through [GitHub Private Vulnerability Reporting](https://github.com/ybotok/loam/security/advisories/new), which is enabled for this repository; [SECURITY.md](SECURITY.md) says what to include and what to leave out.
 
 ## License
 
