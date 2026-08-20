@@ -1,6 +1,6 @@
 {
   "name": "@ybotok/loam",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "description": "Architecture-first specification framework for microservice fleets: connect C4, requirements, APIs, events, permissions, and verification evidence.",
   "author": "spentsov",
   "repository": {
