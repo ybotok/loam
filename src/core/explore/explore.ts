@@ -30,6 +30,8 @@ import { type Maturity } from "../vocabulary/maturity.js";
 import { capabilityRollup, unresolvedCapabilities } from "../capabilities/rollup.js";
 import { compareIds, nearestIds, type ServiceEntry } from "../repo/entries.js";
 import { capabilitiesPath, landscapePath } from "../repo/paths.js";
+import { readUseCases } from "../usecases/fleet.js";
+import { servicesInFlowsClaiming } from "../usecases/capability.js";
 import { describe, newCommand, operationOwner } from "./describe.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -187,6 +189,19 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   // one rollup pass for ALL requested ids, through this exploration's shared
   // context cache, never a fresh walk per capability. A realizing service is
   // by construction an enumerated one, so every seed it adds is `known`.
+  //
+  // And through the fleet's USE CASES, which answer the same question off a
+  // different document. The rollup finds services whose living requirements
+  // carry a `Capability:` line; a `dynamic view` tagged `#cap-<slug>` finds the
+  // services the flow actually runs through — including ones whose spec.md has
+  // never named the capability, which on a brownfield fleet is most of them.
+  // The two are unioned rather than ranked because neither is a subset of the
+  // other: a service can realize a capability without appearing in its drawn
+  // flow, and a flow can pass through a service that has written nothing down.
+  //
+  // The scan gates its own load, and this whole block is already behind
+  // `--capability` being passed at all, so an exploration by service or by
+  // operation never touches `architecture/` as a project.
   const capSeeds: ServiceEntry["id"][] = [];
   let unresolvedCaps: string[] = [];
   if (req.capabilities.length > 0) {
@@ -194,7 +209,14 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
     const rows = await capabilityRollup({ services: entries, vocab, read: (p) => context.readRequirements(p) });
     const wanted = new Set(req.capabilities);
     const realizing = new Set(rows.filter((r) => wanted.has(r.id)).flatMap((r) => r.services));
+    const scan = await readUseCases({ docsDir, known });
+    for (const id of servicesInFlowsClaiming(scan, req.capabilities)) realizing.add(id);
     capSeeds.push(...entries.filter((e) => realizing.has(e.id)).map((e) => e.id));
+    // `unresolvedCapabilities` is unchanged on purpose: it grades the
+    // VOCABULARY — declared or not, realized by a living requirement or not —
+    // and a capability drawn in a flow but realized by nobody is still a
+    // capability nothing implements. Letting a tag silence that would hide the
+    // gap the field exists to name.
     unresolvedCaps = unresolvedCapabilities(rows, req.capabilities);
   }
 

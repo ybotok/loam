@@ -18,6 +18,7 @@ import { featureProvenance } from "../../provenance/findings.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featureSpecServices } from "../../repo/repo.js";
 import { enumeratedServices } from "../../repo/service-target.js";
+import { useCaseBlastRadius } from "../../usecases/touch.js";
 import { gatesArchive, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { contractOwners, contractsHeldElsewhere } from "../contracts.js";
@@ -72,6 +73,7 @@ export async function featureStatus(
   // way round. `--service` is a lens on the table and the steps; a rollup that
   // moved with it would report a feature `ready` because the one service you
   // asked about happens to be written, while three others have nothing.
+  const living = new Map((await enumeratedServices(docsDir, context)).map((s) => [s.id, s]));
   const graded = featureArtifacts(docsDir, feature, services, {
     blocking,
     verification,
@@ -80,7 +82,7 @@ export async function featureStatus(
     // Tolerant on purpose: status must keep answering in a docs repo whose
     // services/ is broken or missing — an unenumerable fleet is doctor's
     // diagnosis, and here it simply means every service reads as never-adopted.
-    living: new Map((await enumeratedServices(docsDir, context)).map((s) => [s.id, s])),
+    living,
   });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);
@@ -92,6 +94,17 @@ export async function featureStatus(
     ? null
     : await analyzeDependencies(docsDir, feature.id, context);
   const blockedBy = graph?.nodes.find((n) => n.id === feature.id)?.dependsOn ?? [];
+
+  // The flows the services in view are already hops of. The fleet set is the
+  // living services UNION the feature's own, so a service this feature
+  // introduces resolves to itself rather than to a container's title — and the
+  // load underneath gates itself, so a docs repo that declares no use case pays
+  // a readdir here rather than a LikeC4 workspace.
+  const useCases = await useCaseBlastRadius({
+    docsDir,
+    known: new Set([...living.keys(), ...services]),
+    services: new Set(inView),
+  });
 
   return {
     interrupted,
@@ -118,6 +131,7 @@ export async function featureStatus(
       issues: findings,
     },
     verification,
+    useCases,
     next: featureNext(
       { feature, services: inView, artifacts, findings, blockedBy, verification, scans, interrupted },
       opts.boundService,

@@ -27,6 +27,7 @@ measured against — a thin baseline that validates is thin, not done.
 \`\`\`
 architecture/landscape.likec4     the living C4 model of the whole fleet
 architecture/permissions.yaml     optional fleet authorization vocabulary
+architecture/adrs/NNNN-*.md       optional FLEET-level decisions (MADR) — nothing grades them
 services/<svc>/
   model.likec4                    this service's C4
   spec.md                         its living requirements (current state)
@@ -44,6 +45,38 @@ features/<FEAT>/                  a change in flight
   verification.yaml               what was checked once the code was built
 features/archive/<FEAT>/          shipped changes — the evolution history
 \`\`\`
+
+## Linking between documents
+
+Documents here link to each other with **standard markdown links**, and the
+target is a relative path to the file:
+
+\`\`\`markdown
+[0001 — transactional outbox](../../architecture/adrs/0001-transactional-outbox.md)
+\`\`\`
+
+Two reasons, and the second is the one that decides it. A markdown link renders
+as a link in pull-request review, which is where these documents are actually
+read, while \`[[0001 transactional outbox]]\` renders there as the literal
+brackets somebody typed. And its target is a real relative path, so "does this
+link resolve" is a filesystem question with a yes-or-no answer — where resolving
+a wikilink means reimplementing Obsidian's shortest-unique-path search across the
+whole repo, which is guessing, and loam refuses and names rather than guessing.
+
+You lose nothing by it. Obsidian reads a repo written this way with no
+integration at all — graph view, backlinks and search all work on markdown links
+— and its per-vault \`Use [[Wikilinks]]\` setting turns OFF, after which its own
+autocomplete and rename-tracking produce markdown links too. The authoring
+comfort is a toggle in somebody's editor, not a decision this repo carries.
+
+**Nothing validates this today.** No check reads a link, a repo holding both
+spellings produces no finding, and there is no code to branch on. It is a
+convention rather than a preference because a link here is a **join**, not
+decoration: a requirement that names a term wants that term's document linked
+and that document updated, and an ADR that supersedes another wants to say
+which — the same kind of relationship \`Operations:\` and \`Covers:\` already
+state, and the same kind a later check could resolve. Write the resolvable form
+now, and that check stays possible.
 
 ## \`loam.json\` — the wiring, in every repo
 

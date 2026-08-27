@@ -35,7 +35,7 @@ import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 import { capabilityTagFindings } from "./capability-tag.js";
 import { stepFindings, type StepGrading } from "./steps.js";
-import { viewFile } from "./place.js";
+import { viewFile } from "../../../../core/usecases/place.js";
 
 /** What the use-case grades run over: the views, the model they are drawn on, and the fleet. */
 export interface UseCaseScope {

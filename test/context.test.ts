@@ -184,10 +184,17 @@ describe("loam context --json: the pack over the canonical fixture", () => {
         description: "Take a payment",
         owner: "team-pay",
         requirements: ["Outbox for payment events"],
+        // Empty because this fixture draws no `dynamic view` at all — not
+        // because nobody could look, which `useCaseScan` below is what says.
+        // `test/usecase-context-pack.test.ts` holds the populated shape and the
+        // hole.
+        useCases: [],
       },
     ]);
     expect(json.capabilitiesVocabulary).toEqual({ present: true });
     expect(json.capabilitiesUnread).toEqual([]);
+    expect(json.useCaseSteps).toEqual([]);
+    expect(json.useCaseScan).toEqual({ unreadable: false });
   });
 
   it("the landscape slice agrees with `loam show` about the edges, and carries its own health", async () => {

@@ -163,14 +163,52 @@ criterion.
 - **UI generation:** begin with a disposable projection over the stable JSON contract only after CLI
   consumers demonstrate a repeated navigation problem. It must not introduce a second mutable state,
   hidden workflow state, or a required service.
+- **Domain glossary — queued, and sequenced after the business axis.** Requirements and specs work
+  over a domain, and nothing in loam holds its vocabulary: there is no glossary concept anywhere,
+  not even a rejected one. The shape is `glossary/<term>.md`, one file per term — NOT a
+  `glossary.yaml`, because a single vocabulary file at fleet scale is unworkable and a second list
+  is the drift `loam init`'s removed service manifest was removed for: the directory IS the list.
+  The general rule it settles: **an entry with prose gets a file; an entry without prose stays a
+  line in YAML** — which is why `permissions.yaml` stays as it is.
+
+  It is checkable because **a link is a join**. A spec links to a term's file; loam resolves the
+  target (an error when it does not exist, as `capability.unknown` is) and reports a term nothing
+  links to (a warning, as `capability.unrealized` is). That is exact where matching words in prose
+  would be a heuristic. It is sequenced after the business axis because `capabilities/<cap>/spec.md`
+  is where domain words appear thickest, and a glossary with nothing linking to it proves nothing.
+
+- **Architectural obligations — queued, with a prerequisite.** An architect has one working channel
+  to a team today and it is checked: an edge carrying `metadata { op }` obliges the provider to
+  define that operationId or `spine.op-undefined` fails the gate. There is no equivalent for the
+  obligations that vary per service — an outbox here, a circuit breaker there, neither everywhere.
+  The shape reuses what exists: a fleet **ADR** says what was decided, a **tag** on a landscape
+  element or edge says where it applies, and the team's **`Covers:`** says it is met, with a
+  declared vocabulary in the shape `permissions.yaml` and `capabilities.yaml` already have.
+
+  **The prerequisite is that `Covers:` must resolve against the LIVING landscape.** `c4.uncovered`
+  grades a tagged element or edge in a feature's `delta.likec4` only, so loam can already say "this
+  architecture object owes a requirement" — just never about the map a fleet actually runs on.
+  Moving that is the half of the work that is not new code.
+
 - **Landscape scaling:** retain one landscape while conflicts are exceptional. If same-service conflicts
   become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than monthly — evaluate
   service-owned model files plus a thin global cross-service map. Migration must preserve archive/undo,
   deterministic resolution, and readable plain files.
-- **Authored business axis:** proceed only if the rollup above maps the fleet's existing business
-  documents onto real requirements and analysts still cannot write without editing `services/`. The
-  recorded trigger is authorship: analyst edits appearing in `services/*/spec.md` history, or
-  capability-level requirements accumulating as `intent.md` prose that no requirement realizes. The
+- **Authored business axis — the trigger FIRED 2026-08-27; this is now a queued item rather than a
+  gated one.** The gate asked for evidence of authorship: analyst edits appearing in
+  `services/*/spec.md` history, or capability-level requirements accumulating as `intent.md` prose
+  that no requirement realizes. The maintainer supplied it as a statement about how his fleet works
+  rather than as git history — business does not think in services, and an analyst does not write
+  them — and the shape of the hole was verified rather than argued: **every requirement loam knows
+  belongs to exactly one service directory**, so an analyst's whole surface is a declared name in
+  `capabilities.yaml` plus an `intent.md` that is archived with its feature. No living
+  business-level document exists at any altitude.
+
+  **One addition the item below predates.** A capability requirement must be realizable by a USE
+  CASE as well as by service requirements. A criterion that crosses services — "I enter a login and
+  a password and I am in" — cannot be carried by any single service's spec, because each promises
+  only its own part; a use case can, because it IS the hop sequence. That is why the use-case axis
+  was built first: it is a prerequisite, not a preference. The
   shape follows the cascade those documents already describe — a capability is revised, the revision
   changes the API, and the API change becomes per-service requirement changes — so promotion is a
   question of need rather than of design:

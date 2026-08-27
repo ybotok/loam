@@ -490,6 +490,10 @@ describe("--json contract", () => {
         contractVersion: "1.0",
         ok: true,
         docsDir: p.docsDir,
+        // A docs repo with no `architecture/adrs/` reports 0, never omission:
+        // the key is unconditional so a consumer never has to tell "no fleet
+        // decisions" from "an older loam that did not count them".
+        fleetAdrs: 0,
         services: [],
         maturity: { empty: 0, partial: 0, documented: 0, sourced: 0, vouched: 0 },
         subsystems: [],

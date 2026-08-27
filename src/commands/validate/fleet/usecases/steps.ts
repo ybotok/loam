@@ -29,7 +29,8 @@ import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedStep, ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import { ACTOR_KINDS } from "../../../../core/vocabulary/maturity.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
-import { stepPlace, viewPlace } from "./place.js";
+import { stepPlace } from "../../../../core/usecases/place.js";
+import { viewPlace } from "./place.js";
 
 /** One hop being graded and the view it belongs to — never passed apart. */
 export interface GradedStep {

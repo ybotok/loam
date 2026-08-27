@@ -9,6 +9,7 @@ import { type Requirement } from "../../core/document/spec.js";
 import { type ApiSlice } from "../../core/projection/api.js";
 import { type ArchSlice } from "../../core/projection/arch-slice.js";
 import { type EventSlice } from "../../core/projection/events.js";
+import { type UseCaseBlastRadius } from "../../core/usecases/touch.js";
 
 /**
  * The requirement delta, in full.
@@ -111,6 +112,42 @@ export function printArchSlice(arch: ArchSlice, service: string): void {
   }
   if (!arch.isNew && arch.outbound.length === 0 && arch.inbound.length === 0) {
     console.log("  (no architecture change for this service)");
+  }
+  console.log();
+}
+
+/**
+ * The business flows this service already appears in.
+ *
+ * Printed even when it is empty, unlike the sections above, which are skipped
+ * when the feature has no such file. Those absences are facts about the FEATURE
+ * — no asyncapi.yaml means this change declares no events — while this one is a
+ * fact about the fleet, and "no use case draws this service" is the answer an
+ * implementer most needs to see stated rather than inferred from a missing
+ * heading.
+ *
+ * The unreadable arm exists so that emptiness is never ambiguous: an
+ * `architecture/` that does not parse produces the same empty list as a fleet
+ * that draws nothing, and only this line tells the two apart.
+ */
+export function printUseCases(useCases: UseCaseBlastRadius, service: string): void {
+  if (useCases.unreadable) {
+    console.log("Use cases: architecture/ does not parse, so the flows through this service could not be read");
+    if (useCases.error !== undefined) console.log(`  ${useCases.error}`);
+    console.log();
+    return;
+  }
+  if (useCases.flows.length === 0) {
+    console.log(`Use cases: (no declared flow draws ${service})\n`);
+    return;
+  }
+  console.log("Use cases (business flows this service is already a hop of):");
+  for (const flow of useCases.flows) {
+    console.log(`  ${flow.title ?? flow.id}  [${flow.id}]  ${flow.file}`);
+    for (const step of flow.steps) {
+      const label = step.title === undefined ? "" : ` '${step.title}'`;
+      console.log(`    step ${step.ordinal}${label}: ${step.source} -> ${step.target}`);
+    }
   }
   console.log();
 }

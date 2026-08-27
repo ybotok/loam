@@ -196,6 +196,31 @@ export function capabilitiesPath(docsDir: DocsDir): string {
 }
 
 /**
+ * The FLEET's decision records — `architecture/adrs/`, beside the landscape and
+ * the two vocabularies.
+ *
+ * ADRs used to exist at two altitudes only, `services/<id>/adrs/` and
+ * `features/<FEAT>/adrs/`, so a decision about the fleet itself — "event
+ * publishers use a transactional outbox", "cross-service calls carry a circuit
+ * breaker" — had no home but one arbitrary service's directory, where the next
+ * reader of the other fifty services never finds it. This is not a new axis: it
+ * is the same `ADRS_DIR` name one level up, spelled through the same constant so
+ * the two altitudes cannot drift into `adrs/` and `decisions/`.
+ *
+ * PRESENCE-TRACKED AND NOTHING MORE, exactly like the service directory it
+ * mirrors: `loam list` counts the files (`repo.ts`'s `fleetAdrCount`) and no
+ * check anywhere reads one. A fleet with no fleet-level ADRs owes nothing and
+ * must produce no finding — which is also why `loam init` does NOT scaffold the
+ * directory. git does not carry an empty one, so it would vanish on the first
+ * clone and come back as a diff on the next `init`; and an empty `adrs/` in a
+ * fresh repo reads as an obligation nobody has met, when there is no obligation
+ * at all.
+ */
+export function fleetAdrsDir(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", ADRS_DIR);
+}
+
+/**
  * The GENERATED subsystem views — beside the fleet map because the LikeC4
  * renderer merges the whole `architecture/` project, and a view can only
  * `include` elements the landscape beside it defines. `loam subsystem sync`
