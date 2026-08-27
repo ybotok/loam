@@ -248,6 +248,66 @@ describe("status is never greener than the gates on the same tree", () => {
     expectAgreesWithGates(v, "capability delta the gate refuses");
     expect(v.shipsIt).toBe(false);
     expect(v.status.checks.gating).toBeGreaterThan(0);
+
+    // And the table NAMES the file. The stage was already `draft` from the
+    // gating count alone, so this is the half the invariant above cannot see:
+    // a `delta.*` fault carries a capability id in `subject` with nothing in
+    // the code saying it is not a service, and before the row it landed on no
+    // artifact at all — silently, except in a fleet holding a service and a
+    // capability of one name, where it named the service's spec delta.
+    const artifacts = (v.status as unknown as { artifacts: Array<Record<string, unknown>> }).artifacts;
+    const row = artifacts.find((a) => a["id"] === "capabilities")!;
+    expect(row, "a feature carrying a capability delta owes a row that names it").toBeTruthy();
+    expect(row["capability"]).toBe("refunds");
+    expect(row["path"]).toBe(`${FEAT_DIR}/capabilities/refunds/spec.md`);
+    expect(row["service"]).toBeNull();
+    expect(row["required"]).toBe(false);
+    expect(row["status"]).toBe("draft");
+    await p.destroy();
+  });
+
+  it("a delta.* fault on a capability document turns the capability row draft, not a service one", async () => {
+    // `delta.*` is the family the code alone cannot attribute: its `subject` is
+    // a service id OR a capability id and nothing says which. This fixture's
+    // only fault is one of those — an unpinned MODIFIED, which gates archive
+    // and which `capability.uncovered` is exempt from — so the row can only go
+    // `draft` through the membership resolution.
+    const p = await makeProject(coherentFixture());
+    await p.write(
+      "capabilities/refunds/spec.md",
+      `# Refunds\n\nA customer can get their money back.\n\n## Requirements\n\n${CAPABILITY_REQUIREMENT}`,
+    );
+    await p.write(
+      `${FEAT_DIR}/capabilities/refunds/spec.md`,
+      `# refunds — delta for ${FEAT}\n\n## MODIFIED Requirements\n\n${CAPABILITY_REQUIREMENT.replace(
+        "within five days",
+        "within three days",
+      )}`,
+    );
+    await record(p);
+    const v = await verdicts(p);
+
+    expect(v.archiveAccepts).toBe(false);
+    expectAgreesWithGates(v, "unpinned capability MODIFIED");
+    const artifacts = (v.status as unknown as { artifacts: Array<Record<string, unknown>> }).artifacts;
+    const row = artifacts.find((a) => a["id"] === "capabilities")!;
+    expect(row["capability"]).toBe("refunds");
+    expect(row["status"]).toBe("draft");
+    // And no service's spec delta is blamed for it — the fault names a file in
+    // the business corpus, and sending a reader to the wrong one of two
+    // documents is what the row exists to stop.
+    expect(artifacts.filter((a) => a["id"] === "spec").every((a) => a["status"] !== "draft")).toBe(true);
+    await p.destroy();
+  });
+
+  it("a feature with no capability delta carries no capabilities row at all", async () => {
+    // The axis's opt-in reaches the payload too: a fleet that has not adopted
+    // it must see nothing new, not an empty row explaining its absence.
+    const p = await makeProject(coherentFixture());
+    const v = await verdicts(p);
+    const artifacts = (v.status as unknown as { artifacts: Array<Record<string, unknown>> }).artifacts;
+    expect(artifacts.filter((a) => a["id"] === "capabilities")).toEqual([]);
+    expect(artifacts.every((a) => a["capability"] === undefined)).toBe(true);
     await p.destroy();
   });
 

@@ -220,6 +220,10 @@ export type IssueCode =
   | "capability.unknown"
   /** a delta requirement's `Realizes:` entry that names no capability requirement — same argument as `capability.unknown` one join over: the merge would land a pointer at a promise that does not exist, looking exactly like a working one */
   | "capability.realizes-unknown"
+  /** a capability requirement this feature ADDS that no `Realizes:` line in the same feature's service deltas names — the merge would land a business promise nothing in this change keeps. A warning that GATES, `--approve` overrides: the document is legal (writing ahead of the fleet is the intended use, which is why `capability.requirement-unrealized` warns and never gates), the MERGE is what is unsafe. Joined by `Realizes:`, NOT by `Covers:` — the name is the roadmap's, the join is the other one */
+  | "capability.uncovered"
+  /** the same join in the removal direction — this feature RETIRES a capability requirement that something the merge leaves behind still realizes, so the archive would leave `capability.realizes-unknown` standing against a document nobody in the feature touched. An error, exactly as `openapi.remove-op-consumed` is for the identical shape one axis over */
+  | "capability.remove-requirement-realized"
   | CapabilityDocCode
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */

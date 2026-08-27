@@ -44,14 +44,20 @@ import { type FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, livingCapabilityPaths, SPEC_AXES } from "../repo/paths.js";
-import { locateServicePaths } from "../repo/service-target.js";
+import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { capabilityDocIssues } from "../capabilities/delta/doc.js";
 import { featureCapabilityDeltas } from "../capabilities/delta/tree.js";
+import {
+  removedRealizedIssues,
+  uncoveredIssues,
+  type CapabilityDeltaDoc,
+  type RealizingDoc,
+} from "../capabilities/delta/uncovered.js";
 import { type Issue } from "../vocabulary/issue.js";
 import { claimLookup, type ClaimLookup } from "./claims.js";
 import { deltaDocumentIssues, livingDocumentIssues } from "./document.js";
-import { indexLiving, type DeltaScope } from "./scope.js";
+import { indexLiving, type DeltaScope, type LivingIndex } from "./scope.js";
 import { selectionIssues } from "./select.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
@@ -105,6 +111,15 @@ export async function deltaShapeIssues(
     ...(context === undefined ? {} : { context }),
   };
 
+  // The two corpora's parsed requirements, kept as the walk produces them so
+  // the `Realizes:` join below can be taken without re-reading a byte. That
+  // join is the one question neither corpus can answer alone — which service
+  // requirement keeps which business promise — and this is the only place in
+  // loam where both sides are already open (`capabilities/delta/uncovered.ts`
+  // holds the rules; nothing here decides anything).
+  const serviceDeltas: RealizingDoc[] = [];
+  const capabilityDeltas: CapabilityDeltaDoc[] = [];
+
   // Both requirement-carrying files per service run the same checks — one code
   // path parameterized by filename, the merge's own factoring. `where` names
   // the arch file in messages so a finding cannot be chased into the wrong
@@ -125,9 +140,9 @@ export async function deltaShapeIssues(
         // the historical "living spec", the arch axis says which file it means.
         livingDoc: axis.key === "spec" ? "living spec" : "living arch.spec.md",
       };
-      issues.push(
-        ...(await gradeDelta(scope, (await locateServicePaths(docsDir, service, context))[axis.key], reads)).issues,
-      );
+      const graded = await gradeDelta(scope, (await locateServicePaths(docsDir, service, context))[axis.key], reads);
+      issues.push(...graded.issues);
+      serviceDeltas.push({ service, file: axis.file, reqs: graded.reqs });
     }
   }
 
@@ -162,9 +177,54 @@ export async function deltaShapeIssues(
         subject: doc.id,
       }),
     );
+    capabilityDeltas.push({ id: doc.id, reqs: graded.reqs, living: graded.living.all });
+  }
+
+  // The `Realizes:` join, both directions, over documents this walk has already
+  // parsed. Skipped entirely when the feature carries no capability delta,
+  // which is every feature in a fleet that has not adopted the business axis —
+  // and the removal half asks for the living corpus only when something is
+  // actually retired, so even an adopting fleet pays the fleet-wide read on the
+  // features that earn it.
+  if (capabilityDeltas.length > 0) {
+    issues.push(...uncoveredIssues(capabilityDeltas, serviceDeltas));
+    issues.push(
+      ...(await removedRealizedIssues({
+        capabilities: capabilityDeltas,
+        deltas: serviceDeltas,
+        living: () => livingRealizers(docsDir, context),
+      })),
+    );
   }
 
   return issues;
+}
+
+/**
+ * Every LIVING service requirements document in the fleet, for the one question
+ * that has to ask about services this feature never mentions: does anything out
+ * there still realize a capability requirement this feature retires?
+ *
+ * The same shape and the same cost `openapi.remove-op-consumed` pays through
+ * `coherence/lookups.ts` one axis over, and for the same reason — the merge
+ * deletes the promise while the `Realizes:` line stays, so the very next
+ * `validate --all` reports a breach on a repository whose author was never in
+ * this feature. Called behind a thunk (`removedRealizedIssues` invokes it only
+ * when something is retired), so a feature that removes nothing never runs it.
+ */
+async function livingRealizers(docsDir: DocsDir, context?: FleetContext): Promise<RealizingDoc[]> {
+  const out: RealizingDoc[] = [];
+  for (const service of await enumeratedServiceIds(docsDir, context)) {
+    const paths = await locateServicePaths(docsDir, service, context);
+    for (const axis of SPEC_AXES) {
+      const path = paths[axis.key];
+      if (!existsSync(path)) continue;
+      const reqs =
+        context === undefined ? parseRequirements(await readFile(path, "utf8")) : await context.readRequirements(path);
+      out.push({ service, file: axis.file, reqs });
+    }
+  }
+  return out;
 }
 
 /**
@@ -181,12 +241,15 @@ export async function deltaShapeIssues(
  * corpus grades them a second way (`capabilityDocIssues`) and re-reading the
  * file to do it would be a second parse of bytes already in hand — and, without
  * a context, a second chance for the two passes to disagree about the document.
+ * The LIVING index rides back for the same reason once more: the removal
+ * direction of the `Realizes:` join has to resolve a REMOVED spelled by heading
+ * into the id it retires, and that id is a fact about the living document.
  */
 async function gradeDelta(
   scope: DeltaScope,
   livingPath: string,
   reads: DeltaReads,
-): Promise<{ issues: Issue[]; reqs: Requirement[] }> {
+): Promise<{ issues: Issue[]; reqs: Requirement[]; living: LivingIndex }> {
   const { claims, context } = reads;
   const raw = context === undefined ? await readFile(scope.specPath, "utf8") : await context.readText(scope.specPath);
   const reqs = context === undefined ? parseRequirements(raw) : await context.readRequirements(scope.specPath);
@@ -199,6 +262,7 @@ async function gradeDelta(
   );
   return {
     reqs,
+    living,
     issues: [
       ...deltaDocumentIssues(scope, raw, reqs),
       ...livingDocumentIssues(scope, living),

@@ -170,27 +170,27 @@ silent about the overlay, without which its own headline flow — add a capabili
 feature and `Realizes:` it from that same feature's service delta — was refused by the existing
 `capability.realizes-unknown` error.
 
+**Landed, phase 5 — the archive gate, in both directions.** `capability.uncovered` (a warning that
+GATES, `--approve`-overridable) refuses a feature that adds a business promise no `Realizes:` line
+in its own service deltas keeps; the severity is the judgement, because the document is legal while
+the merge is what is unsafe. `capability.remove-requirement-realized` (error) is the same join taken
+in the removal direction, and it closed a hole that archived at exit 0 and left the next
+`validate --all` red against a service document nobody had touched. A sibling code rather than one
+code with two severities: the fixes differ, and a machine cannot branch on a severity that depends
+on the case. `loam status --json` gained the `capabilities` artifact rows the business corpus was
+missing from that table.
+
 Remaining, in dependency order, each of which returns here as it lands:
 
-1. **`capability.uncovered`** — an archive refusal for a capability requirement a feature ADDS that
-   no `Realizes:` line in the same feature's service deltas names. Warn that gates,
-   `--approve`-overridable. A `#req-` tagged flow deliberately does NOT count, and that is a
-   consequence rather than a policy: a `dynamic view` has no feature-delta path, so a tag naming a
-   requirement that is not living yet is already `usecase.requirement-unresolved` — the flow route
-   opens only after the promise lands.
-2. **The same join in the REMOVAL direction**, which is the hole phase 4 left open and reproduced
-   end to end: a feature that removes a capability requirement a living service requirement realizes
-   archives at exit 0, and the next `validate --all` then fails with `capability.realizes-unknown`
-   against a service document nobody touched. It belongs with (1) — one join, two directions.
-3. **`loam status`'s artifact table cannot name a capability delta.** No `capabilities` artifact id,
-   so a capability fault maps to `spec` and matches no service; in a fleet holding a service and a
-   capability of the same name it names the wrong file. Status still refuses to ship, which a
-   fixture pins.
-4. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
+1. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
    opens the document that changes, and the service work is derived from it.
-5. **Informational surfaces** — `loam show`, `delta`, `context` and `diff` do not list capability
-   deltas. Probed for crashes: clean. A context pack is deliberately excluded, because it is one
-   service's slice and a capability delta names no service.
+2. **Informational surfaces** — `loam show`, `loam delta` and the context pack say nothing about a
+   capability delta, so a feature carrying only one shows as carrying nothing. Probed for crashes:
+   clean. The context pack stays deliberately excluded: it is one service's slice, and a capability
+   delta names no service.
+3. **A feature-local half-created capability directory is silent.** `docMissingFindings` runs over
+   the LIVING tree only, so a `features/<FEAT>/capabilities/<id>/` holding no `spec.md` and nothing
+   beneath earns nothing — the same `mkdir` mistake the living tree does warn about.
 
 Deferred with a named trigger: a softened sibling of (1) for the case where one feature adds the
 promise and another in flight carries the `Realizes:` line — the shape `delta.modified-pending` and

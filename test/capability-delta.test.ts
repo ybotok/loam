@@ -32,14 +32,25 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { join } from "node:path";
 import { featureCapabilityDeltas } from "../src/core/capabilities/delta/tree.js";
+import { uncoveredIssues } from "../src/core/capabilities/delta/uncovered.js";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
 import { FleetContext } from "../src/core/fleet-context.js";
 import { featureDirOf } from "../src/core/kernel/ids/dirs.js";
-import { coherentFixture, makeProject, pinFor, runLoam, treeHashes, type Project } from "./helpers/harness.js";
+import {
+  coherentFixture,
+  FEATURE_SPEC,
+  LANDSCAPE,
+  makeProject,
+  pinFor,
+  runLoam,
+  treeHashes,
+  type Project,
+} from "./helpers/harness.js";
 
 const FEAT_DIR = "features/FEAT-1-split";
+const SPLIT_SPEC = `${FEAT_DIR}/specs/payment-split-service/spec.md`;
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -85,16 +96,29 @@ function delta(heading: string, reqs: string[]): string {
 ${reqs.join("\n")}`;
 }
 
+/**
+ * The canonical service delta, carrying a `Realizes:` line — the other half of
+ * every fixture that ADDS a capability requirement.
+ *
+ * A promise a feature makes and nothing in the same feature keeps is
+ * `capability.uncovered`, so a fixture demonstrating the merge has to write BOTH
+ * halves or it is demonstrating the refusal instead.
+ */
+function realizing(entry: string): string {
+  return FEATURE_SPEC.replace("Operations: createSplit", `Operations: createSplit\nRealizes: ${entry}`);
+}
+
 /** Every finding of one code, from a `--json` validate run. */
 async function findings(
   p: Project,
   code: string,
   ...args: string[]
-): Promise<Array<{ subject?: string; message: string; gates?: boolean }>> {
+): Promise<Array<{ severity: string; subject?: string; message: string; gates?: boolean }>> {
   const res = await runLoam(p.workDir, "validate", ...args, "--json");
   const doc = JSON.parse(res.stdout);
-  const targets: Array<{ findings: Array<{ code: string; subject?: string; message: string; gates?: boolean }> }> =
-    doc.targets ?? [];
+  const targets: Array<{
+    findings: Array<{ severity: string; code: string; subject?: string; message: string; gates?: boolean }>;
+  }> = doc.targets ?? [];
   return targets.flatMap((t) => t.findings.filter((f) => f.code === code));
 }
 
@@ -334,6 +358,7 @@ describe("archive merges the business corpus", () => {
   it("the first feature to mention a capability CREATES its living document, and says the fleet just opted in", async () => {
     const p = await project({
       ...coherentFixture(),
+      [SPLIT_SPEC]: realizing("refunds#REF-1"),
       [`${FEAT_DIR}/capabilities/refunds/spec.md`]: delta("ADDED Requirements", [
         requirement("REF-1", "Refund within five days"),
       ]),
@@ -377,6 +402,7 @@ describe("archive merges the business corpus", () => {
     const p = await project({
       ...coherentFixture(),
       "capabilities/payments/spec.md": livingDoc([requirement("PAY-1", "Take money for an order")]),
+      [SPLIT_SPEC]: realizing("payments/refunds#REF-1"),
       [`${FEAT_DIR}/capabilities/payments/refunds/spec.md`]: delta("ADDED Requirements", [
         requirement("REF-1", "Refund within five days"),
       ]),
@@ -508,6 +534,7 @@ ${requirement("REF-1", "Refund within five days")}
 ## Notes
 
 ${requirement("REF-9", "Something filed in the wrong section")}`,
+      [SPLIT_SPEC]: realizing("refunds#REF-2"),
       [`${FEAT_DIR}/capabilities/refunds/spec.md`]: delta("ADDED Requirements", [
         requirement("REF-2", "Show the refund on the statement"),
       ]),
@@ -521,6 +548,467 @@ ${requirement("REF-9", "Something filed in the wrong section")}`,
     expect(refused.issues.map((i) => i.subject)).toContain("refunds");
     expect((await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json")).code).toBe(1);
     expect(await treeHashes(p.docsDir)).toEqual(before);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The `Realizes:` join, taken inside the feature that changes it       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * ONE JOIN, TWO DIRECTIONS, and each has its own way of going wrong silently.
+ *
+ * Forward: a feature ADDS a business promise and nothing in the same feature
+ * keeps it. The document is legal and the merge is what is unsafe, so the grade
+ * is a warning that GATES — the shape `scaffold.placeholder` already has, not
+ * the shape `c4.uncovered` has (that one is a validate-only Finding and never
+ * reaches the archive gate at all). `--approve` lands it.
+ *
+ * Removal: a feature RETIRES a promise something outside it still keeps. That
+ * one archived at exit 0 until now, and the next `loam validate --all` failed
+ * with `capability.realizes-unknown` against a service document nobody had
+ * touched — an archive leaving the fleet red against an untouched file, which
+ * is the class of damage this product exists to refuse. An ERROR, exactly as
+ * `openapi.remove-op-consumed` is for the identical shape one axis over.
+ */
+describe("a promise this feature adds that nothing in it keeps", () => {
+  /** A feature whose capability delta ADDs `refunds#REF-1`, and whatever else the case needs. */
+  const adding = (extra: Record<string, string> = {}): Record<string, string> => ({
+    ...coherentFixture(),
+    [`${FEAT_DIR}/capabilities/refunds/spec.md`]: delta("ADDED Requirements", [
+      requirement("REF-1", "Refund within five days"),
+    ]),
+    ...extra,
+  });
+
+  it("gates archive as a WARNING, writes nothing, and --approve lands it under overridden[]", async () => {
+    const p = await project(adding());
+    const before = await treeHashes(p.docsDir);
+    const found = await findings(p, "capability.uncovered", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.subject).toBe("refunds");
+    expect(found[0]!.gates).toBe(true);
+    // A warning, NOT an error: `validate` grades the document valid, because
+    // writing a promise ahead of the fleet is the recorded intended use. An
+    // error here would fail the gate on every corpus written that way.
+    expect(found[0]!.severity).toBe("warn");
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(0);
+    // The message names all three exits — the line to write, the flag, and the
+    // flow route that only opens once the promise is living.
+    expect(found[0]!.message).toContain("Realizes: refunds#REF-1");
+    expect(found[0]!.message).toContain("--approve");
+    expect(found[0]!.message).toContain("no feature-delta path");
+
+    const refused = await refusal(p);
+    expect(refused.code).toBe("not-coherent");
+    expect(refused.issues.map((i) => i.code)).toContain("capability.uncovered");
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+
+    const approved = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    const payload = JSON.parse(approved.stdout);
+    expect(payload.overridden.map((i: { code: string }) => i.code)).toContain("capability.uncovered");
+    // And the promise it landed is exactly the one the fleet warning now
+    // carries — the hand-off the message told the author to expect.
+    const fleet = await runLoam(p.workDir, "validate", "--all", "--json");
+    expect(fleet.stdout).toContain("capability.requirement-unrealized");
+  });
+
+  it("a `Realizes:` line on an ADDED service requirement in the same feature silences it", async () => {
+    const p = await project(adding({ [SPLIT_SPEC]: realizing("refunds#REF-1") }));
+    expect(await findings(p, "capability.uncovered", "--feature", "FEAT-1")).toEqual([]);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json")).code).toBe(0);
+  });
+
+  it("naming the same capability but a DIFFERENT requirement does not silence it", async () => {
+    // Both halves of the entry are the address. Matching on the capability
+    // alone would let one realized promise vouch for every other promise the
+    // same document makes.
+    const p = await project(adding({ [SPLIT_SPEC]: realizing("refunds#REF-9") }));
+    const found = await findings(p, "capability.uncovered", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    // ...and the entry that resolves to nothing earns its own error beside it.
+    expect(await findings(p, "capability.realizes-unknown", "--feature", "FEAT-1")).toHaveLength(1);
+  });
+
+  it("a `Realizes:` line on a BASE requirement in the delta does not silence it", async () => {
+    // BASE means the requirement sits under no delta heading, so the merge
+    // writes none of it — including the `Realizes:` line. A cover that never
+    // lands is not a cover.
+    const p = await project(
+      adding({
+        [SPLIT_SPEC]: `# payment-split-service — delta for FEAT-1
+
+## Behavior
+
+### Requirement: Something already true
+Realizes: refunds#REF-1
+The service SHALL keep doing what it does.
+
+#### Scenario: It keeps doing it
+- **Given** a service
+- **When** time passes
+- **Then** nothing changes
+`,
+      }),
+    );
+    expect(await findings(p, "capability.uncovered", "--feature", "FEAT-1")).toHaveLength(1);
+  });
+
+  it("MODIFYING a living capability requirement with no `Realizes:` anywhere is silent", async () => {
+    // A MODIFIED changes a promise something living may already realize;
+    // demanding a re-declaration would force an edit with nothing to change.
+    const living = livingDoc([requirement("REF-1", "Refund within five days")]);
+    const p = await project({
+      ...coherentFixture(),
+      "capabilities/refunds/spec.md": living,
+      [`${FEAT_DIR}/capabilities/refunds/spec.md`]: delta("MODIFIED Requirements", [
+        requirement("REF-1", "Refund within three days", `Based-On: ${pinFor(living, "Refund within five days")}\n`),
+      ]),
+    });
+    expect(await findings(p, "capability.uncovered", "--feature", "FEAT-1")).toEqual([]);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json")).code).toBe(0);
+  });
+
+  it("a requirement with no Requirement-ID earns ONE finding, not two", async () => {
+    // `capability.requirement-unidentified` already gates it and there is
+    // nothing for a `Realizes:` line to address, so a second finding would send
+    // its reader to write a line that cannot be written yet.
+    const p = await project({
+      ...coherentFixture(),
+      [`${FEAT_DIR}/capabilities/refunds/spec.md`]: `# refunds — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Refund within five days
+The fleet SHALL return a customer's money within five days.
+
+#### Scenario: It is kept
+- **Given** a customer
+- **When** they ask
+- **Then** it is kept
+`,
+    });
+    expect(await findings(p, "capability.requirement-unidentified", "--feature", "FEAT-1")).toHaveLength(1);
+    expect(await findings(p, "capability.uncovered", "--feature", "FEAT-1")).toEqual([]);
+  });
+
+  it("joins on the LAST separator, so a capability id carrying one still matches", () => {
+    // A unit test, because the discriminating fixture is a capability
+    // DIRECTORY named `pay#ments` and no tree should have to hold one. The
+    // entry `pay#ments#REF-1` addresses capability `pay#ments`; split at the
+    // FIRST separator it addresses `pay`, the cover stops matching, and the
+    // feature is refused for a promise it demonstrably keeps.
+    const promise = parseRequirements(delta("ADDED Requirements", [requirement("REF-1", "A promise")]));
+    const cover = parseRequirements(`# svc — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Keeps the promise
+Realizes: pay#ments#REF-1
+The service SHALL keep it.
+
+#### Scenario: It is kept
+- **Given** a customer
+- **When** they ask
+- **Then** it is kept
+`);
+    expect(
+      uncoveredIssues(
+        [{ id: "pay#ments", reqs: promise, living: [] }],
+        [{ service: "svc", file: "spec.md", reqs: cover }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("a living `#req-` tagged flow does NOT silence it — the flow route opens later", async () => {
+    // A `dynamic view` is a fleet document with no feature-delta path, so a tag
+    // naming a promise that is not living yet is ALREADY
+    // `usecase.requirement-unresolved` for the whole window before the archive.
+    // Reading `architecture/` in the gate would mean spinning a Langium
+    // workspace to look for something either absent or already red.
+    const p = await project(
+      adding({
+        "architecture/landscape.likec4": LANDSCAPE.replace(
+          "  element person\n",
+          "  element person\n  tag cap-refunds\n  tag req-REF-1\n",
+        ),
+        "architecture/capabilities.yaml": "capabilities:\n  refunds: {}\n",
+        "architecture/usecases/refunds.likec4": `views {
+  dynamic view refundFlow {
+    #cap-refunds
+    #req-REF-1
+    title 'A customer is refunded'
+    checkoutWeb -> paymentService 'asks for the money back'
+  }
+}
+`,
+      }),
+    );
+    expect(await findings(p, "capability.uncovered", "--feature", "FEAT-1")).toHaveLength(1);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--json")).code).toBe(1);
+    // And the tag is ALREADY red, which is the whole reason the gate does not
+    // look: it names a promise that is not living yet.
+    expect((await runLoam(p.workDir, "validate", "--all", "--json")).stdout).toContain(
+      "usecase.requirement-unresolved",
+    );
+  });
+});
+
+describe("a promise this feature retires that something else still keeps", () => {
+  /** A living service spec whose requirement realizes `refunds#REF-1`. */
+  const LIVING_REALIZER = `---
+service: payment-service
+status: verified
+---
+
+# payment-service
+
+## Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment before capture.
+
+Operations: authorizePayment
+Realizes: refunds#REF-1
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+`;
+
+  const living = (): string => livingDoc([requirement("REF-1", "Refund within five days")]);
+
+  /**
+   * A feature retiring `refunds#REF-1`, spelled BY HEADING — the commoner way,
+   * and the one that only grades at all because the removal reads the living
+   * document to learn which id the heading retires (`capability.requirement-unidentified`
+   * exempts REMOVED, so a stable id here is optional).
+   */
+  const retiring = (extra: Record<string, string> = {}): Record<string, string> => ({
+    ...coherentFixture(),
+    "services/payment-service/spec.md": LIVING_REALIZER,
+    "capabilities/refunds/spec.md": living(),
+    [`${FEAT_DIR}/capabilities/refunds/spec.md`]: `# refunds — delta for FEAT-1
+
+## REMOVED Requirements
+
+### Requirement: Refund within five days
+Based-On: ${pinFor(living(), "Refund within five days")}
+`,
+    ...extra,
+  });
+
+  it("is refused, writes nothing, and --approve leaves exactly the red the gate predicted", async () => {
+    const p = await project(retiring());
+    // The premise: the document that goes red is coherent BEFORE the merge.
+    // Without it the red below could predate the feature.
+    expect((await runLoam(p.workDir, "validate", "payment-service", "--json")).code).toBe(0);
+
+    const before = await treeHashes(p.docsDir);
+    const refused = await refusal(p);
+    expect(refused.code).toBe("not-coherent");
+    const broken = refused.issues.filter((i) => i.code === "capability.remove-requirement-realized");
+    expect(broken).toHaveLength(1);
+    expect(broken[0]!.subject).toBe("refunds");
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+
+    // The message names the realizer by file and heading — the document a
+    // reader has to open is not one this feature contains.
+    const found = await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1");
+    expect(found[0]!.message).toContain("payment-service's living requirement 'Authorize a payment'");
+    // An ERROR, not a warning that gates: unlike the forward direction there is
+    // no reading under which the merge is legal, so `validate` refuses it too.
+    expect(found[0]!.severity).toBe("error");
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(1);
+
+    // A judgement about the feature, so --approve breaks the join deliberately
+    // — and the fleet is then red exactly where the refusal said it would be.
+    const approved = await runLoam(p.workDir, "archive", "FEAT-1", "--approve", "--json");
+    expect(approved.code, approved.out).toBe(0);
+    expect(JSON.parse(approved.stdout).overridden.map((i: { code: string }) => i.code)).toContain(
+      "capability.remove-requirement-realized",
+    );
+    const after = await runLoam(p.workDir, "validate", "payment-service", "--json");
+    expect(after.code).toBe(1);
+    expect(after.stdout).toContain("capability.realizes-unknown");
+  });
+
+  it("a MODIFIED that restates the realizer WITHOUT its `Realizes:` line is not a breach", async () => {
+    const p = await project(
+      retiring({
+        [`${FEAT_DIR}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-1
+
+## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_REALIZER, "Authorize a payment")}
+The service SHALL authorize a payment before capture.
+
+Operations: authorizePayment
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+`,
+      }),
+    );
+    // A MODIFIED carries its FULL new text, so dropping the line from it IS how
+    // an author retires the join. Graded against the LIVING corpus alone this
+    // would refuse the very change that fixes it.
+    const res = await runLoam(p.workDir, "archive", "FEAT-1", "--dry-run", "--json");
+    expect(res.code, res.out).toBe(0);
+    expect(res.stdout).not.toContain("capability.remove-requirement-realized");
+  });
+
+  it("a MODIFIED that KEEPS the `Realizes:` line is still a breach", async () => {
+    const p = await project(
+      retiring({
+        [`${FEAT_DIR}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-1
+
+## MODIFIED Requirements
+
+### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_REALIZER, "Authorize a payment")}
+The service SHALL authorize a payment before capture, twice.
+
+Operations: authorizePayment
+Realizes: refunds#REF-1
+
+#### Scenario: Successful authorization
+- **Given** a valid card
+- **When** authorization is requested
+- **Then** the payment is authorized
+`,
+      }),
+    );
+    // Supersession is not exoneration: what the merge writes is what counts, and
+    // this delta writes the pointer back.
+    const found = await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("this feature's payment-service delta requirement");
+  });
+
+  it("a delta that touches the same document but NOT the realizer is no exoneration", async () => {
+    // Supersession is per REQUIREMENT, never per document. Asking only "does
+    // this feature have a delta for that service" exonerates every requirement
+    // in a file the feature merely adds to — which is the commonest delta there
+    // is, and would silently switch the whole check off for it.
+    const p = await project(
+      retiring({
+        [`${FEAT_DIR}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Log every authorization
+The service SHALL write an audit line for each authorization.
+
+#### Scenario: An authorization is logged
+- **Given** an authorization
+- **When** it completes
+- **Then** an audit line exists
+`,
+      }),
+    );
+    const found = await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("payment-service's living requirement 'Authorize a payment'");
+  });
+
+  it("REMOVING the realizing service requirement in the same feature is not a breach", async () => {
+    const p = await project(
+      retiring({
+        [`${FEAT_DIR}/specs/payment-service/spec.md`]: `# payment-service — delta for FEAT-1
+
+## REMOVED Requirements
+
+### Requirement: Authorize a payment
+Based-On: ${pinFor(LIVING_REALIZER, "Authorize a payment")}
+`,
+      }),
+    );
+    expect(await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1")).toEqual([]);
+  });
+
+  it("an arch.spec.md realizer counts too — both requirement documents carry the line", async () => {
+    const p = await project({
+      ...retiring(),
+      // The living spec.md loses its `Realizes:` line; the arch document one
+      // directory over keeps it. Scanning only spec.md would call this clean.
+      "services/payment-service/spec.md": LIVING_REALIZER.replace("Realizes: refunds#REF-1\n", ""),
+      "services/payment-service/arch.spec.md": `# payment-service — architecture requirements
+
+## Requirements
+
+### Requirement: Hold the refund ledger
+The service SHALL keep a durable refund ledger.
+
+Realizes: refunds#REF-1
+
+#### Scenario: A ledger entry survives a restart
+- **Given** a written entry
+- **When** the service restarts
+- **Then** the entry is still there
+`,
+    });
+    const found = await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("payment-service (arch.spec.md)'s living requirement");
+  });
+
+  it("a REMOVED that selects nothing living earns delta.removed-unknown and nothing else", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      "services/payment-service/spec.md": LIVING_REALIZER,
+      "capabilities/refunds/spec.md": living(),
+      [`${FEAT_DIR}/capabilities/refunds/spec.md`]: `# refunds — delta for FEAT-1
+
+## REMOVED Requirements
+
+### Requirement: A promise nobody ever wrote
+`,
+    });
+    expect(await findings(p, "delta.removed-unknown", "--feature", "FEAT-1")).toHaveLength(1);
+    expect(await findings(p, "capability.remove-requirement-realized", "--feature", "FEAT-1")).toEqual([]);
+  });
+
+  it("a feature that retires nothing never reads the living fleet's requirements", async () => {
+    // The scan is every service's spec.md and arch.spec.md. It exists for one
+    // question, and a feature that asks it of nobody must not pay for it — the
+    // rule `openapi.remove-op-consumed` follows for the identical scan.
+    const p = await project({
+      ...coherentFixture(),
+      // Present, so the assertion is about a file that could be read rather
+      // than one that does not exist.
+      "services/payment-service/arch.spec.md": `# payment-service — architecture requirements
+
+## Requirements
+
+### Requirement: Hold the refund ledger
+The service SHALL keep a durable refund ledger.
+
+#### Scenario: A ledger entry survives a restart
+- **Given** a written entry
+- **When** the service restarts
+- **Then** the entry is still there
+`,
+      [SPLIT_SPEC]: realizing("refunds#REF-1"),
+      [`${FEAT_DIR}/capabilities/refunds/spec.md`]: delta("ADDED Requirements", [
+        requirement("REF-1", "Refund within five days"),
+      ]),
+    });
+    const read: string[] = [];
+    class Recording extends FleetContext {
+      override readRequirements(path: string): Promise<Requirement[]> {
+        read.push(path.split(/[\\/]/).join("/"));
+        return super.readRequirements(path);
+      }
+    }
+    const featureDir = featureDirOf(join(p.docsDir, FEAT_DIR));
+    await featureCoherence({ docsDir: p.docsDir, featureDir, featureId: "FEAT-1", context: new Recording() });
+    expect(read.filter((path) => path.endsWith("services/payment-service/arch.spec.md"))).toEqual([]);
   });
 });
 

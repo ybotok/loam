@@ -252,8 +252,6 @@ describe("public docs name only emitted codes", () => {
     "components.schemas": "AsyncAPI document section path, as above",
     "loam.json.service": "config key path — the service binding inside loam.json",
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
-    "capability.uncovered":
-      "named as FUTURE work in ROADMAP's Later authored-capability item — remove this entry when that item lands (the code becomes emitted) or is dropped",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */
