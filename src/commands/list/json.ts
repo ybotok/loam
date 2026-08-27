@@ -118,6 +118,12 @@ export function capabilityJson(row: CapabilityRow): Record<string, unknown> {
     realizedBy: row.realizedBy,
     services: row.services,
     statuses: row.statuses,
+    // Present only for a capability that HAS a document, and absent rather than
+    // `[]` for one that does not — the same optional-key rule the two fields
+    // above follow, and here it carries a distinction a reader needs: an empty
+    // array means the document declares no requirements, while no key at all
+    // means there is no document to declare any.
+    ...(row.requirements === undefined ? {} : { requirements: row.requirements }),
   };
 }
 

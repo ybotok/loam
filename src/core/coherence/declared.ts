@@ -23,6 +23,9 @@ import { featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
 import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
+import { capabilityRequirementIndex } from "../capabilities/findings.js";
+import { realizesUnknownIssues } from "../capabilities/realizes/findings.js";
+import type { CapabilityRequirementIndex } from "../capabilities/realizes/join.js";
 import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
@@ -87,6 +90,22 @@ export async function declaredByService(
     const capabilityVocab =
       context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir);
     const grading = capabilityVocab.present && capabilityVocab.invalid === undefined;
+    // The `Realizes:` index, built at most ONCE per feature and only if some
+    // delta document actually reaches the grading branch. Lazy rather than
+    // eager because it reads every capability document in the fleet, and a
+    // feature whose deltas carry no requirement file at all must not pay for
+    // that — the same "a silent axis skips the reads that feed it" rule
+    // `grading` above states, one level deeper.
+    let pendingIndex: Promise<CapabilityRequirementIndex> | null = null;
+    const capabilityReqs = (): Promise<CapabilityRequirementIndex> => {
+      pendingIndex ??= capabilityRequirementIndex(
+        capabilityVocab,
+        context === undefined
+          ? async (p) => parseRequirements(await readFile(p, "utf8"))
+          : (p) => context.readRequirements(p),
+      );
+      return pendingIndex;
+    };
     for (const svc of svcNames) {
       const paths = featureSpecPaths(featureDir, svc);
       if (existsSync(paths.spec)) {
@@ -101,7 +120,9 @@ export async function declaredByService(
           new Set(reqs.filter((r) => r.kind === "REMOVED").flatMap((r) => r.operations)),
         );
         if (grading) {
-          issues.push(...capabilityUnknownIssues(reqs, { where: `${svc}: spec.md`, subject: svc }, capabilityVocab));
+          const target = { where: `${svc}: spec.md`, subject: svc };
+          issues.push(...capabilityUnknownIssues(reqs, target, capabilityVocab));
+          issues.push(...realizesUnknownIssues(reqs, target, await capabilityReqs()));
         }
       }
       // The delta arch.spec.md carries the same grammar and merges the same
@@ -114,7 +135,9 @@ export async function declaredByService(
         const archReqs = context === undefined
           ? parseRequirements(await readFile(paths.archSpec, "utf8"))
           : await context.readRequirements(paths.archSpec);
-        issues.push(...capabilityUnknownIssues(archReqs, { where: `${svc}: arch.spec.md`, subject: svc }, capabilityVocab));
+        const archTarget = { where: `${svc}: arch.spec.md`, subject: svc };
+        issues.push(...capabilityUnknownIssues(archReqs, archTarget, capabilityVocab));
+        issues.push(...realizesUnknownIssues(archReqs, archTarget, await capabilityReqs()));
       }
       // Only operations genuinely NEW to this service count as feature-added: authors
       // restate the full living API in the delta file (it is a complete document, not a patch).

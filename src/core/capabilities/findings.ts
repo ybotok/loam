@@ -29,6 +29,7 @@ import type { Finding } from "../vocabulary/report.js";
 import type { Issue } from "../vocabulary/issue.js";
 import type { CapabilityVocabulary } from "./capabilities.js";
 import type { CapabilityTree } from "./tree.js";
+import type { CapabilityRequirementIndex } from "./realizes/join.js";
 
 /** Which document is being graded, and under whose name the finding is filed. */
 export interface CapabilityTarget {
@@ -245,6 +246,38 @@ const SERVICE_JOINS = [
 ] as const satisfies ReadonlyArray<{ field: keyof Requirement; line: string; names: string }>;
 
 /**
+ * The two joins that point INTO the capability tree, and are therefore inert
+ * written inside it.
+ *
+ * Not "wrong at this altitude" like the four above — these are the axis's own
+ * lines. They are refused here because nothing reads them: `capabilityRollup`
+ * joins SERVICE requirements to capabilities, so a `Capability:` line in a
+ * capability document is a requirement claiming the document it is already in,
+ * and a `Realizes:` line there points at a promise loam will never see anybody
+ * keep. Both parse, both look exactly like the working joins one directory
+ * over, and both would sit in a reviewed document meaning nothing.
+ *
+ * A capability realizing ANOTHER capability's requirement — a nested
+ * `payments/refunds` serving a promise made by `payments` — is a real idea and
+ * is deliberately not being smuggled in as a line that happens to parse. It
+ * would need a design: a second corpus of joins, its own cycle rule, and an
+ * answer for what `capability.requirement-unrealized` means when the realizer
+ * is itself unrealized. Refusing the line now is what keeps that decision open.
+ */
+const INTERNAL_JOINS = [
+  {
+    field: "capabilities",
+    line: "Capability:",
+    why: "the rollup joins SERVICE requirements to capabilities, so written here it claims the document it is already in",
+  },
+  {
+    field: "realizes",
+    line: "Realizes:",
+    why: "a capability requirement is what gets realized, not what realizes — nothing reads this line inside the tree",
+  },
+] as const satisfies ReadonlyArray<{ field: keyof Requirement; line: string; why: string }>;
+
+/**
  * Both grades a capability document earns on its own: every requirement needs
  * a stable id, and none may carry a service-level join.
  *
@@ -282,6 +315,57 @@ export function capabilityDocFindings(reqs: Requirement[], id: string): Finding[
           "Move it into that service's spec.md, where the line resolves; what belongs here is the promise, not the mechanism.",
       });
     }
+    for (const join of INTERNAL_JOINS) {
+      if (r[join.field].length === 0) continue;
+      findings.push({
+        severity: "error",
+        code: "capability.requirement-inert-join",
+        subject: id,
+        message:
+          `${where}: requirement '${r.name}' carries \`${join.line}\`, which does nothing in a capability document — ` +
+          `${join.why}. It parses and reads exactly like the working join one directory over, which is why it is refused ` +
+          "rather than ignored. Delete the line; the join that matters is written on the SERVICE requirement, as " +
+          `\`Realizes: ${id}#${r.id ?? "<Requirement-ID>"}\`.`,
+      });
+    }
   }
   return findings;
+}
+
+/**
+ * The requirement ids each capability document declares, with THE LADDER
+ * already applied — the one shape `Realizes:` is ever resolved against.
+ *
+ * Built here rather than at the three call sites for the reason
+ * `gradableCapabilityIds` above is exported: the suppression rule and the index
+ * it guards belong together. A caller that composed them itself would be a
+ * fourth place where "can this be graded at all" is decided, and the first one
+ * to be forgotten when a fifth un-gradable vocabulary state arrives.
+ *
+ * A requirement with no `Requirement-ID:` is absent from the index, so a
+ * `Realizes:` entry naming its heading does not resolve. That is deliberate and
+ * not a gap: an unidentified capability requirement is already an ERROR
+ * (`capability.requirement-unidentified`), and letting a heading work as an
+ * address would quietly reintroduce the identity-by-heading the tree exists to
+ * refuse. REMOVED is skipped for the reason every other reader skips it.
+ *
+ * The reads are NOT wrapped: a `capabilities/<id>/spec.md` that cannot be
+ * decoded takes the run down exactly as a service spec does — the rule
+ * `capabilityFleetFindings` already states one directory over.
+ */
+export async function capabilityRequirementIndex(
+  vocab: CapabilityVocabulary,
+  read: (path: string) => Promise<Requirement[]>,
+): Promise<CapabilityRequirementIndex> {
+  const declared = gradableCapabilityIds(vocab);
+  const byCapability = new Map<string, ReadonlySet<string>>();
+  if (declared === null) return { declared, byCapability };
+  for (const doc of vocab.tree.docs) {
+    const reqs = await read(doc.spec);
+    byCapability.set(
+      doc.id,
+      new Set(reqs.flatMap((r) => (r.kind === "REMOVED" || r.id === undefined ? [] : [r.id]))),
+    );
+  }
+  return { declared, byCapability };
 }

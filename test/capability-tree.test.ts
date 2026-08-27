@@ -120,6 +120,11 @@ describe("the capabilities/ tree declares capabilities", () => {
         realizedBy: [{ service: "payment-service", file: "spec.md", requirement: "Authorize a payment" }],
         services: ["payment-service"],
         statuses: { verified: 1 },
+        // The document's own requirements ride the same row. Realized by
+        // nobody here: the spec claims the capability with `Capability:` and
+        // names no individual promise, which is the whole distinction between
+        // the two joins.
+        requirements: [{ id: "CAP-REFUND-1", name: "Refund a payment", realizedBy: [] }],
       },
     ]);
   });

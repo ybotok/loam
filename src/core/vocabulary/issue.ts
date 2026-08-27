@@ -190,6 +190,8 @@ export type IssueCode =
   /* --- capability axis: the Capability: join against architecture/capabilities.yaml --- */
   /** a delta requirement's `Capability:` entry that the fleet vocabulary does not declare — the merge would land a join that resolves to nothing, so it blocks archive like other errors, and `--approve` overrides it */
   | "capability.unknown"
+  /** a delta requirement's `Realizes:` entry that names no capability requirement — same argument as `capability.unknown` one join over: the merge would land a pointer at a promise that does not exist, looking exactly like a working one */
+  | "capability.realizes-unknown"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

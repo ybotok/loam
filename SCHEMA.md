@@ -152,6 +152,7 @@ and restores wherever the service lives *today*.
 | Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
+| Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#` |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred from a feature directory. A file can therefore be structurally valid while a join is broken; the broken join is the finding loam reports.
 
@@ -396,7 +397,29 @@ The document carries narrative and then `## Requirements`, in the same grammar a
 - **Every requirement needs a `Requirement-ID:`.** Optional in a service spec for OpenSpec compatibility, required here: these documents outlive every service that realizes them, so identity is the line and not the heading — otherwise rewording a heading is a removal and an addition, and every join made to it breaks silently. Missing is `capability.requirement-unidentified` (**error**).
 - **A capability requirement must be observable OUTSIDE the fleet.** `Operations:`, `Covers:`, `Publishes:` and `Consumes:` each resolve against one service's own contract or model, so a requirement carrying any of them is a service requirement filed at the wrong altitude: `capability.requirement-service-scoped` (**error**). `Requires:` is deliberately exempt — a permission is a domain fact, observable outside the fleet. The companion rule that a capability requirement **names no service** is an authoring rule that PR review holds and loam does not check: the only mechanical reading of it is scanning prose for declared service ids, which is a heuristic, and loam refuses-and-names rather than guessing.
 
-A directory under `capabilities/` that holds neither the document nor a capability beneath it is `capability.doc-missing` (**warning**) — what `mkdir` leaves behind halfway through creating one. It declares nothing, so a `Capability:` line naming it still reports `capability.unknown`.
+A directory under `capabilities/` that holds neither the document nor a capability beneath it is `capability.doc-missing` (**warning**) — what `mkdir` leaves behind halfway through creating one. It declares nothing, so a `Capability:` line naming it still reports `capability.unknown`. And the axis's own two joins — `Capability:` and `Realizes:` — are refused inside a capability document (`capability.requirement-inert-join`, **error**): they point INTO the tree, so nothing reads them written in it, while both parse and read exactly like the working joins one directory over.
+
+#### `Realizes:` — the join a service requirement makes into the tree
+
+A service requirement says which promise it serves with a `Realizes:` line, entries spelled `<capability-id>#<Requirement-ID>`:
+
+```markdown
+### Requirement: Authorize a payment
+Requirement-ID: PAY-AUTHORIZE
+The service SHALL reserve funds for an order before capture…
+
+Operations: authorizePayment
+Realizes: checkout#CHECKOUT-CHARGE-ONCE
+```
+
+This is **not** the same claim as `Capability:` beside it, and a requirement commonly carries both: `Capability: checkout` names a theme, `Realizes: checkout#CHECKOUT-CHARGE-ONCE` names one promise. Only the second can be graded in both directions, which is what makes the business tree checkable rather than merely present. It is written by whoever implements the requirement, never by the analyst — a business document must not be edited every time the fleet rearranges which service carries which part — and the API hop needs no line of its own, because a capability requirement reaches its operations by composing this join with the `Operations:` lines that already exist.
+
+Two details of the grammar are load-bearing. The capability half is what makes the target addressable at all, since a `Requirement-ID` is unique only inside its own document. And the separator is the **last** `#`, not the first: the requirement half's grammar excludes `#` while a capability id is a YAML key and a directory name and is constrained nowhere, so splitting at the last one is unambiguous for every id there is.
+
+- `capability.realizes-unknown` (**error**) — the entry names no capability requirement. Five distinct failures with five different fixes, and the message says which: the entry is not spelled `<capability-id>#<Requirement-ID>`; the capability is undeclared (close names offered); it is declared but has no document; the document declares no requirements yet; or it declares requirements but not this id (close names again). In a feature delta it gates `loam archive` (`--approve` overrides), for `capability.unknown`'s reason.
+- `capability.requirement-unrealized` (**warning**, fleet scope) — a capability requirement no living service requirement's `Realizes:` line names, one warning per requirement, subject `<capability>#<id>`. The sharper sibling of `capability.unrealized` and the one that survives a healthy-looking row: a capability with four requirements and three realized reports nothing at all through the other code. It never gates, because writing the business document ahead of the fleet is the intended use.
+
+Realizing a REQUIREMENT realizes its capability: a requirement carrying only `Realizes:` counts toward `capability.unrealized`, and a requirement carrying both joins is counted once. `loam list capabilities --json` carries the whole join — each capability's `requirements[]`, and what realizes each one (the key is absent for a capability with no document, and an empty array for a document declaring none).
 
 The fleet's own files are the opt-in — either side of the union. A fleet holding neither `architecture/capabilities.yaml` nor `capabilities/` gets no capability findings at all, and once one exists the join is graded both ways:
 
@@ -414,7 +437,7 @@ capabilities:
 
 The total is readable — `loam list capabilities` reports each capability's realizing requirements, services and draft/verified split, and `loam explore --capability <id>` seeds an exploration from the realizing services. `migrate-openspec` preserves capability identity through this same file: every routed requirement carries a `Capability:` line, and the staged target declares every living and active-horizon OpenSpec capability id (empty bodies — descriptions are not invented, the authored `## Purpose` prose stays verbatim under `legacy/`).
 
-What the tree does NOT yet carry, and the roadmap owns each: a `Realizes:` join from a service requirement back to a capability requirement, a feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land, a capability document is a fleet document edited directly under PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither corpus is derived from the other** — `gherkin` and `verify` keep computing from service requirements, so a service repository can still validate itself with nothing but its own files.
+What the tree does NOT yet carry, and the roadmap owns each: a use case realizing a capability requirement (a `#cap-`-tagged flow is the only thing that can carry a criterion crossing services), a feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land, a capability document is a fleet document edited directly under PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither corpus is derived from the other** — `gherkin` and `verify` keep computing from service requirements, so a service repository can still validate itself with nothing but its own files.
 
 For a theme that crosses services and matches no structural unit, a **LikeC4 tag** also remains available and checkable: tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift.
 

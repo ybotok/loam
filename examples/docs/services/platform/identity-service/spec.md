@@ -42,6 +42,7 @@ token endpoint into a client-enumeration oracle.
 
 Operations: issueToken
 Capability: identity/tokens
+Realizes: identity/tokens#IDENTITY-ONE-REFUSAL
 
 #### Scenario: A valid client credential is exchanged for a token
 - **Given** a registered client whose secret has not been revoked
@@ -74,6 +75,7 @@ tokens.
 Operations: introspectToken
 Requires: service/tokens:introspect
 Capability: identity/tokens
+Realizes: identity/tokens#IDENTITY-REVOKE-EVERYWHERE
 
 #### Scenario: An active token is described to its caller
 - **Given** a token issued eight minutes ago with a thirty-minute lifetime

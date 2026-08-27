@@ -13,7 +13,7 @@
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../kernel/document-bytes.js";
 import {
-  BASED_ON_LINE_RE, CAPABILITY_LINE_RE, KIND_RE, REQUIREMENT_ID_LINE_RE,
+  BASED_ON_LINE_RE, CAPABILITY_LINE_RE, KIND_RE, REALIZES_LINE_RE, REQUIREMENT_ID_LINE_RE,
   type DeltaKind, type Requirement, type Scenario,
 } from "./spec.js";
 
@@ -210,6 +210,7 @@ export function parseRequirements(md: string): Requirement[] {
         consumes: [],
         requires: [],
         capabilities: [],
+        realizes: [],
         scenarios: [],
         section,
         line: index + 1,
@@ -267,6 +268,13 @@ export function parseRequirements(md: string): Requirement[] {
       // until a fleet writes that file (core/capabilities/findings.ts).
       const mcap = CAPABILITY_LINE_RE.exec(line);
       if (mcap) req.capabilities = mcap[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      // The join INTO the authored business tree: `<capability-id>#<Requirement-ID>`
+      // entries, same comma grammar and same keep-last quirk as every line
+      // above. Split into its two halves nowhere near here —
+      // `core/capabilities/realizes/join.ts` owns that, because the rollup and
+      // the grades must not be able to disagree about where the separator is.
+      const mrl = REALIZES_LINE_RE.exec(line);
+      if (mrl) req.realizes = mrl[1]!.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     }
   }
 

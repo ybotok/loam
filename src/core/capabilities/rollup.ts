@@ -18,6 +18,7 @@ import type { Requirement } from "../document/spec.js";
 import { compareIds, type ServiceEntry } from "../repo/entries.js";
 import { SPEC_AXES, servicePathsAt } from "../repo/paths.js";
 import type { CapabilityVocabulary } from "./capabilities.js";
+import { splitRealizesEntry } from "./realizes/join.js";
 
 /** One requirement realizing one capability, located exactly. */
 export interface CapabilityRealization {
@@ -27,20 +28,50 @@ export interface CapabilityRealization {
   requirement: string;
 }
 
+/** One requirement OF a capability document, and what realizes it. */
+export interface CapabilityRequirementRow {
+  /** Its `Requirement-ID:`. A requirement without one is absent here — see `capabilityRequirementRows`. */
+  id: string;
+  /** Its `### Requirement:` heading. */
+  name: string;
+  /** Service requirements whose `Realizes:` line names `<capability>#<id>`. */
+  realizedBy: CapabilityRealization[];
+}
+
 /** One declared capability with everything the fleet says about it. */
 export interface CapabilityRow {
   id: string;
   description?: string;
   owner?: string;
+  /**
+   * Service requirements realizing this capability BY EITHER JOIN, deduplicated
+   * on (service, file, requirement).
+   *
+   * Both joins land here on purpose. `Realizes: checkout#CHK-1` realizes part of
+   * `checkout` as surely as `Capability: checkout` does, and a rollup that
+   * counted only the second would report a capability as realized by nobody
+   * while the fleet pointed at its individual promises — which would then be
+   * one spurious `capability.unrealized` per capability an author had documented
+   * carefully enough to join at requirement level. The deduplication is what
+   * lets a requirement carry both lines, which is the normal shape: the theme
+   * and the promise are different claims.
+   */
   realizedBy: CapabilityRealization[];
   /** Distinct realizing services, sorted. */
   services: string[];
   /**
    * Realizing requirements counted by their service's frontmatter status
    * (`unset` for a service nobody has marked) — the draft/verified split the
-   * roadmap asks the total to answer.
+   * roadmap asks the total to answer. Counted over the DEDUPLICATED set above,
+   * so a requirement writing both joins is one requirement.
    */
   statuses: Record<string, number>;
+  /**
+   * The capability document's own requirements, each with what realizes it.
+   * Present only for a capability that HAS a document — absent and empty are
+   * different answers, and only the second means "the document declares none".
+   */
+  requirements?: CapabilityRequirementRow[];
 }
 
 export interface CapabilityRollupInput {
@@ -77,6 +108,17 @@ export async function capabilityRollup(input: CapabilityRollupInput): Promise<Ca
       statuses: {},
     });
   }
+  // The documents, before the services, because a `Realizes:` entry can only
+  // land on a requirement row that already exists.
+  for (const doc of vocab.tree.docs) {
+    const row = rows.get(doc.id);
+    if (row === undefined) continue; // unreachable: the tree is one half of byId
+    row.requirements = capabilityRequirementRows(await read(doc.spec));
+  }
+
+  // Realizations are collected as a SET per row before they become a list, so
+  // the two joins cannot count one requirement twice — see `CapabilityRow.realizedBy`.
+  const claimed = new Map<CapabilityRow, Map<string, CapabilityRealization>>();
   for (const entry of services) {
     const paths = servicePathsAt(entry.dir);
     for (const axis of SPEC_AXES) {
@@ -84,27 +126,87 @@ export async function capabilityRollup(input: CapabilityRollupInput): Promise<Ca
       if (!existsSync(path)) continue;
       for (const r of await read(path)) {
         if (r.kind === "REMOVED") continue;
-        for (const capability of r.capabilities) {
-          const row = rows.get(capability);
-          if (row === undefined) continue; // undeclared — capability.unknown's business, not the rollup's
-          row.realizedBy.push({ service: entry.id, file: axis.file, requirement: r.name });
-          const status = entry.status ?? "unset";
-          row.statuses[status] = (row.statuses[status] ?? 0) + 1;
+        const where: CapabilityRealization = { service: entry.id, file: axis.file, requirement: r.name };
+        for (const capability of r.capabilities) claim(rows, claimed, capability, where);
+        for (const target of r.realizes.map(splitRealizesEntry)) {
+          if (target === null) continue; // malformed — capability.realizes-unknown's business
+          claim(rows, claimed, target.capability, where);
+          // The requirement-level half. An entry naming an id the document does
+          // not declare lands nowhere, which is exactly right: it is already
+          // `capability.realizes-unknown`, and inventing a row for it here would
+          // make a typo look like a promise somebody wrote.
+          rows
+            .get(target.capability)
+            ?.requirements?.find((req) => req.id === target.requirement)
+            ?.realizedBy.push(where);
         }
       }
     }
   }
+
   for (const row of rows.values()) {
-    row.realizedBy.sort(
-      (a, b) =>
-        compareIds(a.service, b.service) ||
-        a.file.localeCompare(b.file) ||
-        compareIds(a.requirement, b.requirement),
-    );
+    row.realizedBy = [...(claimed.get(row)?.values() ?? [])].sort(compareRealizations);
     row.services = [...new Set(row.realizedBy.map((r) => r.service))].sort(compareIds);
-    row.statuses = Object.fromEntries(Object.entries(row.statuses).sort(([a], [b]) => compareIds(a, b)));
+    const byStatus: Record<string, number> = {};
+    for (const r of row.realizedBy) {
+      const status = statusOf(services, r.service);
+      byStatus[status] = (byStatus[status] ?? 0) + 1;
+    }
+    row.statuses = Object.fromEntries(Object.entries(byStatus).sort(([a], [b]) => compareIds(a, b)));
+    for (const req of row.requirements ?? []) req.realizedBy.sort(compareRealizations);
   }
   return [...rows.values()];
+}
+
+/** Deterministic realization order — the diff-stable rule this module states for its rows. */
+function compareRealizations(a: CapabilityRealization, b: CapabilityRealization): number {
+  return (
+    compareIds(a.service, b.service) ||
+    a.file.localeCompare(b.file) ||
+    compareIds(a.requirement, b.requirement)
+  );
+}
+
+/** The service's declared frontmatter status, or `unset` for one nobody has marked. */
+function statusOf(services: ServiceEntry[], id: string): string {
+  return services.find((s) => s.id === id)?.status ?? "unset";
+}
+
+/** Record one realization of one capability, deduplicated on where it came from. */
+function claim(
+  rows: Map<string, CapabilityRow>,
+  claimed: Map<CapabilityRow, Map<string, CapabilityRealization>>,
+  capability: string,
+  where: CapabilityRealization,
+): void {
+  const row = rows.get(capability);
+  if (row === undefined) return; // undeclared — capability.unknown's business, not the rollup's
+  const seen = claimed.get(row) ?? new Map<string, CapabilityRealization>();
+  seen.set(`${where.service}\0${where.file}\0${where.requirement}`, where);
+  claimed.set(row, seen);
+}
+
+/**
+ * A capability document's requirements as rows, keyed by their stable id.
+ *
+ * A requirement WITHOUT a `Requirement-ID:` is dropped rather than keyed by its
+ * heading, and the drop is the honest answer rather than a shortcut: nothing
+ * can address it — `Realizes:` names an id — so a row for it would be a promise
+ * reported as unrealized that no author could ever mark realized.
+ * `capability.requirement-unidentified` is the finding that names it, and it is
+ * an ERROR, so the state does not persist quietly.
+ *
+ * A duplicate id keeps the FIRST, matching `requirementIdProblems`' own
+ * `duplicate` grade: the document already earns an error for it, and picking a
+ * winner here is only about not producing two identical rows.
+ */
+export function capabilityRequirementRows(reqs: Requirement[]): CapabilityRequirementRow[] {
+  const rows = new Map<string, CapabilityRequirementRow>();
+  for (const r of reqs) {
+    if (r.kind === "REMOVED" || r.id === undefined || rows.has(r.id)) continue;
+    rows.set(r.id, { id: r.id, name: r.name, realizedBy: [] });
+  }
+  return [...rows.values()].sort((a, b) => compareIds(a.id, b.id));
 }
 
 /** The declared ids something realizes — the set the unrealized grade is taken against. */

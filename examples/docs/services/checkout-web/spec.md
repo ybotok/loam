@@ -31,6 +31,7 @@ show a confirmation only for an order `order-service` has acknowledged — never
 client assumed went through.
 
 Capability: checkout
+Realizes: checkout#CHECKOUT-CHARGE-ONCE
 
 #### Scenario: Complete a checkout
 - **Given** a cart holding at least one line and a payment method the customer has entered

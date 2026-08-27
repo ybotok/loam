@@ -36,6 +36,7 @@ that acts on it is ORD-ON-AUTHORIZED.
 
 Operations: createOrder
 Publishes: order.OrderPlaced
+Realizes: checkout#CHECKOUT-CHARGE-ONCE
 
 #### Scenario: A basket becomes an order
 - **Given** a customer with a basket of two lines and a valid payment method

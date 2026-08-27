@@ -32,6 +32,7 @@ import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { capabilityDocFindings, docMissingFindings, invalidVocabularyFinding, unrealizedFindings } from "../../../core/capabilities/findings.js";
 import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/rollup.js";
+import { requirementUnrealizedFindings } from "../../../core/capabilities/realizes/findings.js";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -265,7 +266,22 @@ export async function capabilityFleetFindings(
   const invalid = invalidVocabularyFinding(vocab);
   if (invalid !== null) return [invalid, ...authored];
   const rows = await capabilityRollup({ services, vocab, read });
-  return [...authored, ...unrealizedFindings(vocab, usedCapabilities(rows))];
+  // The two unrealized grades read the SAME rollup, which is what keeps them
+  // from disagreeing about the word: a capability is unrealized when nothing
+  // names it by either join, and one of its requirements is unrealized when no
+  // `Realizes:` entry names that requirement. Both are warnings, and the second
+  // is the one that survives a healthy-looking row — a capability with four
+  // requirements and three realized reports nothing at all through the first.
+  const unrealizedRequirements = rows.flatMap((row) =>
+    (row.requirements ?? [])
+      .filter((req) => req.realizedBy.length === 0)
+      .map((req) => ({ capability: row.id, id: req.id, name: req.name })),
+  );
+  return [
+    ...authored,
+    ...unrealizedFindings(vocab, usedCapabilities(rows)),
+    ...requirementUnrealizedFindings(unrealizedRequirements),
+  ];
 }
 
 export function externalProducerOf(
