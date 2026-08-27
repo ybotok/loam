@@ -7,7 +7,8 @@
  * from a second read is a footer that can contradict the rows above it.
  */
 import { existsSync } from "node:fs";
-import { loadFile, serviceResolver } from "../../core/c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
+import { serviceResolver } from "../../core/c4/resolve/service.js";
 import {
   maturityGaps,
   serviceMaturity,
@@ -18,7 +19,13 @@ import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js
 import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
 import { readVerification } from "../../core/verify/file.js";
-import { tallyRecord, type VerificationVerdict, verificationVerdict } from "../../core/verify/record.js";
+import { type AnsweredBy } from "../../core/verify/answers.js";
+import {
+  confirmedProvenance,
+  tallyRecord,
+  type VerificationVerdict,
+  verificationVerdict,
+} from "../../core/verify/record.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export interface ServiceView extends MaturityInput {
@@ -40,15 +47,28 @@ export async function serviceViews(
   docsDir: DocsDir,
   services: ServiceEntry[],
   boundService: string | undefined,
+  preloaded?: LoadedDoc | null,
 ): Promise<ServiceView[]> {
   const known = new Set(services.map((s) => s.id));
   const lp = landscapePath(docsDir);
-  const land = existsSync(lp) ? await loadFile(lp) : null;
+  // `preloaded` is the landscape a caller already holds — `undefined` means
+  // "load it if it exists", null "there is none", the convention
+  // validateService's own `preloaded` follows. The fleet scorecard hands in
+  // the batch-parsed doc because a healthy `validate --all` must spin ZERO
+  // per-document workspaces (test/validate-batch-fallback.test.ts counts
+  // them), and a second parse of a document that run already holds was the
+  // exact per-path cost the batch loader exists to retire.
+  const land = preloaded !== undefined ? preloaded : existsSync(lp) ? await loadFile(lp) : null;
   const called = new Set<string>();
   // Positive evidence only: with no landscape, or one that does not parse, we
   // know nothing about who is called and every service is assumed to have an
   // API — the conservative direction, because claiming a service needs no
-  // contract is how a real one goes undocumented.
+  // contract is how a real one goes undocumented. This is the SAME rule
+  // `landscapeEvidence` (core/vocabulary/maturity.ts) spells per service for
+  // explore and the context pack — derived fleet-wide here in one pass (one
+  // `called` set for every service) because calling the per-service partition
+  // from this loop would re-walk the whole relationship list once per
+  // service. If the rule moves, both spellings move.
   const proven = land !== null && land.errors.length === 0;
   if (proven) {
     const svcOf = serviceResolver(land.elements, known);
@@ -91,6 +111,14 @@ export interface VerificationCell {
   claims: number;
   /** Of the confirmed, the scenario claims on an agent's word (`attestedClaims`). */
   attested: number;
+  /**
+   * Of the confirmed, one count per `answered_by` value (`confirmedProvenance`), every key
+   * present. A different question from `attested` above, which is why both are here: `attested`
+   * asks only about `scenario.tested` because that is what the verdict turns on, while this asks
+   * who answered EVERY kind — and reading the first as if it were the second is how the fleet
+   * scorecard credited agent-answered permission and operation claims to a test runner.
+   */
+  answered: Record<AnsweredBy, number>;
 }
 
 /**
@@ -121,6 +149,7 @@ export async function featureVerification(
     confirmed: tally.confirmed,
     claims: tally.claims,
     attested: tally.attested,
+    answered: confirmedProvenance(v.claims),
   };
 }
 

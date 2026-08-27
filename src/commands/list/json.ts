@@ -7,7 +7,31 @@ import { type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { servicesUnder } from "../../core/repo/tree/find.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
+import type { OwnersJoin } from "./campaign/owners.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
+
+/**
+ * The `services[]` rows: ranked and decorated under `--review-order`, plain
+ * otherwise — as a VARIANT, so a call carrying both a plain list and a ranked
+ * queue is unrepresentable rather than resolved by precedence. `fanIn`/
+ * `reviewRank` are ADDITIVE and appear ONLY under the flag — bare
+ * `loam list --json` and `--needs-work --json` stay byte-identical and
+ * cost-identical, the frozen-default doctrine the explicit-only capabilities
+ * section also follows. The spread keeps serviceJson at its two-param
+ * contract; `reviewRank` is 1-based and equals the row's position, so the
+ * array order IS the queue.
+ */
+export function serviceRows(
+  docsDir: string,
+  rows: ServiceView[] | { queue: ServiceView[]; fanIn: ReadonlyMap<string, number> },
+): Record<string, unknown>[] {
+  if (Array.isArray(rows)) return rows.map((v) => serviceJson(docsDir, v));
+  return rows.queue.map((v, i) => ({
+    ...serviceJson(docsDir, v),
+    fanIn: rows.fanIn.get(v.entry.id) ?? 0,
+    reviewRank: i + 1,
+  }));
+}
 
 export function serviceJson(docsDir: string, v: ServiceView): Record<string, unknown> {
   const s = v.entry;
@@ -28,6 +52,12 @@ export function serviceJson(docsDir: string, v: ServiceView): Record<string, unk
     // worklist has to be able to tell "checked and fine" from "not checkable
     // from here", and absence reads as the first one.
     ...(v.unverifiableFromHere ? { provenance: "unverifiable-from-here" } : {}),
+    // Additive, and only when there IS a scope — omission is the fine case
+    // here, exactly as it is for `provenance` above, and `maturity` stays the
+    // frozen `vouched` beside it. A dashboard counting `maturity: "vouched"`
+    // rows keeps counting them; one that cares whether a person read the
+    // document subtracts these.
+    ...(s.vouchScope === "sampled" ? { vouchScope: "sampled" } : {}),
   };
 }
 
@@ -46,6 +76,30 @@ export function subsystemsJson(docsDir: string, tree: FleetTree): Record<string,
       title: sub.meta.title ?? null,
       memberCount: servicesUnder(tree, sub).length,
     }));
+}
+
+/**
+ * The additive `owners` payload key under `--owners` — the join result as a
+ * contract: `path` (the file exactly as the user named it), `teams[]` (owner
+ * plus that team's services, in the LISTING's own filtered-and-ordered row
+ * order, so each array is that team's campaign worklist), `unowned[]` (rows
+ * no rule matched — explicit, because absence would read as owned-somewhere),
+ * and `skippedRules[]` (recognised rules outside the implemented CODEOWNERS
+ * subset, each with its line — reported, never guessed at). Key spellings
+ * frozen once shipped; the join itself lives in campaign/owners.ts.
+ *
+ * The service arrays carry IDS. On a `subsystem.name-collision` fleet —
+ * already an error finding — two rows can share an id, so a consumer cannot
+ * tell them apart here; if that ever needs disambiguating, the fix is a new
+ * ADDITIVE key carrying paths, never a change to these.
+ */
+export function ownersJson(join: OwnersJoin): Record<string, unknown> {
+  return {
+    path: join.path,
+    teams: join.teams.map((team) => ({ owner: team.owner, services: team.services.map((row) => row.id) })),
+    unowned: join.unowned.map((row) => row.id),
+    skippedRules: join.skipped.map((rule) => ({ line: rule.line, pattern: rule.pattern })),
+  };
 }
 
 /**

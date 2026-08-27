@@ -90,8 +90,10 @@ model {
 }
 
 // Views are LikeC4's, not loam's: loam parses this file and computes no view,
-// so nothing below is read by any check. Keep it for the renderer, which does
-// draw it — 'npx likec4 start services/<id>' from the docs repo, pointed at THIS
+// and it never reads a STATIC view's contents in any document, so nothing below
+// is read by any check (docs/DESIGN.md rule 26 — the one thing loam does read is
+// a dynamic view's declared steps, and only in the fleet landscape).
+// Keep it for the renderer, which does draw it — 'npx likec4 start services/<id>' from the docs repo, pointed at THIS
 // directory. Not the repo root: every service model declares its own
 // 'specification' block, so the root is scoped to architecture/ (likec4.config.json)
 // and one model at a time is how these files are meant to be read.

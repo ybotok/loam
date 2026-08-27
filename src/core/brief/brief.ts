@@ -149,7 +149,11 @@ const FRONTMATTER_BRIEF: FrontmatterBrief = {
     sources:
       "the paths in THIS SERVICE'S repository you actually read to write the document — files and directories only, a directory covering everything beneath it; glob patterns are refused. Not the paths a reader would expect to have been read. This is NOT a reading list for a human: nobody follows these, and nothing about the document asks them to.",
   },
-  never: ["last_verified", "sources_digest", "content_digest", "sources_files"],
+  // `vouch_scope` is in this list for a sharper reason than its siblings: the
+  // others are stamps an agent could only forge, while this one is a stamp an
+  // agent could DELETE — and deleting it turns a vouch that read four sections
+  // into one that read the document, on every surface at once.
+  never: ["last_verified", "sources_digest", "content_digest", "sources_files", "vouch_scope"],
   why:
     "`sources` is digest input, not a citation. It is the only mechanical tie between this document and the code — everything else loam checks is internal consistency, and a corpus can agree with itself perfectly while describing nothing that exists. `loam validate`, run inside the service's repo, checks every listed path is still there; `loam vouch` hashes their CONTENT so that a later `validate` can say the code has moved since anyone read it. That hash is the entire point, and it is why padding the list costs something real rather than merely being untidy: a path nobody read still gets hashed, so its next change reports as drift in a document it never described, and a path that WAS read and went unlisted moves under the document in silence. Neither failure is visible to a reader; both are decided by whether this list is honest.",
 };
@@ -220,7 +224,7 @@ export async function serviceBrief(
   // very first service of a brand-new docs repo.
   if (landscape.modelled !== true) {
     targets.push({
-      ...landscapeArtifact(service, landscape.expects, landscape.present),
+      ...landscapeArtifact(service, landscape.expects, landscape.present, rel(paths.dir)),
       path: rel(landscapePath(docsDir)),
       exists: landscape.present,
       action: landscape.present ? "edit" : "create",

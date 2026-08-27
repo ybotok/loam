@@ -27,6 +27,7 @@ import type { Finding } from "../vocabulary/report.js";
 import { featurePaths, SPEC_AXES } from "../repo/paths.js";
 import type { FleetContext } from "../fleet-context.js";
 import { locateServicePaths } from "../repo/service-target.js";
+import { readVouchScope } from "./sample/scope.js";
 import { sourceFindings } from "./sources.js";
 import { contentDigest } from "./stamp.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
@@ -77,6 +78,7 @@ export async function serviceProvenance(
     if (fm.present && !fm.malformed) {
       findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
       findings.push(...contentFindings(fm, raw, service, label));
+      findings.push(...scopeFindings(fm, service, label));
     }
   }
   return findings;
@@ -195,7 +197,54 @@ function contentFindings(fm: Frontmatter, raw: string, service: string, label: s
       // holds of the new words.
       severity: "warn",
       code: "content.stale",
-      message: `${label} changed since ${since} — the doc moved under its vouch, and only a person can say whether 'verified' still holds. Re-read it and \`loam vouch --service ${service}\`.`,
+      message: `${label} changed since ${since} — the doc moved under its vouch, and only a person can say whether 'verified' still holds. Run \`loam vouch --pack --service ${service}\` for what to re-read, then \`loam vouch --service ${service}\`.`,
+    },
+  ];
+}
+
+/**
+ * The other half of what a stamp can hide: a `verified` document that a person
+ * read only a SAMPLE of.
+ *
+ * `loam vouch --sample <n>` deliberately trades assurance for a vouch that
+ * actually happens, and the trade is only sound while the reduction stays
+ * visible. `status: verified` cannot carry it — that string is a published
+ * contract and the maturity rung `vouched` is derived from it — so the scope
+ * rides beside it in `vouch_scope`, and this is the check that makes a fleet
+ * able to see it: one warning per sampled spec file, with the k/n, the seed
+ * to recompute the sample from, and the one action that clears it.
+ *
+ * A WARNING, following the `sources.stale` / `content.stale` doctrine: the
+ * document is not wrong, it is incompletely read, and only a person can close
+ * that. Warnings never gate, which is exactly what a fleet adopting sampling
+ * as policy needs — and a fleet that wants to gate on it branches on the code
+ * in its own CI, which is what stable codes are for.
+ *
+ * Doc-side, like `content.stale`: it needs no service repo, so it fires from
+ * the docs repo under `--service` and `--all` alike. A scope that does not
+ * decode still fires, saying so — `isSampled` asks about PRESENCE, because a
+ * mangled field must never be the way a partial read is promoted to a full
+ * one.
+ */
+function scopeFindings(fm: Frontmatter, service: string, label: string): Finding[] {
+  if (stringField(fm, "status") !== "verified") return [];
+  const stamp = readVouchScope(fm);
+  if (stamp.kind === "none") return [];
+  const when = stringField(fm, "last_verified");
+  const said =
+    stamp.kind === "unreadable"
+      ? `carries a vouch_scope that does not decode (${stamp.text === null ? "its value is not text at all" : `\`${stamp.text}\``}), so it is graded as sampled — an unreadable scope must never read as a full vouch`
+      : `was vouched from a sample: ${stamp.scope.sections} of ${stamp.scope.of} section(s) were read${when === undefined ? "" : ` on ${when}`}, ` +
+        `chosen by seed ${stamp.scope.seed} — the other ${stamp.scope.of - stamp.scope.sections} were read by nobody`;
+  return [
+    {
+      severity: "warn",
+      code: "sources.sampled-vouch",
+      subject: service,
+      message:
+        `${label} ${said}. \`status: verified\` stands over the whole document either way. Only a person can clear ` +
+        `it, by reading the rest and running a full \`loam vouch --service ${service}\` (no --sample); ` +
+        `\`loam vouch --pack --service ${service}\` lists what that sample left unread.`,
     },
   ];
 }

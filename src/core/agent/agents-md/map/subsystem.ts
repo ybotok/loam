@@ -25,6 +25,7 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   \`unfiledServices\`); \`history <name>\` asks git how a service or subsystem
   moved and answers nothing — exit 0, no finding — when git will not say;
   \`sync\` regenerates \`architecture/subsystems.likec4\`, the one repair for
-  \`subsystem.views-stale\`. \`loam adopt --subsystem <name>\` briefs a new
+  \`subsystem.views-stale\`; a landscape view claiming a generated id is
+  \`subsystem.view-id-collision\`. \`loam adopt --subsystem <name>\` briefs a new
   service's baseline directly into a group, so adoption need not land unfiled.
 `;

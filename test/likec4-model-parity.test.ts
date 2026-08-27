@@ -3,8 +3,12 @@
  * src/core/c4/likec4.ts reads.
  *
  * `loadSource` used to call `computedModel()`, which computes every VIEW in the
- * document — work loam throws away, because it renders nothing (brief/unchecked.ts's
- * UNCHECKED says so in as many words). The cost is superlinear in the number of RELATIONSHIPS,
+ * document — work loam throws away: it renders nothing, and rule 26 confines its
+ * view reading to the PARSED stage's declarations. That is also why this file's
+ * parity claim covers elements and relationships only: the two stages are not
+ * claimed to agree about views, and never need to.
+ *
+ * The cost is superlinear in the number of RELATIONSHIPS,
  * so a landscape at fleet shape (120 services, a few hundred calls) turned
  * `loam list` into minutes. It now calls `parsedModel()`.
  *
@@ -23,7 +27,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { LikeC4 } from "likec4";
-import { flattenModel, loadSource, serviceOf, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { flattenModel, loadSource, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { serviceOf } from "../src/core/c4/resolve/service.js";
+import { readSpecification } from "../src/core/c4/parsed/specification.js";
 
 /**
  * Everything loam's adapter reads, in one document: nested/dotted container
@@ -116,9 +122,23 @@ async function bothStages(src: string): Promise<{ parsed: LoadedDoc; computed: L
   const likec4 = await LikeC4.fromSource(src, { logger: false });
   try {
     expect(likec4.getErrors() ?? []).toEqual([]);
+    // The specification rides along with each stage, and is compared by the same
+    // total equality as the elements: loam reads kind tags off it to tell an
+    // inherited `#external` from an authored one, and the cheap stage is only a
+    // safe substitute for the expensive one if it carries that too.
+    const parsedModel = await likec4.parsedModel();
+    const computedModel = await likec4.computedModel();
     return {
-      parsed: { errors: [], ...flattenModel(await likec4.parsedModel()) },
-      computed: { errors: [], ...flattenModel(await likec4.computedModel()) },
+      parsed: {
+        errors: [],
+        specification: readSpecification(parsedModel.specification),
+        ...flattenModel(parsedModel),
+      },
+      computed: {
+        errors: [],
+        specification: readSpecification(computedModel.specification),
+        ...flattenModel(computedModel),
+      },
     };
   } finally {
     await likec4.dispose();
@@ -234,7 +254,33 @@ describe("parsedModel and computedModel agree on everything loam reads", () => {
     const { parsed } = await rich();
     const doc = await loadSource(RICH);
     expect(doc.errors).toEqual([]);
-    expect(doc).toEqual(parsed);
+    // Everything this file's parity claim covers, compared whole.
+    const { views, viewIds, ...parity } = doc;
+    expect(parity).toEqual(parsed);
+    // `views` is loadSource's own addition and is DELIBERATELY outside the
+    // claim: the two stages are not asserted to agree about views and never
+    // need to, because docs/DESIGN.md rule 26 permits reading them from the
+    // parsed stage only. It is destructured out rather than ignored so that a
+    // future field cannot join the payload without this test noticing — and it
+    // is asserted here, because a loader that quietly stopped reading views
+    // would otherwise leave every use-case check answering about nothing.
+    expect(views).toEqual([]);
+    // RICH declares no `views` block at all, so the census is empty — and
+    // empty is the point: LikeC4 synthesizes an `index` view into every
+    // document, and a census that reported it would claim an id nobody wrote.
+    expect(viewIds).toEqual([]);
+  });
+
+  it("loadSource carries a declared dynamic view, which is the one thing the two stages do not share", async () => {
+    const doc = await loadSource(`${RICH}
+views {
+  dynamic view uc {
+    checkoutWeb -> paymentService 'pays'
+  }
+}
+`);
+    expect(doc.errors).toEqual([]);
+    expect(doc.views?.map((v) => v.id)).toEqual(["uc"]);
   });
 
   /**

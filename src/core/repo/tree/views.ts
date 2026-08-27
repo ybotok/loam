@@ -7,8 +7,10 @@
  * (`subsystem.views-stale` in `validate --all`), never a parse: a spike
  * confirmed a views-only document does NOT parse standalone (its `include`
  * lines reference elements the landscape defines), so nothing in loam ever
- * loads this file — only the LikeC4 renderer, which merges the whole
- * `architecture/` project per likec4.config.json, resolves it.
+ * loads this file (and rule 26 does not change that: this file is GENERATED and
+ * holds STATIC views, whose contents loam may not read in any document) — only
+ * the LikeC4 renderer, which merges the whole `architecture/` project per
+ * likec4.config.json, resolves it.
  *
  * The output is deterministic and line-oriented, and both halves are the
  * contract: subsystems sorted by path, members sorted by id, ONE `include`
@@ -38,7 +40,8 @@
  * the committed landscape resolves keeps the output a function of committed
  * bytes alone.
  */
-import { serviceResolver, type Elem } from "../../c4/likec4.js";
+import { type Elem } from "../../c4/likec4.js";
+import { serviceResolver } from "../../c4/resolve/service.js";
 import { servicesUnder } from "./find.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "./walk.js";
 
@@ -65,7 +68,7 @@ export function renderSubsystemViews(tree: FleetTree, elements: Elem[]): string 
   for (const [i, sub] of subsystems.entries()) {
     if (i > 0) lines.push("");
     lines.push(`  // services/${pathKey(sub)}`);
-    lines.push(`  view ${viewName(sub)} {`);
+    lines.push(`  view ${subsystemViewId(sub)} {`);
     for (const member of membersOf(tree, sub)) {
       const element = elementOf.get(member.id);
       if (element !== undefined) lines.push(`    include ${element}`);
@@ -127,8 +130,15 @@ function pathKey(sub: SubsystemEntry): string {
  * `subsystem.name-invalid` already flagged may hold a code point above 0xff
  * whose longer hex could in principle re-collide; it is deterministic still,
  * and that directory is already an error finding by name.
+ *
+ * EXPORTED, with its prefix, because `subsystem.view-id-collision` has to ask
+ * the generator what it mints rather than re-deriving it. A check carrying its
+ * own copy of the escaping above would go quiet the day the encoding changed,
+ * and going quiet is the failure this whole family exists to prevent.
  */
-function viewName(sub: SubsystemEntry): string {
+export const SUBSYSTEM_VIEW_PREFIX = "subsystem_";
+
+export function subsystemViewId(sub: SubsystemEntry): string {
   const segment = (name: string): string =>
     [...name].map((ch) => (/[A-Za-z0-9]/.test(ch) ? ch : `_${ch.codePointAt(0)!.toString(16).padStart(2, "0")}`)).join("");
   return `subsystem_${sub.path.map(segment).join("__")}`;

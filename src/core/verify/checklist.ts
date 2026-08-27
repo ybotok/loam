@@ -23,11 +23,12 @@
  * claim. A second spelling of the hash would silently stop every scenario
  * claim from being answerable by a run.
  */
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
-import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
+import { type Elem } from "../c4/likec4.js";
+import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { ACTOR_KINDS } from "../vocabulary/maturity.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
@@ -37,15 +38,16 @@ import { FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
 import { scenarioBodyHash } from "../gherkin/digest.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
-
-/**
- * What a claim is about. The order is the order the checklist comes back in,
- * and it reads as the story of the feature: the service exists, it exposes its
- * operations, it declares its messages, the calls into it are wired, the
- * behaviour is tested.
- */
-export const CLAIM_KINDS = ["service.exists", "api.exposes", "event.declares", "c4.calls", "scenario.tested"] as const;
-export type ClaimKind = (typeof CLAIM_KINDS)[number];
+// The kind vocabulary and both hash recipes live in ./claims/identity.ts —
+// one module for everything that decides whether two runs ask the same
+// question, and this one for how the questions are derived.
+import {
+  checklistDigest,
+  claimId,
+  DIGEST_LENGTH,
+  ID_LENGTH,
+  type ClaimKind,
+} from "./claims/identity.js";
 
 export interface Claim {
   /** `<kind>-<8 hex>` — stable for the life of the claim. See `claimId`. */
@@ -62,6 +64,24 @@ export interface Claim {
    * what `--results` matches on. Absent on every other kind.
    */
   digest?: string;
+  /**
+   * `api.exposes` only: the operationId the claim asserts, structurally — the
+   * join key `--contract-results` matches a contract report's entries on,
+   * exactly as `digest` is `--results`'s. Never parsed back out of the claim
+   * text, which is prose and may be reworded. Absent on every other kind.
+   */
+  operation?: string;
+  /**
+   * The literal string the claim asserts of the cited artifact — the
+   * operationId for `api.exposes`, the message name for `event.declares`, the
+   * edge's op for `c4.calls` — carried structurally so evidence pins
+   * (`./pins/pin.ts`) can stamp it at record time and the read side never
+   * parses it back out of claim prose. A separate field from `operation` on
+   * purpose: `contestedOperations` filters on `operation !== undefined` and
+   * must not start seeing `c4.calls` claims. Absent where a claim asserts no
+   * literal (`service.exists`, `scenario.tested`).
+   */
+  token?: string;
 }
 
 export interface Checklist {
@@ -70,18 +90,6 @@ export interface Checklist {
   /** A digest of the claim id SET — what says a record still answers this feature. */
   digest: string;
 }
-
-/**
- * How much of the sha256 goes into an id, and into a digest — the checklist's,
- * and a scenario claim's runner-matching one, which is deliberately the same
- * 16 hex `loam gherkin` stamps (its GHERKIN_DIGEST_LENGTH): the tag in a
- * cucumber report and the digest on a claim must be the same string.
- */
-const ID_LENGTH = 8;
-const DIGEST_LENGTH = 16;
-
-/** C4 kinds that model people. A person is never a service. (Mirrors validate.ts.) */
-const ACTOR_KINDS = new Set(["person", "actor", "user"]);
 
 /**
  * Derive the checklist from a feature's own artifacts. No code is read here and
@@ -114,12 +122,16 @@ export async function featureChecklist(
   const calls: Claim[] = [];
   const scenarios: Claim[] = [];
 
-  const specServices = await featureSpecServices(featureDir);
+  const specServices = await featureSpecServices(featureDir, ctx);
 
-  // Architecture — what the delta promised the fleet would look like.
+  // Architecture — what the delta promised the fleet would look like. Loaded
+  // through the context rather than a bare parse, so a caller that derives
+  // several checklists in one invocation (`loam gate`'s verification check,
+  // the fleet forms) shares one parse per delta — and a batch prefetch
+  // (`FleetContext.prefetchLikeC4`) genuinely seeds this load.
   const deltaPath = featurePaths(featureDir).delta;
   if (existsSync(deltaPath)) {
-    const res = await loadFile(deltaPath);
+    const res = await ctx.loadLikeC4(deltaPath);
     // A delta nobody can parse promises nothing checkable. `validate` already
     // reports it; inventing claims out of a broken document would only add noise.
     if (res.errors.length === 0) {
@@ -150,9 +162,12 @@ export async function featureChecklist(
         if (!r.tags.includes(featureId) || r.op === undefined) continue;
         const from = svcOf(r.source);
         const to = svcOf(r.target);
-        calls.push(
-          claim("c4.calls", from, [from, to, r.op], `${from} calls '${r.op}' on ${to}`),
-        );
+        calls.push({
+          ...claim("c4.calls", from, [from, to, r.op], `${from} calls '${r.op}' on ${to}`),
+          // The same string as the provider's api.exposes token, scanned in the
+          // CALLER's cited file — a call site plausibly spells the operationId.
+          token: r.op,
+        });
       }
     }
   }
@@ -170,9 +185,11 @@ export async function featureChecklist(
       const living = new Set(await operationIds((await locateServicePaths(docsDir, svc, ctx)).openapi));
       for (const op of featOps) {
         if (living.has(op)) continue;
-        exposes.push(
-          claim("api.exposes", svc, [svc, op], `${svc} exposes operationId '${op}'`),
-        );
+        exposes.push({
+          ...claim("api.exposes", svc, [svc, op], `${svc} exposes operationId '${op}'`),
+          operation: op,
+          token: op,
+        });
       }
     }
 
@@ -192,14 +209,15 @@ export async function featureChecklist(
       for (const d of directions) {
         for (const name of d.feat) {
           if (d.known.has(name)) continue;
-          declares.push(
-            claim(
+          declares.push({
+            ...claim(
               "event.declares",
               svc,
               [svc, d.direction, name],
               `${svc} declares it ${d.direction} message '${name}'`,
             ),
-          );
+            token: name,
+          });
         }
       }
     }
@@ -253,44 +271,5 @@ export async function featureChecklist(
   }
 
   const claims = [...exists, ...exposes, ...declares, ...calls, ...scenarios];
-  return { feature: featureId, claims, digest: checklistDigest(claims) };
+  return { feature: featureId, claims, digest: checklistDigest(claims.map((c) => c.id)) };
 }
-
-/**
- * A claim's identity: a hash of what it says, and nothing about how it was
- * produced.
- *
- * The feature id is part of it so an answers file for one feature can never
- * validate against another. Two claims that really are identical (the same
- * scenario name twice under one requirement) are distinguished by occurrence, in
- * document order — they are still two questions, and answering one must not
- * answer the other.
- *
- * The hash is short because the claim text sits next to it everywhere it is
- * shown; it identifies a question, it does not authenticate one.
- */
-function claimId(
-  featureId: string,
-  kind: ClaimKind,
-  parts: string[],
-  seen: Map<string, number>,
-): string {
-  // NUL-joined so no claim's own text can spell another claim's tuple by
-  // containing the separator: ['a b','c'] and ['a','b c'] stay two questions.
-  const tuple = [featureId, kind, ...parts].join("\u0000");
-  const n = (seen.get(tuple) ?? 0) + 1;
-  seen.set(tuple, n);
-  const canonical = n === 1 ? tuple : `${tuple}\u0000#${n}`;
-  return `${kind}-${createHash("sha256").update(canonical).digest("hex").slice(0, ID_LENGTH)}`;
-}
-
-/**
- * A digest of the claim id SET — sorted, so reordering the artifacts does not
- * make a record look stale. It changes when a claim is added, removed or
- * reworded, which is exactly when an answer set stops describing the feature.
- */
-function checklistDigest(claims: Claim[]): string {
-  const ids = claims.map((c) => c.id).sort();
-  return createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, DIGEST_LENGTH);
-}
-

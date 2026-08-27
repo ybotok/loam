@@ -5,12 +5,12 @@
  * could check, and says which sources it skipped — a vouch over a spec whose
  * sources could not be read would be the claim this command exists to prevent.
  */
-import { listField, parseFrontmatter } from "../../core/document/frontmatter.js";
-import { missingSources, patternSources, unsafeSources } from "../../core/provenance/sources.js";
-import { emptySourcesMessage, sourcesDigest, type SourceIndexEntry } from "../../core/provenance/stamp.js";
-import type { SkippedSource } from "../../core/provenance/walk.js";
-import { NotUtf8Error, readUtf8 } from "../../core/staging/writes.js";
-import { type VouchOutcome, type VouchRequest } from "./contract.js";
+import { listField, parseFrontmatter } from "../../../core/document/frontmatter.js";
+import type { PathableService } from "../../../core/kernel/ids/service.js";
+import { missingSources, patternSources, unsafeSources } from "../../../core/provenance/sources.js";
+import { emptySourcesMessage, sourcesDigest, type SourceIndexEntry } from "../../../core/provenance/stamp.js";
+import type { SkippedSource } from "../../../core/provenance/walk.js";
+import { NotUtf8Error, readUtf8 } from "../../../core/staging/writes.js";
 
 export interface VerifiedSpec {
   ok: true;
@@ -26,14 +26,54 @@ export interface VerifiedSpec {
 }
 
 /**
+ * The two facts the vetting reads — not the whole VouchRequest, because the
+ * reading pack (`../pack/pack.ts`) asks the same questions with no date or
+ * identity to offer: a pack stamps nothing.
+ */
+export interface SpecVetting {
+  service: PathableService;
+  repoDir: string;
+}
+
+/**
+ * The refusal half, spelled here rather than imported from `../contract.ts`:
+ * this module is a LEAF two sibling consumers share — `run.ts` (the stamp) and
+ * `pack/pack.ts` (the worklist) — which is why it lives in its own package,
+ * and an import from the vouch package above it would close the exact
+ * package-graph cycle the move exists to avoid. The codes are a subset of
+ * VouchOutcome's refusal codes, so run.ts returns one of these unchanged.
+ */
+export interface SpecRefusal {
+  ok: false;
+  code: "sources-absent" | "sources-path-missing" | "repository-unavailable";
+  message: string;
+}
+
+/**
+ * "There is no living spec here", in one sentence.
+ *
+ * Three callers reach this state independently — the stamp (`../run.ts`), the
+ * reading list (`../sample/plan.ts`) and the reading pack (`../pack/pack.ts`)
+ * — and two of them carried a comment promising to keep the wording identical
+ * to the third, which is a promise nothing could enforce. It lives in the leaf
+ * all three already import, because the failure this repo has actually shipped
+ * is four copies of an enumeration `catch` that looked identical for years
+ * while a fix landed in one of them: a `--sample` run refusing a missing spec
+ * with older advice than a bare run gives is the same defect, one flag wide.
+ */
+export function noLivingSpecMessage(specPath: string, service: string): string {
+  return `No living spec at ${specPath}. Run \`loam adopt\` for '${service}' first.`;
+}
+
+/**
  * The per-file half of the refusal discipline: everything vouch cannot verify
  * about ONE spec file, checked the same way for spec.md and arch.spec.md.
  */
 export async function verifySpec(
-  req: VouchRequest,
+  req: SpecVetting,
   path: string,
   file: string,
-): Promise<VerifiedSpec | Extract<VouchOutcome, { ok: false }>> {
+): Promise<VerifiedSpec | SpecRefusal> {
   // Through readUtf8, so the round trip below is exact: the stamp is computed
   // from `raw` and the race check compares `Buffer.from(raw)` against the bytes
   // on disk, which only agree if the file decoded without substitutions. A

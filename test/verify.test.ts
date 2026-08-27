@@ -1,5 +1,5 @@
 /**
- * Tests for `loam verify` (src/commands/verify.ts, src/core/verify.ts) — the
+ * Tests for `loam verify` (src/commands/verify/, src/core/verify/) — the
  * done-check.
  *
  * The original design was to extract C4 from the built code and assert it equals
@@ -834,7 +834,9 @@ describe("composing --results with --record", () => {
     expect(res.code).toBe(1);
     const json = JSON.parse(res.stdout);
     expect(json.error.code).toBe("answers-mismatch");
-    expect(json.error.message).toContain("runner owns");
+    // The prose generalized when --contract-results arrived — what the pin
+    // holds is that OWNERSHIP is named as the diagnosis, not the exact wording.
+    expect(json.error.message).toContain("owns under --results");
     const scenarioId = (await claims(p)).find((c) => c.kind === "scenario.tested")!.id;
     expect(json.error.message).toContain(scenarioId);
   });
@@ -913,6 +915,79 @@ describe("reading the verification back", () => {
     expect(res.code).toBe(0);
     expect(res.out).toContain("Split across two payees");
     expect(res.out).toContain("--record");
+  });
+});
+
+describe("a record that leaves claims open says so — verify.claims-open", () => {
+  // The counts were always on the surface (`summary` on both views), but no
+  // notice line said "this is not a clean result" — a reader skimming the ⚠
+  // lines of a half-answered record saw nothing at all.
+  it("a federated record answering one service's claims carries the notice on the read view", async () => {
+    const p = await project();
+    const repo = await serviceRepo(p, SPLIT, "primary");
+    const partial = await recordService(repo, SPLIT);
+    expect(partial.result.code, partial.result.out).toBe(0);
+
+    const c = await checklist(p);
+    expect(c.summary.unanswered).toBe(1);
+    const notice = (c.notices as { code: string; severity: string; message: string }[]).find(
+      (n) => n.code === "verify.claims-open",
+    )!;
+    expect(notice.severity).toBe("warn");
+    expect(notice.message).toContain("not a clean result: of 4 claim(s)");
+    expect(notice.message).toContain("1 unanswered");
+
+    const text = await runLoam(p.workDir, "verify", FEAT);
+    expect(text.out).toContain("⚠ verify.claims-open: not a clean result");
+  });
+
+  it("a fully confirmed runner-answered record carries no notice — clean is clean", async () => {
+    const p = await project(scenarioOnlyFixture());
+    const report = await writeReport(p, [
+      { digest: digestOf(SCENARIOS_ONLY) },
+      { digest: digestOf(SCENARIOS_ONLY, { sc: 1 }), name: "Reject a split that does not sum" },
+    ]);
+    expect((await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json")).code).toBe(0);
+    const c = await checklist(p);
+    expect(c.verified).toBe(true);
+    expect(c.notices).toBeUndefined();
+  });
+
+  it("an attested-complete record keeps scenario-attested as the only honesty line", async () => {
+    // All confirmed, one on an agent's word: the counts are closed, so the
+    // open-claims line would be a second notice about the one fact
+    // scenario-attested already owns.
+    const p = await project();
+    await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p));
+    const c = await checklist(p);
+    expect(c.verdict).toBe("attested");
+    const codes = (c.notices as { code: string }[]).map((n) => n.code);
+    expect(codes).toContain("verify.scenario-attested");
+    expect(codes).not.toContain("verify.claims-open");
+  });
+
+  it("a feature with no record does not carry it — not-started is not partial", async () => {
+    const p = await project();
+    const c = await checklist(p);
+    expect(c.recorded).toBe(null);
+    expect(c.notices).toBeUndefined();
+  });
+
+  it("the notice survives the archive — the frozen view recounts and says it too", async () => {
+    const p = await project();
+    const cs = await claims(p);
+    const file = await writeAnswers(p, [
+      ...cs.slice(0, 3).map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["a.ts:1"] })),
+      { id: cs[3]!.id, verdict: "unconfirmed", note: "not built" },
+    ]);
+    expect((await runLoam(p.workDir, "verify", FEAT, "--record", file)).code).toBe(0);
+    expect((await runLoam(p.workDir, "archive", FEAT)).code).toBe(0);
+
+    const c = await checklist(p);
+    expect(c.frozen).toBe(true);
+    expect((c.notices as { code: string }[]).map((n) => n.code)).toContain("verify.claims-open");
+    const text = await runLoam(p.workDir, "verify", FEAT);
+    expect(text.out).toContain("⚠ verify.claims-open: not a clean result");
   });
 });
 

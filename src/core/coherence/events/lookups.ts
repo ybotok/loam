@@ -18,7 +18,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, serviceResolver, type LoadedDoc } from "../../c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../c4/likec4.js";
+import { serviceResolver } from "../../c4/resolve/service.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import { featureSpecPaths, landscapePath, SPEC_AXES } from "../../repo/paths.js";
 import { enumeratedServiceIds, locateServicePaths } from "../../repo/service-target.js";
@@ -87,6 +88,9 @@ export function eventLookups(scope: EventScope, context?: FleetContext): EventLo
   // edge naming the message counts, whoever its producer is — resolved
   // through the enumerated fleet so a landscape that models CONTAINERS
   // stays visible, ../lookups.ts's edgeConsumers lesson.
+  // (`core/diff/victims.ts` mirrors this scan over an already-read fleet —
+  // change the rules or the victim strings here and that module owes the
+  // same change; a third copy forces the shared extraction, rule 13.)
   let livingLandscape: LoadedDoc | null | undefined;
   const messageConsumers = async (service: string, message: string): Promise<string[]> => {
     if (livingLandscape === undefined) {

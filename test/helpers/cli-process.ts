@@ -50,7 +50,7 @@ export function trackChild(child: ChildProcess): void {
 export function spawnProcess(
   bin: string,
   args: string[],
-  opts?: { cwd?: string; timeoutMs?: number },
+  opts?: { cwd?: string; timeoutMs?: number; stdin?: string },
 ): Promise<SpawnedResult> {
   return new Promise((resolve) => {
     const child = execFile(
@@ -69,12 +69,37 @@ export function spawnProcess(
       },
     );
     live.add(child);
+    // Written whole and closed at once: the child sees its entire input and
+    // then EOF, so nothing here ever waits on a response before writing more —
+    // the discipline that keeps stdio-protocol tests free of interactive waits.
+    // (execFile's child exposes stdin like any spawn; the buffered-output
+    // convenience and the deadline discipline above are why it stays.)
+    if (opts?.stdin !== undefined) {
+      // Swallowed: a child SIGKILLed by the deadline can close its pipe before
+      // this write flushes, and the EPIPE would otherwise crash the fork as an
+      // unhandled stream error. The deadline verdict (code -1 above) is the
+      // failure report; the broken pipe adds nothing to it.
+      child.stdin?.on("error", () => {});
+      child.stdin?.write(opts.stdin);
+      child.stdin?.end();
+    }
   });
 }
 
 /** The real CLI in a real process: `tsx src/cli.ts <args>` in `cwd`. */
 export function spawnLoam(cwd: string, ...args: string[]): Promise<SpawnedResult> {
   return spawnProcess(tsxBin, [cliEntry, ...args], { cwd });
+}
+
+/**
+ * The real MCP server end to end: `tsx src/cli.ts mcp` in `cwd`, every request
+ * line fed up front, stdin closed immediately. The server answers each frame in
+ * order and exits on the EOF — so the child's lifetime is bounded by its input,
+ * not by any timing assumption, and the 60s deadline above only ever fires on a
+ * genuine wedge.
+ */
+export function spawnLoamStdio(cwd: string, requestLines: readonly string[]): Promise<SpawnedResult> {
+  return spawnProcess(tsxBin, [cliEntry, "mcp"], { cwd, stdin: requestLines.join("\n") + "\n" });
 }
 
 /**

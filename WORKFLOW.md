@@ -12,7 +12,7 @@ why that order.
 
 - [The two flows](#the-two-flows) · [The artifact graph](#the-artifact-graph) · [Derived, never stored](#derived-never-stored)
 - [Actions, not phases](#actions-not-phases) · [What actually gates](#what-actually-gates)
-- [The six workflows](#the-six-workflows) · [Driving it from an agent](#driving-it-from-an-agent)
+- [The six workflows](#the-six-workflows) · [The honestly-small change](#the-honestly-small-change) · [Driving it from an agent](#driving-it-from-an-agent)
 - [Presence is not trust](#presence-is-not-trust) · [Why there is no task list](#why-there-is-no-task-list)
 - [Picking the work back up](#picking-the-work-back-up)
 
@@ -109,6 +109,13 @@ The cost is honest: `status` re-reads and re-parses. On a 120-service fleet with
 flight that is about 1.3 seconds, most of it the per-feature C4 parse, and it is nearly flat in the
 size of the fleet. That is the price of never being wrong about what is on disk.
 
+The fleet scorecard follows the same rule at fleet scale. `loam validate --all --json` carries an
+additive `scorecard` key of ceiling-vs-actual pairs — operations defined → governed, messages
+defined → linked, the maturity rollup, verification verdicts, feature stages, per-axis adoption
+counts (an axis no service participates in reads "not started", expected mid-adoption) — recomputed
+from that run's own reads. loam keeps no history for it, so tracking the trend week over week is the
+pipeline's job: capture the key from each fleet-gate run into a metrics store and diff there.
+
 ## Actions, not phases
 
 There is no phase lock. Any action, any time — because real work does not proceed in one
@@ -137,9 +144,35 @@ opinions about risk, they are data loss, and an override for them is a footgun w
 content digests that make later staleness detectable, and no command promotes a service on its
 own. That is the whole trust chain's anchor.
 
+Re-vouching starts with `loam vouch --pack`: a read-only run that diffs the document's body from
+its last vouched ancestor in the docs repo's history, lists the source files that moved since the
+stamp, and names the sections a previous vouch already covers — so the person re-reads what
+changed instead of everything. An agent may prepare the pack; the vouch itself is unchanged,
+still a person's act, and `--pack` can never stamp (`--pack --yes` is refused).
+
 **`verify` does not gate `archive`,** deliberately. Coherence gates because loam *computed* it. A
 verdict is somebody's word about code loam never read, and a gate in front of shipping only
 teaches everyone that the cheapest way past it is to say yes.
+
+**`loam gate` does not add a third.** It is a pure query for DEPLOY pipelines outside loam's own
+lifecycle — Pact's can-i-deploy insight: the gate executes nothing and asks what evidence previous
+runs already recorded (the join partners' documentation state, staleness, the verification
+verdicts of the features touching the service, an interrupted docs commit). Its verdict is advice
+to a pipeline loam does not own — advisory by default, `--strict` the per-invocation CI lever —
+and it deliberately changes nothing about what gates the archive: verify still never gates the
+merge, and archive still reads no verification record.
+
+**`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
+`loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,
+requirements (by identity and content digest, so a rebase pin is not a change), operations,
+messages, and the cross-service joins between them — with the current consumers of every removal
+named, which is what a reviewer actually needs to know. `validate --all` remains the fleet gate;
+diff exits 1 on a removal the fleet still consumes (`diff.op-removed-consumed`,
+`diff.message-removed-consumed`) — and also whenever a document on either side could not be read,
+because a suspended axis is reported, never graded as "nothing changed" — so a PR job gets those
+checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI breaking-change catalogue, use
+oasdiff on the two states of one contract; the README's `loam diff` command note has the exact
+invocation, and loam deliberately does not reimplement those checks.
 
 Severity and gating are also two different questions. A coherence finding marked `gates` stops the
 archive even when it is only a warning; an error in `validate` fails the check without necessarily
@@ -190,6 +223,37 @@ are connected; it does not know whether this change touches them, and a suggesti
 included them would make the judgement on your behalf while looking derived. Weighing the ring is
 the work — this command just makes sure you are weighing all of it.
 
+### The honestly-small change
+
+Most changes are not cross-service features. A one-service, requirements-only change — a new
+refusal, a tightened invariant, behaviour behind an endpoint that already exists — walks the same
+graph with most of it not owed, and the tooling already says so. The whole loop:
+
+```bash
+loam new FEAT-214 --touches payment-service
+```
+
+Delete the scaffolded `delta.likec4` — `loam new` says so on the way out: a requirements-only
+feature is complete without it. Then author the two files that *are* the change: `intent.md`
+(why), and `specs/payment-service/spec.md` (the ADDED/MODIFIED requirements, each with its
+scenarios).
+
+Everything else is not owed, and `loam status` says which per row rather than leaving you to
+infer it: the `arch.spec.md` and `asyncapi.yaml` rows read `done` with `(not written — none
+owed)`, and so does `openapi.yaml` while the living contract already defines what the
+requirements govern — write an OpenAPI delta only when the change governs operations the living
+contract does not have. `next[]` collapses to three steps: `next.generate-tests` (emit the
+acceptance scenarios into the service's own repository), `next.verify` (answer the checklist,
+the suite answering the scenario claims), `next.archive` (merge the requirement into the living
+spec). A MODIFIED requirement still takes its `loam rebase` pin on the way — the one step size
+never waives, because the pin is what keeps two small changes from silently reverting each
+other.
+
+Small is a fact about the change, not a lighter process: the same gate grades it and the same
+merge ships it. What makes it honestly small is that every skipped artifact is skipped because
+nothing joins into it — status prints the proof beside each row — never because somebody decided
+the documentation could wait.
+
 ## Driving it from an agent
 
 Every command takes `--json`, and the contract is built so an agent never has to read prose:
@@ -203,6 +267,11 @@ Every command takes `--json`, and the contract is built so an agent never has to
   beside `verdict`, which carries the third state, `attested`.
 - **`loam status` takes the union** of what `validate --feature` errors on and what `archive`
   refuses to merge. It may be redder than either and is never greener than both.
+- **`loam context <service> --json` is the one-command briefing** an agent loads before working
+  in that service's repository: the living requirements verbatim, both contracts, the fleet edges
+  one hop out, the permission and capability joins, and every feature in flight over the service —
+  one deterministic payload, so two runs over the same state are byte-diffable. `--feature <FEAT>`
+  narrows the in-flight section to the feature being implemented.
 
 The loop is the same every time: `loam status --json`, read `next[0]`, run the command it names,
 repeat. When a command refuses, it refuses with a code and a sentence naming the fix — `loam
@@ -222,8 +291,10 @@ did — the second one only answerable inside that service's own repository.
 
 The same distinction runs the done-check. `loam verify` derives the claims; a `scenario.tested`
 claim is confirmed **mechanically in the record** when a digest-matched green Cucumber report
-answers it. That proves which passing report bytes loam accepted; it does not prove the report was
-produced by executing the attested commit. An agent
+answers it, and an `api.exposes` claim when an API contract-test report names its operationId
+green (`--contract-results`, recorded as `answered_by: external-runner` with the consumed report
+pinned beside the cucumber one). That proves which passing report bytes loam accepted; it does not
+prove the report was produced by executing the attested commit. An agent
 may confirm one too — a legacy service with no runnable suite has to be able to record its answers
 — but the record then reads **`verdict: "attested"`**, not `verified`, and says so on every
 surface. `verified: true` in the envelope means every scenario claim came from a test run.

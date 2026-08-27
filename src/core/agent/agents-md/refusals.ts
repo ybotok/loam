@@ -1,8 +1,9 @@
 /**
- * What loam REFUSES, and how a shipped change is gated, undone or dropped:
- * the OpenSpec migration surface, the containment and unreadable-file
- * findings, the error-envelope codes, the archive gate, unarchive, and
- * dropping a feature.
+ * What loam REFUSES: the OpenSpec migration surface, the containment and
+ * unreadable-file findings, and the error-envelope codes. What happens to a
+ * SHIPPED change — the archive gate, unarchive, and dropping a feature — is
+ * the continuation section in ./shipped/archive-gate.ts, split there because
+ * the two subjects had grown past one file's ceiling.
  *
  * One section of the AGENTS.md template. ../agents-md.ts assembles the
  * document by PLAIN CONCATENATION — no join separator — so every section
@@ -73,10 +74,25 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`frontmatter.field-mismatch\`,
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md —
   and its arch.spec.md, same conventions — additionally carries the sources chain
-  (\`sources.absent\`, \`sources.path-missing\`, \`sources.empty\`,
-  \`sources.skipped\`, \`sources.unvouched\`, \`sources.stale\`) and the doc-side freshness check
-  (\`content.stale\`) — the one provenance warning that needs no service repo, so
-  it is reported from the docs repo too, \`--service\` and \`--all\` alike.
+  (\`sources.absent\`, \`sources.path-missing\`, \`sources.empty\`, \`sources.skipped\`,
+  \`sources.unvouched\`, \`sources.stale\`) plus the two doc-side checks — \`content.stale\`
+  and \`sources.sampled-vouch\` (a person vouched after reading a recorded SAMPLE of the
+  document) — which need no service repo, so they fire from the docs repo too.
+- A service target run from the service's own repository also re-checks the
+  \`evidence_pins\` its federated verification records carry, against the working
+  tree: ok \`evidence.checked\` (every pin resolved clean) and \`evidence.unpinned\`
+  (a record from before pins existed), warn \`evidence.unresolved\` (the cited
+  file is gone, unsafe, not a regular file, or the cited line is past its end),
+  \`evidence.moved\` (the file changed, the cited line survives),
+  \`evidence.line-changed\` (the cited line no longer says what was recorded),
+  \`evidence.token-missing\` (the file contained the literal the claim asserts at
+  the attested commit and no longer does) and \`evidence.record-unreadable\` (a
+  verification.yaml that exists but cannot be read — none of its evidence was
+  checked, and silence there would read as clean). Demote-only, by doctrine: a
+  warn here is a reading priority for a reviewer, never a verdict change — no
+  pin state moves \`attested\` or \`verified\` in either direction. From the docs
+  repo the family is silent; \`sources.unverifiable-from-here\` already names
+  that blind spot.
 - \`loam archive\` alone reports the breaches only the merge computation can see:
   \`living.requirement-outside-requirements\` (error), \`openapi.op-modified\` (warn),
   \`openapi.path-item-modified\` (warn), \`openapi.component-modified\` (warn),
@@ -108,7 +124,38 @@ positional together with \`--all\`, \`--service\` or \`--feature\` is refused
 Two rendering levers change nothing else: \`loam validate --errors-only\` drops
 the confirmations from the TEXT view (the \`--json\` payload is byte-identical),
 and \`loam list --needs-work\` narrows the service list to the ones with
-something missing — the adoption worklist.
+something missing — the adoption worklist. \`loam list --needs-work --review-order\`
+orders that worklist by fan-in — the services the most other services depend on
+first: drawn call edges into each, plus event subscriptions (a drawn \`consumes\`
+edge, or a living \`Consumes:\` line naming a message it sends) — a count, never
+a priority judgement — and its \`--json\` rows then additionally carry \`fanIn\`
+and \`reviewRank\`; without \`--needs-work\` the flag is refused (\`invalid-option\`).
+
+Two campaign flags slice that same services section and change nothing about
+any row. \`loam list --subsystem <name>\` limits the listing to the services
+filed under one subsystem, at any depth: \`services[]\`, the \`maturity\` rollup
+and \`subsystems[]\` reflect the slice (\`unfiledServices\` is omitted — it is a
+fleet-root fact), while every per-row fact — \`fanIn\`, \`apiExpected\`,
+\`missing\` — is still computed fleet-wide, so filtering changes which rows
+appear, never what a row says; with \`--review-order\` the filter applies first
+and \`reviewRank\` stays contiguous within the filtered worklist. The name
+\`unfiled\` selects the services filed under no subsystem while nothing in the
+tree claims that name (a real subsystem or service spelled \`unfiled\` wins).
+An unknown name refuses \`unknown-target\` with close-name hints; a service
+name refuses \`invalid-option\`. \`loam list --owners <path>\` joins each listed
+service's directory to the owning teams in the named CODEOWNERS file —
+directory-pattern rules only, last match wins, an owner-less directory rule
+CLEARING ownership for what it matches exactly as the forge reads it; a
+recognised rule outside that subset (any other wildcard use, \`*\` included)
+is reported under \`skippedRules\`, never guessed at — and \`--json\` gains the additive \`owners\`
+key (\`path\`, \`teams[]\` with each team's services in the listing's own
+filtered-and-ordered row order, \`unowned[]\` listing the rows no rule matched,
+\`skippedRules[]\`), so the per-team arrays are the per-team campaign
+worklists. A CODEOWNERS path that cannot be read, or a line that cannot be
+parsed as \`pattern owner…\`, refuses \`owners-unreadable\` naming the path and
+line — fail-closed, exactly as \`answers-unreadable\` treats the other
+user-named file. Either flag with the \`features\` or \`capabilities\` section
+is refused (\`invalid-option\`).
 
 \`--strict\` (every targeting mode, \`--all\` included) exits 1 when any error
 or warning exists — \`ok\`-severity findings are confirmations and never trip
@@ -194,8 +241,9 @@ or break the grammar reuse \`unknown-target\`, \`already-exists\` and
 \`answers-unreadable\` / \`answers-mismatch\` /
 \`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\` /
 \`record-raced\` / \`docs-busy\`
-(\`loam verify --record\` / \`--results\` — an unreadable or
-unrecognizable cucumber report refuses under \`answers-unreadable\` too;
+(\`loam verify --record\` / \`--results\` / \`--contract-results\` — an unreadable
+or unrecognizable cucumber or contract-test report refuses under
+\`answers-unreadable\` too;
 \`record-federated\` and \`record-unreadable\` are the two records loam will not
 overwrite. Recording holds the docs repo's lock and commits the record
 atomically over the exact bytes it read: \`record-raced\` means the file changed
@@ -206,7 +254,36 @@ wait. Two records for different services land in either order — the later one
 waits, then merges, and both attestations survive. The shared commit path can
 also answer \`merge-failed\` (the swap itself failed — nothing was recorded,
 re-running can work) and \`rollback-incomplete\` (cleanup failed too; the named
-file needs a human), with exactly the meanings archive gives them), and
+file needs a human), with exactly the meanings archive gives them),
+\`no-members\` / \`binding-duplicate\` / \`invalid-option\` / \`already-exists\`
+(\`loam open\`, deriving an editor workspace from the committed bindings — no
+service checkout bound to this docs repo was found under any scanned root, so
+the workspace would hold only the docs repo, fixable by cloning a bound
+checkout beside it or passing \`--root\`; two discovered checkouts declare the
+same \`service\` and loam will not guess which one speaks for it — narrow the
+scan with \`--root\` or fix the stray binding; a \`--root\` or \`--out\` that names
+nothing readable, or a \`--root\` the scan cannot list, is \`invalid-option\`;
+and the workspace file itself, which loam never silently overwrites — pass
+\`--out\` or \`--force\`),
+\`seed-file-invalid\` / \`seed-duplicate-service\` / \`seed-unknown-subsystem\` /
+\`seed-landscape-edited\` / \`unknown-service\`
+(\`loam seed --from fleet.yaml\`, templating architecture/landscape.likec4 and one
+services/<id>/ directory per service out of a tiny human-authored file — the
+human states the facts, loam guesses nothing. \`seed-file-invalid\` is anything
+wrong with the file itself — missing, not YAML, the wrong shape, an illegal id;
+the message names file and line — and the preflight: fleet.yaml must name every
+existing services/<id>/ (the refusal carries the ids as \`missingServices\`).
+\`seed-duplicate-service\`: one name declared twice — service ids, subsystem
+names and externals share one flat namespace, both lines named.
+\`seed-unknown-subsystem\`: a \`subsystem:\` naming nothing \`subsystems:\`
+declares, with a did-you-mean hint; a call endpoint nothing declares reuses
+\`unknown-service\` — correct the name, re-run. And
+\`seed-landscape-edited\` is the never-overwrite posture: the landscape carries
+hand edits (the line-1 \`loam-seed sha256:\` digest no longer matches) or was
+authored some other way — seed refuses and writes nothing; fold the edits into
+fleet.yaml and delete the file, or keep the map and stop using seed. Seed
+shares every journaled writer's lock, transaction and recovery codes; an
+existing service directory is never moved, and nothing is ever deleted), and
 \`internal\` — an unexpected throw, the one code with no stable meaning.
 
 \`--all\` reports a target per service, a target per feature in flight, and one target
@@ -216,84 +293,8 @@ Three different words for three different questions, and no command conflates th
 \`ok\` — the command ran; \`valid\` — the documents pass (\`validate\`); \`verified\` —
 somebody says the code was built and showed evidence (\`verify\`). A feature can be
 valid and unverified, or verified and incoherent. Read the one you meant.
-
-## The archive gate
-
-The three axes agreeing is called **coherence**, and \`loam validate --feature\` reports
-it as such. \`loam archive\` runs the same coherence check first and refuses a feature
-with GATING issues — every error, plus the rare warning marked \`gates: true\` because
-the merge would silently drop authored content even though the document is legal.
-Advisory warnings never block: archive prints them and proceeds. Each one still names
-something real — usually something the merge will drop or overwrite — so read them
-before the merge runs, not after.
-
-\`--approve\` overrides the gating issues — only those, and archive prints exactly which
-ones it overrode. It is a human decision, not an agent's: if archive refuses, fix the
-breach or hand it back. Two refusals sit outside its reach, because the damage is
-mechanical rather than a judgment about the feature: \`delta.service-id-invalid\` — a
-\`specs/<svc>/\` directory whose name is not a legal service id, which the merge
-would materialise as a \`services/<svc>/\` every loam command then refuses to
-address — and \`c4.service-binding-invalid\` — an explicit \`metadata { service }\`
-binding that breaks the same grammar, on a tagged element or anything nested
-inside its block (the merge splices the whole authored block into the living
-landscape verbatim, untagged children included, and a \`../\` in the binding even
-collapses the archive's \`services/\` probe out of the docs repo). There is
-nothing a judgment call could accept: rename the directory, or fix the binding,
-instead.
-
-Breaches only the merge computation itself can see are reported at plan time,
-after the gate. \`living.requirement-outside-requirements\` (error): the LIVING spec
-holds a requirement outside \`## Requirements\`, and the merge rewrites only that
-section, so the requirement would land in the file twice — \`--approve\` does not
-override it, because the duplication is mechanical, not a judgment call; re-home the
-requirement first. \`openapi.op-modified\` (warn): the feature redefines an operation
-the living OpenAPI already has, and the merge overwrites the living definition
-wholesale.
-
-The OpenAPI merge also carries the merged operations' \`$ref\` closure: every
-\`#/components/<kind>/<name>\` they reference — recursively, a component's own refs
-included — is copied from the feature document into the living one, so an operation
-never lands pointing at a schema that stayed behind. \`openapi.component-modified\`
-(warn): a carried component overwrites a living one that differs, wholesale, same
-discipline as an operation. \`openapi.ref-unresolved\` (error, \`--approve\`
-overrides): a ref reachable from the merged operations resolves in neither
-document, so merging would write a dangling reference. External refs — URLs, file
-paths, anything not starting \`#/\` — are out of scope: left untouched, never gated.
-
-## Taking an archive back
-
-\`loam unarchive <FEAT>\` restores the living docs and re-opens the feature. It works
-by putting bytes back, not by inverting the merge — archive copies every file it is
-about to overwrite into \`features/archive/<FEAT>/.loam-before/\` first, because the
-previous text of a \`MODIFIED\` requirement is written down nowhere else. Do not edit
-or delete that directory, and never reconstruct an old living spec by hand from an
-archived delta: what the requirement said BEFORE is not in there, and a plausible
-reconstruction is a lie the next reader has no way to catch.
-
-Every pre-image is digested when the archive writes it, and re-checked before the
-restore stages anything: \`snapshot-corrupt\` means a pre-image's bytes no longer
-match the digest archive recorded for them, so restoring it would write text
-nobody authored. \`--force\` does NOT override that one — the damage is to the
-undo itself, not to the living docs — and the fix is version control.
-
-It refuses rather than guesses, under codes you can branch on: \`feature-active\` (a
-feature of that id is in flight again), \`snapshot-missing\` (archived before loam
-recorded this — the docs have to come back from version control), \`snapshot-stale\`
-(a merged file changed after the archive, so restoring would revert someone else's
-work). \`--force\` overrides the last one, and like \`--approve\` it is a human's call.
-
-A restore that fails outright splits the same way archive's does: \`restore-failed\`
-means nothing was restored or everything was rolled back — the living docs are
-unchanged, fix the reported cause and re-run; \`rollback-incomplete\` means the
-restore failed AND some files could not be put back — stop and hand it to a human,
-the message lists the files to check.
-
-## Dropping a feature
-
-A feature that was never archived is one directory and nothing else: no living doc
-references it until \`loam archive\` merges it. To abandon it, delete the directory —
-\`git rm -r features/<FEAT-dir>\` — and version control keeps the record of the
-attempt. An ARCHIVED feature is the opposite, its content folded into the living
-docs: run \`loam unarchive <FEAT>\` first, then delete. There is no \`loam abandon\`,
-deliberately — a removal that computes nothing is what version control is for.
 `;
+
+/* The archive gate, unarchive, and dropping a feature continue in
+ * ./shipped/archive-gate.ts — one document section split at its own subject
+ * seam, concatenated after this one by ../agents-md.ts. */

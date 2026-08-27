@@ -1,11 +1,15 @@
 import type { Command } from "commander";
-import { createInterface } from "node:readline/promises";
 import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { gitIdentity } from "../../core/provenance/git.js";
 import { today } from "../../core/provenance/stamp.js";
-import { plural, sayRecovered } from "../policy/format.js";
+import { serviceTreePathOf } from "../../core/repo/service-target.js";
+import { runPack } from "./pack/print.js";
+import { confirmVouch } from "./prompt/confirm.js";
+import { emitStampJson, printStamp } from "./report.js";
 import { vouch } from "./run.js";
+import { buildSamplePlan, type SamplePlan } from "./sample/plan.js";
+import { printReadingList } from "./sample/print.js";
 
 /**
  * `loam vouch` — the human act SCHEMA.md has always described as "promote draft
@@ -50,6 +54,9 @@ import { vouch } from "./run.js";
 interface VouchOptions {
   service?: string;
   yes?: boolean;
+  pack?: boolean;
+  /** `--sample <n>` as typed — a string until it is proved to be a whole number. */
+  sample?: string;
   json?: boolean;
 }
 
@@ -63,6 +70,14 @@ export function registerVouch(program: Command): void {
     .option(
       "--yes",
       "skip the confirmation — required when stdin is not a terminal, and still records `vouched_by`",
+    )
+    .option(
+      "--pack",
+      "print the re-vouch reading pack — the doc-body diff since the last vouch, the source files that moved, and the sections already covered — then exit without vouching; read-only, nothing is stamped",
+    )
+    .option(
+      "--sample <n>",
+      "vouch after reading a deterministic sample of <n> sections per spec file — the stamp records `vouch_scope: sampled`, `loam list` shows `vouched (sampled)`, and `loam validate` reports `sources.sampled-vouch` until a full vouch clears it",
     )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: VouchOptions) => {
@@ -96,6 +111,50 @@ export function registerVouch(program: Command): void {
       // or a subdirectory with its own git config would answer for it.
       const repoDir = config.root ?? process.cwd();
 
+      // The flag's own grammar, before anything is read or hashed: `--sample`
+      // decides what the run CLAIMS, so a value nobody can read must not reach
+      // a stamp. Whole numbers only, and at least one — `0` is a vouch that
+      // read nothing, and there is already a way to record that (do not
+      // vouch). Checked before `--pack` below so a typo is refused the same
+      // way in both modes.
+      let sampleSize: number | undefined;
+      if (opts.sample !== undefined) {
+        if (!/^\d+$/.test(opts.sample.trim()) || Number(opts.sample) < 1) {
+          return fail(
+            json,
+            "invalid-option",
+            `--sample expects a positive whole number of sections; got '${opts.sample}'. ` +
+              "Nothing was read and nothing was stamped.",
+          );
+        }
+        sampleSize = Number(opts.sample);
+      }
+
+      // The reading pack: read-only, so it runs BEFORE — and instead of —
+      // every write-path gate below (identity, TTY, `--yes`, lock, journal),
+      // which all defend the stamp; pack/pack.ts's banner carries the full
+      // reasoning. It runs AFTER the wrong-repo gate above on purpose: the
+      // source delta resolves `sources` here. `--yes` does not compose — it
+      // is the unattended stamp, and a pack that stamped would defeat the
+      // read it just prescribed.
+      if (opts.pack === true) {
+        if (opts.yes === true) {
+          return fail(
+            json,
+            "invalid-option",
+            "--pack is the reading list and --yes is the unattended stamp; a pack that immediately " +
+              `stamped would defeat the read it just prescribed. Run --pack, read it, then \`loam vouch --service ${service}\`.`,
+          );
+        }
+        // `--sample` composes with the pack instead of conflicting with it:
+        // the pack is the reading list, and a sampled vouch's reading list is
+        // the sample. Passing it here makes the pack print the sections the
+        // subsequent `loam vouch --sample <n>` will stamp for — the same
+        // derivation from the same seed, so the two cannot prescribe
+        // different documents.
+        return runPack({ docsDir: config.docsDir, service: config.service, repoDir, json, sample: sampleSize });
+      }
+
       // Who. Before any reading, because a run that cannot name a person has
       // nothing to offer at the end of it and should not spend a digest finding
       // that out.
@@ -121,7 +180,8 @@ export function registerVouch(program: Command): void {
       // spec matches the code either. The allowlist no longer covers this
       // command (core/agent/tools/dialects.ts), and nothing but a terminal or an explicit
       // `--yes` gets past here.
-      if (opts.yes !== true) {
+      const attended = opts.yes === true;
+      if (!attended) {
         if (process.stdin.isTTY !== true) {
           return fail(
             json,
@@ -144,9 +204,24 @@ export function registerVouch(program: Command): void {
               "person, and it cannot be asked on a stream whose whole contract is one JSON document.",
           );
         }
-        if (!(await confirmVouch(service, vouchedBy, config.docsDir))) {
-          return fail(json, "vouch-declined", `Nothing was stamped for '${service}'.`);
-        }
+      }
+
+      // The reading list is built BEFORE the question and AFTER the attendance
+      // gates: a run that cannot ask anybody anything must not spend two
+      // source-tree digests finding that out, and a person must not be asked
+      // to confirm a sample nobody has shown them. Every refusal a vouch can
+      // raise about these documents fires in here, so it lands before the read
+      // rather than after it.
+      let sample: SamplePlan | undefined;
+      if (sampleSize !== undefined) {
+        const built = await buildSamplePlan({ docsDir: config.docsDir, service: config.service, repoDir, n: sampleSize });
+        if (!built.ok) return fail(json, built.code, built.message);
+        sample = built.plan;
+        if (!json) printReadingList(sample, service);
+      }
+      const servicePath = await serviceTreePathOf(config.docsDir, service);
+      if (!attended && !(await confirmVouch({ service, vouchedBy, docsDir: config.docsDir, servicePath, sample }))) {
+        return fail(json, "vouch-declined", `Nothing was stamped for '${service}'.`);
       }
 
       const outcome = await vouch({
@@ -165,105 +240,14 @@ export function registerVouch(program: Command): void {
         // "this repo" that does not move with the caller.
         repoDir,
         today: today(new Date()),
+        // Absent for an ordinary vouch, which is what makes an ordinary vouch
+        // CLEAR a prior sample's scope rather than leave it standing.
+        ...(sample === undefined ? {} : { sample }),
       });
       if (!outcome.ok) return fail(json, outcome.code, outcome.message);
 
-      const { spec, archSpec: arch } = outcome.stamped;
-      if (json) {
-        emitJson({
-          service,
-          path: repoPath(config.docsDir, spec.path),
-          ...(outcome.recovered === null ? {} : { recovered: outcome.recovered }),
-          status: outcome.status,
-          last_verified: outcome.lastVerified,
-          vouched_by: outcome.vouchedBy,
-          sources: spec.sources,
-          sources_digest: spec.digest,
-          content_digest: spec.contentDigest,
-          files: spec.files,
-          skipped: spec.skipped,
-          // The architecture axis, same keys: null when the service has no
-          // arch.spec.md, so a consumer can tell "none present" from an older
-          // loam that never reported the axis. status/last_verified are not
-          // repeated — the vouch is one act, and they hold for every file in it.
-          archSpec:
-            arch === null
-              ? null
-              : {
-                  path: repoPath(config.docsDir, arch.path),
-                  sources: arch.sources,
-                  sources_digest: arch.digest,
-                  content_digest: arch.contentDigest,
-                  files: arch.files,
-                  skipped: arch.skipped,
-                },
-        });
-        return;
-      }
-      // spec.md first, arch.spec.md behind it when present — the order the
-      // person who vouched reads them in, and the order the axes are declared.
-      if (outcome.recovered !== null) console.log(`${sayRecovered(outcome.recovered)}\n`);
-      for (const [i, s] of [spec, ...(arch === null ? [] : [arch])].entries()) {
-        console.log(`${i > 0 ? "\n" : ""}${service} vouched — ${repoPath(config.docsDir, s.path)}\n`);
-        console.log(`  status          ${outcome.status}`);
-        console.log(`  last_verified   ${outcome.lastVerified}`);
-        console.log(`  vouched_by      ${outcome.vouchedBy}`);
-        console.log(
-          `  sources_digest  ${s.digest}  (${plural(s.files, "file")} from ${plural(s.sources.length, "source")})`,
-        );
-        console.log(`  content_digest  ${s.contentDigest}`);
-        // Said at the moment of stamping, not only later by `loam validate`:
-        // this is the one screen the person who vouched is actually looking at,
-        // and what it lists is the part of the tree their promise does not cover.
-        if (s.skipped.length > 0) {
-          console.log(`\n  ⚠ ${plural(s.skipped.length, "path")} under those sources went unhashed:`);
-          for (const skip of s.skipped) console.log(`      ${skip.path} — ${skip.reason}`);
-        }
-      }
-      console.log(
-        `\n\`loam validate\` will now say when that code moves out from under the spec — or when the spec moves under its own stamp.`,
-      );
+      const report = { service, docsDir: config.docsDir, outcome, ...(sample === undefined ? {} : { sample }) };
+      if (json) return emitStampJson(report);
+      printStamp(report);
     });
 }
-
-/**
- * Ask, on a terminal, and answer only on an explicit yes.
- *
- * The question states what is about to be claimed rather than asking for
- * assent to a verb: "vouch?" invites a reflex, and the whole value of this
- * command is that the reflex is the thing being interrupted. Default is no —
- * a bare Enter, a closed stdin and a Ctrl-C all mean the same thing, because
- * the only answer that may stamp a document is one somebody typed.
- */
-async function confirmVouch(service: string, vouchedBy: string, docsDir: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    console.log(
-      `\nVouching for '${service}' records that YOU read the code and say ` +
-        `${docsDir}/services/${service}/ describes it.\n` +
-        `It will be stamped \`status: verified\`, \`vouched_by: ${vouchedBy}\`.\n` +
-        "loam has not checked this and cannot: every other check it runs is internal " +
-        "consistency, which well-written prose satisfies on its own.\n",
-    );
-    const answer = await rl.question("Have you read the code? [y/N] ");
-    return /^y(es)?$/i.test(answer.trim());
-  } finally {
-    rl.close();
-  }
-}
-
-/**
- * Stamp `status`, `last_verified`, `sources_digest` and `content_digest` into
- * a service's living specs — spec.md, and arch.spec.md beside it when the
- * service has one — leaving every body byte-identical.
- *
- * Nothing is written unless all four can be stamped truthfully for EVERY file —
- * a half-stamp (verified, but with no digest behind it; or one file stamped and
- * its sibling not) is exactly the claim this command exists to stop being
- * possible, so every present file is verified before any is written — and the
- * writing itself is staged and swapped in like archive's merge, so a failure
- * between the pair's two writes rolls the first back instead of leaving it.
- * The two digests are the two halves of one promise: `sources_digest` pins the
- * code that was read, `content_digest` pins the words it was read against, so
- * `loam validate` can see either side move.
- */

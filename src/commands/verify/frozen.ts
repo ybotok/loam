@@ -4,15 +4,20 @@
  * A frozen record is history: the checklist it answered no longer exists in
  * `features/`, so there is nothing to re-derive it from and re-deriving it would
  * be an opinion about a feature nobody can change. Everything here reads the
- * recorded claims, which is also why the marks and notices live beside it.
+ * recorded claims, which is also why the shared marks (`answeredMark`), the
+ * contested-claim notices and the report-pin lines live beside it: the read
+ * and record views print the same facts about the same claims, in one voice.
  */
 import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { contestedDigests } from "../../core/results.js";
 import { type Claim } from "../../core/verify/checklist.js";
+import { contestedOperations } from "../../core/verify/evidence/contract.js";
 import {
   attestedNotice,
+  openClaimsNotice,
   tallyRecord,
   type AnsweredClaim,
+  type ConsumedContractReport,
   type ConsumedReport,
   type Verification,
   type VerifyNotice,
@@ -30,7 +35,11 @@ export function reportFrozen(
   const { docsDir, featureDir, json } = target;
   const tally = v === null ? null : tallyRecord(v);
   const verdict = tally === null ? "unverified" : verificationVerdict(tally);
-  const notices = v === null ? [] : noticesFor(v.claims, featureId);
+  // The open-claims line rides into the frozen view too: a feature archived on
+  // a partial record must keep saying so after it ships, not only before. No
+  // record stays bare — the prose already says nothing was recorded.
+  const open = tally === null ? null : openClaimsNotice(tally, featureId);
+  const notices = [...(v === null ? [] : noticesFor(v.claims, featureId)), ...(open === null ? [] : [open])];
 
   if (json) {
     emitJson({
@@ -50,6 +59,7 @@ export function reportFrozen(
               checklist: v.checklist,
               ...(v.attestations === undefined ? {} : { attestations: v.attestations }),
               ...(v.report === undefined ? {} : { report: v.report }),
+              ...(v.contractReport === undefined ? {} : { contractReport: v.contractReport }),
             },
       claims: v === null ? [] : v.claims,
       ...(notices.length === 0 ? {} : { notices }),
@@ -85,8 +95,12 @@ export function reportFrozen(
       `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}).`,
     );
     if (attestation.report !== undefined) console.log(`      from ${reportLine(attestation.report)}`);
+    if (attestation.contractReport !== undefined) {
+      console.log(`      from ${contractReportLine(attestation.contractReport)}`);
+    }
   }
   if (v.report !== undefined) console.log(`  Answered from ${reportLine(v.report)}.`);
+  if (v.contractReport !== undefined) console.log(`  Contract report read: ${contractReportLine(v.contractReport)}.`);
   for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
 }
 
@@ -94,15 +108,26 @@ export const MARK: Record<string, string> = { confirmed: "✓", unconfirmed: "�
 
 /**
  * Who answered, where that changes what the verdict means. `[runner]` is a
- * digest-matched green run; `[attested]` is a scenario claim confirmed on
- * somebody's word — the same ✓, a weaker fact, and it must be visible on the
- * line itself and not only in the summary. Everything else is unmarked: an
- * agent's answer about a service existing or an operation being exposed is
- * exactly what the checklist asks for.
+ * digest-matched green run; `[contract]` is an operationId-matched green
+ * contract-test run — mechanical too, and marked so the record's provenance is
+ * readable per line, not only in `contractReport:`; `[attested]` is a scenario
+ * claim confirmed on somebody's word — the same ✓, a weaker fact, and it must
+ * be visible on the line itself and not only in the summary. The attested test
+ * runs FIRST and uses `attestedClaims`' own predicate (a confirmed scenario
+ * claim not answered by the runner), so the mark can never disagree with the
+ * tally: a scenario claim carrying `answered_by: external-runner` — a hand
+ * edit, or a future loam; the reader accepts any string on purpose — COUNTS as
+ * attested, and printing `[contract]` two lines above a notice saying "an
+ * agent's word" would be the mark calling the tally a liar. Everything else is
+ * unmarked: an agent's answer about a service existing or an operation being
+ * exposed is exactly what the checklist asks for.
  */
 export function answeredMark(c: AnsweredClaim): string {
   if (c.answered_by === "runner") return "  [runner]";
-  return c.kind === "scenario.tested" && c.verdict === "confirmed" ? "  [attested]" : "";
+  if (c.kind === "scenario.tested") {
+    return c.verdict === "confirmed" ? "  [attested]" : "";
+  }
+  return c.answered_by === "external-runner" ? "  [contract]" : "";
 }
 
 /** Everything a verify surface has to say about a set of answers beyond the counts. */
@@ -147,10 +172,47 @@ export function contestedNotices(claims: readonly Claim[]): VerifyNotice[] {
   ];
 }
 
+/**
+ * The digest-contested rule's twin on the contract axis: operationIds that
+ * more than one service on this checklist exposes, which one report can
+ * therefore never attribute (`contestedOperations`, the module that also
+ * leaves those claims unconfirmed). Raised where the contract report is
+ * consumed, so the record path says WHY the claims came back unconfirmed
+ * instead of leaving two bare ✗ lines to be misread as failures.
+ */
+export function contestedOperationNotices(claims: readonly Claim[]): VerifyNotice[] {
+  const contested = contestedOperations(claims);
+  if (contested.size === 0) return [];
+  const shared = [...contested].map(([operation, services]) => `${operation} (${services.join(", ")})`);
+  return [
+    {
+      code: "verify.operation-contested",
+      severity: "warn",
+      message:
+        `${plural(contested.size, "operationId")} exposed by more than one service on this checklist: ${shared.join("; ")}. ` +
+        "A contract report entry names no service, so a shared --contract-results run cannot say whose suite exercised them and leaves them unconfirmed. " +
+        "Record each service's claims from its own repository with --service.",
+      claims: claims.filter((c) => c.operation !== undefined && contested.has(c.operation)).map((c) => c.id),
+    },
+  ];
+}
+
 /** The report a `--results` run consumed, as one line a reviewer can check by hand. */
 export function reportLine(r: ConsumedReport): string {
   return `${r.path} (sha256 ${r.digest.slice(0, 12)}…, ${plural(r.scenarios, "tagged scenario")}, written ${r.mtime})`;
 }
+
+/**
+ * The contract report a `--contract-results` run consumed — the same line for
+ * the same promise, counting operations where the cucumber one counts tagged
+ * scenarios. A separate function rather than a parameter on `reportLine`
+ * because the two pins are different shapes, and a merged formatter would need
+ * exactly the switching flag that near-duplicates are kept apart to avoid.
+ */
+export function contractReportLine(r: ConsumedContractReport): string {
+  return `${r.path} (sha256 ${r.digest.slice(0, 12)}…, ${plural(r.operations, "operation")}, written ${r.mtime})`;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Recording                                                           */

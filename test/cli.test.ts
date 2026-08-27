@@ -9,6 +9,13 @@
  *     exactly as the caller spelled it so a committed config survives a clone,
  *     is idempotent (never clobbers user files), and preserves previously
  *     configured `service` on re-init (config spread).
+ *   - init first-hour epilogue: the human output ends with the adopt → validate
+ *     → vouch → status sequence exactly when one run both creates the docs repo
+ *     and leaves a service bound — by flag or by an existing loam.json's config
+ *     spread — the single-repo trial. Silent on joins, on --create with no
+ *     binding, and under --json. The printed commands parse against the real
+ *     program via test/agent-commands-runnable.test.ts's imported firstHour
+ *     entry, and README's Quick start copy of the table is pinned to it here.
  *   - init --json: {ok, docsDir, created, skipped, tools, detected} — skipped is
  *     the other half of the never-overwrite contract, tools names the agent
  *     tools files were generated for, detected the separate question of which
@@ -40,6 +47,8 @@ import {
   writeFiles,
   type Project,
 } from "./helpers/harness.js";
+import { docsRepoFiles } from "../src/core/docs.js";
+import { firstHour } from "../src/commands/init/first-hour.js";
 
 /* ------------------------------------------------------------------ */
 /* Per-test fixture bookkeeping                                        */
@@ -85,6 +94,31 @@ describe("init: scaffolding a fresh docs repo", () => {
     }
     expect(res.out).toContain("loam initialized.");
     expect(res.out).toContain("scaffolded:");
+  });
+
+  it("writes a README.md — the one file in the repo addressed to a person", async () => {
+    // Every other scaffolded file is either a document about the fleet or
+    // AGENTS.md, which is written for a coding agent and named so a human does
+    // not open it. A forge renders README.md as the landing page and nothing
+    // else, so without this a docs repo opens as a bare directory listing.
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--create", "--docs", "./docs-x");
+    expect(res.code).toBe(0);
+    const readme = await readFile(join(dir, "docs-x", "README.md"), "utf8");
+    // It names each top-level directory, because that is the question a
+    // newcomer opens it with.
+    for (const dirName of ["architecture/landscape.likec4", "services/<id>/", "features/<FEAT>/"]) {
+      expect(readme, `README does not mention ${dirName}`).toContain(dirName);
+    }
+    // And it hands off rather than restating the contract: a second copy of
+    // the layout rules is the first one to go stale.
+    expect(readme).toContain("AGENTS.md");
+    expect(readme).toContain("loam status");
+  });
+
+  it("scaffolds README.md FIRST, so a reader meets it before anything else", async () => {
+    const names = docsRepoFiles().map(([rel]) => rel);
+    expect(names[0]).toBe("README.md");
   });
 
   it("writes no service manifest — the directories under services/ ARE the list", async () => {
@@ -189,6 +223,97 @@ describe("init: idempotency and config preservation", () => {
     const config = await readJson(join(dir, "loam.json"));
     expect(config.service).toBe("svc-a");
     expect(res.out).toContain("service:   svc-a");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* init — the first-hour epilogue (single-repo trial)                  */
+/* ------------------------------------------------------------------ */
+
+describe("init: the first-hour epilogue on the single-repo trial composition", () => {
+  it("prints adopt → validate → vouch → status when one run creates the docs repo AND binds a service", async () => {
+    // The composition README's five-minute trial teaches. `loam status`'s own
+    // first-hour ladder can already answer `next.adopt-bound` in this state,
+    // but it has to be run to say so, and no status rung ever names
+    // `loam vouch` — the one step of the loop that is a person's. init's
+    // output is already on screen, so it prints the whole hour once.
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--create", "--docs", "./loam-docs", "--service", "payment-service",
+    );
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("next — the first hour:");
+    expect(res.out).toContain("loam adopt --service payment-service --json");
+    expect(res.out).toContain("loam validate --service payment-service");
+    expect(res.out).toContain("loam vouch --service payment-service");
+    expect(res.out).toContain("loam status");
+  });
+
+  it("also fires when the binding rides config spread: an existing loam.json's service, no --service flag", async () => {
+    // The guard reads config.service — what the repo is bound to AFTER the
+    // run — not opts.service. "Simplifying" it to the flag would keep every
+    // other test in this block green while the published spread case
+    // (CHANGELOG: "or a binding the repo's existing loam.json already
+    // carried") silently disappeared.
+    const dir = await throwawayDir();
+    await writeFiles(dir, { "loam.json": '{ "docsDir": "./d", "service": "svc-a" }\n' });
+    const res = await runLoam(dir, "init", "--create");
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("next — the first hour:");
+    expect(res.out).toContain("loam adopt --service svc-a --json");
+  });
+
+  it("README's Quick start reprints the exact table init prints — the two copies cannot drift", async () => {
+    // The trial section claims "`init` ends by printing the first hour, which
+    // is this loop:" and then shows the four lines. Nothing else couples that
+    // fence to the source table — docs-facts pins only the command TABLE — so
+    // a reworded command or why-comment here would quietly make the README's
+    // "this loop" false for the reader who just ran init.
+    const readme = await readFile(join(import.meta.dirname, "..", "README.md"), "utf8");
+    const section = readme.slice(
+      readme.indexOf("### Try loam on one service in five minutes"),
+      readme.indexOf("### Explore the example fleet"),
+    );
+    const fences = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]!);
+    const loop = fences.find((fence) => fence.includes("loam adopt"));
+    expect(loop, "the trial section must carry its first-hour fence").toBeDefined();
+    const lines = loop!.trim().split("\n").map((line) => {
+      const [command = "", why = ""] = line.split("#");
+      return [command.trim(), why.trim()];
+    });
+    expect(lines).toEqual(firstHour("payment-service"));
+  });
+
+  it("stays silent on a JOIN, even one that binds a service — that fleet already exists", async () => {
+    // The second repo pointing at an existing docs repo is Day zero step 3,
+    // not the trial: the docs repo's AGENTS.md already carries the sequence.
+    const docsHost = await throwawayDir();
+    await runLoam(docsHost, "init", "--create", "--docs", "./d");
+    const serviceRepo = await throwawayDir();
+    const res = await runLoam(
+      serviceRepo, "init", "--docs", join(docsHost, "d"), "--service", "payment-service",
+    );
+    expect(res.code).toBe(0);
+    expect(res.out).not.toContain("first hour");
+  });
+
+  it("stays silent on --create without --service — nothing is bound, so adopt/vouch have no id to name", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--create", "--docs", "./d");
+    expect(res.code).toBe(0);
+    expect(res.out).not.toContain("first hour");
+  });
+
+  it("never reaches --json: the envelope stays pure JSON with no epilogue text and no new keys", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(
+      dir, "init", "--create", "--docs", "./d", "--service", "payment-service", "--json",
+    );
+    expect(res.code).toBe(0);
+    // JSON.parse over the whole stream is the no-prose assertion.
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(true);
+    expect(res.stdout).not.toContain("first hour");
   });
 });
 

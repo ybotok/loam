@@ -19,23 +19,32 @@ import {
   type DiscardedAnswer,
 } from "../../core/verify/build.js";
 import { type Checklist } from "../../core/verify/checklist.js";
+import { contractAnswers } from "../../core/verify/evidence/contract.js";
 import { commitVerification } from "../../core/verify/store/commit.js";
 import {
   tallyRecord,
-  type ConsumedReport,
+  type ConsumedReports,
   type Verification,
+  type VerifyNotice,
   verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
-import { plural, sayRecovered } from "../policy/format.js";
+import { plural, sayDiscarded, sayRecovered } from "../policy/format.js";
+import { readContractResults } from "./evidence/contract.js";
+import { claimTokens, pinAnswers } from "./evidence/pins.js";
 import { readResults, repositoryCommit, validateServiceEvidence } from "./results.js";
-import { contestedNotices, noticesFor, reportLine } from "./frozen.js";
+import { contestedNotices, contestedOperationNotices, contractReportLine, noticesFor, reportLine } from "./frozen.js";
 import { type VerifyTarget } from "./report.js";
 
 /** The flags `loam verify --record` reads. */
 export interface VerifyOptions {
   record?: string;
   results?: string;
+  contractResults?: string;
+  /** `--diff-answers a.json b.json` — the read-only cross-examination lens
+   * (./cross/diff.ts): both files validate against the current checklist and
+   * nothing is written. verify.ts refuses recording combinations and arity ≠ 2. */
+  diffAnswers?: string[];
   service?: string;
   json?: boolean;
 }
@@ -99,26 +108,45 @@ export async function record(
     );
   }
 
-  // The runner's half: with --results, every scenario.tested claim is the
-  // report's to answer — matched by digest, confirmed only by a green run.
+  // The mechanical halves: with --results, every scenario.tested claim is the
+  // cucumber report's to answer — matched by digest, confirmed only by a green
+  // run — and with --contract-results, every api.exposes claim is the contract
+  // report's, matched by operationId under the same ownership discipline. A
+  // partial suite leaves its unexercised claims unconfirmed rather than
+  // agent-attestable in the same run: silence must not read as checked, and
+  // the escape is a --record run without the flag.
   const runnerClaims =
     opts.results === undefined ? [] : scopedClaims.filter((c) => c.kind === "scenario.tested");
-  const agentClaims =
-    opts.results === undefined ? scopedClaims : scopedClaims.filter((c) => c.kind !== "scenario.tested");
+  const contractClaims =
+    opts.contractResults === undefined ? [] : scopedClaims.filter((c) => c.kind === "api.exposes");
+  const agentClaims = scopedClaims.filter(
+    (c) =>
+      (opts.results === undefined || c.kind !== "scenario.tested") &&
+      (opts.contractResults === undefined || c.kind !== "api.exposes"),
+  );
 
   let fromRunner: Answer[] = [];
-  let consumed: ConsumedReport | undefined;
+  let fromContract: Answer[] = [];
+  const reports: ConsumedReports = {};
   if (opts.results !== undefined) {
     // A federated record attests for THIS repository, so its report has to be a
-    // file inside it — see readResults.
+    // file inside it — see evidence/read.ts.
     const read = await readResults(opts.results, service === undefined ? undefined : repoDir);
     if (!read.ok) return fail(json, read.code, read.message);
-    consumed = read.report;
-    fromRunner = runnerAnswers(runnerClaims, read.scenarios, consumed.path);
+    reports.results = read.report;
+    fromRunner = runnerAnswers(runnerClaims, read.scenarios, read.report.path);
+  }
+  if (opts.contractResults !== undefined) {
+    // Same resolution rules as the cucumber report, same refusal code: the two
+    // pins make the same promise about the same repository.
+    const read = await readContractResults(opts.contractResults, service === undefined ? undefined : repoDir);
+    if (!read.ok) return fail(json, read.code, read.message);
+    reports.contract = read.report;
+    fromContract = contractAnswers(contractClaims, read.runs, read.report.path);
   }
 
-  // The agent's half — exactly what the runner does not own. --results alone
-  // is legal only when the runner owns the whole checklist: anything left over
+  // The agent's half — exactly what no report owns. A mechanical flag alone is
+  // legal only when the reports own the whole checklist: anything left over
   // refuses with the ids, the same discipline as a claim with no answer.
   let raw: unknown = [];
   if (opts.record !== undefined) {
@@ -134,51 +162,56 @@ export async function record(
         `Cannot read ${opts.record}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  } else if (agentClaims.length > 0 && opts.results !== undefined) {
+  } else if (agentClaims.length > 0 && (opts.results !== undefined || opts.contractResults !== undefined)) {
+    const owns = [
+      ...(opts.results === undefined ? [] : ["--results answers only the scenario.tested claims"]),
+      ...(opts.contractResults === undefined ? [] : ["--contract-results answers only the api.exposes claims"]),
+    ].join(" and ");
     return fail(
       json,
       "answers-mismatch",
-      `--results answers only the scenario.tested claims; ${agentClaims.length} claim(s) have no answer: ` +
-        `${agentClaims.map((c) => c.id).join(", ")}. Record them with --record <answers.json> alongside --results.`,
+      `${owns}; ${agentClaims.length} claim(s) have no answer: ` +
+        `${agentClaims.map((c) => c.id).join(", ")}. Record them with --record <answers.json> alongside.`,
     );
   }
 
   const checked = checkAnswers(
     agentClaims,
     raw,
-    opts.results === undefined ? undefined : new Set(runnerClaims.map((c) => c.id)),
+    opts.results === undefined && opts.contractResults === undefined
+      ? undefined
+      : new Set([...runnerClaims, ...contractClaims].map((c) => c.id)),
     { feature: checklist.feature, ...(service === undefined ? {} : { service }) },
   );
   if (!checked.ok) return fail(json, checked.code, checked.message);
 
   let serviceCommit: string | undefined;
+  let answers = [...fromRunner, ...fromContract, ...checked.answers];
+  let pinNotice: VerifyNotice | null = null;
   if (service !== undefined) {
     const commit = await repositoryCommit(repoDir);
     if (!commit.ok) return fail(json, "repository-unavailable", commit.message);
     serviceCommit = commit.commit;
-    // Both halves, one validator. The runner's evidence used to skip it
+    // All halves, one validator. The runner's evidence used to skip it
     // entirely: `--results` minted confirmations whose evidence strings nothing
     // ever checked, in the one mode that promises every answer is bound to this
-    // repository at this commit.
-    const evidenceFailure = await validateServiceEvidence(
-      [...fromRunner, ...checked.answers],
-      repoDir,
-      serviceCommit,
-      consumed,
-    );
-    if (evidenceFailure !== null) return fail(json, "answers-unevidenced", evidenceFailure);
+    // repository at this commit. The same pass stamps each agent citation's
+    // evidence pin and scans its blob for the claim's token (evidence/pins.ts).
+    const evidence = await validateServiceEvidence(answers, { repoDir, commit: serviceCommit }, reports, claimTokens(scopedClaims));
+    if (!evidence.ok) return fail(json, "answers-unevidenced", evidence.message);
+    ({ answers, notice: pinNotice } = pinAnswers(answers, evidence, serviceCommit));
   }
 
   const recorded = today(new Date());
   let verification: Verification;
   let discarded: DiscardedAnswer[] = [];
   if (service === undefined) {
-    verification = buildVerification(checklist, [...fromRunner, ...checked.answers], recorded, consumed);
+    verification = buildVerification(checklist, answers, recorded, reports);
   } else {
     const built = buildFederatedVerification(
       checklist,
-      { service, recorded, commit: serviceCommit!, report: consumed },
-      [...fromRunner, ...checked.answers],
+      { service, recorded, commit: serviceCommit!, reports },
+      answers,
       previous?.verification ?? null,
     );
     verification = built.verification;
@@ -200,7 +233,12 @@ export async function record(
   const tally = tallyRecord(verification);
   const verdict = verificationVerdict(tally);
   const verified = verdict === "verified";
-  const notices = [...noticesFor(verification.claims, verification.feature), ...contestedNotices(runnerClaims)];
+  const notices = [
+    ...noticesFor(verification.claims, verification.feature),
+    ...contestedNotices(runnerClaims),
+    ...contestedOperationNotices(contractClaims),
+    ...(pinNotice === null ? [] : [pinNotice]),
+  ];
 
   if (json) {
     emitJson({
@@ -214,7 +252,8 @@ export async function record(
       recorded: verification.recorded,
       summary: verification.summary,
       ...(verification.attestations === undefined ? {} : { attestations: verification.attestations }),
-      ...(consumed === undefined ? {} : { report: consumed }),
+      ...(reports.results === undefined ? {} : { report: reports.results }),
+      ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
       unconfirmed: unconfirmed.map((c) => ({ id: c.id, claim: c.claim, ...(c.note === undefined ? {} : { note: c.note }) })),
       ...(discarded.length === 0 ? {} : { discarded }),
       ...(notices.length === 0 ? {} : { notices }),
@@ -225,12 +264,16 @@ export async function record(
   if (target.recovered != null) console.log(`${sayRecovered(target.recovered)}\n`);
   console.log(`${verification.feature} verification recorded — ${repoPath(docsDir, path)}\n`);
   console.log(`  ${tally.confirmed} of ${plural(tally.claims, "claim")} confirmed with evidence.`);
-  if (consumed !== undefined) {
-    console.log(
-      `  ${plural(fromRunner.length, "scenario claim")} answered by the test runner (${opts.results})` +
-        `${opts.record === undefined ? "" : `, ${checked.answers.length} by ${opts.record}`}.`,
-    );
-    console.log(`  Report read: ${reportLine(consumed)}.`);
+  if (reports.results !== undefined) {
+    console.log(`  ${plural(fromRunner.length, "scenario claim")} answered by the test runner (${opts.results}).`);
+    console.log(`  Report read: ${reportLine(reports.results)}.`);
+  }
+  if (reports.contract !== undefined) {
+    console.log(`  ${plural(fromContract.length, "api.exposes claim")} answered by the contract test run (${opts.contractResults}).`);
+    console.log(`  Contract report read: ${contractReportLine(reports.contract)}.`);
+  }
+  if (opts.record !== undefined && (reports.results !== undefined || reports.contract !== undefined)) {
+    console.log(`  ${plural(checked.answers.length, "claim")} answered by ${opts.record}.`);
   }
   if (service !== undefined) {
     const attestation = verification.attestations?.find((item) => item.service === service);
@@ -242,29 +285,7 @@ export async function record(
     console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
   }
 
-  // What the previous record answered and this one does not. A federated write
-  // is a partial write, so the first one over an all-at-once record drops every
-  // answer it cannot attribute to a commit — correct, but silence here reads as
-  // loam having lost the answers, and nobody goes looking for what to re-record.
-  if (discarded.length > 0) {
-    const off = discarded.filter((d) => d.reason === "off-checklist").length;
-    console.log(
-      `\n  ${plural(discarded.length, "earlier answer")} from ${repoPath(docsDir, verificationPath(featureDir))} ${discarded.length === 1 ? "is" : "are"} not carried into this record:`,
-    );
-    for (const d of discarded) {
-      console.log(
-        `    - ${d.id}${d.subject === undefined ? "" : ` [${d.subject}]`}  ${d.claim}` +
-          (d.reason === "off-checklist"
-            ? "  (the feature changed; nothing asks this any more)"
-            : "  (no commit attestation binds it — its service must record it again)"),
-      );
-    }
-    if (discarded.length > off) {
-      console.log(
-        `    Each owning service records its own with \`loam verify ${verification.feature} --record answers.json --service <svc>\` in its repo.`,
-      );
-    }
-  }
+  sayDiscarded(discarded, repoPath(docsDir, verificationPath(featureDir)), verification.feature);
   console.log("");
   for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
   console.log(

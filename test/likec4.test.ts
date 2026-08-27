@@ -12,13 +12,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  elementService,
-  loadFile,
-  serviceOf,
-  type Elem,
-  type LoadedDoc,
-} from "../src/core/c4/likec4.js";
+import { loadFile, type Elem, type LoadedDoc } from "../src/core/c4/likec4.js";
+import { elementService, serviceOf } from "../src/core/c4/resolve/service.js";
 import { maskSource } from "../src/core/c4/source-mask.js";
 import { scanModel } from "../src/core/c4/source-scan.js";
 import { makeTmpDir, writeFiles, LANDSCAPE, FEATURE_DELTA } from "./helpers/harness.js";

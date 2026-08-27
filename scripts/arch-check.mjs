@@ -197,9 +197,37 @@ for (const [file, source] of sources) {
   }
 }
 
+// ------------------------------------------------------- 8. the LikeC4 view stage
+// docs/DESIGN.md rule 26: loam reads what a view DECLARES and never computes
+// what a view SHOWS. Two scans, because the rule has two halves and they fail
+// differently. The compute stages are banned outright — resolving a view's
+// predicates against the model is the thing the rule forbids, and there is no
+// legitimate caller. `$data` is the raw parsed record the permitted read goes
+// through, so it is confined rather than banned: one module reads it, and the
+// blast radius of an upstream shape change is that module.
+//
+// Both had ZERO occurrences when the rule landed, so neither carries a
+// whitelist. The one mention of `computedModel` in the tree, at
+// core/c4/likec4.ts:270, is inside a comment — which `codeOnly` blanks, and
+// that is deliberate: the comment explaining why loam does not call it must
+// stay legal to write.
+const PARSED_VIEW_READER = posix(join("src", "core", "c4", "parsed")) + "/";
+for (const [file, source] of sources) {
+  const rel = posix(relative(root, file));
+  const code = codeOnly(source);
+  for (const m of code.matchAll(/\b(computedModel|layoutedModel)\b/g)) {
+    say("view-stage", `${rel} names ${m[1]} — loam never computes a view (docs/DESIGN.md rule 26)`);
+  }
+  if (rel.startsWith(PARSED_VIEW_READER)) continue;
+  for (const m of code.matchAll(/\$data\b/g)) {
+    void m;
+    say("view-stage", `${rel} reads \`$data\` outside ${PARSED_VIEW_READER} — the raw parsed record has one reader (docs/DESIGN.md rule 26)`);
+  }
+}
+
 if (failures.length > 0) {
   console.error(`arch-check: ${failures.length} violation(s)\n`);
   for (const f of failures) console.error(`  ${f}`);
   process.exit(1);
 }
-console.log("arch-check: file cycles, package graph, layering, barrels, core boundary, child processes, brand casts — all clean");
+console.log("arch-check: file cycles, package graph, layering, barrels, core boundary, child processes, brand casts, view stage — all clean");

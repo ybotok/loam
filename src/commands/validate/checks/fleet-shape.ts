@@ -35,11 +35,8 @@ import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/r
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { FleetContext } from "../../../core/fleet-context.js";
-import { EXTERNAL_TAG } from "./vocabulary.js";
+import { EXTERNAL_TAG, PLATFORM_TAG } from "../../../core/vocabulary/maturity.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
-
-/** Tag marking ubiquitous infrastructure; the scaffolded fleet view excludes it. */
-export const PLATFORM_TAG = "platform";
 
 /**
  * Consumers at which an untagged external hub starts to warn. Three, not two:
@@ -60,6 +57,13 @@ export interface FleetShape {
   services: ReadonlySet<string>;
   /** The shared element→service resolver every edge join uses. */
   resolve: (id: string) => string;
+  /**
+   * Where a service id's directory actually sits, repo-relative and without a
+   * trailing slash. Injected rather than joined: only the enumeration knows
+   * whether a service is filed under a subsystem, and a fix instruction naming
+   * the wrong directory is worse than one naming none.
+   */
+  pathOf: (id: string) => string;
 }
 
 export function fleetShapeFindings(shape: FleetShape): Finding[] {
@@ -116,7 +120,7 @@ export function fleetShapeFindings(shape: FleetShape): Finding[] {
         message:
           `landscape: '${e.title}' is a datastore with a single consumer at fleet level ` +
           `('${consumers[0]!}') — drawn as a peer it reads as a system in its own right, available to ` +
-          `be depended on. Move it into services/${consumers[0]!}/model.likec4 as a nested container ` +
+          `be depended on. Move it into ${shape.pathOf(consumers[0]!)}/model.likec4 as a nested container ` +
           `and delete it here, or add the second consumer's edge if another service really reaches ` +
           `the same data`,
       });

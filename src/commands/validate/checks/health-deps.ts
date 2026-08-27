@@ -22,11 +22,20 @@
  * instead.
  */
 import { closeIds } from "../../../core/c4/arch.js";
-import { elementService, type Elem } from "../../../core/c4/likec4.js";
+import { type Elem } from "../../../core/c4/likec4.js";
+import { elementService } from "../../../core/c4/resolve/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 
 export interface HealthDeps {
   service: string;
+  /**
+   * The resolved path of the service's own `model.likec4` — the file this
+   * check reads and the one its message names. Handed in rather than joined
+   * from the id: `services/<id>/model.likec4` is right only for an unfiled
+   * service, and every sibling finding in this command prints the resolved
+   * path of the file it means.
+   */
+  modelPath: string;
   /** `dependencies:` ids, already muted by the caller when health.yaml is unreadable. */
   dependencies: string[];
   /** The service's own parsed model — empty when absent or invalid, which mutes the check. */
@@ -34,7 +43,7 @@ export interface HealthDeps {
 }
 
 export function healthDependencyFindings(deps: HealthDeps): Finding[] {
-  const { service, dependencies, elements } = deps;
+  const { service, dependencies, elements, modelPath } = deps;
   // An absent or unparsable model already has its own finding, and grading
   // health.yaml against a model nobody could read would manufacture warns out
   // of the wrong file's breakage.
@@ -50,7 +59,7 @@ export function healthDependencyFindings(deps: HealthDeps): Finding[] {
       subject: service,
       message:
         `${service}: health.yaml declares dependency '${dep}' but nothing in ` +
-        `services/${service}/model.likec4 answers to that name — either a dependency nobody ` +
+        `${modelPath} answers to that name — either a dependency nobody ` +
         `modelled, or one that no longer exists. Model it (an external system as its own element ` +
         `with the edge this service actually has; a private store as a nested container), or ` +
         `delete the entry` +

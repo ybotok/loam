@@ -9,10 +9,11 @@
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { listField, readFrontmatter, stringField } from "../document/frontmatter.js";
+import { listField, readFrontmatter, stringField, type Frontmatter } from "../document/frontmatter.js";
 import type { FleetContext } from "../fleet-context.js";
 import { featureDirOf, type DocsDir, type FeatureDir } from "../kernel/ids/dirs.js";
 import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
+import { readVouchScope } from "../provenance/sample/scope.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
 import { ARCHIVE_DIR, featurePaths, featuresDir, isServiceArtifactName, servicePathsAt } from "./paths.js";
 import { requireDocsRepo } from "./state.js";
@@ -76,11 +77,39 @@ export async function listServices(docsDir: DocsDir, context?: FleetContext): Pr
  * the directory as the tiebreak so a duplicated id (its own error finding)
  * still lists deterministically.
  */
+/**
+ * The second spec axis's header, or an empty one when nobody could read it.
+ *
+ * `readFrontmatter` folds a decode failure into a flag but still THROWS when
+ * the path exists and cannot be read as a file at all — a directory named
+ * `arch.spec.md`, which test/gate-command.test.ts builds on purpose. This is
+ * the fleet ENUMERATION, where one service's bad byte must cost one subject
+ * and not the listing of the other 119, so the throw stops here.
+ *
+ * The distinction between "no scope" and "nobody could look" is not lost by
+ * swallowing it: a path that exists and cannot be read is `service.unreadable`
+ * — an ERROR that fails `loam validate` and `loam gate` — which is a louder
+ * signal than any row of a listing, and it names the file this cannot.
+ */
+async function archHeader(path: string): Promise<Frontmatter> {
+  try {
+    return await readFrontmatter(path);
+  } catch {
+    return { present: false, malformed: false, data: {}, body: "" };
+  }
+}
+
 export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
   const entries = await Promise.all(
     tree.services.map(async (svc): Promise<ServiceEntry> => {
       const p = servicePathsAt(svc.dir);
-      const fm = await readFrontmatter(p.spec);
+      // Both spec axes, because a sample is per FILE: one `--sample 3` run can
+      // read a short spec.md in full and stamp a scope on a long arch.spec.md
+      // beside it, and a fleet row that reported only spec.md's header would
+      // print that service as fully vouched while `loam validate` reported it
+      // sampled. `readFrontmatter` answers "absent" for a file that is not
+      // there, so a service without the second axis pays one existsSync.
+      const [fm, archFm] = await Promise.all([readFrontmatter(p.spec), archHeader(p.archSpec)]);
       const idProblem = serviceIdProblem(svc.id, "directory name");
       return {
         id: svc.id,
@@ -101,6 +130,12 @@ export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
           declared: listField(fm, "sources").length > 0,
           stamped: stringField(fm, "sources_digest") !== undefined,
         },
+        // Either axis makes the SERVICE sampled, and presence is the test, not
+        // decodability: an unreadable scope is still a stamped partial read
+        // (core/provenance/sample/scope.ts's `readVouchScope`), and the fleet
+        // listing is the last place a mangled field should be able to buy
+        // itself a full-trust row.
+        vouchScope: [fm, archFm].some((header) => readVouchScope(header).kind !== "none") ? "sampled" : null,
       };
     }),
   );

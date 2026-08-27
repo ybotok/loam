@@ -8,7 +8,7 @@
  */
 import type { Issue } from "../../vocabulary/issue.js";
 import { type AsyncapiSlot } from "../../asyncapi/digest.js";
-import { type AsyncapiDoc } from "../../asyncapi/read.js";
+import { type AsyncapiDoc } from "../../asyncapi/model.js";
 import { classifyBaselineDigests, OPERATION_DIGEST_LENGTH, OPERATION_DIGEST_RE } from "../../openapi/digest.js";
 
 /** One service's slot pins against the living contract — openapi/baseline/gate.ts's verdicts, slot-keyed. */

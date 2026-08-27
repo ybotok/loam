@@ -15,7 +15,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { loadFile, serviceResolver, type LoadedDoc } from "../c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../c4/likec4.js";
+import { serviceResolver } from "../c4/resolve/service.js";
 import { type PathableService } from "../kernel/ids/service.js";
 import { featureSpecPaths, landscapePath } from "../repo/paths.js";
 import { operations } from "../openapi/doc.js";
@@ -76,6 +77,12 @@ export function coherenceLookups(scope: DeltaScope, context?: FleetContext): Loo
     // Lazy on purpose: the landscape is a full LikeC4 workspace spin-up and the
     // requirement scan reads every service's living spec, and a feature that
     // removes nothing must pay for neither.
+    //
+    // `core/diff/victims.ts` carries a second copy of this join (an index over
+    // an already-read fleet — these closures are scoped to a DeltaScope and
+    // cannot serve it). The victim strings and scan rules are kept in step by
+    // hand; changing either module owes the other the same change, and a THIRD
+    // copy forces the shared extraction (docs/DESIGN.md rule 13).
     let livingLandscape: LoadedDoc | null | undefined;
     const edgeConsumers = async (service: string, op: string): Promise<string[]> => {
       if (livingLandscape === undefined) {

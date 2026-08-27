@@ -29,6 +29,7 @@ import { buildProgram } from "../src/cli.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
+import { firstHour } from "../src/commands/init/first-hour.js";
 
 const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
@@ -243,6 +244,15 @@ async function corpus(): Promise<Invocation[]> {
     ...Object.entries(SLASH_COMMANDS).map(
       ([name, body]) => [`/${name} file (src/core/agent/workflows/)`, markdownInvocations(body)] as [string, string[]],
     ),
+    // The init first-hour epilogue, by IMPORT rather than scrape: its printed
+    // lines are plain text inside template literals — no markdown backticks,
+    // no single-quoted `loam` forms — so printedInvocations cannot see them,
+    // and they are the first instruction a single-repo trial user receives:
+    // exactly the class this suite's header records shipping broken once.
+    [
+      "the init first-hour epilogue (src/commands/init/first-hour.ts)",
+      firstHour("PLACEHOLDER").map(([command]) => command),
+    ],
     ...files.map(([where, src]) => [`a message loam prints (${where})`, printedInvocations(src)] as [string, string[]]),
     ...files.map(([where, src]) => [`a next[] step (${where})`, nextCommands(src)] as [string, string[]]),
   ];

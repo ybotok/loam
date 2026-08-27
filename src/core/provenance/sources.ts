@@ -129,7 +129,7 @@ export async function sourceFindings(
       // can say. What loam knows is that nobody has looked since the code moved.
       severity: "warn",
       code: "sources.stale",
-      message: `${label}: sources changed since ${since}${moved.summary} — re-read them and \`loam vouch --service ${service}\``,
+      message: `${label}: sources changed since ${since}${moved.summary} — run \`loam vouch --pack --service ${service}\` for the reading list, then \`loam vouch --service ${service}\``,
       details: moved.paths ?? sources,
       text: { detailPrefix: "- " },
     },

@@ -10,7 +10,8 @@
  * instead of re-deriving it against a file it would open a second time.
  */
 import { existsSync } from "node:fs";
-import { loadFile, serviceResolver, type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { loadFile, type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { capabilitiesPath, landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
@@ -31,8 +32,9 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { errorText } from "../checks/vocabulary.js";
 import { sourceScopeFindings } from "../checks/sources.js";
 import { apiAxisFindings } from "./api.js";
+import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
-import { eventAxisFindings } from "./events.js";
+import { eventAxisFindings } from "./events/events.js";
 import { archAxisFindings, readServiceSpecs } from "./specs.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
@@ -249,6 +251,11 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // it needs the repo (the suite lives there), and it stays quiet until
   // <gherkinDir>/loam/ exists — a service that never generated has not opted in.
   findings.push(...(await gherkinFindings({ docsDir, service, repoDir, gherkinDir, fleet })));
+
+  // The evidence-pin re-check, the same service-repo-scoped family: recorded
+  // verification citations graded against THIS working tree, quiet from the
+  // docs repo — sources.unverifiable-from-here already names that blind spot.
+  findings.push(...(await evidencePinFindings(docsDir, service, repoDir, fleet)));
 
   // The one journal that does NOT live in the docs repo: gherkin commits into
   // the service repo's emission root. A half-committed suite graded by the

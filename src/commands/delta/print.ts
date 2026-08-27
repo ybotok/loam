@@ -2,12 +2,24 @@
  * The delta as a person reads it: requirements, contract changes, and the
  * architecture slice for one service.
  *
- * Rendering only. Everything printed here comes from `./slices.ts`, which is
- * also what `--json` emits.
+ * Rendering only. Everything printed here comes from `../../core/projection/`,
+ * which is also what `--json` emits.
  */
 import { type Requirement } from "../../core/document/spec.js";
-import { type ApiSlice, type ArchSlice, type EventSlice } from "./slices.js";
+import { type ApiSlice } from "../../core/projection/api.js";
+import { type ArchSlice } from "../../core/projection/arch-slice.js";
+import { type EventSlice } from "../../core/projection/events.js";
 
+/**
+ * The requirement delta, in full.
+ *
+ * The text view used to print headings and scenario NAMES only, which made it a
+ * table of contents for a file the reader then had to open — while `--json`
+ * carried the requirement body and the Given/When/Then lines verbatim. The two
+ * are the same briefing, so they carry the same content: a person reading this
+ * in a terminal is being asked to implement it, exactly like the agent reading
+ * the payload.
+ */
 export function printRequirements(reqs: Requirement[], label: string): void {
   if (reqs.length === 0) {
     console.log(`${label}: (none)\n`);

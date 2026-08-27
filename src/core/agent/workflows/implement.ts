@@ -12,6 +12,7 @@ export const LOAM_IMPLEMENT: CommandContent = {
   placeholders: ["feature", "service"],
   spine: [
     "`loam status` — where this feature actually is, and what is owed before you start",
+    "`loam context` — the briefing: the service's living slice, and every delta in flight over it",
     "`loam delta` — the task: the intent, every requirement verbatim, the endpoints, and the calls in and out",
     "`loam gherkin` in the service's repo — the digest-stamped `.feature` files. Never edit them",
     "write step definitions for the generated scenarios first, outside the generated directory",
@@ -28,7 +29,18 @@ repository, which needs its own committed ./loam.json — if there is none,
    artifacts are still owed, whether another feature has to archive first, and
    what the next step is, each \`next[]\` entry carrying the literal command. It
    writes nothing, so it is always safe to re-run.
-1. \`loam delta $1 --service $2 --json\` (drop \`--service\` to use the service configured
+1. \`loam context $2 --feature $1 --json\` — the briefing to load before touching
+   code: the service's living requirements and arch requirements verbatim, its
+   operations and messages as they stand today, the permissions and capabilities
+   its requirements join to, the fleet edges around it, and this feature's delta
+   over it (\`--feature $1\` narrows the in-flight section; drop it to see every
+   feature working over this service). The delta below is WHAT CHANGES; the pack
+   is what it changes INTO — read it first so a MODIFIED requirement lands as an
+   edit rather than a rewrite, and an operation you are about to add is caught
+   when the living contract already defines it. Exit 1 with \`ok: true\` means a
+   document behind the pack did not parse; the empty section beside the flag is
+   the parse failure, not "nothing here".
+2. \`loam delta $1 --service $2 --json\` (drop \`--service\` to use the service configured
    in ./loam.json). That output IS the task:
    - \`intent\` — why this exists
    - \`requirements[]\` — what to build, with \`scenarios[].lines\` verbatim
@@ -51,23 +63,23 @@ repository, which needs its own committed ./loam.json — if there is none,
    document before building anything — for the delta, \`loam validate $1 --json\` names
    the error; the contract delta is not graded by validate, so read the parser message
    the payload carries.
-2. In the service's repo, \`loam gherkin $1 --json\` — one \`.feature\` file per changed
+3. In the service's repo, \`loam gherkin $1 --json\` — one \`.feature\` file per changed
    requirement lands under \`<gherkinDir>/loam/\` (default \`features/loam/\`), scenarios
    digest-stamped, arch requirements tagged \`@architecture\`. Those files ARE the
    acceptance criteria. Never edit them: regeneration rewrites the directory, and
    \`loam validate\` reports the suite stale by digest, not by your intentions.
-3. Write step definitions for the generated scenarios FIRST — outside \`loam/\`.
+4. Write step definitions for the generated scenarios FIRST — outside \`loam/\`.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance
    criterion someone else reviews against.
-4. Implement until the suite passes — run it with a JSON report
+5. Implement until the suite passes — run it with a JSON report
    (\`cucumber-js --format json:report.json\`):
    \`loam verify $1 --service $2 --results report.json\` consumes that report as the
    done-check's answer sheet. Record from THIS repo, with \`--service\` — the
    \`--service\`-less \`--record\` form writes the whole record from one place and is
    refused (\`record-federated\`) once another service has attested.
-5. Honour the contract: every operation in \`architecture.inbound\` must exist under
+6. Honour the contract: every operation in \`architecture.inbound\` must exist under
    exactly that operationId, and every one in \`architecture.outbound\` must be called.
-6. If building made you change the feature's documents at all — a requirement's
+7. If building made you change the feature's documents at all — a requirement's
    wording, an operation in its openapi.yaml — **\`loam rebase $1\`** before you
    validate. Every edit you make in the docs repo while other features are in
    flight is written against a living document that may have moved since the
@@ -80,7 +92,7 @@ repository, which needs its own committed ./loam.json — if there is none,
    somebody landed a change underneath you — re-read theirs, fold in what you
    still mean, then rebase again. Re-pinning without re-reading is how you
    overwrite someone else's requirement with loam's blessing.
-7. \`loam validate --feature $1 --json\` before handing back.
+8. \`loam validate --feature $1 --json\` before handing back.
 
 If the requirement is ambiguous, say so and stop — do not invent behaviour and
 leave the spec disagreeing with the code.

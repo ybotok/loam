@@ -38,7 +38,7 @@
 import { listServices } from "./repo.js";
 import { parseServiceId, type PathableService, type RawServiceId } from "../kernel/ids/service.js";
 import type { FleetContext } from "../fleet-context.js";
-import type { DocsDir, ServiceDir } from "../kernel/ids/dirs.js";
+import { serviceTreePath, type DocsDir, type ServiceDir } from "../kernel/ids/dirs.js";
 import { servicePathsAt, unfiledServicePaths, type ServicePaths } from "./paths.js";
 import type { ServiceEntry } from "./entries.js";
 
@@ -93,6 +93,26 @@ export async function enumeratedServiceIds(
  * `ServiceEntry` should spell `servicePathsAt(entry.dir)` directly and pay
  * nothing.
  */
+/**
+ * Where a service sits under `services/`, repo-relative and WITHOUT a trailing
+ * slash — for a message that names an existing directory to a reader.
+ *
+ * The join it replaces is `services/${id}`, which is right for an unfiled
+ * service and wrong for every filed one; `paths.ts` states the same rule for
+ * artifact paths and this is its display sibling. A name the enumeration does
+ * not answer to falls back to the unfiled spelling, which is the only honest
+ * answer: there is no directory to point at, and that is usually what the
+ * message is about.
+ */
+export async function serviceTreePathOf(
+  docsDir: DocsDir,
+  service: string,
+  fleet?: FleetContext,
+): Promise<string> {
+  const entry = (await enumeratedServices(docsDir, fleet)).find((s) => s.id === service);
+  return entry === undefined ? `services/${service}` : serviceTreePath(entry);
+}
+
 export async function locateServicePaths(
   docsDir: DocsDir,
   service: PathableService,

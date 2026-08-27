@@ -10,13 +10,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import {
-  elementService,
-  loadFile,
-  serviceResolver,
-  type Elem,
-  type LoadedDoc,
-} from "../../../core/c4/likec4.js";
+import { loadFile, type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
+import { elementService, serviceResolver } from "../../../core/c4/resolve/service.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
 import { serviceIdFindings } from "../../../core/repo/entries.js";
 import { listFleetTree, listServices } from "../../../core/repo/repo.js";
@@ -24,10 +19,14 @@ import { type Finding, type TargetReport } from "../../../core/vocabulary/report
 import { landscapeConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
-import { ACTOR_KINDS, EXTERNAL_TAG, errorText } from "../checks/vocabulary.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
+import { errorText } from "../checks/vocabulary.js";
+import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
+import { drawnSystems, serviceLevelElements } from "./census.js";
 import { unreadableLandscape } from "./load.js";
-import { viewsStaleFindings } from "./views-stale.js";
+import { kindTagFindings } from "./kind-tags.js";
+import { viewIdFindings } from "./views/ids.js";
+import { viewsStaleFindings } from "./views/stale.js";
 
 /**
  * The fleet cross-check: `services/` and the landscape both claim to name the
@@ -143,31 +142,28 @@ export async function validateLandscape(
 
   // The generated subsystem views, graded only now that the landscape has
   // parsed: the expected bytes are a function of (tree, landscape elements) —
-  // `views-stale.ts` says why a byte compare and why exactly one finding.
+  // `views/stale.ts` says why a byte compare and why exactly one finding.
   findings.push(...(await viewsStaleFindings(docsDir, tree, land.elements)));
+  // Beside staleness, and for the same file: an authored view id that collides
+  // with one loam mints into it takes the whole architecture/ project down in
+  // the renderer while every check here stays green — see views/ids.ts.
+  findings.push(...viewIdFindings(land.viewIds, tree));
 
   const services: ReadonlySet<string> = new Set(entries.map((s) => s.id));
-  // Depth is not a fact about a service. This used to keep only top-level
-  // elements (`!e.id.includes(".")`), which ordinary C4 breaks the moment it
-  // groups services under a parent: every nested element was thrown away, so a
-  // bound service read as unmodelled — an ERROR, on every service in the fleet
-  // — and a binding written one level down was never checked at all. The tree
-  // is walked instead, the way `serviceResolver` walks it for edges: a binding
-  // wins at any depth, then a title naming a real services/<id>/, and what sits
-  // INSIDE one of those is that service's container, not a service of its own.
-  const byId = new Map(land.elements.map((e) => [e.id, e]));
-  /** Declared ancestors of an element, nearest first. */
-  const ancestorsOf = (e: Elem): Elem[] => {
-    const out: Elem[] = [];
-    for (let dot = e.id.lastIndexOf("."); dot !== -1; dot = e.id.lastIndexOf(".", dot - 1)) {
-      const parent = byId.get(e.id.slice(0, dot));
-      if (parent !== undefined) out.push(parent);
-    }
-    return out;
+  // Where each service actually sits, for every finding below that names a
+  // directory a reader is meant to open. `services/<id>/` is right only for an
+  // unfiled fleet; a filed service lives at `services/<subsystem>/…/<id>/`, and
+  // a finding pointing at the root form sends the fix to a path that does not
+  // exist. Built once here because three checks below need the same answer.
+  const pathOf = (id: string): string => {
+    const entry = entries.find((s) => s.id === id);
+    return entry === undefined ? `services/${id}` : serviceTreePath(entry);
   };
-  const standsForService = (e: Elem): boolean => e.service !== undefined || services.has(e.title);
-  /** Service-LEVEL elements: everything not drawn inside something that is already a service. */
-  const drawn = land.elements.filter((e) => !ancestorsOf(e).some(standsForService));
+  // Ahead of every exemption below, because it is the one defect that can make
+  // all of them lie at once: a tag loam grades on, declared on a KIND, landing
+  // on an element that stands for one of our own directories — see kind-tags.ts.
+  findings.push(...kindTagFindings({ specification: land.specification, elements: land.elements, services }));
+  const drawn = serviceLevelElements(land.elements, services);
   // Which services the landscape models, answered by the same resolver every
   // edge join uses — so "modelled" here and "inbound edge" in the spine check
   // can never disagree about what an element stands for.
@@ -204,7 +200,7 @@ export async function validateLandscape(
       severity: "error",
       code: "landscape.service-unmodelled",
       subject: id,
-      message: `landscape: services/${id}/ exists but nothing in architecture/landscape.likec4 models it — add an element, or bind one with metadata { service '${id}' }`,
+      message: `landscape: ${pathOf(id)}/ exists but nothing in architecture/landscape.likec4 models it — add an element, or bind one with metadata { service '${id}' }`,
     });
   }
 
@@ -223,16 +219,13 @@ export async function validateLandscape(
     });
   }
 
-  for (const e of drawn) {
-    if (e.tags.includes(EXTERNAL_TAG)) continue;
+  // Walked over the SYSTEM census — the same derivation the scorecard counts,
+  // so the map's exemptions and the fleet rollup cannot drift — with the two
+  // residual skips that are not exemptions: a bound element is the binding
+  // pass's subject above, and a title naming a real directory is documented.
+  for (const e of drawnSystems(land.elements, services)) {
     if (e.service !== undefined) continue; // graded by the binding pass above
-    if (ACTOR_KINDS.has(e.kind.toLowerCase())) continue;
     if (services.has(e.title)) continue;
-    // An element that CONTAINS a service is a grouping — a domain, a boundary,
-    // an enterprise — not a service nobody adopted. There is nothing to bind on
-    // it and nothing to tag #external, so asking for either would be a warning
-    // with no correct fix; the services under it answer for themselves.
-    if (land.elements.some((c) => c.id.startsWith(`${e.id}.`) && standsForService(c))) continue;
     findings.push({
       severity: "warn",
       code: "landscape.service-undocumented",
@@ -245,7 +238,7 @@ export async function validateLandscape(
   // structural checks used. Any one of them suppresses `landscape.matched`
   // below on purpose: a map with a shape warning did not fully "agree".
   findings.push(
-    ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf }),
+    ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf, pathOf }),
   );
 
   if (findings.length === 0) {

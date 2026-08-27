@@ -1,13 +1,14 @@
 
-import { elementService, loadSource, serviceOf, type Elem, type Rel } from "../likec4.js";
+import { loadSource, type Elem, type Rel } from "../likec4.js";
+import { elementService, serviceOf } from "../resolve/service.js";
 import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
 import { spliceSource } from "./authored-source.js";
 import { LandscapeSpliceError, type LandscapeMergeRequest, type LandscapePlan } from "./contract.js";
+import { assertMergeableDelta } from "./delta-blocks.js";
+import { relKey, relSortKey } from "./identity/edges.js";
 import {
   elementSpot,
   nestedInsert,
-  relKey,
-  relSortKey,
   relSpot,
   topStatements,
   type ModelRegion,
@@ -56,6 +57,10 @@ import {
  */
 export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<LandscapePlan> {
   const { landscapeText: text, deltaText, deltaElements, newEls, newRels, featureId } = merge;
+  // First, and before the early return for "nothing to add": a block this merge
+  // cannot carry is lost whether or not the delta also has tagged elements to
+  // splice. See delta-blocks.ts.
+  assertMergeableDelta(deltaText);
   const land = await loadSource(text);
   if (land.errors.length > 0) {
     throw new LandscapeSpliceError(`landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);

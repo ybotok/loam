@@ -14,6 +14,7 @@
  * command.
  */
 import { describe, expect, it } from "vitest";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   coherentFixture,
@@ -33,12 +34,14 @@ import {
   type Project,
 } from "./helpers/harness.js";
 import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
+import { docsRepoFiles } from "../src/core/docs.js";
+import { isLandscapeStub } from "../src/core/scaffold/landscape.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { type Answer } from "../src/core/verify/answers.js";
 import { buildVerification } from "../src/core/verify/build.js";
 import { featureChecklist } from "../src/core/verify/checklist.js";
-import { renderVerification } from "../src/core/verify/file.js";
+import { renderVerification } from "../src/core/verify/store/render.js";
 
 const FEAT_DIR = "features/FEAT-1-split";
 
@@ -538,6 +541,65 @@ describe("features that need a scenario, a pin, or a service", () => {
   });
 });
 
+describe("the honestly-small change — WORKFLOW.md's walkthrough, pinned", () => {
+  it("a requirements-only one-service feature owes nothing else, and next[] is the three-step light path", async () => {
+    // A regression pin, not a behaviour test: the walkthrough documents
+    // already-true mechanics, and this test is what keeps its central claim —
+    // a short, clean next[] over rows that read "none owed" — from silently
+    // regressing under the prose.
+    const files = coherentFixture();
+    for (const key of Object.keys(files)) if (key.startsWith("features/")) delete files[key];
+    const p = await makeProject(files);
+    try {
+      const scaffolded = await runLoam(p.workDir, "new", "FEAT-9", "--touches", "payment-service");
+      expect(scaffolded.code, scaffolded.out).toBe(0);
+      // The deletion the walkthrough instructs is the scaffold's own outro.
+      expect(scaffolded.out).toContain("delete delta.likec4");
+
+      await rm(join(p.docsDir, "features/FEAT-9/delta.likec4"));
+      await p.write(
+        "features/FEAT-9/intent.md",
+        `---\nfeature: FEAT-9\nstatus: proposed\n---\n\n# Reject expired cards\n\n## Why\n\nAuthorization must refuse an expired card before capture.\n\n## Scope\n\npayment-service only; the operation already exists.\n`,
+      );
+      await p.write(
+        "features/FEAT-9/specs/payment-service/spec.md",
+        `# payment-service — delta for FEAT-9\n\n## ADDED Requirements\n\n### Requirement: Reject expired cards\nThe service SHALL refuse authorization when the card is expired.\n\nOperations: authorizePayment\n\n#### Scenario: Expired card\n- **Given** an expired card\n- **When** authorization is requested\n- **Then** the authorization is refused\n`,
+      );
+
+      const payload = await statusJson(p, "FEAT-9");
+      expect(payload.__code).toBe(0);
+      // Every artifact the change does not need grades `done` with
+      // exists:false — "none owed", never "missing": the C4 delta was
+      // deleted on the scaffold's own advice, the arch and event axes are
+      // optional, and the living openapi.yaml already defines the governed
+      // operation, so no contract delta is owed either.
+      expect(artifact(payload, "delta")).toMatchObject({ exists: false, required: false, status: "done" });
+      for (const id of ["arch-spec", "asyncapi", "openapi"]) {
+        expect(artifact(payload, id, "payment-service")).toMatchObject({
+          exists: false,
+          required: false,
+          status: "done",
+        });
+      }
+      // The two files that ARE the change stand clean.
+      expect(artifact(payload, "intent")).toMatchObject({ exists: true, status: "done" });
+      expect(artifact(payload, "spec", "payment-service")).toMatchObject({ exists: true, status: "done" });
+
+      // The light path, exactly and in order: generate the suite, answer the
+      // checklist, ship. Nothing about rebase (an ADDED requirement pins
+      // nothing), nothing about coherence, nothing left to author.
+      expect(codes(payload.next)).toEqual(["next.generate-tests", "next.verify", "next.archive"]);
+
+      // The human view says "none owed" in words, per row, which is the
+      // walkthrough's proof that skipping the artifact was legitimate.
+      const human = await runLoam(p.workDir, "status", "FEAT-9");
+      expect(human.stdout).toContain("(not written — none owed)");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("--service narrows the view without moving the verdict", () => {
   it("narrows the artifact table and the per-service steps", async () => {
     const files = coherentFixture();
@@ -596,7 +658,7 @@ describe("the fleet payload", () => {
 
     expect(payload.scope).toBe("fleet");
     expect(payload.service).toBeNull();
-    expect(payload.services).toEqual({ total: 2, undocumented: 1, draft: 1, vouched: 0 });
+    expect(payload.services).toEqual({ total: 2, undocumented: 1, draft: 1, vouched: 0, sampledVouched: 0 });
     expect(payload.features).toHaveLength(1);
     expect(payload.features[0]).toMatchObject({
       id: "FEAT-1",
@@ -616,6 +678,36 @@ describe("the fleet payload", () => {
     await p.destroy();
   });
 
+  it("names a FILED service at the path it actually occupies, not services/<id>/", async () => {
+    // A service inside a subsystem lives at services/<subsystem>/…/<id>/, and a
+    // next-step naming services/<id>/ sends a reader — or an agent following the
+    // documented loop — to a directory that does not exist. core/repo/entries.ts
+    // already writes this rule down for its own findings; status is the surface
+    // that had not applied it.
+    const files = coherentFixture();
+    files["services/billing/subsystem.yaml"] = "";
+    files["services/billing/orphan-service/.gitkeep"] = "";
+    const p = await makeProject(files);
+    const next = (await statusJson(p)).next as NextStep[];
+    const adopt = next.find((n) => n.code === "next.adopt" && n.statement.includes("orphan-service"));
+    expect(adopt).toBeDefined();
+    expect(adopt!.statement).toContain("services/billing/orphan-service/");
+    expect(adopt!.statement).not.toContain("services/orphan-service/");
+    await p.destroy();
+  });
+
+  it("names a FILED service the same way when it has a spec but no model", async () => {
+    const files = coherentFixture();
+    files["services/billing/subsystem.yaml"] = "";
+    files["services/billing/half-service/spec.md"] = LIVING_SPEC.replace(/payment-service/g, "half-service");
+    const p = await makeProject(files);
+    const next = (await statusJson(p)).next as NextStep[];
+    const step = next.find((n) => n.code === "next.complete-service" && n.statement.includes("half-service"));
+    expect(step).toBeDefined();
+    expect(step!.statement).toContain("services/billing/half-service/");
+    expect(step!.statement).not.toContain("services/half-service/");
+    await p.destroy();
+  });
   it("counts a vouched service separately from a merely documented one", async () => {
     const files = coherentFixture();
     files["services/payment-service/spec.md"] = LIVING_SPEC.replace(
@@ -628,6 +720,8 @@ describe("the fleet payload", () => {
       undocumented: 0,
       draft: 0,
       vouched: 1,
+      // Additive, and a SUBSET of vouched: this service was read in full.
+      sampledVouched: 0,
     });
     await p.destroy();
   });
@@ -677,6 +771,121 @@ describe("the fleet payload", () => {
     expect(run.code).toBe(1);
     expect(JSON.parse(run.stdout).error.code).toBe("unknown-service");
     await p.destroy();
+  });
+});
+
+/**
+ * The first hour. A docs repo with zero services and zero features used to be
+ * the one repository `next[]` had nothing to say to: every loop was vacuous and
+ * the tail answered `next.fleet-clean` — "every service is written down", true
+ * over a fleet of zero the way every claim about nothing is true. The ladder
+ * below replaces that answer with the three steps a first hour actually has.
+ */
+describe("the first-hour ladder over an empty docs repo", () => {
+  /**
+   * The scaffold's landscape, taken from the scaffolder itself — a hand-copied
+   * stub here would be a second declaration of the sentinel, free to drift the
+   * day the template moves, which is exactly what isLandscapeStub forbids.
+   */
+  const scaffoldLandscape = (): string =>
+    docsRepoFiles().find(([rel]) => rel.endsWith("landscape.likec4"))![1];
+
+  /** The two dirs `docsRepoFiles` keeps in git; status refuses a repo without services/. */
+  const EMPTY_REPO = { "services/.gitkeep": "", "features/.gitkeep": "" };
+
+  it("walks the first hour, in order, instead of reporting a vacuously clean fleet", async () => {
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "architecture/landscape.likec4": scaffoldLandscape(),
+    });
+    const payload = await statusJson(p);
+    expect(codes(payload.next)).toEqual([
+      "next.author-landscape",
+      "next.bind-service",
+      "next.adopt-first",
+      "next.fleet-gate",
+    ]);
+    const steps = payload.next as NextStep[];
+    // The untouched-scaffold variant: the file exists, so the step is "draw",
+    // not "scaffold", and it names the file it is about. Since `loam seed`
+    // landed, the rung also teaches the mechanical path — fleet.yaml through
+    // seed — because an untouched stub is exactly seed's target state; the
+    // step's command stays the gate, as it always was.
+    expect(steps[0]!.statement).toContain("untouched");
+    expect(steps[0]!.statement).toContain("loam seed --from fleet.yaml");
+    expect(steps[0]!.path).toBe("architecture/landscape.likec4");
+    expect(steps[0]!.command).toBe("loam validate --all --json");
+    expect(steps[1]!.command).toBe("loam init --docs <path-to-this-docs-repo> --service <service-id>");
+    expect(steps[2]!.command).toBe("loam adopt --service <service-id> --json");
+    expect(codes(payload.next)).not.toContain("next.fleet-clean");
+    await p.destroy();
+  });
+
+  it("says `loam init --create` when there is no landscape at all", async () => {
+    const p = await makeProject({ ...EMPTY_REPO });
+    const payload = await statusJson(p);
+    const first = (payload.next as NextStep[])[0]!;
+    expect(first.code).toBe("next.author-landscape");
+    expect(first.statement).toContain("does not exist");
+    expect(first.statement).toContain("loam init --create");
+    await p.destroy();
+  });
+
+  it("drops the authoring rung once the map is authored, keeping bind and adopt", async () => {
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "architecture/landscape.likec4": coherentFixture()["architecture/landscape.likec4"]!,
+    });
+    const payload = await statusJson(p);
+    expect(codes(payload.next)).toEqual(["next.bind-service", "next.adopt-first", "next.fleet-gate"]);
+    await p.destroy();
+  });
+
+  it("yields the bind/adopt rungs to next.adopt-bound, which already names the exact adopt", async () => {
+    // The most common first-hour repo there is: `init --create --service x`
+    // then `status`. adopt-bound is about HERE and stays first; a generic
+    // bind-service/adopt-first below it would be the same instruction twice.
+    const p = await makeProject(
+      { ...EMPTY_REPO, "architecture/landscape.likec4": scaffoldLandscape() },
+      { service: "obm-message-rest-api" },
+    );
+    const payload = await statusJson(p);
+    expect(codes(payload.next)).toEqual(["next.adopt-bound", "next.author-landscape", "next.fleet-gate"]);
+    await p.destroy();
+  });
+
+  it("never answers an explicit --service question with the onboarding ladder", async () => {
+    // On an empty fleet a narrowed run is refused outright — "no services" and
+    // "you misspelled it" are opposite facts — so the ladder cannot be the
+    // answer to a question about one service.
+    const p = await makeProject({ ...EMPTY_REPO });
+    const run = await runLoam(p.workDir, "status", "--service", "x", "--json");
+    expect(run.code).toBe(1);
+    expect(JSON.parse(run.stdout).error.code).toBe("unknown-service");
+    await p.destroy();
+  });
+});
+
+describe("isLandscapeStub — the writer and the checker read one string", () => {
+  const stub = docsRepoFiles().find(([rel]) => rel.endsWith("landscape.likec4"))![1];
+
+  it("recognises the scaffold's own bytes, under CRLF and under the migration preamble", () => {
+    expect(isLandscapeStub(stub)).toBe(true);
+    // A checkout under core.autocrlf is still untouched.
+    expect(isLandscapeStub(stub.replace(/\n/g, "\r\n"))).toBe(true);
+    // migrate-openspec prepends a preamble to the identical stub — endsWith,
+    // not equality, is what keeps that form reading as untouched.
+    const migrated = docsRepoFiles({ landscapePreamble: "// staged out of an OpenSpec corpus" }).find(
+      ([rel]) => rel.endsWith("landscape.likec4"),
+    )![1];
+    expect(isLandscapeStub(migrated)).toBe(true);
+  });
+
+  it("reads any hand-edit as authored", () => {
+    // Appended: the first drawn edge.
+    expect(isLandscapeStub(`${stub}\n// drawn\n`)).toBe(false);
+    // Edited inside: a service declared in the model block.
+    expect(isLandscapeStub(stub.replace("model {", "model {\n  a = softwareSystem 'a'"))).toBe(false);
   });
 });
 

@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
 import { declaredService, type DeclaredService } from "../kernel/ids/service.js";
+import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
+import { readViewIds } from "./parsed/view-ids.js";
+import { readSpecification, type DocSpecification } from "./parsed/specification.js";
+import { descText, metaKey } from "./parsed/values.js";
 
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
@@ -22,106 +26,6 @@ export interface Elem {
    */
   service?: DeclaredService;
   tags: string[];
-}
-
-/**
- * The service directory an element stands for: an explicit
- * `metadata { service '<id>' }` binding wins, the title is the fallback.
- *
- * The fallback is what every docs repo written before the binding existed relies
- * on, and it is also the trap the binding exists to close: matching on the title
- * means renaming a box in a diagram silently unlinks it from its service, and
- * every check that joined the two just stops finding anything.
- */
-export function elementService(e: Elem): DeclaredService {
-  return e.service ?? declaredService(e.title);
-}
-
-/**
- * Every id an endpoint may be filed under, nearest first: `a.b.c`, `a.b`, `a`.
- *
- * A landscape does not have to draw a service as one opaque box. The moment
- * somebody models its containers — `paymentService.api`, `paymentService.worker`
- * — an edge drawn INTO a container is still an edge into the service, and every
- * join that groups by service has to know that. Resolving only the exact id is
- * what made those edges invisible: the spine check silently skipped them, and
- * the no-openapi grace treated a service with a dozen inbound container calls as
- * one nobody calls at all.
- */
-function ancestorIds(id: string): string[] {
-  const out = [id];
-  for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) {
-    out.push(id.slice(0, dot));
-  }
-  return out;
-}
-
-/**
- * A memoized `id -> service` resolver over one document.
- *
- * Resolution order, and why it is this order:
- *
- *  1. the nearest ancestor (the id itself first) carrying an explicit
- *     `metadata { service '<id>' }` — a binding is a claim somebody wrote down,
- *     so it outranks every guess;
- *  2. the nearest ancestor whose title names a REAL `services/<id>/` directory —
- *     positive evidence from the filesystem, available only to callers that
- *     hand in `known`;
- *  3. the element's own title, and finally the raw id — today's fallback, kept
- *     LAST because it is the one that lies: it happily resolves
- *     `paymentService.api` to "api", a service that has never existed.
- *
- * Built once per document and shared, because it is called inside loops over
- * every relationship and the walk up the ancestor chain is not free.
- */
-export function serviceResolver(
-  elements: Elem[],
-  known?: ReadonlySet<string>,
-): (id: string) => DeclaredService {
-  const byId = new Map(elements.map((e) => [e.id, e]));
-  const memo = new Map<string, DeclaredService>();
-  return (id: string): DeclaredService => {
-    const hit = memo.get(id);
-    if (hit !== undefined) return hit;
-    let answer: DeclaredService | undefined;
-    for (const candidate of ancestorIds(id)) {
-      const e = byId.get(candidate);
-      if (e?.service !== undefined) {
-        answer = e.service;
-        break;
-      }
-    }
-    if (answer === undefined && known !== undefined) {
-      for (const candidate of ancestorIds(id)) {
-        const e = byId.get(candidate);
-        if (e !== undefined && known.has(e.title)) {
-          answer = declaredService(e.title);
-          break;
-        }
-      }
-    }
-    if (answer === undefined) {
-      const self = byId.get(id);
-      answer = self ? elementService(self) : declaredService(id);
-    }
-    memo.set(id, answer);
-    return answer;
-  };
-}
-
-/**
- * The service a relationship endpoint belongs to. An id that names no element
- * resolves to itself, so a partial document degrades to the id rather than
- * throwing.
- *
- * `known` is the set of service directories that actually exist; pass it
- * wherever the caller has enumerated `services/`, so an edge into a modelled
- * container resolves to the service that owns it instead of to the container's
- * own title. Callers with a single document and no repository in hand omit it
- * and keep the pre-existing behaviour.
- */
-export function serviceOf(elements: Elem[], id: string, known?: ReadonlySet<string>): DeclaredService {
-  return serviceResolver(elements, known)(id);
 }
 
 /** loam-neutral relationship view. */
@@ -155,6 +59,35 @@ export interface LoadedDoc {
   errors: LikeC4Error[];
   elements: Elem[];
   relationships: Rel[];
+  /**
+   * The document's `specification { }` block — what its KINDS declare, as
+   * opposed to what its elements do. Optional because a document that did not
+   * parse has none, and because the several `LoadedDoc` literals standing in for
+   * an absent file (`show`'s missing model.likec4, `unreadableLandscape`) have
+   * nothing to put here: a reader must treat "absent" and "declares nothing" the
+   * same way. See `./parsed/specification.ts` for why loam reads it at all —
+   * short version: since LikeC4 1.59.0 a kind can carry tags, and only the
+   * specification can tell an inherited tag from an authored one.
+   */
+  specification?: DocSpecification;
+  /**
+   * The `dynamic view`s the document DECLARES — the ordered steps of a use
+   * case, never a rendering (docs/DESIGN.md rule 26). Optional for exactly the
+   * reason `specification` is: a document that did not parse has none, and the
+   * several `LoadedDoc` literals standing in for an absent file have nothing to
+   * put here. Absent and empty mean the same thing to every reader — no views
+   * were declared, or none could be read — and neither is a finding: a fleet
+   * that draws no diagrams owes loam no views block.
+   */
+  views?: ParsedView[];
+  /**
+   * The ids of every view the document AUTHORS, static ones included — a census,
+   * not a read of what any of them shows. Separate from `views` above because
+   * the two answer different questions off different filters (see
+   * `./parsed/view-ids.ts`), and because a static view contributes an id and
+   * nothing else loam may look at.
+   */
+  viewIds?: string[];
 }
 
 /**
@@ -166,6 +99,12 @@ export interface LoadedDoc {
  * what makes the cheap stage a safe substitute for the expensive one. The
  * substitution is pinned in test/likec4-model-parity.test.ts, which flattens
  * both stages through `flattenModel` below and compares the results.
+ *
+ * Views are deliberately NOT in this interface, even though loam does read them.
+ * What this interface pins is the two-stage PARITY that makes the cheap stage a
+ * safe substitute for the expensive one — and the stages are not claimed to
+ * agree about views, nor need to: the parsed stage is the only one rule 26
+ * permits. That read has its own adapter, `./parsed/dynamic-views.ts`.
  */
 export interface ReadableModel {
   elements: () => Iterable<{
@@ -183,6 +122,15 @@ export interface ReadableModel {
     tags?: readonly string[];
     metadata?: unknown;
   }>;
+  /**
+   * The parsed `specification { }` block. Typed `unknown` and normalized by
+   * `readSpecification` rather than described here, because it is NOT part of
+   * the two-stage parity this interface pins: the shape is LikeC4's internal
+   * record (1.59.2 spells element-kind tags and relationship-kind tags
+   * differently), and writing it out here would be a structural claim about a
+   * dependency's internals that the compiler would then enforce against us.
+   */
+  specification?: unknown;
 }
 
 /** Flatten a LikeC4 model into loam's neutral `Elem`/`Rel` view. */
@@ -245,55 +193,25 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
       return { errors, elements: [], relationships: [] };
     }
 
-    // `parsedModel`, not `computedModel`: the computed stage additionally
-    // computes every VIEW the document declares (and a default one when it
-    // declares none), which loam never reads — it renders nothing. That work is
-    // superlinear in the number of RELATIONSHIPS, so a landscape at fleet shape
-    // turned `loam list` from under a second into minutes. The elements and
-    // relationships below are identical either way.
+    // `parsedModel`, not `computedModel`: the computed stage RESOLVES every
+    // view — expanding its predicates against the model and deriving the
+    // ancestor edges a diagram needs (and computing a default view when the
+    // document declares none). loam reads what a view DECLARES and never what a
+    // view SHOWS (docs/DESIGN.md rule 26), so none of that resolution is ever
+    // wanted; it renders nothing. That work is superlinear in the number of
+    // RELATIONSHIPS, so a landscape at fleet shape turned `loam list` from under
+    // a second into minutes. The elements and relationships below are identical
+    // either way. The `await` is load-bearing for anything reading `$data`: it is
+    // undefined on the unresolved promise.
     const model = (await likec4.parsedModel()) as ReadableModel;
-    return { errors, ...flattenModel(model) };
+    return {
+      errors,
+      specification: readSpecification(model.specification),
+      views: readDynamicViews(model),
+      viewIds: readViewIds(model),
+      ...flattenModel(model),
+    };
   } finally {
     await likec4.dispose();
   }
-}
-
-/**
- * Read one string key out of a LikeC4 `metadata { ... }` block. Four keys carry
- * loam's spines: `op` on a relationship (the OpenAPI operationId it calls),
- * `publishes`/`consumes` on a relationship (the AsyncAPI message it produces or
- * receives), and `service` on an element (the services/<id> directory it stands
- * for). Every one of them is read by BOTH model readers — the parsed one here
- * and the text scanner `scanModel` uses for archive's splice map — because a key
- * only one of them sees is a key the merge silently drops. Elements
- * with no metadata come back as `{}`, so a missing key is indistinguishable from
- * a missing block — both mean "not bound".
- */
-function metaKey(m: unknown, key: string): string | undefined {
-  if (m && typeof m === "object") {
-    const v = (m as Record<string, unknown>)[key];
-    if (typeof v === "string") return v;
-    // A key written TWICE in one block comes back as an array, accepted with no
-    // error, and reading only the string form dropped every value — so an edge
-    // naming two operations reported as naming none, `c4.op-link-missing` telling
-    // the author the opposite of what they wrote. First wins, matching the text
-    // scanner's `keyedLiteral`: the two readers disagreeing about a binding is
-    // exactly what the paragraph above exists to prevent. Later values stay
-    // dropped — one id per key per edge is the model.
-    if (Array.isArray(v) && typeof v[0] === "string") return v[0];
-  }
-  return undefined;
-}
-
-/** LikeC4 descriptions can be a string or a rich-text object ({ txt } / { text } / { md }). */
-function descText(d: unknown): string | undefined {
-  if (typeof d === "string") return d;
-  if (d && typeof d === "object") {
-    const o = d as Record<string, unknown>;
-    for (const key of ["txt", "text", "md", "value"]) {
-      const v = o[key];
-      if (typeof v === "string") return v;
-    }
-  }
-  return undefined;
 }

@@ -41,8 +41,15 @@ export function isRequirementsHeading(heading: string): boolean {
  * Track ``` / ~~~ fences line by line. Returns true while the line is fenced
  * content — including the fence marker itself — so heading-like lines inside a
  * code block are never mistaken for structure.
+ *
+ * Exported for the one heading walk that cannot live in this file:
+ * `core/provenance/sample/sections.ts` cuts a body at H2 *and* H3 for the
+ * sampled vouch, and this package is at its five-file limit. It is exported
+ * rather than restated there because a sampler that disagreed with
+ * `sectionHeadings` about whether a `## ` line inside a code fence is
+ * structure would prescribe sections no reader can find.
  */
-function fenceTracker(): (line: string) => boolean {
+export function fenceTracker(): (line: string) => boolean {
   let fence: string | null = null;
   return (line) => {
     const m = /^\s*(```|~~~)/.exec(line);

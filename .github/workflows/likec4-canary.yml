@@ -1,0 +1,99 @@
+# An early-warning canary against likec4@latest, and never a gate: the real
+# gate (ci.yml, release.yml) runs against the exact lockfile pin, and no push
+# or pull_request trigger exists here, so this workflow can never post a
+# status on a PR, enter branch protection as a required check, or block a
+# release — no release logic reads it. A red run means upstream moved — most
+# often the undocumented multi-project workspace behaviour the batch loader
+# leans on, which test/likec4-batch-parity.test.ts was designed to trip on —
+# not that loam broke; the runbook is CONTRIBUTING.md's "The LikeC4 canary"
+# section. The benchmark step is informational evidence in the step summary,
+# never a pass/fail threshold: wall-clock assertions on shared runners measure
+# the host, not the code. bench:validate reads `ps -o rss=`, so this workflow
+# must never be retargeted to windows runners. Weekly Wednesday, offset from
+# ci.yml's Monday cron so the two scheduled reds never land in one inbox
+# burst. One leg on the engines floor, deliberately: likec4@latest raising its
+# own engines floor above loam's is exactly the upstream drift worth
+# discovering here, and it surfaces as an install or run failure.
+name: likec4-canary
+
+on:
+  schedule:
+    - cron: "29 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: likec4-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22.22.3"
+          cache: npm
+      # Lockfile truth first: the overlay install below must start from the
+      # exact tree the gate certifies, not from whatever a bare install picks.
+      - run: npm ci
+      - name: Compare the exact pin to the npm latest
+        id: versions
+        run: |
+          PINNED=$(node -p "require('./package.json').dependencies.likec4")
+          LATEST=$(npm view likec4 version)
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Pinned likec4: \`$PINNED\` — npm latest: \`$LATEST\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$LATEST" = "$PINNED" ]; then
+            echo "latest equals the pin — nothing new to test" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      # Every step below is skipped, green, when latest equals the pin: a run
+      # that tested nothing must say so rather than imply latest passed.
+      - name: Install likec4@latest over the pin
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned
+        run: |
+          npm install --no-save likec4@latest
+          echo "Resolved likec4 under test: \`$(node -p "require('likec4/package.json').version")\`" >> "$GITHUB_STEP_SUMMARY"
+      # loam imports likec4's type surface (src/core/c4/likec4.ts,
+      # src/core/c4/workspace.ts), so a type-level break is caught before any
+      # test runs.
+      - name: Typecheck against likec4@latest
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned
+        run: npm run typecheck
+      # The LikeC4-touching suites only, not the whole gate: a red here must
+      # implicate likec4, and the non-likec4 suites would only add noise and
+      # minutes. batch-parity is the designed tripwire for the undocumented
+      # multi-project workspace behaviour; the validate suites drive the
+      # batched loader end to end, fallback included; examples runs the real
+      # corpus through real commands; scale is the blow-up alarm.
+      - name: Run the LikeC4-touching suites
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned
+        run: >
+          npx vitest run
+          test/likec4.test.ts
+          test/likec4-lifecycle.test.ts
+          test/likec4-model-parity.test.ts
+          test/likec4-scan-parity.test.ts
+          test/likec4-batch-parity.test.ts
+          test/validate.test.ts
+          test/validate-batch-fallback.test.ts
+          test/validate-blind-spots.test.ts
+          test/validate-contract.test.ts
+          test/examples.test.ts
+          test/scale.test.ts
+      - name: Build
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned
+        run: npm run build
+      # Informational evidence only: the table lands in the step summary for
+      # eyeball comparison against docs/BENCHMARKS.md. bench's own assertSound
+      # fails the job on an unsound run, never on timing.
+      - name: Benchmark the committed 120-service fixture
+        if: steps.versions.outputs.latest != steps.versions.outputs.pinned
+        run: npm run bench:validate | tee -a "$GITHUB_STEP_SUMMARY"

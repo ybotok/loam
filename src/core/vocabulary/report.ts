@@ -77,6 +77,24 @@ export function countSeverity(targets: TargetReport[], severity: Severity): numb
   return targets.reduce((n, t) => n + t.findings.filter((f) => f.severity === severity).length, 0);
 }
 
+/**
+ * DISTINCT subjects carrying a finding with `code`, across the whole report.
+ *
+ * By SUBJECT, not by finding, and that is the rule every rollup derived from
+ * findings must share: one service can raise the same code from two documents
+ * — each document has its own list and its own answer — but it is one service,
+ * and a count of findings sends the reader looking for services that do not
+ * exist. A finding that names no subject is about its target, so the target id
+ * is the fallback key.
+ */
+export function subjectsWith(targets: TargetReport[], code: string): number {
+  return new Set(
+    targets.flatMap((t) =>
+      t.findings.filter((f) => f.code === code).map((f) => f.subject ?? t.id),
+    ),
+  ).size;
+}
+
 export function findingJson(f: Finding): Record<string, unknown> {
   return {
     severity: f.severity,

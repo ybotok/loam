@@ -68,3 +68,24 @@ export function featureDirOf(abs: string): FeatureDir {
 export function serviceDirOf(abs: string): ServiceDir {
   return abs as ServiceDir;
 }
+
+/**
+ * Where a service sits under `services/`, repo-relative and spelled from its
+ * own placement chain — `services/<subsystem>/…/<id>/` for a filed service,
+ * `services/<id>/` for an unfiled one.
+ *
+ * The join it replaces is `services/${id}`, which is right for an unfiled
+ * service and WRONG for every filed one, and the failure is the kind a reader
+ * cannot diagnose: the message names a directory that does not exist, so the
+ * fix goes to the wrong place, or a `cd` simply fails. Three findings already
+ * spelled it correctly by hand and `loam status` spelled it by id; this exists
+ * so the rule has one implementation rather than a convention.
+ *
+ * DISPLAY only, and not a `ServiceDir`: it is repo-relative text for a human
+ * to read, while `ServiceDir` is the absolute path artifacts resolve from. And
+ * `subsystem` is placement carrying no identity, so nothing here may be joined
+ * on — the id is the identity, at whatever depth it lives.
+ */
+export function serviceTreePath(s: { id: string; subsystem: string[] }): string {
+  return ["services", ...s.subsystem, s.id].join("/");
+}

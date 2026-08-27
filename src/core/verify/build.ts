@@ -11,7 +11,7 @@
 import { type Checklist } from "./checklist.js";
 import { type Answer } from "./answers.js";
 import {
-  type ConsumedReport,
+  type ConsumedReports,
   type RecordedClaim,
   type ServiceAttestation,
   type Verification,
@@ -21,7 +21,7 @@ export function buildVerification(
   checklist: Checklist,
   answers: Answer[],
   today: string,
-  report?: ConsumedReport,
+  reports: ConsumedReports = {},
 ): Verification {
   const byId = new Map(answers.map((a) => [a.id, a]));
   const claims: RecordedClaim[] = checklist.claims.map((c) => {
@@ -32,6 +32,10 @@ export function buildVerification(
     // property of `undefined` and no word about which claim went missing.
     const a = byId.get(c.id);
     if (a === undefined) throw new Error(`buildVerification: no answer for claim ${c.id}`);
+    // Deliberately no `evidence_pins` here: the legacy all-at-once form binds
+    // to no commit, so there is no attested blob to pin — and none is ever
+    // handed in, because pins are computed inside the federated evidence
+    // validation this form never runs.
     return {
       id: c.id,
       kind: c.kind,
@@ -49,7 +53,8 @@ export function buildVerification(
     checklist: checklist.digest,
     summary: { claims: claims.length, confirmed, unconfirmed: claims.length - confirmed },
     claims,
-    ...(report === undefined ? {} : { report }),
+    ...(reports.results === undefined ? {} : { report: reports.results }),
+    ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
   };
 }
 
@@ -92,7 +97,7 @@ export interface Attestation {
   service: string;
   recorded: string;
   commit: string;
-  report?: ConsumedReport;
+  reports: ConsumedReports;
 }
 
 export function buildFederatedVerification(
@@ -101,7 +106,7 @@ export function buildFederatedVerification(
   answers: Answer[],
   previous: Verification | null,
 ): FederatedBuild {
-  const { service, recorded, commit, report } = attestation;
+  const { service, recorded, commit, reports } = attestation;
   const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
   const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
 
@@ -133,6 +138,10 @@ export function buildFederatedVerification(
       answered_by: answer.answered_by,
       evidence: answer.evidence,
       ...(answer.note === undefined ? {} : { note: answer.note }),
+      // The pins the evidence validation stamped onto this repository's
+      // answers ride into the record here; retained other-service claims are
+      // spread whole below, so THEIR pins survive a re-record untouched.
+      ...(answer.evidence_pins === undefined ? {} : { evidence_pins: answer.evidence_pins }),
     };
   });
   const byId = new Map([...retained, ...local].map((claim) => [claim.id, claim]));
@@ -158,10 +167,12 @@ export function buildFederatedVerification(
       commit,
       recorded,
       claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id),
-      // Filed with the attestation, not the record: the report is one
+      // Filed with the attestation, not the record: each report is one
       // repository's run, and it is pruned or retained with that repository's
-      // answers rather than outliving them.
-      ...(report === undefined ? {} : { report }),
+      // answers rather than outliving them — the contract report under the
+      // same rule as the cucumber one.
+      ...(reports.results === undefined ? {} : { report: reports.results }),
+      ...(reports.contract === undefined ? {} : { contractReport: reports.contract }),
     },
   ].sort((a, b) => a.service.localeCompare(b.service));
 

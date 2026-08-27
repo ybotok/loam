@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
+import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { maturityRollup } from "../../core/vocabulary/maturity.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
@@ -9,9 +9,12 @@ import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/ro
 import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
 import { listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
-import { featureVerification, serviceViews } from "./views.js";
-import { capabilityJson, featureJson, serviceJson, subsystemsJson } from "./json.js";
-import { printCapabilities, printFeatures, printServices, printWorklist } from "./print.js";
+import { featureVerification, serviceViews, type ServiceView } from "./views.js";
+import { capabilityJson, featureJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
+import { printCapabilities, printFeatures, printOwners, printServices, printWorklist } from "./print.js";
+import { fanInByService, reviewLandscape, reviewOrder } from "./review.js";
+import { resolveSubsystemSlice } from "./campaign/campaign.js";
+import { ownersJoin, type OwnersJoin } from "./campaign/owners.js";
 
 type Section = "services" | "features" | "capabilities";
 const SECTIONS: Section[] = ["services", "features", "capabilities"];
@@ -26,6 +29,9 @@ interface ListOptions {
   json?: boolean;
   archived?: boolean;
   needsWork?: boolean;
+  reviewOrder?: boolean;
+  subsystem?: string;
+  owners?: string;
 }
 
 export function registerList(program: Command): void {
@@ -39,13 +45,30 @@ export function registerList(program: Command): void {
       "--needs-work",
       "services only: the adoption worklist — every service below `vouched`, with what it is missing",
     )
+    .option(
+      "--review-order",
+      "with --needs-work: order the worklist by blast radius — services the most other services depend on first",
+    )
+    .option(
+      "--subsystem <name>",
+      "services only: limit the listing to services filed under this subsystem, at any depth ('unfiled' selects the ones filed under none, while nothing in the tree claims that name)",
+    )
+    .option(
+      "--owners <path>",
+      "services only: group the listing by owning team from this CODEOWNERS file, resolved from the current directory (directory-pattern rules only; unsupported rules are listed as skipped, never guessed)",
+    )
     .action(async (section: string | undefined, opts: ListOptions) => {
       const json = opts.json === true;
-      const wanted = opts.needsWork
-        ? DEFAULT_SECTIONS.filter((s) => s === "services")
-        : section
-          ? SECTIONS.filter((s) => s === section)
-          : DEFAULT_SECTIONS;
+      // The campaign flags grade services, so — exactly like --needs-work —
+      // they narrow a bare `loam list` to the services section instead of
+      // printing a features table the filter silently does not apply to.
+      const campaign = opts.subsystem !== undefined || opts.owners !== undefined;
+      const wanted =
+        opts.needsWork || campaign
+          ? DEFAULT_SECTIONS.filter((s) => s === "services")
+          : section
+            ? SECTIONS.filter((s) => s === section)
+            : DEFAULT_SECTIONS;
       if (section && !SECTIONS.includes(section as Section)) {
         // `invalid-option`, same as show's bad --type: one mistake class, one code.
         fail(json, "invalid-option", `Unknown section '${section}'. Expected: ${SECTIONS.join(" | ")}.`);
@@ -53,6 +76,17 @@ export function registerList(program: Command): void {
       }
       if (opts.needsWork && section === "features") {
         fail(json, "invalid-option", "--needs-work is the service adoption worklist; drop the 'features' section.");
+        return;
+      }
+      if (campaign && (section === "features" || section === "capabilities")) {
+        fail(json, "invalid-option", `--subsystem and --owners grade the services section; drop the '${section}' section.`);
+        return;
+      }
+      // The flag ORDERS the worklist, so it requires the worklist explicitly:
+      // silently implying --needs-work would make one flag change which rows
+      // exist, not only their order.
+      if (opts.reviewOrder && !opts.needsWork) {
+        fail(json, "invalid-option", "--review-order sorts the adoption worklist; add --needs-work.");
         return;
       }
 
@@ -76,7 +110,32 @@ export function registerList(program: Command): void {
         const fleet = new FleetContext();
         const tree = wanted.includes("services") ? await listFleetTree(docsDir, fleet) : undefined;
         const services = wanted.includes("services") ? await listServices(docsDir, fleet) : undefined;
-        const views = services ? await serviceViews(docsDir, services, config.service) : undefined;
+        // --review-order parses the landscape ONCE for both of its consumers —
+        // serviceViews' `called` set (handed in as `preloaded`) and the fan-in
+        // joins below. Without the flag, `undefined` keeps serviceViews' own
+        // load-if-exists behaviour and the run byte-identical to today's.
+        const land =
+          opts.reviewOrder === true && services !== undefined
+            ? await reviewLandscape(docsDir, fleet)
+            : undefined;
+        const views = services ? await serviceViews(docsDir, services, config.service, land) : undefined;
+        // The slice is resolved AFTER the full-fleet views, and rows are
+        // filtered rather than re-derived: fan-in, apiExpected and the missing
+        // lists are fleet facts, and a slice-first derivation would recompute
+        // them against a fleet with the callers outside the slice erased. The
+        // composition is pinned as filter-first-then-rank — ranks stay
+        // contiguous within the filtered set (test/list-campaign.test.ts).
+        // `tree !== undefined` is a type NARROWING, not a branch: a campaign
+        // flag forces the services section, so the tree always exists here.
+        const slice =
+          opts.subsystem !== undefined && tree !== undefined
+            ? resolveSubsystemSlice(tree, opts.subsystem, json)
+            : undefined;
+        if (slice === null) return;
+        // Membership is by DIRECTORY: leaf ids can collide across a broken
+        // tree (`subsystem.name-collision`), and the directory is the row's
+        // actual identity — campaign.ts's SubsystemSlice says why.
+        const shown = slice === undefined ? views : views?.filter((v) => slice.members.has(v.entry.dir));
         const features = wanted.includes("features")
           ? await listFeatures(docsDir, { includeArchived: opts.archived }, fleet)
           : undefined;
@@ -109,23 +168,66 @@ export function registerList(program: Command): void {
                 read: (p) => fleet.readRequirements(p),
               });
 
-        const worklist = views?.filter((v) => v.maturity !== "vouched");
+        const worklist = (shown ?? []).filter((v) => v.maturity !== "vouched");
+        // The ranked review queue, derived never stored: fan-in is computed
+        // FLEET-WIDE (the joins need every service's slice anyway — and a
+        // --subsystem filter must never change a service's count, only which
+        // rows appear) while ranks are assigned over the WORKLIST only — a
+        // vouched service needs no review, and ranking it would put gaps in
+        // the queue. The worklist is already sliced, so under --subsystem the
+        // ranks are contiguous within the filtered set.
+        let ranked: { queue: ServiceView[]; fanIn: ReadonlyMap<string, number> } | undefined;
+        if (opts.reviewOrder === true && services !== undefined) {
+          const fanIn = await fanInByService(services, fleet, land ?? null);
+          ranked = { queue: reviewOrder(worklist, fanIn), fanIn };
+        }
+
+        // THE row set of this listing, spelled once: the owners join, the
+        // `services[]` payload and the text view must all be about the same
+        // rows — `owners.teams[]` is only "that team's campaign worklist"
+        // while it was computed over the rows `services[]` lists — and three
+        // copies of this expression is how they would drift apart.
+        const rows = shown === undefined ? undefined : (ranked?.queue ?? (opts.needsWork ? worklist : shown));
+
+        let owned: OwnersJoin | undefined;
+        if (opts.owners !== undefined && rows !== undefined) {
+          const join = await ownersJoin({
+            path: opts.owners,
+            rows: rows.map((v) => ({ id: v.entry.id, repoDir: repoPath(docsDir, v.entry.dir) })),
+            json,
+          });
+          if (join === null) return;
+          owned = join;
+        }
 
         if (json) {
           emitJson({
             docsDir,
-            ...(views
+            ...(rows && shown
               ? {
-                  services: (opts.needsWork ? worklist! : views).map((v) => serviceJson(docsDir, v)),
-                  maturity: maturityRollup(views),
+                  services: serviceRows(docsDir, ranked ?? rows),
+                  // Under --subsystem the dial is the SLICE's — the filter's
+                  // whole answer — while unfiltered runs keep the full fleet's
+                  // rollup, byte-identical to before the flag existed.
+                  maturity: maturityRollup(shown),
                   // The tree beside the table — additive keys, wave 3 of the
                   // subsystem item: the groups, and how many services sit
                   // unfiled (a permanent, normal state, so a count, never a
-                  // finding).
-                  subsystems: subsystemsJson(docsDir, tree!),
-                  unfiledServices: tree!.services.filter((s) => s.subsystem.length === 0).length,
+                  // finding). Under --subsystem the rows narrow to the named
+                  // group and its descendants; memberCount stays transitive
+                  // because the full tree's services back the modified copy.
+                  subsystems: subsystemsJson(
+                    docsDir,
+                    slice === undefined ? tree! : { ...tree!, subsystems: slice.subsystems },
+                  ),
+                  // `unfiledServices` is a fleet-root fact: under a filter it
+                  // is omitted rather than reported as 0, which would lie.
+                  ...(slice === undefined
+                    ? { unfiledServices: tree!.services.filter((s) => s.subsystem.length === 0).length }
+                    : {}),
                 }
               : {}),
+            ...(owned !== undefined ? { owners: ownersJson(owned) } : {}),
             ...(features
               ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
               : {}),
@@ -134,11 +236,33 @@ export function registerList(program: Command): void {
           return;
         }
 
-        if (opts.needsWork) {
-          printWorklist(worklist!, views!.length);
+        if (slice !== undefined && shown !== undefined) {
+          console.log(`filtered to ${slice.label}: ${shown.length} of ${views!.length} service(s)`);
+        }
+        if (owned !== undefined && rows !== undefined && shown !== undefined) {
+          if (opts.needsWork && rows.length === 0) {
+            // printWorklist's own affordance, kept under the grouping flag:
+            // empty owner groups would answer "who owns the work" without
+            // saying there is none.
+            console.log(`nothing to do — all ${shown.length} service(s) are vouched`);
+            return;
+          }
+          const kind = opts.needsWork
+            ? `${rows.length} of ${shown.length} service(s) need work`
+            : `services (${rows.length})`;
+          const ordered =
+            ranked === undefined ? "" : " — review order (fan-in: services depending on each)";
+          console.log(`${kind} — by owner (${owned.path})${ordered}`);
+          printOwners(owned, new Map(rows.map((v) => [repoPath(docsDir, v.entry.dir), v])), ranked?.fanIn);
           return;
         }
-        if (views) printServices(views, tree);
+        if (opts.needsWork) {
+          printWorklist(ranked === undefined ? worklist : ranked.queue, shown!.length, ranked?.fanIn);
+          return;
+        }
+        // Under --subsystem the tree dial (subsystem and unfiled counts) is a
+        // fleet-root fact the filtered table must not claim, so no tree.
+        if (shown) printServices(shown, slice === undefined ? tree : undefined);
         if (views && features) console.log("");
         if (features) printFeatures(features, verification!);
         if (capabilities) {
@@ -159,12 +283,3 @@ export function registerList(program: Command): void {
     });
 }
 
-/* ------------------------------------------------------------------ */
-/* The per-service view                                                */
-/* ------------------------------------------------------------------ */
-
-/**
- * The graded view: the rung's own inputs (core/vocabulary/maturity.ts) plus the one fact
- * only this command knows — whether anyone standing here could check the
- * service's `sources`, which needs loam.json's binding, not the directory.
- */

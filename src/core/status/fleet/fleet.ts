@@ -11,12 +11,14 @@
  * where the checks actually run.
  */
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { analyzeDependencies } from "../../dependencies/dependencies.js";
 import { type DependencyGraph } from "../../dependencies/facts.js";
+import { isLandscapeStub } from "../../scaffold/landscape.js";
 import { repoPath } from "../../envelope/json.js";
 import { FleetContext } from "../../fleet-context.js";
 import { compareIds, type FeatureEntry, type ServiceEntry } from "../../repo/entries.js";
-import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
+import { featurePaths, featureSpecPaths, landscapePath } from "../../repo/paths.js";
 import { listFeatures, listServices } from "../../repo/repo.js";
 import { contractOwners, contractsHeldElsewhere, owesContract } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
@@ -77,6 +79,17 @@ export async function fleetStatus(
   );
   features.sort((a, b) => compareIds(a.id, b.id));
 
+  // The first-hour ladder's fact, computed exactly when the ladder can apply
+  // — an unnarrowed run over a fleet with zero services and zero features —
+  // so the read disappears from every repository that has anything in it.
+  // Withheld on narrowed runs for the same reason the binding is withheld
+  // below: `--service X` is an explicit question about X, and the
+  // repository's onboarding ladder would be a different question's answer.
+  const teaching =
+    narrowed === undefined && services.length === 0 && features.length === 0
+      ? { landscape: await landscapeTeaching(docsDir) }
+      : null;
+
   return {
     interrupted,
     services: {
@@ -84,6 +97,12 @@ export async function fleetStatus(
       undocumented: services.filter(undocumented).length,
       draft: services.filter((s) => !undocumented(s) && !vouched(s)).length,
       vouched: services.filter(vouched).length,
+      // A subset of `vouched`, never a fourth bucket: those services ARE
+      // vouched, and the three counts still sum to `total`. It rides beside
+      // the count it qualifies because this line is the fleet's trust
+      // headline, and "118 vouched" over a fleet where 90 of them were read
+      // from a sample is the misreading the scope exists to prevent.
+      sampledVouched: services.filter((s) => vouched(s) && s.vouchScope === "sampled").length,
     },
     features,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),
@@ -92,8 +111,34 @@ export async function fleetStatus(
     // is an explicit question about X, and answering it with a step about
     // whichever service loam.json happens to name would be a different
     // question's answer at the top of the list.
-    next: fleetNext({ services, features, graph, interrupted }, narrowed === undefined ? unadopted : null),
+    next: fleetNext(
+      { services, features, graph, interrupted, teaching },
+      narrowed === undefined ? unadopted : null,
+    ),
   };
+}
+
+/**
+ * Which first-hour state the fleet map is in: absent, still the scaffold's own
+ * untouched bytes, or authored. One file read and a byte comparison — the
+ * module header's cost rule stands, no LikeC4 workspace is spun here.
+ */
+async function landscapeTeaching(docsDir: DocsDir): Promise<"missing" | "stub" | "authored"> {
+  const lp = landscapePath(docsDir);
+  if (!existsSync(lp)) return "missing";
+  try {
+    return isLandscapeStub(await readFile(lp, "utf8")) ? "stub" : "authored";
+  } catch {
+    // Unreadable is not untouched. A map that cannot be read — a directory in
+    // the file's place, a permission — must not be called the scaffold's stub
+    // ("missing" and "stub" would each put a false statement in next[]), so it
+    // reads as "authored", which only drops the one teaching step: the gate
+    // entry still names `loam validate --all`, where an unreadable landscape
+    // is actually graded, and letting this read throw would hand the whole
+    // orientation surface — a command that reports and never gates — to the
+    // repository-unavailable refusal over a file status does not even parse.
+    return "authored";
+  }
 }
 
 /** What a feature's fleet row needs about the fleet AROUND it. */

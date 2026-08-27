@@ -14,7 +14,8 @@
  * promising a contract the archive does not produce.
  */
 import { parse } from "yaml";
-import { asyncapiDocOf, type AsyncapiDoc } from "../../asyncapi/read.js";
+import { asyncapiDocOf } from "../../asyncapi/read.js";
+import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import { AsyncapiMergeError } from "../../asyncapi/merge/error.js";
 import { mergeAsyncapiSlots } from "../../asyncapi/merge/merge.js";
 

@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
-import { titleOf } from "../../../core/c4/splice/placement.js";
+import { titleOf } from "../../../core/c4/splice/identity/edges.js";
 import { parseServiceId } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
 import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
@@ -40,6 +40,27 @@ export async function planLandscape(
       throw new ArchiveFailure(
         "merge-failed",
         `delta.likec4 has ${delta.errors.length} parse error(s) — the architecture axis cannot be merged; fix it (\`loam validate --feature ${id}\`) or delete the file`,
+      );
+    }
+    // The feature tag is the whole selection mechanism of this merge, and since
+    // LikeC4 1.59.0 a specification KIND can carry a tag that every element or
+    // edge of that kind then inherits. A delta declaring its own feature tag on
+    // a kind makes `newEls`/`newRels` below select the entire document —
+    // including the context declarations the scaffold ships commented out
+    // precisely so they are NOT merged — and archive would splice somebody
+    // else's services into the fleet map at exit 0. Mechanical, so `--approve`
+    // does not reach it, and refused before the merge is even planned.
+    const kindTagged = [
+      ...Object.entries(delta.specification?.elementKindTags ?? {}),
+      ...Object.entries(delta.specification?.relationshipKindTags ?? {}),
+    ].find(([, tags]) => tags.includes(id));
+    if (kindTagged !== undefined) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `delta.likec4 declares the feature tag '#${id}' on kind '${kindTagged[0]}' in its specification block, so every ` +
+          `'${kindTagged[0]}' in the file inherits it — the merge would treat the whole document as this feature's ` +
+          `additions, context elements included, and splice them into architecture/landscape.likec4. Nothing was ` +
+          `written. Remove '#${id}' from the kind and tag only the declarations ${id} actually adds.`,
       );
     }
     const newEls = delta.elements.filter((e) => e.tags.includes(id));

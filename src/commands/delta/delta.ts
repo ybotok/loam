@@ -10,23 +10,17 @@ import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
-import { apiChanges, archSlice, eventChanges, introducedServices, livingServices, stripFrontmatter } from "./slices.js";
+import { stripFrontmatter } from "../../core/document/frontmatter.js";
+import { apiChanges } from "../../core/projection/api.js";
+import { eventChanges } from "../../core/projection/events.js";
+import { archSlice, introducedServices, livingServices } from "../../core/projection/arch-slice.js";
 import { printApi, printArchSlice, printEvents, printRequirements } from "./print.js";
 import { indent } from "./print.js";
-
-// The summary walk below descends four levels into a document nobody has
-// validated, and `isRecord` is what it asks at each step: a cast there would
-// assert a shape the parser never promised, and a sequence or a scalar in any of
-// those slots would be indexed as a mapping.
 
 interface DeltaOptions {
   service?: string;
   json?: boolean;
 }
-
-
-
-
 
 export function registerDelta(program: Command): void {
   program
@@ -224,5 +218,3 @@ export function registerDelta(program: Command): void {
       if (existsSync(paths.delta)) printArchSlice(arch, service);
     });
 }
-
-/** Every service in the docs repo, or none when there is no docs repo to ask. */
