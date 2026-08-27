@@ -11,14 +11,16 @@ import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { type CommitRecovery } from "../../core/staging/interrupted.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
 import { type Checklist } from "../../core/verify/checklist.js";
+import { type EvidencePin } from "../../core/verify/pins/pin.js";
 import {
+  openClaimsNotice,
   tallyAnswers,
   type Verification,
   verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
-import { plural } from "../policy/format.js";
-import { answeredMark, contestedNotices, MARK, noticesFor, reportLine } from "./frozen.js";
+import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
+import { answeredMark, contestedNotices, contractReportLine, MARK, noticesFor, reportLine } from "./frozen.js";
 
 export interface ClaimStatus {
   id: string;
@@ -29,6 +31,8 @@ export interface ClaimStatus {
   answered_by?: AnsweredBy;
   evidence: string[];
   note?: string;
+  /** The recorded pins, passed through where the record carries them — additive payload key. */
+  evidence_pins?: EvidencePin[];
 }
 
 export function statuses(checklist: Checklist, claims: Checklist["claims"], recorded: Verification | null): ClaimStatus[] {
@@ -57,6 +61,7 @@ export function statuses(checklist: Checklist, claims: Checklist["claims"], reco
       ...(answer?.answered_by === undefined ? {} : { answered_by: answer.answered_by }),
       evidence: answer?.evidence ?? [],
       ...(answer?.note === undefined ? {} : { note: answer.note }),
+      ...(answer?.evidence_pins === undefined ? {} : { evidence_pins: answer.evidence_pins }),
     };
   });
 }
@@ -128,7 +133,14 @@ export function report(
   // attributed. Always from the whole checklist, never the lens — a shared
   // digest is a fact about the feature, and a narrowed view is the one place it
   // would otherwise be invisible.
-  const notices = [...noticesFor(claims, checklist.feature), ...contestedNotices(checklist.claims)];
+  // The open-claims honesty line only where a record EXISTS: with none, the
+  // surface already says "Not verified", and not-started is not partial.
+  const open = recorded === null ? null : openClaimsNotice(tally, checklist.feature);
+  const notices = [
+    ...noticesFor(claims, checklist.feature),
+    ...(open === null ? [] : [open]),
+    ...contestedNotices(checklist.claims),
+  ];
 
   if (json) {
     emitJson({
@@ -153,6 +165,7 @@ export function report(
               stale,
               ...(recorded.attestations === undefined ? {} : { attestations: recorded.attestations }),
               ...(recorded.report === undefined ? {} : { report: recorded.report }),
+              ...(recorded.contractReport === undefined ? {} : { contractReport: recorded.contractReport }),
             },
       claims,
       ...(notices.length === 0 ? {} : { notices }),
@@ -194,8 +207,14 @@ export function report(
         `  Attested by ${attestation.service} at ${attestation.commit.slice(0, 12)} (${attestation.recorded}, ${plural(attestation.claims.length, "claim")}).`,
       );
       if (attestation.report !== undefined) console.log(`      from ${reportLine(attestation.report)}`);
+      if (attestation.contractReport !== undefined) {
+        console.log(`      from ${contractReportLine(attestation.contractReport)}`);
+      }
     }
     if (recorded.report !== undefined) console.log(`  Answered from ${reportLine(recorded.report)}.`);
+    if (recorded.contractReport !== undefined) {
+      console.log(`  Contract report read: ${contractReportLine(recorded.contractReport)}.`);
+    }
   }
   for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
   // An attested record has answered every question — telling it to "answer each
@@ -208,6 +227,12 @@ export function report(
     for (const line of federationNote(scope, owners)) console.log(line);
     console.log("\n  A claim you cannot show evidence for is `unconfirmed` — say why in `note`.");
   }
+  // APPENDED, as format.ts promises — the report's last line, never a wedge
+  // between the notices and the recording instructions that follow them. It
+  // follows printed notice codes only: claim marks carry no code to look up,
+  // and the frozen post-archive view (frozen.ts) stays without it on purpose,
+  // because shipped history is not a fix-it surface.
+  if (notices.length > 0) console.log(`\n${EXPLAIN_FOOTER}`);
 }
 
 /**

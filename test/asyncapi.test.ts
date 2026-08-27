@@ -317,7 +317,11 @@ components:
 describe("validate --service: the event axis", () => {
   it("confirms a resolved spine on both sides of one message", async () => {
     await withProject(fleet(), {}, async (p) => {
-      expect(await codesFor(p, "payment-service")).toContain("event.covered");
+      const producer = await codesFor(p, "payment-service");
+      expect(producer).toContain("event.covered");
+      // Every declared message is requirement-governed here, so the coverage
+      // warn must stay silent — the exclusivity api.covered/api.ungoverned has.
+      expect(producer).not.toContain("event.ungoverned");
       expect(await codesFor(p, "notification-service")).toContain("event.covered");
     });
   });
@@ -547,6 +551,59 @@ Publishes: payment.Typo
       expect(await codesFor(p, "payment-service")).toContain("event.messages-unlinked");
     });
   });
+
+  it("warns per orphaned message even when another message is governed — partial linkage is not silence", async () => {
+    // `event.messages-unlinked` fires only in the ZERO-links case, so a
+    // contract with one governed message and one orphan reported nothing about
+    // the orphan. `event.ungoverned` is the per-message half, api.ungoverned's
+    // event twin: it joins declarations against requirement lines alone.
+    const files = fleet({
+      "services/payment-service/asyncapi.yaml": PRODUCER.replace(
+        "operations:",
+        `  auditEvents:
+    address: payment.audit.v1
+    messages:
+      AuditTrail:
+        $ref: '#/components/messages/AuditTrail'
+operations:`,
+      ).replace(
+        "components:\n  messages:",
+        `  sendAuditTrail:
+    action: send
+    channel:
+      $ref: '#/channels/auditEvents'
+components:
+  messages:
+    AuditTrail:
+      name: payment.AuditTrail
+      payload:
+        type: object
+        properties:
+          entry:
+            type: string`,
+      ),
+    });
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      const findings = JSON.parse(res.stdout).targets[0].findings as {
+        code: string;
+        severity: string;
+        message: string;
+      }[];
+      const finding = findings.find((f) => f.code === "event.ungoverned")!;
+      expect(finding.severity).toBe("warn");
+      expect(finding.message).toContain("payment.AuditTrail");
+      // Per orphan, never per contract: the governed message is not named.
+      expect(finding.message).not.toContain("payment.PaymentAuthorized");
+      const codes = findings.map((f) => f.code);
+      // A finding from this walk suppresses the axis's ok-line, and the
+      // zero-links warn stays silent because one link exists.
+      expect(codes).not.toContain("event.covered");
+      expect(codes).not.toContain("event.messages-unlinked");
+      // A warning grades, it does not fail: the service is usable mid-migration.
+      expect(res.code).toBe(0);
+    });
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -749,12 +806,29 @@ components:
 
 describe("spine.message-external — the producer is outside the fleet", () => {
   it("a carried contract closes the question: no unproduced, no external, spine covered", async () => {
-    await withProject(externalFleet(), {}, async (p) => {
+    // The Consumes: requirement is load-bearing since `event.ungoverned`
+    // exists: a declared message no requirement governs is a finding from this
+    // same walk, and the ok-line declines to stand beside it — so the covered
+    // claim is reachable only when the declaration is governed. (This fixture
+    // used to have no spec at all and still tallied event.covered off the
+    // landscape edge alone; that tally is gone by design, because an edge is a
+    // claim about traffic, not governance.) The spec-less shape keeps
+    // exercising the external-producer answer in the tests below.
+    const files = externalFleet({
+      "services/notification-service/spec.md": spec(
+        "notification-service",
+        "\nConsumes: config.ConfigRefreshed\n",
+      ),
+    });
+    await withProject(files, {}, async (p) => {
       const res = await runLoam(p.workDir, "validate", "--service", "notification-service", "--json");
       expect(res.code).toBe(0);
       const codes = (JSON.parse(res.stdout).targets[0].findings as { code: string }[]).map((f) => f.code);
       expect(codes).not.toContain("spine.message-unproduced");
       expect(codes).not.toContain("spine.message-external");
+      // The governed declaration also keeps the coverage warn silent: the
+      // carried-contract shape changes nothing about the requirements-only join.
+      expect(codes).not.toContain("event.ungoverned");
       expect(codes).toContain("event.covered");
     });
   });

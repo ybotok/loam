@@ -37,10 +37,11 @@ import {
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
 import { validateLandscape } from "./fleet/landscape.js";
 import { readLandscape } from "./fleet/load.js";
+import { buildScorecard } from "./fleet/scorecard/scorecard.js";
+import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
 import { validateService } from "./service/service.js";
-import { ambiguousTarget, capDetails, guarded, renderText, summary } from "./report.js";
-import { UNVERIFIABLE } from "./checks/vocabulary.js";
+import { ambiguousTarget, capDetails, guarded, renderText, summary, unverifiableSubjects } from "./report.js";
 
 interface ValidateOptions {
   service?: string;
@@ -245,26 +246,21 @@ export function registerValidate(program: Command): void {
         return;
       }
 
-      // Counted off the findings rather than alongside them, so the rollup line
-      // and the per-service findings can never disagree about how many services
-      // this run could not check.
-      //
-      // Counted by SUBJECT, not by finding: a service whose spec.md and
-      // arch.spec.md both name `sources` raises two findings — each document
-      // has its own list and its own answer — but it is one service nobody
-      // here can check, and "2 services' sources" over a fleet of one is a
-      // number that sends the reader looking for a service that does not exist.
-      const unverifiable = new Set(
-        targets.flatMap((t) =>
-          t.findings.filter((f) => f.code === UNVERIFIABLE).map((f) => f.subject ?? t.id),
-        ),
-      ).size;
+      // By subject, not by finding — the rule lives with the rollup in report.ts.
+      const unverifiable = unverifiableSubjects(targets);
       // A journal in the repo outranks everything graded above: the docs may
       // be half-merged, and in CI a green over them merges. Led, not appended
       // — it is the reason nothing below can be trusted — and attached to the
       // first target because a finding lives in one.
       const interrupted = await interruptedCommitFinding(docsDir);
       if (interrupted !== null && targets.length > 0) targets[0]!.findings.unshift(interrupted);
+
+      // The fleet scorecard, --all only: recomputed per invocation off the same
+      // memoized reads this run already made — loam stores no history — and it
+      // fails closed per axis, never whole (fleet/scorecard/scorecard.ts).
+      const scorecard = opts.all
+        ? await buildScorecard({ docsDir, targets, fleet, boundService: config.service })
+        : null;
 
       const valid = reportValid(targets);
       const capped = targets.map(capDetails);
@@ -277,10 +273,17 @@ export function registerValidate(program: Command): void {
           // single-service run knows exactly as much about its own blind spot
           // as `--all` knows about the fleet's.
           sourcesUnverifiableFromHere: unverifiable,
+          ...(scorecard === null ? {} : { scorecard }),
           targets: capped.map(targetJson),
         });
       } else {
-        renderText(capped, opts.all === true, unverifiable, opts.errorsOnly === true);
+        renderText(capped, {
+          all: opts.all === true,
+          errorsOnly: opts.errorsOnly === true,
+          unverifiable,
+          scorecard,
+        });
+        if (scorecard !== null) printScorecard(scorecard);
       }
       // --strict is a per-invocation CI lever: it fails the run on any error or
       // warning (ok-severity confirmations never trip it — virtually every

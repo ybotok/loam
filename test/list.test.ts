@@ -209,6 +209,10 @@ describe("verification column", () => {
         confirmed: 3,
         claims: 4,
         attested: 1,
+        // Who answered the CONFIRMED three, by their own `answered_by`. Three
+        // agent answers, because nothing mechanical ran — distinct from
+        // `attested` above, which asks only about the scenario claim.
+        answered: { runner: 0, "external-runner": 0, agent: 3 },
       });
     });
   });
@@ -260,6 +264,7 @@ describe("verification column", () => {
         confirmed: 4,
         claims: 4,
         attested: 1,
+        answered: { runner: 0, "external-runner": 0, agent: 4 },
       });
     });
   });

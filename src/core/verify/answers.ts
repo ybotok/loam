@@ -16,6 +16,7 @@
  */
 import { isRecord } from "../kernel/records.js";
 import { type Claim } from "./checklist.js";
+import { type EvidencePin } from "./pins/pin.js";
 
 /**
  * Two verdicts, deliberately. Anything an agent cannot show evidence for is
@@ -27,11 +28,17 @@ export type Verdict = (typeof VERDICTS)[number];
 
 /**
  * Who answered a claim: the `runner` (a cucumber report's digest-tagged
- * scenarios, matched mechanically by `--results`) or an `agent` (somebody's
+ * scenarios, matched mechanically by `--results`), the `external-runner` (an
+ * API contract-test report's operationId-matched entries, matched mechanically
+ * by `--contract-results` — external because loam did not generate the suite
+ * the way it generates the gherkin, so the join key is the operationId the
+ * claim asserts rather than a digest loam stamped), or an `agent` (somebody's
  * word about the code, taken back by `--record`). On the record so a reviewer
- * can tell a green run from an assertion.
+ * can tell a green run from an assertion. `external-runner` never answers a
+ * `scenario.tested` claim, which is what keeps the attested boundary —
+ * `attestedClaims` in `./record.ts` — exactly where it was.
  */
-export const ANSWERED_BY = ["runner", "agent"] as const;
+export const ANSWERED_BY = ["runner", "external-runner", "agent"] as const;
 export type AnsweredBy = (typeof ANSWERED_BY)[number];
 
 export interface Answer {
@@ -41,6 +48,14 @@ export interface Answer {
   evidence: string[];
   note?: string;
   answered_by: AnsweredBy;
+  /**
+   * loam's own stamp, never caller input: `validateServiceEvidence` computes
+   * these from the attested commit's blobs and the record path attaches them.
+   * `checkAnswers` below deliberately never reads the field, so an
+   * `evidence_pins` key in an answers FILE is ignored, not honored — an agent
+   * must not be able to hand loam a pin loam did not derive.
+   */
+  evidence_pins?: EvidencePin[];
 }
 
 /** Why an answer set was refused. Each names a different way it fails to answer. */
@@ -60,11 +75,16 @@ export type AnswerCheck =
  * nobody ever asked it — and a record that can lie is worse than no record,
  * because it looks like evidence.
  *
- * `runnerOwned` is the composition rule under `--results`: ids the test runner
- * answers, which an answers file must therefore not touch. An entry naming one
- * refuses with its own diagnosis — the id IS on the feature's checklist, so
- * calling it unknown would send the caller hunting a staleness that is not
- * there.
+ * `runnerOwned` is the composition rule under `--results` and
+ * `--contract-results`: ids a mechanical report answers — scenario claims under
+ * the first flag, api.exposes claims under the second — which an answers file
+ * must therefore not touch. An entry naming one refuses with its own diagnosis
+ * — the id IS on the feature's checklist, so calling it unknown would send the
+ * caller hunting a staleness that is not there. `--diff-answers`
+ * (commands/verify/cross/diff.ts) calls this with it UNSET on purpose: under a
+ * diff both agents answer everything in scope, scenario claims included,
+ * because the diff consults no report — so making scenario claims runner-only
+ * even without `--results` would break that lens.
  *
  * `context` is what turns the last line from a circle into an instruction. In a
  * fleet the commonest way to "miss" a claim is that it is not yours: the
@@ -135,7 +155,7 @@ export function checkAnswers(
   if (runnerHit.length + unknown.length + missing.length + twice.length > 0) {
     const parts = [
       runnerHit.length > 0
-        ? `${runnerHit.length} answer(s) name scenario claim(s) the test runner owns under --results: ${runnerHit.join(", ")} — the report answers those; take them out of the answers file`
+        ? `${runnerHit.length} answer(s) name claim(s) a report owns under --results or --contract-results: ${runnerHit.join(", ")} — the report answers those; take them out of the answers file`
         : "",
       unknown.length > 0 ? `${unknown.length} answer(s) name a claim that is not on the checklist: ${unknown.join(", ")}` : "",
       missing.length > 0 ? `${missing.length} claim(s) have no answer: ${missing.join(", ")}` : "",

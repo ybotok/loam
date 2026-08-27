@@ -9,23 +9,23 @@
  * repository — so "is this message declared" is local, while "does anybody
  * publish it" is a fleet question with no local answer at all. That second
  * question is the only check on either spine that reads other services'
- * contracts, and it is paid for only when something actually consumes.
+ * contracts; it lives in `./message-producers.js`, and this axis only decides
+ * when it is worth paying for — exactly when something actually consumes.
  */
 import { existsSync } from "node:fs";
 import {
   type DeclaredService,
   type PathableService,
   type RawServiceId,
-} from "../../../core/kernel/ids/service.js";
-import { type LoadedDoc } from "../../../core/c4/likec4.js";
-import { type ServicePaths } from "../../../core/repo/paths.js";
-import { type Finding } from "../../../core/vocabulary/report.js";
-import { type Requirement } from "../../../core/document/spec.js";
-import { producersByMessage } from "../../../core/asyncapi/producers.js";
-import { readAsyncapi, slotsOf } from "../../../core/asyncapi/read.js";
-import { FleetContext } from "../../../core/fleet-context.js";
-import { externalProducerOf } from "../checks/fleet-shape.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+} from "../../../../core/kernel/ids/service.js";
+import { type LoadedDoc } from "../../../../core/c4/likec4.js";
+import { type ServicePaths } from "../../../../core/repo/paths.js";
+import { type Finding } from "../../../../core/vocabulary/report.js";
+import { type Requirement } from "../../../../core/document/spec.js";
+import { readAsyncapi, slotsOf } from "../../../../core/asyncapi/read.js";
+import { FleetContext } from "../../../../core/fleet-context.js";
+import { producerFindings } from "./message-producers.js";
+import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 
 /** What the service target hands the event axis. */
 export interface EventAxis {
@@ -210,70 +210,34 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
         message: `${service}: asyncapi.yaml declares ${events.messages.length} message(s) but no requirement links any — the event axis is unchecked for this service`,
       });
     }
+    // `api.ungoverned`'s event twin, and the per-message half the check above
+    // cannot see: `event.messages-unlinked` fires only when ZERO links exist,
+    // so a contract with five declared messages and three governed ones
+    // reported nothing about the other two. The join is against requirement
+    // lines ONLY, deliberately ignoring landscape edges — an edge is a claim
+    // about traffic, a requirement is governance — exactly as the API axis
+    // ignores inbound edges when grading coverage.
+    const governed = new Set(eventLinks.map((e) => e.message));
+    const orphans = [...new Set(events.messages.map((m) => m.name))].filter((name) => !governed.has(name));
+    if (orphans.length > 0) {
+      findings.push({
+        severity: "warn",
+        code: "event.ungoverned",
+        subject: service,
+        message: `${service}: ${orphans.length} message(s) not governed by any requirement's Publishes:/Consumes: line — ${orphans.join(", ")}`,
+      });
+    }
   }
 
-  // The fleet question, and the one check on either spine that a single
-  // repository cannot answer: a consumer joins to a message whose schema lives
-  // in the producer's contract, in the producer's repo. Paid only when something
-  // actually consumes — a fleet where nobody has adopted the axis walks nothing.
+  // The consumed-message list is the handover to the fleet question in
+  // ./message-producers.js — a fleet where nothing consumes walks nothing.
   const consumed = [
     ...new Set([
       ...eventEdges.filter((e) => e.direction === "consumes").map((e) => e.message),
       ...eventLinks.filter((e) => e.direction === "consumes").map((e) => e.message),
     ]),
   ].sort();
-  if (consumed.length > 0) {
-    const producers = await producersByMessage(docsDir, [...known], fleet);
-    for (const message of consumed) {
-      const who = producers.byMessage.get(message) ?? [];
-      // "Nobody produces this" is an argument from absence, and it is only
-      // sound over a fleet loam could actually read. One unreadable contract
-      // anywhere suspends it — that service may be the producer, and the
-      // alternative is blaming every consumer for somebody else's broken YAML.
-      // The external answer and the contested answer below rest on positive
-      // evidence and need no such guard.
-      if (who.length === 0) {
-        // A message produced OUTSIDE the fleet used to be inexpressible: the
-        // landscape said the producer was #external, and this error fired
-        // anyway — so honesty cost a red build, and the exit ramp people took
-        // was deleting the link. The landscape already carries the answer; an
-        // external producer shifts the contract question to the one file that
-        // can settle it, this service's own asyncapi.yaml.
-        const ext = externalProducerOf(message, land, landSvcOf, known);
-        if (ext !== null) {
-          const local = events.messages.find((m) => m.name === message);
-          if (local === undefined || local.payloadEmpty === true) {
-            findings.push({
-              severity: "warn",
-              code: "spine.message-external",
-              subject: service,
-              message:
-                `${service}: consumes '${message}' from '${ext}', a system outside the fleet — the ` +
-                `producer declares no contract here, so the only payload definition is this service's ` +
-                `own asyncapi.yaml, and it currently defines no shape for it; declare the message with ` +
-                `its payload`,
-            });
-          }
-          // A carried contract closes the question: the landscape states the
-          // external dependency, the consumer owns the schema — nothing to say.
-        } else if (producers.unreadable.length === 0) {
-          findings.push({
-            severity: "error",
-            code: "spine.message-unproduced",
-            subject: service,
-            message: `${service}: consumes '${message}', but no service in the fleet and no #external element declares it is sent — the message has no producer anywhere, so nothing defines its payload`,
-          });
-        }
-      } else if (who.length > 1) {
-        findings.push({
-          severity: "warn",
-          code: "asyncapi.message-contested",
-          subject: service,
-          message: `${service}: consumes '${message}', which ${who.length} services declare they send (${who.join(", ")}) — every consumer's join picks one of them arbitrarily, so the payload this service reads is whichever one happens to win`,
-        });
-      }
-    }
-  }
+  findings.push(...(await producerFindings({ docsDir, service, land, landSvcOf, known, events, consumed, fleet })));
 
   // Positive confirmation, on the same rule `spine.resolved` follows: claimed
   // only where the axis actually checked something. A service that touches no

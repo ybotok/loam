@@ -21,7 +21,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { readAsyncapi, type AsyncapiDoc } from "./asyncapi/read.js";
+import { readAsyncapi } from "./asyncapi/read.js";
+import type { AsyncapiDoc } from "./asyncapi/model.js";
 import { readCapabilities, type CapabilityVocabulary } from "./capabilities/capabilities.js";
 import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
@@ -60,9 +61,7 @@ export interface FleetContextStats {
   likec4Loads: number;
 }
 
-function key(path: string): string {
-  return resolve(path);
-}
+const key = (path: string): string => resolve(path);
 
 /** One coherent filesystem snapshot for one command invocation. */
 export class FleetContext {

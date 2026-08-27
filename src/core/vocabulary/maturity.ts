@@ -91,3 +91,126 @@ export function maturityRollup(graded: readonly { maturity: Maturity }[]): Recor
   for (const v of graded) out[v.maturity] += 1;
   return out;
 }
+
+/* ------------------------------------------------------------------ */
+/* What the fleet map proves about one service                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * C4 kinds that model people, and the tag marking an element as somebody
+ * else's system. A person is never a service directory, and `#external` is
+ * undocumented on purpose — every census and exemption over the fleet map
+ * asks both questions.
+ *
+ * Extracted on the third strike: `commands/validate/checks/vocabulary.ts`,
+ * `core/gate/partners.ts` and `core/verify/checklist.ts` each carried a copy.
+ * Their real home is `core/c4/likec4.ts` beside the model they describe, but
+ * that file sits against the 300-line limit and its package holds five files
+ * — so the trio lives here, beside `landscapeEvidence`, which reads the same
+ * map for the same per-service questions.
+ *
+ * `PLATFORM_TAG` joined them from `commands/validate/checks/fleet-shape.ts`,
+ * where it was declared beside its one reader. It moved for the rule above the
+ * others came for: `fleet/kind-tags.ts` needs to know which tag names loam
+ * grades on, and reaching into fleet-shape.ts for a five-character constant
+ * would import a module that reads permissions, capabilities and every
+ * service's requirements to get it. The two tags loam gives meaning to belong
+ * in one place anyway — that list IS what the kind-tag check is about.
+ */
+export const ACTOR_KINDS = new Set(["person", "actor", "user"]);
+export const EXTERNAL_TAG = "external";
+/** Tag marking ubiquitous infrastructure; the scaffolded fleet view excludes it. */
+export const PLATFORM_TAG = "platform";
+
+/**
+ * The tags loam GRADES on, as opposed to the ones it merely carries.
+ *
+ * A tag in this list changes what loam concludes about a fleet: `#external`
+ * exempts an element from the landscape↔services reconciliation entirely, and
+ * `#platform` silences the hub warning. Every other tag on an element is the
+ * author's own vocabulary and loam does not read it.
+ *
+ * The list exists because since LikeC4 1.59.0 a tag can be declared on a KIND
+ * — `specification { element softwareSystem { #external } }` — and LikeC4
+ * applies it to every element of that kind. A kind-wide declaration of a tag on
+ * this list switches loam's grading off for the whole fleet at once, which is
+ * what `kindTagFindings` refuses. A tag NOT on this list is safe to declare
+ * kind-wide, so the check must ask exactly this question and no broader one.
+ */
+export const GRADED_TAGS: readonly string[] = [EXTERNAL_TAG, PLATFORM_TAG];
+
+/** One end of a call the fleet map draws, as every per-service view spells it. */
+export interface LandscapeEdge {
+  service: string;
+  op: string | null;
+  title: string | null;
+}
+
+/**
+ * The slice of a parsed relationship the partition reads. Structural on
+ * purpose — the smallest parameter type the derivation needs — so this module
+ * stays a leaf: `core/c4/likec4.ts`'s `Rel` satisfies it without an import
+ * edge from the vocabulary package into the parser.
+ */
+export interface EdgeSource {
+  source: string;
+  target: string;
+  op?: string;
+  title?: string;
+}
+
+export interface LandscapeEvidenceRequest {
+  /** The service being asked about. */
+  id: string;
+  /** Whether the landscape parsed — what makes its silence evidence rather than absence. */
+  parses: boolean;
+  /** The parsed relationships; empty when the landscape is absent or unparseable. */
+  relationships: readonly EdgeSource[];
+  /** Every element id in the map, for the `modelled` probe. */
+  elementIds: readonly string[];
+  /** The shared resolver (`core/c4/resolve/service.ts` `serviceResolver`), widened to plain strings. */
+  svcOf: (id: string) => string;
+}
+
+export interface LandscapeEvidence {
+  inbound: LandscapeEdge[];
+  outbound: LandscapeEdge[];
+  /** Whether anything in the fleet map resolves to this service. */
+  modelled: boolean;
+  /** The `apiExpected` input the ladder above consumes. */
+  apiExpected: boolean;
+}
+
+/**
+ * The fleet map's evidence about one service: the edges into and out of it,
+ * whether the map draws it at all, and whether an API is expected of it.
+ *
+ * One spelling, because it had grown three. `explore`'s describe and the
+ * context pack's living slice partitioned the same relationships with the
+ * same positive-evidence rule line for line — an inbound edge carrying an
+ * operation proves somebody calls the service; a landscape that is absent or
+ * does not parse proves NOTHING about who calls it, so the contract is still
+ * owed — and a rule spelled twice is how the same service grades `partial` in
+ * one command and `documented` in another. `list`'s serviceViews
+ * (`commands/list/views.ts`) derives the same rule fleet-wide in ONE pass —
+ * a single `called` set for every service, not a partition per service —
+ * so that spelling deliberately stays there, cross-referenced from both
+ * sides: calling this per service inside a fleet loop would re-walk the
+ * whole relationship list once per service.
+ */
+export function landscapeEvidence(req: LandscapeEvidenceRequest): LandscapeEvidence {
+  const { id, parses, relationships, svcOf } = req;
+  const inbound: LandscapeEdge[] = [];
+  const outbound: LandscapeEdge[] = [];
+  for (const r of relationships) {
+    const edge = { op: r.op ?? null, title: r.title ?? null };
+    if (svcOf(r.target) === id) inbound.push({ service: svcOf(r.source), ...edge });
+    else if (svcOf(r.source) === id) outbound.push({ service: svcOf(r.target), ...edge });
+  }
+  return {
+    inbound,
+    outbound,
+    modelled: req.elementIds.some((e) => svcOf(e) === id),
+    apiExpected: !parses || inbound.some((e) => e.op !== null),
+  };
+}

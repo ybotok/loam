@@ -1314,6 +1314,224 @@ views {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* Non-model blocks in a delta: the merge cannot carry them            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `planLandscapeMerge` splices out of `model { }` and nothing else, so a delta's
+ * `deployment { }`, `global { }` or `dynamic view` used to vanish on archive —
+ * exit 0, `+N element(s), +M relationship(s)` printed exactly as usual, and the
+ * block simply gone. The merge's own parse net cannot see it: a landscape with
+ * no deployment model is perfectly legal, so there is nothing to fail on.
+ *
+ * The static `views { view … { include * } }` block every fixture here carries
+ * is the control. `loam new` scaffolds exactly that into every delta, and it is
+ * deliberately NOT merged — refusing it would refuse loam's own scaffold. See
+ * src/core/c4/splice/delta-blocks.ts for the line: a static view is a rendering
+ * of a model that the merge leaves wholly present in the landscape, so it can be
+ * restated; a dynamic view's ordering and a deployment block's topology are
+ * recorded nowhere else and are gone for good.
+ */
+describe("a delta block the landscape merge would silently discard", () => {
+  const LANDSCAPE_FOR_BLOCKS = `specification {
+  element softwareSystem
+}
+
+model {
+  paymentApi = softwareSystem 'API' {
+    metadata { service 'payment-service' }
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+  /** A delta that adds one tagged element, plus whatever `extra` blocks follow. */
+  const deltaWith = (feat: string, spec: string, extra: string): string => `specification {
+  element softwareSystem
+${spec}  tag ${feat}
+}
+
+model {
+  newBox = softwareSystem 'New Box' {
+    #${feat}
+  }
+}
+
+views {
+  view v_${feat.toLowerCase().replace(/-/g, "_")} {
+    include *
+  }
+}
+${extra}`;
+
+  const refuses = async (feat: string, delta: string, expected: string[]): Promise<void> => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE_FOR_BLOCKS,
+      [`features/${feat}-blocks/delta.likec4`]: delta,
+    });
+    try {
+      const before = await treeHashes(p.docsDir);
+      // --approve on purpose: the loss is MECHANICAL — the merge cannot carry
+      // the block as authored — not a judgment about coherence, so the flag
+      // must not override it. Same rule as the cross-service collision above.
+      const { res, crashed } = await runLoamSafe(p.workDir, "archive", feat, "--approve", "--json");
+      expect(crashed).toBe(false);
+      expect(res!.code).toBe(1);
+      const json = JSON.parse(res!.stdout);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("merge-failed");
+      for (const fragment of expected) expect(json.error.message).toContain(fragment);
+      expect(await treeHashes(p.docsDir), "a plan-time refusal must write nothing").toEqual(before);
+      expect(p.exists(`features/${feat}-blocks/delta.likec4`)).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  };
+
+  it("refuses a top-level deployment block instead of dropping it", async () => {
+    await refuses(
+      "FEAT-60",
+      deltaWith(
+        "FEAT-60",
+        "  deploymentNode pod\n",
+        `
+deployment {
+  ledgerPod = pod 'ledger pod'
+}
+`,
+      ),
+      ["deployment", "model { }", "architecture/landscape.likec4"],
+    );
+  });
+
+  it("refuses a top-level global block instead of dropping it", async () => {
+    await refuses(
+      "FEAT-61",
+      deltaWith(
+        "FEAT-61",
+        "",
+        `
+global {
+  predicateGroup everything {
+    include *
+  }
+}
+`,
+      ),
+      ["global"],
+    );
+  });
+
+  it("refuses a dynamic view — its ordering is recorded in no other document", async () => {
+    await refuses(
+      "FEAT-62",
+      `specification {
+  element softwareSystem
+  tag FEAT-62
+}
+
+model {
+  newBox = softwareSystem 'New Box' {
+    #FEAT-62
+  }
+  paymentApi = softwareSystem 'API'
+  paymentApi -> newBox 'Calls' {
+    #FEAT-62
+  }
+}
+
+views {
+  view v_feat_62 {
+    include *
+  }
+  dynamic view feat_62_flow {
+    paymentApi -> newBox 'Calls'
+  }
+}
+`,
+      ["dynamic view", "architecture/landscape.likec4"],
+    );
+  });
+
+  it("refuses a delta that declares its own feature tag on a specification KIND", async () => {
+    // The other half of the LikeC4 1.59.0 kind-tag problem, on the WRITE path.
+    // The feature tag is this merge's entire selection mechanism, so a kind-wide
+    // declaration of it makes every element in the file — including the context
+    // declarations the scaffold ships commented out precisely so they are not
+    // merged — look like this feature's additions, and archive would publish
+    // somebody else's services into the fleet map at exit 0.
+    await refuses(
+      "FEAT-64",
+      `specification {
+  element softwareSystem {
+    #FEAT-64
+  }
+  tag FEAT-64
+}
+
+model {
+  newBox = softwareSystem 'New Box'
+  someoneElse = softwareSystem 'Ledger'
+}
+
+views {
+  view v_feat_64 {
+    include *
+  }
+}
+`,
+      ["#FEAT-64", "softwareSystem", "context elements included"],
+    );
+  });
+
+  it("still archives the scaffolded static views block, and the word `deployment` below top level", async () => {
+    // Three ways the refusal could over-fire, all in one delta: the scaffolded
+    // preview view, a `deploymentNode` KIND inside the specification (depth 1,
+    // not a top-level block), and the words themselves inside a comment and a
+    // description — which the mask blanks, so structure cannot be faked in
+    // prose. A refusal a comment can provoke is worse than the silence it
+    // replaced.
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE_FOR_BLOCKS,
+      "features/FEAT-63-ok/delta.likec4": `// This feature does not change deployment { } or global { } at all.
+specification {
+  element softwareSystem
+  deploymentNode pod
+  tag FEAT-63
+}
+
+model {
+  newBox = softwareSystem 'New Box' {
+    #FEAT-63
+    description 'Runs beside the deployment { } we already have'
+  }
+}
+
+views {
+  view v_feat_63 {
+    include *
+  }
+}
+`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-63", "--approve");
+      expect(res.code, res.out).toBe(0);
+      const land = await loadFile(landscapePath(p));
+      expect(land.errors).toEqual([]);
+      expect(elementsTitled(land, "New Box")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("spine preservation through the merge", () => {
   it("both spines survive the rewrite: `op` on the edge and `service` on the element", async () => {
     // The merge re-emits a delta element as living-landscape source. Anything it

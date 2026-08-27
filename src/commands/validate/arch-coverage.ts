@@ -15,14 +15,8 @@
  * one module is what stops "new" being decided differently in three places.
  */
 import { existsSync } from "node:fs";
-import {
-  elementService,
-  loadFile,
-  serviceResolver,
-  type Elem,
-  type LoadedDoc,
-  type Rel,
-} from "../../core/c4/likec4.js";
+import { loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { elementService, serviceResolver } from "../../core/c4/resolve/service.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
@@ -32,7 +26,7 @@ import { type Requirement } from "../../core/document/spec.js";
 import { coversEdge, coversElement, type CoverageScope } from "../../core/c4/arch.js";
 import { readHealth } from "../../core/vocabulary/health.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { ACTOR_KINDS, EXTERNAL_TAG } from "./checks/vocabulary.js";
+import { ACTOR_KINDS, EXTERNAL_TAG } from "../../core/vocabulary/maturity.js";
 import { coversEntries, coversUnknownFindings } from "./checks/requirements.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 

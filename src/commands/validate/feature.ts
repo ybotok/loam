@@ -13,7 +13,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { elementService, loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { elementService } from "../../core/c4/resolve/service.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";

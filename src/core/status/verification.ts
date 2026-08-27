@@ -6,6 +6,7 @@
  * a second definition of "verified".
  */
 import type { FeatureEntry } from "../repo/entries.js";
+import type { FleetContext } from "../fleet-context.js";
 import { featureChecklist } from "../verify/checklist.js";
 import { readVerificationState } from "../verify/file.js";
 import { attestedNotice, tallyRecord, type VerificationVerdict, type VerifyNotice, verificationVerdict } from "../verify/record.js";
@@ -58,6 +59,11 @@ export function verificationStatus(v: VerificationState): ArtifactStatus {
 export async function verificationState(
   docsDir: DocsDir,
   feature: FeatureEntry,
+  // The invocation's read index, when the caller holds one. It reaches the
+  // checklist derivation, whose enumerations and delta parse are memo hits
+  // through it — the difference between one fleet walk per invocation and one
+  // per feature for a caller grading several (`loam gate`'s check 3).
+  fleet?: FleetContext,
 ): Promise<{ state: VerificationState; notice: VerifyNotice | null }> {
   const empty = {
     recorded: null,
@@ -81,7 +87,7 @@ export async function verificationState(
   const v = read.verification;
   const stale = feature.archived
     ? false
-    : (await featureChecklist(docsDir, feature.dir, feature.id)).digest !== v.checklist;
+    : (await featureChecklist(docsDir, feature.dir, feature.id, fleet)).digest !== v.checklist;
   const tally = tallyRecord(v);
   return {
     state: {

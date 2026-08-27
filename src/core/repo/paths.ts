@@ -30,14 +30,17 @@ export const ARCHIVE_DIR = "archive";
 /* ------------------------------------------------------------------ */
 
 /**
- * The living artifact filenames, as one table, because two questions read
- * them: `servicePathsAt` below spells the paths, and the tree walk classifies
- * a directory as a service by whether any of these names sit in it. The walk
- * cannot import this module — `repo → repo/tree` is the package direction, and
- * an edge back would be the cycle `scripts/package-graph.mjs` refuses — so
- * `repo.ts` injects `isServiceArtifactName` into the walk request instead.
+ * The living artifact filenames, as one table, because three questions read
+ * them: `servicePathsAt` below spells the paths, the tree walk classifies
+ * a directory as a service by whether any of these names sit in it, and
+ * `core/diff/base-state.ts` classifies the SAME way over a base git ref's
+ * tree listing (exported for that reader — a filename respelled there would
+ * be the drift this table exists to prevent). The walk cannot import this
+ * module — `repo → repo/tree` is the package direction, and an edge back
+ * would be the cycle `scripts/package-graph.mjs` refuses — so `repo.ts`
+ * injects `isServiceArtifactName` into the walk request instead.
  */
-const ARTIFACT_FILES = {
+export const ARTIFACT_FILES = {
   model: "model.likec4",
   spec: "spec.md",
   archSpec: "arch.spec.md",

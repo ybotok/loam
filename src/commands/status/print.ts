@@ -128,7 +128,10 @@ export function printFleet(r: FleetStatusReport): void {
   const s = r.services;
   console.log(`loam status — ${s.total} service(s) · ${r.features.length} feature(s) in flight`);
   console.log(
-    `  services      ${s.undocumented} undocumented · ${s.draft} draft · ${s.vouched} vouched`,
+    // The sampled count inside the vouched one, the scorecard's own layout: a
+    // reader who stops at the first number must not have been told the
+    // stronger of the two.
+    `  services      ${s.undocumented} undocumented · ${s.draft} draft · ${s.vouched} vouched${s.sampledVouched > 0 ? ` (${s.sampledVouched} sampled)` : ""}`,
   );
   if (r.service !== null) console.log(`  narrowed to   ${r.service}`);
   if (r.order.length > 1) console.log(`  order         ${r.order.join(" → ")}`);

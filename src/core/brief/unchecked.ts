@@ -16,7 +16,13 @@ export const UNCHECKED: string[] = [
   // renderer; loam computes none. Saying otherwise taught agents that a views
   // block was owed to loam, and an `include *` over the FLEET map is the one
   // shape that costs minutes rather than milliseconds.
-  "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. loam reads elements and relationships out of the PARSED model and renders nothing, so it computes no view and a model without one is missing nothing loam wants. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start <dir>` pointed at ONE directory — `services/<id>` for a service model, the docs repo root for the fleet map (`likec4.config.json` scopes that root project to `architecture/`). The renderer merges every `.likec4` file it is given into one model, and loam parses each of them alone, so each declares its own `specification` block: point it at a directory holding two of them and every declaration reads as a duplicate. Scope your views too — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
+  //
+  // Still exactly true of PRESENCE, which is what this entry is about. Rule 26
+  // lets loam read a dynamic view's declared steps WHERE ONE EXISTS; nothing
+  // grades their absence, and the failure this comment records — agents
+  // learning that a views block is owed to loam — is the one rule 26 is
+  // written to prevent recurring.
+  "Whether model.likec4 declares a `views { ... }` block, or any view at all — and nothing in loam ever will. What loam reads, when a `dynamic view` IS present, is only what its author declared: the view's tags and its ordered steps. It computes no view and renders nothing, and it never grades a model for lacking one — a fleet that draws no diagrams owes loam no views block, today or ever. Views belong to LikeC4's own renderer: write them if you want diagrams, and read them with `npx likec4 start <dir>` pointed at ONE directory — `services/<id>` for a service model, the docs repo root for the fleet map (`likec4.config.json` scopes that root project to `architecture/`). The renderer merges every `.likec4` file it is given into one model, and loam parses each of them alone, so each declares its own `specification` block: point it at a directory holding two of them and every declaration reads as a duplicate. Scope your views too — computing a view is superlinear in the number of edges, and an `include *` over `architecture/landscape.likec4` is the expensive one, because that file holds every call in the fleet.",
   // The readability half of the entry above. They are separate entries because
   // the failures are: one is a view that takes minutes to compute, the other is
   // a view that computes instantly and cannot be read. A fleet acquires the

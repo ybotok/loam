@@ -20,7 +20,7 @@
 import { message, rollbackMessage, rollbackStaged, stageWrites, StagingRaceError, swapStaged } from "../../staging/commit.js";
 import { repoPath } from "../../envelope/json.js";
 import { type PlannedWrite, type StagedWrite } from "../../staging/writes.js";
-import { renderVerification } from "../file.js";
+import { renderVerification } from "./render.js";
 import { verificationPath, type Verification } from "../record.js";
 
 /**

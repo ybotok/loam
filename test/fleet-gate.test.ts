@@ -844,10 +844,16 @@ describe("output sized to the question being asked", () => {
       const quiet = await runLoam(p.workDir, "validate", "--all", "--errors-only");
       expect(quiet.code).toBe(0);
       expect(full.code).toBe(0);
-      // Only the blank line + the summary + the unverifiable rollup survive.
+      // Only the rollups survive: the summary, the unverifiable line, and the
+      // fleet scorecard (header + seven axes, plus the adoption row and the
+      // axes one-liner). The scorecard prints under --errors-only
+      // DELIBERATELY — like the footer it is a rollup, not a finding, and
+      // --errors-only is a findings-rendering lever (report.ts);
+      // what the flag promises is that no per-target `ok` confirmation survives.
       const lines = quiet.out.split("\n").filter((l) => l.trim() !== "");
-      expect(lines).toHaveLength(2);
+      expect(lines).toHaveLength(12);
       expect(lines[0]).toContain("10 services, 0 features");
+      expect(lines[2]).toContain("fleet scorecard");
       expect(quiet.out.length).toBeLessThan(full.out.length);
     });
   });
@@ -977,6 +983,177 @@ describe("two landscape elements standing for one service", () => {
       expect(f.subject).toBe("x");
       expect(f.message).toContain("xOne");
       expect(f.message).toContain("xTwo");
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A tag loam grades on, declared on a specification KIND               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The fail-open LikeC4 1.59.0 opened, and the narrowest fixture that shows it.
+ *
+ * `specification { element softwareSystem { #external } }` puts `#external` on
+ * every softwareSystem in the document before loam sees any of them. loam reads
+ * `#external` as "not ours, stop grading", so those six words switch the whole
+ * landscape↔services reconciliation off — and the run then ends on
+ * `landscape.matched`, the line that says the map and the directories AGREE,
+ * over a map nothing checked. Green is the worst possible answer here, which is
+ * why the assertion below is on the ABSENCE of `landscape.matched` as much as on
+ * the presence of the new code.
+ */
+function kindTagLandscape(kindBody: string, modelBody: string): string {
+  return `specification {
+  element softwareSystem${kindBody}
+  element container
+  element topic {
+    #external
+    #platform
+  }
+  tag external
+  tag platform
+  tag tier1
+}
+
+model {
+${modelBody}
+}
+`;
+}
+
+const BOUND_PLUS_STRAY = `  x = softwareSystem 'X' {
+    metadata { service 'x' }
+  }
+  stray = softwareSystem 'Stripe'`;
+
+describe("a graded tag on a specification KIND cannot silence the fleet gate", () => {
+  it("errors landscape.kind-tag-graded and refuses to print landscape.matched", async () => {
+    const files = {
+      ...service("x", "x", "opX"),
+      "architecture/landscape.likec4": kindTagLandscape(
+        ` {
+    #external
+  }`,
+        BOUND_PLUS_STRAY,
+      ),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const all = findings(JSON.parse(res.stdout).targets);
+      const f = all.find((x) => x.code === "landscape.kind-tag-graded")!;
+      expect(f.severity).toBe("error");
+      expect(f.subject).toBe("softwareSystem");
+      // The message has to name the tag, the kind and the element of OURS that
+      // got exempted — the three facts that make the line actionable.
+      expect(f.message).toContain("#external");
+      expect(f.message).toContain("softwareSystem");
+      expect(f.message).toContain("'X'");
+      // The whole point: the run must not be able to end on the agreement line.
+      expect(all.map((x) => x.code)).not.toContain("landscape.matched");
+      expect(res.code).toBe(1);
+    });
+  });
+
+  it("stays silent when the same tag is written on the ELEMENT — that exemption is honest", async () => {
+    const files = {
+      ...service("x", "x", "opX"),
+      "architecture/landscape.likec4": kindTagLandscape(
+        "",
+        `  x = softwareSystem 'X' {
+    metadata { service 'x' }
+  }
+  stray = softwareSystem 'Stripe' {
+    #external
+  }`,
+      ),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = codesIn(JSON.parse(res.stdout).targets);
+      expect(codes).not.toContain("landscape.kind-tag-graded");
+      // The reconciliation actually RAN and agreed — the green this check exists
+      // to tell apart from the green above.
+      expect(codes).toContain("landscape.matched");
+    });
+  });
+
+  it("stays silent for a kind tag loam does not grade — #tier1 is the author's own vocabulary", async () => {
+    const files = {
+      ...service("x", "x", "opX"),
+      "architecture/landscape.likec4": kindTagLandscape(
+        ` {
+    #tier1
+  }`,
+        `  x = softwareSystem 'X' {
+    metadata { service 'x' }
+  }`,
+      ),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = codesIn(JSON.parse(res.stdout).targets);
+      expect(codes).not.toContain("landscape.kind-tag-graded");
+      expect(codes).toContain("landscape.matched");
+    });
+  });
+
+  it("leaves the documented `topic` idiom alone — a kind that stands for no directory of ours", async () => {
+    // The boundary this check has to respect, and the reason it grades what the
+    // tag EXEMPTS rather than where it is written. Every fixture above declares
+    // `element topic { #external #platform }`, exactly as
+    // examples/docs/architecture/landscape.likec4 does, so that the Kafka topics
+    // nested in an external broker do not each demand a services/ directory
+    // nobody owes. No `topic` is bound or titled like a real directory, so
+    // nothing of ours is exempted and the check must stay silent — refusing
+    // this would be loam breaking its own published fleet map.
+    const files = {
+      ...service("x", "x", "opX"),
+      "architecture/landscape.likec4": kindTagLandscape(
+        "",
+        `  x = softwareSystem 'X' {
+    metadata { service 'x' }
+  }
+  kafka = softwareSystem 'kafka' {
+    #external
+    paymentEvents = topic 'payment.events'
+    orderEvents = topic 'order.events'
+  }`,
+      ),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = codesIn(JSON.parse(res.stdout).targets);
+      expect(codes).not.toContain("landscape.kind-tag-graded");
+      expect(codes).not.toContain("landscape.service-undocumented");
+    });
+  });
+
+  it("fires on the SAME kind tag once a topic is bound to a real directory", async () => {
+    // The other side of that boundary, and proof the check grades consequence
+    // rather than kind names: `topic` is unchanged, but one of its elements now
+    // binds to services/x/ — so `#external` is exempting something provably
+    // ours, and `landscape.binding-unknown` (an error) is among what it hides.
+    const files = {
+      ...service("x", "x", "opX"),
+      "architecture/landscape.likec4": kindTagLandscape(
+        "",
+        `  kafka = softwareSystem 'kafka' {
+    #external
+    xTopic = topic 'x-topic' {
+      metadata { service 'x' }
+    }
+  }`,
+      ),
+    };
+    await withProject(files, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const f = findings(JSON.parse(res.stdout).targets).find(
+        (x) => x.code === "landscape.kind-tag-graded",
+      )!;
+      expect(f.subject).toBe("topic");
+      expect(f.message).toContain("'x-topic'");
+      expect(res.code).toBe(1);
     });
   });
 });

@@ -229,7 +229,12 @@ describe("the agent contract teaches the multi-repo forms", () => {
 
   it("/loam-verify records with --service, in the service's own repo", () => {
     const verify = PROTOCOLS["loam-verify"]!;
-    expect(verify).toMatch(/loam verify \$1 --service <id> --results report\.json --record answers\.json/);
+    // The contract flag sits between the two, bracketed: optional where a
+    // contract suite exists, and part of the ONE recording form so an agent
+    // never learns a second command shape for the same act.
+    expect(verify).toMatch(
+      /loam verify \$1 --service <id> --results report\.json \[--contract-results contract\.json\] --record answers\.json/,
+    );
     expect(verify).toMatch(/in each affected service's own repository/i);
     for (const code of ["record-federated", "record-unreadable", "service-mismatch", "repository-unavailable"]) {
       expect(verify, `/loam-verify does not branch on ${code}`).toContain(`\`${code}\``);

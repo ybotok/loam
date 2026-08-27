@@ -7,107 +7,92 @@
  * working tree the one the report was produced from.
  */
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
-import { type ErrorCode } from "../../core/envelope/json.js";
 import { resolvePortableFileInside } from "../../core/kernel/path-safety.js";
 import { readCucumberReport, type ReportScenario } from "../../core/results.js";
 import { type Answer } from "../../core/verify/answers.js";
-import { type ConsumedReport } from "../../core/verify/record.js";
+import { citedLine, pinnedDigest, sourceLines, type EvidencePin } from "../../core/verify/pins/pin.js";
+import { type ConsumedReport, type ConsumedReports } from "../../core/verify/record.js";
+import { type EvidencePins, type TokenMiss } from "./evidence/pins.js";
+import { readReportArtifact } from "./evidence/read.js";
 
 export type ResultsRead =
   | { ok: true; report: ConsumedReport; scenarios: ReportScenario[] }
-  | { ok: false; code: ErrorCode; message: string };
+  | { ok: false; code: "answers-unreadable"; message: string };
 
 /**
- * The report as an artifact, not merely as a parse.
- *
- * `repoDir` is set in federated mode, and there the report must be a file
- * INSIDE the repository being attested, resolved by the same rules as evidence
- * (`portablePathOf` then `resolveInside`): an attestation says "at this
- * commit, in this repository", and a report living somewhere else answers for
- * a run nobody standing here can find. The legacy all-at-once form binds to no
- * repository at all, so it takes the path as spelled — its looser contract,
- * unchanged.
- *
- * Either way the bytes are digested and the file's mtime read, because loam
- * cannot prove a JSON file came from executing this commit and should stop
- * implying otherwise. It can say precisely which file it consumed, and that
- * goes on the record.
+ * The report as an artifact, not merely as a parse. The resolve/read/digest
+ * plumbing lives in `./evidence/read.ts`, shared with `--contract-results`:
+ * the bytes are digested and the file's mtime read, because loam cannot prove
+ * a JSON file came from executing this commit and should stop implying
+ * otherwise. It can say precisely which file it consumed, and that goes on
+ * the record.
  */
 export async function readResults(spelled: string, repoDir: string | undefined): Promise<ResultsRead> {
-  let path: string;
-  if (repoDir === undefined) {
-    path = resolve(process.cwd(), spelled);
-  } else {
-    try {
-      path = resolvePortableFileInside(repoDir, spelled, "test report");
-    } catch (err) {
-      return {
-        ok: false,
-        code: "answers-unreadable",
-        message:
-          `Cannot answer from ${spelled}: ${err instanceof Error ? err.message : String(err)}. ` +
-          "A federated attestation rests on a report inside the repository it attests — give the path relative to the repo root.",
-      };
-    }
-  }
-
-  let bytes: Buffer;
-  let mtime: Date;
-  try {
-    bytes = await readFile(path);
-    mtime = (await stat(path)).mtime;
-  } catch (err) {
-    return {
-      ok: false,
-      code: "answers-unreadable",
-      message: `Cannot read ${spelled} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-  let doc: unknown;
-  try {
-    doc = JSON.parse(bytes.toString("utf8"));
-  } catch (err) {
-    return {
-      ok: false,
-      code: "answers-unreadable",
-      message: `Cannot read ${spelled} as a cucumber JSON report: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-  const parsed = readCucumberReport(doc, spelled);
+  const artifact = await readReportArtifact(spelled, repoDir, "cucumber JSON report");
+  if (!artifact.ok) return artifact;
+  const parsed = readCucumberReport(artifact.doc, spelled);
   if (!parsed.ok) return { ok: false, code: "answers-unreadable", message: parsed.message };
   return {
     ok: true,
     scenarios: parsed.scenarios,
     report: {
-      path: spelled,
-      digest: createHash("sha256").update(bytes).digest("hex"),
-      mtime: mtime.toISOString(),
+      path: artifact.spelled,
+      digest: artifact.digest,
+      mtime: artifact.mtime,
       scenarios: parsed.scenarios.length,
     },
   };
 }
 
 /**
+ * The repository an attestation binds to and the commit it binds at — two
+ * values only ever asked about together, so they travel as one and the
+ * inconsistent pair (this repo, that commit) stops being representable.
+ */
+export interface AttestationBinding {
+  repoDir: string;
+  commit: string;
+}
+
+export type ServiceEvidenceCheck =
+  /** Every citation held up; `pins`/`tokenMisses` are the stamp and the honesty it computed en route. */
+  | ({ ok: true } & EvidencePins)
+  | { ok: false; message: string };
+
+/**
  * In federated mode, a confirmation is accepted only when its evidence holds up
  * in this repository: an agent's `file:line` resolves to a real line that is
- * unchanged at the attested commit, and the runner's evidence names the report
- * loam just read. Legacy global mode deliberately keeps its original, looser
+ * unchanged at the attested commit, and each runner's evidence names the report
+ * loam just read — the cucumber report for `runner`, the contract report for
+ * `external-runner`. Legacy global mode deliberately keeps its original, looser
  * evidence contract for backward compatibility.
+ *
+ * The same pass now STAMPS what it validated: one `EvidencePin` per agent
+ * citation, built where `committedFile`'s blob is already in hand (zero new
+ * git calls), and one `TokenMiss` per citation whose blob does not contain the
+ * claim's token (`tokens`, claim id → the literal the claim asserts). Runner
+ * and contract answers get no pins — their evidence names a report entry, not
+ * a file — and the legacy all-at-once form never calls this validator, so it
+ * stamps nothing.
  */
 export async function validateServiceEvidence(
   answers: Answer[],
-  repoDir: string,
-  commit: string,
-  report?: ConsumedReport,
-): Promise<string | null> {
-  if (report !== undefined) {
+  binding: AttestationBinding,
+  reports: ConsumedReports,
+  tokens: ReadonlyMap<string, string>,
+): Promise<ServiceEvidenceCheck> {
+  const { repoDir, commit } = binding;
+  const err = (message: string): ServiceEvidenceCheck => ({ ok: false, message });
+  const pins = new Map<string, EvidencePin[]>();
+  const tokenMisses: TokenMiss[] = [];
+  for (const report of [reports.results, reports.contract]) {
+    if (report === undefined) continue;
     // Most reports are build output and untracked, and `git diff` is quiet on
     // those — nothing here invents a rule for them. One the repository DOES
     // carry has to match the commit being attested, like any other file the
-    // evidence rests on.
+    // evidence rests on. Both reports independently: each is its own file
+    // making its own claim about this commit.
     const clean = await git(repoDir, ["diff", "--quiet", commit, "--", report.path]);
     if (clean.code !== 0) {
       // Only `1` is git ANSWERING — "that file differs". Every other non-zero
@@ -119,60 +104,87 @@ export async function validateServiceEvidence(
       // commit. An unanswered check is not a passed one, so the unknown refuses
       // on the same terms as the known, and `clean.stderr` carries whatever
       // account of itself the child managed to leave.
-      return clean.code === 1
-        ? `The test report '${report.path}' is committed to this repository and differs from ${commit.slice(0, 12)} — commit it or attest the commit it belongs to.`
-        : `Cannot tell whether the test report '${report.path}' is bound to ${commit.slice(0, 12)} — git could not be run to completion: ${clean.stderr || "git diff failed"}`;
+      return err(
+        clean.code === 1
+          ? `The test report '${report.path}' is committed to this repository and differs from ${commit.slice(0, 12)} — commit it or attest the commit it belongs to.`
+          : `Cannot tell whether the test report '${report.path}' is bound to ${commit.slice(0, 12)} — git could not be run to completion: ${clean.stderr || "git diff failed"}`,
+      );
     }
   }
   for (const answer of answers) {
     if (answer.verdict !== "confirmed") continue;
-    if (answer.answered_by === "runner") {
-      // The runner's evidence is a scenario inside the report, not a file:line
-      // in the source — there is nothing to resolve. What must hold is that it
+    if (answer.answered_by === "runner" || answer.answered_by === "external-runner") {
+      // A runner's evidence is an entry inside its report, not a file:line in
+      // the source — there is nothing to resolve. What must hold is that it
       // names THAT report: an answer pointing anywhere else is not this run's.
+      const report = answer.answered_by === "runner" ? reports.results : reports.contract;
       const stray = answer.evidence.filter((e) => report === undefined || !e.startsWith(`${report.path}: `));
       if (stray.length > 0) {
-        return `Claim ${answer.id} has runner evidence ${stray.map((e) => `'${e}'`).join(", ")} that does not name the report loam read.`;
+        return err(`Claim ${answer.id} has runner evidence ${stray.map((e) => `'${e}'`).join(", ")} that does not name the report loam read.`);
       }
       continue;
     }
     for (const evidence of answer.evidence) {
       const match = /^(.+):([1-9]\d*)$/.exec(evidence);
       if (match === null) {
-        return `Claim ${answer.id} has evidence '${evidence}' — service evidence must be a canonical relative file:line.`;
+        return err(`Claim ${answer.id} has evidence '${evidence}' — service evidence must be a canonical relative file:line.`);
       }
       const relativePath = match[1]!;
       const line = Number(match[2]);
       let absolutePath: string;
       try {
         absolutePath = resolvePortableFileInside(repoDir, relativePath, `evidence for ${answer.id}`);
-      } catch (err) {
-        return `Claim ${answer.id} has unsafe evidence '${evidence}': ${err instanceof Error ? err.message : String(err)}`;
+      } catch (cause) {
+        return err(`Claim ${answer.id} has unsafe evidence '${evidence}': ${cause instanceof Error ? cause.message : String(cause)}`);
       }
       try {
         const info = await stat(absolutePath);
         if (!info.isFile()) {
-          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' is not a regular file.`;
+          return err(`Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' is not a regular file.`);
         }
         const source = await readFile(absolutePath, "utf8");
-        const lines = source.split(/\r\n|\n|\r/).length;
+        const lines = sourceLines(source).length;
         if (line > lines) {
-          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${lines} line(s).`;
+          return err(`Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${lines} line(s).`);
         }
         const committed = await committedFile(repoDir, commit, relativePath);
         if (!committed.ok) {
-          return `Claim ${answer.id} has evidence '${evidence}' that is not bound to ${commit.slice(0, 12)}: ${committed.message}`;
+          return err(`Claim ${answer.id} has evidence '${evidence}' that is not bound to ${commit.slice(0, 12)}: ${committed.message}`);
         }
-        const committedLines = committed.source.split(/\r\n|\n|\r/).length;
-        if (line > committedLines) {
-          return `Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${committedLines} line(s) at ${commit.slice(0, 12)}.`;
+        // The pin, built from the blob just fetched. `citedLine` is undefined
+        // exactly when the line is past the committed file's end — the refusal
+        // this validator already owed — so the bounds check and the pinned
+        // text can never disagree about where lines fall.
+        const text = citedLine(committed.source, line);
+        if (text === undefined) {
+          const committedLines = sourceLines(committed.source).length;
+          return err(`Claim ${answer.id} has evidence '${evidence}', but '${relativePath}' has only ${committedLines} line(s) at ${commit.slice(0, 12)}.`);
         }
-      } catch (err) {
-        return `Claim ${answer.id} has unreadable evidence '${evidence}': ${err instanceof Error ? err.message : String(err)}`;
+        // The token scan happens here, per citation, because the blob is in
+        // hand and record time is when the answerer can still re-read what
+        // they cited. Substring, never a parse: the claim asserts a literal.
+        // A blob that does NOT contain the token is warned once (the notice
+        // built from `tokenMisses`) and the pin then omits the token — see
+        // EvidencePin.token for why re-litigating a never-there token at
+        // every later validate would be a false sentence with no repair.
+        const token = tokens.get(answer.id);
+        const held = token !== undefined && committed.source.includes(token);
+        if (token !== undefined && !held) tokenMisses.push({ id: answer.id, evidence, token });
+        const list = pins.get(answer.id) ?? [];
+        list.push({
+          path: relativePath,
+          line,
+          file_sha256: pinnedDigest(committed.source),
+          text,
+          ...(held && token !== undefined ? { token } : {}),
+        });
+        pins.set(answer.id, list);
+      } catch (cause) {
+        return err(`Claim ${answer.id} has unreadable evidence '${evidence}': ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
   }
-  return null;
+  return { ok: true, pins, tokenMisses };
 }
 
 type CommitResult = { ok: true; commit: string } | { ok: false; message: string };

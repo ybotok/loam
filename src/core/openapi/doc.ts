@@ -164,9 +164,21 @@ export async function readOpenapi(openapiPath: string, context?: FleetContext): 
   // grades it `openapi.invalid` — the file is the error, and every check that
   // reads the contract stays suspended.
   if (!isUtf8(bytes)) return { ...empty(), unreadable: true, error: "file is not valid UTF-8" };
+  return openapiFromText(bytes.toString("utf8"));
+}
+
+/**
+ * The same read over text already in hand — the parse half of `readOpenapi`,
+ * split out so `loam diff` can read a contract fetched from a base git ref
+ * (core/diff/base-state.ts) without writing it to disk. One spelling of the
+ * walk for both entries, so a base-ref contract can never parse differently
+ * from the living file the same bytes would produce; the byte concerns
+ * (existence, UTF-8) stay with the reader that holds the bytes.
+ */
+export function openapiFromText(text: string): OpenapiDoc {
   let doc: unknown;
   try {
-    doc = parse(bytes.toString("utf8"));
+    doc = parse(text);
   } catch (e) {
     return { ...empty(), unreadable: true, error: e instanceof Error ? e.message : String(e) };
   }

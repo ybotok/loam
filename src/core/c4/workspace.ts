@@ -40,6 +40,9 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { flattenModel, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
+import { readDynamicViews } from "./parsed/dynamic-views.js";
+import { readViewIds } from "./parsed/view-ids.js";
+import { readSpecification } from "./parsed/specification.js";
 
 /** A staged document: the real path it came from, and its workspace project. */
 interface StagedDoc {
@@ -118,9 +121,10 @@ function groupErrors(likec4: LikeC4, staged: StagedDoc[]): Map<string, LikeC4Err
  * relationships, WITHOUT calling `parsedModel`: the parsed stage succeeds even
  * over unresolved references, so the "errors mean no model" boundary is loam's
  * to apply, not LikeC4's. A clean document is flattened from
- * `parsedModel(project)` — parsed, never computed: the computed stage builds
- * every VIEW, which loam renders nowhere and which is superlinear in edge
- * count (see loadSource).
+ * `parsedModel(project)` — parsed, never computed: the computed stage RESOLVES
+ * every view against the model — which loam never wants, because it reads a
+ * view's DECLARATIONS and never a view's resolved contents (docs/DESIGN.md
+ * rule 26) — and which is superlinear in edge count (see loadSource).
  */
 export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>> {
   const targets = [...new Set(paths.map((path) => resolve(path)))];
@@ -142,7 +146,17 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
           out.set(path, { errors, elements: [], relationships: [] });
         } else {
           const model = (await likec4.parsedModel(project)) as ReadableModel;
-          out.set(path, { errors, ...flattenModel(model) });
+          // The specification travels with the batch loader too, and must: this
+          // is the loader `validate --all` reads the landscape through, so a
+          // kind-tag check wired only into `loadSource` would be a check the
+          // fleet gate — the one run it exists for — never actually ran.
+          out.set(path, {
+            errors,
+            specification: readSpecification(model.specification),
+            views: readDynamicViews(model),
+            viewIds: readViewIds(model),
+            ...flattenModel(model),
+          });
         }
       }
     } finally {

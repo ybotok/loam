@@ -12,11 +12,18 @@
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import {
   countSeverity,
+  subjectsWith,
   SEVERITY_MARK,
   type Finding,
   type TargetReport,
 } from "../../core/vocabulary/report.js";
-import { plural } from "../policy/format.js";
+import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
+import {
+  ADOPTION_AXES,
+  groupedWarnCodes,
+  type Adoption,
+  type AdoptionAxis,
+} from "./fleet/scorecard/adoption.js";
 
 /**
  * The rollup `--json` carries and the `--all` footer prints.
@@ -40,6 +47,25 @@ export function summary(targets: TargetReport[]): ValidateSummary {
     errors: countSeverity(targets, "error"),
     warnings: countSeverity(targets, "warn"),
   };
+}
+
+/**
+ * How many services this run could not check, for the rollup line and the
+ * `--json` payload.
+ *
+ * Counted off the findings rather than alongside them, so the rollup line
+ * and the per-service findings can never disagree about how many services
+ * this run could not check. The by-SUBJECT rule (a service whose spec.md and
+ * arch.spec.md both name `sources` raises two findings and is one service) is
+ * `subjectsWith`'s, spelled once for every findings-derived rollup — the
+ * fleet scorecard counts through the same function on the same code, so its
+ * number and this one are structurally the same number. The code is a LITERAL
+ * rather than checks/vocabulary.ts's UNVERIFIABLE constant because the
+ * stable-code collector reads counting sites too, and it refuses a slot it
+ * cannot read — the collector is also what convicts a typo here.
+ */
+export function unverifiableSubjects(targets: TargetReport[]): number {
+  return subjectsWith(targets, "sources.unverifiable-from-here");
 }
 
 /**
@@ -133,6 +159,23 @@ export function ambiguousTarget(arg: string, chosen: "service" | "feature"): Fin
 /* Text renderer                                                       */
 /* ------------------------------------------------------------------ */
 
+/** What `renderText` needs of the run beyond the graded targets themselves. */
+export interface RenderOptions {
+  all: boolean;
+  errorsOnly: boolean;
+  /** The fleet's unverifiable-sources subject count, for the one-line rollup. */
+  unverifiable: number;
+  /**
+   * The run's scorecard facts the renderer reads — ONE field, not a nullable
+   * adoption beside a defaulted denominator, so "adoption without its real
+   * denominator" is not constructible. Null on every single-target run and on
+   * an `--all` run whose card failed closed, and null renders exactly as
+   * before grouping existed: fail-open to today's behaviour, every warning
+   * printed individually.
+   */
+  scorecard: { readonly adoption: Adoption; readonly services: number } | null;
+}
+
 /**
  * `--errors-only` is a RENDERING lever, the way `--strict` is an exit-code
  * lever: neither changes the report, and the `--json` payload is unaffected by
@@ -140,15 +183,42 @@ export function ambiguousTarget(arg: string, chosen: "service" | "feature"): Fin
  * `ok` confirmations, and the two warnings that matter are somewhere inside it;
  * anyone reading a CI log wants the exceptions, and anyone auditing wants all
  * of it. Both are available, from the same run, and neither is the default.
+ *
+ * Axis grouping is the same kind of lever, one notch further: warnings whose
+ * SOLE cause is a fleet-wide not-started axis (the mechanical, fail-closed
+ * rule in fleet/scorecard/adoption.ts — warn severity, listed code, axis at
+ * zero) are dropped from the per-target listing and re-stated as one banner
+ * per axis after the footer. The report, the footer's counts, `--json` and
+ * `--strict` are all computed from the UNFILTERED findings, so nothing a
+ * machine or an exit code reads moves by a single bit.
  */
-export function renderText(
-  targets: TargetReport[],
-  all: boolean,
-  unverifiable: number,
-  errorsOnly: boolean,
-): void {
+export function renderText(targets: TargetReport[], opts: RenderOptions): void {
+  const { all, errorsOnly, unverifiable } = opts;
+  // When the fleet-wide "not started" claim is measurable at all — each guard
+  // fails closed to ungrouped rendering. `!all` is structural, not just the
+  // call site's promise: the banners print after the footer that only `--all`
+  // reaches, so grouping outside `--all` would DROP warnings instead of
+  // moving them — the one thing this lever must never do. `services === 0`
+  // is the vacuous fleet: with no services every axis is 0 "fleet-wide", and
+  // a banner over "0 of 0 services" would hide the fleet-level warnings of a
+  // repo that merely has no fleet yet. And an unreadable service proves
+  // nothing about what it started: its all-false participation (contracts.ts)
+  // could MANUFACTURE the very N=0 that licenses suppression — beside an
+  // error saying that service could not be checked — so one
+  // `service.unreadable` subject disables grouping for the whole run.
+  const card =
+    !all ||
+    opts.scorecard === null ||
+    opts.scorecard.services === 0 ||
+    subjectsWith(targets, "service.unreadable") > 0
+      ? null
+      : opts.scorecard;
+  const grouped = card === null ? new Map<string, AdoptionAxis>() : groupedWarnCodes(card.adoption);
+  const isGrouped = (f: Finding): boolean => f.severity === "warn" && grouped.has(f.code);
   for (const t of targets) {
-    const shown = errorsOnly ? t.findings.filter((f) => f.severity !== "ok") : t.findings;
+    const shown = t.findings.filter(
+      (f) => !isGrouped(f) && (!errorsOnly || f.severity !== "ok"),
+    );
     if (shown.length === 0) continue;
     // A feature announces itself; a service's findings already carry its name.
     if (t.kind === "feature") console.log(t.id);
@@ -169,6 +239,11 @@ export function renderText(
     }
   }
 
+  // The explain pointer follows any report that printed work — a non-ok
+  // finding, listed or folded under an axis banner. Gated on the UNFILTERED
+  // findings like every other rollup, so `--errors-only` and grouping cannot
+  // print codes the pointer then fails to follow.
+  const pointer = targets.some((t) => t.findings.some((f) => f.severity !== "ok"));
   if (!all) {
     // Without the --all footer there would be nothing at all to print for a
     // clean single target under --errors-only — and silence is the one output
@@ -176,6 +251,7 @@ export function renderText(
     if (errorsOnly && targets.every((t) => t.findings.every((f) => f.severity === "ok"))) {
       console.log(`${targets.map((t) => t.id).join(", ")}: no errors or warnings`);
     }
+    if (pointer) console.log(`\n${EXPLAIN_FOOTER}`);
     return;
   }
   const s = summary(targets);
@@ -191,4 +267,32 @@ export function renderText(
       `⚠ sources.unverifiable-from-here: ${whose} sources can only be checked from their own repos`,
     );
   }
+  // The axis banners — one per not-started axis that actually grouped a
+  // warning, in the axes' fixed order, each naming its dropped codes with
+  // counts. Tallied off the UNFILTERED findings (the same walk the footer
+  // counts), and printed under --errors-only too: like the footer and the
+  // unverifiable line this is a rollup, not a finding.
+  if (card !== null && grouped.size > 0) {
+    const tally = new Map<string, number>();
+    for (const t of targets) {
+      for (const f of t.findings) {
+        if (isGrouped(f)) tally.set(f.code, (tally.get(f.code) ?? 0) + 1);
+      }
+    }
+    for (const axis of ADOPTION_AXES) {
+      // Insertion order of `grouped` is the table's order, so the pairs render
+      // deterministically across runs and machines.
+      const pairs = [...grouped]
+        .filter(([code, a]) => a === axis && (tally.get(code) ?? 0) > 0)
+        .map(([code]) => [code, tally.get(code) ?? 0] as const);
+      if (pairs.length === 0) continue;
+      const total = pairs.reduce((n, [, k]) => n + k, 0);
+      console.log(
+        `⚠ ${axis} axis not started fleet-wide (0 of ${plural(card.services, "service")}), ` +
+          `expected during staged adoption — ${total} warning(s) grouped: ` +
+          `${pairs.map(([code, k]) => `${code}×${k}`).join(", ")}; every finding is unchanged in --json`,
+      );
+    }
+  }
+  if (pointer) console.log(`\n${EXPLAIN_FOOTER}`);
 }

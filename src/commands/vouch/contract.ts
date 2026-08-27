@@ -11,8 +11,14 @@ import { type ErrorCode } from "../../core/envelope/json.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import type { CommitRecovery } from "../../core/staging/interrupted.js";
+import type { VouchScope } from "../../core/provenance/sample/scope.js";
 import type { SkippedSource } from "../../core/provenance/walk.js";
-
+// The plan's shapes live with the pass that derives them (`sample/plan.ts`),
+// the way pack's `SectionDelta` lives with `pack/sections.ts`. The import
+// direction is parent-from-child, which is the only one the package graph
+// allows here: a sub-package that reached back up into this file would close
+// the cycle `vet/verify.ts` was moved down to avoid.
+import type { SamplePlan } from "./sample/plan.js";
 
 export interface VouchRequest {
   docsDir: DocsDir;
@@ -28,6 +34,13 @@ export interface VouchRequest {
    * command that can talk to a person about it.
    */
   vouchedBy: string;
+  /**
+   * The sample a person was shown before they answered, under `--sample <n>`.
+   * Absent for an ordinary vouch — and its absence is what CLEARS a prior
+   * sampled stamp, since a full run deletes `vouch_scope` from every file it
+   * writes.
+   */
+  sample?: SamplePlan;
 }
 
 /** One spec-axis file's share of a successful vouch. */
@@ -50,6 +63,14 @@ export interface StampedSpec {
    * they are told, because the stamp cannot go stale over bytes it never saw.
    */
   skipped: SkippedSource[];
+  /**
+   * What was written into `vouch_scope`, or null when the file was read in
+   * full and the field was deleted. The report describes what the stamp
+   * ACTUALLY says rather than what the plan asked for: a file whose section
+   * count was at or under `--sample <n>` is stamped as a full vouch, and the
+   * screen the person is looking at has to say so.
+   */
+  vouchScope: VouchScope | null;
 }
 
 export type VouchOutcome =

@@ -231,31 +231,65 @@ interface MovedSources {
 }
 
 /**
+ * The structured half of the answer: which paths were added, changed and
+ * removed between a stamp and the current index — or null when the stamp
+ * cannot say. Null covers two distinct silences on purpose, both of which mean
+ * "do not print a path list": a stamp that recorded no per-file entries (the
+ * count-only >100-file fallback, or a header nobody could parse), and an index
+ * that AGREES with the current tree while the caller's digest comparison said
+ * stale — a contradiction (a truncation collision, or a hand-edited header),
+ * where an empty delta under a staleness warning would read as proof that
+ * nothing moved. Callers that need the counts anyway read `stamp.count`.
+ *
+ * Extracted from `movedSources` (which now consumes it) when the re-vouch
+ * reading pack became a second reader: the pack wants the three lists as
+ * data, the stale finding wants them annotated in one column.
+ */
+export function sourceDelta(
+  stamp: StampedIndex,
+  now: SourceIndexEntry[],
+): { added: string[]; changed: string[]; removed: string[] } | null {
+  if (stamp.entries === null) return null;
+  const added: string[] = [];
+  const changed: string[] = [];
+  const current = new Map(now.map((e) => [e.path, e.sha]));
+  for (const [path, sha] of current) {
+    const before = stamp.entries.get(path);
+    if (before === undefined) added.push(path);
+    else if (before !== sha) changed.push(path);
+  }
+  const removed = [...stamp.entries.keys()].filter((path) => !current.has(path));
+  if (added.length + changed.length + removed.length === 0) return null;
+  added.sort();
+  changed.sort();
+  removed.sort();
+  return { added, changed, removed };
+}
+
+/**
  * added / removed / changed, from the stamped index against the current one.
  * The annotation travels IN the detail line rather than in three separate
  * lists: a reader scanning a stale report wants the paths in one column, and
  * "which of the three" is one word wide.
  */
 export function movedSources(stamp: StampedIndex, now: SourceIndexEntry[]): MovedSources {
-  if (stamp.entries === null) {
-    // No index, but the count alone still beats silence: "12 files then, 14
-    // now" tells a reader to go looking for two new files.
+  const delta = sourceDelta(stamp, now);
+  if (delta === null) {
+    // A recorded index that came back null is the contradiction case — say
+    // nothing rather than print an empty list under a staleness warning. With
+    // no index at all, the count alone still beats silence: "12 files then,
+    // 14 now" tells a reader to go looking for two new files.
     return {
-      summary: stamp.count === undefined ? "" : ` (${stamp.count} file(s) then, ${now.length} now)`,
+      summary:
+        stamp.entries !== null || stamp.count === undefined
+          ? ""
+          : ` (${stamp.count} file(s) then, ${now.length} now)`,
     };
   }
-  const paths: string[] = [];
-  const current = new Map(now.map((e) => [e.path, e.sha]));
-  for (const [path, sha] of current) {
-    const before = stamp.entries.get(path);
-    if (before === undefined) paths.push(`added    ${path}`);
-    else if (before !== sha) paths.push(`changed  ${path}`);
-  }
-  for (const path of stamp.entries.keys()) if (!current.has(path)) paths.push(`removed  ${path}`);
-  paths.sort();
-  // An index that agrees with the current tree while the digest does not is a
-  // contradiction (a truncation collision, or a hand-edited header). Say
-  // nothing rather than print an empty list under a staleness warning.
-  if (paths.length === 0) return { summary: "" };
+  const paths = [
+    ...delta.added.map((path) => `added    ${path}`),
+    ...delta.changed.map((path) => `changed  ${path}`),
+    ...delta.removed.map((path) => `removed  ${path}`),
+  ].sort();
   return { paths, summary: ` (${paths.length} path(s) moved)` };
 }

@@ -287,3 +287,95 @@ describe("validate --all — subsystem.views-stale", () => {
     }
   });
 });
+
+describe("validate --all — subsystem.view-id-collision", () => {
+  /** `nestedFixture()` with the landscape authoring the view id the generator mints. */
+  function collidingFixture(viewId: string): Record<string, string> {
+    const files = nestedFixture();
+    files["architecture/landscape.likec4"] = LANDSCAPE.replace(
+      "views {",
+      `views {
+  view ${viewId} {
+    include *
+  }
+`,
+    );
+    return files;
+  }
+
+  it("an authored view claiming a GENERATED id is an error naming the subsystem it belongs to", async () => {
+    // Measured against likec4@1.59.2: with both files present the renderer
+    // refuses the whole architecture/ project with two `Duplicate view`
+    // diagnostics — and every other check in this run stays green, which is
+    // the hole this code closes.
+    const p = await makeProject(collidingFixture("subsystem_payments"));
+    try {
+      await runLoam(p.workDir, "subsystem", "sync");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(1);
+      const hits = subsystemFindings(res.stdout).filter((f) => f.code === "subsystem.view-id-collision");
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toMatchObject({ severity: "error", subject: "subsystem_payments" });
+      expect(hits[0]!.message).toContain("services/payments/");
+      expect(hits[0]!.message).toContain("architecture/subsystems.likec4");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("fires on the generated id even before `subsystem sync` has written the file", async () => {
+    // The collision is a fact about what loam WILL mint, not about bytes on
+    // disk: a fleet that has not synced yet is already broken for anyone who
+    // syncs, and `subsystem.views-stale` is about to make them.
+    const p = await makeProject(collidingFixture("subsystem_payments"));
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(1);
+      const codes = subsystemFindings(res.stdout).map((f) => f.code).sort();
+      expect(codes).toEqual(["subsystem.view-id-collision", "subsystem.views-stale"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a `subsystem_`-looking id matching no subsystem is NOT refused — it breaks nothing yet", async () => {
+    // Deliberate, and the reason is in views/ids.ts: refusing a name that
+    // harms nobody would be loam inventing a rule. The day somebody creates
+    // that subsystem, the generator mints the id and the case above fires.
+    const p = await makeProject(collidingFixture("subsystem_nosuchgroup"));
+    try {
+      await runLoam(p.workDir, "subsystem", "sync");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(res.stdout).map((f) => f.code)).not.toContain("subsystem.view-id-collision");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("an ordinary authored view is never refused, and a fleet with no subsystems is silent", async () => {
+    // The harness landscape already declares `view landscape`; a fleet with no
+    // subsystems generates no ids at all, so there is nothing to collide with.
+    const p = await makeProject(coherentFixture());
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      expect(subsystemFindings(res.stdout).map((f) => f.code)).not.toContain("subsystem.view-id-collision");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("says nothing under a single-target run, where the tree is not walked", async () => {
+    // loam's could-not-look rule: `validate --service` loads no fleet tree, so
+    // the generated ids are unknown and the question is unanswerable. Silence,
+    // never a half-answer.
+    const p = await makeProject(collidingFixture("subsystem_payments"));
+    try {
+      await runLoam(p.workDir, "subsystem", "sync");
+      const res = await runLoam(p.workDir, "validate", "--service", "payment-service", "--json");
+      expect(res.stdout).not.toContain("subsystem.view-id-collision");
+    } finally {
+      await p.destroy();
+    }
+  });
+});

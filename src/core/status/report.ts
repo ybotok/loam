@@ -276,6 +276,11 @@ export interface FleetStatusReport {
     draft: number;
     /** `status: verified` with a `sources_digest` — a person stood behind it. */
     vouched: number;
+    /**
+     * Of `vouched`, the ones read from a recorded SAMPLE rather than in full
+     * (`vouch_scope`, either axis) — a SUBSET: the three above still sum to `total`.
+     */
+    sampledVouched: number;
   };
   features: FleetFeatureState[];
   /** Dependencies before consumers — which feature has to archive first. */

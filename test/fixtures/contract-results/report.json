@@ -1,0 +1,21 @@
+{
+  "loamContractReport": 1,
+  "results": [
+    {
+      "operationId": "createSplit",
+      "status": "passed",
+      "test": "POST /splits creates a split and responds 201 per contract"
+    },
+    {
+      "operationId": "authorizePayment",
+      "status": "passed",
+      "test": "POST /payments/authorize responds per contract"
+    },
+    {
+      "operationId": "capturePayment",
+      "status": "failed",
+      "test": "POST /payments/capture contract check",
+      "tool": "specmatic-ctrf-transform"
+    }
+  ]
+}

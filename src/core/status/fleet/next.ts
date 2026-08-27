@@ -4,6 +4,7 @@
  * than inventory.
  */
 import type { DependencyGraph } from "../../dependencies/facts.js";
+import { serviceTreePath } from "../../kernel/ids/dirs.js";
 import { compareIds, type ServiceEntry } from "../../repo/entries.js";
 import { recoverStep } from "../interrupted.js";
 import {
@@ -48,7 +49,12 @@ export const FLEET_NEXT_LIMIT = 10;
  * nothing was in flight — so a repository that FAILS the fleet gate, which is
  * every repository with work in it, was handed a green-looking list that never
  * once named the command CI runs. This form grades nothing; the least it can do
- * is say where grading happens.
+ * is say where grading happens. `next.fleet-clean` is also no longer the
+ * empty-repo answer: over zero services, "every service is written down" is
+ * vacuously true, and the first hour of a docs repo used to get that green
+ * sentence instead of its first three steps. The teaching ladder below owns
+ * that case now, and the clean entry survives only for its truthful one —
+ * services exist, and nothing is owed.
  */
 /** The whole fleet as the next-step walk reads it. */
 export interface Fleet {
@@ -56,10 +62,17 @@ export interface Fleet {
   features: FleetFeatureState[];
   graph: DependencyGraph;
   interrupted: InterruptedCommit | null;
+  /**
+   * The ladder's fact, present exactly when the ladder can apply — an
+   * unnarrowed run over an empty fleet. `null` otherwise: on a narrowed run
+   * (withheld for the reason fleet.ts records beside the binding) and on any
+   * fleet with services or features, where fleet.ts skips the read entirely.
+   */
+  teaching: { landscape: "missing" | "stub" | "authored" } | null;
 }
 
 export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextStep[] {
-  const { services, features, graph, interrupted } = fleet;
+  const { services, features, graph, interrupted, teaching } = fleet;
   const steps: NextStep[] = [];
 
   // The repository this command is standing in names a service the fleet has no
@@ -84,10 +97,52 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
     });
   }
 
+  // The first hour of a docs repo, in order. Zero services and zero features
+  // used to fall through every loop below into `next.fleet-clean` — the header
+  // says why that answer was vacuous — so the emptiest repository loam serves
+  // got the least from the command whose whole purpose is "what do I do next".
+  // These are ordinary steps on purpose: the gate entry still closes the list,
+  // and the tail ternary is untouched. The bind/adopt rungs are suppressed when
+  // `next.adopt-bound` above already names the exact adopt to run, and the
+  // whole ladder is withheld on narrowed runs (`teaching === null`).
+  if (teaching !== null && services.length === 0 && features.length === 0) {
+    if (teaching.landscape !== "authored") {
+      steps.push({
+        code: "next.author-landscape",
+        statement:
+          teaching.landscape === "missing"
+            ? "architecture/landscape.likec4 does not exist — the fleet map is the one artifact every " +
+              "cross-service check reads. Run `loam init --create` to scaffold it, then draw the first service."
+            : "architecture/landscape.likec4 is still the scaffold's untouched map — no service is drawn. " +
+              "State the facts in a fleet.yaml (service ids, `a -> b` calls) and run " +
+              "`loam seed --from fleet.yaml` to template the map mechanically — or open the file " +
+              "and follow its own comments. Either way loam never guesses who calls whom.",
+        command: "loam validate --all --json",
+        path: "architecture/landscape.likec4",
+      });
+    }
+    if (unadoptedBinding === null) {
+      steps.push({
+        code: "next.bind-service",
+        statement:
+          "No service repository is bound to this fleet yet. From a service's own repo, point --docs " +
+          "here and --service at its canonical id, then commit the loam.json it writes.",
+        command: "loam init --docs <path-to-this-docs-repo> --service <service-id>",
+      });
+      steps.push({
+        code: "next.adopt-first",
+        statement:
+          "services/ is empty — nothing about any service is written down yet. Adopt the first one: " +
+          "the brief walks an agent through writing its baseline docs as draft.",
+        command: "loam adopt --service <service-id> --json",
+      });
+    }
+  }
+
   for (const s of services.filter(undocumented)) {
     steps.push({
       code: "next.adopt",
-      statement: `services/${s.id}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`,
+      statement: `${serviceTreePath(s)}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`,
       command: `loam adopt --service ${s.id} --json`,
       service: s.id,
     });
@@ -100,7 +155,7 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
   for (const s of services.filter((x) => !undocumented(x) && !x.has.model)) {
     steps.push({
       code: "next.complete-service",
-      statement: `services/${s.id}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,
+      statement: `${serviceTreePath(s)}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,
       command: `loam validate --service ${s.id} --json`,
       service: s.id,
     });

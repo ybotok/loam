@@ -22,6 +22,7 @@ import {
   type Delivery,
 } from "../../core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
+import { firstHour } from "./first-hour.js";
 import { isDocsRepo, resolveTools, storedDocsDir } from "./options.js";
 
 interface InitOptions {
@@ -258,6 +259,28 @@ export function registerInit(program: Command): void {
       if (created.length > 0) {
         console.log("  scaffolded:");
         for (const c of created) console.log(`    + ${c}`);
+      }
+
+      // Printed ONLY for the single-repo trial composition: one run that both
+      // created the docs repo and left a service bound (the binding may
+      // predate the run — the config spread above carries an existing
+      // loam.json's `service` forward). `loam status` is NOT mute here — its
+      // first-hour ladder (core/status/fleet/next.ts) already answers
+      // `next.adopt-bound` in exactly this state — but status has to be run
+      // to say so, and no status rung ever names `loam vouch`, the one step
+      // of this loop that is a person's; init's output is already on screen,
+      // so it prints the whole hour once. A join stays silent on purpose: a
+      // joined fleet has other repositories already through this loop, and
+      // `loam status` in its docs repo is the working guide there. The --json
+      // path returned above, so the envelope is byte-identical to before
+      // this block existed.
+      if (!joining && config.service !== undefined) {
+        const steps = firstHour(config.service);
+        const width = Math.max(...steps.map(([command]) => command.length));
+        console.log("  next — the first hour:");
+        for (const [command, why] of steps) {
+          console.log(`    ${command.padEnd(width)}   # ${why}`);
+        }
       }
     });
 }

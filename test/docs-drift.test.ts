@@ -87,6 +87,21 @@ describe("the released range and the unreleased head", () => {
   });
 });
 
+describe("the OpenSpec product reference and the corpus pin", () => {
+  it("README and COMPARISON both name OpenSpec v1.10.0 as the product reference", async () => {
+    expect(await read("README.md")).toContain("OpenSpec v1.10.0");
+    expect(await read("COMPARISON.md")).toContain("OpenSpec v1.10.0");
+  });
+
+  it("COMPARISON still pins the certified corpus to the v1.9.0 commit", async () => {
+    expect(await read("COMPARISON.md")).toContain("2826b8889e5223a9a8095d4428b60b56597e1020");
+  });
+
+  it("README no longer claims the product reference and the compatibility pin are one release", async () => {
+    expect(await read("README.md")).not.toContain("the compatibility pin are now the same release");
+  });
+});
+
 describe("private vulnerability reporting status", () => {
   it("marks the intended private route as unavailable and release-blocking", async () => {
     const [security, readiness] = await Promise.all([

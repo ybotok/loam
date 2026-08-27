@@ -170,8 +170,28 @@ export function listField(fm: Frontmatter, key: string): string[] {
  * A document with no frontmatter gets one, and the text that was there becomes
  * the body. A header that does not parse (or is not a mapping) is replaced
  * rather than merged into — it cannot be edited without guessing what it meant.
+ *
+ * Keys named in `remove` are DELETED. That is not a convenience: `loam vouch`
+ * stamps `vouch_scope` when a person read only a sample of the document, and
+ * a full vouch afterwards has to take that claim back out. Left behind, a
+ * stale scope would keep a fully-read document reading as sampled forever —
+ * on `loam list`, in `loam validate`'s `sources.sampled-vouch`, and in the
+ * frontmatter a person opens — which is the same class of lie as a stamp with
+ * nothing behind it, pointing the other way.
+ *
+ * Deletion is a separate LIST rather than a null value in `fields`, and the
+ * difference is the compiler's: `string | null` is the most common field shape
+ * in this codebase (`stringField(fm, k) ?? null` appears in a dozen readers),
+ * so a writer that stamped a field it had just read back — `{ owner }` — would
+ * silently delete `owner` on every document that never had one, where today
+ * that line does not compile. Clearing a key is something a call site says,
+ * never something a value happens to be.
  */
-export function withFrontmatterFields(source: string, fields: Record<string, string>): string {
+export function withFrontmatterFields(
+  source: string,
+  fields: Record<string, string>,
+  remove: readonly string[] = [],
+): string {
   // Stamping a BOM-prefixed document drops the BOM. It sits above the header, so
   // the promise about the body still holds — and leaving it would re-break the
   // file for every parser anchored at position 0, including ours.
@@ -182,6 +202,13 @@ export function withFrontmatterFields(source: string, fields: Record<string, str
   const doc = editable ? parsed : parseDocument("");
 
   for (const [key, value] of Object.entries(fields)) doc.set(key, value);
+  // Guarded, not because a missing key is a problem — deleting one that is not
+  // there is a no-op — but because yaml's `Document.delete` THROWS ("Expected
+  // a YAML collection as document contents") when the document has no mapping
+  // at all: the empty header of a document that had none, and the replacement
+  // built for a header that would not parse. Both are states this writer
+  // reaches on purpose, and in both there is nothing to clear.
+  if (isMap(doc.contents)) for (const key of remove) doc.delete(key);
   const yamlText = doc.toString();
 
   if (at === null) return `---\n${yamlText}---\n\n${md}`;
@@ -234,3 +261,23 @@ export async function readFrontmatter(path: string): Promise<Frontmatter> {
 /** The statuses each kind of artifact may carry. */
 export const SERVICE_STATUSES = ["draft", "verified"] as const;
 export const FEATURE_STATUSES = ["proposed", "in_progress", "built", "done"] as const;
+
+/**
+ * A document's prose with any leading frontmatter block dropped — what
+ * `loam delta` and `loam context` print as a feature's intent.
+ *
+ * Moved verbatim from `commands/delta/slices.ts` when the context pack became
+ * its second caller. It deliberately keeps its own, looser fence rule
+ * (`\n---` as a substring, not `bounds()`'s line-exact match) rather than
+ * delegating to `parseFrontmatter(md).body`: the two agree on every header
+ * loam writes, but the delta brief's output is pinned byte-for-byte by its
+ * tests, and unifying the rules is a behaviour change to make deliberately,
+ * not as a side effect of a move.
+ */
+export function stripFrontmatter(md: string): string {
+  if (!md.startsWith("---")) return md;
+  const close = md.indexOf("\n---", 3);
+  if (close === -1) return md;
+  const nl = md.indexOf("\n", close + 1);
+  return nl === -1 ? "" : md.slice(nl + 1).trimStart();
+}

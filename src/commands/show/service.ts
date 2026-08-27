@@ -11,7 +11,9 @@ import { readFile } from "node:fs/promises";
 import { FleetContext } from "../../core/fleet-context.js";
 import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { listField, readFrontmatter, stringField } from "../../core/document/frontmatter.js";
-import { loadFile, serviceResolver } from "../../core/c4/likec4.js";
+import { scopeText } from "../../core/provenance/sample/scope.js";
+import { loadFile } from "../../core/c4/likec4.js";
+import { serviceResolver } from "../../core/c4/resolve/service.js";
 import { readOpenapi } from "../../core/openapi/doc.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath } from "../../core/repo/paths.js";
@@ -66,12 +68,25 @@ export async function showService(
   const api = await readOpenapi(paths.openapi);
   const ops = api.ops.filter((o) => !o.remove).map((o) => o.id);
 
-  const fm = await readFrontmatter(paths.spec);
+  // Both axes: the sample is per file, so an arch.spec.md read from a sample
+  // beside a fully-read spec.md still means part of this service's
+  // documentation was not read, and a badge derived from spec.md alone would
+  // not say so.
+  const [fm, archFm] = await Promise.all([readFrontmatter(paths.spec), readFrontmatter(paths.archSpec)]);
+  const scope = scopeText(fm);
+  const archScope = scopeText(archFm);
   const provenance = {
     status: stringField(fm, "status") ?? null,
     owner: stringField(fm, "owner") ?? null,
     last_verified: stringField(fm, "last_verified") ?? null,
     sources: listField(fm, "sources"),
+    // Additive, under its frontmatter spelling like its siblings: `show` is
+    // where a person goes to find out what a service's documents claim, and a
+    // `status: verified` that a person reached by reading four sections of the
+    // spec is a materially different claim. Verbatim rather than decoded — an
+    // unreadable value is still a stamped partial read, and showing it as it
+    // stands is what lets a reader see the mangling.
+    vouch_scope: scope,
   };
 
   const governs = (op: string): string[] =>
@@ -106,6 +121,10 @@ export async function showService(
         requirements: archReqs.length,
         scenarios: scenarioCount(archReqs),
         entries: archReqs.map(requirementJson),
+        // The second axis carries its own scope: one `--sample` run can stamp
+        // one of the pair sampled and read the other in full, and the
+        // `frontmatter` block above is spec.md's alone.
+        vouch_scope: archScope,
       },
       openapi: {
         unreadable: api.unreadable,
@@ -117,12 +136,27 @@ export async function showService(
     return;
   }
 
-  const badge = [provenance.status, provenance.owner].filter((s) => s !== null).join(" · ");
+  // The badge qualifies the status rather than replacing it: the document
+  // still says `verified` and this screen still says so, with what that vouch
+  // actually covered attached. A bare `verified` over a sampled stamp is the
+  // one reading this whole feature exists to prevent — and either axis earns
+  // the qualifier, since either one is part of this service nobody read.
+  const shown =
+    provenance.status === null || (scope === null && archScope === null)
+      ? provenance.status
+      : `${provenance.status} (sampled)`;
+  const badge = [shown, provenance.owner].filter((s) => s !== null).join(" · ");
   console.log(`${id}   ${repoPath(docsDir, paths.dir)}${badge ? `   ${badge}` : ""}\n`);
 
-  if (provenance.sources.length > 0 || provenance.last_verified !== null) {
+  if (provenance.sources.length > 0 || provenance.last_verified !== null || archScope !== null) {
     console.log("  provenance");
     if (provenance.last_verified !== null) console.log(`    verified  ${provenance.last_verified}`);
+    // Per axis and named, because they can disagree: one file read in full,
+    // the other from a sample, is an ordinary outcome of one `--sample` run.
+    if (scope !== null) console.log(`    scope     spec.md ${scope} — the rest of it was not read at that vouch`);
+    if (archScope !== null) {
+      console.log(`    scope     arch.spec.md ${archScope} — the rest of it was not read at that vouch`);
+    }
     for (const s of provenance.sources) console.log(`    sources   ${s}`);
     console.log("");
   }

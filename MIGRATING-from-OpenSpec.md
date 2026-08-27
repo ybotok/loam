@@ -15,6 +15,8 @@ loam reads OpenSpec requirement Markdown from the outside: `### Requirement:` he
 
 The seven verbatim fixtures come from the v1.9.0 commit and run in routine CI. A scheduled/manual matrix separately sweeps all three pinned commits across living, active, and archived spec trees: v1.9.0 211 files / 746 requirements / 2317 scenarios; v1.7.0 207 / 739 / 2273; canary 209 / 742 / 2284. These test requirement/scenario parsing, not every v1.8/v1.9 workspace feature. The [fixture provenance, immutable upstream paths, and checksums](https://github.com/ybotok/loam/blob/main/test/fixtures/openspec/README.md) and the [compatibility tests](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts) use absolute GitHub URLs because this guide is also shipped in the npm tarball while `test/` is not.
 
+OpenSpec v1.10.0 (released 2026-08-19) changed no requirement-Markdown format, so the certified v1.9.0 boundary also covers documents it writes; its workspace-level additions are inventoried like the v1.8/v1.9 shapes above.
+
 An audit result of `ready: true` means that the particular files the installed loam inspected satisfy loam's documented migration checks. It is not a statement that every behavior of the OpenSpec version which created them has been certified. In particular, a v1.8/v1.9 `.openspec.yaml` field such as `retire_capabilities` is inventoried and preserved with the source tree, but loam does not translate OpenSpec capability retirement into a loam service or feature lifecycle action.
 
 ## Start with a read-only audit

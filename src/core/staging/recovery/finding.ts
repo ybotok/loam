@@ -2,8 +2,9 @@
  * What an unfinished write means for `loam validate`.
  *
  * `core/doctor/residue.ts` grades the same fact for `doctor`; this module
- * answers for the OTHER command that certifies the docs — the fleet gate. A
- * `.loam-commit` in the repo means the last writer's commit never finished:
+ * answers for `loam validate --all` — the fleet gate — and `loam gate`, the
+ * deploy-time query, reuses the same finding verbatim for its interrupted
+ * check. A `.loam-commit` in the repo means the last writer's commit never finished:
  * some files hold the new bytes, some the old, and a validate that grades
  * that tree green is certifying a state no run ever produced. In CI that
  * green MERGES, which is why this is an error finding and not a warning.

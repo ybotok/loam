@@ -126,6 +126,20 @@ export type ErrorCode =
   | "move-uncommitted"
   /** A subsystem move/rename failed and was rolled back cleanly: every rename undone, the generated views file restored, the docs unchanged — re-running can work. Distinct from `merge-failed` because no merge was computed; a failure that could NOT be fully undone is `rollback-incomplete`, exactly as for archive. */
   | "move-failed"
+  /** `loam open` found no service checkout bound to this docs repo under any scanned root — the workspace would hold only the docs repo. Re-running can succeed once a bound checkout exists beside it, or with `--root` pointing where the checkouts live. */
+  | "no-members"
+  /** Two discovered repositories' committed loam.json files declare the same `service` for this docs repo — two checkouts of one service, or a copied config. loam will not guess which checkout speaks for the service; narrow the scan with `--root` or fix the stray binding, then re-run. */
+  | "binding-duplicate"
+  /** `loam list --owners` could not use the user-named CODEOWNERS file: the path cannot be read, or a line in it cannot be parsed as `pattern owner…` (the message names the line). Fail-closed like `answers-unreadable` for the other user-named file — a half-read ownership file must never file a service under the wrong team. Re-running succeeds once the path or the line is fixed. */
+  | "owners-unreadable"
+  /** `loam seed`'s fleet file is missing, unreadable, not YAML, the wrong shape, carries an illegal id or name, or no longer names every existing `services/<id>/` (that arm carries the additive `missingServices` payload key). The message names the file and, where one exists, the line; editing the file and re-running succeeds. */
+  | "seed-file-invalid"
+  /** fleet.yaml declares one name twice — as two services, or as both a service and an external/subsystem. Service ids, subsystem names and externals share one flat namespace (a call endpoint must name exactly one thing); the message names both declaration lines. Rename one and re-run. */
+  | "seed-duplicate-service"
+  /** A service's `subsystem:` in fleet.yaml names nothing `subsystems:` declares; the message carries a did-you-mean hint over the names the file really declares. Fix the spelling (or add the subsystem) and re-run. */
+  | "seed-unknown-subsystem"
+  /** architecture/landscape.likec4 carries hand edits (the line-1 stamp's digest no longer matches) or was authored some other way (no stamp, and not the scaffold's untouched stub). Seed never overwrites human work and nothing was written; re-running cannot succeed until the file is deleted or the edits are folded into fleet.yaml. */
+  | "seed-landscape-edited"
   | "internal";
 
 export function emitJson(payload: Record<string, unknown>): void {

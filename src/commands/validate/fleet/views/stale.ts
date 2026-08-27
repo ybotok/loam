@@ -8,7 +8,10 @@
  * defines; the spike in `core/repo/tree/views.ts` records it), and no check
  * anywhere reads the file's CONTENT: the file is a scoping convenience for
  * the LikeC4 renderer, so the only question loam owes it is "are these the
- * bytes the tree renders to". Absent counts as a state of its own: a fleet
+ * bytes the tree renders to". Rule 26 leaves this untouched: what loam may
+ * read is a `dynamic view`'s declared steps out of a document it already
+ * parses — never a static view's `include` predicates, and never this
+ * generated file at all. Absent counts as a state of its own: a fleet
  * with subsystems and no file is stale, and a fleet with NO subsystems and a
  * leftover file is stale too — the render contract says the file must then
  * not exist, or a group deleted months ago keeps a view forever.
@@ -22,12 +25,12 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { Elem } from "../../../core/c4/likec4.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { subsystemViewsPath } from "../../../core/repo/paths.js";
-import { renderSubsystemViews } from "../../../core/repo/tree/views.js";
-import type { FleetTree } from "../../../core/repo/tree/walk.js";
-import type { Finding } from "../../../core/vocabulary/report.js";
+import type { Elem } from "../../../../core/c4/likec4.js";
+import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
+import { subsystemViewsPath } from "../../../../core/repo/paths.js";
+import { renderSubsystemViews } from "../../../../core/repo/tree/views.js";
+import type { FleetTree } from "../../../../core/repo/tree/walk.js";
+import type { Finding } from "../../../../core/vocabulary/report.js";
 
 export async function viewsStaleFindings(
   docsDir: DocsDir,

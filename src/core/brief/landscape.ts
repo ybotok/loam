@@ -8,9 +8,10 @@
  * them.
  */
 import { existsSync } from "node:fs";
-import { elementService, loadFile, serviceResolver, type Elem } from "../c4/likec4.js";
+import { loadFile, type Elem } from "../c4/likec4.js";
+import { elementService, serviceResolver } from "../c4/resolve/service.js";
 import { landscapePath } from "../repo/paths.js";
-import { enumeratedServiceIds } from "../repo/service-target.js";
+import { enumeratedServiceIds, serviceTreePathOf } from "../repo/service-target.js";
 import type { BriefTarget } from "./targets.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -71,6 +72,7 @@ export function landscapeArtifact(
   service: string,
   expects: string[],
   present: boolean,
+  servicePath: string,
 ): Omit<BriefTarget, "path" | "exists" | "action"> {
   return {
     artifact: "landscape.likec4",
@@ -79,7 +81,7 @@ export function landscapeArtifact(
       "the fleet map — until an element here resolves to this directory, the service is documented and invisible to every cross-service check",
     shape: [
       "This file is the WHOLE FLEET's, not this service's. Add to it; never rewrite it. Everything already in `model { ... }` belongs to the other services, and replacing the file destroys their map along with their edges.",
-      `Add one top-level element for the service, bound to its directory: \`metadata { service '${service}' }\`. Until an element resolves to \`services/${service}/\`, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error).`,
+      `Add one top-level element for the service, bound to its directory: \`metadata { service '${service}' }\`. Until an element resolves to \`${servicePath}/\`, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error).`,
       "Bind rather than rename: a binding whose id names no directory is `landscape.binding-unknown` (error), and two elements binding the SAME directory is `landscape.binding-duplicate` (warn) — every element→service join then picks one of them arbitrarily.",
       "Draw every cross-service call as an edge carrying the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. The `op` must be an operationId the TARGET's openapi.yaml defines, or `spine.op-undefined` (error) — a broken contract between services.",
       "If the file does not exist yet, create it with a `specification { ... }` block declaring the kinds you use, then the `model { ... }` block. A landscape that does not parse is `landscape.invalid` (error) and blinds every cross-service check at once.",
@@ -154,6 +156,11 @@ async function knownServices(docsDir: DocsDir): Promise<ReadonlySet<string>> {
  */
 export async function landscapeContext(docsDir: DocsDir, service: string): Promise<LandscapeContext> {
   const path = landscapePath(docsDir);
+  // The service's own directory, spelled from the enumeration rather than joined
+  // at the root: this text is handed to an AGENT that will go and edit files, and
+  // a filed service named at `services/<id>/` sends it to create a second
+  // directory beside the one that already exists.
+  const servicePath = await serviceTreePathOf(docsDir, service);
   const empty: LandscapeContext = {
     present: existsSync(path),
     parses: false,
@@ -165,11 +172,11 @@ export async function landscapeContext(docsDir: DocsDir, service: string): Promi
     instruction: null,
   };
   if (!empty.present)
-    return { ...empty, modelled: false, instruction: instructionFor(service, "absent", []) };
+    return { ...empty, modelled: false, instruction: instructionFor(service, "absent", [], servicePath) };
 
   const land = await loadFile(path);
   if (land.errors.length > 0)
-    return { ...empty, instruction: instructionFor(service, "unparseable", []) };
+    return { ...empty, instruction: instructionFor(service, "unparseable", [], servicePath) };
 
   const mine = (e: Elem): boolean => elementService(e) === service;
   const elements: LandscapeElement[] = land.elements.filter(mine).map((e) => ({
@@ -204,7 +211,7 @@ export async function landscapeContext(docsDir: DocsDir, service: string): Promi
     outbound,
     expects,
     instruction:
-      elements.length > 0 ? null : instructionFor(service, "unmodelled", expects),
+      elements.length > 0 ? null : instructionFor(service, "unmodelled", expects, servicePath),
   };
 }
 
@@ -220,12 +227,13 @@ function instructionFor(
   service: string,
   state: "absent" | "unparseable" | "unmodelled",
   expects: string[],
+  servicePath: string,
 ): string {
   const id = elementIdFor(service);
   const bind = `an element bound with \`metadata { service '${service}' }\``;
   const consequence =
     `Until one resolves, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error) for ` +
-    `services/${service}/: the service is documented and invisible — no edge into it can be checked ` +
+    `${servicePath}/: the service is documented and invisible — no edge into it can be checked ` +
     `against its openapi.yaml, and no feature can draw a call to it.`;
   // `expects` is reachable only through elements that already resolve to this
   // service, so it is empty in every state that produces an instruction. It is
@@ -253,7 +261,7 @@ function instructionFor(
     );
   }
   return (
-    `Nothing in architecture/landscape.likec4 resolves to services/${service}/. ADD to that file — do not rewrite ` +
+    `Nothing in architecture/landscape.likec4 resolves to ${servicePath}/. ADD to that file — do not rewrite ` +
     `it, every other service's map is in there — ${bind}, conventionally ` +
     `\`${id} = softwareSystem '${service}'\`, inside the existing \`model { ... }\` block, and draw each ` +
     `cross-service call as an edge carrying \`metadata { op '<operationId>' }\`. ${consequence}${owed}`

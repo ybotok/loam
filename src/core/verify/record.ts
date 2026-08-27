@@ -13,8 +13,9 @@
  * `attestedNotice` says so on every surface that reads the record.
  */
 import { join } from "node:path";
-import { type ClaimKind } from "./checklist.js";
+import { type ClaimKind } from "./claims/identity.js";
 import { type AnsweredBy, type Verdict } from "./answers.js";
+import { type EvidencePin } from "./pins/pin.js";
 
 export interface RecordedClaim {
   id: string;
@@ -27,6 +28,17 @@ export interface RecordedClaim {
   answered_by?: AnsweredBy;
   evidence: string[];
   note?: string;
+  /**
+   * One pin per file:line citation of a federated agent-confirmed answer: the
+   * cited file's normalized sha256 at the attested commit, the cited line's
+   * text, and the claim's token where it asserts one. A pin records which
+   * text was cited at that commit so `loam validate`, run later in the
+   * service's own repo, can convict drift; it does not prove the claim true —
+   * a faithful pin of the wrong line is still a wrong answer. Absent on
+   * runner-answered claims (their evidence names a report entry, not a file)
+   * and on every record written before pins existed.
+   */
+  evidence_pins?: EvidencePin[];
 }
 
 /**
@@ -51,6 +63,46 @@ export interface ConsumedReport {
   scenarios: number;
 }
 
+/**
+ * The contract-test report a `--contract-results` run consumed — the same pin,
+ * the same honesty, for the report that answers `api.exposes` claims by
+ * operationId. Nothing here proves the file came from executing the attested
+ * commit either; the digest identifies WHICH file was consumed, and the
+ * federated form binds a committed one to the commit exactly as `report:` is.
+ */
+export interface ConsumedContractReport {
+  /** As it was passed to `--contract-results` — repo-relative in a federated record. */
+  path: string;
+  /** Full sha256 of the bytes read. */
+  digest: string;
+  /** ISO-8601 mtime of the report file. */
+  mtime: string;
+  /** How many distinct operationIds the report's entries name. */
+  operations: number;
+  /**
+   * Which accepted shape the report was read as — `"generic"` for the
+   * documented `loamContractReport: 1` shape, the only one v1 accepts. loam
+   * always writes it, but the READ shape keeps it optional: no reader
+   * dereferences it, so a hand-written pin without it stays a readable record
+   * (`isConsumedContractReport` in ./file.ts says why) — and it is a string
+   * rather than a closed union so a format a NEWER loam learned to read stays
+   * readable here too.
+   */
+  format?: string;
+}
+
+/**
+ * Both mechanical answer sheets one recording run may consume, together
+ * because they are validated together (`validateServiceEvidence` binds each to
+ * the attested commit) and filed together (on the record all-at-once, inside
+ * the service's attestation federated). Two loose optional parameters made the
+ * inconsistent pair representable at every call site.
+ */
+export interface ConsumedReports {
+  results?: ConsumedReport;
+  contract?: ConsumedContractReport;
+}
+
 /** A service repository's commit-bound contribution to a federated record. */
 export interface ServiceAttestation {
   service: string;
@@ -60,6 +112,8 @@ export interface ServiceAttestation {
   claims: string[];
   /** The report that answered this service's scenario claims, when `--results` did. */
   report?: ConsumedReport;
+  /** The report that answered this service's api.exposes claims, when `--contract-results` did. */
+  contractReport?: ConsumedContractReport;
 }
 
 export interface Verification {
@@ -74,6 +128,8 @@ export interface Verification {
   claims: RecordedClaim[];
   /** The all-at-once form's consumed report; the federated form files it per attestation. */
   report?: ConsumedReport;
+  /** The all-at-once form's consumed contract report — filed per attestation when federated. */
+  contractReport?: ConsumedContractReport;
   attestations?: ServiceAttestation[];
 }
 
@@ -105,6 +161,20 @@ export function attestedClaims(claims: readonly AnsweredClaim[]): string[] {
   return claims
     .filter((c) => c.kind === "scenario.tested" && c.verdict === "confirmed" && c.answered_by !== "runner")
     .map((c) => c.id);
+}
+
+/**
+ * Of the CONFIRMED answers, one count per `answered_by` value. Anything that is not a runner spelling
+ * counts as the agent's word — a record too old to carry the field says nothing, and crediting a run
+ * nobody can point at is the error that matters. Never derive it by subtracting {@link attestedClaims}
+ * from the confirmed total: that count is `scenario.tested` ALONE, so the fleet scorecard filed every
+ * other kind an agent confirmed under a runner that never ran.
+ */
+export function confirmedProvenance(claims: readonly AnsweredClaim[]): Record<AnsweredBy, number> {
+  const done = claims.filter((c) => c.verdict === "confirmed");
+  const by = (who: AnsweredBy): number => done.filter((c) => c.answered_by === who).length;
+  const ran = { runner: by("runner"), "external-runner": by("external-runner") };
+  return { ...ran, agent: done.length - ran.runner - ran["external-runner"] };
 }
 
 /** How a set of answers counts up — recounted from the answers, never read off a `summary`. */
@@ -189,6 +259,32 @@ export function attestedNotice(claims: readonly AnsweredClaim[], feature: string
       `${ids.length} scenario claim(s) are confirmed on an agent's word, not on a test run: ${ids.join(", ")}. ` +
       `Answer them mechanically once the suite runs: \`loam verify ${feature} --results <cucumber.json>\`.`,
     claims: ids,
+  };
+}
+
+/**
+ * The one-line honesty summary of a record that leaves claims open: partial is
+ * not a clean result, and the counts alone did not say so — `summary` carries
+ * them on every surface, and a reader skimming for the ⚠ lines shipped a
+ * half-answered record as done anyway. Null when nothing is open, and the
+ * callers fire it only when a record EXISTS: a feature with no record already
+ * says "Not verified", and calling that "not a clean result" would conflate
+ * not-started with partial. A pure-attested record (all confirmed, some on an
+ * agent's word) never reaches the message either — its counts are closed, and
+ * `attestedNotice` above owns that honesty; two notices about one fact is the
+ * double-reporting this file's notices exist to prevent.
+ */
+export function openClaimsNotice(tally: RecordTally, feature: string): VerifyNotice | null {
+  const open = tally.unconfirmed + tally.unanswered;
+  if (open === 0) return null;
+  return {
+    code: "verify.claims-open",
+    severity: "warn",
+    message:
+      `not a clean result: of ${tally.claims} claim(s), ${tally.confirmed} confirmed` +
+      (tally.attested > 0 ? ` (${tally.attested} on an agent's word)` : "") +
+      `, ${tally.unconfirmed} unconfirmed, ${tally.unanswered} unanswered — ` +
+      `treat ${feature} as unverified until every claim is answered and confirmed.`,
   };
 }
 

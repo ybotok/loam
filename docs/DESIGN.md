@@ -10,14 +10,14 @@ checks it is given.
 
 No — but the tree does not show you why, and that gap is the real finding.
 
-- `src/cli.ts` is registration and nothing else. It makes 20 `register*` calls, which produce
-  **21** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
+- `src/cli.ts` is registration and nothing else. It makes 27 `register*` calls, which produce
+  **28** commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec`
   and `migrate-openspec`), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations. (Both numbers are pinned
   live by `test/docs-facts.test.ts`, so this sentence moves when the CLI does.)
-- `src/commands/` owns the printing and the exit codes. Sixteen of the twenty command modules are
-  packages; four sit loose as files (`dependencies`, `doctor`, `explore`, `instructions`), and
-  `commands/policy/` holds the two things in that directory which are not commands.
+- `src/commands/` owns the printing and the exit codes. Twenty-two of the twenty-seven command modules
+  are packages; five sit loose as files (`dependencies`, `doctor`, `explore`, `instructions`,
+  `open`), and `commands/policy/` holds the two things in that directory which are not commands.
 - `src/core/` imports `commander` zero times, never imports `commands/`, and holds three
   `console` calls in total — all in `core/envelope/json.ts`, which *is* the envelope emitter.
 - `src/`'s value-import graph has **zero cycles** at both the file level and the package level
@@ -43,8 +43,8 @@ the compiler does not check.
 | Layer | Modules | Job |
 |---|---|---|
 | Entry | `src/cli.ts` | Register commands; decide the process exit |
-| Command | `src/commands/` — 20 command modules, 21 commands | Parse flags, refuse, print, set `process.exitCode` |
-| Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 5 and 6 commands |
+| Command | `src/commands/` — 27 command modules, 28 commands | Parse flags, refuse, print, set `process.exitCode` |
+| Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 10 and 14 commands |
 | Core | `src/core/` | Compute and return. Never print, never exit |
 
 Inside `core/`, the DAG levels are a real division of labour:
@@ -56,7 +56,7 @@ Inside `core/`, the DAG levels are a real division of labour:
 | L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
 | L3 | `openapi/` `asyncapi/` `permissions/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
 | L4 | `fleet-context` `verify/` `openapi/merge/` | Whole-fleet caching and evidence |
-| L5 | `coherence/` `gherkin/` `dependencies/` `doctor/` `explore/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
+| L5 | `coherence/` `gherkin/` `dependencies/` `doctor/` `explore/` `diff/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
 | L6 | `results` `status/` | Aggregate answers for a feature or a fleet |
 
 ## The package layout
@@ -70,23 +70,31 @@ describes the tree rather than a plan for it.
 | `core/kernel/` | `ids/` (service feature dirs) `path-safety` `records` `document-bytes` `concurrency` | nothing |
 | `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
 | `core/envelope/` | `json` `config` `version` | kernel |
+| `core/mcp/` | the MCP facade's pure half: stdio `framing`, JSON-RPC routing (`protocol`), the read-only `tools` table and its `argv` boundary | envelope, kernel |
 | `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
+| `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
 | `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
 | `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | kernel |
 | `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
+| `core/workspace/` | `loam open`'s editor workspace: sibling-repo `discover`y through committed bindings, deterministic `.code-workspace` `render`ing | envelope, repo, kernel |
 | `core/openapi/` `core/asyncapi/` | the two contract axes; `openapi/merge/` is the delta path | repo, kernel |
 | `core/permissions/` | the fleet authorization vocabulary joined by `Requires:` | kernel |
+| `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | repo, document, kernel |
+| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | openapi, asyncapi, c4, repo |
 | `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
 | `core/verify/` | the done-check: questions, answers, the record | openapi, repo, c4, document |
 | `core/delta/` `core/coherence/` | does the diff apply, and do the three axes agree | verify, repo, document |
 | `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | repo, document, kernel |
 | `core/gherkin/` `core/dependencies/` `core/explore/` `core/doctor/` | cross-artifact rules | everything above |
+| `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | provenance, fleet-context, openapi, asyncapi, c4, repo, document, envelope, vocabulary, kernel |
+| `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | everything above |
 | `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | everything above |
+| `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | everything above |
 
-Three modules stay loose in `core/`: `docs.ts`, `fleet-context.ts` and `results.ts`. That is not an
-oversight — a package of one is a directory pretending to be a subject, and the five-file limit
-counts files, not folders.
+Four modules stay loose in `core/`: `conflict-markers.ts`, `docs.ts`, `fleet-context.ts` and
+`results.ts`. That is not an oversight — a package of one is a directory pretending to be a
+subject, and the five-file limit counts files, not folders.
 
 The order of the rows is the dependency order, and every edge points up it. That is not a
 coincidence — the subjects were derived from the seven DAG levels this document already measured,
@@ -160,7 +168,13 @@ only the workspace layout differs, and that part is already isolated.
    `repo` ↔ `fleet-context` edge) and the package graph beside it.
 5. **Commands do not import commands**, except `format.ts` and `docs-repo-gate.ts`. One legacy
    exception: `unarchive.ts` imports `sayRecovery` from `archive.ts`. A second exception means a
-   new shared module, not a second exception.
+   new shared module, not a second exception. One structural exception, which is not the shared-code
+   shape this rule exists to stop: `commands/mcp/dispatch.ts` imports the `register*` functions of
+   the ten read commands it re-enters — the same functions `src/cli.ts` imports, for the same
+   purpose (building a program), not a helper reached around the layer. The acyclic alternative
+   does not exist: importing `cli.ts` from a command module would be a file cycle, and a second
+   copy of the registrations would agree with itself and with nothing else — the exact drift
+   `buildProgram()`'s doc comment records.
 6. **A raw string that reaches a path join passes `assertServiceId` at the command boundary.**
    `new`, `rebase`, `init`, `delta`, `adopt` and `explore` guard — `assertServiceId` for a single
    id, `parseServiceIds` where the flag takes a list. `doctor` reads its id from `loam.json`,
@@ -193,11 +207,14 @@ only the workspace layout differs, and that part is already isolated.
    pays for are still owed). The scanner was extracted so it could be unit-tested, and its two
    modules date from when the 300-line limit reached `likec4.ts` — the seam was already drawn in
    that file as a banner comment, and the parsed view now sits at 284 lines with nothing
-   text-level in it.
+   text-level in it. The first clause fired again on 2026-08-26: the delta projection helpers
+   (`apiChanges`/`eventChanges`/`archSlice`) moved from `commands/delta/slices.ts` to
+   `core/projection/` the day `loam context` became their second caller — rule 5 bans the
+   command→command import that would otherwise have been the shortcut.
 9. **No interface with one implementation.** `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/`
    returns zero. Keep it zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
-    17 exported classes: 16 typed errors and `FleetContext`.
+    18 exported classes: 17 typed errors and `FleetContext`.
 11. **No barrel or index re-export files.** None exist. They would make rule 4 unenforceable by
     hiding the real edge behind a re-export — and under rule 21 they would also defeat the
     package graph, since every import would point at a directory instead of at the module it
@@ -285,14 +302,79 @@ only the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how
     many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
     it. It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 43 of the 91
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 56 of the 129
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 18 and 24 of them. Slices would duplicate the hubs or
+    and `core/repo/repo.ts` by 23 and 26 of them. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.
 25. **Do not move code because it would be cleaner.** Move it when there is a second caller
     (rule 8), or when the untestable half of an algorithm is stranded in a command.
+
+
+### What loam reads from LikeC4
+
+26. **loam reads what a view DECLARES; it never computes what a view SHOWS.** The line is
+    LikeC4's own stage boundary. The **parsed** stage — `(await parsedModel()).$data.views` — is
+    a record of what an author wrote, and loam may read exactly this and nothing more: for an
+    entry whose `_type` is `"dynamic"`, its `id`, `tags`, `title`, `description`, and its
+    `steps[]` restricted to `source`, `target`, `title`, `notes`, `isBackward` and `astPath`.
+    The **computed** and **layouted** stages resolve a view's predicates against the model,
+    derive the ancestor-to-ancestor edges a diagram needs, and place boxes. loam calls neither,
+    ever. Note the `await`: `$data` is `undefined` on the unresolved promise, and every draft of
+    this rule got that wrong before it was measured.
+
+    `isBackward` is in that list on purpose and is not noise. Measured: `a <- b 'reply'` records
+    `{source:"b", target:"a", isBackward:true}`, while `b -> a 'reply'` records the same pair
+    unflagged. A reply arrow is the commonest step in any sequence diagram, so a reader that
+    drops the flag mis-orients every return hop — and a check built on it would convict them all.
+
+    Three consequences, each of which is the reason for the line rather than a detail of it:
+    - *Rendering instructions are not facts about the system.* A static view's `rules[]`,
+      `include`/`exclude` predicates, `autoLayout` and `style` say how a picture should look.
+      A check that reads them makes a verdict depend on a diagram's cosmetics, and puts loam
+      one step from evaluating a predicate — which is computing.
+    - *`$data.views` is not what the author wrote.* LikeC4 synthesises an `index` view into it
+      whether or not the document declares one — measured, present for a document with **no**
+      `views` block at all. Reporting it would be reporting a fiction. Two filters drop it, and
+      which one to use depends on the consumer, so the rule states both: a reader that wants
+      dynamic views filters on `_type === "dynamic"`; a census that must also enumerate authored
+      **element** views filters on `sourcePath !== undefined`, because the synthesized entry is
+      `_type: "element"` *and* `sourcePath: undefined`. A reader who learns only one of these
+      writes the other check wrong.
+    - *Presence is never owed.* A model with no views is missing nothing loam wants, and no
+      check may grade its absence. `loam init` scaffolds no `views` block; `core/brief/unchecked.ts`
+      says so in the brief, and that entry may narrow but may never invert.
+
+    **Views were already load-bearing.** A step naming a typo'd element fails LikeC4's reference
+    checker (measured: 2 diagnostics on a one-step view, and that view's `steps[]` comes back
+    EMPTY), `getErrors()` returns them, and loam's own rule —
+    errors mean no model — already turns that landscape into `landscape.invalid` and takes the
+    fleet gate down. That was true before loam read a single view. What rule 26 adds is not the
+    ability of a views block to fail a repo; it is the ability of one that PARSES to be graded.
+
+    **Enforced**, not merely written — both in `scripts/arch-check.mjs` over `codeOnly(source)`,
+    each with a negative self-test in `test/arch-gate.test.ts`, exactly as the brand-cast scan works:
+    - `computedModel` and `layoutedModel` may not appear in `src/` at all. Zero occurrences
+      when the rule landed, **no whitelist needed** — the one mention, `core/c4/likec4.ts:270`,
+      is inside a comment, which `codeOnly` already blanks.
+    - `$data` may appear only under `src/core/c4/parsed/`. Zero occurrences when the rule landed.
+
+    **The upstream risk, and what carries it.** `$data` is a public, typed, readonly property
+    (`@likec4/core`'s `LikeC4Model.d.mts:1018`), so this is not reaching into a private — it is
+    the same public-but-thinly-documented tier as `fromWorkspace`'s multi-project behaviour,
+    which the batched-loader row below already accepted on the same terms. The pin
+    (`likec4: 1.59.2`) is the first defence; `test/likec4-view-shape.test.ts` — one document,
+    one dynamic view of two steps, asserting the exact shape including the `index` entry it must
+    ignore — is the second, and is written BEFORE the read, not after. The blast radius is one
+    module, because of the containment scan above. And the degradation rule is decided here
+    rather than discovered later: if the shape ever moves such that the adapter cannot read it,
+    it returns "no views read" and every dependent check reports **could-not-look**, never
+    **nothing-wrong** — loam's standing rule for a suspended axis.
+
+    The ergonomic accessor is a dead end, recorded so the next reader does not spend the
+    afternoon: `parsedModel().views()` returns **0** items, because `LikeC4ViewModel` is typed
+    over computed and layouted views. The raw `$data` record is the access path.
 
 ## Open decisions
 
@@ -311,7 +393,9 @@ Ranked by value over cost. The "not worth it" rows are the useful ones — they 
 | Audit the six `serviceResolver` calls that omit `known` | Without it the resolver's last rung can resolve a container id to a service that never existed, so group-by-service joins find nothing | 6 sites to decide, plus a comment at each deliberate omission. Not confirmed against a fixture — audit before fixing | **Done** 2026-08-16 — confirmed against fixtures, the worst case being the removal gate answering "nobody calls it" for a container-drawn consumer. Every repository-aware site now passes the enumerated fleet (coherence, lookups, dependencies, arch coverage, the Covers matcher via `CoverageScope.known`, the verify checklist, `delta`'s projection); the two splice placement sites stay without it, each with its deliberate-omission comment — placement is cosmetic anchoring inside one document, safety-netted by the re-parse |
 | Fix `core/envelope/config.ts`'s stray `console.error` | Restores rule 1 to exceptionless | Three options: delete the print (check `test/wiring.test.ts`); return the reason instead of `null` (16 callers, real payoff); or record the exception in a lint override (two visible exceptions instead of one invisible) | **Done** — option two: `ConfigLoad` returns the reason, the command layer renders it, and the `--json` envelope finally carries the parse detail |
 | Split `commands/validate/`'s rule functions into core | Nothing yet | ~1300 lines relocated — now isolated in `validate/checks/` and `validate/service/` rather than interleaved with two callers, so the cost is a move rather than an extraction. `core/status/` already needs these answers and does *not* re-derive them — it calls into core. Everything with two callers is already there | **Not worth it** until `loam status --service` exists |
-| Batch `validate --all`'s C4 parsing through one temp workspace | The fleet gate at fleet size: 13.7s → 0.73s median on the committed 120-service benchmark (docs/BENCHMARKS.md), peak RSS halved | `validate` becomes a command that writes — a mkdtemp `loam-c4-*` workspace in OS tmp, one single-file project per document. A kill mid-run can strand one there (never in the docs repo); accepted rather than teaching doctor about foreign tmpdirs. And the loader leans on likec4@1.59.2 multi-project behaviour that is public but undocumented for this use — the exact pin plus test/likec4-batch-parity.test.ts are the tripwire | **Done** 2026-08-19 — `core/c4/workspace.ts` `loadBatch` + `FleetContext.prefetchLikeC4`, `--all` only. Project names carry a crypto-random per-invocation token so an author-written `import` cannot resolve against a sibling project `fromSource` would refuse; a batch-infrastructure failure degrades silently to per-path loads (findings can never depend on tmpdir writability); `parsedModel` still, never `computedModel` — the computed-views boundary holds. A shared long-lived Langium instance was considered and declined: 1.59.2 exposes no public document-update API, so reuse would mean private internals or workspace watching, both worse than a 0.7s rebuild |
+| Batch `validate --all`'s C4 parsing through one temp workspace | The fleet gate at fleet size: 13.7s → 0.73s median on the committed 120-service benchmark (docs/BENCHMARKS.md), peak RSS halved | `validate` becomes a command that writes — a mkdtemp `loam-c4-*` workspace in OS tmp, one single-file project per document. A kill mid-run can strand one there (never in the docs repo); accepted rather than teaching doctor about foreign tmpdirs. And the loader leans on likec4@1.59.2 multi-project behaviour that is public but undocumented for this use — the exact pin plus test/likec4-batch-parity.test.ts are the tripwire | **Done** 2026-08-19 — `core/c4/workspace.ts` `loadBatch` + `FleetContext.prefetchLikeC4`, `--all` only at first; since 2026-08-26 `loam context` prefetches its feature deltas through the same loader. Project names carry a crypto-random per-invocation token so an author-written `import` cannot resolve against a sibling project `fromSource` would refuse; a batch-infrastructure failure degrades silently to per-path loads (findings can never depend on tmpdir writability); `parsedModel` still, never `computedModel` — the computed-views boundary holds, and **rule 26 is what now states where it is**. A shared long-lived Langium instance was considered and declined: 1.59.2 exposes no public document-update API, so reuse would mean private internals or workspace watching, both worse than a 0.7s rebuild |
+| Read a `dynamic view`'s declared steps out of `(await parsedModel()).$data.views` | The first two hops of loam's spine — capability id → view tag → steps → (source,target) → relationship → `metadata { op }` → operationId — become mechanical. loam already checks every hop after those two; making these two checkable makes the spine walkable from the business end. And it retires `SCHEMA.md`'s planned `flows/` tree rather than building it | The written doctrine said "never parses views" and must narrow to "never COMPUTES views" — 15 live statements across `src/`, `SCHEMA.md`, `ROADMAP.md`, `docs/DESIGN.md` and one test banner, three more inspected and deliberately left alone. `$data` is public and typed but thinly documented for this use, so it needs a shape tripwire and one-module containment. Zero runtime cost: the record is materialized by the `parsedModel()` call both loaders already make. Real hazards: LikeC4 synthesises an `index` view into the record, a step can carry no `metadata` and no tags (only the view can), a reply step is flagged `isBackward` rather than reversed, and a step names element FqnRefs rather than a relationship — so two relationships joining one pair are ambiguous and must be refused-and-named, never guessed | **Done** — **rule 26**. The boundary is not moved, it is stated: `test/likec4-model-parity.test.ts` was always pinning the COMPUTE (that `computedModel()` invents no ancestor edges `parsedModel()` lacks), never the parse, so the written rule and the enforced rule now agree for the first time. Enforcement moved from prose into `arch:check`: `computedModel`/`layoutedModel` banned in `src/` outright (zero occurrences, no whitelist — the one mention is a comment, which `codeOnly` blanks), `$data` confined to `core/c4/parsed/`. Not filed in this table's usual place, because this is a boundary rule and not a restructuring of `src/`; numbered 26 rather than renumbered into the Boundaries block because rule numbers are cited across 14 files, `docs/DESIGN.md` itself among them, and renumbering breaks every citation for no gain |
+| Weight `vouch --sample`'s pick by fan-in (`core/dependencies/fanin.ts`) | Would put the sections of the most-depended-on services in front of a reader first — the proposal's own suggestion | Fan-in counts dependants per SERVICE; nothing joins a consumer to a doc SECTION, and the join that would (section → `Operations:`/`Publishes:` → landscape edge → caller) exists only for `### Requirement:` blocks that carry those lines. Every narrative section — `## Overview`, `## Interfaces`, the prose most likely to be quietly false — would weight to zero and stop being sampled. It also needs the fleet map and every sibling's contract inside a vouch that runs in one service's repo, and an unparseable landscape would flatten the weights back to uniform without saying so | **Not worth it** — and one cost is disqualifying rather than merely large: those inputs are documents an agent can edit, and neither is covered by the digests in the seed, so weighting would hand back exactly the steering that content-derived seeding takes away. `pickSample` takes a plain section list, so weights stay an additive parameter for a version that can answer this |
 | A shared `withDocsRepo(…)` command frame | Removes a repeated 9–11 line prelude | ~0.5% of the command layer, and everything the frame must parameterise is the part that differs: four distinct consequence sentences, a conditional gate level, and `validate`'s per-target catch. Tests assert stdout, so the change would be invisible to the suite | **Not worth it.** The defect class that actually bit — four drifting errno readings — is already fixed by `docs-repo-gate.ts` |
 
 ### Reopened and decided the other way

@@ -31,7 +31,7 @@
 import { realpathSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { serviceDirOf, type DocsDir, type ServiceDir } from "../../kernel/ids/dirs.js";
+import { serviceDirOf, serviceTreePath, type DocsDir, type ServiceDir } from "../../kernel/ids/dirs.js";
 import { rawServiceId, type RawServiceId } from "../../kernel/ids/service.js";
 import { subsystemNameProblem } from "../../kernel/ids/subsystem.js";
 import type { Finding } from "../../vocabulary/report.js";
@@ -163,7 +163,7 @@ async function visitDir(spot: Spot, ctx: WalkContext): Promise<void> {
         `It stays classified as a service; delete ${rel}/${SUBSYSTEM_MARKER}, ` +
         `or move the artifacts into a service directory of their own inside the group.` +
         (stranded.length > 0 ? ` ${stranded.length} service(s) beneath it stay enumerated meanwhile: ${stranded.map((s) => s.id).join(", ")}.` : ""),
-      ...(stranded.length > 0 ? { details: stranded.map((s) => ["services", ...s.subsystem, s.id].join("/")) } : {}),
+      ...(stranded.length > 0 ? { details: stranded.map(serviceTreePath) } : {}),
     });
     return;
   }
@@ -264,7 +264,7 @@ async function visitUnmarked(spot: Spot, at: { rel: string; dirs: string[] }, ct
       `Without the marker this directory would be read as a service and everything under it would vanish from the fleet — ` +
       `the shape an ordinary merge produces when one branch deletes an emptied subsystem's marker while another moves a service in. ` +
       `Restore ${at.rel}/${SUBSYSTEM_MARKER} (an empty file is a valid marker), or move the directories out.`,
-    ...(stranded.length > 0 ? { details: stranded.map((s) => ["services", ...s.subsystem, s.id].join("/")) } : {}),
+    ...(stranded.length > 0 ? { details: stranded.map(serviceTreePath) } : {}),
   });
 }
 

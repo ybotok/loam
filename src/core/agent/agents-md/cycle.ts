@@ -96,8 +96,8 @@ until validation is quiet" is the wrong loop; the two runs above are the test.
 Two rules the brief repeats and this file will too. An artifact that already
 exists is reported as \`action: "diff"\` — read it and report what disagrees;
 never replace it, because a document somebody wrote is evidence. And everything
-you write is \`status: draft\`: promotion is \`loam vouch\`, run by a person in
-the service's own repository.
+you write is \`status: draft\`: promotion is \`loam vouch\`, run by a person in the
+service's own repo — \`loam vouch --pack --service <id>\` (read-only) preps that read.
 
 ## The done-check
 
@@ -108,8 +108,8 @@ deltas included (those claims name their file, and the test they ask for is an
 integration/ops test, not an acceptance test). Each claim has a stable id, so
 two runs are diffable and an answer cannot drift onto a different question.
 
-Two answer channels, and they never overlap. The \`scenario.tested\` claims are
-the TEST RUNNER's to answer: run the generated suite with a cucumber JSON
+Three answer channels, and they never overlap. The \`scenario.tested\` claims
+are the TEST RUNNER's to answer: run the generated suite with a cucumber JSON
 report (\`cucumber-js --format json:report.json\`) and pass it back —
 \`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
 report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
@@ -120,6 +120,32 @@ reason. The digest is the only identity: a reworded spec scenario matches
 nothing until the suite is regenerated and re-run. When a report exists,
 ALWAYS pass \`--results\` — under it the runner owns every scenario claim, and
 an answers-file entry for one is refused.
+
+The \`api.exposes\` claims have a mechanical channel of their own: an API
+contract-test run, passed back with
+\`loam verify <FEAT> --contract-results contract.json\`. loam accepts one
+shape — its own documented contract-results JSON,
+\`{"loamContractReport": 1, "results": [{"operationId": "createSplit",
+"status": "passed"}]}\` — emitted from your contract tool's report in one
+transform (Specmatic's own coverage JSON is refused by design: its "covered"
+status means exercised, not passed, so reading it would confirm what a red run
+refuted). An entry whose status is exactly \`passed\` confirms the claim whose
+operationId it names — the record says \`answered_by: external-runner\` and the
+views mark the line \`[contract]\` — while a failed or unknown status and an
+operation the report never exercised leave the claim \`unconfirmed\` with the
+reason; entries naming operations outside the checklist are ignored.
+\`verify.operation-contested\` (warn) is \`verify.digest-contested\`'s twin on
+this axis: an operationId is unique per contract document, not per fleet, so
+when two services on the checklist expose the same one, a report entry — which
+names no service — cannot say whose suite exercised it, those claims stay
+unconfirmed, and each service records its own with \`--service\`. Under the
+flag the contract report OWNS every api.exposes claim in scope, so an
+answers-file entry for one is refused (\`answers-mismatch\`), and the record
+pins the file consumed in \`contractReport\` (path, sha256 of the bytes, mtime,
+operation count) exactly as \`report\` pins the cucumber one. The verdict
+ladder does not move: external evidence never answers a \`scenario.tested\`
+claim, so \`attested\` versus \`verified\` still turns on scenario claims
+alone.
 
 \`--record\` without \`--results\` is the fallback for a service with no runnable
 suite yet: there your word answers the scenario claims too. It still works, and
@@ -133,6 +159,22 @@ nothing gates on it, because a legacy service with no suite must still be able
 to ship). Answer them mechanically the moment a suite runs:
 \`loam verify <FEAT> --results <report.json>\`.
 
+A record that leaves any claim unconfirmed or unanswered carries
+\`verify.claims-open\` (warn) in \`notices[]\` — the one-line "not a clean
+result" summary with all four counts, on the read view and the frozen
+post-archive view alike; it gates nothing, and a feature with no record at all
+never carries it, because not-started is not partial.
+
+Federated \`--record\` also stamps \`evidence_pins\` on each agent-confirmed
+citation — the cited file's sha256 at the attested commit, the cited line's
+text, and the literal token the claim asserts (operationId, message name, edge
+op). One notice rides beside the stamp: \`verify.evidence-token-missing\` (warn,
+verdict-neutral, gates nothing) says a cited file at the attested commit does
+not contain the claim's token — read that evidence first, while the answer can
+still be corrected. \`loam validate\`, run later in the service's repo,
+re-checks the pins and reports drift under the \`evidence.*\` findings; nothing
+there moves a verdict either.
+
 Two more codes belong to the record itself. \`verify.record-miscounted\` (error):
 a \`verification.yaml\` whose \`summary\` block contradicts its own \`claims[]\` — the
 record is refused as unreadable rather than believed in either half, and
@@ -142,21 +184,23 @@ re-recording is the repair, never editing the counts. \`verify.digest-contested\
 those scenario claims are left unconfirmed, and each service records its own
 from its own repository with \`--service\`.
 
-A consumed report is written down: \`report\` on the record (or on that
-repository's attestation) carries the path, a sha256 of the bytes, the file's
-mtime and how many tagged scenarios it held. That identifies WHICH file
-answered the claims, and — when the file is committed — that it matches the
-attested commit. It does not prove the file came from executing that commit; no
-digest can.
+A consumed report is written down: \`report\` and \`contractReport\` on the
+record (or on that repository's attestation) each carry the path, a sha256 of
+the bytes, the file's mtime and how much it held — tagged scenarios for the
+one, distinct operationIds for the other. That identifies WHICH file answered
+the claims, and — when the file is committed — that it matches the attested
+commit. It does not prove the file came from executing that commit; no digest
+can.
 
 Everything else you answer from the code, and \`--record answers.json\` takes
 those back, writing \`features/<FEAT>/verification.yaml\` — it travels into the
-archive with the feature and reads without loam. With \`--results\`, the answers
-file must answer exactly the non-scenario claims: an entry for a scenario
-claim is refused (\`answers-mismatch\` — the runner owns it), and \`--results\`
-alone is refused while non-scenario claims are outstanding. Every recorded
-verdict says who answered it (\`answered_by: runner | agent\`), so a reviewer
-can tell a green run from somebody's word.
+archive with the feature and reads without loam. Alongside the mechanical
+flags, the answers file must answer exactly the claims no report owns: an
+entry for a report-owned claim is refused (\`answers-mismatch\`), and a
+mechanical flag alone is refused while claims outside its kind are
+outstanding. Every recorded verdict says who answered it
+(\`answered_by: runner | external-runner | agent\`), so a reviewer can tell a
+green run from somebody's word.
 
 **A cross-service feature is verified once per service, and the form matters.**
 The claims of one feature belong to several services, and each service's code
@@ -165,6 +209,8 @@ lives in its own repository — so the recording form is federated:
 \`\`\`sh
 # in EACH affected service's own repo, not in the docs repo:
 loam verify FEAT-101 --service payment-service --results report.json --record answers.json
+# with an API contract suite, its report answers the api.exposes claims too:
+loam verify FEAT-101 --service payment-service --results report.json --contract-results contract.json --record answers.json
 \`\`\`
 
 \`--service <id>\` narrows the checklist to that service's claims and binds the

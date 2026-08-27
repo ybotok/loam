@@ -9,6 +9,7 @@ import { MATURITY_LADDER, maturityRollup } from "../../core/vocabulary/maturity.
 import { type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { compareIds, type FeatureEntry } from "../../core/repo/entries.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
+import type { OwnedRow, OwnersJoin } from "./campaign/owners.js";
 import { type ServiceView, type VerificationCell } from "./views.js";
 
 function serviceFlags(v: ServiceView): string {
@@ -27,12 +28,31 @@ function serviceFlags(v: ServiceView): string {
   ].join(" ");
 }
 
+/**
+ * The rung as a person reads it. `vouched (sampled)` is a DISPLAY string, not
+ * a rung: the ladder, the rollup below and `--needs-work` all still see
+ * `vouched`, because that string is a published contract and the document
+ * really is stamped by a person. What the suffix says is what the stamp says
+ * — they read a recorded sample of it, and `loam validate` will report
+ * `sources.sampled-vouch` until somebody reads the rest. Without it, the one
+ * line a fleet lead scans for trust would show a sampled vouch and a full one
+ * as the same word.
+ *
+ * Only on `vouched`: a lower rung already says less than "a person vouched",
+ * and hanging a scope note on it would explain a claim nothing is making.
+ */
+function rungLabel(v: ServiceView): string {
+  return v.maturity === "vouched" && v.entry.vouchScope === "sampled" ? "vouched (sampled)" : v.maturity;
+}
+
 export function printServices(views: ServiceView[], tree?: FleetTree): void {
   console.log(
     `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [R]unbook [H]ealth`,
   );
   const width = Math.max(0, ...views.map((v) => v.entry.id.length));
-  const rungWidth = Math.max(0, ...views.map((v) => v.maturity.length));
+  // Measured over the DISPLAY strings, so the column does not shear the first
+  // time a sampled row appears in a fleet.
+  const rungWidth = Math.max(0, ...views.map((v) => rungLabel(v).length));
   for (const v of views) {
     const s = v.entry;
     const adrs = s.adrs > 0 ? `  (${s.adrs} adr${s.adrs === 1 ? "" : "s"})` : "";
@@ -40,7 +60,7 @@ export function printServices(views: ServiceView[], tree?: FleetTree): void {
     // the fleet is unfinished and nothing about which twelve, which is the one
     // question the line is read to answer.
     console.log(
-      `  ${serviceFlags(v)}  ${s.id.padEnd(width)}  ${v.maturity.padEnd(rungWidth)}${adrs}`.trimEnd(),
+      `  ${serviceFlags(v)}  ${s.id.padEnd(width)}  ${rungLabel(v).padEnd(rungWidth)}${adrs}`.trimEnd(),
     );
   }
   // How much of the fleet anyone has actually vouched for. On 100+ services this
@@ -59,7 +79,16 @@ export function printServices(views: ServiceView[], tree?: FleetTree): void {
     // line reads as progress left to right. Presence and provenance state only
     // — completeness is unchecked, so this line never says "adopted".
     const rollup = maturityRollup(views);
-    const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map((m) => `${rollup[m]} ${m}`);
+    // The rollup itself is untouched — the rung IS `vouched`, and both the
+    // `--json` payload and `--needs-work` are computed from it. What the TEXT
+    // line adds is the qualifier the per-row suffix already carries, because
+    // this is the line a fleet lead reads for the trust answer, and recovering
+    // "how many of those 118 did anybody read in full" by scanning 118 rows is
+    // not an answer. Same layout as the validate scorecard's provenance row.
+    const sampled = views.filter((v) => v.maturity === "vouched" && v.entry.vouchScope === "sampled").length;
+    const rungs = MATURITY_LADDER.filter((m) => rollup[m] > 0).map(
+      (m) => `${rollup[m]} ${m}${m === "vouched" && sampled > 0 ? ` (${sampled} sampled)` : ""}`,
+    );
     console.log(`  maturity: ${rungs.join(" · ")}`);
     // The tree dial, only once a tree exists: unfiled is permanent and normal
     // (a count, never a finding), and a flat fleet has nothing to say here —
@@ -78,18 +107,80 @@ export function printServices(views: ServiceView[], tree?: FleetTree): void {
  * provenance cannot be judged from here is LISTED, tagged, never dropped:
  * omitting it would read as done.
  */
-export function printWorklist(views: ServiceView[], total: number): void {
+export function printWorklist(
+  views: ServiceView[],
+  total: number,
+  fanIn?: ReadonlyMap<string, number>,
+): void {
   if (views.length === 0) {
     console.log(`nothing to do — all ${total} service(s) are vouched`);
     return;
   }
-  console.log(`${views.length} of ${total} service(s) need work`);
+  // Under --review-order the caller hands the rows pre-sorted; the header
+  // names the derivation as a caller count, never a priority judgement — the
+  // number is who depends on the service, not how important it is.
+  const ordered = fanIn === undefined ? "" : " — review order (fan-in: services depending on each)";
+  console.log(`${views.length} of ${total} service(s) need work${ordered}`);
   const width = Math.max(0, ...views.map((v) => v.entry.id.length));
-  const rungWidth = Math.max(0, ...views.map((v) => v.maturity.length));
-  for (const v of views) {
+  const rungWidth = Math.max(0, ...views.map((v) => rungLabel(v).length));
+  const cells = fanIn === undefined ? undefined : views.map((v) => `fan-in: ${fanIn.get(v.entry.id) ?? 0}`);
+  const cellWidth = cells === undefined ? 0 : Math.max(0, ...cells.map((c) => c.length));
+  for (const [i, v] of views.entries()) {
     const note = v.unverifiableFromHere ? "  (provenance: unverifiable-from-here)" : "";
+    // Indexing the same array the loop walks, like printFeatures' cells below.
+    const cell = cells === undefined ? "" : `  ${cells[i]!.padEnd(cellWidth)}`;
     console.log(
-      `  ${v.entry.id.padEnd(width)}  ${v.maturity.padEnd(rungWidth)}  missing: ${v.missing.join(", ")}${note}`,
+      `  ${v.entry.id.padEnd(width)}  ${rungLabel(v).padEnd(rungWidth)}${cell}  missing: ${v.missing.join(", ")}${note}`,
+    );
+  }
+}
+
+/**
+ * The owner-grouped view under `--owners`: every row of the current listing
+ * filed under the team CODEOWNERS names for its directory, unowned last —
+ * the per-team campaign queues, each in the exact order the ungrouped
+ * listing would print. Text side only; the ids-per-team contract is
+ * json.ts's `ownersJson`.
+ */
+export function printOwners(
+  join: OwnersJoin,
+  byDir: ReadonlyMap<string, ServiceView>,
+  fanIn?: ReadonlyMap<string, number>,
+): void {
+  const row = (r: OwnedRow): void => {
+    // Joined back by DIRECTORY, the row's identity — ids can collide across
+    // a broken tree, and an id-keyed map would print one twin's cells under
+    // the other twin's team. The join was computed from these same rows so a
+    // miss is unreachable, but it is a key join on purpose (docs/CODE-STYLE.md:
+    // never join two arrays by position) — and a miss prints the bare id
+    // LOUDLY rather than vanishing, so a future row-set drift shows itself.
+    const v = byDir.get(r.repoDir);
+    if (v === undefined) {
+      console.log(`    ${r.id}`);
+      return;
+    }
+    const cell = fanIn === undefined ? "" : `  fan-in: ${fanIn.get(r.id) ?? 0}`;
+    const missing = v.missing.length > 0 ? `  missing: ${v.missing.join(", ")}` : "";
+    console.log(`    ${r.id}  ${rungLabel(v)}${cell}${missing}`);
+  };
+  for (const team of join.teams) {
+    console.log(`  ${team.owner} (${team.services.length})`);
+    for (const r of team.services) row(r);
+  }
+  // Explicit even in a heading: an unmatched service silently absent from
+  // every team's queue would read as somebody else's work.
+  if (join.unowned.length > 0) {
+    console.log(`  unowned (${join.unowned.length})`);
+    for (const r of join.unowned) row(r);
+  }
+  if (join.skipped.length > 0) {
+    // Line AND pattern: `* @org/all` is the most common CODEOWNERS opener,
+    // and a note naming only "line 1" would leave the reader unable to tell
+    // the fleet-wide default was skipped rather than some docs rule.
+    console.log(
+      `  note: ${join.skipped.length} rule(s) outside the supported CODEOWNERS subset skipped: ${join.skipped
+        .map((rule) => `line ${rule.line} (${rule.pattern})`)
+        .join(", ")}`,
     );
   }
 }

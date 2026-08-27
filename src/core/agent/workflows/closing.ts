@@ -36,8 +36,9 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    requirement, arch.spec.md deltas included. Each has a stable \`id\` and a
    \`subject\` (the service whose code answers it); a claim that says arch.spec.md
    wants an integration/ops test, not an acceptance test. An ARCHIVED feature returns its record as frozen history instead
-   (\`frozen: true\`) and \`--record\` / \`--results\` refuse it — \`loam unarchive\`
-   first if the answers really must change.
+   (\`frozen: true\`) and \`--record\` / \`--results\` / \`--contract-results\` /
+   \`--diff-answers\` refuse it — \`loam unarchive\` first if the answers really
+   must change.
 2. The \`scenario.tested\` claims are the runner's to answer, not yours. In the
    service's repo, run the generated suite with a JSON report —
    \`npx cucumber-js --format json:report.json\` (cucumber-jvm, behave and
@@ -53,11 +54,20 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    \`verify.digest-contested\` (warn) is the case where two services word a
    scenario identically: they share one digest, so no single report can say whose
    suite ran it, and each service must record its own with \`--service\`.
+   The \`api.exposes\` claims have a mechanical channel too, when an API
+   contract-test suite exists: emit loam's contract-results shape from its
+   report — \`{"loamContractReport": 1, "results": [{"operationId": "…",
+   "status": "passed"}]}\`, a one-line transform for Specmatic, Pact, Dredd or a
+   property harness — and pass \`--contract-results contract.json\` alongside.
+   Only a status of exactly \`passed\` confirms the named operation
+   (\`answered_by: external-runner\`); anything else, and an operation the report
+   never exercised, stays \`unconfirmed\` with the reason, and under the flag the
+   report owns every api.exposes claim, so take those out of the answers file.
 3. Answer every OTHER claim by finding it in the code. Not by reasoning that it
    must be there — by opening the file:
    - \`service.exists\` — the service is deployable: its build, its entry point.
    - \`api.exposes\` — the route handler serving that operationId, not the spec that
-     declares it.
+     declares it — unless a contract-test report already answered it in step 2.
    - \`event.declares\` — the code that puts the message on the wire (sends) or
      handles it off the wire (receives), not the contract that names it.
    - \`c4.calls\` — the call site in the CALLER.
@@ -69,10 +79,33 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
      { "id": "<claim id>", "verdict": "unconfirmed", "note": "the split service has no entry point yet" }
    ] }
    \`\`\`
-5. Record, **in each affected service's own repository**, one service at a time:
+5. Optional, before recording: cross-examine. Have a SECOND agent answer the
+   same checklist blind — a fresh context, given only \`loam verify $1 --json\`
+   and the code, never your answers file — then compare the two sets:
 
    \`\`\`sh
-   loam verify $1 --service <id> --results report.json --record answers.json --json
+   loam verify $1 --diff-answers yours.json theirs.json --json
+   \`\`\`
+
+   Both files must answer EVERY claim in the compared scope,
+   \`scenario.tested\` included: the diff consults no test report, so this is a
+   DIFFERENT file from the one step 6 records under \`--results\` (that one
+   must omit the runner's claims; a step-6-shaped file here refuses
+   \`answers-mismatch\`). Narrowing with \`--service <id>\` compares one
+   service's claims — give the second agent the same lens, or its file will
+   not match the compared scope. An archived feature refuses the diff too:
+   frozen history has no current checklist. It writes nothing and changes no
+   verdict: \`cross.agree-confirmed\` / \`cross.agree-unconfirmed\` rows are the
+   cheap-to-skip queue, \`disagreements[]\` (\`cross.disagree\`) is what a human
+   reads first, and the \`cross.evidence-disjoint\` notice flags agreements
+   citing non-overlapping files — read those second. Agreement between two
+   same-model agents is correlated, so it ranks review; it never upgrades
+   \`attested\` to \`verified\`. Record only the answer set you stand behind, in
+   a separate run.
+6. Record, **in each affected service's own repository**, one service at a time:
+
+   \`\`\`sh
+   loam verify $1 --service <id> --results report.json [--contract-results contract.json] --record answers.json --json
    \`\`\`
 
    \`--service <id>\` narrows the checklist to that service's claims and binds the
@@ -102,12 +135,16 @@ reads the service, so a verdict is worth exactly what its evidence is worth.
    \`service-mismatch\` (\`--service\` names a service this repo does not declare) and
    \`repository-unavailable\` (\`--service\` from a repo that declares none, or whose
    commit cannot be read — an attestation must be bound to the code it is about).
-6. Report every \`unconfirmed\` claim and what it would take to close it, and read
+7. Report every \`unconfirmed\` claim and what it would take to close it, and read
    \`discarded\` in the payload: it names every previous answer the new record does
    not carry, and each one is either evidence that went stale or evidence that was
    just dropped. A scenario claim the report failed or missed closes by fixing the
-   code and re-running the suite — never by editing the generated .feature.
-7. Reading is safe from anywhere: \`loam verify $1 --service <id> --json\` without
+   code and re-running the suite — never by editing the generated .feature. While
+   any claim stays unconfirmed or unanswered, \`notices[]\` carries
+   \`verify.claims-open\` (warn, gating nothing): the one-line "not a clean
+   result" summary with all four counts, so a partial record can never read as a
+   finished one from the notice lines alone.
+8. Reading is safe from anywhere: \`loam verify $1 --service <id> --json\` without
    \`--record\` writes nothing and works from the docs repo too. \`services\` lists
    every subject of the checklist, so it is how you find out which repos still
    owe an attestation, and \`loam status $1 --json\` says the same thing in the
@@ -118,6 +155,21 @@ and it is the useful one: nothing gates on this file, so the only thing it is fo
 telling the next reader the truth. \`loam archive\` will ship the feature either way —
 which is exactly why a \`confirmed\` you cannot back up costs nothing now and misleads
 everyone later.
+
+\`loam verify\` — the notice and record codes its reports carry in \`notices[]\`,
+gathered from the steps above; branch on the code, never the prose:
+
+| code | what it means | what to do |
+|---|---|---|
+| \`verify.claims-open\` (warn) | a recorded feature still has unconfirmed or unanswered claims — the one-line "not a clean result" summary with all four counts, so a partial record can never read as finished from the notice lines alone; a feature with no record at all never carries it | close each open claim: fix the code and re-run the suite for a failed scenario, re-answer the rest with evidence, then re-record |
+| \`verify.scenario-attested\` (warn) | scenario claims were answered on an agent's word (\`answered_by: agent\`), so the verdict is **attested**, not verified — nothing gates on it, but say so when you hand back | run the generated suite with a JSON report and re-record with \`--results report.json\` the moment a suite exists |
+| \`verify.digest-contested\` (warn) | two or more services word a scenario identically, so they share one \`@loam-digest-…\` tag and no single cucumber report can say whose suite ran it — those scenario claims stay unconfirmed | each service records its own claims from its own repository with \`--service <id>\` |
+| \`verify.operation-contested\` (warn) | two services on the checklist expose the same operationId, so a contract report — which names no service — cannot say whose suite exercised it; those claims stay unconfirmed | each service records its own with \`--service <id>\`, passing its own contract report |
+| \`verify.record-miscounted\` (error) | a verification.yaml whose \`summary\` block contradicts its own \`claims[]\` — neither half can be believed, so the record is refused as unreadable rather than trusted in either direction | re-record from the service's repo; never edit the counts by hand |
+| \`verify.evidence-token-missing\` (warn) | a just-confirmed citation's file at the attested commit does not contain the claim's own token (the operationId, message name or edge op) — the evidence may not show what the answer says | re-read that evidence while the answer can still be corrected; verdict-neutral, it gates nothing |
+| \`cross.agree-confirmed\` / \`cross.agree-unconfirmed\` (ok) | a \`--diff-answers\` row where both blind answer sets reach the same verdict — the cheap-to-skip review queue, though same-model agreement is correlated and proves nothing | nothing on its own; record only the answer set you stand behind, in a separate run |
+| \`cross.disagree\` (the rows a human reads first) | a \`--diff-answers\` row where the two blind answer sets contradict each other — one of them is wrong about the code | read both cited evidences and decide; the diff writes nothing and never moves a verdict |
+| \`cross.evidence-disjoint\` (warn) | a \`--diff-answers\` notice: claims BOTH sets confirm while citing non-overlapping files — two yeses that looked at different evidence | read those agreements second, after the disagreements; agreement over disjoint evidence is two guesses, not one proof |
 `,
 };
 

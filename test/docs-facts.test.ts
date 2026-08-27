@@ -12,7 +12,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { buildProgram } from "../src/cli.js";
 import { readVocabulary } from "../src/core/permissions/permissions.js";
-import { CLAIM_KINDS } from "../src/core/verify/checklist.js";
+import { CLAIM_KINDS } from "../src/core/verify/claims/identity.js";
 import { PACKAGED_MARKDOWN } from "../scripts/package-docs.mjs";
 import { collectEmittedCodes } from "./helpers/stable-codes.js";
 import { makeProject } from "./helpers/harness.js";
@@ -238,6 +238,7 @@ describe("public docs name only emitted codes", () => {
     "error.message": "envelope field path, as above",
     "checks.coherent": "status --json payload field path",
     "has.asyncapi": "list --json payload field path",
+    "claims.answered": "validate --all --json scorecard payload field path — the confirmed claims' provenance split",
     "landscape.instruction": "adopt brief --json payload field path",
     "readiness.living": "audit-openspec --json payload field path",
     "readiness.active": "audit-openspec --json payload field path",
@@ -246,6 +247,7 @@ describe("public docs name only emitted codes", () => {
     "baselines.release": "check-openspec-corpus baseline selector, dev tooling not CLI output",
     "user.email": "git config key quoted in vouch's provenance prose",
     "user.name": "git config key, as above",
+    "core.autocrlf": "git config key — the line-ending rewrite `loam seed`'s stamp is deliberately immune to",
     "components.messages": "AsyncAPI document section path (the slot grammar), not a finding",
     "components.schemas": "AsyncAPI document section path, as above",
     "loam.json.service": "config key path — the service binding inside loam.json",
@@ -361,11 +363,6 @@ describe("known gaps carry owners", () => {
       doc: "SCHEMA.md",
       gap: "page-specs (UI services)",
       owner: "**UI generation:**",
-    },
-    {
-      doc: "SCHEMA.md",
-      gap: "interaction flows -> sequence views",
-      owner: "**Rendering:**",
     },
   ];
 

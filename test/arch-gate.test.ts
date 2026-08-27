@@ -161,6 +161,32 @@ describe("each architecture check refuses its representative violation", () => {
     expect(res.code).toBe(1);
     expect(res.err).toContain("brand-casts");
   }, 200_000);
+  it("a call into LikeC4's computed view stage", async () => {
+    const root = await fixture({
+      "src/core/c4/render.ts": 'export async function draw(m: { computedModel(): unknown }) {\n  return m.computedModel();\n}\n',
+    });
+    const res = await gateOn(root);
+    expect(res.code).toBe(1);
+    expect(res.err).toContain("view-stage");
+  }, 200_000);
+
+  it("a raw `$data` read outside src/core/c4/parsed/, while the reader itself stays legal", async () => {
+    // Two fixtures in one case, because a confinement scan has two ways to go
+    // wrong and only one of them is a false green: banning nothing, and banning
+    // the one module the rule exists to permit. The second assertion is what
+    // stops a later tightening from fencing the reader out of its own record.
+    const leaked = await fixture({
+      "src/core/c4/leak.ts": "export function read(m: { $data: { views: unknown } }) {\n  return m.$data.views;\n}\n",
+    });
+    const res = await gateOn(leaked);
+    expect(res.code).toBe(1);
+    expect(res.err).toContain("view-stage");
+
+    const permitted = await fixture({
+      "src/core/c4/parsed/dynamic-views.ts": "export function read(m: { $data: { views: unknown } }) {\n  return m.$data.views;\n}\n",
+    });
+    expect((await gateOn(permitted)).code).toBe(0);
+  }, 200_000);
 });
 
 describe("the gate's own lists cannot go stale silently", () => {

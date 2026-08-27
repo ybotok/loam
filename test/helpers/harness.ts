@@ -24,10 +24,12 @@ import { registerInit } from "../../src/commands/init/init.js";
 import { registerAdopt } from "../../src/commands/adopt/adopt.js";
 import { registerList } from "../../src/commands/list/list.js";
 import { registerNew } from "../../src/commands/new/new.js";
+import { registerSeed } from "../../src/commands/seed/seed.js";
 import { registerShow } from "../../src/commands/show/show.js";
 import { registerStatus } from "../../src/commands/status/status.js";
 import { registerSubsystem } from "../../src/commands/subsystem/subsystem.js";
 import { registerDelta } from "../../src/commands/delta/delta.js";
+import { registerDiff } from "../../src/commands/diff/diff.js";
 import { registerGherkin } from "../../src/commands/gherkin/gherkin.js";
 import { registerRebase } from "../../src/commands/rebase/rebase.js";
 import { registerArchive } from "../../src/commands/archive/archive.js";
@@ -35,10 +37,14 @@ import { registerUnarchive } from "../../src/commands/unarchive/unarchive.js";
 import { registerValidate } from "../../src/commands/validate/validate.js";
 import { registerVerify } from "../../src/commands/verify/verify.js";
 import { registerVouch } from "../../src/commands/vouch/vouch.js";
+import { registerGate } from "../../src/commands/gate/gate.js";
 import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
 import { registerExplore } from "../../src/commands/explore.js";
+import { registerContext } from "../../src/commands/context/context.js";
+import { registerOpen } from "../../src/commands/open.js";
 import { registerInstructions } from "../../src/commands/instructions.js";
+import { registerExplain } from "../../src/commands/explain/explain.js";
 import { registerMigrateOpenSpec } from "../../src/commands/migrate-openspec/migrate-openspec.js";
 import { docsDirOf, type DocsDir } from "../../src/core/kernel/ids/dirs.js";
 import { parseRequirements } from "../../src/core/document/parse.js";
@@ -258,15 +264,23 @@ async function runLoamNow(cwd: string, args: string[]): Promise<RunResult> {
     process.chdir(cwd);
     const program = new Command();
     program.name("loam").exitOverride();
+    // registerMcp is deliberately absent: its action awaits process.stdin,
+    // which no in-process test owns, so runLoam("mcp") would hang this fork
+    // until the runner's timeout. Drive the server through serve() with
+    // injected streams (test/mcp-serve.test.ts) or through spawnLoamStdio
+    // (test/helpers/cli-process.ts), where stdin has an owner and an end.
     registerInit(program);
     registerAdopt(program);
     registerList(program);
     registerExplore(program);
+    registerContext(program);
     registerNew(program);
+    registerSeed(program);
     registerShow(program);
     registerStatus(program);
     registerSubsystem(program);
     registerDelta(program);
+    registerDiff(program);
     registerGherkin(program);
     registerRebase(program);
     registerArchive(program);
@@ -274,9 +288,12 @@ async function runLoamNow(cwd: string, args: string[]): Promise<RunResult> {
     registerValidate(program);
     registerVerify(program);
     registerVouch(program);
+    registerGate(program);
     registerDoctor(program);
     registerDependencies(program);
     registerInstructions(program);
+    registerExplain(program);
+    registerOpen(program);
     registerMigrateOpenSpec(program);
     await program.parseAsync(["node", "loam", ...args]);
   } finally {

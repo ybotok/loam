@@ -13,6 +13,7 @@ import { report } from "./report.js";
 import { reportFrozen } from "./frozen.js";
 import { record } from "./record.js";
 import { type VerifyOptions } from "./record.js";
+import { diffAnswers, type AnswerFiles } from "./cross/diff.js";
 
 
 export function registerVerify(program: Command): void {
@@ -24,6 +25,14 @@ export function registerVerify(program: Command): void {
     .option(
       "--results <file>",
       "answer the scenario.tested claims mechanically from a cucumber JSON test report",
+    )
+    .option(
+      "--contract-results <file>",
+      "answer the api.exposes claims mechanically from an API contract-test report (loam's generic contract-results JSON)",
+    )
+    .option(
+      "--diff-answers <files...>",
+      "cross-examine two independent answer sets against the current checklist (reads only, writes nothing)",
     )
     .option(
       "--service <id>",
@@ -40,13 +49,46 @@ export function registerVerify(program: Command): void {
       }
       const config = loaded.config;
       const { docsDir } = config;
-      const recording = opts.record !== undefined || opts.results !== undefined;
+      const recording =
+        opts.record !== undefined || opts.results !== undefined || opts.contractResults !== undefined;
+
+      // --diff-answers is a third READ form (see the WRITING/READING split
+      // below): it validates two answer sets against the same checklist and
+      // writes nothing, so combining it with any recording flag is a
+      // contradiction refused up front — before the binding, before the lock —
+      // rather than a mode silently picked between the two.
+      let diffFiles: AnswerFiles | null = null;
+      if (opts.diffAnswers !== undefined) {
+        if (recording) {
+          return fail(
+            json,
+            "invalid-option",
+            "--diff-answers is a read-only cross-examination: it validates both files and writes nothing, " +
+              "so it cannot be combined with --record, --results or --contract-results. " +
+              "Diff first, then record the answer set you stand behind.",
+          );
+        }
+        // Commander's variadic form consumes arguments until the next --flag,
+        // so a featureId placed AFTER the flag arrives here as a third file —
+        // this refusal is what turns that mistake into a sentence instead of a
+        // diff of the wrong files.
+        const [a, b] = opts.diffAnswers;
+        if (opts.diffAnswers.length !== 2 || a === undefined || b === undefined) {
+          return fail(
+            json,
+            "invalid-option",
+            "--diff-answers takes exactly two answer files: --diff-answers a.json b.json",
+          );
+        }
+        diffFiles = { a, b };
+      }
 
       // WRITING is bound to the repository; READING is not. An attestation
       // pins claims to this repo's git HEAD and to file:line evidence inside
-      // it, so `--record --service X` may only run where loam.json says this
-      // repo IS X — vouch's and gherkin's refusal, for vouch's reason: from
-      // anywhere else, that repository is somebody else's. Reading takes
+      // it, so writing (--record, --results or --contract-results) with
+      // `--service X` may only run where loam.json says this repo IS X —
+      // vouch's and gherkin's refusal, for vouch's reason: from anywhere
+      // else, that repository is somebody else's. Reading takes
       // `--service` as a pure lens (which claims are checkout-web's, and what
       // has it said?) and needs no binding at all, because it writes nothing.
       if (recording && opts.service !== undefined) {
@@ -124,6 +166,32 @@ export function registerVerify(program: Command): void {
           // feature resolves — so the text is exactly what it was; what changes is
           // that a reworded miss message can no longer leave this one behind.
           return fail(json, "unknown-target", await missingFeatureMessage(docsDir, featureId));
+        }
+
+        // The cross-examination lens leaves BEFORE the record is read below:
+        // it never consumes verification.yaml, and the moment a
+        // cross-examination is most needed is exactly when the record on disk
+        // is too damaged to read and somebody is about to re-record over it —
+        // the record-unreadable refusal must not bar the one command that
+        // would inform that re-recording. The archived refusal still applies,
+        // with the recording branch's code and reason: there is no current
+        // checklist to answer, so the wrong thing is the option, not the
+        // answer sets.
+        if (diffFiles !== null) {
+          if (feature.archived) {
+            return fail(
+              json,
+              "invalid-option",
+              `${feature.id} is archived — there is no current checklist to answer, so there is nothing to cross-examine; its record is frozen history. \`loam unarchive ${feature.id}\` first if the claims really need re-answering.`,
+            );
+          }
+          await diffAnswers(
+            { docsDir, featureDir: feature.dir, json },
+            await featureChecklist(docsDir, feature.dir, feature.id),
+            diffFiles,
+            { lens: opts.service },
+          );
+          return;
         }
 
         // Before anything else: a verification.yaml that exists but will not read

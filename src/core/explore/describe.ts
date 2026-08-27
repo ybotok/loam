@@ -11,11 +11,11 @@
 import { existsSync } from "node:fs";
 import { FleetContext } from "../fleet-context.js";
 import { type Elem, type Rel } from "../c4/likec4.js";
-import { maturityGaps, serviceMaturity } from "../vocabulary/maturity.js";
+import { landscapeEvidence, maturityGaps, serviceMaturity } from "../vocabulary/maturity.js";
 import { compareIds, type ServiceEntry } from "../repo/entries.js";
 import { servicePathsAt } from "../repo/paths.js";
 // Type-only, so it is erased and no runtime edge points back at the walk.
-import { type ExploreEdge, type ExploreReason, type ExploreService } from "./explore.js";
+import { type ExploreReason, type ExploreService } from "./explore.js";
 
 interface DescribeRequest {
   id: string;
@@ -32,14 +32,17 @@ interface DescribeRequest {
 export async function describe(req: DescribeRequest): Promise<ExploreService> {
   const { id, reason, entry, relationships, svcOf } = req;
 
-  const inbound: ExploreEdge[] = [];
-  const outbound: ExploreEdge[] = [];
-  for (const r of relationships) {
-    const edge = { op: r.op ?? null, title: r.title ?? null };
-    if (svcOf(r.target) === id) inbound.push({ service: svcOf(r.source), ...edge });
-    else if (svcOf(r.source) === id) outbound.push({ service: svcOf(r.target), ...edge });
-  }
-  const modelled = req.elements.some((e) => svcOf(e.id) === id);
+  // The edge partition, the modelled probe and the apiExpected rule are ONE
+  // derivation (core/vocabulary/maturity.ts `landscapeEvidence`), shared with
+  // the context pack's living slice — the same rule spelled twice is how the
+  // same service grades `partial` in one command and `documented` in another.
+  const { inbound, outbound, modelled, apiExpected } = landscapeEvidence({
+    id,
+    parses: req.parses,
+    relationships,
+    elementIds: req.elements.map((e) => e.id),
+    svcOf,
+  });
 
   // A service that does not exist has no rung: `empty` would be a claim about a
   // directory nobody has made, and it reads as "exists, nothing in it" — the
@@ -63,13 +66,6 @@ export async function describe(req: DescribeRequest): Promise<ExploreService> {
   }
 
   const archSpec = existsSync(servicePathsAt(entry.dir).archSpec);
-  // Positive evidence only, and the rule is `list`'s verbatim: an inbound edge
-  // carrying an operation is proof somebody calls this service, while a
-  // landscape that is absent or does not parse proves nothing about who calls
-  // it — so the contract is still owed. Spelling this differently here is how
-  // the same service would grade `partial` in one command and `vouched` in the
-  // other.
-  const apiExpected = !req.parses || inbound.some((e) => e.op !== null);
   const input = { entry, archSpec, apiExpected };
 
   // `readOpenapi`, not `operationIds`: a contract that exists but does not

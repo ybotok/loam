@@ -43,7 +43,7 @@ import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
 import { type Answer, type AnsweredBy, type Verdict } from "../src/core/verify/answers.js";
 import { buildVerification } from "../src/core/verify/build.js";
 import { featureChecklist } from "../src/core/verify/checklist.js";
-import { renderVerification } from "../src/core/verify/file.js";
+import { renderVerification } from "../src/core/verify/store/render.js";
 
 const FEAT = "FEAT-1";
 const FEAT_DIR = "features/FEAT-1-split";

@@ -3,7 +3,10 @@
  * `status`, `validate`, `doctor`, `rebase`, `dependencies`, `explore` and
  * `instructions`. This is the section that grows when a finding code is
  * added — test/codes-drift.test.ts checks every emitted code is documented
- * here or in a workflow body.
+ * here or in a workflow body. (The `status` bullet lives in `./map/status.ts`
+ * and is composed back in below, first among the bullets on purpose; `gate`,
+ * `context`, `diff` and `mcp` document themselves one package down, in
+ * `./map/` and `./map/lenses/` — this file sits against the 300-line limit.)
  *
  * One section of the AGENTS.md template. ../agents-md.ts assembles the
  * document by PLAIN CONCATENATION — no join separator — so every section
@@ -11,7 +14,9 @@
  * that closes its last one. Keep that shape when editing, or two sections glue
  * onto one line in every docs repo loam scaffolds from now on.
  */
-export const COMMAND_MAP = `## Reading loam's output
+import { STATUS_COMMAND } from "./map/status.js";
+
+const MAP_INTRO = `## Reading loam's output
 
 Every command takes \`--json\`, and the envelope holds even when the INVOCATION
 is wrong: with \`--json\` anywhere in the arguments, an unknown flag, unknown
@@ -37,63 +42,9 @@ each suppress one delivery. The tools written for are recorded in
 because the binary grew a new command from one missing because nobody ever
 selected that tool. The map of which invocation surfaces what:
 
-- \`loam status [<FEAT>]\` is the orientation surface — the question you have when
-  you join a repository halfway, or come back having lost the session, and the one
-  every other command assumed you could already answer. It writes nothing and
-  stores nothing: there is no state file, every answer is re-derived from the
-  files, so a document someone edited in another window is visible on the next run
-  with nothing to invalidate. Artifacts come back as \`missing\` (owed, nothing in
-  the way — write it now), \`blocked\` (not written and not writable yet; the entry
-  names what comes first), \`draft\` (on disk, and the shared checks report an error
-  against it — what exists is wrong), \`ready\` (on disk and clean, but something
-  outside the documents — code, a test run, a recording — still has to answer it)
-  or \`done\`. The payload's reason to exist is \`next[]\`: ordered, first entry
-  first, each carrying a code and the literal command to run. \`next.recover-commit\`
-  outranks every other step in both forms and is never elided: a \`.loam-commit\`
-  journal says a writer was killed mid-commit, so some of the files everything
-  below is derived from may be half-written. Its command is the re-run the
-  journal itself names — archive/unarchive repair from the pre-image, every
-  other writer rolls its staged bytes forward — under the lock either way;
-  except when the journal cannot be read, where it is \`loam doctor\` and the
-  repair is a human's comparison against version control. Fleet-wide the rest are
-  \`next.adopt-bound\` (this repository's own loam.json names a service the docs repo
-  has no directory for at all — it outranks every other service's partial adoption,
-  because it is the only step that is about the repo you are standing in, and it is
-  the same state \`loam doctor\` reports as \`doctor.service-unknown\`),
-  \`next.adopt\` (a service with no spec.md — nothing about it is written down, so
-  no feature can be graded against it), \`next.complete-service\` (a living spec.md
-  with no model.likec4 beside it), \`next.feature\` (something is in flight;
-  ask \`loam status <FEAT>\` about it), \`next.archive\` (authored and verified —
-  ship it, and everything waiting on it is released), \`next.fleet-clean\`
-  (nothing is owed), \`next.elided\` (the fleet list hit its cap and says how many
-  steps of the same kinds it left out — it is ordered most-unblocking first, so
-  work down it and re-run) and \`next.fleet-gate\` (always last while anything is
-  outstanding: \`loam validate --all\` is what CI runs, and the fleet form grades
-  nothing itself). On one feature: \`next.author-intent\`, \`next.touch-service\`
-  (no per-service delta at all yet), \`next.author-spec\`, \`next.author-openapi\`,
-  \`next.author-scenarios\`, \`next.rebase\` (requirements or operations with no
-  baseline pin — until they have one the merge cannot tell what it EDITS from what
-  it merely quotes), \`next.archive-first\` (another feature in flight has to land
-  before this one), \`next.fix-coherence\` (the three axes disagree and archive
-  refuses), \`next.generate-tests\` (a per-service delta carries scenarios no test
-  run has answered — \`loam gherkin <FEAT> --service <svc>\` in that service's own
-  repository), \`next.verify\` (the done-check has not been started — or its record
-  will not read, or it answers a checklist the feature has since moved out from
-  under, which is not the same as a finished one), \`next.verify-unconfirmed\`
-  (started, and claims are still open — close them from each affected service's
-  own repository), \`next.attest-service\` (this repo IS one of the services that
-  owes an answer, so the step is bound to this commit), \`next.verify-attested\`
-  (every claim is confirmed but a scenario rests on an agent's word rather than a
-  green run — see "The done-check"), \`next.archive\`, and \`next.archived\` for one
-  that shipped.
-  It grades nothing of its own: the verdict is the one \`loam validate --feature\`
-  and \`loam archive\` compute — status takes the UNION of what both of them refuse,
-  so it may be more pessimistic than either and can never be greener than both.
-  \`verification\` carries \`verdict\` (\`verified\` | \`attested\` | \`unverified\`)
-  and \`attested\` (how many scenario claims rest on an agent's word) beside the
-  recounted totals, and \`checks.issues[]\` carries \`gates\` and \`details\` on every
-  finding.
-- \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
+`;
+
+const MAP_REST = `- \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
   \`c4.no-relationships\` (warn — the model declares elements and no edge joins
   anything, while more than one nested element or this service's own
@@ -121,7 +72,7 @@ selected that tool. The map of which invocation surfaces what:
   \`spine.message-external\` (warn — the only declared producer is an
   \`#external\` element, so the consumer's own asyncapi.yaml is the contract;
   fires while it defines no shape for the message, silent once it does),
-  \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.covered\`, and
+  \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.ungoverned\`, \`event.covered\`, and
   the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`,
   \`health.dependency-unmodelled\` (warn — a health.yaml \`dependencies:\` id that
   nothing in this service's own model.likec4 answers to by element id, binding
@@ -192,6 +143,15 @@ selected that tool. The map of which invocation surfaces what:
   and update the stamp line. A hand-curated file silences it the same way, by
   keeping the stamp current. The file is never refreshed automatically — your
   edits outrank the template, so detection is all loam does.
+  \`loam validate --all\`'s \`--json\` payload also carries the additive \`scorecard\` key — per-axis ceiling-vs-actual fleet
+  aggregates, the text report appending the same table; derived per run and never stored, so week-over-week is the pipeline's job: capture the key per run into a metrics store.
+  \`scorecard.adoption\` counts the services PARTICIPATING in each contract axis
+  (requirements, arch, openapi, asyncapi, permissions, capabilities; the
+  denominator is \`scorecard.services\`) — an axis at 0 of N reads "not started",
+  which is expected during staged adoption and distinct from partially adopted.
+  Text mode folds the warnings such an axis alone causes under one banner per
+  axis and says so; \`--json\` carries every finding unchanged, and the summary
+  counts, exit codes and \`--strict\` are identical either way.
 - \`loam doctor\` is read-only local/fleet preflight — the first thing to run in a
   repo that behaves as though the fleet were empty, and every finding carries a
   \`fix\`. Its blockers are
@@ -285,6 +245,18 @@ selected that tool. The map of which invocation surfaces what:
   seeds from a declared capability's realizing services, and an id that seeds
   nothing lands in the additive \`unresolvedCapabilities\` — beside
   \`loam list capabilities\`, the rollup those seeds are read from.
+- \`loam seed --from fleet.yaml\` is the onboarding entry point for an empty
+  fleet: a tiny human-authored YAML — a \`services:\` list of ids, optional
+  \`subsystems:\`, \`externals:\` and \`calls:\` lines like
+  \`checkout -> payments\` — templated mechanically into
+  architecture/landscape.likec4 (one bound element per service, plain edges, no
+  guessed operationIds) plus one services/<id>/ directory per service, in one
+  journaled transaction. Not an extractor: the human stated every fact, and
+  "who calls whom" is the one thing no generator can read off a repository.
+  The seeded landscape carries a line-1 stamp; while it stands unedited,
+  editing fleet.yaml and re-running regenerates the map, and the first hand
+  edit makes the file yours — seed then refuses \`seed-landscape-edited\`
+  rather than overwrite. Then adopt each service: \`loam adopt --service <id>\`.
 - \`loam instructions [<workflow>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
@@ -295,3 +267,5 @@ selected that tool. The map of which invocation surfaces what:
   to run \`loam init\` when there is no config, so it cannot be the step that
   requires one.
 `;
+
+export const COMMAND_MAP = MAP_INTRO + STATUS_COMMAND + MAP_REST;

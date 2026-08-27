@@ -7,7 +7,7 @@
  * `compareIds` lives here for the same reason: sorting ids is what a renderer
  * does, and no renderer wants the enumeration.
  */
-import type { FeatureDir, ServiceDir } from "../kernel/ids/dirs.js";
+import { serviceTreePath, type FeatureDir, type ServiceDir } from "../kernel/ids/dirs.js";
 import { rawFeatureId, type RawFeatureId } from "../kernel/ids/feature.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
 import type { Finding } from "../vocabulary/report.js";
@@ -53,6 +53,23 @@ export interface ServiceEntry {
    * can only be answered from inside the service's own repo.
    */
   sources: { declared: boolean; stamped: boolean };
+  /**
+   * "sampled" when EITHER spec axis carries a `vouch_scope` — a vouch a person
+   * gave after reading a recorded sample of the document rather than all of
+   * it — and null when neither does. Either axis, because the sample is per
+   * file: a service whose arch.spec.md alone was sampled is a service part of
+   * whose documentation nobody read.
+   *
+   * PRESENCE decides it, not decodability: a scope nobody can parse still
+   * means somebody stamped a partial read, so it grades as sampled. Fail
+   * closed, because the alternative is that mangling one field turns a partial
+   * vouch into a full one on every dashboard reading this table.
+   *
+   * The RUNG never changes: `vouched` is a published contract and this is a
+   * qualification of it, so the maturity ladder, the rollup and `--needs-work`
+   * are all untouched. Only the renderings say "vouched (sampled)".
+   */
+  vouchScope: "sampled" | null;
   /**
    * Why no loam command can author this directory, or absent when the name is a
    * legal service id — `serviceIdProblem`'s own sentence, so the read model and
@@ -112,7 +129,7 @@ export function serviceIdFindings(services: ServiceEntry[]): Finding[] {
         // `services/<id>/` join: a FILED service with an illegal name lives at
         // services/<subsystem>/…/<id>/, and a finding naming a root directory
         // that does not exist sends the fix to the wrong place.
-        `${["services", ...s.subsystem, s.id].join("/")}/ — ${s.idProblem} ` +
+        `${serviceTreePath(s)}/ — ${s.idProblem} ` +
         `Every authoring command refuses this id (\`loam adopt\`, \`loam delta\`, \`loam new --touches\`), so nothing in that directory can be changed through loam. ` +
         `Rename the directory to a legal id, then update its \`service:\` frontmatter, its \`metadata { service '${s.id}' }\` binding in architecture/landscape.likec4, and any features/<FEAT>/specs/${s.id}/ that names it.`,
     }));

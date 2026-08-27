@@ -111,6 +111,13 @@ result. It never reads the service — so anything you cannot show, do not write
      is not.
    Then a human runs \`loam vouch --service $1\` in the service's own repo.
 
+An empty docs repo's \`loam status --json\` names this recipe's own states as its
+first-hour ladder: \`next.author-landscape\` (the fleet map is missing, or still the
+scaffold's untouched bytes — step 3's landscape edit is what discharges it),
+\`next.bind-service\` (no service repository is wired to the fleet yet — step 0) and
+\`next.adopt-first\` (services/ is empty — this protocol, from step 1). Landing on
+one of those codes means: run this recipe, starting at the step it points at.
+
 Where the code does not say, write that it does not say. A confident sentence about
 behaviour nobody can find is the one failure mode none of loam's checks can catch.
 `,

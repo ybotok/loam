@@ -262,7 +262,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   }
   // The other direction health.yaml is read in: its dependencies must be the
   // model's dependencies. `deps` is already muted on an unreadable file above.
-  findings.push(...healthDependencyFindings({ service, dependencies: deps, elements }));
+  findings.push(...healthDependencyFindings({ service, dependencies: deps, elements, modelPath: paths.model }));
 
   return findings;
 }

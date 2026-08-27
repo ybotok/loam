@@ -1,61 +1,22 @@
 /**
- * `verification.yaml` itself: rendered, read back, and refused when it cannot
- * be trusted.
+ * `verification.yaml` read back, and refused when it cannot be trusted.
  *
- * Reading is not the inverse of rendering here, which is why the two share a
- * module instead of being two halves of a codec. A record loam wrote is
+ * Reading is deliberately not the inverse of rendering. A record loam wrote is
  * re-graded on the way in — unreadable YAML, a shape that is not a
  * verification, a `summary` that disagrees with the claims below it — because
  * the file is data meant to survive without loam, and anything may have edited
- * it since. Putting the rendered bytes ON DISK is a separate concern with its
- * own failure modes: races and kills mid-write live in `store/commit.ts`, and
- * the lock that serialises writers is taken by `commands/verify/verify.ts`
- * before this module's authoritative read. Nothing here touches the
- * filesystem except to read.
+ * it since. The render lives with the writer it feeds (`store/render.ts`
+ * produces exactly the bytes `store/commit.ts` swaps into place; races and
+ * kills mid-write live there too), and the lock that serialises writers is
+ * taken by `commands/verify/verify.ts` before this module's authoritative
+ * read. Nothing here touches the filesystem except to read.
  */
 import { lstat, readFile } from "node:fs/promises";
-import { parse, stringify } from "yaml";
+import { parse } from "yaml";
 import { isRecord } from "../kernel/records.js";
 import { VERDICTS } from "./answers.js";
+import { isEvidencePinList } from "./pins/pin.js";
 import { tallyAnswers, verificationPath, type Verification } from "./record.js";
-
-/**
- * The record as a file. The header explains what the reader is looking at,
- * because the whole point is that this is legible to someone who has never run
- * loam — including the part loam cannot vouch for.
- */
-export function renderVerification(v: Verification): string {
-  const header = [
-    `# Verification record for ${v.feature} — written by \`loam verify ${v.feature}\` (--results / --record).`,
-    "#",
-    "# Every claim below was derived mechanically from this feature's own artifacts:",
-    "# delta.likec4, specs/<svc>/spec.md, specs/<svc>/arch.spec.md and specs/<svc>/",
-    "# openapi.yaml. Each verdict names who answered it: `answered_by: runner` means a",
-    "# cucumber JSON report's digest-tagged scenarios answered it mechanically;",
-    "# `answered_by: agent` means somebody's word about the code, which loam did not",
-    "# check. Nothing gates on either.",
-    "#",
-    "# A `scenario.tested` claim confirmed by an agent is ATTESTED, not run: loam",
-    "# reports it as `verify.scenario-attested` and the feature does not count as",
-    "# verified until a report answers it. `report:` records the file a --results run",
-    "# read — its sha256 and mtime say WHICH file, not that it came from that commit;",
-    "# no digest can say that.",
-    "#",
-    "# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same",
-    "# one, the feature changed after this was recorded and these answers are stale.",
-    ...(v.schema === 2
-      ? [
-          "#",
-          "# Schema 2 is federated: each service entry under `attestations` binds its claim ids",
-          "# and file:line evidence to that repository's git commit. Missing claims are honestly",
-          "# unanswered; another service run may add them without rewriting existing attestations.",
-        ]
-      : []),
-    "",
-  ].join("\n");
-  // lineWidth 0: never fold a claim onto a second line — these are grepped and diffed.
-  return header + stringify(v, { lineWidth: 0 });
-}
 
 /**
  * What is on disk beside a feature: nothing, something unreadable, or a record.
@@ -244,9 +205,16 @@ function asVerification(doc: unknown): Verification | null {
     if (!Array.isArray(c["evidence"]) || c["evidence"].some((e) => typeof e !== "string")) return null;
     if (c["note"] !== undefined && typeof c["note"] !== "string") return null;
     if (c["answered_by"] !== undefined && typeof c["answered_by"] !== "string") return null;
+    // Absent fine, present whole — the isConsumedContractReport precedent, and
+    // the guard body lives with the pin shape it vouches for (pins/pin.ts). A
+    // broken pins block makes the whole record unreadable and therefore never
+    // overwritten: skipping it instead would read a hand-damaged record as
+    // drift-free.
+    if (!isEvidencePinList(c["evidence_pins"])) return null;
   }
   if (doc["schema"] !== undefined && doc["schema"] !== 2) return null;
   if (!isConsumedReport(doc["report"])) return null;
+  if (!isConsumedContractReport(doc["contractReport"])) return null;
   if (doc["attestations"] !== undefined) {
     if (!Array.isArray(doc["attestations"])) return null;
     for (const a of doc["attestations"]) {
@@ -255,6 +223,7 @@ function asVerification(doc: unknown): Verification | null {
       if (!/^[0-9a-f]{40,64}$/i.test(a["commit"])) return null;
       if (!Array.isArray(a["claims"]) || a["claims"].some((id) => typeof id !== "string")) return null;
       if (!isConsumedReport(a["report"])) return null;
+      if (!isConsumedContractReport(a["contractReport"])) return null;
     }
   }
   return doc as unknown as Verification;
@@ -269,6 +238,30 @@ function isConsumedReport(v: unknown): boolean {
     typeof v["digest"] === "string" &&
     typeof v["mtime"] === "string" &&
     isCount(v["scenarios"])
+  );
+}
+
+/**
+ * The contract report's pin, exactly as loose as {@link isConsumedReport}:
+ * absent fine, present whole — for the fields the readers dereference.
+ * `format` is OPTIONAL here even though loam always writes it: nothing in the
+ * readers dereferences it (it is provenance for a person, echoed only inside
+ * whole-object payloads), and the generated AGENTS.md teaches the pin as
+ * path/sha256/mtime/operation-count — so a hand-written block faithful to that
+ * teaching must not make the WHOLE record unreadable over a field no reader
+ * uses. When present it must be a string, and any string: a record written by
+ * a newer loam that learned a second report format must not read as
+ * unreadable here.
+ */
+function isConsumedContractReport(v: unknown): boolean {
+  if (v === undefined) return true;
+  return (
+    isRecord(v) &&
+    typeof v["path"] === "string" &&
+    typeof v["digest"] === "string" &&
+    typeof v["mtime"] === "string" &&
+    isCount(v["operations"]) &&
+    (v["format"] === undefined || typeof v["format"] === "string")
   );
 }
 

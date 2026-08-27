@@ -66,8 +66,8 @@ with \`no-config\` rather than guessing.
   The docs repo's own \`loam.json\` says \`"docsDir": "."\`.
 - \`service\` — the canonical id of the service THIS repo contains, i.e. the
   \`services/<id>/\` directory it is allowed to speak for. \`loam vouch\`,
-  \`loam gherkin\` and \`loam verify --service\` when writing with \`--record\`
-  or \`--results\` bind to it; without it they refuse
+  \`loam gherkin\` and \`loam verify --service\` when writing with \`--record\`,
+  \`--results\` or \`--contract-results\` bind to it; without it they refuse
   (\`repository-unavailable\`) rather than write another service's documents
   from a repo that is not that service's. A read-only verify checklist needs no
   binding and works from the docs repo.
@@ -181,7 +181,7 @@ fix is always regeneration, never editing a generated file.
 The flow, closed end to end: \`loam gherkin FEAT-101\` → write step definitions
 (outside \`loam/\`) → run the suite with a JSON report
 (\`cucumber-js --format json:report.json\`) → implement until green →
-\`loam verify FEAT-101 --service <id> --results report.json [--record rest.json]\`,
+\`loam verify FEAT-101 --service <id> --results report.json [--contract-results contract.json] [--record rest.json]\`,
 run in that same service repo. The digest
 tags ride through the runner into the report, so the \`scenario.tested\` claims
 are answered mechanically from the passing report rather than anybody's word.
@@ -206,6 +206,7 @@ sources_digest: 6f1c0a…      # written by \`loam vouch\` — do not hand-edit
 content_digest: 9b2f41…      # written by \`loam vouch\` — do not hand-edit
 sources_files: |             # written by \`loam vouch\` — do not hand-edit
   9b2f41…  src/main/java/com/shop/payment/Api.java
+vouch_scope: sampled 2/9 seed=1a2b3c4d5e6f7089   # only when the vouch read a SAMPLE
 ---
 \`\`\`
 
@@ -222,7 +223,10 @@ a different file set than intended, corrupting the staleness signal silently.
 CONTENT of those files, taken when a human last vouched for the document. Every
 later \`loam validate\` re-computes it, so it can tell a document nobody has checked
 (\`sources.unvouched\`) from one that still matches the code (\`sources.current\`) from
-one the code has moved out from under (\`sources.stale\`).
+one the code has moved out from under (\`sources.stale\`). On \`sources.stale\` or
+\`content.stale\`, \`loam vouch --pack --service <id>\` (read-only, stamps nothing)
+prints exactly what to re-read before the human re-vouches — the body's diff since
+the last vouch, the source files that moved, and the sections already covered.
 
 \`content_digest\` is the same promise about the document itself: a hash of the
 body below the frontmatter, stamped by the same vouch. It closes the other half of
@@ -231,6 +235,23 @@ standing over words nobody read. \`loam validate\` recomputes it wherever it can
 read the doc (no service repo needed, so it fires from the docs repo too) and
 reports \`content.stale\` (warn): only a person can say whether verified still
 holds of the new words.
+
+\`vouch_scope\` appears only when the person vouched after reading a SAMPLE of the
+document — \`loam vouch --sample <n>\`, whose whole purpose is that a partial read
+is recorded as a partial read. Its value is one flat string,
+\`sampled <k>/<n> seed=<16 hex>\`: k sections read of n, and the seed those k were
+chosen with. The seed is \`sha256(<service> NUL <content_digest> NUL <sources_digest>)\`
+truncated to 16 hex characters, and the sections are ranked by
+\`sha256(<seed> NUL <index> NUL <heading>)\` with the lowest k taken, over every H2
+and H3 heading of the body outside code fences — so anybody holding the document
+can recompute exactly which sections that person was shown, and an agent cannot
+steer the pick without rewriting the document (which changes the seed and voids the
+stamp). \`status\` stays \`verified\` and the maturity rung stays \`vouched\`: the scope
+qualifies that claim, it is not a fourth status. \`loam validate\` reports
+\`sources.sampled-vouch\` (warn) while it is there, \`loam list\` shows
+\`vouched (sampled)\`, and a later FULL \`loam vouch\` deletes the field. Never write
+or delete it by hand: removing it turns a partial read into a full one on every
+surface at once, which is the one forgery this field exists to make impossible.
 
 Write \`sources\` for anything you author from reading code, and leave \`status: draft\`
 until a human has read it. Promoting draft to verified is their call, not yours, and

@@ -6,6 +6,17 @@
  * handle. No denominator, no finding. The subsystem surface's own questions
  * (dirty paths, rename hops, the one blessed `git add`) live in `./gitq/`,
  * sharing the timeout and the capped reader exported here.
+ *
+ * Beside this module's own four questions live the neutral ANSWER-SHAPE
+ * helpers — `gitText`, `GitAnswer`, `gitSaid`, `declineDetail`,
+ * `collectStderr` — shared by the two modules that carry git's words to a
+ * user: `core/diff/base-git.ts` (which REFUSES when git declines, because a
+ * silently empty base reports the fleet as added) and `./gitq/vouched-ancestor.ts`
+ * (which DEGRADES to "full read", because a reading list may only ever grow
+ * when nobody could look). The helpers are spawn-and-capture with no verdict
+ * in them: the consequence of a decline belongs to each caller and is stated
+ * there — sharing the mechanics is what keeps a hardening (an env pin, a cap
+ * change) from landing in one of two byte-identical copies.
  */
 import { spawn } from "node:child_process";
 
@@ -40,6 +51,68 @@ export function collectStdout(child: import("node:child_process").ChildProcess):
     out += chunk;
   });
   return { text: () => out, overflowed: () => overflowed };
+}
+
+/**
+ * How much of git's stderr an outcome may quote. The point is the first
+ * `fatal:` line, not a transcript; past the cap the words are dropped, never
+ * the outcome.
+ */
+const STDERR_CAP = 2048;
+
+/** Everything one git question can come back as. `code` is null when the child never ran or was killed. */
+export interface GitAnswer {
+  code: number | null;
+  out: string;
+  err: string;
+  /** The spawn itself failed — git is not installed, or cannot be started. */
+  spawnError?: string;
+  overflowed: boolean;
+}
+
+/** Accumulate a child's stderr up to the cap; past it, keep what is held. */
+export function collectStderr(child: import("node:child_process").ChildProcess): () => string {
+  let err = "";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => {
+    if (err.length < STDERR_CAP) err = (err + chunk).slice(0, STDERR_CAP);
+  });
+  return () => err;
+}
+
+/**
+ * One git question, stdout as text, stderr held for quoting. No verdict here
+ * — see the banner: what a decline MEANS belongs to the caller.
+ */
+export async function gitText(cwd: string, args: string[]): Promise<GitAnswer> {
+  return new Promise<GitAnswer>((done) => {
+    const child = spawn("git", args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: GIT_TIMEOUT_MS,
+    });
+    const out = collectStdout(child);
+    const err = collectStderr(child);
+    child.on("error", (e) =>
+      done({ code: null, out: "", err: "", spawnError: e.message, overflowed: false }),
+    );
+    child.on("close", (code) =>
+      done({ code, out: out.text(), err: err(), overflowed: out.overflowed() }),
+    );
+  });
+}
+
+/** The first line of git's stderr, trimmed — the quotable half of a decline. */
+export function gitSaid(answer: GitAnswer): string {
+  const line = answer.err.split("\n").find((l) => l.trim() !== "");
+  return line === undefined ? "" : line.trim();
+}
+
+/** The one sentence a decline collapses to when git left no words behind. */
+export function declineDetail(answer: GitAnswer): string {
+  if (answer.spawnError !== undefined) return `git could not be started: ${answer.spawnError}.`;
+  const said = gitSaid(answer);
+  return said === "" ? "git answered nothing (killed or timed out)." : `git said: ${said}`;
 }
 
 /**
