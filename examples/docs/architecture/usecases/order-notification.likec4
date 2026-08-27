@@ -1,0 +1,64 @@
+// A fleet use case: the ordered hops that fulfil one business capability.
+//
+// This file is the whole shape of the axis. A `dynamic view` tagged
+// `#cap-<slug>` opts in to grading; an untagged one is somebody's hand-drawn
+// diagram and loam never says a word about it. The slug is the capability id
+// from architecture/capabilities.yaml with every `/` flattened to `-`, because
+// a LikeC4 tag name cannot carry a slash — `identity/tokens` would be
+// `#cap-identity-tokens`.
+//
+// It lives in its own file rather than in architecture/landscape.likec4 for a
+// reason that is about people, not parsing: the map belongs to whoever owns the
+// fleet's topology, and a flow changes when a business need changes. Different
+// reasons to edit are different files. The whole `architecture/` directory is
+// read as ONE LikeC4 project, so the steps below resolve against the landscape's
+// elements even though this file declares none — which also means exactly one
+// file in this directory declares the `specification` block, and it is not this
+// one.
+//
+// THE TAG MUST BE THE FIRST THING IN THE VIEW BODY. Written after `title` it is
+// five parse errors, none of which mentions tags. That is the mistake every
+// author makes once.
+//
+// ---------------------------------------------------------------------------
+//
+// Two things about this particular flow are worth reading before you copy it.
+//
+// The first hop is a PERSON, and it is here on purpose: `customer ->
+// checkoutWeb` is backed by a real edge that carries no `metadata { op }`, and
+// checkout-web is a real services/ directory — so every condition of
+// `usecase.step-unlinked` is met except the one that matters, which is that a
+// person is not a caller. Somebody clicking a button owes no operationId. Delete
+// that exemption from the checker and this file is what notices: the example
+// fleet's warning count moves from eight to nine and test/examples.test.ts
+// fails.
+//
+// The hop from checkout-web to order-service is DELIBERATELY NOT DRAWN, and its
+// absence is the more useful half of the lesson. The landscape declares two
+// edges for that pair — `Calls createOrder` and `Calls getOrder` — so a step
+// between those two elements names two operations, and loam refuses to guess
+// which one the flow exercises: `usecase.step-contested` (warn), listing both
+// candidates. That is the check working. The two fixes are the ones the message
+// offers: draw the hop between elements that name exactly one operation, or give
+// the candidates one operation between them.
+
+views {
+  dynamic view uc_order_notification {
+    #cap-order-notifications
+    title 'Order notification'
+    description 'A placed order reaches the customer as exactly one confirmation'
+
+    // A person, not a caller — see above.
+    customer -> marketplace.checkoutWeb 'places the order'
+
+    // Producer to topic: the edge carries `publishes`, so the hop reaches a
+    // declared API — an AsyncAPI one — and loam does not also demand an HTTP
+    // operationId for it. The event spine grades this edge on its own terms.
+    marketplace.orderService -> kafka.orderEvents 'announces OrderPlaced'
+
+    // Topic to consumer, the same exemption from the other side. Modelling the
+    // TOPIC rather than the broker is what keeps this readable: an edge into
+    // `kafka` itself would put every service in the fleet on one node.
+    kafka.orderEvents -> marketplace.notificationService 'sends the confirmation'
+  }
+}

@@ -189,7 +189,7 @@ export function coversCandidates(entry: CoversEntry, scope: CoverageScope): stri
  * and every id offered is real, so the hint can never point at the typo itself.
  * (Moved here from validate.ts once `covers.unknown` became its second user.)
  */
-export function closeIds(typo: string, ids: string[]): string[] {
+export function closeIds(typo: string, ids: readonly string[]): string[] {
   const t = typo.toLowerCase();
   return ids
     .filter((id) => {

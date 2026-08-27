@@ -26,10 +26,11 @@ import { GATE_COMMAND } from "./agents-md/map/lenses/gate.js";
 import { EXPLAIN_COMMAND } from "./agents-md/map/explain.js";
 import { MCP_COMMAND } from "./agents-md/map/mcp.js";
 import { SUBSYSTEM_COMMANDS } from "./agents-md/map/subsystem.js";
+import { USECASE_VIEWS } from "./agents-md/map/usecases.js";
 import { CYCLE } from "./agents-md/cycle.js";
 import { REFUSALS } from "./agents-md/refusals.js";
 import { ARCHIVE_GATE } from "./agents-md/shipped/archive-gate.js";
 import { SPINE } from "./agents-md/spine.js";
 
 export const AGENTS_MD =
-  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + COMMAND_MAP + CONTEXT_COMMAND + GATE_COMMAND + SUBSYSTEM_COMMANDS + DIFF_COMMAND + EXPLAIN_COMMAND + MCP_COMMAND + REFUSALS + ARCHIVE_GATE;
+  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + COMMAND_MAP + CONTEXT_COMMAND + GATE_COMMAND + SUBSYSTEM_COMMANDS + USECASE_VIEWS + DIFF_COMMAND + EXPLAIN_COMMAND + MCP_COMMAND + REFUSALS + ARCHIVE_GATE;
