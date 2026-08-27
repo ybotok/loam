@@ -53,15 +53,39 @@ ON (user, profile, service), not necessarily the caller. \`owned_by\` and
 \`enforced_by\` are explanatory and are not resolved against services; this is
 a checked document join, not proof that the identity provider implements it.
 
-The capability axis opts in the OTHER way: the FILE is the opt-in, not the
-line. A fleet with no \`architecture/capabilities.yaml\` gets no capability
-findings at all, however many \`Capability:\` lines its requirements already
-carry. Once the file declares the vocabulary — \`capabilities: {<id>:
-{description, owner}}\`, nested ids such as \`payments/refunds\` kept as one
-flat key — an undeclared name is \`capability.unknown\` (error; in a feature
-delta it gates \`loam archive\`, \`--approve\`-overridable), an unreadable file
-is \`capability.invalid\` exactly once per run with the rest of the family
-suspended, and a declared capability no living requirement realizes is
+The capability axis opts in the OTHER way: the FILES are the opt-in, not the
+line. A fleet with neither \`architecture/capabilities.yaml\` nor a
+\`capabilities/\` directory gets no capability findings at all, however many
+\`Capability:\` lines its requirements already carry.
+
+A capability may be declared on either side, and the vocabulary is the UNION.
+A name alone is a line in \`architecture/capabilities.yaml\` —
+\`capabilities: {<id>: {description, owner}}\`, nested ids such as
+\`payments/refunds\` kept as one flat key. A name with prose behind it gets a
+document instead: \`capabilities/<id>/spec.md\`, the AUTHORED business tree,
+one directory per capability with nesting spelled by the tree
+(\`capabilities/payments/refunds/spec.md\`). The directory is the list — there
+is no manifest — and its existence is what opts the fleet in, so \`loam init\`
+does not scaffold it. A directory holding neither the document nor a
+capability beneath it is \`capability.doc-missing\` (warn).
+
+The document carries narrative and then \`## Requirements\`, in the same
+grammar every spec.md uses, with two rules of its own. Every requirement needs
+a \`Requirement-ID:\` — these documents outlive the services that realize them,
+so identity is the line and not the heading; without one it is
+\`capability.requirement-unidentified\` (error). And a capability requirement
+must be observable OUTSIDE the fleet: \`Operations:\`, \`Covers:\`,
+\`Publishes:\` and \`Consumes:\` all resolve against one service's own contract,
+so carrying any of them is \`capability.requirement-service-scoped\` (error) —
+write it in that service's spec.md instead. Naming no service is an authoring
+rule that PR review holds, not one loam checks: matching service names in prose
+would be a heuristic, and loam does not guess.
+
+Against that vocabulary an undeclared name is \`capability.unknown\` (error; in
+a feature delta it gates \`loam archive\`, \`--approve\`-overridable), an
+unreadable \`capabilities.yaml\` is \`capability.invalid\` exactly once per run
+with every grade that resolves against the vocabulary suspended behind it, and
+a declared capability no living requirement realizes is
 \`capability.unrealized\` (warn, one per capability). The fleet total is
 readable: \`loam list capabilities\` reports each capability's realizing
 requirements, their services and the draft/verified split, and

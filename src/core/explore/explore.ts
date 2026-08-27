@@ -29,7 +29,7 @@ import { serviceResolver } from "../c4/resolve/service.js";
 import { type Maturity } from "../vocabulary/maturity.js";
 import { capabilityRollup, unresolvedCapabilities } from "../capabilities/rollup.js";
 import { compareIds, nearestIds, type ServiceEntry } from "../repo/entries.js";
-import { capabilitiesPath, landscapePath } from "../repo/paths.js";
+import { landscapePath } from "../repo/paths.js";
 import { readUseCases } from "../usecases/fleet.js";
 import { servicesInFlowsClaiming } from "../usecases/capability.js";
 import { describe, newCommand, operationOwner } from "./describe.js";
@@ -205,7 +205,7 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   const capSeeds: ServiceEntry["id"][] = [];
   let unresolvedCaps: string[] = [];
   if (req.capabilities.length > 0) {
-    const vocab = await context.capabilities(capabilitiesPath(docsDir));
+    const vocab = await context.capabilities(docsDir);
     const rows = await capabilityRollup({ services: entries, vocab, read: (p) => context.readRequirements(p) });
     const wanted = new Set(req.capabilities);
     const realizing = new Set(rows.filter((r) => wanted.has(r.id)).flatMap((r) => r.services));

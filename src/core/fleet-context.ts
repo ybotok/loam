@@ -23,7 +23,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readAsyncapi } from "./asyncapi/read.js";
 import type { AsyncapiDoc } from "./asyncapi/model.js";
-import { readCapabilities, type CapabilityVocabulary } from "./capabilities/capabilities.js";
+import { readCapabilityVocabulary, type CapabilityVocabulary } from "./capabilities/capabilities.js";
 import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
@@ -53,9 +53,11 @@ export interface FleetContextStats {
    */
   asyncapiParses: number;
   /**
-   * Reads of `architecture/capabilities.yaml`. One per invocation is the
-   * capability axis's exit criterion, and this counter is how a test pins it.
-   * (Permissions predates the memo and re-parses per service — do not copy that.)
+   * Reads of the capability vocabulary — `architecture/capabilities.yaml` AND
+   * the `capabilities/` walk, which are one vocabulary and so one read. One per
+   * invocation is the capability axis's exit criterion, and this counter is how
+   * a test pins it. (Permissions predates the memo and re-parses per service —
+   * do not copy that.)
    */
   capabilityParses: number;
   likec4Loads: number;
@@ -219,12 +221,12 @@ export class FleetContext {
    * core-root↔capabilities package cycle `import/no-cycle` cannot see, which is
    * why the functions there take plain data or a `read` function, never a FleetContext.
    */
-  capabilities(path: string): Promise<CapabilityVocabulary> {
-    const k = key(path);
+  capabilities(docsDir: DocsDir): Promise<CapabilityVocabulary> {
+    const k = key(docsDir);
     let pending = this.capabilityVocabularies.get(k);
     if (pending === undefined) {
       this.counts.capabilityParses += 1;
-      pending = readCapabilities(path);
+      pending = readCapabilityVocabulary(docsDir);
       this.capabilityVocabularies.set(k, pending);
     }
     return pending;

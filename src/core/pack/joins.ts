@@ -15,7 +15,7 @@ import { capabilityRollup } from "../capabilities/rollup.js";
 import { repoPath } from "../envelope/json.js";
 import { readVocabulary } from "../permissions/permissions.js";
 import { compareIds, type ServiceEntry } from "../repo/entries.js";
-import { capabilitiesPath, permissionsPath, servicePathsAt, SPEC_AXES } from "../repo/paths.js";
+import { permissionsPath, servicePathsAt, SPEC_AXES } from "../repo/paths.js";
 import { existsSync } from "node:fs";
 import { readUseCases } from "../usecases/fleet.js";
 import { flowsClaiming, type ClaimingFlow } from "../usecases/capability.js";
@@ -152,7 +152,7 @@ export async function buildJoins(req: JoinsRequest): Promise<JoinsSlice> {
   // capabilities — the reader is injected because fleet-context.ts imports the
   // capabilities package and an import back would be a package cycle.
   const entries = await context.listServices(docsDir);
-  const capVocab = await context.capabilities(capabilitiesPath(docsDir));
+  const capVocab = await context.capabilities(docsDir);
   const unread: string[] = [];
   const rows = await capabilityRollup({
     services: entries,

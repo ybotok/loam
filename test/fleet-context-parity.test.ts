@@ -37,7 +37,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readAsyncapi } from "../src/core/asyncapi/read.js";
-import { readCapabilities } from "../src/core/capabilities/capabilities.js";
+import { readCapabilityVocabulary } from "../src/core/capabilities/capabilities.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
@@ -123,11 +123,34 @@ const CAPABILITIES_YAML = `capabilities:
   payments/refunds: {}
 `;
 
+/**
+ * An AUTHORED capability document, so the row covers the vocabulary's SECOND
+ * side. The YAML declares three names and the tree declares a fourth, which is
+ * the only shape in which a memo that read one file could be told apart from
+ * one that reads the union.
+ */
+const CAPABILITY_DOC = `# Chargebacks
+
+A customer can reverse a payment through their bank.
+
+## Requirements
+
+### Requirement: Accept a chargeback
+Requirement-ID: CAP-CHARGEBACK-1
+The fleet SHALL accept a chargeback raised by a customer's bank.
+
+#### Scenario: A bank raises one
+- **Given** a settled payment
+- **When** the bank reverses it
+- **Then** the fleet accepts the reversal
+`;
+
 /** `coherentFixture()` plus what the readers below need and it does not carry. */
 function parityFixture(): Record<string, string> {
   const files = coherentFixture();
   files["services/payment-service/asyncapi.yaml"] = ASYNCAPI;
   files["architecture/capabilities.yaml"] = CAPABILITIES_YAML;
+  files["capabilities/chargebacks/spec.md"] = CAPABILITY_DOC;
   files["services/checkout-web/spec.md"] = CONFLICTED;
   files["features/archive/FEAT-0-capture/intent.md"] =
     "---\nfeature: FEAT-0\nstatus: shipped\n---\n\n# Capture payments\n";
@@ -142,7 +165,6 @@ interface Fixture {
   spec: string;
   openapi: string;
   asyncapi: string;
-  capabilities: string;
   landscape: string;
   conflicted: string;
   /** Two documents no other row loads, so the prefetch row truly batches. */
@@ -246,14 +268,22 @@ const READERS: Reader[] = [
   },
   {
     name: "capabilities",
-    memo: (fleet, at) => fleet.capabilities(at.capabilities),
-    direct: (at) => readCapabilities(at.capabilities),
+    // Keyed by the DOCS DIR, not by a file: the vocabulary is the union of
+    // `architecture/capabilities.yaml` and the `capabilities/` tree, and a memo
+    // keyed on either file alone would answer one half of it.
+    memo: (fleet, at) => fleet.capabilities(at.docsDir),
+    direct: (at) => readCapabilityVocabulary(at.docsDir),
     floor: (vocab) => {
       expect(vocab.present).toBe(true);
       // Both declaration shapes, so the parity covers the leaf-shape ladder:
       // a full body and a bare `{}` (and the nested id stays one flat key).
       expect(vocab.byId.get("payments")?.owner).toBe("payments-team");
       expect(vocab.byId.has("payments/refunds")).toBe(true);
+      // And the authored side, which only the union answers — without it the
+      // row would compare two readers over the YAML alone and pass while the
+      // tree half of the union went unread through the memo.
+      expect(vocab.byId.get("chargebacks")?.source).toBe("tree");
+      expect(vocab.tree.docs.map((d) => d.id)).toEqual(["chargebacks"]);
     },
   },
   {
@@ -334,7 +364,6 @@ describe("every FleetContext reader answers exactly what the core module answers
       spec: join(docsDir, "services/payment-service/spec.md"),
       openapi: join(docsDir, "services/payment-service/openapi.yaml"),
       asyncapi: join(docsDir, "services/payment-service/asyncapi.yaml"),
-      capabilities: join(docsDir, "architecture/capabilities.yaml"),
       landscape: join(docsDir, "architecture/landscape.likec4"),
       conflicted: join(docsDir, "services/checkout-web/spec.md"),
       model: join(docsDir, "services/payment-service/model.likec4"),

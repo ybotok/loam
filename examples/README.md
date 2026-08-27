@@ -36,6 +36,17 @@ Around them: `kafka` as an `#external` `#platform` system with a topic per chann
 at the topic, never at the broker), `stripe` and `salesforce` as external systems, and
 `architecture/permissions.yaml` as the fleet's authorization vocabulary.
 
+**Two authored capability documents**, which are the business tree rather than the architecture:
+`capabilities/checkout/spec.md` and `capabilities/identity/tokens/spec.md`. Both ids are also
+declared in `architecture/capabilities.yaml` — the vocabulary is the union of the two sides, and
+a name a document elaborates does not have to leave the YAML, which is what keeps the metadata
+(`description`, `owner`) that a document has no field for. The nested one carries the lesson:
+the id `identity/tokens` keeps its slash everywhere it is written, so the tree spells it as
+directories, and `capabilities/identity/` holding no `spec.md` of its own is a GROUP and earns no
+finding. Each requirement in both files is a promise a customer could check, names no service,
+and carries a `Requirement-ID:` — required here, unlike in a service spec, because these
+documents outlive every service that realizes them.
+
 **On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
 consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
 edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds

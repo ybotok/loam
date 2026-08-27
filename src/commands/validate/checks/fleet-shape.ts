@@ -27,10 +27,10 @@ import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js"
 import { type DeclaredService, type RawServiceId } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
-import { capabilitiesPath, permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
+import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
-import { readCapabilities } from "../../../core/capabilities/capabilities.js";
-import { invalidVocabularyFinding, unrealizedFindings } from "../../../core/capabilities/findings.js";
+import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
+import { capabilityDocFindings, docMissingFindings, invalidVocabularyFinding, unrealizedFindings } from "../../../core/capabilities/findings.js";
 import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/rollup.js";
 import { parseRequirements } from "../../../core/document/parse.js";
 import { type Requirement } from "../../../core/document/spec.js";
@@ -232,30 +232,40 @@ async function readRequirementsAt(path: string): Promise<Requirement[]> {
  * grades at every service target return [] for the same vocabulary — one
  * breach, one finding, never a cascade). `capability.unrealized` is one warn
  * PER declared-but-unnamed capability, subject = the id, because the roadmap's
- * criterion is 'one warning per capability, not one per service'. An absent
- * file is total silence: the FILE is this axis's opt-in.
+ * criterion is 'one warning per capability, not one per service'. Holding
+ * NEITHER `architecture/capabilities.yaml` nor `capabilities/` is total
+ * silence: the fleet's own files are this axis's opt-in, either of them.
  *
  * The used set comes through capabilityRollup with the fleet's own cached
  * reader, so under --all the walk re-parses nothing the service targets have
  * not already paid for — and the rollup, the warn and `loam list capabilities`
  * can never disagree about what "realized" means.
+ *
+ * The AUTHORED documents are graded here too, and they ride this function
+ * rather than a target of their own for `viewsStaleFindings`' reason one tree
+ * over: a capability belongs to no service, so only the fleet run has the whole
+ * vocabulary and the enumerated tree in view at once. Their reads are NOT
+ * wrapped, deliberately — a `capabilities/<id>/spec.md` that is not UTF-8 takes
+ * the run down exactly as a `services/<id>/spec.md` does, because a document
+ * loam cannot decode is a refusal everywhere else in the product and a quiet
+ * "zero requirements" here would grade a whole capability green on bytes
+ * nobody read.
  */
 export async function capabilityFleetFindings(
   docsDir: DocsDir,
   services: ServiceEntry[],
   fleet: FleetContext | undefined,
 ): Promise<Finding[]> {
-  const path = capabilitiesPath(docsDir);
-  const vocab = fleet === undefined ? await readCapabilities(path) : await fleet.capabilities(path);
+  const vocab = fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
   if (!vocab.present) return [];
+  const read = fleet === undefined ? readRequirementsAt : (p: string) => fleet.readRequirements(p);
+  const authored: Finding[] = docMissingFindings(vocab.tree);
+  for (const doc of vocab.tree.docs) authored.push(...capabilityDocFindings(await read(doc.spec), doc.id));
+
   const invalid = invalidVocabularyFinding(vocab);
-  if (invalid !== null) return [invalid];
-  const rows = await capabilityRollup({
-    services,
-    vocab,
-    read: fleet === undefined ? readRequirementsAt : (p) => fleet.readRequirements(p),
-  });
-  return unrealizedFindings(vocab, usedCapabilities(rows));
+  if (invalid !== null) return [invalid, ...authored];
+  const rows = await capabilityRollup({ services, vocab, read });
+  return [...authored, ...unrealizedFindings(vocab, usedCapabilities(rows))];
 }
 
 export function externalProducerOf(
