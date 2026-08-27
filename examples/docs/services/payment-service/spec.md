@@ -23,6 +23,7 @@ request as idempotent by order id so that a caller's timeout-and-retry never res
 
 Operations: authorizePayment
 Publishes: payment.PaymentAuthorized
+Realizes: checkout#CHECKOUT-CHARGE-ONCE
 
 #### Scenario: Successful authorization
 - **Given** an order with a valid payment method

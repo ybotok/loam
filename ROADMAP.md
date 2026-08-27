@@ -126,32 +126,42 @@ Promoted because its recorded trigger fired (see the item's history in `## Later
 second item here because a fleet's analysts cannot wait on evidence from other people's fleets to
 have anywhere to write, and because the use-case axis it depends on is complete.
 
-**Landed:** `capabilities/<cap>/spec.md` as a fourth top-level tree, read by the same requirement
-parser as every other `spec.md`, with nesting spelled by the tree and the directory as the list.
-The capability vocabulary is now the UNION of `architecture/capabilities.yaml` and that tree, and
-either one opts the fleet in. Three codes grade the documents on their own terms:
-`capability.doc-missing` (warn), `capability.requirement-unidentified` (error) and
-`capability.requirement-service-scoped` (error). `SCHEMA.md`'s capability section carries the
-shape and the two rules; `examples/docs/capabilities/` carries the worked pair.
+**Landed, phase 1 — the tree.** `capabilities/<cap>/spec.md` as a fourth top-level tree, read by
+the same requirement parser as every other `spec.md`, with nesting spelled by the tree and the
+directory as the list. The capability vocabulary is now the UNION of
+`architecture/capabilities.yaml` and that tree, and either one opts the fleet in. Three codes grade
+the documents on their own terms: `capability.doc-missing` (warn),
+`capability.requirement-unidentified` (error) and `capability.requirement-service-scoped` (error).
+
+**Landed, phase 2 — the join.** `Realizes: <capability-id>#<Requirement-ID>` on a service
+requirement, written by whoever implements it rather than by the analyst, and graded in both
+directions: `capability.realizes-unknown` (error, and an archive gate in a feature delta) and
+`capability.requirement-unrealized` (warn, one per capability requirement nothing realizes). A
+third code closes the hole the first phase left open — `capability.requirement-inert-join` (error)
+refuses the axis's own two joins written INSIDE a capability document, where nothing reads them.
+The API hop needs no line of its own: a capability requirement reaches its operations by composing
+`Realizes:` with the `Operations:` lines that already exist. `SCHEMA.md`'s capability section
+carries the shape and the rules; `examples/docs/capabilities/` carries the worked pair, with three
+service requirements realizing one promise and a fourth deliberately left unrealized.
 
 Remaining, in dependency order, each of which returns here as it lands:
 
-1. **`Realizes:` on a service requirement** — the one new authored join, written by whoever
-   implements it rather than by the analyst, resolving `<capability-id>#<Requirement-ID>`. The API
-   hop needs no line of its own: a capability requirement reaches its operations by composing
-   `Realizes:` with the `Operations:` lines that already exist.
-2. **A use case realizes a capability requirement.** A cross-service criterion ("I enter a login
+1. **A use case realizes a capability requirement.** A cross-service criterion ("I enter a login
    and a password and I am in") cannot be carried by any single service's spec, because each
    promises only its own part; a `#cap-`-tagged flow can, because it IS the hop sequence. This is
-   why the use-case axis was built first — a prerequisite, not a preference.
-3. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
+   why the use-case axis was built first — a prerequisite, not a preference. One measurement is
+   owed before any design: a view can only carry TAGS, and whether a LikeC4 tag name accepts every
+   character `Requirement-ID` allows (`.` is the doubtful one) decides whether the tag can carry
+   the id at all.
+2. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
    requirement grammar, delta algebra and `Based-On:` pins, merged by the same transactional
    archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for a
    capability requirement the feature's own service deltas leave unrealized.
-4. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
+3. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
    opens the document that changes, and the service work is derived from it.
 
-Exit criteria for calling the axis complete:
+Exit criteria for calling the axis complete (the first half of the first is met; a use case still
+cannot realize a requirement):
 
 - A capability requirement is realizable by service requirements AND by a use case, and
   `loam list capabilities` reports both without either corpus being derived from the other.

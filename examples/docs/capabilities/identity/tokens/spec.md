@@ -30,12 +30,13 @@ every part of the product, not only the one they revoked it from.
 - **When** they sign out one of them from the other
 - **Then** the signed-out device can no longer act as them
 
-### Requirement: Signing in again does not silently extend an old session
-Requirement-ID: IDENTITY-NO-SILENT-EXTENSION
-The fleet SHALL NOT extend an existing session past its stated lifetime because
-the person signed in again elsewhere.
+### Requirement: A refused sign-in never says which half was wrong
+Requirement-ID: IDENTITY-ONE-REFUSAL
+When a sign-in is refused, the fleet SHALL give the same answer whether the
+account does not exist or the secret was wrong — a refusal that tells them apart
+lets anyone test which accounts exist.
 
-#### Scenario: A second sign-in on a new device
-- **Given** a session that expires in ten minutes
-- **When** the same person signs in on another device
-- **Then** the first session still expires in ten minutes
+#### Scenario: An account that does not exist
+- **Given** a sign-in attempt for an account nobody has registered
+- **When** it is refused
+- **Then** the refusal is word for word the one a wrong password gets

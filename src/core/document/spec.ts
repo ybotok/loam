@@ -92,6 +92,38 @@ export interface Requirement {
    */
   capabilities: string[];
   /**
+   * Capability REQUIREMENTS this requirement realizes part of, from a
+   * `Realizes:` line — entries spelled `<capability-id>#<Requirement-ID>`,
+   * resolving against `capabilities/<cap>/spec.md`.
+   *
+   * A fifth join, and the one that makes the business tree checkable rather
+   * than merely present. `Capability:` beside it answers a DIFFERENT question
+   * and neither replaces the other: `Capability: checkout` says this
+   * requirement is part of that capability, which is a claim about theme;
+   * `Realizes: checkout#CHECKOUT-CHARGE-ONCE` says it is part of what makes one
+   * named promise true, which is a claim loam can grade in both directions —
+   * an entry that resolves to nothing, and a capability requirement nothing
+   * realizes.
+   *
+   * WHY A COMPOSITE ENTRY RATHER THAN TWO LINES. A `Requirement-ID` is only
+   * unique inside its own document, so the capability half is not decoration —
+   * it is what makes the target addressable at all. Two lines would let a
+   * requirement name three capabilities and four ids with nothing saying which
+   * belongs to which.
+   *
+   * WHY THE SEPARATOR IS THE LAST `#` AND NOT THE FIRST. The requirement half
+   * has a strict grammar (`REQUIREMENT_ID_RE`) that excludes `#`, while the
+   * capability half is a YAML key and a directory name and is not constrained
+   * here at all. Splitting at the last `#` is therefore unambiguous for every
+   * capability id there is; splitting at the first would mis-parse any id that
+   * contained one, and would do it silently.
+   *
+   * Parsed additively exactly as `capabilities` is — the line rides in
+   * `req.text` and therefore inside `requirementDigest`, so no living
+   * document's digest moves merely because loam learned to read it.
+   */
+  realizes: string[];
+  /**
    * AsyncAPI message names this requirement governs on the PRODUCING side, from
    * a `Publishes:` line — the event-axis analog of `Operations:`.
    *
@@ -139,6 +171,15 @@ export const BASED_ON_LINE_RE = /^\s*Based-On:\s*(.*?)\s*$/i;
  * the parse quietly stop agreeing about what counts as the line.
  */
 export const CAPABILITY_LINE_RE = /^\s*Capabilit(?:y|ies):\s*(.+?)\s*$/i;
+
+/**
+ * The `Realizes:` body line. One spelling only — no `Realize:` singular
+ * alternative, unlike `Operations?:` and the rest — because the verb already
+ * reads correctly for one entry and for six, and the plural forms in the older
+ * lines exist to forgive a NOUN that changes shape. A grammar with an
+ * alternative nobody needs is one more thing two readers can disagree about.
+ */
+export const REALIZES_LINE_RE = /^\s*Realizes:\s*(.+?)\s*$/i;
 
 /** Portable, review-friendly stable IDs. Case-sensitive by design. */
 export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;

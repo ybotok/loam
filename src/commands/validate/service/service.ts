@@ -17,7 +17,9 @@ import { landscapePath as landscapeFile, permissionsPath } from "../../../core/r
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
-import { capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
+import { capabilityRequirementIndex, capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
+import { realizesUnknownFindings } from "../../../core/capabilities/realizes/findings.js";
+import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
@@ -232,6 +234,14 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
   const capabilities =
     fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
+  // The requirement-level index behind `Realizes:`. Built once for both axes,
+  // and behind the same ladder `capabilityUnknownFindings` applies — an absent
+  // or unreadable vocabulary means no reads and no grades at all, so a fleet
+  // that has not adopted the axis pays nothing for a line it never wrote.
+  const capabilityReqs = await capabilityRequirementIndex(
+    capabilities,
+    fleet === undefined ? async (p) => parseRequirements(await readRequirementsDocument(p)) : (p) => fleet.readRequirements(p),
+  );
   for (const [label, docReqs] of [
     ["spec.md", reqs],
     ["arch.spec.md", archReqs],
@@ -239,6 +249,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     const target = { where: `${service}: ${label}`, subject: service };
     findings.push(...requiresUnknownFindings(docReqs, target, vocabulary));
     findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
+    findings.push(...realizesUnknownFindings(docReqs, target, capabilityReqs));
   }
 
   // Provenance last: who vouched for this, and what code it was written from.

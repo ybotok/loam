@@ -5,13 +5,14 @@
 ### Requirement: Authorize a payment, splitting it when the order is flagged
 
 Requirement-ID: PAY-AUTHORIZE
-Based-On: 1336956f06a40e93
+Based-On: 820301445e65f9f4
 The service SHALL reserve funds for an order before capture, SHALL treat an authorization
 request as idempotent by order id, and SHALL delegate splitting to `payment-split-service` when
 the order is flagged for splitting.
 
 Operations: authorizePayment
 Publishes: payment.PaymentAuthorized
+Realizes: checkout#CHECKOUT-CHARGE-ONCE
 
 #### Scenario: Successful authorization
 - **Given** an order with a valid payment method

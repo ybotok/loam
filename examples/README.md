@@ -87,6 +87,7 @@ deliberate. An example that reported nothing would teach nothing about what thes
 | `api.requirement-deprecated` (×2) | `IDN-VALIDATE-LEGACY` and `ORD-PLACE-V1` each govern only a deprecated operation: promised behaviour on its way out |
 | `permissions.unenforced` | `user/profile:read` is declared in the vocabulary and named by no requirement — the shape a vocabulary drifts into |
 | `capability.unrealized` | `payments/settlement` is declared in `architecture/capabilities.yaml` and no living requirement's `Capability:` line names it — a promise nobody implemented, or a word nobody adopted; `loam list capabilities` shows it as `0 — unrealized` beside the realized ones |
+| `capability.requirement-unrealized` | `checkout#CHECKOUT-PRICE-HONOURED` — one promise inside a capability whose OTHER promise three services realize, so the row above says nothing about it. That contrast IS the demonstration: `capability.unrealized` finds a capability nobody claimed, and only this code finds the gap inside a capability that looks healthy. Three requirements do carry `Realizes:` lines — `WEB-CHECKOUT`, `ORD-PLACE` and `PAY-AUTHORIZE` all name `checkout#CHECKOUT-CHARGE-ONCE` — and the fourth promise is simply not implemented, which is a normal state for a business document written ahead of the fleet |
 | `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
 
 **Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is

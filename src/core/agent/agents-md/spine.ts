@@ -79,7 +79,31 @@ must be observable OUTSIDE the fleet: \`Operations:\`, \`Covers:\`,
 so carrying any of them is \`capability.requirement-service-scoped\` (error) —
 write it in that service's spec.md instead. Naming no service is an authoring
 rule that PR review holds, not one loam checks: matching service names in prose
-would be a heuristic, and loam does not guess.
+would be a heuristic, and loam does not guess. The axis's own two joins are
+refused here as well (\`capability.requirement-inert-join\`, error): they point
+INTO the tree, so nothing reads them written inside it.
+
+A service requirement says which promise it serves with \`Realizes:\`, entries
+spelled \`<capability-id>#<Requirement-ID>\`. This is the join the tree exists
+for, and it is NOT the same claim as \`Capability:\` beside it — that names a
+theme, this names one promise, and a requirement commonly carries both. The
+capability half of an entry is what makes the target addressable, since a
+\`Requirement-ID\` is unique only inside its own document; the separator is the
+LAST \`#\`, because the requirement half's grammar excludes one and the
+capability half's does not. Written by whoever implements the requirement,
+never by the analyst — a business document must not be edited every time the
+fleet rearranges which service carries which part.
+
+Both directions are graded. An entry naming no capability requirement is
+\`capability.realizes-unknown\` (error; in a feature delta it gates
+\`loam archive\`, \`--approve\`-overridable), and its message says which of the
+five failures happened — malformed entry, undeclared capability, declared but
+undocumented, document with no requirements, or an id that document does not
+declare. A capability requirement no living \`Realizes:\` line names is
+\`capability.requirement-unrealized\` (warn, one per requirement): it never
+gates, because writing the business document ahead of the fleet is the intended
+use. \`loam list capabilities --json\` carries the whole join — each capability's
+requirements, and what realizes each one.
 
 Against that vocabulary an undeclared name is \`capability.unknown\` (error; in
 a feature delta it gates \`loam archive\`, \`--approve\`-overridable), an

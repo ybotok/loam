@@ -606,6 +606,12 @@ describe("gap: OpenSpec semantics we do not interpret", () => {
       // The capability axis — the same additive parse for the same reason:
       // `Capability:` stays in `text`, so the digest guarantee above holds.
       "capabilities",
+      // The join INTO the authored business tree, `Realizes:`. Same additive
+      // parse again, and the guarantee matters more here than anywhere: this
+      // line arrived on an axis whose whole point is that documents outlive the
+      // services realizing them, so a corpus adopted from OpenSpec must not
+      // have every `Based-On:` pin go stale the day loam learned to read it.
+      "realizes",
       "scenarios",
       "section",
       // Where the heading was, so `loam rebase` can rewrite one body line by
