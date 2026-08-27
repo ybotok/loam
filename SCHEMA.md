@@ -15,7 +15,8 @@ arch behavior│ arch.spec.md ──(covers)──► C4 · health        source
 contract     │ OpenAPI  ◄──(detail of C4 "exposes/calls")    hybrid
 async        │ AsyncAPI ◄──(detail of C4 "publishes/consumes")  hybrid
 authorization│ permissions.yaml ◄──(required by)── requirements source [fleet vocabulary]
-capability   │ capabilities.yaml ◄──(realized by)── requirements source [fleet vocabulary, opt-in]
+capability   │ capabilities/<cap>/spec.md + capabilities.yaml            source [business tree + vocabulary, opt-in]
+             │   ◄──(realized by)── requirements
 structure    │ C4 model — services, relationships            source (adopt-seeded)
 ops / why    │ ADR · runbook · health                        source
 truth        │ code                                          ground truth
@@ -37,6 +38,8 @@ docs/
     capabilities.yaml                   fleet capability vocabulary           [authored, opt-in]
     adrs/NNNN-*.md                      FLEET-level MADR decisions            [authored, opt-in]
     landscape.health.yaml            composed health model              [derived, later]
+  capabilities/<cap>/                the AUTHORED business tree; nesting spelled by the tree  [authored, opt-in]
+    spec.md                             narrative, then `## Requirements` — `Requirement-ID:` REQUIRED
   services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
     model.likec4                        service C4 (containers/components)  [adopt]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
@@ -148,7 +151,7 @@ and restores wherever the service lives *today*.
 | Asynchronous message | LikeC4 edge `publishes` / `consumes` | requirement `Publishes:` / `Consumes:` and AsyncAPI 3 operation/message | exact message id |
 | Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
-| Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` | declared capability id, `/` allowed for nesting |
+| Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred from a feature directory. A file can therefore be structurally valid while a join is broken; the broken join is the finding loam reports.
 
@@ -378,11 +381,24 @@ Each axis may be legitimately empty, and the checks grade absence differently fr
 
 `intent.md` is where the "why" lives — the delta says what changed, and nothing else says what for — and the archive gate holds it to that: `intent.empty` (a warning that gates, `--approve` overridable) fires when the file is missing or says nothing outside the scaffold's own comments, so a feature cannot fold into the living docs with its reason unwritten. Its sibling `scaffold.placeholder` refuses the rest of an unedited `loam new` scaffold the same way — the exact template strings, a requirement or description nobody authored, must not become living truth.
 
-### Where a capability lives (declared names, and why there is still no authored layer)
+### Where a capability lives (a declared name, and the document behind it)
 
-A business capability — "payment splitting" — is spread across the living specs of every service that carries part of it. What was rejected here, and stays rejected, was an UNCHECKED free-text label and an authored `capabilities/` prose layer: a hand-written `capability:` field has no ground truth, so it would end up on some features and not others, in three spellings of the same theme, never revisited — while creating the impression that an index exists. And a prose layer would be a second copy of text that already exists in the living specs and the archived features, which is a second thing that can disagree with the first.
+A business capability — "payment splitting" — is spread across the living specs of every service that carries part of it. What was rejected here, and stays rejected, is an UNCHECKED free-text label: a hand-written `capability:` field has no ground truth, so it would end up on some features and not others, in three spellings of the same theme, never revisited — while creating the impression that an index exists.
 
-A DECLARED name is different in exactly the way that mattered: it is checkable. `architecture/capabilities.yaml` declares the fleet's capability vocabulary — ids with an optional `description` and `owner`, nested ids such as `payments/refunds` kept as one flat key — and a requirement joins it with a `Capability:` list line in either spec file. The file is the opt-in: a fleet without it gets no capability findings at all, and once it exists the axis is graded both ways:
+A DECLARED name is different in exactly the way that mattered: it is checkable. A capability may be declared on either of two sides, and the vocabulary is their UNION.
+
+**A name alone is a line in `architecture/capabilities.yaml`** — ids with an optional `description` and `owner`, nested ids such as `payments/refunds` kept as one flat key — and a requirement joins it with a `Capability:` list line in either spec file.
+
+**A name with prose behind it gets a document: `capabilities/<cap>/spec.md`,** the authored business tree. The rule that separates the two is general and settles the question for every future vocabulary: **an entry with prose gets a file; an entry without prose stays a line in YAML.** (`architecture/permissions.yaml` is the principled exception — a `user/profile:read` pair has no prose, and a document per pair is ceremony.) A single YAML file grown to hold paragraphs is unworkable at fleet scale and is a second list nothing keeps current, which is the drift `loam init`'s removed `loam.docs.json` was removed for. So the DIRECTORY is the list: a directory is a capability if and only if it holds `spec.md`, nesting is spelled by the tree (`capabilities/payments/refunds/spec.md`), and a directory may be both a capability and the parent of others. `loam init` does not scaffold `capabilities/` — its existence is the opt-in, exactly as `architecture/adrs/`'s is.
+
+The document carries narrative and then `## Requirements`, in the same grammar and read by the same parser as every other `spec.md` — this is where OpenSpec's `## Purpose` prose finally has a loam equivalent — with two rules of its own:
+
+- **Every requirement needs a `Requirement-ID:`.** Optional in a service spec for OpenSpec compatibility, required here: these documents outlive every service that realizes them, so identity is the line and not the heading — otherwise rewording a heading is a removal and an addition, and every join made to it breaks silently. Missing is `capability.requirement-unidentified` (**error**).
+- **A capability requirement must be observable OUTSIDE the fleet.** `Operations:`, `Covers:`, `Publishes:` and `Consumes:` each resolve against one service's own contract or model, so a requirement carrying any of them is a service requirement filed at the wrong altitude: `capability.requirement-service-scoped` (**error**). `Requires:` is deliberately exempt — a permission is a domain fact, observable outside the fleet. The companion rule that a capability requirement **names no service** is an authoring rule that PR review holds and loam does not check: the only mechanical reading of it is scanning prose for declared service ids, which is a heuristic, and loam refuses-and-names rather than guessing.
+
+A directory under `capabilities/` that holds neither the document nor a capability beneath it is `capability.doc-missing` (**warning**) — what `mkdir` leaves behind halfway through creating one. It declares nothing, so a `Capability:` line naming it still reports `capability.unknown`.
+
+The fleet's own files are the opt-in — either side of the union. A fleet holding neither `architecture/capabilities.yaml` nor `capabilities/` gets no capability findings at all, and once one exists the join is graded both ways:
 
 ```yaml
 capabilities:
@@ -392,13 +408,15 @@ capabilities:
   payments/refunds: {}
 ```
 
-- `capability.unknown` (**error**) — a `Capability:` entry the vocabulary does not declare, with close-name suggestions; in a feature delta it gates `loam archive` (`--approve` overrides). Silent when the vocabulary is absent or invalid.
-- `capability.invalid` (**error**, fleet scope) — the file exists but does not read as a vocabulary; reported exactly once per `validate --all` run (single-target runs stay silent about the file), the rest of the family suspended, because grading a fleet against a file nobody can read is a cascade rather than a diagnosis.
-- `capability.unrealized` (**warning**, fleet scope) — a declared capability no living non-`REMOVED` requirement names, one warning per capability: either a promise nobody implemented or a word nobody adopted.
+- `capability.unknown` (**error**) — a `Capability:` entry neither side declares, with close-name suggestions; in a feature delta it gates `loam archive` (`--approve` overrides). Silent when the fleet holds neither file, or when the YAML is invalid.
+- `capability.invalid` (**error**, fleet scope) — `capabilities.yaml` exists but does not read as a vocabulary; reported exactly once per `validate --all` run (single-target runs stay silent about the file). Every grade that RESOLVES against the vocabulary is suspended behind it, because grading a fleet against a file nobody can read is a cascade rather than a diagnosis — but the authored tree's own grades are not, since none of them consults the YAML.
+- `capability.unrealized` (**warning**, fleet scope) — a declared capability no living non-`REMOVED` requirement names, one warning per capability, naming the side that declared it: either a promise nobody implemented or a word nobody adopted.
 
 The total is readable — `loam list capabilities` reports each capability's realizing requirements, services and draft/verified split, and `loam explore --capability <id>` seeds an exploration from the realizing services. `migrate-openspec` preserves capability identity through this same file: every routed requirement carries a `Capability:` line, and the staged target declares every living and active-horizon OpenSpec capability id (empty bodies — descriptions are not invented, the authored `## Purpose` prose stays verbatim under `legacy/`).
 
-The AUTHORED capability layer — one long-lived page per capability, revised by features — remains deliberately outside loam. That is the roadmap's evidence-gated Later item, and the rollup over these declared names is the evidence that will decide it. For a theme that crosses services and matches no structural unit, a **LikeC4 tag** also remains available and checkable: tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift.
+What the tree does NOT yet carry, and the roadmap owns each: a `Realizes:` join from a service requirement back to a capability requirement, a feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land, a capability document is a fleet document edited directly under PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither corpus is derived from the other** — `gherkin` and `verify` keep computing from service requirements, so a service repository can still validate itself with nothing but its own files.
+
+For a theme that crosses services and matches no structural unit, a **LikeC4 tag** also remains available and checkable: tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift.
 
 ### Considered and rejected: the rest of the OpenSpec feature set
 

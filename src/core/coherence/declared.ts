@@ -19,10 +19,10 @@ import { NotUtf8DocumentError } from "../kernel/document-bytes.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
-import { capabilitiesPath, featureSpecPaths } from "../repo/paths.js";
+import { featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
-import { readCapabilities } from "../capabilities/capabilities.js";
+import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
 import { capabilityUnknownIssues } from "../capabilities/findings.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
@@ -85,9 +85,7 @@ export async function declaredByService(
     // silence hoisted into a guard, so a silent axis also skips the reads that
     // exist only to feed it.
     const capabilityVocab =
-      context === undefined
-        ? await readCapabilities(capabilitiesPath(docsDir))
-        : await context.capabilities(capabilitiesPath(docsDir));
+      context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir);
     const grading = capabilityVocab.present && capabilityVocab.invalid === undefined;
     for (const svc of svcNames) {
       const paths = featureSpecPaths(featureDir, svc);

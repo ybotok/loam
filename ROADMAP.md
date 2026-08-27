@@ -89,9 +89,10 @@ The strongest foundations to preserve are:
 
 ## Now
 
-The current priority is the pilot. Every integrity, enforcement and lifecycle item that preceded it
+The first priority is the pilot. Every integrity, enforcement and lifecycle item that preceded it
 has landed (see [Recently landed](#recently-landed)); what the product still lacks is evidence from
-fleets that are not its own.
+fleets that are not its own. The second is the authored business axis, promoted out of `## Later`
+when its recorded trigger fired and now part-landed.
 
 ### Complete the two-fleet pilot
 
@@ -117,6 +118,54 @@ Exit criteria:
   more than 10% of classified findings.
 - The reviewed scorecards link the machine evidence and give every failure or waiver an owner and an
   explicit release disposition. Blank or `not-assessed` fields cannot be called completion.
+
+### The authored business axis — promoted from Later, its first phase landed
+
+Promoted because its recorded trigger fired (see the item's history in `## Later` below, and
+`git show 53c762a:ROADMAP.md` for the full gated text). It does not outrank the pilot: it is the
+second item here because a fleet's analysts cannot wait on evidence from other people's fleets to
+have anywhere to write, and because the use-case axis it depends on is complete.
+
+**Landed:** `capabilities/<cap>/spec.md` as a fourth top-level tree, read by the same requirement
+parser as every other `spec.md`, with nesting spelled by the tree and the directory as the list.
+The capability vocabulary is now the UNION of `architecture/capabilities.yaml` and that tree, and
+either one opts the fleet in. Three codes grade the documents on their own terms:
+`capability.doc-missing` (warn), `capability.requirement-unidentified` (error) and
+`capability.requirement-service-scoped` (error). `SCHEMA.md`'s capability section carries the
+shape and the two rules; `examples/docs/capabilities/` carries the worked pair.
+
+Remaining, in dependency order, each of which returns here as it lands:
+
+1. **`Realizes:` on a service requirement** — the one new authored join, written by whoever
+   implements it rather than by the analyst, resolving `<capability-id>#<Requirement-ID>`. The API
+   hop needs no line of its own: a capability requirement reaches its operations by composing
+   `Realizes:` with the `Operations:` lines that already exist.
+2. **A use case realizes a capability requirement.** A cross-service criterion ("I enter a login
+   and a password and I am in") cannot be carried by any single service's spec, because each
+   promises only its own part; a `#cap-`-tagged flow can, because it IS the hop sequence. This is
+   why the use-case axis was built first — a prerequisite, not a preference.
+3. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
+   requirement grammar, delta algebra and `Based-On:` pins, merged by the same transactional
+   archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for a
+   capability requirement the feature's own service deltas leave unrealized.
+4. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
+   opens the document that changes, and the service work is derived from it.
+
+Exit criteria for calling the axis complete:
+
+- A capability requirement is realizable by service requirements AND by a use case, and
+  `loam list capabilities` reports both without either corpus being derived from the other.
+- `gherkin` and `verify` still compute from service requirements alone, so a service repository
+  validates itself with nothing but its own files.
+- A fleet holding neither `architecture/capabilities.yaml` nor `capabilities/` still produces no
+  capability finding of any kind.
+
+Two rules must not be softened, because they are the answer to the old rejection ("a second copy
+of text that already exists in the living specs"): a capability requirement must be observable
+outside the fleet and name no service — one that could be pasted into a service spec unchanged
+belongs there instead — and neither corpus is derived from the other. Only the first half of the
+first rule is mechanically checked, and `SCHEMA.md` says so: matching service names in prose is a
+heuristic, and loam refuses that class of check.
 
 ## Recently landed
 
@@ -147,10 +196,11 @@ never merges, with the one guard that a merged slot referencing a feature-only s
 
 ## Later — promote only from evidence
 
-Health composition, built-in rendering, UI generation, landscape decomposition, and an authored
-business axis remain candidate investments, not promises. Promote one only when pilot evidence names
-the operator, repeated task, failure mode, frequency, current workaround, and measurable acceptance
-criterion.
+Health composition, built-in rendering, UI generation and landscape decomposition remain candidate
+investments, not promises. Promote one only when pilot evidence names the operator, repeated task,
+failure mode, frequency, current workaround, and measurable acceptance criterion. The authored
+business axis stays listed below because its trigger and its reasoning are the record of how a Later
+item gets promoted — it has already moved to `## Now`.
 
 - **Health composition:** proceed only if both service-level `health.yaml` and fleet relationships are
   repeatedly being joined by hand and that work causes missed or contradictory checks. The result must
@@ -194,50 +244,16 @@ criterion.
   become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than monthly — evaluate
   service-owned model files plus a thin global cross-service map. Migration must preserve archive/undo,
   deterministic resolution, and readable plain files.
-- **Authored business axis — the trigger FIRED 2026-08-27; this is now a queued item rather than a
-  gated one.** The gate asked for evidence of authorship: analyst edits appearing in
-  `services/*/spec.md` history, or capability-level requirements accumulating as `intent.md` prose
-  that no requirement realizes. The maintainer supplied it as a statement about how his fleet works
-  rather than as git history — business does not think in services, and an analyst does not write
-  them — and the shape of the hole was verified rather than argued: **every requirement loam knows
-  belongs to exactly one service directory**, so an analyst's whole surface is a declared name in
-  `capabilities.yaml` plus an `intent.md` that is archived with its feature. No living
-  business-level document exists at any altitude.
-
-  **One addition the item below predates.** A capability requirement must be realizable by a USE
-  CASE as well as by service requirements. A criterion that crosses services — "I enter a login and
-  a password and I am in" — cannot be carried by any single service's spec, because each promises
-  only its own part; a use case can, because it IS the hop sequence. That is why the use-case axis
-  was built first: it is a prerequisite, not a preference. The
-  shape follows the cascade those documents already describe — a capability is revised, the revision
-  changes the API, and the API change becomes per-service requirement changes — so promotion is a
-  question of need rather than of design:
-  - `capabilities/<cap>/spec.md` as a fourth top-level tree beside the three in
-    [src/core/docs.ts](https://github.com/ybotok/loam/blob/main/src/core/docs.ts), carrying narrative
-    **and** requirements in one document. The narrative slot is not decoration: OpenSpec's `## Purpose`
-    prose has no loam equivalent today and is dropped into `legacy/` on migration, and an axis without
-    room for it would repeat that loss on loam's own documents.
-  - A stable capability id on the discipline `Requirement-ID` already establishes. These documents
-    outlive every service named in them, so a rename stays one identity rather than becoming a removal
-    and an addition.
-  - Exactly one new authored join: `Realizes:` on a service requirement, written by whoever implements
-    it rather than by the analyst. The API hop needs no line of its own — a capability requirement
-    reaches its operations by composing `Realizes:` with the `Operations:` lines that already exist — so
-    the whole cascade is expressible without a third place to keep in sync.
-  - A feature-local `features/<FEAT>/capabilities/<cap>/` delta carrying the existing requirement
-    grammar, delta algebra, `Based-On:` pins and `Requirement-ID` identity, merged by the same
-    transactional archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for
-    a capability requirement the feature's own service deltas leave unrealized.
-  - `loam new <FEAT> --capability <cap>` as an entry point, inverting today's `--touches <services>`: the
-    analyst opens the document that changes, and the service work is derived from it rather than named
-    before the business change is written.
-  - Tens of documents, not hundreds. This corpus is sized like the landscape, not like the service tree,
-    which is what keeps a second requirement corpus reviewable at all.
-  - Two rules keep it from becoming a second copy of the same prose: a capability requirement must be
-    observable outside the fleet and name no service — one that could be pasted into a service spec
-    unchanged belongs there instead — and neither corpus is derived from the other. `gherkin` and
-    `verify` must keep computing from service requirements, so a service repository can still validate
-    itself with nothing but its own files.
+- **Authored business axis — PROMOTED 2026-08-27 and part-landed; see [The authored business axis](#the-authored-business-axis--promoted-from-later-its-first-phase-landed) under `## Now`.**
+  The gate asked for evidence of authorship: analyst edits appearing in `services/*/spec.md`
+  history, or capability-level requirements accumulating as `intent.md` prose that no requirement
+  realizes. The maintainer supplied it as a statement about how his fleet works rather than as git
+  history — business does not think in services, and an analyst does not write them — and the shape
+  of the hole was verified rather than argued: **every requirement loam knew belonged to exactly one
+  service directory**, so an analyst’s whole surface was a declared name in `capabilities.yaml` plus
+  an `intent.md` that is archived with its feature. No living business-level document existed at any
+  altitude. The full gated text, including the four sub-items and the cascade it follows, is in this
+  file’s history (`git show 53c762a:ROADMAP.md`).
 
 Exit criteria for promoting a Later item:
 

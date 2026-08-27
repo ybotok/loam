@@ -196,6 +196,59 @@ export function capabilitiesPath(docsDir: DocsDir): string {
 }
 
 /**
+ * The AUTHORED business tree — `capabilities/<id>/`, one directory per
+ * capability, each holding the document that describes it.
+ *
+ * Top-level and not under `architecture/`, because the two altitudes have
+ * different authors and different reasons to change: `architecture/` is the
+ * architect's — the map, the vocabularies, the use cases — while a capability
+ * document is the analyst's, and it must survive every redesign of the fleet
+ * that realizes it. A business tree filed inside the architecture tree would
+ * say the opposite of what the axis is for.
+ *
+ * NESTING IS SPELLED BY THE TREE, not inside a name. A capability id keeps its
+ * slashes wherever it is written (`core/capabilities/capabilities.ts` preserves
+ * the YAML key exactly as a `Capability:` line spells it), so `payments/refunds`
+ * lives at `capabilities/payments/refunds/spec.md` and `payments` may be a
+ * capability in its own right at `capabilities/payments/spec.md`. A directory is
+ * a capability if and only if it holds the document — the same
+ * presence-classifies rule `isServiceArtifactName` applies one tree over, and
+ * the reason it is safe here too: a group directory that acquires a document
+ * becomes a capability visibly, in a diff, rather than by a marker file nobody
+ * updated.
+ *
+ * NOT SCAFFOLDED BY `loam init`, exactly as `architecture/adrs/` is not. git
+ * does not carry an empty directory, so a scaffolded one vanishes on the first
+ * clone and returns as a diff on the next `init`; and an empty `capabilities/`
+ * in a fresh repo reads as an obligation nobody has met, when a fleet that has
+ * not adopted the axis owes nothing. The directory's EXISTENCE is the opt-in.
+ */
+export function capabilityDocsDir(docsDir: DocsDir): string {
+  return join(docsDir, "capabilities");
+}
+
+export interface CapabilityDocPaths {
+  dir: string;
+  /**
+   * The capability's own document: narrative and requirements in one file.
+   * `spec.md`, the same name a service's requirements live under, because it is
+   * the same grammar read by the same parser — a second spelling would be a
+   * second thing to keep in step for no reader's benefit.
+   */
+  spec: string;
+}
+
+/**
+ * The document paths of a capability whose directory is already KNOWN — the
+ * enumeration's `dir`, at whatever depth the walk found it. Same discipline as
+ * `servicePathsAt`: joining `capabilities/<id>/` at the root is only true for a
+ * flat id, and a nested capability would silently grade as absent through it.
+ */
+export function capabilityDocPathsAt(dir: string): CapabilityDocPaths {
+  return { dir, spec: join(dir, ARTIFACT_FILES.spec) };
+}
+
+/**
  * The FLEET's decision records — `architecture/adrs/`, beside the landscape and
  * the two vocabularies.
  *

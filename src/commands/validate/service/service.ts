@@ -13,10 +13,10 @@ import { existsSync } from "node:fs";
 import { loadFile, type Elem, type Rel } from "../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
-import { capabilitiesPath, landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
+import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
-import { readCapabilities } from "../../../core/capabilities/capabilities.js";
+import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
@@ -231,9 +231,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // memo makes that one parse for the whole run.
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
   const capabilities =
-    fleet === undefined
-      ? await readCapabilities(capabilitiesPath(docsDir))
-      : await fleet.capabilities(capabilitiesPath(docsDir));
+    fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
   for (const [label, docReqs] of [
     ["spec.md", reqs],
     ["arch.spec.md", archReqs],

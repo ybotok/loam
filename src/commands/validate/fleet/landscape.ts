@@ -29,9 +29,8 @@ import { kindTagFindings } from "./kind-tags.js";
 import { useCaseFindings } from "./usecases/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
-import { readCapabilities } from "../../../core/capabilities/capabilities.js";
+import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { gradableCapabilityIds } from "../../../core/capabilities/findings.js";
-import { capabilitiesPath } from "../../../core/repo/paths.js";
 
 /**
  * The fleet cross-check: `services/` and the landscape both claim to name the
@@ -286,9 +285,7 @@ export async function validateLandscape(
   // `capabilityFleetFindings` above has already paid for this read through the
   // fleet context's memo.
   const vocabulary =
-    fleet === undefined
-      ? await readCapabilities(capabilitiesPath(docsDir))
-      : await fleet.capabilities(capabilitiesPath(docsDir));
+    fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
   findings.push(
     ...useCaseFindings({
       views: preloaded?.views ?? [],

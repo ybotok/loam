@@ -4,7 +4,6 @@ import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/js
 import { maturityRollup } from "../../core/vocabulary/maturity.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { capabilitiesPath } from "../../core/repo/paths.js";
 import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
 import { fleetAdrCount, listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
@@ -158,7 +157,7 @@ export function registerList(program: Command): void {
         // file WAS read, it just is not a vocabulary, and one diagnosis should
         // have one spelling wherever it surfaces.
         const capabilityVocab = wanted.includes("capabilities")
-          ? await fleet.capabilities(capabilitiesPath(docsDir))
+          ? await fleet.capabilities(docsDir)
           : undefined;
         const brokenVocab = capabilityVocab === undefined ? null : invalidVocabularyFinding(capabilityVocab);
         if (brokenVocab !== null) {
