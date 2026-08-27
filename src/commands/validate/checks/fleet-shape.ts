@@ -275,34 +275,38 @@ export async function capabilityFleetFindings(
 
   const invalid = invalidVocabularyFinding(vocab);
   if (invalid !== null) return [invalid, ...authored];
-  const rows = await capabilityRollup({ services, vocab, read });
-  // The two unrealized grades read the SAME rollup, which is what keeps them
-  // from disagreeing about the word: a capability is unrealized when nothing
-  // names it by either join, and one of its requirements is unrealized when no
-  // `Realizes:` entry names that requirement. Both are warnings, and the second
-  // is the one that survives a healthy-looking row — a capability with four
-  // requirements and three realized reports nothing at all through the first.
-  //
   // A USE CASE IS THE OTHER WAY TO KEEP A PROMISE, and it is the only carrier a
   // cross-service criterion has: "I enter a login and a password and I am in"
   // belongs to no single service's spec, so a fleet could satisfy it perfectly
   // through a `#cap-`/`#req-` tagged flow and still be told nobody realizes it.
-  // `flows === null` means loam could not READ the flows (no preload, or an
-  // `architecture/` that did not parse), and then the grade is suspended rather
-  // than answered from half the evidence.
+  //
+  // The claims go INTO the rollup rather than beside it, so both unrealized
+  // grades and `loam list capabilities` read one set of rows. `flows === null`
+  // means loam could not READ the flows (no preload, or an `architecture/` that
+  // did not parse); the key is then OMITTED rather than empty, and every
+  // `keptBy` below is `undefined` — the three-state contract `rollup.ts` states.
   const index = await capabilityRequirementIndex(vocab, read);
-  const kept =
+  const keptByFlows =
     flows === null
-      ? null
+      ? undefined
       : useCaseRequirementClaims(flows, gradableCapabilityIds(vocab), (c) => index.byCapability.get(c));
-  const unrealizedRequirements =
-    kept === null
-      ? []
-      : rows.flatMap((row) =>
-          (row.requirements ?? [])
-            .filter((req) => req.realizedBy.length === 0 && !kept.has(`${row.id}#${req.id}`))
-            .map((req) => ({ capability: row.id, id: req.id, name: req.name })),
-        );
+  const rows = await capabilityRollup({ services, vocab, read, ...(keptByFlows === undefined ? {} : { keptByFlows }) });
+
+  // The two unrealized grades read the SAME rollup, which is what keeps them
+  // from disagreeing about the word: a capability is unrealized when nothing
+  // names it by any join, and one of its requirements is unrealized when nothing
+  // keeps that promise. Both are warnings, and the second is the one that
+  // survives a healthy-looking row — a capability with four requirements and
+  // three kept reports nothing at all through the first.
+  //
+  // The suspension falls out of the DATA rather than a branch: `keptBy` absent
+  // means nobody looked, and a promise nobody looked for is not a promise
+  // reported unkept.
+  const unrealizedRequirements = rows.flatMap((row) =>
+    (row.requirements ?? [])
+      .filter((req) => req.realizedBy.length === 0 && req.keptBy?.length === 0)
+      .map((req) => ({ capability: row.id, id: req.id, name: req.name })),
+  );
   return [
     ...authored,
     ...unrealizedFindings(vocab, usedCapabilities(rows)),

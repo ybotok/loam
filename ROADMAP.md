@@ -161,9 +161,9 @@ Remaining, in dependency order, each of which returns here as it lands:
 2. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
    opens the document that changes, and the service work is derived from it.
 
-Exit criteria for calling the axis complete (the first is met except for the listing half — a use
-case keeps a promise and `validate --all` knows it, while `loam list capabilities` still reports
-only the service requirements that realize one):
+Exit criteria for calling the axis complete (the first is now MET — `loam list capabilities`
+carries `keptBy` beside `realizedBy` on every promise, and `capability.unrealized` counts both
+corpora, so the listing and the gate give one answer):
 
 - A capability requirement is realizable by service requirements AND by a use case, and
   `loam list capabilities` reports both without either corpus being derived from the other.

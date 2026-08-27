@@ -443,6 +443,8 @@ The second tag is **scoped by the first**: a `Requirement-ID` is unique only ins
 
 **Only a RESOLVED claim keeps a promise.** A broken `#req-` tag suppresses nothing, so `capability.requirement-unrealized` goes on firing beside the error — a typo that silenced it would turn a mistake into a green fleet. And a run that could not READ the flows (a single-target run, or an `architecture/` that did not parse) suspends `capability.requirement-unrealized` entirely: loam did not look, which is never the same answer as "there is nothing there".
 
+**Both corpora are reported together, and neither is derived from the other.** `loam list capabilities --json` carries `keptBy` (the flows keeping a promise) beside `realizedBy` (the service requirements realizing it) on every `requirements[]` row, with the same three-state rule one level down — present and non-empty, present and empty, or **absent** when nobody looked — and an additive top-level `useCases` key saying which kind of absence it was. `capability.unrealized` counts flows as well: a capability whose criteria all cross services can be kept entirely by flows and named by no service requirement, and calling that "a word nobody adopted" would contradict loam's own answer in the same report. It stays asymmetric with `capability.requirement-unrealized`, which suspends when the flows are unreadable — a capability has independent evidence in its `Capability:`/`Realizes:` lines, while a cross-service promise often has no realizer but a flow.
+
 The fleet's own files are the opt-in — either side of the union. A fleet holding neither `architecture/capabilities.yaml` nor `capabilities/` gets no capability findings at all, and once one exists the join is graded both ways:
 
 ```yaml

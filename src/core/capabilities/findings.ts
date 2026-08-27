@@ -174,8 +174,9 @@ export function unrealizedFindings(vocab: CapabilityVocabulary, used: ReadonlySe
       code: "capability.unrealized",
       subject: id,
       message:
-        `landscape: capability '${id}' is declared in ${declaredIn(vocab, id)} and no living requirement's \`Capability:\` line names it — ` +
-        "either a promise nobody implemented or a word nobody adopted; write the requirement that realizes it, or drop the declaration",
+        `landscape: capability '${id}' is declared in ${declaredIn(vocab, id)} and nothing in the fleet realizes it — ` +
+        "no living requirement names it with `Capability:` or `Realizes:`, and no `#cap-`/`#req-` tagged flow keeps one of its promises. " +
+        "Either a promise nobody implemented or a word nobody adopted; write the requirement that realizes it, draw the flow that keeps it, or drop the declaration",
     }));
 }
 

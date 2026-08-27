@@ -26,9 +26,13 @@ import {
   resolveCapabilityTags,
   resolveRequirementTags,
 } from "../capabilities/usecase-join.js";
+import { capabilityRequirementIndex } from "../capabilities/findings.js";
+import type { CapabilityVocabulary } from "../capabilities/capabilities.js";
+import type { Requirement } from "../document/spec.js";
 import { compareIds } from "../repo/entries.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
-import type { UseCaseScan } from "./fleet.js";
+import type { DocsDir } from "../kernel/ids/dirs.js";
+import { readUseCases, type UseCaseScan } from "./fleet.js";
 import { viewFile } from "./place.js";
 
 /** One flow claiming a capability: enough to name it and to open the file it lives in. */
@@ -116,6 +120,15 @@ export function servicesInFlowsClaiming(scan: UseCaseScan, capabilities: readonl
  * that realize the same promise. Two implementations of "which promises does
  * this fleet keep" is two answers to the question the axis exists to settle.
  *
+ * A MAP RATHER THAN A SET, because the two callers need different depths of the
+ * same answer and one of them needs names. `validate` only asks whether a
+ * promise is kept (`.has`, which a Map answers identically); a listing that said
+ * "kept" without saying by WHAT would leave a reader unable to open the flow, go
+ * look at its hops and judge whether the promise really is kept — which is the
+ * whole reason the listing carries the realizing service requirements by name
+ * rather than as a count. Widening the return type was cheaper than a second
+ * function, and a second function is how the two corpora start disagreeing.
+ *
  * ONLY RESOLVED CLAIMS COUNT, and both halves must resolve: the `#cap-` tag to
  * exactly one declared capability, and the `#req-` tag to exactly one of its
  * requirements. A broken tag of either kind is already an ERROR
@@ -124,23 +137,86 @@ export function servicesInFlowsClaiming(scan: UseCaseScan, capabilities: readonl
  * would turn a mistake into a green fleet.
  *
  * `declared` carries the vocabulary ladder: `null` means there is nothing to
- * grade against, and the honest answer is then an empty set — no flow can be
+ * grade against, and the honest answer is then an empty map — no flow can be
  * said to keep a promise loam cannot see declared.
+ *
+ * Diff-stable by construction: the view ids under each promise are DEDUPLICATED
+ * and sorted with compareIds, so nothing here depends on LikeC4's view order,
+ * on how many tags one view carried, or on the readdir order the project was
+ * staged in. The map's own key order reaches no output — both callers look
+ * promises up by key — but the values are printed, so they are sorted.
  */
 export function useCaseRequirementClaims(
   views: readonly ParsedView[],
   declared: readonly string[] | null,
   requirementsOf: (capability: string) => ReadonlySet<string> | undefined,
-): Set<string> {
-  const claimed = new Set<string>();
-  if (declared === null) return claimed;
-  for (const view of views) {
-    const scope = resolveCapabilityTags(view.tags, declared).flatMap((claim) =>
-      claim.kind === "resolved" ? [claim.id] : [],
-    );
-    for (const claim of resolveRequirementTags(view.tags, scope, requirementsOf)) {
-      if (claim.kind === "resolved") claimed.add(`${claim.capability}#${claim.id}`);
+): ReadonlyMap<string, string[]> {
+  const claimed = new Map<string, Set<string>>();
+  if (declared !== null) {
+    for (const view of views) {
+      const scope = resolveCapabilityTags(view.tags, declared).flatMap((claim) =>
+        claim.kind === "resolved" ? [claim.id] : [],
+      );
+      for (const claim of resolveRequirementTags(view.tags, scope, requirementsOf)) {
+        if (claim.kind !== "resolved") continue;
+        const key = `${claim.capability}#${claim.id}`;
+        const flows = claimed.get(key) ?? new Set<string>();
+        flows.add(view.id);
+        claimed.set(key, flows);
+      }
     }
   }
-  return claimed;
+  return new Map([...claimed].map(([key, flows]) => [key, [...flows].sort(compareIds)]));
+}
+
+/**
+ * The same answer as `useCaseRequirementClaims`, read from disk — or the honest
+ * refusal to give one.
+ *
+ * `validate --all` already holds the parsed project and has already applied the
+ * vocabulary ladder by the time it grades, so it calls the pure function above
+ * with what it has. `loam list capabilities` holds neither, and the three steps
+ * between a docsDir and that answer — read the flows, take the ladder, index the
+ * documents' requirement ids — are three chances to get the suppression rules
+ * wrong. They live here rather than in the command for that reason and not for
+ * brevity: a command that spelled `[...vocab.byId.keys()]` in place of the
+ * ladder would report a flow's promise as kept against a vocabulary nobody could
+ * read.
+ *
+ * THE `unreadable` ARM MUST TRAVEL. An `architecture/` that did not parse yields
+ * no views, and an empty map is indistinguishable from "no flow keeps
+ * anything" — which is the single wrong answer this axis exists to prevent, and
+ * the reason `readUseCases` is a tagged union rather than a list.
+ */
+export type PromisesKept =
+  | { kind: "read"; kept: ReadonlyMap<string, readonly string[]> }
+  | { kind: "unreadable"; errors: string[] };
+
+export interface PromisesKeptRequest {
+  docsDir: DocsDir;
+  vocab: CapabilityVocabulary;
+  /** The enumerated fleet — `readUseCases`' own requirement, for its own reason. */
+  known: ReadonlySet<string>;
+  /** The requirement reader — pass a FleetContext's readRequirements, bound. */
+  read: (path: string) => Promise<Requirement[]>;
+}
+
+export async function promisesKeptByFlows(req: PromisesKeptRequest): Promise<PromisesKept> {
+  const scan = await readUseCases({ docsDir: req.docsDir, known: req.known });
+  if (scan.kind !== "read") return { kind: "unreadable", errors: scan.errors };
+  // No flow, no claim — and no capability document is opened to prove it.
+  // `readUseCases`' byte gate answers a fleet with no use cases without starting
+  // LikeC4 at all, and reading every `capabilities/<id>/spec.md` here to resolve
+  // a tag set that is empty would put back the cost the gate exists to remove.
+  // The `read` arm is still what travels: the fleet WAS looked at.
+  if (scan.views.length === 0) return { kind: "read", kept: new Map() };
+  const index = await capabilityRequirementIndex(req.vocab, req.read);
+  // `index.declared` rather than a second call to `gradableCapabilityIds`: the
+  // index applied the ladder when it was built, and two applications of one rule
+  // is where the two halves of this join start disagreeing about whether the
+  // vocabulary is gradable at all.
+  return {
+    kind: "read",
+    kept: useCaseRequirementClaims(scan.views, index.declared, (c) => index.byCapability.get(c)),
+  };
 }

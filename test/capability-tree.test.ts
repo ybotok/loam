@@ -123,8 +123,10 @@ describe("the capabilities/ tree declares capabilities", () => {
         // The document's own requirements ride the same row. Realized by
         // nobody here: the spec claims the capability with `Capability:` and
         // names no individual promise, which is the whole distinction between
-        // the two joins.
-        requirements: [{ id: "CAP-REFUND-1", name: "Refund a payment", realizedBy: [] }],
+        // the two joins. `keptBy: []` is the third join's answer beside them —
+        // loam read the fleet's flows and none of them claims this promise
+        // either (an unreadable architecture/ omits the key instead).
+        requirements: [{ id: "CAP-REFUND-1", name: "Refund a payment", realizedBy: [], keptBy: [] }],
       },
     ]);
   });

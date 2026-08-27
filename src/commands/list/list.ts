@@ -6,6 +6,7 @@ import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
+import { promisesKeptByFlows } from "../../core/usecases/capability.js";
 import { fleetAdrCount, listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews, type ServiceView } from "./views.js";
@@ -164,13 +165,43 @@ export function registerList(program: Command): void {
           fail(json, "repository-unavailable", brokenVocab.message);
           return;
         }
+        // The SECOND corpus behind a capability's promises: the `#cap-`/`#req-`
+        // tagged flows. Read only under `loam list capabilities`, and
+        // `promisesKeptByFlows` carries `readUseCases`' byte gate, so a fleet
+        // whose architecture/ never mentions the reserved tag prefix pays a
+        // readdir here rather than a LikeC4 workspace.
+        //
+        // AN UNREADABLE architecture/ DEGRADES, it does not refuse — the
+        // opposite of the invalid vocabulary above, and the difference is which
+        // corpus broke. `architecture/capabilities.yaml` is what the ROWS are
+        // built from: unreadable, there is no listing to print, so refusing is
+        // the only honest answer. The flows are a second corpus over rows that
+        // are already true, and refusing the whole listing because a use-case
+        // document has a syntax error would take `loam list capabilities` away
+        // during exactly the minutes somebody is fixing that document, while
+        // `validate` already reports it as `landscape.invalid`. So the join is
+        // withheld instead — every `keptBy` absent rather than `[]` — and the
+        // reason is stated, which is `core/pack/joins.ts`' holes idiom: carry
+        // what is true, name what could not be looked at, never let the two read
+        // the same.
+        const entries = capabilityVocab === undefined ? undefined : await listServices(docsDir, fleet);
+        const promises =
+          capabilityVocab === undefined || entries === undefined
+            ? undefined
+            : await promisesKeptByFlows({
+                docsDir,
+                vocab: capabilityVocab,
+                known: new Set(entries.map((e) => e.id)),
+                read: (p) => fleet.readRequirements(p),
+              });
         const capabilities: CapabilityRow[] | undefined =
-          capabilityVocab === undefined
+          capabilityVocab === undefined || entries === undefined
             ? undefined
             : await capabilityRollup({
-                services: await listServices(docsDir, fleet),
+                services: entries,
                 vocab: capabilityVocab,
                 read: (p) => fleet.readRequirements(p),
+                ...(promises?.kind === "read" ? { keptByFlows: promises.kept } : {}),
               });
 
         const worklist = (shown ?? []).filter((v) => v.maturity !== "vouched");
@@ -242,6 +273,23 @@ export function registerList(program: Command): void {
               ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
               : {}),
             ...(capabilities ? { capabilities: capabilities.map(capabilityJson) } : {}),
+            // The use-case corpus's own health, beside the rows it decorates —
+            // `status --json` and `delta --json` already spell this key this
+            // way. It is what makes an absent `keptBy` legible: `unreadable:
+            // false` with no `keptBy` on a row means the document declares that
+            // promise and no flow keeps it, while `unreadable: true` means
+            // nobody could look. Emitted only with the capabilities section, so
+            // bare `loam list --json` is untouched.
+            ...(promises === undefined
+              ? {}
+              : {
+                  useCases: {
+                    unreadable: promises.kind === "unreadable",
+                    ...(promises.kind === "unreadable" && promises.errors[0] !== undefined
+                      ? { error: promises.errors[0] }
+                      : {}),
+                  },
+                }),
           });
           return;
         }
@@ -277,7 +325,7 @@ export function registerList(program: Command): void {
         if (views && features) console.log("");
         if (features) printFeatures(features, verification!);
         if (capabilities) {
-          if (capabilityVocab!.present) printCapabilities(capabilities);
+          if (capabilityVocab!.present) printCapabilities(capabilities, promises!);
           else console.log("no architecture/capabilities.yaml — the fleet declares no capabilities");
         }
       } catch (err) {

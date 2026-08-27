@@ -12,6 +12,15 @@
  * cycle (see the memo's comment); callers pass `fleet.readRequirements` bound,
  * so under `validate --all` every parse is already cached from the service
  * targets and the rollup costs no additional per-service read.
+ *
+ * TWO CORPORA MEET HERE, and neither is derived from the other. A promise is
+ * kept by a service requirement's `Realizes:` line (walked below) or by a
+ * `#cap-`/`#req-` tagged flow (injected as `keptByFlows`, because the module
+ * that computes it imports this one). The rollup carries both on one row for the
+ * reason it carries both `Capability:` joins on one row: `loam list capabilities`
+ * and `capability.requirement-unrealized` must not be able to give different
+ * answers to "is this business promise kept", and they can only give one answer
+ * if they read one row.
  */
 import { existsSync } from "node:fs";
 import type { Requirement } from "../document/spec.js";
@@ -36,6 +45,25 @@ export interface CapabilityRequirementRow {
   name: string;
   /** Service requirements whose `Realizes:` line names `<capability>#<id>`. */
   realizedBy: CapabilityRealization[];
+  /**
+   * The ids of the declared flows that keep this promise — a `#cap-`/`#req-`
+   * tagged `dynamic view` whose BOTH tags resolve. THE SECOND CORPUS, and the
+   * only carrier a cross-service promise has: "I enter a login and a password
+   * and I am in" belongs to no single service's spec, so a fleet can keep it
+   * perfectly through a flow and realize it by no `Realizes:` line at all.
+   *
+   * Three states, all of them different answers, exactly as `requirements`
+   * itself has three:
+   *   present and non-empty — these flows keep it;
+   *   present and empty     — loam read the flows and none of them keeps it;
+   *   ABSENT                — nobody looked. Either the caller did not ask
+   *                           (`CapabilityRollupInput.keptByFlows` omitted) or
+   *                           it asked and `architecture/` could not be read.
+   * The third must never collapse into the second. "Kept by no flow" over a
+   * project that did not parse is the vacuously-green claim the whole use-case
+   * axis exists to refuse, and it is the claim a `[]` default would make.
+   */
+  keptBy?: string[];
 }
 
 /** One declared capability with everything the fleet says about it. */
@@ -79,6 +107,23 @@ export interface CapabilityRollupInput {
   vocab: CapabilityVocabulary;
   /** The requirement reader — pass a FleetContext's readRequirements, bound. */
   read: (path: string) => Promise<Requirement[]>;
+  /**
+   * `<capability>#<Requirement-ID>` → the ids of the flows that keep it, from
+   * `core/usecases`' `useCaseRequirementClaims`. Injected as PLAIN DATA, exactly
+   * as `read` is, and for a harder reason than the memo: `core/usecases` imports
+   * this package, so an import back would be a package cycle and
+   * `npm run arch:check` refuses it. What travels is a Map of strings, which
+   * carries no dependency in either direction.
+   *
+   * OMIT IT to answer "nobody looked": every `keptBy` above is then absent
+   * rather than empty, which is what keeps a caller that never asked about
+   * flows — `explore`, the context pack, `validate`'s own rollup — from
+   * publishing a `[]` that reads as "no flow keeps this". A caller that DID look
+   * and found nothing passes an empty Map; a caller that looked and could not
+   * see must omit it and say so in its own words (`loam list` prints the note
+   * and carries `useCases.unreadable`).
+   */
+  keptByFlows?: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -90,7 +135,7 @@ export interface CapabilityRollupInput {
  * grade and the list's `0 — unrealized` marker both read.
  */
 export async function capabilityRollup(input: CapabilityRollupInput): Promise<CapabilityRow[]> {
-  const { services, vocab, read } = input;
+  const { services, vocab, read, keptByFlows } = input;
   // Rows exist only for DECLARED ids, so an empty vocabulary (absent file, or
   // present with nothing declared) can build nothing — walking every service's
   // two spec files to produce zero rows is what a vocabless 120-service fleet
@@ -153,7 +198,15 @@ export async function capabilityRollup(input: CapabilityRollupInput): Promise<Ca
       byStatus[status] = (byStatus[status] ?? 0) + 1;
     }
     row.statuses = Object.fromEntries(Object.entries(byStatus).sort(([a], [b]) => compareIds(a, b)));
-    for (const req of row.requirements ?? []) req.realizedBy.sort(compareRealizations);
+    for (const req of row.requirements ?? []) {
+      req.realizedBy.sort(compareRealizations);
+      // Copied out of the injected map rather than aliased into the row: the row
+      // is a mutable value a caller may sort or splice, and handing it the
+      // caller's own array would let one consumer's edit rewrite the answer the
+      // next one reads. Already sorted upstream — copied, never re-sorted, so
+      // there is exactly one statement of the order.
+      if (keptByFlows !== undefined) req.keptBy = [...(keptByFlows.get(`${row.id}#${req.id}`) ?? [])];
+    }
   }
   return [...rows.values()];
 }
@@ -211,7 +264,33 @@ export function capabilityRequirementRows(reqs: Requirement[]): CapabilityRequir
 
 /** The declared ids something realizes — the set the unrealized grade is taken against. */
 export function usedCapabilities(rows: CapabilityRow[]): Set<string> {
-  return new Set(rows.filter((row) => row.realizedBy.length > 0).map((row) => row.id));
+  return new Set(rows.filter(isRealized).map((row) => row.id));
+}
+
+/**
+ * Does anything in the fleet realize this capability — by EITHER corpus?
+ *
+ * A flow keeping one of a capability's promises realizes part of that
+ * capability as surely as a `Capability:` line does, and the case is not
+ * hypothetical: a capability whose promises are all cross-service can be kept
+ * perfectly by `#cap-`/`#req-` tagged flows and named by no service requirement
+ * at all. Counting only the service corpus told such a fleet its capability was
+ * "a promise nobody implemented or a word nobody adopted" while the fleet's own
+ * use cases said otherwise — one warning, contradicted by loam's own answer two
+ * lines further down the same report.
+ *
+ * ASYMMETRIC WITH `capability.requirement-unrealized`, on purpose. That grade
+ * suspends entirely when the flows cannot be read, because a promise crossing
+ * services often has NO possible realizer but a flow — unreadable flows remove
+ * the only evidence there was. A capability has independent primary evidence in
+ * the `Capability:`/`Realizes:` lines, so unreadable flows leave it answering
+ * from less rather than from nothing, and going silent would lose the warning
+ * for a fleet that has a vocabulary and no fleet map at all — a real and legal
+ * shape, and one where the whole point of the code is to be heard.
+ */
+function isRealized(row: CapabilityRow): boolean {
+  if (row.realizedBy.length > 0) return true;
+  return (row.requirements ?? []).some((req) => (req.keptBy?.length ?? 0) > 0);
 }
 
 /**
