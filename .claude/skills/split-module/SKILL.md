@@ -1,6 +1,6 @@
 ---
 name: split-module
-description: Split a source file over 300 lines, or a package over 5 files, without losing history or comments. Use whenever test/code-limits.test.ts reports a new violation, or when relocating a module between packages — the order of operations is what keeps `git blame` and the package graph intact.
+description: Split a source file over 400 lines, or a package over 5 files, without losing history or comments. Use whenever test/code-limits.test.ts reports a new violation, or when relocating a module between packages — the order of operations is what keeps `git blame` and the package graph intact.
 ---
 
 # Splitting a module or a package
@@ -20,7 +20,7 @@ Read the whole module first. You are looking for a boundary that is already ther
 - **A distinct document kind** — this codebase's artifacts (spec, delta, openapi, landscape) are
   natural boundaries and already how `src/core/` divides.
 
-If the only boundary you can find is "the first 300 lines", stop and say so. A file with one
+If the only boundary you can find is "the first 400 lines", stop and say so. A file with one
 subject and no internal phase boundary is a real finding worth reporting, and it is not fixed by
 `foo-part2.ts`. Names that mean the split failed: `*-helpers.ts`, `*-utils.ts`, `*-common.ts`,
 `*-misc.ts`, anything with a number in it.

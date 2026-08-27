@@ -16,7 +16,7 @@ Four numbers. They are not guidance and they are not a review opinion —
 
 | Limit | Applies to | Enforced by |
 |---|---|---|
-| A source file is at most **300 lines** | `src/` | `test/code-limits.test.ts` |
+| A source file is at most **400 lines** | `src/` | `test/code-limits.test.ts` |
 | A function or method takes at most **4 parameters** | `src/` and `test/` | `test/code-limits.test.ts` |
 | A constructor takes at most **4 parameters** | `src/` and `test/` | `test/code-limits.test.ts` |
 | A package directory holds at most **5 files** | `src/` | `test/code-limits.test.ts` |
@@ -40,8 +40,37 @@ anybody deciding they should; nothing asked. A ceiling asks.
 Both halves of that trade are real, which is why the limits come with an obligation, not just a
 number:
 
+**The line number was 300 until 2026-08-27, and what moved it was a measurement rather than a
+preference.** At 300 the distribution had gone wrong in a way the number itself caused: across 359
+files in `src/` the median was 150 and p90 was 283, but **thirteen files sat at exactly 300** with
+sixteen more between 290 and 300. That is not a spread of natural sizes — it is files growing until
+something stopped them and then parking against the wall. Every one of those thirteen turned its
+next change into either a split or a trimmed comment, and the trimmed comment is the outcome this
+document already calls a failure: `src/commands/validate/validate.ts` reached exactly 300 and a
+later one-line change was paid for by deleting two lines of explanation.
+
+The second measurement is the one that decided the size. **37% of the non-blank lines in `src/` are
+comments** — 20,521 of 55,587 — and that is doctrine, not accident: in this codebase the comments
+are the documentation, and a comment recording which defect a line prevents is worth more than the
+line. So a 300-line ceiling was really a ~190-code-line ceiling, and it fell hardest on the modules
+with the most subtle reasoning to record — which are exactly the modules where a forced split is
+most dangerous. The ceiling was taxing the practice the repository values most.
+
+**400 rather than 500 or 600, and the reason is that a ceiling has to keep asking.** The whole case
+for having one is that `src/core/agent.ts` reached 2,387 lines because nothing asked. With p90 at
+283, a 500-line ceiling would be inert for years — it would stop asking, and the four seams the
+300-line ceiling found in a single session (`core/c4/resolve/`, `core/c4/splice/identity/`,
+`core/scaffold/`, `core/c4/project/`) would not have been looked for. All four were real subject
+boundaries, which is the evidence that the mechanism works and only its number was wrong. 400 gives
+the parked files about a hundred lines of headroom — enough that an ordinary addition no longer
+forces a split — while still biting long before a module becomes two.
+
+The five-file package limit was reviewed at the same time and left alone: it never blocked anything
+in that session, it only decided where new files went, and the sub-packages it produced are named
+after their subjects rather than after their overflow.
+
 **Split on a seam, and let the limit tell you *when*, never *where*.** A distinct data shape, a
-distinct phase, a distinct document kind. If the only seam you can find is line 300, the module is
+distinct phase, a distinct document kind. If the only seam you can find is line 400, the module is
 telling you it has one subject that grew too big for one file — find the phase boundary inside it
 and name the halves after the phases. Never `foo-part2.ts`, never `foo-helpers.ts`, never
 `utils.ts`: a file whose name cannot say what is inside it is the failure this rule was traded
@@ -204,9 +233,9 @@ a `WeakMap` keyed on the per-invocation array, whose value is a pure function of
 holds nothing derived from the working directory. Its comment says exactly that, and a cache whose
 comment cannot say it does not belong.
 
-**A module is one subject, and at most 300 lines of it.** The subject rule is the one that
+**A module is one subject, and at most 400 lines of it.** The subject rule is the one that
 matters; the line count is what makes somebody check. A module that is genuinely one subject and
-has outgrown 300 lines has a phase boundary inside it — find that, split there, and name each
+has outgrown 400 lines has a phase boundary inside it — find that, split there, and name each
 half after its phase. See **Limits** above for the seam obligation that comes with the number.
 
 **A package is one subject too, and at most five files of it.** The same reasoning one level up:

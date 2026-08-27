@@ -19,7 +19,7 @@ the product, and it constrains every design choice below.
 Three of them are numbers, counted by `test/code-limits.test.ts` on every run of the gate. They
 are not review guidance.
 
-- **300 lines** per source file (`src/`).
+- **400 lines** per source file (`src/`).
 - **4 parameters** per function, method or constructor (`src/` and `test/`).
 - **5 files** per package directory (`src/`). Over five, split along a subject seam; a
   sub-directory is a package of its own and does not count toward its parent's five.
