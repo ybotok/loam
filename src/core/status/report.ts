@@ -83,11 +83,17 @@ export type ArtifactStatus = (typeof ARTIFACT_STATUSES)[number];
 /**
  * The artifact kinds a feature can owe, in the order the cycle authors them.
  * `spec`, `arch-spec`, `openapi` and `asyncapi` are per-service and repeat
- * once per service the feature touches; the rest are feature-wide.
+ * once per service the feature touches; `capabilities` repeats once per
+ * capability document the feature's delta carries; the rest are feature-wide.
+ *
+ * `capabilities` sits where an analyst writes it — the business promise comes
+ * before the services that keep it, and a capability-only feature is a real and
+ * ordinary first commit.
  */
 export const ARTIFACT_IDS = [
   "intent",
   "delta",
+  "capabilities",
   "spec",
   "arch-spec",
   "openapi",
@@ -100,6 +106,16 @@ export interface ArtifactState {
   id: ArtifactId;
   /** The service this artifact belongs to, or null for the feature-wide ones. */
   service: string | null;
+  /**
+   * The capability this artifact belongs to, on `capabilities` rows only.
+   *
+   * A field of its own rather than a capability id put in `service`: the two
+   * are different namespaces — a fleet may hold a service and a capability of
+   * one name — and bending a published field to carry the other kind is how a
+   * consumer grouping by service silently acquires a row that is not one. Absent
+   * on every other row, so nothing that reads `service` today changes.
+   */
+  capability?: string;
   /** Repo-relative with forward slashes — diffable across machines, like every path in the contract. */
   path: string;
   exists: boolean;

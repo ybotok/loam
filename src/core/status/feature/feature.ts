@@ -83,6 +83,10 @@ export async function featureStatus(
     // services/ is broken or missing — an unenumerable fleet is doctor's
     // diagnosis, and here it simply means every service reads as never-adopted.
     living,
+    // Through the context's memo — the same walk `featureFindings` above and
+    // the coherence pass inside it already ran. An archived feature carries no
+    // delta to name, and the walk is one `existsSync` besides.
+    capabilities: (await context.featureCapabilityDeltas(feature.dir)).docs,
   });
   const artifacts =
     narrowed === undefined ? graded : graded.filter((a) => a.service === null || a.service === narrowed);

@@ -6,6 +6,7 @@
  */
 import { existsSync } from "node:fs";
 import { repoPath } from "../../envelope/json.js";
+import type { CapabilityDoc } from "../../capabilities/tree.js";
 import type { PathableService } from "../../kernel/ids/service.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
@@ -16,6 +17,20 @@ import type { ServiceEntry } from "../../repo/entries.js";
 import type { ArtifactId, ArtifactState, ArtifactStatus, VerificationState } from "../report.js";
 import { verificationStatus } from "../verification.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
+
+/**
+ * The `capability.*` codes filed against a capability DOCUMENT rather than
+ * against a service requirement's join line. Spelled out rather than matched by
+ * prefix because the family straddles both corpora, and the whole point of this
+ * table is to name one file.
+ */
+const CAPABILITY_DOCUMENT_CODES = new Set([
+  "capability.requirement-unidentified",
+  "capability.requirement-service-scoped",
+  "capability.requirement-inert-join",
+  "capability.uncovered",
+  "capability.remove-requirement-realized",
+]);
 
 /**
  * Which artifact an error names.
@@ -34,24 +49,31 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  * any single artifact `draft`, because guessing which file to blame is how a
  * reader gets sent to edit the wrong one.
  *
- * WHICH IS WHERE THE BUSINESS CORPUS SITS TODAY, and the row below is honest
- * about it rather than quietly wrong. A `delta.*` issue's `subject` is now a
- * service id OR a capability id (`core/delta/scope.ts`), the table has no
- * `capabilities` artifact for the second to land on, and a capability delta's
- * fault therefore maps to `spec` and matches no service — so it turns nothing
- * `draft`, exactly like any other unattributable error. The feature is still
- * refused: the issue reaches `checks.gating` and `next.fix-coherence`, which
- * `test/status-agrees-with-gate.test.ts` pins. What it cannot do yet is NAME
- * the file, and in a fleet holding a service and a capability of the SAME name
- * it names the service's spec delta instead. Fixing that means a `capabilities`
- * ArtifactId with a row per delta document — the same change that has to carry
- * `capability.uncovered`, so it lands with it and not before.
+ * THE BUSINESS CORPUS IS THE ONE PLACE THE CODE FAMILY IS NOT ENOUGH. A
+ * `delta.*` issue's `subject` is a service id OR a capability id
+ * (`core/delta/scope.ts`), and nothing in the code says which — so this
+ * function answers `spec` for both and `featureArtifacts` below resolves it by
+ * MEMBERSHIP, against the two lists it already holds. Where a name is only a
+ * capability the capability row is turned `draft` and no service row is; where
+ * a fleet holds a service AND a capability of the same name, BOTH are, which is
+ * the pessimistic answer this module is required to give and strictly better
+ * than the old one (it named the service's spec delta and was silently wrong).
+ * The capability-document codes below need no such resolution: they are only
+ * ever filed against a capability.
  */
 function faultedArtifact(code: string, subject?: string): ArtifactId | null {
   if (code === "delta.invalid" || code === "delta.nothing-tagged") return "delta";
   if (code.startsWith("c4-api.") || code.startsWith("c4-event.") || code.startsWith("c4.")) return "delta";
   if (code.startsWith("openapi.")) return "openapi";
   if (code.startsWith("asyncapi.")) return "asyncapi";
+  // The capability document's own grades, and the two halves of the `Realizes:`
+  // join a feature can break — every one of them names a
+  // `features/<FEAT>/capabilities/<id>/spec.md`, never a service delta. The two
+  // `capability.*` codes deliberately absent are `capability.unknown` and
+  // `capability.realizes-unknown`: those grade a SERVICE requirement's join
+  // lines and carry a service id, so the prefix alone would send their reader
+  // to the wrong file.
+  if (CAPABILITY_DOCUMENT_CODES.has(code)) return "capabilities";
   if (code.startsWith("delta.") || code.startsWith("spec-api.") || code.startsWith("spec-event.")) return "spec";
   // The two families validate contributes: the frontmatter checks read only
   // intent.md, and a requirement with no scenario is a requirement in a spec
@@ -85,6 +107,12 @@ export interface Grading {
   governs: ReadonlySet<string>;
   /** The enumeration's entries by id — where each living service is and what it has (owesContract reads both). */
   living: ReadonlyMap<string, ServiceEntry>;
+  /**
+   * The capability documents this feature's delta carries. Empty for every
+   * feature in a fleet that has not adopted the business axis, which is what
+   * keeps the rows out of those payloads entirely.
+   */
+  capabilities: readonly CapabilityDoc[];
 }
 
 export function featureArtifacts(
@@ -93,7 +121,7 @@ export function featureArtifacts(
   services: readonly PathableService[],
   grading: Grading,
 ): ArtifactState[] {
-  const { blocking, verification, contracted, governs, living } = grading;
+  const { blocking, verification, contracted, governs, living, capabilities } = grading;
   const paths = featurePaths(feature.dir);
   const rel = (abs: string): string => repoPath(docsDir, abs);
   const faults = blocking.map((f) => ({ artifact: faultedArtifact(f.code, f.subject), subject: f.subject }));
@@ -104,6 +132,26 @@ export function featureArtifacts(
     fileState("intent", { service: null, path: rel(paths.intent), exists: existsSync(paths.intent) }, true, faulted("intent", null)),
     fileState("delta", { service: null, path: rel(paths.delta), exists: existsSync(paths.delta) }, false, faulted("delta", null)),
   ];
+
+  // One row per capability document the feature carries, and none at all when
+  // it carries none: the row is the answer to "which file do I edit", and a
+  // fleet that has not adopted the axis has no such file to name. Never
+  // `required` — no feature owes a business change — so absence never shows up
+  // as work owed, and only a fault turns one `draft`. A `delta.*` fault carries
+  // the capability id in `subject` with nothing saying it is not a service, so
+  // the membership test is the resolution the code family cannot give.
+  for (const doc of capabilities) {
+    out.push({
+      id: "capabilities",
+      service: null,
+      capability: doc.id,
+      path: rel(doc.spec),
+      exists: existsSync(doc.spec),
+      required: false,
+      status: faulted("capabilities", doc.id) || faulted("spec", doc.id) ? "draft" : "done",
+      blockedBy: [],
+    });
+  }
 
   for (const svc of services) {
     const p = featureSpecPaths(feature.dir, svc);
@@ -135,7 +183,15 @@ export function featureArtifacts(
   // derived from the delta and the per-service deltas, so with none of them
   // written there is nothing to answer — authoring one is impossible rather
   // than merely premature, which is the whole distinction `blocked` carries.
-  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "arch-spec" && a.exists);
+  //
+  // `capabilities` is excluded for exactly that reason and not by oversight:
+  // `featureChecklist` derives no claim from a capability document — a business
+  // promise is realized by service requirements, and those are what the record
+  // answers — so counting one as a feeder would report a capability-only
+  // feature as ready to verify against a checklist with nothing in it.
+  const feeders = out.filter(
+    (a) => a.id !== "intent" && a.id !== "arch-spec" && a.id !== "capabilities" && a.exists,
+  );
   out.push({
     id: "verification",
     service: null,
