@@ -30,8 +30,10 @@
  * does exactly that: findings can never change because a workspace could not be
  * created, only the speed can.
  *
- * This file takes core/c4/ to exactly five files — the package is at its limit;
- * the next addition must open a subdirectory seam.
+ * This file took core/c4/ to exactly five files, and the seam that note
+ * predicted is now open: `./project/load.ts` loads a DIRECTORY as one project,
+ * which is the opposite isolation contract and belongs beside this one rather
+ * than inside it.
  */
 import { randomBytes } from "node:crypto";
 import { inOrder } from "../kernel/concurrency.js";

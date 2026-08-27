@@ -16,8 +16,16 @@
  * safer when each one owns its shape assumptions outright — the same reason
  * `./specification.ts` states.
  *
- * Ids only. What the view SHOWS stays unread, in any document, forever.
+ * Ids only, each with the file that claims it. What the view SHOWS stays
+ * unread, in any document, forever.
  */
+
+/** One authored view id, and the document that claims it. */
+export interface ViewIdClaim {
+  id: string;
+  /** As LikeC4 spells it: relative to the project root. */
+  sourcePath: string;
+}
 
 /**
  * The shape LikeC4 mints for a view its author never named — `view of svc { }`
@@ -55,18 +63,19 @@ function record(v: unknown): Record<string, unknown> | undefined {
  * inside `validate --all` over every C4 document a fleet has, and the one
  * behaviour it may never have is failing the run it was added to.
  */
-export function readViewIds(model: unknown): string[] {
+export function readViewIds(model: unknown): ViewIdClaim[] {
   const views = record(record(record(model)?.["$data"])?.["views"]);
   if (!views) return [];
-  const out: string[] = [];
+  const out: ViewIdClaim[] = [];
   for (const raw of Object.values(views)) {
     const rec = record(raw);
     // Authored, which is what `sourcePath` means here. The synthesized entry
     // has none, and reporting a collision against a view nobody wrote would be
     // a false error on every fleet in existence.
-    if (!rec || typeof rec["sourcePath"] !== "string") continue;
+    const sourcePath = rec?.["sourcePath"];
+    if (!rec || typeof sourcePath !== "string") continue;
     const id = rec["id"];
-    if (typeof id === "string" && id.length > 0 && !MINTED_ID.test(id)) out.push(id);
+    if (typeof id === "string" && id.length > 0 && !MINTED_ID.test(id)) out.push({ id, sourcePath });
   }
   return out;
 }

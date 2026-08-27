@@ -9,6 +9,7 @@
  * `unreadableLandscape` in `./load.ts`.
  */
 import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadFile, type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
 import { elementService, serviceResolver } from "../../../core/c4/resolve/service.js";
@@ -131,11 +132,25 @@ export async function validateLandscape(
   if (land.errors.length > 0) {
     // Nothing may be concluded from a document that did not parse — in particular
     // not that every service is unmodelled.
+    //
+    // The fleet map is a PROJECT now, not a file: `architecture/landscape.likec4`
+    // plus every `architecture/usecases/*.likec4`, merged the way the renderer
+    // merges them. So the message names the FILES that broke rather than the
+    // landscape by default — a use case with a typo'd element used to be
+    // reported as the landscape having errors, which sent the author to the
+    // wrong file with a line number that pointed at somebody else's text.
+    const broken = [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))];
+    const spell = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
+    const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.map(spell).sort().join(", ");
     findings.push({
       severity: "error",
       code: "landscape.invalid",
-      message: `landscape: architecture/landscape.likec4 has ${land.errors.length} error(s) — cross-check with services/ impossible`,
-      details: land.errors.map(errorText),
+      message: `landscape: ${named} has ${land.errors.length} error(s) — cross-check with services/ impossible`,
+      // Every line carries its own file, because one project's errors can come
+      // from more than one document and a bare `L8:` is unactionable then.
+      details: land.errors.map((e) =>
+        e.sourceFsPath === undefined || broken.length < 2 ? errorText(e) : `${spell(e.sourceFsPath)} ${errorText(e)}`,
+      ),
     });
     return report;
   }

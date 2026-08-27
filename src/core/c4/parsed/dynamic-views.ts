@@ -73,6 +73,24 @@ export interface ParsedStep {
 export interface ParsedView {
   id: string;
   /**
+   * The name LikeC4 knows the document by, and it is only a PATH under
+   * `loadProject`: there it is relative to the project root, so
+   * `usecases/checkout.likec4` inside `architecture/`. Under the per-file
+   * loaders it is whatever that loader called the document — `source.c4` for
+   * `loadSource`, the basename for `loadBatch` — because there is no project
+   * for it to be relative to.
+   *
+   * So: name a file with it only when the views came from `loadProject`. That
+   * is the only reader that has one, which is also the only reader that needs
+   * one — a use case lives in a file of its own now, and a finding that cannot
+   * name that file sends its reader to the landscape to look for something
+   * that is not there.
+   *
+   * Absent for anything LikeC4 synthesized rather than read off a file, which
+   * is how the census reader tells the two apart.
+   */
+  sourcePath?: string;
+  /**
    * The view's declared tags, `[]` when it declares none. Normalized here
    * because LikeC4 reads an untagged view's tags as `null`, and a caller
    * testing `.length` on that would throw inside a validate run.
@@ -185,8 +203,10 @@ export function readDynamicViews(model: unknown): ParsedView[] {
 
     const title = str(rec, "title");
     const description = descText(rec["description"]);
+    const sourcePath = str(rec, "sourcePath");
     out.push({
       id,
+      ...(sourcePath === undefined ? {} : { sourcePath }),
       tags: Array.isArray(rec["tags"]) ? rec["tags"].filter((t): t is string => typeof t === "string") : [],
       ...(title === undefined ? {} : { title }),
       ...(description === undefined ? {} : { description }),
