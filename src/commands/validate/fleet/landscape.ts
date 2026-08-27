@@ -30,7 +30,26 @@ import { useCaseFindings } from "./usecases/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
-import { gradableCapabilityIds } from "../../../core/capabilities/findings.js";
+import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../core/capabilities/findings.js";
+import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
+import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
+
+/**
+ * The fleet's flows as a grade may read them, or `null` when loam cannot see
+ * them at all — the same `null`-suspends idiom `gradableCapabilityIds` uses,
+ * and here it guards one specific wrong answer.
+ *
+ * `capability.requirement-unrealized` says a business promise is kept by
+ * nobody. A use case is one of the two things that can keep it, so a run that
+ * could not read the flows must not make that claim: no preload (a single-target
+ * run) and a project that did not parse are both "loam did not look", never
+ * "there is nothing there". A preload that DID parse and declares no views is a
+ * real, empty answer and grades normally.
+ */
+function gradableFlows(preloaded: LoadedDoc | null | undefined): readonly ParsedView[] | null {
+  if (preloaded === null || preloaded === undefined || preloaded.errors.length > 0) return null;
+  return preloaded.views ?? [];
+}
 
 /**
  * The fleet cross-check: `services/` and the landscape both claim to name the
@@ -84,7 +103,7 @@ export async function validateLandscape(
   // Before the landscape's own early returns: the authorization and capability
   // vocabularies are fleet facts that do not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));
-  findings.push(...(await capabilityFleetFindings(docsDir, entries, fleet)));
+  findings.push(...(await capabilityFleetFindings(docsDir, entries, fleet, gradableFlows(preloaded))));
 
   if (!existsSync(path)) {
     const count = entries.length;
@@ -286,6 +305,14 @@ export async function validateLandscape(
   // fleet context's memo.
   const vocabulary =
     fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
+  // The requirement index behind the `#req-` tag, read here rather than inside
+  // the use-case package so that package never learns what a capability
+  // document is. Under `--all` every document was already parsed by
+  // `capabilityFleetFindings` above and the fleet memo answers from cache.
+  const capabilityReqs = await capabilityRequirementIndex(
+    vocabulary,
+    fleet === undefined ? async (p) => parseRequirements(await readRequirementsDocument(p)) : (p) => fleet.readRequirements(p),
+  );
   findings.push(
     ...useCaseFindings({
       views: preloaded?.views ?? [],
@@ -294,6 +321,7 @@ export async function validateLandscape(
       services,
       resolve: landSvcOf,
       capabilities: gradableCapabilityIds(vocabulary),
+      requirementsOf: (capability) => capabilityReqs.byCapability.get(capability),
     }),
   );
 

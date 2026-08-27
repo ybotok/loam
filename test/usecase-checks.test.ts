@@ -378,7 +378,7 @@ describe("usecase.capability-unresolved — the tag that names nothing, or two t
       // rule is stated so the next tag is derivable.
       const none = findings.find((f) => f.subject === "uc_none");
       expect(none?.message).toContain("Declare it there (`capabilities: {<id>: {description, owner}}`)");
-      expect(none?.message).toContain("A tag spells the id with every `/` flattened to `-`");
+      expect(none?.message).toContain("A tag spells the id with every character outside `[A-Za-z0-9_-]` flattened to `-`");
     } finally {
       await p.destroy();
     }

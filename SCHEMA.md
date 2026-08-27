@@ -153,6 +153,7 @@ and restores wherever the service lives *today*.
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
 | Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#` |
+| Capability requirement (flow) | a `dynamic view` tag `#req-<slug>` | a requirement of the capability the view's `#cap-` tag names | the `Requirement-ID` with every character outside `[A-Za-z0-9_-]` flattened to `-` |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred from a feature directory. A file can therefore be structurally valid while a join is broken; the broken join is the finding loam reports.
 
@@ -421,6 +422,27 @@ Two details of the grammar are load-bearing. The capability half is what makes t
 
 Realizing a REQUIREMENT realizes its capability: a requirement carrying only `Realizes:` counts toward `capability.unrealized`, and a requirement carrying both joins is counted once. `loam list capabilities --json` carries the whole join — each capability's `requirements[]`, and what realizes each one (the key is absent for a capability with no document, and an empty array for a document declaring none).
 
+#### `#req-` — the join a USE CASE makes, and the only one that crosses services
+
+`Realizes:` is not the only way to keep a promise, and for a criterion that crosses services it is not enough. "I enter a login and a password and I am in" belongs to no single service's `spec.md`, because each promises only its own part — one announces the order, another sends the message, and neither can promise what happens between them. A use case can, because it IS the hop sequence. So a `dynamic view` already tagged `#cap-<slug>` may carry `#req-<slug>` as well:
+
+```
+dynamic view uc_order_notification {
+  #cap-order-notifications
+  #req-NOTIFY-ONCE
+  title 'Order notification'
+  …
+}
+```
+
+The second tag is **scoped by the first**: a `Requirement-ID` is unique only inside its own document, so the view must first say which capability it is about. Several `#req-` tags on one view are legal and normal — a flow commonly keeps two of a capability's promises. Both tags spell their id with every character outside `[A-Za-z0-9_-]` flattened to `-`, because that is all a LikeC4 tag name accepts (measured at the 1.59.2 pin; a rejected character truncates the tag rather than refusing it, which is why the flattening is a whitelist and not a list of substitutions).
+
+- `usecase.requirement-unresolved` (**error**) — six failures with six fixes, and the message says which: the view resolves no `#cap-` tag, it resolves two, the capability has no document, the document declares no requirements yet, it declares none flattening to this slug (close ids offered, each already spelled as the tag to write), or two of its ids flatten to one slug.
+
+**Either reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who asked to be graded and forgot half the claim; it earns the `unscoped` message rather than silence.
+
+**Only a RESOLVED claim keeps a promise.** A broken `#req-` tag suppresses nothing, so `capability.requirement-unrealized` goes on firing beside the error — a typo that silenced it would turn a mistake into a green fleet. And a run that could not READ the flows (a single-target run, or an `architecture/` that did not parse) suspends `capability.requirement-unrealized` entirely: loam did not look, which is never the same answer as "there is nothing there".
+
 The fleet's own files are the opt-in — either side of the union. A fleet holding neither `architecture/capabilities.yaml` nor `capabilities/` gets no capability findings at all, and once one exists the join is graded both ways:
 
 ```yaml
@@ -437,7 +459,7 @@ capabilities:
 
 The total is readable — `loam list capabilities` reports each capability's realizing requirements, services and draft/verified split, and `loam explore --capability <id>` seeds an exploration from the realizing services. `migrate-openspec` preserves capability identity through this same file: every routed requirement carries a `Capability:` line, and the staged target declares every living and active-horizon OpenSpec capability id (empty bodies — descriptions are not invented, the authored `## Purpose` prose stays verbatim under `legacy/`).
 
-What the tree does NOT yet carry, and the roadmap owns each: a use case realizing a capability requirement (a `#cap-`-tagged flow is the only thing that can carry a criterion crossing services), a feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land, a capability document is a fleet document edited directly under PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither corpus is derived from the other** — `gherkin` and `verify` keep computing from service requirements, so a service repository can still validate itself with nothing but its own files.
+What the tree does NOT yet carry, and the roadmap owns each: a feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land, a capability document is a fleet document edited directly under PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither corpus is derived from the other** — `gherkin` and `verify` keep computing from service requirements, so a service repository can still validate itself with nothing but its own files.
 
 For a theme that crosses services and matches no structural unit, a **LikeC4 tag** also remains available and checkable: tags are declared in a `specification` block, so a misspelling is a parse error rather than quiet drift.
 
