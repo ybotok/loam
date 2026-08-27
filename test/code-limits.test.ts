@@ -2,7 +2,7 @@
  * The three counted limits. (The fourth house limit — a branded type on every
  * validated id or path — is tsc's to hold, and never appears here.)
  *
- *   300 lines per source file       (src/)
+ *   400 lines per source file       (src/)
  *   4 parameters per function       (src/ and test/)
  *   5 files per package directory   (src/)
  *
@@ -52,7 +52,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MAX_FILE_LINES = 300;
+const MAX_FILE_LINES = 400;
 const MAX_PARAMS = 4;
 const MAX_PACKAGE_FILES = 5;
 

@@ -61,8 +61,9 @@ Inside `core/`, the DAG levels are a real division of labour:
 
 ## The package layout
 
-Rule 21's five-file limit needed a destination for every module, and the 300-line limit decided how
-far each one nests. Both are now clear — `test/code-limits-baseline.json` is empty — so this table
+Rule 21's five-file limit needed a destination for every module, and the file-length limit decided
+how far each one nests — 300 lines while this tree was taking shape, 400 since 2026-08-27
+(docs/CODE-STYLE.md records what the measurement was and why the number moved). Both are now clear — `test/code-limits-baseline.json` is empty — so this table
 describes the tree rather than a plan for it.
 
 | Package | Holds | Depends on |
