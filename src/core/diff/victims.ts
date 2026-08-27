@@ -3,8 +3,11 @@
  * removed or deprecated — the joins that turn "an operation left the
  * contract" into "and these named consumers break".
  *
- * This is deliberately a SECOND copy of the consumer join the coherence gate
- * asks, built on the same shared primitives, and both copies say so:
+ * THREE SOURCES answer that, and only the first two are copies of anything.
+ *
+ * The first two are deliberately a SECOND copy of the consumer join the
+ * coherence gate asks, built on the same shared primitives, and both copies
+ * say so:
  *
  *  - the operation half mirrors `core/coherence/lookups.ts`'s
  *    `edgeConsumers`/`requirementConsumers` (landscape edges with
@@ -24,11 +27,25 @@
  * victim strings or the scan rules in either module owes the other the same
  * change. The victim string spellings are kept byte-compatible with the
  * coherence findings on purpose, so a reader meets one vocabulary.
+ *
+ * The THIRD source is not a copy and does not fall under that rule: the fleet's
+ * USE CASES, joined in `core/usecases/operations.ts`. A hop of a
+ * capability-tagged `dynamic view` that the model attributes to the operation
+ * being removed is a business flow that stops working, and saying so — "step 4
+ * of Checkout breaks" — is the only one of the three that names a consequence a
+ * human weighs rather than a document they then have to open. It has its own
+ * module because it asks a different question of a different reader (an
+ * attribution over the whole `architecture/` PROJECT, not a scan of one
+ * landscape file), and because the attributed/contested distinction it turns on
+ * belongs beside `attributeStep`, not beside a requirement scan. Coherence has
+ * no equivalent to keep in step with, so nothing here owes it a mirror.
  */
 import { existsSync } from "node:fs";
 import { type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import { landscapePath } from "../repo/paths.js";
+import { readUseCases, type UseCaseScan } from "../usecases/fleet.js";
+import { hopsConsuming, hopsExercising } from "../usecases/operations.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { FleetContext } from "../fleet-context.js";
 import type { Requirement } from "../document/spec.js";
@@ -48,9 +65,9 @@ export interface ConsumerScan {
 
 /** The current-state consumer questions `semantic.ts` asks per removal. */
 export interface VictimIndex {
-  /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements. */
+  /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements, then the use-case hops the model attributes to it (contested hops ride as suspensions). */
   opConsumers(provider: string, op: string): Promise<ConsumerScan>;
-  /** Current consumers of message `name` a `provider` is dropping: consumes-edges (not into the provider), then other services' `Consumes:` lines over both spec axes. */
+  /** Current consumers of message `name` a `provider` is dropping: consumes-edges (not into the provider), then other services' `Consumes:` lines over both spec axes, then the use-case hops backed by such an edge. */
   messageConsumers(provider: string, name: string): Promise<ConsumerScan>;
   /** Current services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
   declarers(name: string): string[];
@@ -110,6 +127,20 @@ export function victimIndex(snap: {
   const ids = [...snap.current.keys()].sort();
 
   /**
+   * The use-case half, lazy for the same reason and one step further.
+   *
+   * `readUseCases` carries its own cheap gate — a byte scan for the reserved
+   * tag prefix — so a fleet that declares no use case never starts LikeC4 here
+   * at all, and a fleet that does pays for the `architecture/` project exactly
+   * once per `loam diff`, at the first removal that asks. The fleet set is the
+   * same one the landscape resolver above is built from, so the two halves
+   * cannot disagree about which service an element stands for.
+   */
+  let flows: Promise<UseCaseScan> | undefined;
+  const useCases = (): Promise<UseCaseScan> =>
+    (flows ??= readUseCases({ docsDir: snap.docsDir, known: new Set(snap.current.keys()) }));
+
+  /**
    * The requirement half of one scan, `tupleVisible`'s own discipline applied
    * to victims: an unreadable consumer axis contributes a SUSPENSION, never a
    * silent nothing — "consuming nothing" and "loam refused to read the file"
@@ -145,7 +176,14 @@ export function victimIndex(snap: {
         if (r.op === op && resolve(r.target) === provider) edges.push(EDGE(resolve, r));
       }
     }
-    return { victims: [...edges, ...scan.victims], suspended: scan.suspended };
+    // Flows last in each list, deliberately: the edge and the requirement say
+    // WHICH document to open, and the flow says what the reader is about to
+    // break — so a `details[]` scanned top-down ends on the consequence.
+    const hops = hopsExercising(await useCases(), { provider, op });
+    return {
+      victims: [...edges, ...scan.victims, ...hops.breaks],
+      suspended: [...scan.suspended, ...hops.unsure],
+    };
   };
 
   const messageConsumers = async (provider: string, name: string): Promise<ConsumerScan> => {
@@ -160,7 +198,8 @@ export function victimIndex(snap: {
         if (r.consumes === name && resolve(r.target) !== provider) edges.push(EDGE(resolve, r));
       }
     }
-    return { victims: [...edges, ...scan.victims], suspended: scan.suspended };
+    const hops = hopsConsuming(await useCases(), { provider, name });
+    return { victims: [...edges, ...scan.victims, ...hops], suspended: scan.suspended };
   };
 
   const declarers = (name: string): string[] =>

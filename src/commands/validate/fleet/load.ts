@@ -3,13 +3,14 @@
  * touches the filesystem before anything can be graded. Split from
  * `./landscape.ts` when the fleet target grew past the line limit; the
  * containment DOCTRINE below travelled with the functions it explains.
+ *
+ * The load ITSELF is no longer here. `loadArchitecture` moved to
+ * `core/c4/project/architecture.ts` when the use-case axis grew a second reader
+ * of it, and that module's banner records why; what stayed is the containment,
+ * which is command-layer business because it is about which validate TARGET a
+ * failed read is filed against.
  */
 import type { LoadedDoc } from "../../../core/c4/likec4.js";
-import { join } from "node:path";
-import { architectureDocuments } from "../../../core/c4/project/documents.js";
-import { asLoadedDoc, loadProject } from "../../../core/c4/project/load.js";
-import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { subsystemViewsPath } from "../../../core/repo/paths.js";
 
 /**
  * A landscape that could not be READ, shaped as one that did not PARSE.
@@ -61,21 +62,4 @@ export async function readLandscape(load: () => Promise<LoadedDoc>): Promise<Loa
   } catch (err) {
     return unreadableLandscape(err);
   }
-}
-
-/**
- * The fleet map, read as the PROJECT it actually is.
- *
- * `architecture/landscape.likec4` plus every `architecture/usecases/*.likec4`,
- * merged the way the renderer merges them — because a use case declares views
- * over the landscape's elements and does not parse standalone (measured: five
- * errors). `architectureDocuments` owns which files are in and why the
- * generated one is not.
- *
- * A fleet with no use cases loads exactly the landscape and behaves as it
- * always did, which is what keeps this a widening rather than a change.
- */
-export async function loadArchitecture(docsDir: DocsDir): Promise<LoadedDoc> {
-  const dir = join(docsDir, "architecture");
-  return asLoadedDoc(await loadProject(dir, await architectureDocuments(dir, [subsystemViewsPath(docsDir)])));
 }

@@ -7,7 +7,7 @@ import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { capabilitiesPath } from "../../core/repo/paths.js";
 import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/rollup.js";
 import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
-import { listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
+import { fleetAdrCount, listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews, type ServiceView } from "./views.js";
 import { capabilityJson, featureJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
@@ -136,6 +136,12 @@ export function registerList(program: Command): void {
         // tree (`subsystem.name-collision`), and the directory is the row's
         // actual identity — campaign.ts's SubsystemSlice says why.
         const shown = slice === undefined ? views : views?.filter((v) => slice.members.has(v.entry.dir));
+        // The fleet's own decision records. Read unconditionally — it is one
+        // existsSync over `architecture/adrs/` and it belongs to the docs repo
+        // rather than to any section, so `loam list features --json` reports it
+        // as truthfully as `loam list services --json` does. Nothing grades it:
+        // an absent directory is 0 and 0 is a fine, permanent answer.
+        const fleetAdrs = await fleetAdrCount(docsDir);
         const features = wanted.includes("features")
           ? await listFeatures(docsDir, { includeArchived: opts.archived }, fleet)
           : undefined;
@@ -203,6 +209,11 @@ export function registerList(program: Command): void {
         if (json) {
           emitJson({
             docsDir,
+            // Additive, unconditional and flat, mirroring the per-service
+            // `adrs` key one row down rather than inventing a second shape for
+            // the same number. Not nested under the services section: the fleet
+            // has decision records whether or not this run listed services.
+            fleetAdrs,
             ...(rows && shown
               ? {
                   services: serviceRows(docsDir, ranked ?? rows),
@@ -261,8 +272,9 @@ export function registerList(program: Command): void {
           return;
         }
         // Under --subsystem the tree dial (subsystem and unfiled counts) is a
-        // fleet-root fact the filtered table must not claim, so no tree.
-        if (shown) printServices(shown, slice === undefined ? tree : undefined);
+        // fleet-root fact the filtered table must not claim, so no tree. The
+        // fleet's ADR count is not derived from the rows at all and stays.
+        if (shown) printServices(shown, { tree: slice === undefined ? tree : undefined, adrs: fleetAdrs });
         if (views && features) console.log("");
         if (features) printFeatures(features, verification!);
         if (capabilities) {

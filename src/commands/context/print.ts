@@ -73,6 +73,11 @@ export function printPack(pack: ContextPack): void {
     console.log(`! ${path} could not be read while joining capabilities — that service's realizations are missing from the rollup this pack filtered`);
   }
   if (pack.capabilitiesUnread.length > 0) console.log();
+  if (pack.useCaseScan.unreadable) {
+    console.log("! architecture/ does not parse as one LikeC4 project — every use case below is missing because nobody could look, not because none is drawn");
+    if (pack.useCaseScan.error !== undefined) console.log(`  ${pack.useCaseScan.error}`);
+    console.log();
+  }
 
   printRequirements("Requirements", pack.requirements);
   printRequirements("Arch requirements", pack.archRequirements);
@@ -118,8 +123,24 @@ export function printPack(pack: ContextPack): void {
   for (const c of pack.capabilities) {
     const label = c.description === undefined ? c.id : `${c.id} — ${c.description}`;
     console.log(`- ${label} (realized by: ${c.requirements.map((n) => `"${n}"`).join(", ")})`);
+    // The flows that claim the capability, fleet-wide — the answer to "what is
+    // this requirement FOR", which the requirement's own text rarely gives.
+    for (const flow of c.useCases) console.log(`  - flow: ${flow.title ?? flow.id} [${flow.id}]  ${flow.file}`);
   }
   if (pack.capabilities.length > 0) console.log();
+
+  console.log("## Use cases\n");
+  if (pack.useCaseSteps.length === 0) {
+    console.log(pack.useCaseScan.unreadable ? "(unreadable — see above)\n" : "(no declared flow draws this service)\n");
+  }
+  for (const flow of pack.useCaseSteps) {
+    console.log(`- ${flow.title ?? flow.id} [${flow.id}]  ${flow.file}`);
+    for (const step of flow.steps) {
+      const label = step.title === undefined ? "" : ` '${step.title}'`;
+      console.log(`  - step ${step.ordinal}${label}: ${step.source} -> ${step.target}`);
+    }
+  }
+  if (pack.useCaseSteps.length > 0) console.log();
 
   console.log("## Landscape\n");
   if (!pack.landscape.present) console.log("(no architecture/landscape.likec4)\n");

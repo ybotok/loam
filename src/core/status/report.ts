@@ -72,6 +72,7 @@
  * refuses to pay.
  */
 import type { ServiceEntry } from "../repo/entries.js";
+import type { UseCaseBlastRadius } from "../usecases/touch.js";
 import type { VerificationVerdict } from "../verify/record.js";
 import type { Finding } from "../vocabulary/report.js";
 
@@ -244,6 +245,22 @@ export interface FeatureStatusReport {
     issues: Finding[];
   };
   verification: VerificationState;
+  /**
+   * The declared business flows the services IN VIEW are hops of — blast
+   * radius, and the only field here that is a fact about the fleet rather than
+   * about the feature.
+   *
+   * It narrows with `--service` exactly as `artifacts` and `next` do, because
+   * `--service` is a lens on what the reader is being asked to do next. What it
+   * must never do is go silently empty: `unreadable` is how it says that
+   * `architecture/` could not be read, which is a different fact from a fleet
+   * that draws no use cases and produces the identical empty list.
+   *
+   * The FLEET form has no equivalent, deliberately. That form grades nothing and
+   * is coarse by design, and a per-feature flow join over every feature in flight
+   * is exactly the per-feature cost it refuses to pay.
+   */
+  useCases: UseCaseBlastRadius;
   next: NextStep[];
 }
 

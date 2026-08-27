@@ -45,7 +45,27 @@ function rungLabel(v: ServiceView): string {
   return v.maturity === "vouched" && v.entry.vouchScope === "sampled" ? "vouched (sampled)" : v.maturity;
 }
 
-export function printServices(views: ServiceView[], tree?: FleetTree): void {
+/**
+ * The two facts printed under the table that are not about any row — and they
+ * are withheld differently, which is the whole reason to name the record
+ * instead of passing two arguments and hoping the next caller notices.
+ */
+export interface FleetFacts {
+  /**
+   * The subsystem tree, or undefined under `--subsystem`. A slice's own
+   * "unfiled: 0" would be read as a fact about the slice, and it is not one.
+   */
+  tree: FleetTree | undefined;
+  /**
+   * Markdown files in `architecture/adrs/`. NEVER withheld: unlike the tree
+   * dial it is not derived from the rows at all — the same fleet documents are
+   * there whichever services this run listed — and the line names the directory
+   * so it cannot be misread as a subsystem's own decisions. 0 prints nothing.
+   */
+  adrs: number;
+}
+
+export function printServices(views: ServiceView[], fleet: FleetFacts): void {
   console.log(
     `services (${views.length})  [M]odel [S]pec [a]rch-spec [A]pi [R]unbook [H]ealth`,
   );
@@ -93,10 +113,18 @@ export function printServices(views: ServiceView[], tree?: FleetTree): void {
     // The tree dial, only once a tree exists: unfiled is permanent and normal
     // (a count, never a finding), and a flat fleet has nothing to say here —
     // printing "5 unfiled" over a fleet nobody groups would read as work.
-    if (tree !== undefined && tree.subsystems.length > 0) {
-      const unfiled = tree.services.filter((s) => s.subsystem.length === 0).length;
-      console.log(`  subsystems: ${tree.subsystems.length} · unfiled: ${unfiled}`);
+    if (fleet.tree !== undefined && fleet.tree.subsystems.length > 0) {
+      const unfiled = fleet.tree.services.filter((s) => s.subsystem.length === 0).length;
+      console.log(`  subsystems: ${fleet.tree.subsystems.length} · unfiled: ${unfiled}`);
     }
+  }
+  // OUTSIDE the rollup block above, which only runs when the fleet has
+  // services: a fleet can record a decision about how it will build services
+  // before it holds one, and that count would otherwise be printed by nothing.
+  // Silent at zero, exactly like the per-service `(3 adrs)` column: no fleet
+  // owes any fleet-level ADR, so "adrs: 0" would read as a gap.
+  if (fleet.adrs > 0) {
+    console.log(`  adrs: ${fleet.adrs} fleet decision${fleet.adrs === 1 ? "" : "s"}  (architecture/adrs/)`);
   }
 }
 

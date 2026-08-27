@@ -91,6 +91,13 @@ export function packHoles(pack: ContextPack): boolean {
     pack.permissionsVocabulary.invalid !== undefined ||
     pack.capabilitiesVocabulary.invalid !== undefined ||
     pack.capabilitiesUnread.length > 0 ||
+    // The use-case axis fails the same way, and one step wider than
+    // `landscape.parses` above: that flag is about `architecture/landscape.likec4`
+    // alone, while a flow lives in `architecture/usecases/*.likec4` and the whole
+    // directory is read as ONE LikeC4 project. So a use-case file with an
+    // unresolved element leaves `landscape.parses` true and empties every flow
+    // in the pack — the exact silent hole this predicate exists to refuse.
+    pack.useCaseScan.unreadable ||
     pack.features.some(
       (f) => f.architecture.errors.length > 0 || f.openapi.unreadable || f.events.unreadable,
     )

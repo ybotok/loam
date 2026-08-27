@@ -14,7 +14,8 @@ import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
 import { archSlice, introducedServices, livingServices } from "../../core/projection/arch-slice.js";
-import { printApi, printArchSlice, printEvents, printRequirements } from "./print.js";
+import { useCaseBlastRadius } from "../../core/usecases/touch.js";
+import { printApi, printArchSlice, printEvents, printRequirements, printUseCases } from "./print.js";
 import { indent } from "./print.js";
 
 interface DeltaOptions {
@@ -140,7 +141,27 @@ export function registerDelta(program: Command): void {
       // C4 architecture slice. The fleet union mirrors coherence's: services/
       // plus the feature's own specs/ names, so the slice and the validator
       // resolve a container-targeted edge to the same owner.
-      const arch = archSlice(deltaDoc, service, id, new Set([...living, ...featureServices]));
+      const fleet = new Set([...living, ...featureServices]);
+      const arch = archSlice(deltaDoc, service, id, fleet);
+
+      // The use-case axis, and the one section here that is a fact about the
+      // FLEET rather than about the feature's own files: which declared business
+      // flows already run through this service, and at which hop. An implementer
+      // handed "add the endpoint" and not told that step 4 of Checkout is the
+      // caller has to go find that out, and on a fleet of a hundred nobody does.
+      //
+      // The fleet set is `living ∪ featureServices`, the same union `archSlice`
+      // resolves with, so a service this feature INTRODUCES resolves to itself
+      // rather than to a container's title. And `useCaseBlastRadius` gates its
+      // own load: a docs repo whose architecture/ never mentions the reserved
+      // tag prefix costs a readdir and a few file reads here, not a LikeC4
+      // workspace — which is what keeps this command usable inside
+      // /loam-implement's inner loop.
+      const useCases = await useCaseBlastRadius({
+        docsDir: config.docsDir,
+        known: fleet,
+        services: new Set([service]),
+      });
 
       // An unparseable delta.likec4 empties the C4 slice, and a consumer
       // reading this projection as a task brief — the JSON payload and the
@@ -201,6 +222,19 @@ export function registerDelta(program: Command): void {
             ...(events.error === undefined ? {} : { error: events.error }),
           },
           architecture: arch,
+          // Additive, which the envelope permits (core/envelope/json.ts), and
+          // deliberately NOT wired into the exit-code guard above. The three
+          // conditions there are about the FEATURE's own documents; an
+          // `architecture/` that does not parse is a pre-existing fleet defect
+          // `validate` already reports as `landscape.invalid`, and making every
+          // `loam delta` in such a repo exit 1 would be a new gate wearing the
+          // clothes of a new field. `unreadable` is how this payload says it
+          // could not look.
+          useCases: {
+            unreadable: useCases.unreadable,
+            ...(useCases.error === undefined ? {} : { error: useCases.error }),
+            flows: useCases.flows,
+          },
         });
         return;
       }
@@ -216,5 +250,6 @@ export function registerDelta(program: Command): void {
       if (existsSync(specPaths.openapi)) printApi(api);
       if (existsSync(specPaths.asyncapi)) printEvents(events);
       if (existsSync(paths.delta)) printArchSlice(arch, service);
+      printUseCases(useCases, service);
     });
 }

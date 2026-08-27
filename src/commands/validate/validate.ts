@@ -36,7 +36,8 @@ import {
 } from "../policy/gate.js";
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
 import { validateLandscape } from "./fleet/landscape.js";
-import { loadArchitecture, readLandscape } from "./fleet/load.js";
+import { loadArchitecture } from "../../core/c4/project/architecture.js";
+import { readLandscape } from "./fleet/load.js";
 import { buildScorecard } from "./fleet/scorecard/scorecard.js";
 import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";

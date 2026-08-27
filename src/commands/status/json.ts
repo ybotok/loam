@@ -16,6 +16,14 @@ export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
     artifacts: r.artifacts,
     checks: { ...r.checks, issues: r.checks.issues.map(findingJson) },
     verification: r.verification,
+    // Additive (core/envelope/json.ts). Spread key by key rather than passed
+    // through whole, so an optional `error` that is absent stays absent instead
+    // of arriving as `undefined` — the shape every other payload here keeps.
+    useCases: {
+      unreadable: r.useCases.unreadable,
+      ...(r.useCases.error === undefined ? {} : { error: r.useCases.error }),
+      flows: r.useCases.flows,
+    },
     next: r.next,
   };
 }

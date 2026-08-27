@@ -73,6 +73,31 @@ function printNext(steps: NextStep[]): void {
   }
 }
 
+/**
+ * The business flows the services in view already appear in.
+ *
+ * Silent when the fleet declares none, unlike the delta brief's version of the
+ * same section: this report is a table of what is OWED, and a "(none)" row for
+ * a fleet that has never drawn a use case would be one more line between the
+ * reader and the next step. The unreadable arm is not silent, because that one
+ * is a hole rather than an absence.
+ */
+function printUseCases(u: FeatureStatusReport["useCases"]): void {
+  if (u.unreadable) {
+    console.log("\n  use cases     architecture/ does not parse, so the flows through these services could not be read");
+    return;
+  }
+  if (u.flows.length === 0) return;
+  console.log("\n  use cases");
+  for (const flow of u.flows) {
+    console.log(`    ${flow.title ?? flow.id}  [${flow.id}]  ${flow.file}`);
+    for (const step of flow.steps) {
+      const label = step.title === undefined ? "" : ` '${step.title}'`;
+      console.log(`      step ${step.ordinal}${label}: ${step.source} -> ${step.target}`);
+    }
+  }
+}
+
 export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void {
   if (r.interrupted !== null) printInterrupted(r.interrupted);
   const f = r.feature;
@@ -120,6 +145,7 @@ export function printFeature(r: FeatureStatusReport, ambiguous: string[]): void 
     }
   }
 
+  printUseCases(r.useCases);
   printNext(r.next);
 }
 

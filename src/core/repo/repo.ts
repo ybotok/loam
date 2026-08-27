@@ -15,7 +15,7 @@ import { featureDirOf, type DocsDir, type FeatureDir } from "../kernel/ids/dirs.
 import { rawServiceId, serviceIdProblem, type RawServiceId } from "../kernel/ids/service.js";
 import { readVouchScope } from "../provenance/sample/scope.js";
 import { compareIds, featureIdFromDirName, type FeatureEntry, type ServiceEntry } from "./entries.js";
-import { ARCHIVE_DIR, featurePaths, featuresDir, isServiceArtifactName, servicePathsAt } from "./paths.js";
+import { ARCHIVE_DIR, featurePaths, featuresDir, fleetAdrsDir, isServiceArtifactName, servicePathsAt } from "./paths.js";
 import { requireDocsRepo } from "./state.js";
 import { countMarkdown, entryIs } from "./tree/fs.js";
 import { walkServicesTree, type FleetTree } from "./tree/walk.js";
@@ -140,6 +140,22 @@ export async function serviceEntries(tree: FleetTree): Promise<ServiceEntry[]> {
     }),
   );
   return entries.sort((a, b) => compareIds(a.id, b.id) || compareIds(a.dir, b.dir));
+}
+
+/**
+ * How many fleet-level ADRs `architecture/adrs/` holds — the same number, by the
+ * same rule (`countMarkdown`), that `ServiceEntry.adrs` carries one altitude
+ * down. One shape for one question: a second spelling of "count the decisions"
+ * is how `list` and `show` once reported different ADR counts for one service.
+ *
+ * A count and never a finding. The directory is optional, an absent one is 0,
+ * and nothing in loam grades either — see `fleetAdrsDir` for why that is the
+ * whole design rather than an unfinished half of it. No `FleetContext` overload:
+ * one caller asks this once per invocation, and a memo whose key is the docsDir
+ * would be a cache nobody reads twice.
+ */
+export async function fleetAdrCount(docsDir: DocsDir): Promise<number> {
+  return countMarkdown(fleetAdrsDir(docsDir));
 }
 
 async function readFeature(dir: FeatureDir, dirName: string, archived: boolean): Promise<FeatureEntry> {
