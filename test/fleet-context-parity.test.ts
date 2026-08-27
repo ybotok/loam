@@ -38,6 +38,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readAsyncapi } from "../src/core/asyncapi/read.js";
 import { readCapabilityVocabulary } from "../src/core/capabilities/capabilities.js";
+import { featureCapabilityDeltas } from "../src/core/capabilities/delta/tree.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
@@ -145,12 +146,36 @@ The fleet SHALL accept a chargeback raised by a customer's bank.
 - **Then** the fleet accepts the reversal
 `;
 
+/**
+ * A capability DELTA — the feature-local half of the business corpus. Its
+ * `## ADDED Requirements` heading is what makes it a delta rather than a second
+ * living document, and the walk that finds it must not care either way.
+ */
+const CAPABILITY_DELTA = `# a capability — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Reverse within five days
+Requirement-ID: CAP-REVERSE-1
+The fleet SHALL reverse a payment within five days.
+
+#### Scenario: A reversal is asked for
+- **Given** a settled payment
+- **When** a reversal is requested
+- **Then** the money is returned within five days
+`;
+
 /** `coherentFixture()` plus what the readers below need and it does not carry. */
 function parityFixture(): Record<string, string> {
   const files = coherentFixture();
   files["services/payment-service/asyncapi.yaml"] = ASYNCAPI;
   files["architecture/capabilities.yaml"] = CAPABILITIES_YAML;
   files["capabilities/chargebacks/spec.md"] = CAPABILITY_DOC;
+  // The feature's OWN capability deltas — two of them, one nested under a group
+  // directory that is not itself a capability, so the row below compares a walk
+  // rather than a presence flag.
+  files["features/FEAT-1-split/capabilities/chargebacks/spec.md"] = CAPABILITY_DELTA;
+  files["features/FEAT-1-split/capabilities/payments/refunds/spec.md"] = CAPABILITY_DELTA;
   files["services/checkout-web/spec.md"] = CONFLICTED;
   files["features/archive/FEAT-0-capture/intent.md"] =
     "---\nfeature: FEAT-0\nstatus: shipped\n---\n\n# Capture payments\n";
@@ -284,6 +309,21 @@ const READERS: Reader[] = [
       // tree half of the union went unread through the memo.
       expect(vocab.byId.get("chargebacks")?.source).toBe("tree");
       expect(vocab.tree.docs.map((d) => d.id)).toEqual(["chargebacks"]);
+    },
+  },
+  {
+    name: "featureCapabilityDeltas",
+    // Keyed by the FEATURE dir, not the docs dir: this is the feature's own
+    // `capabilities/` delta tree, and a memo keyed on the repo root would
+    // answer one feature's deltas for every other feature in the run.
+    memo: (fleet, at) => fleet.featureCapabilityDeltas(at.featureDir),
+    direct: (at) => featureCapabilityDeltas(at.featureDir),
+    floor: (tree) => {
+      // Present, nested, and with a group directory that is NOT itself a
+      // capability — the shape that separates a real walk from "the deepest
+      // directory wins", and the one a memo returning a bare `[]` would pass.
+      expect(tree.present).toBe(true);
+      expect(tree.docs.map((d: { id: string }) => d.id)).toEqual(["chargebacks", "payments/refunds"]);
     },
   },
   {

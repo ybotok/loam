@@ -174,6 +174,21 @@ The service SHALL record every split in a ledger.
 - **Then** a ledger entry exists
 `;
 
+/**
+ * One capability requirement, written into BOTH the living document and the
+ * feature's delta below — which is what makes the delta an ADDED that lands on
+ * a requirement that already exists, and so a gate archive refuses on.
+ */
+const CAPABILITY_REQUIREMENT = `### Requirement: Refund within five days
+Requirement-ID: REF-1
+The fleet SHALL return a customer's money within five days.
+
+#### Scenario: A refund is asked for
+- **Given** a settled payment
+- **When** a refund is requested
+- **Then** the money is returned within five days
+`;
+
 /* ------------------------------------------------------------------ */
 
 describe("status is never greener than the gates on the same tree", () => {
@@ -208,6 +223,31 @@ describe("status is never greener than the gates on the same tree", () => {
     // And it has to SAY that the gate archive refuses on is one validate calls
     // valid — an author who only reads exit codes never finds out otherwise.
     expect(v.status.next.find((s) => s.code === "next.fix-coherence")!.statement).toMatch(/GATES?/);
+    await p.destroy();
+  });
+
+  it("a capability delta the archive gate refuses — the business corpus is not a blind spot", async () => {
+    // The feature-local capability delta is a SECOND requirements corpus, and
+    // status projects over the same gates for both or it projects over half of
+    // them. This fixture's delta ADDs a requirement the living capability
+    // document already carries: archive refuses (the merge would REPLACE it,
+    // scenarios and all), so status may not report the feature ready.
+    const p = await makeProject(coherentFixture());
+    await p.write(
+      "capabilities/refunds/spec.md",
+      `# Refunds\n\nA customer can get their money back.\n\n## Requirements\n\n${CAPABILITY_REQUIREMENT}`,
+    );
+    await p.write(
+      `${FEAT_DIR}/capabilities/refunds/spec.md`,
+      `# refunds — delta for ${FEAT}\n\n## ADDED Requirements\n\n${CAPABILITY_REQUIREMENT}`,
+    );
+    await record(p);
+    const v = await verdicts(p);
+
+    expect(v.archiveAccepts).toBe(false);
+    expectAgreesWithGates(v, "capability delta the gate refuses");
+    expect(v.shipsIt).toBe(false);
+    expect(v.status.checks.gating).toBeGreaterThan(0);
     await p.destroy();
   });
 

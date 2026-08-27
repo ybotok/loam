@@ -33,6 +33,7 @@ import {
 import { gatesArchive } from "../../core/vocabulary/issue.js";
 import { featureProvenance } from "../../core/provenance/findings.js";
 import { documentConflictFinding } from "../../core/conflict-markers.js";
+import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "./checks/vocabulary.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
@@ -160,6 +161,22 @@ export async function validateFeature(
       findings.push(...steplessFindings(`${svc}: arch requirements`, svc, reqs));
       findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
     }
+  }
+
+  // The BUSINESS corpus's delta documents, graded for the same document-level
+  // breach as the service ones and for the same reason: a conflicted delta
+  // parses as prose, so every other check reads it as a valid document, and
+  // `loam archive` then re-serializes both sides of somebody's merge into the
+  // LIVING capability document. It is worse there than one tree over — once the
+  // feature is archived, nothing walks the delta again, and the living
+  // capability documents are only conflict-scanned while some feature still
+  // carries a delta for them.
+  const capabilityDeltas =
+    fleet === undefined ? await featureCapabilityDeltas(featureDir) : await fleet.featureCapabilityDeltas(featureDir);
+  for (const doc of capabilityDeltas.docs) {
+    const raw = fleet === undefined ? await readFile(doc.spec, "utf8") : await fleet.readText(doc.spec);
+    const conflict = documentConflictFinding(`capability ${doc.id}: spec.md`, doc.id, raw);
+    if (conflict !== null) findings.push(conflict);
   }
 
   findings.push(

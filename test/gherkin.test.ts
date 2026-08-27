@@ -367,6 +367,44 @@ describe("feature mode", () => {
     expect(onDisk).toMatch(new RegExp(` {2}@loam-digest-${expected}\\n {2}Scenario:`));
   });
 
+  it("a capability delta changes NOTHING — the two corpora are not derived from each other", async () => {
+    // The hard constraint of the business axis. `gherkin` and `verify` compute
+    // from SERVICE requirements alone: a capability requirement is a promise a
+    // customer could check, deliberately carrying no `Operations:` and naming
+    // no service, so there is no service repository for a scenario generated
+    // from one to run in. The moment a capability requirement could reach a
+    // .feature file, a service repo's test suite would depend on the business
+    // corpus — and the analyst editing a promise would redden somebody's build.
+    //
+    // Byte-identical output, not "the same set of files": a header, a tag or a
+    // digest that shifted would be the first symptom of that dependency.
+    const withCapability = fixtureWithArch();
+    withCapability["features/FEAT-1-split/capabilities/refunds/spec.md"] = `# refunds — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Refund within five days
+Requirement-ID: REF-1
+The fleet SHALL return a customer's money within five days.
+
+#### Scenario: A refund is asked for
+- **Given** a settled payment
+- **When** a refund is requested
+- **Then** the money is returned within five days
+`;
+    const plain = await project(fixtureWithArch(), { service: "payment-split-service" });
+    const both = await project(withCapability, { service: "payment-split-service" });
+    const withoutRun = await runLoam(plain.workDir, "gherkin", "FEAT-1", "--json");
+    const withRun = await runLoam(both.workDir, "gherkin", "FEAT-1", "--json");
+    expect(withRun.code, withRun.out).toBe(0);
+    expect(JSON.parse(withRun.stdout).files).toEqual(JSON.parse(withoutRun.stdout).files);
+    for (const rel of ["features/loam/split-a-payment.feature", "features/loam/arch--retries-stay-idempotent.feature"]) {
+      expect(await readWork(both, rel)).toBe(await readWork(plain, rel));
+    }
+    // And no file was emitted for the promise itself, under any name.
+    expect(existsSync(join(both.workDir, "features", "loam", "refund-within-five-days.feature"))).toBe(false);
+  });
+
   it("a feature with nothing for this service emits nothing and does not opt the repo in", async () => {
     const p = await project(coherentFixture(), { service: "payment-service" });
     const res = await runLoam(p.workDir, "gherkin", "FEAT-1", "--json");

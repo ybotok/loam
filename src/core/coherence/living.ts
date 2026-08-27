@@ -17,7 +17,7 @@ import { closeIds } from "../c4/arch.js";
 import { serviceIdProblem, type PathableService } from "../kernel/ids/service.js";
 import { repoPath } from "../envelope/json.js";
 import type { Finding } from "../vocabulary/report.js";
-import { featurePaths, landscapePath, SPEC_AXES } from "../repo/paths.js";
+import { featurePaths, landscapePath, livingCapabilityPaths, SPEC_AXES } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { featureSpecServices, listServices } from "../repo/repo.js";
 import { enumeratedServices, locateServicePaths } from "../repo/service-target.js";
@@ -172,10 +172,25 @@ export async function invalidSpecServiceFindings(
  * `openapi.yaml` is deliberately absent: markers make it unparseable, so the
  * YAML reader already refuses it by name and a second finding would only say
  * the same thing later.
+ *
+ * `capabilities` is the same question on the business corpus, and it is not
+ * optional politeness: a living `capabilities/<id>/spec.md` the feature's
+ * capability delta merges into is rewritten by exactly the same
+ * `rewriteRequirementsRun`, so a conflicted one loses its marker lines exactly
+ * the same way. Passed in rather than walked here because the caller has
+ * already read the feature's delta tree and this function must not decide which
+ * documents a merge touches.
+ *
+ * IDS, not the `CapabilityDoc` records the caller holds, and that is a guard
+ * rather than a preference: a `CapabilityDoc` from a feature's delta walk
+ * carries `spec` and `dir` pointing at the FEATURE'S copy, and the document
+ * this function is about is the LIVING one. Taking the whole record would leave
+ * `doc.spec` in scope here — the wrong file, one property access away.
  */
 export async function livingMergeConflicts(
   docsDir: DocsDir,
   services: readonly PathableService[],
+  capabilities: readonly string[],
   context?: FleetContext,
 ): Promise<Finding[]> {
   const out: Finding[] = [];
@@ -190,6 +205,13 @@ export async function livingMergeConflicts(
       const finding = documentConflictFinding(repoPath(docsDir, path), svc, await read(path));
       if (finding !== null) out.push(finding);
     }
+  }
+
+  for (const id of capabilities) {
+    const path = livingCapabilityPaths(docsDir, id).spec;
+    if (!existsSync(path)) continue;
+    const finding = documentConflictFinding(repoPath(docsDir, path), id, await read(path));
+    if (finding !== null) out.push(finding);
   }
 
   const landscape = landscapePath(docsDir);

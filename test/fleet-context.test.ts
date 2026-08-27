@@ -78,6 +78,10 @@ describe("FleetContext", () => {
         // Same discipline for the capability vocabulary: nothing here asks
         // for it, so nothing pays the read.
         capabilityParses: 0,
+        // And for a feature's own capability deltas. A fleet that has not
+        // adopted the business axis must pay nothing at all for it — not even
+        // the single existsSync — unless something actually asks.
+        featureCapabilityWalks: 0,
         likec4Loads: 1,
       });
     });

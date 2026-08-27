@@ -249,6 +249,60 @@ export function capabilityDocPathsAt(dir: string): CapabilityDocPaths {
 }
 
 /**
+ * The LIVING document a capability id addresses — `capabilities/` with the id's
+ * own nesting spelled back out as directories, so `payments/refunds` resolves to
+ * `capabilities/payments/refunds/spec.md`.
+ *
+ * Spelled here because FIVE readers need it — the delta grade, the archive
+ * merge, the conflict-marker scan, the archive gate's strayed-requirement scan
+ * and `loam rebase` — and a reader that resolved it differently would disagree
+ * about which document a feature is changing. The delta grade is where that costs most: a living path that finds
+ * nothing reads as an empty document, so every ADDED looks new and no
+ * `Based-On:` is ever compared, and the merge then lands over text nobody
+ * re-read.
+ *
+ * `...id.split("/")` rather than passing the id whole is explicitness, not a
+ * fix: `node:path.join` already normalizes an embedded separator, so both
+ * spellings resolve identically on every platform. The split is what makes the
+ * nesting visible at the one place the rule is written down. The mistake this
+ * function actually prevents is the OTHER one — resolving a nested id by its
+ * leaf, which silently addresses a different capability.
+ *
+ * `id` IS caller-controlled path input and carries no brand, for the reason
+ * `capabilityDocPathsAt` above takes a bare `dir`: a capability id has no
+ * grammar — it is a YAML key and a directory name, constrained nowhere — so
+ * there is nothing for a smart constructor to validate. What holds the join is
+ * PROVENANCE, and every caller owes it: the id must have come from a
+ * `readCapabilityTree` walk, where each component is a `readdir` entry name.
+ * An id read out of `architecture/capabilities.yaml` has not, and must not
+ * reach here.
+ */
+export function livingCapabilityPaths(docsDir: DocsDir, id: string): CapabilityDocPaths {
+  return capabilityDocPathsAt(join(capabilityDocsDir(docsDir), ...id.split("/")));
+}
+
+/**
+ * A feature's own capability deltas — `features/<FEAT>/capabilities/<id>/`,
+ * the delta tree that merges into `capabilityDocsDir` above.
+ *
+ * The layout MIRRORS the living one exactly, nesting included: a delta for
+ * `payments/refunds` sits at `features/<FEAT>/capabilities/payments/refunds/`,
+ * so `readCapabilityTree` walks both sides with one implementation and the
+ * merge target is the same id split the same way. The alternative — a flat
+ * escaped spelling like `payments%2Frefunds/` — would be a second grammar with
+ * its own escaping defects, and a diff nobody could read by eye against
+ * `specs/<svc>/spec.md` ↔ `services/<svc>/spec.md` one directory over.
+ *
+ * The DIRECTORY'S EXISTENCE is this axis's per-feature opt-in, exactly as
+ * `capabilityDocsDir`'s is the fleet's: a feature without one pays a single
+ * `existsSync` and produces no finding, so a fleet that has not adopted the
+ * business axis sees nothing.
+ */
+export function featureCapabilityDeltasDir(featureDir: FeatureDir): string {
+  return join(featureDir, "capabilities");
+}
+
+/**
  * The FLEET's decision records — `architecture/adrs/`, beside the landscape and
  * the two vocabularies.
  *

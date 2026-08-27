@@ -21,7 +21,7 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  * Which artifact an error names.
  *
  * Attribution is by code family, because that is the only machine-readable
- * pointer an `Issue` carries: `subject` narrows to a service, never to a file.
+ * pointer an `Issue` carries: `subject` narrows to a NAME, never to a file.
  * The families are unambiguous — `c4-api.*`/`c4-event.*`/`c4.*` and the two
  * `delta.*` codes about the LikeC4 document itself grade the architecture
  * axis, `openapi.*` grades the API contract, `asyncapi.*` the event contract,
@@ -33,6 +33,19 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
  * `checks.issues` and still drives `next.fix-coherence` — it just does not turn
  * any single artifact `draft`, because guessing which file to blame is how a
  * reader gets sent to edit the wrong one.
+ *
+ * WHICH IS WHERE THE BUSINESS CORPUS SITS TODAY, and the row below is honest
+ * about it rather than quietly wrong. A `delta.*` issue's `subject` is now a
+ * service id OR a capability id (`core/delta/scope.ts`), the table has no
+ * `capabilities` artifact for the second to land on, and a capability delta's
+ * fault therefore maps to `spec` and matches no service — so it turns nothing
+ * `draft`, exactly like any other unattributable error. The feature is still
+ * refused: the issue reaches `checks.gating` and `next.fix-coherence`, which
+ * `test/status-agrees-with-gate.test.ts` pins. What it cannot do yet is NAME
+ * the file, and in a fleet holding a service and a capability of the SAME name
+ * it names the service's spec delta instead. Fixing that means a `capabilities`
+ * ArtifactId with a row per delta document — the same change that has to carry
+ * `capability.uncovered`, so it lands with it and not before.
  */
 function faultedArtifact(code: string, subject?: string): ArtifactId | null {
   if (code === "delta.invalid" || code === "delta.nothing-tagged") return "delta";

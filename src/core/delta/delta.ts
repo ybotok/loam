@@ -15,25 +15,70 @@
  *
  * These run inside the archive gate, because the merge is where the damage lands.
  *
+ * TWO CORPORA, ONE ALGEBRA. A feature's delta documents live in two places —
+ * `specs/<svc>/{spec,arch.spec}.md` against the service tree, and
+ * `capabilities/<id>/spec.md` against the authored business tree — and every
+ * grade about a DOCUMENT and its living counterpart applies to both verbatim,
+ * with the capability id in `subject` where a service id would be. That is not
+ * a coincidence to exploit but the reason the business corpus was given deltas
+ * at all: a capability document is a requirements document, so the diff that
+ * changes one has exactly the same ways of not landing. A second implementation
+ * would be a second set of answers to `delta.added-duplicate`.
+ *
+ * The exception is the four CROSS-FEATURE warnings — `delta.added-conflict`,
+ * `delta.modified-conflict`, `delta.modified-pending`, `delta.removed-pending`
+ * — which ask what OTHER features in flight claim. `./claims.ts` indexes the
+ * service corpus only and states why; on the business axis those four are
+ * silent, which is a missing warning and never a wrong answer.
+ *
  * This module is only the walk: which documents get read, in what order, and how
- * the two passes over each are handed a `DeltaScope`. The checks themselves are
- * in `./document.ts` (a document against itself) and `./select.ts` (the delta
- * against the living text). Their order is load-bearing and stays here, where it
- * can be read in one screen.
+ * each is handed a `DeltaScope`. The checks themselves are in `./document.ts`
+ * (a document against itself) and `./select.ts` (the delta against the living
+ * text). Their order is load-bearing and stays here, where it can be read in one
+ * screen.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { relative } from "node:path";
 import { type FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
-import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
+import { type Requirement } from "../document/spec.js";
+import { featureSpecPaths, livingCapabilityPaths, SPEC_AXES } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
+import { capabilityDocIssues } from "../capabilities/delta/doc.js";
+import { featureCapabilityDeltas } from "../capabilities/delta/tree.js";
 import { type Issue } from "../vocabulary/issue.js";
-import { claimLookup } from "./claims.js";
+import { claimLookup, type ClaimLookup } from "./claims.js";
 import { deltaDocumentIssues, livingDocumentIssues } from "./document.js";
 import { indexLiving, type DeltaScope } from "./scope.js";
 import { selectionIssues } from "./select.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
+
+/**
+ * The business corpus's ONE axis. A capability document carries the promise and
+ * nothing else — there is no `arch.spec.md` beside it, because "how it is
+ * built" is precisely the altitude a capability requirement may not describe
+ * (`capability.requirement-service-scoped` is that rule). It has no `key`
+ * because it indexes no `ServicePaths`, which is why `DeltaScope.axis` is the
+ * narrower `DeltaAxis` and not `SpecAxis`.
+ */
+const CAPABILITY_AXIS = { file: "spec.md" };
+
+/**
+ * What every document in one feature's walk shares.
+ *
+ * A record rather than two more parameters because both values are about the
+ * WALK and not about the document being graded — `gradeDelta` would otherwise
+ * read as a four-argument function whose last two arguments never vary within
+ * a run, which is how the next value gets added as a fifth.
+ */
+interface DeltaReads {
+  /** What OTHER features in flight claim — lazy, so the common case never scans. */
+  claims: ClaimLookup;
+  /** The invocation's read index, when the caller threaded one. */
+  context?: FleetContext;
+}
 
 export async function deltaShapeIssues(
   docsDir: DocsDir,
@@ -43,11 +88,22 @@ export async function deltaShapeIssues(
 ): Promise<Issue[]> {
   const issues: Issue[] = [];
   const services = await featureSpecServices(featureDir, context);
-  if (services.length === 0) return issues;
+  // One `existsSync` for a feature that carries no capability delta, which is
+  // every feature in a fleet that has not adopted the business axis.
+  const capabilities =
+    context === undefined ? await featureCapabilityDeltas(featureDir) : await context.featureCapabilityDeltas(featureDir);
+  // The early return must ask about BOTH corpora. Asking only about services
+  // meant a capability-only feature — a business change with no service touched
+  // yet, which is exactly what an analyst writes first — was graded by nothing
+  // and archived whatever its delta said.
+  if (services.length === 0 && capabilities.docs.length === 0) return issues;
 
   // What OTHER features in flight claim. Only built when a claim has to be
   // checked — the common case never pays for the scan.
-  const claims = claimLookup(docsDir, featureId, context);
+  const reads: DeltaReads = {
+    claims: claimLookup(docsDir, featureId, context),
+    ...(context === undefined ? {} : { context }),
+  };
 
   // Both requirement-carrying files per service run the same checks — one code
   // path parameterized by filename, the merge's own factoring. `where` names
@@ -57,36 +113,96 @@ export async function deltaShapeIssues(
     for (const axis of SPEC_AXES) {
       const specPath = featureSpecPaths(featureDir, service)[axis.key];
       if (!existsSync(specPath)) continue;
-      const raw = context === undefined
-        ? await readFile(specPath, "utf8")
-        : await context.readText(specPath);
       const scope: DeltaScope = {
+        kind: "service",
+        subject: service,
+        axis,
         featureId,
         docsDir,
-        service,
-        axis,
         specPath,
         where: axis.key === "spec" ? service : `${service} (arch.spec.md)`,
         // How the axis's living document is named in messages — spec.md keeps
         // the historical "living spec", the arch axis says which file it means.
         livingDoc: axis.key === "spec" ? "living spec" : "living arch.spec.md",
       };
-
-      const reqs = context === undefined ? parseRequirements(raw) : await context.readRequirements(specPath);
-      issues.push(...deltaDocumentIssues(scope, raw, reqs));
-
-      const livingPath = (await locateServicePaths(docsDir, service, context))[axis.key];
-      const living = indexLiving(
-        existsSync(livingPath)
-          ? context === undefined
-            ? parseRequirements(await readFile(livingPath, "utf8"))
-            : await context.readRequirements(livingPath)
-          : [],
+      issues.push(
+        ...(await gradeDelta(scope, (await locateServicePaths(docsDir, service, context))[axis.key], reads)).issues,
       );
-      issues.push(...livingDocumentIssues(scope, living));
-      issues.push(...(await selectionIssues(scope, reqs, living, claims)));
     }
   }
 
+  for (const doc of capabilities.docs) {
+    const scope: DeltaScope = {
+      kind: "capability",
+      subject: doc.id,
+      axis: CAPABILITY_AXIS,
+      featureId,
+      docsDir,
+      specPath: doc.spec,
+      // `capability <id>`, not `capabilities/<id>` — the second reads as the
+      // LIVING directory, and every message this labels is about the FEATURE's
+      // delta of it. Sending an author to edit the wrong one of two files with
+      // the same name is the whole reason `where` and `livingDoc` are separate.
+      where: `capability ${doc.id}`,
+      livingDoc: `living capabilities/${doc.id}/spec.md`,
+    };
+    // Absent is a real and ordinary answer on this axis: the first feature to
+    // mention a capability is what creates its living document, so the whole
+    // delta grades against `[]` and every requirement in it is legitimately an
+    // addition.
+    const graded = await gradeDelta(scope, livingCapabilityPaths(docsDir, doc.id).spec, reads);
+    issues.push(...graded.issues);
+    // The document's own three rules, on the requirements this delta would
+    // MERGE — before the merge, where the author can still fix them. See
+    // `capabilities/delta/doc.ts` for why grading only the living copy leaves a
+    // hole straight through the altitude rule.
+    issues.push(
+      ...capabilityDocIssues(graded.reqs, {
+        where: relative(docsDir, doc.spec).split(/[\\/]/).join("/"),
+        subject: doc.id,
+      }),
+    );
+  }
+
   return issues;
+}
+
+/**
+ * One delta document against one living document: the three passes, in the
+ * order that makes their messages readable.
+ *
+ * The order is load-bearing. `deltaDocumentIssues` settles what the delta says
+ * about itself, `livingDocumentIssues` settles whether the living text can be
+ * selected in at all, and only then does `selectionIssues` compare them — a pin
+ * the document pass already refused must not also be reported stale, which
+ * would send its author to `loam rebase` for a problem rebase does not fix.
+ *
+ * The parsed delta requirements come back with the issues because the capability
+ * corpus grades them a second way (`capabilityDocIssues`) and re-reading the
+ * file to do it would be a second parse of bytes already in hand — and, without
+ * a context, a second chance for the two passes to disagree about the document.
+ */
+async function gradeDelta(
+  scope: DeltaScope,
+  livingPath: string,
+  reads: DeltaReads,
+): Promise<{ issues: Issue[]; reqs: Requirement[] }> {
+  const { claims, context } = reads;
+  const raw = context === undefined ? await readFile(scope.specPath, "utf8") : await context.readText(scope.specPath);
+  const reqs = context === undefined ? parseRequirements(raw) : await context.readRequirements(scope.specPath);
+  const living = indexLiving(
+    !existsSync(livingPath)
+      ? []
+      : context === undefined
+        ? parseRequirements(await readFile(livingPath, "utf8"))
+        : await context.readRequirements(livingPath),
+  );
+  return {
+    reqs,
+    issues: [
+      ...deltaDocumentIssues(scope, raw, reqs),
+      ...livingDocumentIssues(scope, living),
+      ...(await selectionIssues(scope, reqs, living, claims)),
+    ],
+  };
 }

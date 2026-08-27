@@ -178,7 +178,15 @@ async function featureFindings(
   // this module is held to is one-directional.
   out.push(...(await unknownDeltaServices(docsDir, feature.dir, feature.id, { context })));
   out.push(...(await invalidSpecServiceFindings(feature.dir, context)));
-  out.push(...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), context)));
+  // The capability half of the same scan: status may be redder than the gates
+  // and never greener, so a living capability document this feature's delta
+  // would rewrite has to be looked at here too. Through the context's memo —
+  // this function always has one — so the walk is shared with the coherence
+  // pass above rather than repeated.
+  const capabilityDeltas = await context.featureCapabilityDeltas(feature.dir);
+  out.push(
+    ...(await livingMergeConflicts(docsDir, await featureSpecServices(feature.dir, context), capabilityDeltas.docs.map((d) => d.id), context)),
+  );
   for (const scan of scans) {
     if (scan.bare.length === 0) continue;
     out.push({

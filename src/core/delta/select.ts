@@ -26,7 +26,7 @@ export async function selectionIssues(
   living: LivingIndex,
   claims: ClaimLookup,
 ): Promise<Issue[]> {
-  const { featureId, service, where, livingDoc } = scope;
+  const { featureId, subject, where, livingDoc } = scope;
   const issues: Issue[] = [];
   /**
    * The pin, against the living requirement this delta actually selects.
@@ -63,7 +63,7 @@ export async function selectionIssues(
         severity: "warn",
         gates: true,
         code: "delta.baseline-missing",
-        subject: service,
+        subject,
         message: `${where}: ${r.kind} requirement '${r.name}' carries no Based-On, so nothing can say whether the living text moved since this delta was written — merging it would replace whatever landed in between. Run \`loam rebase ${featureId}\` to pin it (Based-On: ${current}), or archive with --approve to merge unpinned deliberately.`,
       });
       return;
@@ -72,7 +72,7 @@ export async function selectionIssues(
     issues.push({
       severity: "error",
       code: "delta.baseline-stale",
-      subject: service,
+      subject,
       message:
         `${where}: ${r.kind} requirement '${r.name}' was written against living version ${r.basedOn}, but the ${livingDoc} now holds ${current} — someone landed a change to it in between. ` +
         (r.kind === "MODIFIED"
@@ -103,7 +103,7 @@ export async function selectionIssues(
           severity: "warn",
           gates: true,
           code: "delta.requirement-not-merged",
-          subject: service,
+          subject,
           message: `${where}: requirement '${r.name}' sits under '${r.section}', which is not a delta section — archive will NOT merge it. Move it under '## ADDED Requirements' (or MODIFIED/REMOVED), or drop it if it is documentation.`,
         });
       }
@@ -118,7 +118,7 @@ export async function selectionIssues(
         issues.push({
           severity: "error",
           code: "delta.requirement-identity-collision",
-          subject: service,
+          subject,
           message: `${where}: ADDED requirement '${r.name}' carries Requirement-ID '${r.id}', but that heading already identifies a different living requirement — ID and name cannot select different identities`,
         });
         continue;
@@ -127,7 +127,7 @@ export async function selectionIssues(
         issues.push({
           severity: "error",
           code: "delta.added-duplicate",
-          subject: service,
+          subject,
           message: r.id === undefined
             ? `${where}: ADDED requirement '${r.name}' already exists in the ${livingDoc} — the merge would REPLACE it, scenarios and all. Use MODIFIED, or rename.`
             : `${where}: ADDED requirement '${r.name}' uses Requirement-ID '${r.id}', which already exists in the ${livingDoc} — use MODIFIED to change that identity`,
@@ -145,7 +145,7 @@ export async function selectionIssues(
         issues.push({
           severity: "warn",
           code: "delta.added-near-duplicate",
-          subject: service,
+          subject,
           message: `${where}: ADDED requirement '${r.name}' differs only in case from living requirement '${near}' — the merge matches names exactly, so both would coexist. Match the living spelling and use MODIFIED, or pick a distinct name.`,
         });
       }
@@ -154,7 +154,7 @@ export async function selectionIssues(
         issues.push({
           severity: "warn",
           code: "delta.added-conflict",
-          subject: service,
+          subject,
           message: `${where}: requirement '${r.name}' is also added by ${other} — whichever archives first lands it, and the second archive is refused (delta.added-duplicate) unless --approve`,
         });
       }
@@ -174,7 +174,7 @@ export async function selectionIssues(
       issues.push({
         severity: "warn",
         code: "delta.modified-conflict",
-        subject: service,
+        subject,
         message: `${where}: ${r.kind} requirement '${r.name}' is also changed by ${alsoChanged} — both deltas apply cleanly, so whichever archives second REPLACES the other's text wholesale. Agree on one owner, or fold the two changes together.`,
       });
     }
@@ -193,7 +193,7 @@ export async function selectionIssues(
         issues.push({
           severity: "error",
           code: "delta.requirement-identity-collision",
-          subject: service,
+          subject,
           message: `${where}: ${r.kind} requirement '${r.name}' carries Requirement-ID '${r.id}', but its ID and heading select different living requirements — fix the ID or heading; archive will not guess`,
         });
         continue;
@@ -230,7 +230,7 @@ export async function selectionIssues(
       issues.push({
         severity: "warn",
         code: r.kind === "MODIFIED" ? "delta.modified-pending" : "delta.removed-pending",
-        subject: service,
+        subject,
         message: `${where}: ${r.kind} requirement '${r.name}' is not in the ${livingDoc} yet — ${other} introduces it. Archive ${other} first.`,
       });
       continue;
@@ -238,7 +238,7 @@ export async function selectionIssues(
     issues.push({
       severity: "error",
       code: r.kind === "MODIFIED" ? "delta.modified-unknown" : "delta.removed-unknown",
-      subject: service,
+      subject,
       message:
         r.kind === "MODIFIED"
           ? `${where}: MODIFIED requirement '${r.name}' does not exist in the ${livingDoc} — the merge would create it. Did you mean ADDED?`

@@ -12,6 +12,7 @@ import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { type FeatureDir } from "../../../core/kernel/ids/dirs.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
+import { type CapabilityDoc } from "../../../core/capabilities/tree.js";
 import { type CommitRecovery } from "../../../core/staging/interrupted.js";
 
 export interface Gated {
@@ -22,6 +23,13 @@ export interface Gated {
   /** Parsed ONCE for the whole run — loading it spins up a fresh Langium workspace. */
   deltaDoc: LoadedDoc | undefined;
   deltaServices: PathableService[];
+  /**
+   * The capability documents this feature's delta carries, walked ONCE in the
+   * gate. Three phases downstream ask about them — the conflict-marker scan,
+   * the strayed-requirement scan and the merge — and a second walk is a second
+   * chance to disagree about which capabilities the merge touches.
+   */
+  capabilityDeltas: CapabilityDoc[];
   gating: Issue[];
   advisory: Issue[];
   archiveDir: string;

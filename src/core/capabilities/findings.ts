@@ -26,7 +26,7 @@ import { closeIds } from "../c4/arch.js";
 import { compareIds } from "../repo/entries.js";
 import type { Requirement } from "../document/spec.js";
 import type { Finding } from "../vocabulary/report.js";
-import type { Issue } from "../vocabulary/issue.js";
+import type { CapabilityDocCode, Issue } from "../vocabulary/issue.js";
 import type { CapabilityVocabulary } from "./capabilities.js";
 import type { CapabilityTree } from "./tree.js";
 import type { CapabilityRequirementIndex } from "./realizes/join.js";
@@ -286,10 +286,18 @@ const INTERNAL_JOINS = [
  * so a `--json` consumer can group by capability while a reader gets the file.
  * The two grades ride one walk because they ask about the same requirements and
  * a second pass is a second chance to disagree about which ones are graded.
+ *
+ * `where` DEFAULTS to the living spelling; `capabilities/delta/doc.ts` overrides
+ * it to grade the same requirements inside a feature's own capability delta and
+ * file them as archive Issues. A parameter rather than a second function because
+ * these messages are what a reader acts on, and two copies drift. The return type
+ * states severity and code exactly for that caller: the Finding→Issue conversion
+ * needs no cast, and a fourth grade added here cannot silently stop gating.
  */
-export function capabilityDocFindings(reqs: Requirement[], id: string): Finding[] {
-  const where = `capabilities/${id}/spec.md`;
-  const findings: Finding[] = [];
+type DocGrade = Finding & { severity: "error"; code: CapabilityDocCode };
+
+export function capabilityDocFindings(reqs: Requirement[], id: string, where = `capabilities/${id}/spec.md`): DocGrade[] {
+  const findings: DocGrade[] = [];
   for (const r of reqs) {
     if (r.id === undefined) {
       findings.push({

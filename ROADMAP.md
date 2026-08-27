@@ -152,14 +152,50 @@ because each promises only its own part, and only a flow can carry it. The measu
 gated on came back decisive — a LikeC4 tag name accepts exactly `[A-Za-z0-9_-]` and TRUNCATES at
 anything else — so the slug rule became a whitelist and now serves both tags.
 
+**Landed, phase 4 — the feature-local delta.** `features/<FEAT>/capabilities/<cap>/spec.md` carries
+a delta in the existing requirement grammar, delta algebra and `Based-On:` pins; `loam archive`
+merges it transactionally and creates the living document — and the `capabilities/` tree — when the
+feature is the first to name that capability; `loam unarchive` takes it back; `loam rebase` pins it.
+The three capability-document rules are graded on the delta as well, where they gate archive,
+because otherwise the delta path is a hole straight through the rule that keeps the corpus from
+becoming a second way to write service requirements.
+
+**Two corrections to this item's own text, found by tracing the code rather than reading it.** The
+first: `capability.uncovered` cannot gate archive "exactly as `c4.uncovered` does", because
+**`c4.uncovered` never gates archive** — it is a validate-only `Finding` from `deltaArchCoverage`,
+and the gate reads only `featureCoherence`'s `Issue[]`. The model to copy is `scaffold.placeholder`:
+a warning that GATES, `--approve`-overridable, because the document is legal (writing a promise
+ahead of the fleet is the intended use) while the MERGE is what is unsafe. The second: the item was
+silent about the overlay, without which its own headline flow — add a capability requirement in a
+feature and `Realizes:` it from that same feature's service delta — was refused by the existing
+`capability.realizes-unknown` error.
+
 Remaining, in dependency order, each of which returns here as it lands:
 
-1. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
-   requirement grammar, delta algebra and `Based-On:` pins, merged by the same transactional
-   archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for a
-   capability requirement the feature's own service deltas leave unrealized.
-2. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
+1. **`capability.uncovered`** — an archive refusal for a capability requirement a feature ADDS that
+   no `Realizes:` line in the same feature's service deltas names. Warn that gates,
+   `--approve`-overridable. A `#req-` tagged flow deliberately does NOT count, and that is a
+   consequence rather than a policy: a `dynamic view` has no feature-delta path, so a tag naming a
+   requirement that is not living yet is already `usecase.requirement-unresolved` — the flow route
+   opens only after the promise lands.
+2. **The same join in the REMOVAL direction**, which is the hole phase 4 left open and reproduced
+   end to end: a feature that removes a capability requirement a living service requirement realizes
+   archives at exit 0, and the next `validate --all` then fails with `capability.realizes-unknown`
+   against a service document nobody touched. It belongs with (1) — one join, two directions.
+3. **`loam status`'s artifact table cannot name a capability delta.** No `capabilities` artifact id,
+   so a capability fault maps to `spec` and matches no service; in a fleet holding a service and a
+   capability of the same name it names the wrong file. Status still refuses to ship, which a
+   fixture pins.
+4. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
    opens the document that changes, and the service work is derived from it.
+5. **Informational surfaces** — `loam show`, `delta`, `context` and `diff` do not list capability
+   deltas. Probed for crashes: clean. A context pack is deliberately excluded, because it is one
+   service's slice and a capability delta names no service.
+
+Deferred with a named trigger: a softened sibling of (1) for the case where one feature adds the
+promise and another in flight carries the `Realizes:` line — the shape `delta.modified-pending` and
+`spec-api.op-pending` already have. `--approve` covers it today, and a code shipped speculatively is
+a branch nobody needed. Trigger: the pilot, or the first fleet that reports the ordering.
 
 Exit criteria for calling the axis complete (the first is now MET — `loam list capabilities`
 carries `keptBy` beside `realizedBy` on every promise, and `capability.unrealized` counts both

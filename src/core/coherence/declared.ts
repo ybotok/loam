@@ -24,9 +24,12 @@ import { locateServicePaths } from "../repo/service-target.js";
 import { parseRequirements } from "../document/parse.js";
 import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
 import { capabilityRequirementIndex } from "../capabilities/findings.js";
+import { withFeatureCapabilities, withFeatureRequirements } from "../capabilities/delta/overlay.js";
+import { featureCapabilityDeltas } from "../capabilities/delta/tree.js";
 import { realizesUnknownIssues } from "../capabilities/realizes/findings.js";
 import type { CapabilityRequirementIndex } from "../capabilities/realizes/join.js";
 import { capabilityUnknownIssues } from "../capabilities/findings.js";
+import type { Requirement } from "../document/spec.js";
 import { openapiBaselineIssues } from "../openapi/baseline/gate.js";
 import { readOpenapi } from "../openapi/doc.js";
 import type { FleetContext } from "../fleet-context.js";
@@ -87,8 +90,22 @@ export async function declaredByService(
     // /loam-check row tells agents to fix the YAML first). `grading` is that
     // silence hoisted into a guard, so a silent axis also skips the reads that
     // exist only to feed it.
-    const capabilityVocab =
-      context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir);
+    //
+    // The vocabulary is the one this feature's MERGE would leave behind, not
+    // the one on disk: a feature that adds a capability requirement in its own
+    // capability delta and `Realizes:` it from its own service delta is the
+    // flow the whole axis exists for, and graded against the living tree alone
+    // it is refused with `capability.realizes-unknown` — an error, gating
+    // archive, for a target the same archive creates. `capabilities/delta/
+    // overlay.ts` states the whole judgement. One `existsSync` for a feature
+    // that carries no capability delta, which is every feature in a fleet that
+    // has not adopted the axis.
+    const capabilityDeltas =
+      context === undefined ? await featureCapabilityDeltas(featureDir) : await context.featureCapabilityDeltas(featureDir);
+    const capabilityVocab = withFeatureCapabilities(
+      context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir),
+      capabilityDeltas.docs.map((d) => d.id),
+    );
     const grading = capabilityVocab.present && capabilityVocab.invalid === undefined;
     // The `Realizes:` index, built at most ONCE per feature and only if some
     // delta document actually reaches the grading branch. Lazy rather than
@@ -98,11 +115,17 @@ export async function declaredByService(
     // `grading` above states, one level deeper.
     let pendingIndex: Promise<CapabilityRequirementIndex> | null = null;
     const capabilityReqs = (): Promise<CapabilityRequirementIndex> => {
-      pendingIndex ??= capabilityRequirementIndex(
-        capabilityVocab,
-        context === undefined
-          ? async (p) => parseRequirements(await readFile(p, "utf8"))
-          : (p) => context.readRequirements(p),
+      const read = context === undefined
+        ? async (p: string): Promise<Requirement[]> => parseRequirements(await readFile(p, "utf8"))
+        : (p: string): Promise<Requirement[]> => context.readRequirements(p);
+      // The living index first, then widened by what this feature's capability
+      // deltas ADD or MODIFY. Both halves are inside the lazy thunk, so a
+      // feature whose deltas carry no requirement file at all pays for neither.
+      pendingIndex ??= capabilityRequirementIndex(capabilityVocab, read).then(async (index) =>
+        withFeatureRequirements(
+          index,
+          await Promise.all(capabilityDeltas.docs.map(async (d) => ({ id: d.id, reqs: await read(d.spec) }))),
+        ),
       );
       return pendingIndex;
     };

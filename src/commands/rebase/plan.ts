@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../../core/kernel/document-bytes.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
-import { type SpecAxis } from "../../core/repo/paths.js";
+import { livingCapabilityPaths, type SpecAxis } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
 import { parseRequirements, readRequirementsDocument } from "../../core/document/parse.js";
 import { requirementDigest, type Requirement } from "../../core/document/spec.js";
@@ -60,8 +60,16 @@ export type PinStatus =
    */
   | "unwritable";
 
-export interface PinOutcome {
-  service: string;
+/**
+ * What happened to ONE pin, minus whose document it was in.
+ *
+ * Split from `PinOutcome` when the business corpus arrived: a capability delta
+ * is pinned by the identical rule against an identical document, but it names
+ * no service, and putting a capability id into a published field called
+ * `service` would bend the `--json` contract into a lie. Everything a reader
+ * acts on lives here; the two wrappers below add only the identity.
+ */
+export interface PinRecord {
   /** The axis's filename — "spec.md", "arch.spec.md", "openapi.yaml" or "asyncapi.yaml". */
   file: string;
   /**
@@ -80,9 +88,23 @@ export interface PinOutcome {
   to: string | null;
 }
 
+export interface PinOutcome extends PinRecord {
+  service: string;
+}
+
+/** The same record on the business corpus, keyed by the promise instead of the service. */
+export interface CapabilityPinOutcome extends PinRecord {
+  capability: string;
+}
+
 export interface AxisPlan {
   outcomes: PinOutcome[];
   /** The rewritten document, or null when nothing about it changes. */
+  content: string | null;
+}
+
+export interface CapabilityAxisPlan {
+  outcomes: CapabilityPinOutcome[];
   content: string | null;
 }
 
@@ -93,17 +115,56 @@ export async function planAxis(
   axis: SpecAxis,
   specPath: string,
 ): Promise<AxisPlan> {
+  const livingPath = (await locateServicePaths(repo.docsDir, service, repo.fleet))[axis.key];
+  const planned = await planRequirementPins(specPath, livingPath, axis.file);
+  return { outcomes: planned.pins.map((pin) => ({ service, ...pin })), content: planned.content };
+}
+
+/**
+ * The same, for one capability delta against its living document.
+ *
+ * NOT OPTIONAL, and not symmetry for its own sake: `delta.baseline-missing` is
+ * a warning that GATES archive, and its message ends "Run `loam rebase <FEAT>`
+ * to pin it". A capability delta graded by that rule while `rebase` skipped the
+ * axis would have loam send an author to a command that does not pin the file
+ * loam just named — a refusal with no exit, which is the one thing a gating
+ * message may never be.
+ *
+ * The living path resolves through `livingCapabilityPaths` for the reason that
+ * function states: the id's nesting is spelled by directories, so an unsplit
+ * join reads an empty living document and every pin comes out `unresolved`
+ * over a promise the fleet already made.
+ */
+export async function planCapabilityAxis(
+  repo: RepoRead,
+  capability: string,
+  specPath: string,
+): Promise<CapabilityAxisPlan> {
+  const planned = await planRequirementPins(specPath, livingCapabilityPaths(repo.docsDir, capability).spec, "spec.md");
+  return { outcomes: planned.pins.map((pin) => ({ capability, ...pin })), content: planned.content };
+}
+
+/**
+ * The pin rule itself: every MODIFIED/REMOVED requirement in one delta document,
+ * against one living document. Whose documents they are is the caller's
+ * business — this is the part that must not fork, because a second copy is a
+ * second answer to "was this delta written against what is there now".
+ */
+async function planRequirementPins(
+  specPath: string,
+  livingPath: string,
+  file: string,
+): Promise<{ pins: PinRecord[]; content: string | null }> {
   // Both sides through the decoding read: the delta because line surgery over a
   // document loam mis-decoded would write bytes nobody authored, the living
   // because it is what every digest below is taken over.
   const raw = await readRequirementsDocument(specPath);
   const reqs = parseRequirements(raw);
-  const livingPath = (await locateServicePaths(repo.docsDir, service, repo.fleet))[axis.key];
   const living = existsSync(livingPath)
     ? parseRequirements(await readRequirementsDocument(livingPath))
     : [];
 
-  const outcomes: PinOutcome[] = [];
+  const pins: PinRecord[] = [];
   const edits: LineEdit[] = [];
   for (const r of reqs) {
     if (r.kind !== "MODIFIED" && r.kind !== "REMOVED") continue;
@@ -112,18 +173,18 @@ export async function planAxis(
     // there is nothing truthful to report about pinning it.
     const line = r.line;
     if (line === undefined) continue;
-    const base = { service, file: axis.file, kind: r.kind, target: r.name };
+    const base = { file, kind: r.kind, target: r.name };
     const selected = selectLiving(living, r);
     if (selected === undefined) {
-      outcomes.push({ ...base, status: "unresolved", from: r.basedOn ?? null, to: null });
+      pins.push({ ...base, status: "unresolved", from: r.basedOn ?? null, to: null });
       continue;
     }
     const digest = requirementDigest(selected);
     if (r.basedOn === digest) {
-      outcomes.push({ ...base, status: "unchanged", from: digest, to: digest });
+      pins.push({ ...base, status: "unchanged", from: digest, to: digest });
       continue;
     }
-    outcomes.push({
+    pins.push({
       ...base,
       status: r.basedOn === undefined ? "pinned" : "repinned",
       from: r.basedOn ?? null,
@@ -132,7 +193,7 @@ export async function planAxis(
     edits.push(pinEdit(r, line, digest));
   }
 
-  return { outcomes, content: edits.length === 0 ? null : applyEdits(raw, edits) };
+  return { pins, content: edits.length === 0 ? null : applyEdits(raw, edits) };
 }
 
 /**
