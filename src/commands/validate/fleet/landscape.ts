@@ -26,8 +26,12 @@ import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js"
 import { drawnSystems, serviceLevelElements } from "./census.js";
 import { unreadableLandscape } from "./load.js";
 import { kindTagFindings } from "./kind-tags.js";
+import { useCaseFindings } from "./usecases/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
+import { readCapabilities } from "../../../core/capabilities/capabilities.js";
+import { gradableCapabilityIds } from "../../../core/capabilities/findings.js";
+import { capabilitiesPath } from "../../../core/repo/paths.js";
 
 /**
  * The fleet cross-check: `services/` and the landscape both claim to name the
@@ -254,6 +258,46 @@ export async function validateLandscape(
   // below on purpose: a map with a shape warning did not fully "agree".
   findings.push(
     ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf, pathOf }),
+  );
+
+  // The use cases the SAME `architecture/` project declares — every
+  // `dynamic view` in the landscape and in every `architecture/usecases/*.likec4`
+  // — graded against the model above (usecases/usecases.ts owns the opt-in and
+  // the grades). They ride this target for `viewsStaleFindings`' reason: a view
+  // belongs to no service, and only the fleet run has both the whole model and
+  // the enumerated `services/` in view at once.
+  //
+  // The views come from `preloaded` rather than from `land`, and that is the
+  // file-naming rule made mechanical instead of remembered: only the PROJECT
+  // load gives a view the `sourcePath` a finding has to name, while the
+  // single-file fallback a few lines above calls every document `source.c4` —
+  // so a message built from that load would send its reader to
+  // `architecture/source.c4`, a file that has never existed. No preload, no
+  // grading, and nothing to get wrong.
+  //
+  // Read second, and the ladder APPLIED BY ITS OWN FUNCTION rather than
+  // re-spelled here: an absent or unreadable capabilities.yaml means silence for
+  // the whole family, not a fleet full of unresolved tags, so `null` travels
+  // rather than an empty list — which the join would read as "the fleet declares
+  // no capabilities" and grade every tag against. `gradableCapabilityIds` is the
+  // one statement of that rule (`core/capabilities/findings.ts`), and this is a
+  // caller of it precisely so a fourth un-gradable vocabulary state cannot be
+  // fixed in core while the command layer keeps handing the join a whole key set.
+  // `capabilityFleetFindings` above has already paid for this read through the
+  // fleet context's memo.
+  const vocabulary =
+    fleet === undefined
+      ? await readCapabilities(capabilitiesPath(docsDir))
+      : await fleet.capabilities(capabilitiesPath(docsDir));
+  findings.push(
+    ...useCaseFindings({
+      views: preloaded?.views ?? [],
+      elements: land.elements,
+      relationships: land.relationships,
+      services,
+      resolve: landSvcOf,
+      capabilities: gradableCapabilityIds(vocabulary),
+    }),
   );
 
   if (findings.length === 0) {

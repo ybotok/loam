@@ -30,6 +30,34 @@ export interface CapabilityTarget {
   subject: string;
 }
 
+/**
+ * THE LADDER, and the only place it is applied: the declared capability ids when
+ * the vocabulary can be graded against at all, `null` when it cannot.
+ *
+ * Exported because the suppression is not this module's private business — the
+ * use-case axis asks the same question about the same file
+ * (`commands/validate/fleet/landscape.ts` hands the answer to
+ * `usecases/capability-tag.ts`), and a hand-rolled
+ * `present && invalid === undefined ? [...byId.keys()] : null` at each site is
+ * three copies of one rule. The failure that costs is not hypothetical: the next
+ * un-gradable state added to `CapabilityVocabulary` — "present but partially
+ * readable" is the obvious one, since `readCapabilities` already treats a
+ * non-mapping declaration body as `{}` — gets fixed wherever the greps land, and
+ * any copy left behind answers with the whole key set. A half-read vocabulary
+ * then reads as a complete one, and every `#cap-` tag whose capability lived in
+ * the unreadable half becomes one `usecase.capability-unresolved` ERROR per
+ * view: the cascade this ladder exists to prevent, arriving through the ladder.
+ *
+ * `null` rather than `[]`, and the two are never interchangeable: an empty list
+ * is the real verdict "this fleet declares no capabilities" and every entry
+ * fails against it, while `null` says there is nothing to grade against and
+ * suspends the family. Callers that only need the boolean read `=== null`.
+ */
+export function gradableCapabilityIds(vocab: CapabilityVocabulary): readonly string[] | null {
+  if (!vocab.present || vocab.invalid !== undefined) return null;
+  return [...vocab.byId.keys()];
+}
+
 /** One unresolved entry: the requirement that wrote it, the entry, the close names. */
 interface UnknownEntry {
   requirement: string;
@@ -39,8 +67,8 @@ interface UnknownEntry {
 
 /** Non-REMOVED requirements' entries the vocabulary does not declare — or nothing, per the opt-in rule above. */
 function unknownEntries(reqs: Requirement[], vocab: CapabilityVocabulary): UnknownEntry[] {
-  if (!vocab.present || vocab.invalid !== undefined) return [];
-  const known = [...vocab.byId.keys()];
+  const known = gradableCapabilityIds(vocab);
+  if (known === null) return [];
   const out: UnknownEntry[] = [];
   for (const r of reqs) {
     if (r.kind === "REMOVED") continue;
@@ -124,8 +152,9 @@ export function invalidVocabularyFinding(vocab: CapabilityVocabulary): Finding |
  * promise nobody implemented, or a distinct word nobody adopted.
  */
 export function unrealizedFindings(vocab: CapabilityVocabulary, used: ReadonlySet<string>): Finding[] {
-  if (!vocab.present || vocab.invalid !== undefined) return [];
-  return [...vocab.byId.keys()]
+  const declared = gradableCapabilityIds(vocab);
+  if (declared === null) return [];
+  return declared
     .filter((id) => !used.has(id))
     .sort(compareIds)
     .map((id) => ({

@@ -48,6 +48,11 @@ specification {
   // depends on it" answerable during an incident. LikeC4 refuses an undeclared
   // tag, so the declaration here and the tag on the element are both needed.
   tag platform
+  // The capability a use case opts in with. `architecture/usecases/` declares
+  // no `specification` of its own — the whole directory is ONE LikeC4 project,
+  // and a second declaration there is a duplicate error blamed on both files —
+  // so a tag a flow carries is declared here, beside the kinds.
+  tag cap-order-notifications
 }
 
 model {
