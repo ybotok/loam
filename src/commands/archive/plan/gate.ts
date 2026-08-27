@@ -22,8 +22,10 @@ import {
   archiveDir as archiveRoot,
   featurePaths,
   featureSpecPaths,
+  livingCapabilityPaths,
   SPEC_AXES,
 } from "../../../core/repo/paths.js";
+import { featureCapabilityDeltas } from "../../../core/capabilities/delta/tree.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";
 import { featureCoherence } from "../../../core/coherence/coherence.js";
@@ -71,6 +73,19 @@ export async function gate(
   const deltaDoc = existsSync(deltaLikec4) ? await loadFile(deltaLikec4) : undefined;
 
   const deltaServices = await featureSpecServices(featureDir);
+  // The business corpus's delta tree, walked once HERE and carried on `Gated`:
+  // the conflict-marker scan, the strayed-requirement scan and the merge itself
+  // all ask which capability documents this feature rewrites, and three walks
+  // are three chances to answer differently. `featureCoherence` below walks it
+  // again on its own — it is called without `config.fleet`, the same
+  // no-context path `core/coherence/declared.ts` already documents paying for
+  // the arch delta — so this is not the run's only walk, only the one every
+  // phase downstream of the gate shares.
+  const capabilityDeltas = (
+    config.fleet === undefined
+      ? await featureCapabilityDeltas(featureDir)
+      : await config.fleet.featureCapabilityDeltas(featureDir)
+  ).docs;
 
   // A `specs/<svc>/` whose NAME is not a legal service id, refused before
   // anything joins that name into a path: the conflict scan below probes
@@ -112,7 +127,7 @@ export async function gate(
   // --approve does not apply, exactly as with the strayed-requirement refusal
   // below: --approve overrides judgments about the FEATURE, and this is a fact
   // about the living document.
-  const conflicted = await livingMergeConflicts(config.docsDir, deltaServices);
+  const conflicted = await livingMergeConflicts(config.docsDir, deltaServices, capabilityDeltas.map((d) => d.id));
   if (conflicted.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${conflicted.length} living document(s) still hold git conflict markers`;
     if (json) {
@@ -235,26 +250,36 @@ export async function gate(
   // editing text it does not understand. --approve does not apply — it
   // overrides judgments about the FEATURE, and this is neither.
   const strayed: Issue[] = [];
+  const scanStrayed = async (livingPath: string, subject: string): Promise<void> => {
+    if (!existsSync(livingPath)) return;
+    for (const r of parseRequirements(await readUtf8(livingPath))) {
+      // The ONE definition of the heading (spec.ts): the guard and the rewrite
+      // boundary match the same way, so they cannot disagree about "outside".
+      if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
+      const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
+      strayed.push({
+        severity: "error",
+        code: "living.requirement-outside-requirements",
+        subject,
+        message: `${subject}: living requirement '${r.name}' sits ${where} in ${repoPath(config.docsDir, livingPath)} — the merge rewrites only '## Requirements', so it would land in the file twice. Re-home it under '## Requirements' first, then re-run.`,
+      });
+    }
+  };
   for (const svc of deltaServices) {
     for (const axis of SPEC_AXES) {
       if (!existsSync(featureSpecPaths(featureDir, svc)[axis.key])) continue;
       // The shared context, because this sits in a deltaServices × SPEC_AXES
       // loop: without it every iteration re-walks and re-reads the fleet.
-      const livingPath = (await locateServicePaths(config.docsDir, svc, config.fleet))[axis.key];
-      if (!existsSync(livingPath)) continue;
-      for (const r of parseRequirements(await readUtf8(livingPath))) {
-        // The ONE definition of the heading (spec.ts): the guard and the rewrite
-        // boundary match the same way, so they cannot disagree about "outside".
-        if (r.section !== undefined && isRequirementsHeading(r.section)) continue;
-        const where = r.section === undefined ? "above every heading" : `under '${r.section}'`;
-        strayed.push({
-          severity: "error",
-          code: "living.requirement-outside-requirements",
-          subject: svc,
-          message: `${svc}: living requirement '${r.name}' sits ${where} in ${repoPath(config.docsDir, livingPath)} — the merge rewrites only '## Requirements', so it would land in the file twice. Re-home it under '## Requirements' first, then re-run.`,
-        });
-      }
+      await scanStrayed((await locateServicePaths(config.docsDir, svc, config.fleet))[axis.key], svc);
     }
+  }
+  // The business corpus, for the identical mechanical reason: a capability
+  // document is narrative ABOVE `## Requirements`, `rewriteRequirementsRun`
+  // rewrites only the run inside that heading, and a requirement filed under
+  // `## Notes` would keep its authored copy in the preserved prose AND land
+  // again in the rewritten run.
+  for (const doc of capabilityDeltas) {
+    await scanStrayed(livingCapabilityPaths(config.docsDir, doc.id).spec, doc.id);
   }
   if (strayed.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${strayed.length} living requirement(s) outside '## Requirements'`;
@@ -280,5 +305,18 @@ export async function gate(
 
   say(`archive ${id}${dryRun ? "  (dry run)" : ""}\n`);
 
-  return { id, dirName, featureDir, deltaDoc, deltaServices, gating, advisory, archiveDir, archiveDest, recovered, issues };
+  return {
+    id,
+    dirName,
+    featureDir,
+    deltaDoc,
+    deltaServices,
+    capabilityDeltas,
+    gating,
+    advisory,
+    archiveDir,
+    archiveDest,
+    recovered,
+    issues,
+  };
 }

@@ -24,6 +24,8 @@ import { resolve } from "node:path";
 import { readAsyncapi } from "./asyncapi/read.js";
 import type { AsyncapiDoc } from "./asyncapi/model.js";
 import { readCapabilityVocabulary, type CapabilityVocabulary } from "./capabilities/capabilities.js";
+import { featureCapabilityDeltas } from "./capabilities/delta/tree.js";
+import type { CapabilityTree } from "./capabilities/tree.js";
 import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
@@ -60,6 +62,15 @@ export interface FleetContextStats {
    * do not copy that.)
    */
   capabilityParses: number;
+  /**
+   * Walks of ONE feature's `capabilities/` delta tree. Counted apart from
+   * `capabilityParses` because it answers a different question about a
+   * different directory, and because a fleet that has not adopted the business
+   * axis must be able to prove it pays nothing: every feature's walk is a
+   * single `existsSync` that finds no directory, so this counter rises while
+   * `textReads` and `requirementParses` do not.
+   */
+  featureCapabilityWalks: number;
   likec4Loads: number;
 }
 
@@ -76,6 +87,7 @@ export class FleetContext {
   private readonly openapis = new Map<string, Promise<OpenapiDoc>>();
   private readonly asyncapis = new Map<string, Promise<AsyncapiDoc>>();
   private readonly capabilityVocabularies = new Map<string, Promise<CapabilityVocabulary>>();
+  private readonly featureCapabilities = new Map<string, Promise<CapabilityTree>>();
   private readonly likec4 = new Map<string, Promise<LoadedDoc>>();
 
   private readonly counts: FleetContextStats = {
@@ -87,6 +99,7 @@ export class FleetContext {
     openapiParses: 0,
     asyncapiParses: 0,
     capabilityParses: 0,
+    featureCapabilityWalks: 0,
     likec4Loads: 0,
   };
 
@@ -228,6 +241,28 @@ export class FleetContext {
       this.counts.capabilityParses += 1;
       pending = readCapabilityVocabulary(docsDir);
       this.capabilityVocabularies.set(k, pending);
+    }
+    return pending;
+  }
+
+  /**
+   * One feature's `capabilities/` delta tree, walked once per invocation. Two
+   * readers ask for it in the same run — the delta-shape walk
+   * (`core/delta/delta.ts`) and the capability overlay
+   * (`core/coherence/declared.ts`) — and without the memo a feature carrying
+   * three capability deltas paid the readdirs twice.
+   *
+   * The direction rule stated on `capabilities()` above applies verbatim: the
+   * function this stands in front of takes a plain `FeatureDir`, never a
+   * FleetContext, so `src/core/capabilities/` never imports this module back.
+   */
+  featureCapabilityDeltas(featureDir: FeatureDir): Promise<CapabilityTree> {
+    const k = key(featureDir);
+    let pending = this.featureCapabilities.get(k);
+    if (pending === undefined) {
+      this.counts.featureCapabilityWalks += 1;
+      pending = featureCapabilityDeltas(featureDir);
+      this.featureCapabilities.set(k, pending);
     }
     return pending;
   }

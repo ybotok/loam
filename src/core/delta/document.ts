@@ -51,14 +51,14 @@ const RENAMED_SECTION_RE = /^##\s+RENAMED\s+Requirements?\s*:?\s*$/i;
 
 /** Everything wrong with the DELTA document on its own terms. */
 export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requirement[]): Issue[] {
-  const { docsDir, service, specPath, where } = scope;
+  const { docsDir, subject, specPath, where } = scope;
   const issues: Issue[] = [];
   for (const heading of sectionHeadings(raw)) {
     if (KIND_RE.test(heading.text) || !NEAR_SECTION_RE.test(heading.text)) continue;
     issues.push({
       severity: "error",
       code: "delta.unknown-section",
-      subject: service,
+      subject,
       message: RENAMED_SECTION_RE.test(heading.text)
         ? `${where}: '${heading.text}' (line ${heading.line}) is OpenSpec rename syntax, which loam does not merge — carry one stable Requirement-ID through a MODIFIED requirement, or express a legacy rename as a REMOVED requirement plus an ADDED one; otherwise the rename happens to nothing`
         : `${where}: '${heading.text}' (line ${heading.line}) is not a delta section — use '## ADDED Requirements', '## MODIFIED Requirements' or '## REMOVED Requirements', or everything under it merges as nothing`,
@@ -70,21 +70,21 @@ export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requir
       issues.push({
         severity: "error",
         code: "delta.requirement-id-invalid",
-        subject: service,
+        subject,
         message: `${where}: requirement '${problem.requirement}' has invalid Requirement-ID '${problem.value}' — use 1-128 characters matching [A-Za-z][A-Za-z0-9._-]*`,
       });
     } else if (problem.kind === "repeated") {
       issues.push({
         severity: "error",
         code: "delta.requirement-id-repeated",
-        subject: service,
+        subject,
         message: `${where}: requirement '${problem.requirement}' declares Requirement-ID ${problem.values.length} times — identity must be declared exactly once`,
       });
     } else {
       issues.push({
         severity: "error",
         code: "delta.requirement-id-duplicate",
-        subject: service,
+        subject,
         message: `${where}: Requirement-ID '${problem.id}' is shared by ${problem.requirements.map((name) => `'${name}'`).join(", ")} — one ID may identify only one requirement`,
       });
     }
@@ -104,7 +104,7 @@ export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requir
       issues.push({
         severity: "error",
         code: "delta.baseline-invalid",
-        subject: service,
+        subject,
         message: `${where}: requirement '${r.name}' declares Based-On ${declared.length} times — a delta is written against exactly one living version`,
       });
       continue;
@@ -115,14 +115,14 @@ export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requir
       issues.push({
         severity: "error",
         code: "delta.baseline-invalid",
-        subject: service,
+        subject,
         message: `${where}: requirement '${r.name}' has invalid Based-On '${pin}' — expected ${REQUIREMENT_DIGEST_LENGTH} lowercase hex characters, as \`loam rebase\` writes them`,
       });
     } else if (r.kind === "ADDED") {
       issues.push({
         severity: "error",
         code: "delta.baseline-invalid",
-        subject: service,
+        subject,
         message: `${where}: ADDED requirement '${r.name}' carries Based-On '${pin}', but an added requirement has no living version to be based on — drop the line, or make it MODIFIED`,
       });
     }
@@ -141,8 +141,8 @@ export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requir
     issues.push({
       severity: "error",
       code: "delta.no-delta-sections",
-      subject: service,
-      message: `${service}: ${rel} contains ${reqs.length} requirement(s) but no '## ADDED|MODIFIED|REMOVED Requirements' section — this delta would merge nothing`,
+      subject,
+      message: `${subject}: ${rel} contains ${reqs.length} requirement(s) but no '## ADDED|MODIFIED|REMOVED Requirements' section — this delta would merge nothing`,
     });
   }
   return issues;
@@ -150,13 +150,13 @@ export function deltaDocumentIssues(scope: DeltaScope, raw: string, reqs: Requir
 
 /** Everything wrong with the LIVING document that stops a delta selecting in it. */
 export function livingDocumentIssues(scope: DeltaScope, living: LivingIndex): Issue[] {
-  const { service, where, livingDoc } = scope;
+  const { subject, where, livingDoc } = scope;
   const issues: Issue[] = [];
   for (const problem of requirementIdProblems(living.all)) {
     issues.push({
       severity: "error",
       code: "delta.living-requirement-id-invalid",
-      subject: service,
+      subject,
       message:
         problem.kind === "invalid"
           ? `${where}: the ${livingDoc} requirement '${problem.requirement}' has invalid Requirement-ID '${problem.value}', so this delta cannot select it safely`
@@ -179,7 +179,7 @@ export function livingDocumentIssues(scope: DeltaScope, living: LivingIndex): Is
     issues.push({
       severity: "error",
       code: "delta.living-duplicate-requirement",
-      subject: service,
+      subject,
       message: `${where}: the ${livingDoc} declares ${twins.length} requirements named '${name}' — MODIFIED would rewrite only the first and REMOVED would delete both, so no delta applies to it predictably. Give them distinct names (or distinct Requirement-IDs and headings) first.`,
     });
   }

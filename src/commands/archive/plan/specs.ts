@@ -14,7 +14,12 @@
  */
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
-import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import {
+  capabilityDocsDir,
+  featureSpecPaths,
+  livingCapabilityPaths,
+  SPEC_AXES,
+} from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import {
   isRequirementsHeading,
@@ -85,6 +90,87 @@ export async function planSpecs(
       const c = summarize(deltaReqs);
       say(`  ${axis.label}: ${svc} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
     }
+  }
+}
+
+/**
+ * The BUSINESS corpus's merge: a feature's `capabilities/<id>/spec.md` deltas
+ * applied into the living `capabilities/<id>/spec.md`.
+ *
+ * Here rather than in a sixth file in this package because this module already
+ * owns "requirements merged into a living document" — it owns
+ * `rewriteRequirementsRun`, the two-headings refusal and the `applyRequirementDelta`
+ * call, and the business corpus needs all three unchanged. What differs from
+ * `planSpecs` above is only where the living document lives and what a CREATED
+ * one says at the top.
+ *
+ * ARCHIVE CREATES THE LIVING DOCUMENT, by exact analogy with the new-service
+ * branch above. The directory IS the list on this axis (`core/capabilities/tree.ts`),
+ * so an archive that merged into a file it refused to create would make the
+ * whole delta merge nothing — which is the `delta.no-delta-sections` failure
+ * class, arriving through the merge instead of through the grammar.
+ *
+ * NO FRONTMATTER on a created capability document, and that is a decision
+ * rather than an omission. Nothing reads a capability document's frontmatter:
+ * `readCapabilityTree` classifies by the file's PRESENCE and
+ * `readCapabilityVocabulary` takes `description`/`owner` from the YAML side. A
+ * `status:` field invented here would be the "second list nothing keeps
+ * current" this axis was designed against.
+ *
+ * AND IT SAYS SO OUT LOUD. Creating the first `capabilities/<id>/spec.md`
+ * creates `capabilities/`, which is one of the two ways a fleet opts INTO the
+ * capability axis — from the next command on, `loam validate --all` grades a
+ * corpus that did not exist before. A merge that changes what the whole fleet
+ * is graded on must not do it silently.
+ */
+export async function planCapabilities(
+  config: { docsDir: DocsDir; fleet?: FleetContext },
+  gated: Gated,
+  plan: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const { writes } = plan;
+  // Whether `capabilities/` exists is asked BEFORE the loop, because the loop
+  // is what would create it; `creating` records whether this run actually
+  // materialises a document, so the adoption line below is not printed by a
+  // run whose every capability delta merged into a document already there.
+  const adopting = !existsSync(capabilityDocsDir(config.docsDir));
+  let creating = false;
+  for (const doc of gated.capabilityDeltas) {
+    const deltaReqs = parseRequirements(await readUtf8(doc.spec));
+    const livingPath = livingCapabilityPaths(config.docsDir, doc.id).spec;
+    if (!existsSync(livingPath)) {
+      const created = applyRequirementDelta([], deltaReqs);
+      if (created.length === 0) {
+        say(`  capability: ${doc.id} — nothing to merge (delta leaves no requirements), no living spec.md created`);
+        continue;
+      }
+      // The heading is the id and nothing else. loam merges requirements and
+      // never prose, so it must not fabricate the narrative that is the whole
+      // point of the document — the line below tells the author it is theirs.
+      writes.push(planWrite(livingPath, `# ${doc.id}\n\n## Requirements\n\n${serializeRequirements(created)}`));
+      creating = true;
+      say(`  capability: ${doc.id} — created capabilities/${doc.id}/spec.md (${created.length} requirement(s))`);
+      say(`      write the narrative above '## Requirements' — loam merges requirements, not prose`);
+      continue;
+    }
+    const livingText = await readUtf8(livingPath);
+    // The same one-section invariant as the service axis above, and the same
+    // reason it cannot be guessed at.
+    const reqHeadings = sectionHeadings(livingText).filter((h) => isRequirementsHeading(h.text));
+    if (reqHeadings.length > 1) {
+      throw new ArchiveFailure(
+        "merge-failed",
+        `living capabilities/${doc.id}/spec.md has ${reqHeadings.length} '## Requirements' headings (lines ${reqHeadings.map((h) => h.line).join(", ")}) — the merge rewrites ONE requirements section and cannot choose; merge them into one, then re-run`,
+      );
+    }
+    const merged = applyRequirementDelta(parseRequirements(livingText), deltaReqs);
+    writes.push(planWrite(livingPath, rewriteRequirementsRun(livingText, merged)));
+    const c = summarize(deltaReqs);
+    say(`  capability: ${doc.id} ← +${c.ADDED} ~${c.MODIFIED} -${c.REMOVED} (now ${merged.length} total)`);
+  }
+  if (adopting && creating) {
+    say(`  capabilities/ did not exist — this archive opts the fleet into the business axis, and \`loam validate --all\` grades it from now on`);
   }
 }
 

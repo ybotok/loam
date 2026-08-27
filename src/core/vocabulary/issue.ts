@@ -42,6 +42,34 @@ export function approveOverrides(i: Issue): boolean {
   return i.code !== "c4.service-binding-invalid";
 }
 
+/**
+ * The three grades a CAPABILITY DOCUMENT earns on its own terms, named as a
+ * union of their own because both corpora emit them and the two must stay one
+ * list: `validate --all` grades the living `capabilities/<id>/spec.md` and
+ * files them as Findings, while the archive gate grades a feature's
+ * `features/<FEAT>/capabilities/<id>/spec.md` and files the SAME three as
+ * archive-gating Issues.
+ *
+ * Grading the delta is not belt-and-braces. Without it, a capability
+ * requirement with no `Requirement-ID:` — or one carrying `Operations:`, the
+ * service-altitude line the whole corpus exists to keep out — merges into the
+ * living tree and only THEN earns its error, against a document whoever reads
+ * the finding did not write. The feature-local delta must not become a second
+ * way to write service requirements, and this is the rule that stops it.
+ *
+ * No code is added to the product here: all three already shipped, are already
+ * emitted from `core/capabilities/findings.ts` with literal `code:` values, and
+ * are already documented in the `/loam-check` table. What the union member adds
+ * is the compiler's permission to file the same finding at the archive gate.
+ */
+export type CapabilityDocCode =
+  /** a requirement in a capability document with no `Requirement-ID:` — identity by heading, which every join to it breaks on */
+  | "capability.requirement-unidentified"
+  /** a capability requirement carrying `Operations:`/`Covers:`/`Publishes:`/`Consumes:` — a service requirement filed at the wrong altitude */
+  | "capability.requirement-service-scoped"
+  /** a capability requirement carrying `Capability:` or `Realizes:` — the axis's own joins, which point into the tree and so do nothing written inside it */
+  | "capability.requirement-inert-join";
+
 export type IssueCode =
   /* --- cross-axis: C4 <-> requirements <-> OpenAPI --- */
   /** the architecture axis could not be read at all */
@@ -192,6 +220,7 @@ export type IssueCode =
   | "capability.unknown"
   /** a delta requirement's `Realizes:` entry that names no capability requirement — same argument as `capability.unknown` one join over: the merge would land a pointer at a promise that does not exist, looking exactly like a working one */
   | "capability.realizes-unknown"
+  | CapabilityDocCode
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

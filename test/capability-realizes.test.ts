@@ -371,6 +371,127 @@ ${written}
   });
 });
 
+describe("a feature's own capability delta widens what its service deltas may realize", () => {
+  /** A capability delta adding one requirement under `## ADDED Requirements`. */
+  const capabilityDelta = (id: string, name: string): string => `# ${id} — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: ${name}
+Requirement-ID: ${id}
+The fleet SHALL keep this promise.
+
+#### Scenario: It is kept
+- **Given** a customer
+- **When** they ask
+- **Then** it is kept
+`;
+
+  /** The coherent feature, its service delta requirement carrying `entry`. */
+  const featureRealizing = (entry: string): Record<string, string> => {
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = files[
+      "features/FEAT-1-split/specs/payment-split-service/spec.md"
+    ]!.replace("Operations: createSplit", `Operations: createSplit\nRealizes: ${entry}`);
+    return files;
+  };
+
+  it("the headline flow: ADD the capability requirement here, Realizes: it from the service delta", async () => {
+    // The whole reason the axis exists. Without the overlay the index is built
+    // from the LIVING tree alone, so this is refused with
+    // capability.realizes-unknown — an ERROR that gates archive — for a target
+    // this very feature introduces two directories away.
+    const p = await project({
+      ...featureRealizing("checkout#CHK-REFUND"),
+      "capabilities/checkout/spec.md": CHECKOUT_DOC,
+      "features/FEAT-1-split/capabilities/checkout/spec.md": capabilityDelta("CHK-REFUND", "Refund within five days"),
+    });
+    expect(await findings(p, "capability.realizes-unknown", "--feature", "FEAT-1")).toEqual([]);
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(0);
+    const archived = await runLoam(p.workDir, "archive", "FEAT-1", "--json");
+    expect(archived.code, archived.out).toBe(0);
+  });
+
+  it("a capability id the feature INTRODUCES resolves for `Capability:` too", async () => {
+    // The other half of the overlay: widening `byCapability` without widening
+    // `declared` leaves this as capability.unknown, because the id itself is
+    // new to the fleet.
+    const files = coherentFixture();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = files[
+      "features/FEAT-1-split/specs/payment-split-service/spec.md"
+    ]!.replace("Operations: createSplit", "Operations: createSplit\nCapability: refunds\nRealizes: refunds#REF-1");
+    const p = await project({
+      ...files,
+      "capabilities/checkout/spec.md": CHECKOUT_DOC,
+      "features/FEAT-1-split/capabilities/refunds/spec.md": capabilityDelta("REF-1", "Return the money"),
+    });
+    expect(await findings(p, "capability.unknown", "--feature", "FEAT-1")).toEqual([]);
+    expect(await findings(p, "capability.realizes-unknown", "--feature", "FEAT-1")).toEqual([]);
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(0);
+  });
+
+  it("a requirement the delta only QUOTES does not widen anything — quoting merges nothing", async () => {
+    // A `## Requirements` section inside a delta is legal: it quotes living
+    // context for a reader. Its requirements are BASE, so the merge skips them
+    // — which means an id that appears ONLY there will not exist after the
+    // archive either. An overlay that widened on every kind would resolve this
+    // `Realizes:` in silence and then leave the living fleet holding a pointer
+    // at a promise nobody ever wrote, discovered by whoever runs
+    // `validate --all` next.
+    const p = await project({
+      ...featureRealizing("checkout#CHK-GHOST"),
+      "capabilities/checkout/spec.md": CHECKOUT_DOC,
+      "features/FEAT-1-split/capabilities/checkout/spec.md": `# checkout — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Refund within five days
+Requirement-ID: CHK-REFUND
+The fleet SHALL return a customer's money within five days.
+
+#### Scenario: It is kept
+- **Given** a customer
+- **When** they ask
+- **Then** it is kept
+
+## Requirements
+
+### Requirement: A promise nobody has written yet
+Requirement-ID: CHK-GHOST
+The fleet SHALL do something one day.
+
+#### Scenario: It is kept
+- **Given** a customer
+- **When** they ask
+- **Then** it is kept
+`,
+    });
+    const found = await findings(p, "capability.realizes-unknown", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("CHK-GHOST");
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--json")).code).toBe(1);
+  });
+
+  it("still refuses an entry NEITHER the living tree nor this feature declares", async () => {
+    // The overlay widens; it must not blind. A typo next to a real addition is
+    // the case that fails if the widening is applied as "anything goes".
+    const p = await project({
+      ...featureRealizing("checkout#CHK-REFUNDS"),
+      "capabilities/checkout/spec.md": CHECKOUT_DOC,
+      "features/FEAT-1-split/capabilities/checkout/spec.md": capabilityDelta("CHK-REFUND", "Refund within five days"),
+    });
+    const found = await findings(p, "capability.realizes-unknown", "--feature", "FEAT-1");
+    expect(found).toHaveLength(1);
+    // And the near-name candidates are drawn from the WIDENED set, so the id
+    // this same feature is adding is offered. An overlay that widened only the
+    // resolution and not the diagnosis would list CHK-ONCE and CHK-PRICE and
+    // send the author looking at requirements they were not writing about.
+    expect(found[0]!.message).toContain("CHK-REFUND?");
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(1);
+    expect((await runLoam(p.workDir, "archive", "FEAT-1", "--json")).code).toBe(1);
+  });
+});
+
 describe("the archive gate", () => {
   /** The coherent feature, its delta requirement carrying `entry`. */
   const featureRealizing = (entry: string): Record<string, string> => {

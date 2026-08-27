@@ -83,6 +83,21 @@ would be a heuristic, and loam does not guess. The axis's own two joins are
 refused here as well (\`capability.requirement-inert-join\`, error): they point
 INTO the tree, so nothing reads them written inside it.
 
+A FEATURE changes a capability document with a delta, not by editing it:
+\`features/<FEAT>/capabilities/<id>/spec.md\`, the same
+\`## ADDED|MODIFIED|REMOVED Requirements\` grammar the service deltas use, the
+same nesting (\`features/<FEAT>/capabilities/payments/refunds/\`), the same
+\`Based-On:\` pins, and the same \`delta.*\` refusals with the capability id as
+the subject. \`loam archive\` merges it into the living document in the same
+transaction as the service merge, creating \`capabilities/<id>/spec.md\` — and
+so the whole tree — when this is the first feature to mention it; the heading
+is the id and the narrative above \`## Requirements\` is yours to write, because
+loam merges requirements and never prose. The document's three rules above are
+graded on the delta BEFORE the merge, so a capability requirement filed at the
+wrong altitude is refused while you still hold it. Editing the living document
+directly is still legal; the delta is what makes two features touching one
+promise collide loudly instead of silently.
+
 A service requirement says which promise it serves with \`Realizes:\`, entries
 spelled \`<capability-id>#<Requirement-ID>\`. This is the join the tree exists
 for, and it is NOT the same claim as \`Capability:\` beside it — that names a

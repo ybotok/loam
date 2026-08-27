@@ -25,6 +25,9 @@
  * check into the heuristic loam refuses.
  */
 import { describe, expect, it, afterEach } from "vitest";
+import { join } from "node:path";
+import { featureCapabilityDeltas } from "../src/core/capabilities/delta/tree.js";
+import { featureDirOf } from "../src/core/kernel/ids/dirs.js";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -336,5 +339,45 @@ describe("a capability document is held to two rules of its own", () => {
     expect(await findings(p, "capability.unrealized", "--all")).toEqual([]);
     expect(await findings(p, "capability.doc-missing", "--all")).toHaveLength(1);
     expect(await findings(p, "capability.requirement-unidentified", "--all")).toHaveLength(1);
+  });
+});
+
+describe("a feature's own capability delta tree walks like the living one", () => {
+  it("enumerates nesting, compareIds-ordered, with a parent that is also a capability", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      "features/FEAT-1-split/capabilities/payments/spec.md": GOOD_DOC,
+      "features/FEAT-1-split/capabilities/payments/refunds/spec.md": GOOD_DOC,
+      "features/FEAT-1-split/capabilities/billing/spec.md": GOOD_DOC,
+    });
+    const tree = await featureCapabilityDeltas(featureDirOf(join(p.docsDir, "features/FEAT-1-split")));
+    expect(tree.present).toBe(true);
+    // `payments` is a capability in its own right AND the group `payments/refunds`
+    // nests under: the shape that separates a real classification from "the
+    // deepest directory wins", and the one a flattened id would collapse.
+    expect(tree.docs.map((d) => d.id)).toEqual(["billing", "payments", "payments/refunds"]);
+    expect(tree.undocumented).toEqual([]);
+  });
+
+  it("a group directory holding no document earns nothing; a half-created one is undocumented", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      "features/FEAT-1-split/capabilities/payments/refunds/spec.md": GOOD_DOC,
+      "features/FEAT-1-split/capabilities/halfway/.gitkeep": "",
+    });
+    const tree = await featureCapabilityDeltas(featureDirOf(join(p.docsDir, "features/FEAT-1-split")));
+    expect(tree.docs.map((d) => d.id)).toEqual(["payments/refunds"]);
+    // `payments/` is a group the walk descends through and earns no finding;
+    // `halfway/` holds no document and nothing beneath it.
+    expect(tree.undocumented).toEqual(["capabilities/halfway"]);
+  });
+
+  it("a feature with no capabilities/ answers present:false without walking anything", async () => {
+    // An unconditional readdir of a directory that is not there raises ENOENT,
+    // so this resolving at all is the existsSync short-circuit's proof — and it
+    // is the whole cost a fleet that has not adopted the axis pays per feature.
+    const p = await project(coherentFixture());
+    const tree = await featureCapabilityDeltas(featureDirOf(join(p.docsDir, "features/FEAT-1-split")));
+    expect(tree).toEqual({ present: false, docs: [], undocumented: [] });
   });
 });

@@ -15,7 +15,14 @@ import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { planAsyncapi, planAxis, planOpenapi, type PinOutcome } from "./plan.js";
+import {
+  planAsyncapi,
+  planAxis,
+  planCapabilityAxis,
+  planOpenapi,
+  type CapabilityPinOutcome,
+  type PinOutcome,
+} from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 /**
@@ -148,7 +155,15 @@ async function rebaseLocked(
   // them per run, on a tree that cannot change under the lock this holds.
   const repo = { docsDir, fleet: new FleetContext() };
   const outcomes: PinOutcome[] = [];
+  const capabilityOutcomes: CapabilityPinOutcome[] = [];
   const writes: PlannedWrite[] = [];
+  // The business corpus this feature changes. Skipped entirely under `--service`:
+  // that flag means "restrict to one service", and a capability names none — so
+  // pinning capability deltas under it would write files the caller narrowed the
+  // command to exclude. One `existsSync` when the feature carries no capability
+  // delta, which is every feature in a fleet that has not adopted the axis.
+  const capabilities =
+    chosen === undefined ? (await repo.fleet.featureCapabilityDeltas(feature.dir)).docs : [];
   try {
     for (const service of services) {
       for (const axis of SPEC_AXES) {
@@ -176,6 +191,14 @@ async function rebaseLocked(
         outcomes.push(...planned.outcomes);
         if (planned.content !== null) writes.push({ path: asyncapiPath, content: planned.content });
       }
+    }
+    // The business axis, after the services and in the same transaction: a
+    // feature that changes a promise and the services keeping it is ONE act,
+    // and half of it pinned is the state the journal exists to prevent.
+    for (const doc of capabilities) {
+      const planned = await planCapabilityAxis(repo, doc.id, doc.spec);
+      capabilityOutcomes.push(...planned.outcomes);
+      if (planned.content !== null) writes.push({ path: doc.spec, content: planned.content });
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;
@@ -211,8 +234,17 @@ async function rebaseLocked(
     }
   }
 
-  const changed = outcomes.filter((o) => o.status === "pinned" || o.status === "repinned");
-  const unresolved = outcomes.filter((o) => o.status === "unresolved");
+  // One line per pin, whichever corpus it came from: what to call the document,
+  // and the record itself. The two lists are reported separately in `--json`
+  // (the published `pins[]`/`services[]` keys keep meaning exactly what they
+  // meant) and together here, because a human rebasing one feature wants one
+  // list in one order.
+  const lines = [
+    ...outcomes.map((o) => ({ where: `${o.service}/${o.file}`, pin: o })),
+    ...capabilityOutcomes.map((o) => ({ where: `capabilities/${o.capability}/${o.file}`, pin: o })),
+  ];
+  const changed = lines.filter((l) => l.pin.status === "pinned" || l.pin.status === "repinned");
+  const unresolved = lines.filter((l) => l.pin.status === "unresolved");
 
   if (json) {
     emitJson({
@@ -220,13 +252,18 @@ async function rebaseLocked(
       services,
       dryRun,
       pins: outcomes,
+      // Additive, and separate from `pins[]` on purpose: `PinOutcome.service`
+      // is a published field, and a capability id written into it would say
+      // something false to every consumer that already reads it.
+      capabilities: capabilities.map((c) => c.id),
+      capabilityPins: capabilityOutcomes,
       written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
       ...(opts.recovered === null ? {} : { recovered: opts.recovered }),
     });
     return;
   }
 
-  if (outcomes.length === 0) {
+  if (lines.length === 0) {
     console.log(
       `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key, a component or an event slot that already exists in the living docs.`,
     );
@@ -235,8 +272,8 @@ async function rebaseLocked(
 
   if (opts.recovered !== null) console.log(`${sayRecovered(opts.recovered)}\n`);
   console.log(`${id}${dryRun ? " (dry run)" : ""}\n`);
-  for (const o of outcomes) {
-    const what = `${o.service}/${o.file}  ${o.kind} ${o.target}`;
+  for (const { where, pin: o } of lines) {
+    const what = `${where}  ${o.kind} ${o.target}`;
     if (o.status === "unresolved") {
       console.log(`  · ${what} — not in the living docs yet, nothing to pin`);
     } else if (o.status === "unwritable") {
@@ -260,7 +297,7 @@ async function rebaseLocked(
     // what its author read, and a `repinned` line means the living text moved
     // under a delta that still says what it said before — restamping does not
     // fold in the change it just stopped reporting.
-    const repinned = changed.filter((o) => o.status === "repinned");
+    const repinned = changed.filter((l) => l.pin.status === "repinned");
     if (repinned.length > 0) {
       console.log(
         `\n⚠ ${plural(repinned.length, "pin")} moved since this delta was written. A pin records what you read — ` +
