@@ -23,19 +23,24 @@
 import { describe, it, expect } from "vitest";
 import { LikeC4 } from "likec4";
 import { readDynamicViews } from "../src/core/c4/parsed/dynamic-views.js";
-import { readViewIds } from "../src/core/c4/parsed/view-ids.js";
+import { readViewIds, type ViewIdClaim } from "../src/core/c4/parsed/view-ids.js";
 import { loadSource } from "../src/core/c4/likec4.js";
 import { loadBatch } from "../src/core/c4/workspace.js";
 import { makeTmpDir, writeFiles } from "./helpers/harness.js";
 
 /** The census read over a real parse, matching `parsedViews` above. */
-async function readIds(source: string): Promise<string[]> {
+async function readClaims(source: string): Promise<ViewIdClaim[]> {
   const likec4 = await LikeC4.fromSource(source, { logger: false });
   try {
     return readViewIds(await likec4.parsedModel());
   } finally {
     await likec4.dispose();
   }
+}
+
+/** Just the ids, for the cases that are about the SET rather than the files. */
+async function readIds(source: string): Promise<string[]> {
+  return (await readClaims(source)).map((c) => c.id);
 }
 
 const SPEC = `specification {
@@ -332,7 +337,16 @@ describe("both loaders carry the views, because the fleet gate runs the batched 
     const batch = await loadBatch([`${dir}/landscape.likec4`]);
     const doc = [...batch.values()][0]!;
     expect(doc.errors).toEqual([]);
-    expect(doc.views).toEqual((await loadSource(DOC)).views);
+    // Everything except `sourcePath`, which is the ONE field the two loaders
+    // are not claimed to agree about: it is the name LikeC4 knows the document
+    // by, and the two loaders hand it different ones — `source.c4` from
+    // `fromSource`, the staged basename from the workspace. Only `loadProject`
+    // gives it a meaning worth reading, and only its consumers read it.
+    const strip = (views: typeof doc.views): unknown =>
+      views?.map(({ sourcePath: _drop, ...rest }) => rest);
+    expect(strip(doc.views)).toEqual(strip((await loadSource(DOC)).views));
+    expect(doc.views?.[0]!.sourcePath).toBe("landscape.likec4");
+    expect((await loadSource(DOC)).views?.[0]!.sourcePath).toBe("source.c4");
   });
 
   it("a document that did not parse carries no views at all", async () => {
@@ -375,7 +389,7 @@ describe("readViewIds counts what the document claims, not what LikeC4 adds", ()
     // Order and duplicates are the caller's business: two views with one id is
     // already a LikeC4 error, and a census that quietly collapsed them would
     // hide how many claimants there are.
-    const ids = readViewIds({
+    const claims = readViewIds({
       $data: {
         views: {
           b: { id: "b", sourcePath: "x.c4" },
@@ -387,7 +401,10 @@ describe("readViewIds counts what the document claims, not what LikeC4 adds", ()
         },
       },
     });
-    expect(ids).toEqual(["b", "a"]);
+    expect(claims).toEqual([
+      { id: "b", sourcePath: "x.c4" },
+      { id: "a", sourcePath: "x.c4" },
+    ]);
   });
 
   it("omits the id LikeC4 MINTS for an unnamed view — it is nobody's claim, and not loader-stable", async () => {
@@ -415,7 +432,9 @@ describe("readViewIds counts what the document claims, not what LikeC4 adds", ()
 `, { logger: false });
     try {
       expect(readViewIds(likec4.parsedModel())).toEqual([]);
-      expect(readViewIds(await likec4.parsedModel())).toEqual(["fleet"]);
+      // The id AND the file that claims it: a finding about a collision has to be
+      // able to name the document, now that a view can live outside the landscape.
+      expect(readViewIds(await likec4.parsedModel())).toEqual([{ id: "fleet", sourcePath: "source.c4" }]);
     } finally {
       await likec4.dispose();
     }

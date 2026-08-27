@@ -36,7 +36,7 @@ import {
 } from "../policy/gate.js";
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
 import { validateLandscape } from "./fleet/landscape.js";
-import { readLandscape } from "./fleet/load.js";
+import { loadArchitecture, readLandscape } from "./fleet/load.js";
 import { buildScorecard } from "./fleet/scorecard/scorecard.js";
 import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
@@ -136,7 +136,7 @@ export function registerValidate(program: Command): void {
             ...services.filter((svc) => svc.has.model).map((svc) => servicePathsAt(svc.dir).model),
             ...features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
           ]);
-          const land = existsSync(lp) ? await readLandscape(() => fleet.loadLikeC4(lp)) : null;
+          const land = existsSync(lp) ? await readLandscape(() => loadArchitecture(docsDir)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
           targets.push(await validateLandscape(docsDir, land, fleet));

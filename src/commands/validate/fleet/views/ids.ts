@@ -35,24 +35,30 @@
  * walked and the generated ids are unknown, so the question is unanswerable and
  * the check stays silent rather than half-answering.
  */
+import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
 import { SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
 /**
- * `authored` is the landscape's own view ids — every view it declares, static
- * ones included, because a static view claims an id exactly as firmly as a
- * dynamic one. Absent (the document did not parse, or an older loader did not
- * read them) is treated as "nothing to compare", never as "nothing collides".
+ * `authored` is every view id the `architecture/` project claims, each with the
+ * file that claims it — static views included, because a static view claims an
+ * id exactly as firmly as a dynamic one. Absent (the document did not parse, or
+ * an older loader did not read them) is treated as "nothing to compare", never
+ * as "nothing collides".
  */
-export function viewIdFindings(authored: string[] | undefined, tree: FleetTree): Finding[] {
+export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetTree): Finding[] {
   if (authored === undefined || authored.length === 0) return [];
   const generated = new Map(tree.subsystems.map((sub) => [subsystemViewId(sub), sub.path.join("/")]));
   const findings: Finding[] = [];
-  // Sorted and de-duplicated so a landscape claiming the same id twice — itself
-  // already `landscape.invalid`, but reachable through a partial read — yields
-  // one finding per id rather than one per occurrence.
-  for (const id of [...new Set(authored)].sort()) {
+  // Sorted and de-duplicated by id so a project claiming the same id twice —
+  // itself already a parse error, but reachable through a partial read — yields
+  // one finding per id rather than one per occurrence. The first claimant's file
+  // is the one named: with a duplicate the project does not parse at all, so
+  // there is never a second one to choose between.
+  const claimants = new Map<string, string>();
+  for (const claim of authored) if (!claimants.has(claim.id)) claimants.set(claim.id, claim.sourcePath);
+  for (const [id, file] of [...claimants].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const owner = generated.get(id);
     if (owner === undefined) continue;
     findings.push({
@@ -60,10 +66,10 @@ export function viewIdFindings(authored: string[] | undefined, tree: FleetTree):
       code: "subsystem.view-id-collision",
       subject: id,
       message:
-        `subsystems: architecture/landscape.likec4 declares \`view ${id}\`, which is the id loam generates ` +
+        `subsystems: architecture/${file} declares \`view ${id}\`, which is the id loam generates ` +
         `into architecture/subsystems.likec4 for services/${owner}/ — LikeC4 merges both files into one project, ` +
         `so it refuses the whole architecture/ project and renders nothing. ` +
-        `Rename the view in architecture/landscape.likec4; ids beginning \`${SUBSYSTEM_VIEW_PREFIX}\` are loam's ` +
+        `Rename the view in architecture/${file}; ids beginning \`${SUBSYSTEM_VIEW_PREFIX}\` are loam's ` +
         "to mint, and architecture/subsystems.likec4 is generated (`loam subsystem sync`) and must never be hand-edited.",
     });
   }

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
 import { declaredService, type DeclaredService } from "../kernel/ids/service.js";
 import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
-import { readViewIds } from "./parsed/view-ids.js";
+import { readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
 import { descText, metaKey } from "./parsed/values.js";
 
@@ -87,7 +87,7 @@ export interface LoadedDoc {
    * `./parsed/view-ids.ts`), and because a static view contributes an id and
    * nothing else loam may look at.
    */
-  viewIds?: string[];
+  viewIds?: ViewIdClaim[];
 }
 
 /**
