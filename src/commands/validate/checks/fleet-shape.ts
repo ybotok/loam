@@ -30,7 +30,16 @@ import { type ServiceEntry } from "../../../core/repo/entries.js";
 import { permissionsPath, servicePathsAt } from "../../../core/repo/paths.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
-import { capabilityDocFindings, docMissingFindings, invalidVocabularyFinding, unrealizedFindings } from "../../../core/capabilities/findings.js";
+import {
+  capabilityDocFindings,
+  capabilityRequirementIndex,
+  docMissingFindings,
+  gradableCapabilityIds,
+  invalidVocabularyFinding,
+  unrealizedFindings,
+} from "../../../core/capabilities/findings.js";
+import { useCaseRequirementClaims } from "../../../core/usecases/capability.js";
+import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
 import { capabilityRollup, usedCapabilities } from "../../../core/capabilities/rollup.js";
 import { requirementUnrealizedFindings } from "../../../core/capabilities/realizes/findings.js";
 import { parseRequirements } from "../../../core/document/parse.js";
@@ -256,6 +265,7 @@ export async function capabilityFleetFindings(
   docsDir: DocsDir,
   services: ServiceEntry[],
   fleet: FleetContext | undefined,
+  flows: readonly ParsedView[] | null,
 ): Promise<Finding[]> {
   const vocab = fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
   if (!vocab.present) return [];
@@ -272,11 +282,27 @@ export async function capabilityFleetFindings(
   // `Realizes:` entry names that requirement. Both are warnings, and the second
   // is the one that survives a healthy-looking row — a capability with four
   // requirements and three realized reports nothing at all through the first.
-  const unrealizedRequirements = rows.flatMap((row) =>
-    (row.requirements ?? [])
-      .filter((req) => req.realizedBy.length === 0)
-      .map((req) => ({ capability: row.id, id: req.id, name: req.name })),
-  );
+  //
+  // A USE CASE IS THE OTHER WAY TO KEEP A PROMISE, and it is the only carrier a
+  // cross-service criterion has: "I enter a login and a password and I am in"
+  // belongs to no single service's spec, so a fleet could satisfy it perfectly
+  // through a `#cap-`/`#req-` tagged flow and still be told nobody realizes it.
+  // `flows === null` means loam could not READ the flows (no preload, or an
+  // `architecture/` that did not parse), and then the grade is suspended rather
+  // than answered from half the evidence.
+  const index = await capabilityRequirementIndex(vocab, read);
+  const kept =
+    flows === null
+      ? null
+      : useCaseRequirementClaims(flows, gradableCapabilityIds(vocab), (c) => index.byCapability.get(c));
+  const unrealizedRequirements =
+    kept === null
+      ? []
+      : rows.flatMap((row) =>
+          (row.requirements ?? [])
+            .filter((req) => req.realizedBy.length === 0 && !kept.has(`${row.id}#${req.id}`))
+            .map((req) => ({ capability: row.id, id: req.id, name: req.name })),
+        );
   return [
     ...authored,
     ...unrealizedFindings(vocab, usedCapabilities(rows)),

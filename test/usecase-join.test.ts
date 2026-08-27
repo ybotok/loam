@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAP_TAG_PREFIX,
-  capabilitySlug,
+  tagSlug,
   resolveCapabilityTags,
   type CapabilityClaim,
 } from "../src/core/capabilities/usecase-join.js";
@@ -29,23 +29,23 @@ function only(tags: string[], declared: string[]): CapabilityClaim {
   return claims[0]!;
 }
 
-describe("capabilitySlug", () => {
+describe("tagSlug", () => {
   it("leaves a flat id alone — the tag and the id are the same string", () => {
-    expect(capabilitySlug("checkout")).toBe("checkout");
-    expect(capabilitySlug("order-notifications")).toBe("order-notifications");
+    expect(tagSlug("checkout")).toBe("checkout");
+    expect(tagSlug("order-notifications")).toBe("order-notifications");
   });
 
   it("flattens the slash a LikeC4 tag name cannot carry", () => {
     // Both of these ship in examples/docs/architecture/capabilities.yaml, so the
     // nesting is not hypothetical: loam's own published example is untaggable
     // without this line.
-    expect(capabilitySlug("identity/tokens")).toBe("identity-tokens");
-    expect(capabilitySlug("payments/settlement")).toBe("payments-settlement");
+    expect(tagSlug("identity/tokens")).toBe("identity-tokens");
+    expect(tagSlug("payments/settlement")).toBe("payments-settlement");
   });
 
   it("flattens EVERY slash, not the first — `replace` would leave a tag that will not parse", () => {
-    expect(capabilitySlug("a/b/c")).toBe("a-b-c");
-    expect(capabilitySlug("payments/refunds/partial")).toBe("payments-refunds-partial");
+    expect(tagSlug("a/b/c")).toBe("a-b-c");
+    expect(tagSlug("payments/refunds/partial")).toBe("payments-refunds-partial");
   });
 });
 

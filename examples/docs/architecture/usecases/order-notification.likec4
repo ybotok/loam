@@ -45,6 +45,7 @@
 views {
   dynamic view uc_order_notification {
     #cap-order-notifications
+    #req-NOTIFY-ONCE
     title 'Order notification'
     description 'A placed order reaches the customer as exactly one confirmation'
 

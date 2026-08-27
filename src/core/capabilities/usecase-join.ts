@@ -1,22 +1,40 @@
 /**
- * The join from a use case's tags back to a declared capability id.
+ * The joins from a use case's tags: back to a declared capability, and to one
+ * of that capability's requirements.
+ *
+ * TWO TAGS, ONE CLAIM. `#cap-<slug>` says which capability a flow is about;
+ * `#req-<slug>` says which of its named promises the flow satisfies. The second
+ * is the architect's ANSWER to the analyst's requirement, and it is the only
+ * carrier a cross-service criterion has: "I enter a login and a password and I
+ * am in" cannot be promised by any single service's spec, because each promises
+ * only its own part — but a flow can, because it IS the hop sequence. That is
+ * why `Realizes:` on a service requirement is not enough on its own, and why
+ * this join exists at all.
+ *
+ * THE SECOND TAG IS SCOPED BY THE FIRST. A `Requirement-ID` is unique only
+ * inside its own document, so `#req-CHK-ONCE` means nothing until the view has
+ * said which capability it is about. A view carrying `#req-` with no resolved
+ * `#cap-`, or with two, is refused rather than guessed at — the same stance the
+ * `many` arm takes one join down.
  *
  * A LikeC4 `dynamic view` opts in to being graded as a business use case by
- * carrying a tag `#cap-<slug>`, and this module is the whole of what that tag
- * means. It is deliberately the narrowest layer that can mean it: no file is
+ * carrying a tag `#cap-<slug>`, and this module is the whole of what both tags
+ * mean. It is deliberately the narrowest layer that can mean it: no file is
  * read, no finding is emitted, and nothing is thrown — a pure function over ids
  * somebody else supplies. That last property is not tidiness. Its caller runs
  * inside `loam validate --all` over every document a fleet has, and the one
  * behaviour a check added to that run may never have is failing the run it was
  * added to.
  *
- * WHY A SLUG AT ALL. A capability id spells its nesting inside the id —
- * `identity/tokens` and `payments/settlement` both ship in loam's own
+ * WHY A SLUG AT ALL. Neither id is spelled in characters a tag name accepts. A
+ * capability id spells its nesting inside the id — `identity/tokens` and
+ * `payments/settlement` both ship in loam's own
  * `examples/docs/architecture/capabilities.yaml`, and `./capabilities.ts` keeps
- * the key exactly as the requirement writes it, slashes preserved. A LikeC4 tag
- * name cannot carry a `/` (a hard parse error at the 1.59.2 pin, measured in
- * `test/likec4-view-shape.test.ts`), so the tag carries the id with its slashes
- * flattened and the join runs over the flattened form.
+ * the key exactly as the requirement writes it, slashes preserved — while a
+ * `Requirement-ID` may legally contain a `.`. A LikeC4 tag name accepts exactly
+ * `[A-Za-z0-9_-]` (measured at the 1.59.2 pin, pinned in
+ * `test/likec4-view-shape.test.ts`), so both tags carry their id with the rest
+ * flattened and both joins run over the flattened form.
  *
  * WHY THE JOIN CAN ANSWER "MANY". The slug is NOT injective. `payments/refunds`
  * and `payments-refunds` are two distinct, legal, declarable ids that flatten to
@@ -52,25 +70,44 @@ import { compareIds } from "../repo/entries.js";
 export const CAP_TAG_PREFIX = "cap-";
 
 /**
- * A declared capability id as its tag spells it: slashes flattened to hyphens.
+ * Every character a LikeC4 tag name accepts, at the 1.59.2 pin. A WHITELIST,
+ * and that is the load-bearing choice: the complement is infinite, so a rule
+ * written as "flatten a slash" is a rule that is right about one character and
+ * silent about the rest.
  *
- * `replaceAll`, not `replace` — `a/b/c` is a legal three-level id and a
- * single-replacement slug would leave the second slash in a tag name LikeC4
- * refuses to parse, which reads to the author as "loam told me to write
- * something illegal".
- *
- * Deliberately lossy, and `resolveCapabilityTags` below carries the whole cost
- * of that: two ids can produce one slug and nothing here notices.
+ * Measured, not assumed (`test/likec4-view-shape.test.ts` pins it): `.`, `/`,
+ * `:`, a space, `+`, `@` and a non-ASCII letter each make the DECLARATION a
+ * parse error — and the failure is worse than a refusal, because the parser
+ * TRUNCATES the name at the offending character. `#x-a.b` comes back as
+ * `["x-a"]`. Nothing in loam reads a model with errors, so the truncation
+ * cannot reach a join today; it is recorded because the day something does read
+ * one, a truncated tag resolves to a different, possibly real, capability.
  */
-export function capabilitySlug(id: string): string {
-  return id.replaceAll("/", "-");
+const TAG_NAME_SAFE = /[^A-Za-z0-9_-]/g;
+
+/**
+ * An id as its tag spells it: every character a tag name cannot carry flattened
+ * to a hyphen.
+ *
+ * Used by BOTH tags this module resolves, which is why it is no longer called
+ * `capabilitySlug`. A capability id spells its nesting with `/`
+ * (`identity/tokens`) and a `Requirement-ID` may legally contain `.`
+ * (`REQUIREMENT_ID_RE` allows it) — two different characters, one rule, because
+ * an author who learns that a tag flattens the awkward character in one id
+ * should not have to learn it again for the other.
+ *
+ * Deliberately lossy, and the `many` arms below carry the whole cost of that:
+ * two ids can produce one slug and nothing here notices.
+ */
+export function tagSlug(id: string): string {
+  return id.replace(TAG_NAME_SAFE, "-");
 }
 
 /** The tag a claim is about, and the slug left after the prefix. */
 interface ClaimTag {
   /** The tag verbatim, as the view declares it — no `#`, prefix still on. */
   tag: string;
-  /** The tag with `CAP_TAG_PREFIX` removed: the name the join actually ran on. */
+  /** The tag with its reserved prefix removed: the name the join actually ran on. */
   slug: string;
 }
 
@@ -104,7 +141,7 @@ export type CapabilityClaim =
 function idsBySlug(declared: readonly string[]): Map<string, string[]> {
   const bySlug = new Map<string, string[]>();
   for (const id of declared) {
-    const slug = capabilitySlug(id);
+    const slug = tagSlug(id);
     const ids = bySlug.get(slug);
     if (ids === undefined) bySlug.set(slug, [id]);
     else ids.push(id);
@@ -193,4 +230,112 @@ export function resolveCapabilityTags(
     if (rest.length === 0) return { tag, slug, kind: "resolved" as const, id: first };
     return { tag, slug, kind: "many" as const, ids: [first, ...rest].sort(compareIds) };
   });
+}
+
+/**
+ * The reserved tag prefix for the requirement claim, matched EXACTLY as
+ * `CAP_TAG_PREFIX` is and for the same two reasons: a tag that does not start
+ * with it is the author's own vocabulary and is invisible here, and the slug
+ * that survives the match must round-trip to a case-sensitive `Requirement-ID:`.
+ */
+export const REQ_TAG_PREFIX = "req-";
+
+/**
+ * What one `#req-` tag joins to, given the capabilities the same view resolved.
+ *
+ * Five arms because there are five different fixes, and they are deliberately
+ * the same five `RealizesClaim` draws in `./realizes/join.ts`: the two carriers
+ * of one claim must fail in the same vocabulary, or an author who learns the
+ * `Realizes:` messages learns nothing about the tag.
+ */
+export type RequirementClaim =
+  /** Exactly one requirement of the scoping capability flattens to this tag. */
+  | (ClaimTag & { kind: "resolved"; capability: string; id: string })
+  /**
+   * The view resolved no capability, or more than one, so a `Requirement-ID`
+   * has no document to be unique inside. `capabilities` is what it DID resolve
+   * — empty, or the two-or-more that make the scope ambiguous.
+   */
+  | (ClaimTag & { kind: "unscoped"; capabilities: string[] })
+  /** The scoping capability is declared but has no `capabilities/<id>/spec.md`, so it carries no requirements. */
+  | (ClaimTag & { kind: "undocumented"; capability: string })
+  /** Its document exists and declares no requirements yet. */
+  | (ClaimTag & { kind: "empty"; capability: string })
+  /**
+   * Its document declares requirements, none flattening to this slug. `close`
+   * holds real `Requirement-ID`s — never the slugs the comparison ran against,
+   * because a slug is loam's spelling and offering it would send the author
+   * looking for an id that appears nowhere in the document.
+   */
+  | (ClaimTag & { kind: "none"; capability: string; close: string[] })
+  /** Two or more of its requirement ids flatten to this slug. Every colliding id, sorted. */
+  | (ClaimTag & { kind: "many"; capability: string; ids: string[] });
+
+/**
+ * Resolve every `#req-` tag a view carries against the capability it is about.
+ *
+ * `scope` is the capability ids the view's OWN `#cap-` tags resolved to —
+ * `resolveCapabilityTags`' `resolved` arms, and nothing else. An unresolved
+ * `#cap-` tag is already `usecase.capability-unresolved`, and letting it also
+ * scope a requirement lookup would build a second finding on top of a name loam
+ * has just said it cannot place.
+ *
+ * Claims come back SORTED BY TAG for `resolveCapabilityTags`' reason: nothing in
+ * loam has measured that LikeC4 preserves the author's tag order, and an output
+ * ordered by an unmeasured upstream detail reorders under a version bump. A
+ * repeated tag collapses to one claim, for the reason one breach earns one
+ * finding.
+ *
+ * SEVERAL `#req-` TAGS ARE LEGAL AND NORMAL. One flow commonly satisfies two of
+ * a capability's promises — a checkout flow that charges once AND honours the
+ * price — and there is no honest way to make its author pick one. That is the
+ * same shape `resolveCapabilityTags` allows for `#cap-`, and it is the opposite
+ * of the `many` arm: there the author wrote one name loam cannot place, here
+ * they wrote two and meant both.
+ */
+export function resolveRequirementTags(
+  tags: readonly string[],
+  scope: readonly string[],
+  requirementsOf: (capability: string) => ReadonlySet<string> | undefined,
+): RequirementClaim[] {
+  const claimed = [...new Set(tags.filter((tag) => tag.startsWith(REQ_TAG_PREFIX)))].sort(compareIds);
+  if (claimed.length === 0) return [];
+  const capability = scope.length === 1 ? scope[0]! : null;
+
+  return claimed.map((tag): RequirementClaim => {
+    // A bare `#req-` slugs to the empty string and stays a claim, exactly as a
+    // bare `#cap-` does: the prefix is the opt-in however little follows it, and
+    // dropping it would leave a view that asked to be graded silently ungraded.
+    const slug = tag.slice(REQ_TAG_PREFIX.length);
+    if (capability === null) return { tag, slug, kind: "unscoped", capabilities: [...scope].sort(compareIds) };
+    const ids = requirementsOf(capability);
+    if (ids === undefined) return { tag, slug, kind: "undocumented", capability };
+    if (ids.size === 0) return { tag, slug, kind: "empty", capability };
+    const matching = [...ids].filter((id) => tagSlug(id) === slug).sort(compareIds);
+    const [first, ...rest] = matching;
+    if (first === undefined) {
+      return { tag, slug, kind: "none", capability, close: closeRequirementIds(slug, ids) };
+    }
+    if (rest.length === 0) return { tag, slug, kind: "resolved", capability, id: first };
+    return { tag, slug, kind: "many", capability, ids: matching };
+  });
+}
+
+/**
+ * Close ids for a slug nothing in the document matches — suggested against the
+ * SLUGS, then mapped back to the real ids, exactly as `closeCapabilityIds`
+ * does and for its two reasons: comparing on slugs is what lets a typo reach an
+ * id whose awkward character sits where the typo does not, and mapping back is
+ * what keeps the suggestion writable.
+ */
+function closeRequirementIds(slug: string, ids: ReadonlySet<string>): string[] {
+  const bySlug = new Map<string, string[]>();
+  for (const id of ids) {
+    const key = tagSlug(id);
+    const found = bySlug.get(key);
+    if (found === undefined) bySlug.set(key, [id]);
+    else found.push(id);
+  }
+  const near = closeIds(slug, [...bySlug.keys()]);
+  return [...new Set(near.flatMap((s) => bySlug.get(s) ?? []))].sort(compareIds);
 }

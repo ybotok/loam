@@ -2,14 +2,14 @@
  * The use-case axis of `validate --all`: the `dynamic view`s a fleet declares,
  * graded as business flows against the model they are drawn over.
  *
- * ONLY CAPABILITY-TAGGED VIEWS ARE GRADED, and that opt-in is what lets this
- * ship into a fleet that already has diagrams. An untagged `dynamic view` is
- * somebody's hand-drawn sequence — drawn to explain something to a person, not
- * to be joined to a model — and grading it would turn every existing docs repo
- * red on upgrade over documents nobody promised anything about. A `#cap-` tag is
- * the author saying "this is a use case; hold it to the model", and nothing else
- * says it: a view with no tags and a view whose tags are all somebody's own
- * vocabulary are the same thing here.
+ * ONLY VIEWS CARRYING A RESERVED TAG ARE GRADED, and that opt-in is what lets
+ * this ship into a fleet that already has diagrams. An untagged `dynamic view`
+ * is somebody's hand-drawn sequence — drawn to explain something to a person,
+ * not to be joined to a model — and grading it would turn every existing docs
+ * repo red on upgrade over documents nobody promised anything about. A `#cap-`
+ * or `#req-` tag is the author saying "this is a use case; hold it to the
+ * model", and nothing else says it: a view with no tags and a view whose tags
+ * are all somebody's own vocabulary are the same thing here.
  *
  * THE TAG OPTS A VIEW IN WHETHER OR NOT IT RESOLVES. A `#cap-` slug that names
  * no declared capability is a broken claim about the vocabulary, not a withdrawn
@@ -29,11 +29,16 @@
  * against every hop in the fleet.
  */
 import { compareIds } from "../../../../core/repo/entries.js";
-import { CAP_TAG_PREFIX } from "../../../../core/capabilities/usecase-join.js";
+import {
+  CAP_TAG_PREFIX,
+  REQ_TAG_PREFIX,
+  resolveCapabilityTags,
+} from "../../../../core/capabilities/usecase-join.js";
 import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 import { capabilityTagFindings } from "./capability-tag.js";
+import { requirementTagFindings } from "./requirement-tag.js";
 import { stepFindings, type StepGrading } from "./steps.js";
 import { viewFile } from "../../../../core/usecases/place.js";
 
@@ -68,21 +73,39 @@ export interface UseCaseScope {
    * caller applies the ladder because the caller is the one that read the file.
    */
   capabilities: readonly string[] | null;
+  /**
+   * The requirement ids one capability's document declares, or `undefined` for a
+   * capability with no document — the scope a `#req-` tag is resolved in.
+   *
+   * A function rather than the map itself, so this package never learns what a
+   * capability document is: the fleet target reads them once
+   * (`capabilityRequirementIndex`) and hands the lookup over. `undefined` and an
+   * empty set are different answers here, exactly as they are one join over —
+   * no document at all, against a document declaring no promises yet.
+   */
+  requirementsOf: (capability: string) => ReadonlySet<string> | undefined;
 }
 
 /**
- * The capability-tagged views, in a stable order.
+ * The views that opted in, in a stable order.
+ *
+ * EITHER reserved prefix opts a view in, not only `#cap-`. A view carrying
+ * `#req-CHK-ONCE` and no capability tag is an author who asked to be graded and
+ * forgot half the claim; opting in on `#cap-` alone would leave that view
+ * silently ungraded — the one outcome an opt-in must never produce, because the
+ * author believes they have said something. What they get instead is
+ * `usecase.requirement-unresolved`'s `unscoped` arm, naming the missing tag.
  *
  * Sorted by (file, view id) rather than reported in LikeC4's own record order:
  * nothing in loam has measured that the parse preserves declaration order, so a
  * report whose row order depends on that would reorder under a dependency bump
  * — the diff-stability rule `core/capabilities/rollup.ts` states for its rows,
- * applied to findings. The prefix test matches `resolveCapabilityTags`'s exactly,
- * case included, so a view can never be opted in here and read as untagged there.
+ * applied to findings. Both prefix tests match their resolver's exactly, case
+ * included, so a view can never be opted in here and read as untagged there.
  */
 function gradedViews(views: readonly ParsedView[]): ParsedView[] {
   return views
-    .filter((view) => view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX)))
+    .filter((view) => view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX) || tag.startsWith(REQ_TAG_PREFIX)))
     .sort((a, b) => compareIds(viewFile(a), viewFile(b)) || compareIds(a.id, b.id));
 }
 
@@ -105,7 +128,21 @@ export function useCaseFindings(scope: UseCaseScope): Finding[] {
   };
   const findings: Finding[] = [];
   for (const view of gradedViews(scope.views)) {
-    findings.push(...capabilityTagFindings(view, scope.capabilities));
+    // ONE resolution of this view's capability tags, shared by both grades. The
+    // `#req-` tag is scoped by exactly the capabilities the `#cap-` tags resolve
+    // to, so resolving twice would be two chances to disagree about which
+    // document a `Requirement-ID` is unique inside.
+    //
+    // THE LADDER IS THE `null`, NOT AN EMPTY LIST, and the distinction is a
+    // wrong answer away: a suspended vocabulary handed on as `[]` reads to the
+    // requirement grade as "this view resolves no capability", which is its
+    // `unscoped` ERROR — so every `#req-` tag in a fleet that has not adopted
+    // the capability axis would be convicted for the axis not existing.
+    if (scope.capabilities !== null) {
+      const claims = resolveCapabilityTags(view.tags, scope.capabilities);
+      findings.push(...capabilityTagFindings(view, claims));
+      findings.push(...requirementTagFindings(view, claims, scope.requirementsOf));
+    }
     for (const step of view.steps) findings.push(...stepFindings({ view, step }, grading));
   }
   return findings;

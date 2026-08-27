@@ -194,6 +194,83 @@ describe("the parsed record's dynamic-view shape at likec4@1.59.2", () => {
     expect(errors).toBeGreaterThan(0);
   });
 
+  it("accepts exactly [A-Za-z0-9_-] in a tag NAME, and TRUNCATES at anything else", async () => {
+    // The measurement `tagSlug` is built on. It is a whitelist rather than a
+    // list of rejections because the complement is infinite: a rule that
+    // flattens a slash is right about one character and silent about the rest,
+    // and both ids this axis carries in a tag — a capability id spelling its
+    // nesting with `/`, a `Requirement-ID` allowed a `.` — break it differently.
+    //
+    // The TRUNCATION is the half worth pinning. A rejected character does not
+    // make the tag absent; it makes the tag SHORTER. `#x-a.b` comes back as
+    // `["x-a"]`, which is a name that could be a real, different tag. Nothing in
+    // loam reads a model with errors, so it cannot reach a join today — this
+    // assertion is what makes that "cannot" a measured fact rather than a hope.
+    const tagged = async (name: string): Promise<{ errors: number; tags: unknown }> => {
+      const parsed = await parsedViews(`specification {
+  element service
+  tag ${name}
+}
+model {
+  web = service 'web'
+  api = service 'api'
+  web -> api 'calls'
+}
+views {
+  dynamic view uc {
+    #${name}
+    title 'flow'
+    web -> api 'calls'
+  }
+}
+`);
+      return { errors: parsed.errors, tags: parsed.views["uc"]?.["tags"] ?? null };
+    };
+
+    // Every accepted class in one name, including a digit and mixed case: the
+    // slug must round-trip to a case-sensitive `Requirement-ID:`.
+    expect(await tagged("x-AZaz09_-")).toEqual({ errors: 0, tags: ["x-AZaz09_-"] });
+
+    for (const [name, cut] of [
+      ["x-a.b", "x-a"],
+      ["x-a/b", "x-a"],
+      ["x-a:b", "x-a"],
+      ["x-a+b", "x-a"],
+      ["x-a@b", "x-a"],
+      ["x-über", "x-"],
+    ] as const) {
+      const got = await tagged(name);
+      expect(got.errors, name).toBeGreaterThan(0);
+      expect(got.tags, name).toEqual([cut]);
+    }
+  }, 30_000);
+
+  it("carries two tags on one view, in declaration order", async () => {
+    // What makes the `#cap-` + `#req-` pair expressible at all: the second tag
+    // must not replace the first, and the record must hand both back.
+    const parsed = await parsedViews(`specification {
+  element service
+  tag cap-checkout
+  tag req-CHK-ONCE
+}
+model {
+  web = service 'web'
+  api = service 'api'
+  web -> api 'calls'
+}
+views {
+  dynamic view uc {
+    #cap-checkout
+    #req-CHK-ONCE
+    title 'flow'
+    web -> api 'calls'
+  }
+}
+`);
+    expect(parsed.errors).toBe(0);
+    expect(parsed.views["uc"]!["tags"]).toEqual(["cap-checkout", "req-CHK-ONCE"]);
+  });
+
   it("requires the `#cap-` tag BEFORE `title` — after it is a parse failure, not a warning", async () => {
     // The mistake every author makes once, and the reason SCHEMA.md must spell
     // the ordering out: the diagnostics never mention tags at all.

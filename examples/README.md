@@ -36,8 +36,13 @@ Around them: `kafka` as an `#external` `#platform` system with a topic per chann
 at the topic, never at the broker), `stripe` and `salesforce` as external systems, and
 `architecture/permissions.yaml` as the fleet's authorization vocabulary.
 
-**Two authored capability documents**, which are the business tree rather than the architecture:
-`capabilities/checkout/spec.md` and `capabilities/identity/tokens/spec.md`. Both ids are also
+**Three authored capability documents**, which are the business tree rather than the architecture:
+`capabilities/checkout/spec.md`, `capabilities/identity/tokens/spec.md` and
+`capabilities/order-notifications/spec.md`. The third carries the axis's second realizer: its one
+promise — "a placed order produces exactly one confirmation" — is cross-service by construction,
+so no service's `spec.md` can keep it, and `architecture/usecases/order-notification.likec4`
+claims it with `#req-NOTIFY-ONCE` beside its `#cap-` tag. The other two are kept by service
+requirements through `Realizes:`. Both ids are also
 declared in `architecture/capabilities.yaml` — the vocabulary is the union of the two sides, and
 a name a document elaborates does not have to leave the YAML, which is what keeps the metadata
 (`description`, `owner`) that a document has no field for. The nested one carries the lesson:

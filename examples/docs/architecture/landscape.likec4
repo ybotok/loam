@@ -53,6 +53,11 @@ specification {
   // and a second declaration there is a duplicate error blamed on both files —
   // so a tag a flow carries is declared here, beside the kinds.
   tag cap-order-notifications
+  // The requirement tag beside it: a flow says WHICH of the capability's named
+  // promises it keeps, and the id is spelled with every character a tag name
+  // cannot carry flattened to `-`. Declared here for the same reason — one
+  // specification block serves the whole `architecture/` project.
+  tag req-NOTIFY-ONCE
 }
 
 model {

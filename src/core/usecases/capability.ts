@@ -20,7 +20,12 @@
  * settled. The same stance `PackPermission` takes on an undeclared permission:
  * carry the claim, let validate convict it.
  */
-import { capabilitySlug, CAP_TAG_PREFIX } from "../capabilities/usecase-join.js";
+import {
+  tagSlug,
+  CAP_TAG_PREFIX,
+  resolveCapabilityTags,
+  resolveRequirementTags,
+} from "../capabilities/usecase-join.js";
 import { compareIds } from "../repo/entries.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import type { UseCaseScan } from "./fleet.js";
@@ -36,7 +41,7 @@ export interface ClaimingFlow {
 
 /** The tag spelling a declared capability id would carry — `identity/tokens` → `cap-identity-tokens`. */
 function tagFor(capability: string): string {
-  return `${CAP_TAG_PREFIX}${capabilitySlug(capability)}`;
+  return `${CAP_TAG_PREFIX}${tagSlug(capability)}`;
 }
 
 /** Does this view claim the capability? Exact tag match, case included, as `resolveCapabilityTags` matches. */
@@ -97,4 +102,45 @@ export function servicesInFlowsClaiming(scan: UseCaseScan, capabilities: readonl
     }
   }
   return [...out].sort(compareIds);
+}
+
+/**
+ * The `<capability>#<Requirement-ID>` pairs a fleet's flows RESOLVE to — the
+ * business promises a use case claims to keep.
+ *
+ * Lives in core rather than beside the grade that reports a broken tag, because
+ * two very different callers need the same answer and they must not compute it
+ * twice: `validate --all` subtracts these from
+ * `capability.requirement-unrealized` (a promise a flow keeps is not unkept),
+ * and `loam list capabilities` reports them beside the service requirements
+ * that realize the same promise. Two implementations of "which promises does
+ * this fleet keep" is two answers to the question the axis exists to settle.
+ *
+ * ONLY RESOLVED CLAIMS COUNT, and both halves must resolve: the `#cap-` tag to
+ * exactly one declared capability, and the `#req-` tag to exactly one of its
+ * requirements. A broken tag of either kind is already an ERROR
+ * (`usecase.capability-unresolved`, `usecase.requirement-unresolved`) and must
+ * never also mark a promise kept — a typo that silenced the unrealized warning
+ * would turn a mistake into a green fleet.
+ *
+ * `declared` carries the vocabulary ladder: `null` means there is nothing to
+ * grade against, and the honest answer is then an empty set — no flow can be
+ * said to keep a promise loam cannot see declared.
+ */
+export function useCaseRequirementClaims(
+  views: readonly ParsedView[],
+  declared: readonly string[] | null,
+  requirementsOf: (capability: string) => ReadonlySet<string> | undefined,
+): Set<string> {
+  const claimed = new Set<string>();
+  if (declared === null) return claimed;
+  for (const view of views) {
+    const scope = resolveCapabilityTags(view.tags, declared).flatMap((claim) =>
+      claim.kind === "resolved" ? [claim.id] : [],
+    );
+    for (const claim of resolveRequirementTags(view.tags, scope, requirementsOf)) {
+      if (claim.kind === "resolved") claimed.add(`${claim.capability}#${claim.id}`);
+    }
+  }
+  return claimed;
 }

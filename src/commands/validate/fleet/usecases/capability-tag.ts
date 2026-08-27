@@ -15,10 +15,13 @@
  * sequence under an owner, so a claim that resolves to nothing produces a use
  * case nobody can find and a capability nobody can see is realized.
  *
- * SUPPRESSED ENTIRELY when the vocabulary is absent or unreadable: `declared`
- * arrives as `null` and this answers with nothing. The ladder that produces that
- * `null` is `gradableCapabilityIds` in `core/capabilities/findings.ts` — one
- * function, called by every site that needs the graded id list, this module's
+ * SUPPRESSED ENTIRELY when the vocabulary is absent or unreadable: the caller
+ * resolves no claims at all in that case, so this answers with nothing. The
+ * claims are RESOLVED BY THE CALLER rather than here because the `#req-` grade
+ * beside this one is scoped by the very same verdicts, and two resolutions of
+ * one view's tags are two chances to disagree about which capability a flow is
+ * about. The ladder that produces the suppressing `null` is
+ * `gradableCapabilityIds` in `core/capabilities/findings.ts` — one function, called by every site that needs the graded id list, this module's
  * caller in `../landscape.ts` included. The FILE is this axis's opt-in, so a
  * fleet with no `architecture/capabilities.yaml` produces no capability finding
  * at all, and an unreadable one is `capability.invalid` alone rather than one
@@ -29,8 +32,7 @@
  */
 import {
   CAP_TAG_PREFIX,
-  capabilitySlug,
-  resolveCapabilityTags,
+  tagSlug,
   type CapabilityClaim,
 } from "../../../../core/capabilities/usecase-join.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
@@ -39,7 +41,7 @@ import { viewPlace } from "./place.js";
 
 /** A capability id as an author must write it in a tag: `identity/tokens (#cap-identity-tokens)`. */
 function idAndTag(id: string): string {
-  return `${id} (#${CAP_TAG_PREFIX}${capabilitySlug(id)})`;
+  return `${id} (#${CAP_TAG_PREFIX}${tagSlug(id)})`;
 }
 
 /**
@@ -59,7 +61,7 @@ function noneMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "
   return (
     `${viewPlace(view)} is tagged #${claim.tag}, and no capability declared in ` +
     `architecture/capabilities.yaml flattens to '${claim.slug}'. ${hint} ` +
-    "A tag spells the id with every `/` flattened to `-`, because a LikeC4 tag name cannot carry a slash."
+    "A tag spells the id with every character outside `[A-Za-z0-9_-]` flattened to `-`, because that is all a LikeC4 tag name accepts."
   );
 }
 
@@ -87,10 +89,9 @@ function manyMessage(view: ParsedView, claim: Extract<CapabilityClaim, { kind: "
  * swallow a broken tag beside a working one or lose the capability the view
  * genuinely does realize; one tag, one verdict, one finding keeps both facts.
  */
-export function capabilityTagFindings(view: ParsedView, declared: readonly string[] | null): Finding[] {
-  if (declared === null) return [];
+export function capabilityTagFindings(view: ParsedView, claims: readonly CapabilityClaim[]): Finding[] {
   const findings: Finding[] = [];
-  for (const claim of resolveCapabilityTags(view.tags, declared)) {
+  for (const claim of claims) {
     if (claim.kind === "resolved") continue;
     findings.push({
       severity: "error",

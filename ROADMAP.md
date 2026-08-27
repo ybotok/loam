@@ -144,24 +144,26 @@ The API hop needs no line of its own: a capability requirement reaches its opera
 carries the shape and the rules; `examples/docs/capabilities/` carries the worked pair, with three
 service requirements realizing one promise and a fourth deliberately left unrealized.
 
+**Landed, phase 3 — the flow.** A `dynamic view` tagged `#cap-<slug>` may carry `#req-<slug>` as
+well, naming one of that capability's requirements, and `usecase.requirement-unresolved` (error)
+grades the claim in six named arms. This is the join the axis was built for: a cross-service
+criterion ("I enter a login and a password and I am in") belongs to no single service's spec,
+because each promises only its own part, and only a flow can carry it. The measurement it was
+gated on came back decisive — a LikeC4 tag name accepts exactly `[A-Za-z0-9_-]` and TRUNCATES at
+anything else — so the slug rule became a whitelist and now serves both tags.
+
 Remaining, in dependency order, each of which returns here as it lands:
 
-1. **A use case realizes a capability requirement.** A cross-service criterion ("I enter a login
-   and a password and I am in") cannot be carried by any single service's spec, because each
-   promises only its own part; a `#cap-`-tagged flow can, because it IS the hop sequence. This is
-   why the use-case axis was built first — a prerequisite, not a preference. One measurement is
-   owed before any design: a view can only carry TAGS, and whether a LikeC4 tag name accepts every
-   character `Requirement-ID` allows (`.` is the doubtful one) decides whether the tag can carry
-   the id at all.
-2. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
+1. **A feature-local `features/<FEAT>/capabilities/<cap>/` delta**, carrying the existing
    requirement grammar, delta algebra and `Based-On:` pins, merged by the same transactional
    archive, with `capability.uncovered` gating archive exactly as `c4.uncovered` does for a
    capability requirement the feature's own service deltas leave unrealized.
-3. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
+2. **`loam new <FEAT> --capability <cap>`**, inverting today's `--touches <services>`: the analyst
    opens the document that changes, and the service work is derived from it.
 
-Exit criteria for calling the axis complete (the first half of the first is met; a use case still
-cannot realize a requirement):
+Exit criteria for calling the axis complete (the first is met except for the listing half — a use
+case keeps a promise and `validate --all` knows it, while `loam list capabilities` still reports
+only the service requirements that realize one):
 
 - A capability requirement is realizable by service requirements AND by a use case, and
   `loam list capabilities` reports both without either corpus being derived from the other.

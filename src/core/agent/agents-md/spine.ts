@@ -99,11 +99,25 @@ Both directions are graded. An entry naming no capability requirement is
 \`loam archive\`, \`--approve\`-overridable), and its message says which of the
 five failures happened — malformed entry, undeclared capability, declared but
 undocumented, document with no requirements, or an id that document does not
-declare. A capability requirement no living \`Realizes:\` line names is
+declare. A capability requirement nothing keeps is
 \`capability.requirement-unrealized\` (warn, one per requirement): it never
 gates, because writing the business document ahead of the fleet is the intended
 use. \`loam list capabilities --json\` carries the whole join — each capability's
 requirements, and what realizes each one.
+
+\`Realizes:\` is not the only way to keep a promise, and for a criterion that
+CROSSES services it is not enough: "I enter a login and a password and I am in"
+belongs to no single service's spec, because each promises only its own part. A
+USE CASE can carry it, because it IS the hop sequence. So a \`dynamic view\`
+already tagged \`#cap-<slug>\` may carry \`#req-<slug>\` as well, naming one of
+that capability's requirements — the architect's answer to the analyst's
+promise, graded by the same four \`usecase.*\` codes down to the operation. The
+second tag is SCOPED by the first: a \`Requirement-ID\` is unique only inside its
+own document, so a \`#req-\` tag on a view that resolves no capability, or two, is
+\`usecase.requirement-unresolved\` (error) rather than a guess. Several \`#req-\`
+tags on one view are legal — a flow commonly keeps two promises. Both tags spell
+their id with every character outside \`[A-Za-z0-9_-]\` flattened to \`-\`,
+because that is all a LikeC4 tag name accepts.
 
 Against that vocabulary an undeclared name is \`capability.unknown\` (error; in
 a feature delta it gates \`loam archive\`, \`--approve\`-overridable), an
