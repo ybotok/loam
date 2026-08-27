@@ -123,6 +123,15 @@ export function capabilityJson(row: CapabilityRow): Record<string, unknown> {
     // above follow, and here it carries a distinction a reader needs: an empty
     // array means the document declares no requirements, while no key at all
     // means there is no document to declare any.
+    //
+    // Each row inside carries `realizedBy` (the service requirements whose
+    // `Realizes:` line names it) and `keptBy` (the flows whose `#cap-`/`#req-`
+    // tags resolve to it) — two independent corpora, NEITHER derived from the
+    // other, because a cross-service promise can only be kept by a flow and a
+    // per-service one is normally kept by a requirement. `keptBy` follows the
+    // same three-state rule one level down and `rollup.ts` states it: absent
+    // means nobody looked, `[]` means loam looked and no flow keeps it. The
+    // payload's own `useCases.unreadable` says which of the two absences it is.
     ...(row.requirements === undefined ? {} : { requirements: row.requirements }),
   };
 }

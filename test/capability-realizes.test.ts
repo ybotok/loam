@@ -118,13 +118,18 @@ describe("Realizes: resolves against a capability document's requirements", () =
       id: string;
       requirements?: Array<{ id: string; name: string; realizedBy: unknown[] }>;
     }>;
+    // `keptBy` is the use-case corpus's half of the same question, and `[]` on
+    // both rows is a positive answer here rather than a filler: loam read the
+    // fleet's flows and none of them claims either promise. The key would be
+    // ABSENT if `architecture/` could not be read — see list-capability-flows.
     expect(rows.find((r) => r.id === "checkout")!.requirements).toEqual([
       {
         id: "CHK-ONCE",
         name: "Charge exactly once",
         realizedBy: [{ service: "payment-service", file: "spec.md", requirement: "Authorize a payment" }],
+        keptBy: [],
       },
-      { id: "CHK-PRICE", name: "The price shown is charged", realizedBy: [] },
+      { id: "CHK-PRICE", name: "The price shown is charged", realizedBy: [], keptBy: [] },
     ]);
   });
 
