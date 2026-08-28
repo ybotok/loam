@@ -17,12 +17,15 @@
  *  - refusal to clobber an existing (or archived) feature
  *  - what each template contains, and that the delta parses
  *  - --touches vs --new-service
+ *  - --capability, the inversion of --touches
  *  - the clean-validate criterion
  *  - --json contract and failure modes
  */
 import { describe, expect, it } from "vitest";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { REQUIREMENT_ID_RE } from "../src/core/document/spec.js";
 import { makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import { spawnLoam } from "./helpers/cli-process.js";
 import { stageWrites, swapStaged } from "../src/core/staging/commit.js";
@@ -279,6 +282,251 @@ describe("templates", () => {
       expect(res.out).toContain("spec.md");
       expect(res.out).toContain("openapi.yaml");
     });
+  });
+});
+
+/**
+ * `--capability`, the INVERSION of `--touches`: the analyst opens the document
+ * that changes, and the service work is derived from it rather than named
+ * before the business change is written.
+ *
+ * What these hold that a plausible wrong implementation would break:
+ *
+ * THE NESTED ID IS THE DISCRIMINATOR, exactly as it is in capability-delta.test.ts.
+ * `payments/refunds` spells its nesting in the TREE, so a scaffold that joined
+ * the id whole, escaped the slash, or resolved by the leaf would produce a
+ * directory the walk in `core/capabilities/tree.ts` reads as a different
+ * capability — or as none at all — and every downstream grade would then be
+ * silently about the wrong document. A flat id cannot tell those apart.
+ *
+ * AND THE ID IS PATH INPUT. `capabilities/<id>/` is a chain of directories, so
+ * `--capability ../../evil` lands `features/evil/spec.md` — a directory
+ * `listFeatures` then enumerates as a feature — and one `..` further reaches the
+ * docs-repo root. Both stay inside the repo, which is precisely the case
+ * `resolveInside` cannot refuse, and the reason the grammar check exists at the
+ * command boundary.
+ */
+describe("--capability", () => {
+  const CAP = "features/FEAT-1/capabilities";
+
+  it("scaffolds the capability delta and NO service spec — the services are not known yet", async () => {
+    await withProject({}, async (p) => {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds");
+      expect(res.code, res.out).toBe(0);
+      expect(p.exists(`${CAP}/refunds/spec.md`)).toBe(true);
+      // The inversion, stated as an assertion: naming a capability must not
+      // invent a service delta for a service nobody has named. intent.md and
+      // delta.likec4 are unconditional and stay — `--capability` is additive,
+      // and subtracting a file on the presence of a flag would change what
+      // `loam new` means.
+      expect(p.exists("features/FEAT-1/specs")).toBe(false);
+      expect(p.exists("features/FEAT-1/intent.md")).toBe(true);
+      expect(p.exists("features/FEAT-1/delta.likec4")).toBe(true);
+    });
+  });
+
+  it("spells a nested id as one directory per segment, never by its leaf or as one name", async () => {
+    await withProject({}, async (p) => {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "payments/refunds");
+      expect(res.code, res.out).toBe(0);
+      expect(p.exists(`${CAP}/payments/refunds/spec.md`)).toBe(true);
+      // The three wrong answers, each named: the leaf alone is a DIFFERENT
+      // capability, and either flattened spelling is a directory the walk reads
+      // as one capability called something nobody wrote.
+      expect(p.exists(`${CAP}/refunds`)).toBe(false);
+      expect(p.exists(`${CAP}/payments%2Frefunds`)).toBe(false);
+      expect(p.exists(`${CAP}/payments-refunds`)).toBe(false);
+      // And the document names the capability by its full id, so the delta and
+      // the living document it merges into cannot disagree about which it is.
+      expect(await p.read(`${CAP}/payments/refunds/spec.md`)).toContain("payments/refunds");
+    });
+  });
+
+  it("composes with --touches: one feature can carry the promise and a service that keeps it", async () => {
+    // Refusing the combination would fight this axis's own archive gate —
+    // `capability.uncovered` refuses a promise nothing in the same feature
+    // keeps, and the fix it names IS a `--touches` service's `Realizes:` line.
+    await withProject(livingService("payment-service"), async (p) => {
+      const res = await runLoam(
+        p.workDir, "new", "FEAT-1", "--capability", "refunds", "--touches", "payment-service",
+      );
+      expect(res.code, res.out).toBe(0);
+      expect(p.exists(`${CAP}/refunds/spec.md`)).toBe(true);
+      expect(p.exists("features/FEAT-1/specs/payment-service/spec.md")).toBe(true);
+    });
+  });
+
+  it("is repeatable, and a parent capability may be scaffolded beside one nested in it", async () => {
+    await withProject({}, async (p) => {
+      const res = await runLoam(
+        p.workDir, "new", "FEAT-1", "--capability", "payments", "--capability", "payments/refunds",
+      );
+      expect(res.code, res.out).toBe(0);
+      expect(p.exists(`${CAP}/payments/spec.md`)).toBe(true);
+      expect(p.exists(`${CAP}/payments/refunds/spec.md`)).toBe(true);
+    });
+  });
+
+  it("refuses an id that would write outside the feature, and writes nothing at all", async () => {
+    // Inside the docs repo but outside the feature: `resolveInside` sees a path
+    // under docsDir and permits it, so the grammar is the only thing standing
+    // between argv and these two. Both paths are asserted because they are two
+    // different escapes — `features/evil/` is a directory `listFeatures`
+    // enumerates as a feature, `<docsDir>/evil/` is loose in the repo root —
+    // and each is the path the guard's own comment names.
+    await withProject({}, async (p) => {
+      for (const [bad, landing] of [
+        ["../../evil", "features/evil"],
+        ["../../../evil", "evil"],
+      ]) {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", bad!, "--json");
+        expect(res.code, `'${bad}' must be refused`).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
+        expect(p.exists(landing!), `nothing may land at ${landing}`).toBe(false);
+        expect(p.exists("features/FEAT-1")).toBe(false);
+      }
+    });
+  });
+
+  it("refuses an empty segment and a Windows-hostile one, before any write", async () => {
+    await withProject({}, async (p) => {
+      for (const bad of ["", "payments/", "payments/CON", "payments/refunds."]) {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", bad, "--json");
+        expect(res.code, `'${bad}' must be refused`).toBe(1);
+        expect(JSON.parse(res.stdout).error.code).toBe("invalid-option");
+      }
+      expect(p.exists("features/FEAT-1")).toBe(false);
+    });
+  });
+
+  it("scaffolds a body that declares nothing until a person copies it out", async () => {
+    // The same idiom as the two spec templates: the example sits INSIDE an HTML
+    // comment, indented past the line-anchored heading patterns, so a fresh
+    // scaffold parses to zero requirements. That is what keeps `loam validate`
+    // green on a scaffold nobody has touched — while `scaffold.placeholder`
+    // still refuses the archive once the block is copied out unedited
+    // (capability-delta.test.ts holds that half).
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds");
+      const doc = await p.read(`${CAP}/refunds/spec.md`);
+      expect(parseRequirements(doc)).toEqual([]);
+      expect(doc).toContain("TODO — name the promise");
+      // The altitude rule the document invites breaking, spelled where the
+      // author reads it: the four service-scoped lines are errors here.
+      expect(doc).toContain("Operations:");
+      expect(doc).toContain("Realizes: refunds#<Requirement-ID>");
+    });
+  });
+
+  it("a fresh --capability scaffold validates without errors", async () => {
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds");
+      const res = await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json");
+      expect(res.code, res.out).toBe(0);
+      expect(JSON.parse(res.stdout).valid).toBe(true);
+    });
+  });
+
+  it("--json lists the capability delta among what it created, and notes the unnamed capability", async () => {
+    await withProject({}, async (p) => {
+      const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.created).toContain("features/FEAT-1/capabilities/refunds/spec.md");
+      // A NOTE, not a refusal: a capability the fleet has never named is exactly
+      // what an analyst opening a new business area types, and the archive that
+      // lands this feature is what creates the living document.
+      expect(json.notes.join("\n")).toContain("has not named yet");
+      expect(json.notes.join("\n")).toContain("capabilities/refunds/spec.md");
+    });
+  });
+
+  it("offers the close names, and points the way out at THIS feature's directory", async () => {
+    // The failure a refusal would have caught, kept catchable without one:
+    // `refund` against a living `refunds` is a second capability created out of
+    // nothing, with the promise filed where nobody looks.
+    await withProject(
+      { "capabilities/refunds/spec.md": "# refunds\n\n## Requirements\n" },
+      async (p) => {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refund", "--json");
+        expect(res.code).toBe(0);
+        const notes = JSON.parse(res.stdout).notes.join("\n") as string;
+        expect(notes).toContain("'refunds'");
+        // loam ships instructions people and agents type back, and `features/`
+        // holds every in-flight feature in a SHARED docs repo — so the way out
+        // names this feature's own directory and nothing wider.
+        expect(notes).toContain("features/FEAT-1/capabilities/refund/");
+        expect(notes).toContain("delete features/FEAT-1/");
+        expect(notes).not.toMatch(/delete features\/(?![A-Za-z])/);
+      },
+    );
+  });
+
+  it("does not report a nested capability's own PARENT as a near-miss", async () => {
+    // Nesting spelled by the tree is this axis's headline shape, so a rule that
+    // matches on substring reports `payments/refunds` as a misspelling of
+    // `payments` — and then instructs the author to re-scaffold at the wrong
+    // altitude. `nearestIds` (edit distance) is the "did you misspell a
+    // directory" rule; `closeIds` (substring/prefix) answers a different
+    // question and belongs to the C4 element resolver.
+    await withProject(
+      { "capabilities/payments/spec.md": "# payments\n\n## Requirements\n" },
+      async (p) => {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "payments/refunds", "--json");
+        expect(res.code).toBe(0);
+        const notes = JSON.parse(res.stdout).notes.join("\n") as string;
+        expect(notes).toContain("has not named yet");
+        expect(notes).not.toContain("If you meant");
+      },
+    );
+  });
+
+  it("scaffolds a Requirement-ID hint the requirement grammar actually accepts", async () => {
+    // A capability id may start with a digit (`3ds`, `2fa`, `1099-filing`) —
+    // `dirNameHazard` allows an alphanumeric head — while REQUIREMENT_ID_RE
+    // demands a LETTER. The obvious slug hands the author `3DS-1`, and
+    // `delta.requirement-id-invalid` then refuses them for using the shape the
+    // scaffold offered.
+    await withProject({}, async (p) => {
+      await runLoam(p.workDir, "new", "FEAT-1", "--capability", "3ds");
+      const doc = await p.read(`${CAP}/3ds/spec.md`);
+      const hint = /Requirement-ID: (\S+)/.exec(doc)?.[1];
+      expect(hint, "the template must offer a Requirement-ID").toBeDefined();
+      expect(REQUIREMENT_ID_RE.test(hint!), `'${hint!}' must satisfy the requirement-id grammar`).toBe(true);
+    });
+  });
+
+  it("tells a YAML-only capability apart from one nobody has named", async () => {
+    // The ordinary mid-adoption state: the fleet declared the word and nobody
+    // has written the prose. The two notes point at different fixes — write the
+    // document, versus check you meant this word at all — so a message that
+    // could not tell them apart would send its reader the wrong way.
+    await withProject(
+      { "architecture/capabilities.yaml": "capabilities:\n  refunds:\n    owner: payments-team\n" },
+      async (p) => {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds", "--json");
+        expect(res.code).toBe(0);
+        const notes = JSON.parse(res.stdout).notes.join("\n");
+        expect(notes).toContain("declared in architecture/capabilities.yaml");
+        expect(notes).not.toContain("has not named yet");
+      },
+    );
+  });
+
+  it("names the living document's requirement ids — what a MODIFIED delta addresses", async () => {
+    await withProject(
+      {
+        "capabilities/refunds/spec.md":
+          "# refunds\n\n## Requirements\n\n### Requirement: Refund within five days\nRequirement-ID: REF-1\n\nThe fleet SHALL refund within five days.\n\n#### Scenario: It is refunded\n- **Given** a customer\n- **When** they ask\n- **Then** it is refunded\n",
+      },
+      async (p) => {
+        const res = await runLoam(p.workDir, "new", "FEAT-1", "--capability", "refunds", "--json");
+        expect(res.code).toBe(0);
+        const notes = JSON.parse(res.stdout).notes.join("\n");
+        expect(notes).toContain("already has capabilities/refunds/spec.md");
+        expect(notes).toContain("REF-1");
+      },
+    );
   });
 });
 

@@ -279,7 +279,57 @@ components:
       expect(typeof json.openapi.error).toBe("string");
     });
   });
+
+  it("carries the business promises the feature changes, with the `Realizes:` id", async () => {
+    // The section is a fact about the FEATURE, not about this service's files,
+    // and it is here for the sharper version of the use-case section's reason: a
+    // capability delta NAMES NO SERVICE, so projecting the feature onto one
+    // dropped it entirely — and the implementer handed "add the endpoint" was
+    // never told which business promise the requirement they are writing keeps.
+    const files = capabilityFixture();
+    await withProject(files, async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      expect(json.capabilities).toEqual([
+        {
+          id: "payments/refunds",
+          path: "features/FEAT-1-split/capabilities/payments/refunds/spec.md",
+          added: 1,
+          modified: 0,
+          removed: 0,
+          promises: [{ kind: "ADDED", id: "REF-1", name: "Refund within five days" }],
+        },
+      ]);
+      // NOT narrowed by --service: the promise is what the whole feature is
+      // for, so it reads the same from every service the feature touches.
+      const other = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-service", "--json")).stdout,
+      );
+      expect(other.capabilities).toEqual(json.capabilities);
+    });
+  });
+
+  it("carries an empty capabilities array for a fleet that has not adopted the axis", async () => {
+    // Empty, never absent: a consumer must not have to tell "no capability
+    // delta" from "this loam does not report them".
+    await withProject(coherentFixture(), async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      expect(json.capabilities).toEqual([]);
+    });
+  });
 });
+
+/** `coherentFixture` plus one nested capability delta on the feature already in flight. */
+function capabilityFixture(): Record<string, string> {
+  return {
+    ...coherentFixture(),
+    "features/FEAT-1-split/capabilities/payments/refunds/spec.md":
+      "# payments/refunds — capability delta for FEAT-1\n\n## ADDED Requirements\n\n### Requirement: Refund within five days\nRequirement-ID: REF-1\n\nThe fleet SHALL refund within five days.\n\n#### Scenario: It is refunded\n- **Given** a customer\n- **When** they ask\n- **Then** it is refunded\n",
+  };
+}
 
 describe("text output", () => {
   it("still prints the human briefing", async () => {
@@ -291,6 +341,22 @@ describe("text output", () => {
       expect(res.out).toContain("[ADDED] Split a payment");
       expect(res.out).toContain("Architecture:");
       expect(res.out).toContain(`NEW service — create ${NEW_SVC}`);
+      // Silent when the feature carries no capability delta, unlike the
+      // use-case section: "no flow draws this service" is an answer about the
+      // FLEET, while "this feature changes no capability" is the normal state
+      // of every feature in a fleet that has not adopted the axis.
+      expect(res.out).not.toContain("Capabilities");
+    });
+  });
+
+  it("prints the promises and the exact line to paste, when there are any", async () => {
+    await withProject(capabilityFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC);
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("Capabilities (business promises this feature changes):");
+      // The entry WHOLE, not a capability and an id to assemble: it is text
+      // somebody is about to paste into a requirement.
+      expect(res.out).toContain("Realizes: payments/refunds#REF-1");
     });
   });
 

@@ -35,6 +35,12 @@ export const CYCLE = `## The cycle
    The scaffold leaves a \`delta.likec4\` whose context elements are commented out —
    a requirements-only feature should DELETE that file rather than ship an empty
    one — and gives every \`--new-service\` a \`specs/<svc>/arch.spec.md\` alongside.
+   \`--capability <id>\` (repeatable, and it composes with \`--touches\`) scaffolds a
+   capability delta instead of a service one — the inversion of this step, for a
+   change whose BUSINESS side is what is known: open the promise that changes and
+   derive the service work from it. An id the fleet has never named is scaffolded
+   rather than refused, with the close spellings printed beside it; the archive
+   is what creates the living \`capabilities/<id>/spec.md\`.
 4. **Author** the four files the scaffold left as TODO: intent, delta.likec4,
    a spec.md per service, an openapi.yaml per new service. Finish with
    \`loam rebase FEAT-101\`: it pins every MODIFIED/REMOVED requirement and every

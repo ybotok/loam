@@ -4,6 +4,26 @@
  * `loam delta` projects — same helpers (`core/projection/`), same known-set,
  * same shapes — so the pack and the brief can never disagree about what a
  * feature changes here.
+ *
+ * THE BUSINESS CORPUS IS DELIBERATELY EXCLUDED, and it is the one place this
+ * module and `loam delta` are allowed to differ. `loam delta` gained a
+ * `capabilities` section — the promises a feature changes, and the
+ * `Realizes: <capability>#<id>` entry each one is addressed by — because it is
+ * read by a person about to author a requirement. A context pack is not that:
+ * it is ONE SERVICE'S slice, assembled to be copied into that service's own
+ * repository, and a capability delta names no service. Including it would make
+ * a service repository's briefing depend on the fleet's business corpus — the
+ * first such dependency anywhere in loam, and the exact inversion of the rule
+ * this axis is built on, that neither corpus is derived from the other
+ * (`core/capabilities/rollup.ts` states it: "TWO CORPORA MEET HERE, and neither
+ * is derived from the other"). A service that wants to know which promise its
+ * requirement keeps reads the `Realizes:` line on the requirement itself, which
+ * IS in the pack, because it is part of the service's own document.
+ *
+ * That is an exclusion by design, not an omission waiting to be filled: adding
+ * the section later is a product decision about what a service repository is
+ * allowed to depend on, and it needs to be argued in those terms rather than
+ * landed as a missing field.
  */
 import { existsSync } from "node:fs";
 import { FleetContext } from "../fleet-context.js";
