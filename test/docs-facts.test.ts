@@ -6,6 +6,14 @@
  * packaged docs name is one loam emits, and every known-gap sentence has its
  * owner heading on the roadmap. test/docs-drift.test.ts pins the RELEASE
  * facts; this file pins the derivable ones.
+ *
+ * The last four describes were added after an audit found the drift sitting
+ * exactly where these pins did not reach: thirteen shipped flags no page named,
+ * a `loam list` section the table had never heard of, five real artifact paths
+ * missing from the layout block readers treat as the map, and an example-fleet
+ * count README got wrong while the fixture test and examples/README.md agreed
+ * on the right one. Prose about a derivable fact is a claim; this file is where
+ * it gets checked.
  */
 import { describe, expect, it } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
@@ -21,6 +29,18 @@ const ROOT = join(import.meta.dirname, "..");
 
 async function read(rel: string): Promise<string> {
   return readFile(join(ROOT, rel), "utf8");
+}
+
+/**
+ * Collapse every whitespace run to one space. Pinned prose is matched through
+ * this: a page rewrapped at 100 columns must not fail a sentence pin, because
+ * the pin is about the words, and the line break is a formatting decision the
+ * author is allowed to make without touching a test.
+ */
+function flat(text: string): string {
+  // Blockquote continuation marks are line furniture, not prose: a wrapped
+  // `> …` callout must match the same sentence an unwrapped one does.
+  return text.replace(/^[ \t]*>[ \t]?/gm, "").replace(/\s+/g, " ");
 }
 
 /** The pages whose counted facts are graded: the nine shipped + docs/DESIGN.md. */
@@ -56,6 +76,16 @@ async function srcCounts(): Promise<{ modules: number; packages: number }> {
   };
   await walk(join(ROOT, "src"));
   return { modules, packages: packages.size };
+}
+
+/** Every .ts source under a directory, concatenated — for "does the code still build this path". */
+async function sourceUnder(dir: string): Promise<string> {
+  let text = "";
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) text += await sourceUnder(join(dir, entry.name));
+    else if (entry.name.endsWith(".ts")) text += await readFile(join(dir, entry.name), "utf8");
+  }
+  return text;
 }
 
 async function testFileCount(): Promise<number> {
@@ -96,9 +126,14 @@ async function commandsHubCounts(): Promise<{
 /**
  * ROADMAP's "## Current assessment" is an audit snapshot governed by the
  * document's leading `_Assessed YYYY-MM-DD._` line — exactly the "assessment
- * context" the roadmap's own criterion prescribes for measured facts. Counted
- * facts inside it are exempt from live comparison and stay honest as a dated
- * snapshot; everywhere else a bare count must equal the live derivation.
+ * context" the roadmap's own criterion prescribes for measured facts.
+ *
+ * The exemption it grants is now NARROW, and the narrowing is the fix for a
+ * drift it licensed: the section spent nine days claiming 261 modules and 21
+ * commands against a tree holding 394 and 28 — legally, because a dated heading
+ * covered counts that derive from one readdir. A passed/total test count
+ * genuinely has no cheap derivation and still belongs here. A module, package,
+ * test-file or command count never did, and is graded live wherever written.
  */
 async function assessmentRange(): Promise<{ start: number; end: number }> {
   const roadmap = await read("ROADMAP.md");
@@ -123,11 +158,9 @@ describe("counted facts are live or dated", () => {
     const dated = await assessmentRange();
     const failures: string[] = [];
     const grade = (page: string, match: RegExpExecArray, ok: boolean, expected: string): void => {
-      const exempt =
-        page === "ROADMAP.md" && match.index >= dated.start && match.index < dated.end;
-      if (ok || exempt) return;
+      if (ok) return;
       failures.push(
-        `${page}: "${match[0]}" does not match the live tree (${expected}) — update the prose, or move the claim under ROADMAP's dated Current assessment`,
+        `${page}: "${match[0]}" does not match the live tree (${expected}) — update the prose. A count this cheap to derive has no dated exemption, on any page.`,
       );
     };
     const int = (text: string): number => Number(text.replace(/,/g, ""));
@@ -143,7 +176,12 @@ describe("counted facts are live or dated", () => {
         // A passed/total test count has no cheap live derivation (it needs a
         // full suite run), so the only honest home for one is the dated
         // assessment snapshot; a bare copy anywhere else WILL rot.
-        grade(page, m as RegExpExecArray, false, "no live derivation — dated context required");
+        const exempt = page === "ROADMAP.md" && m.index >= dated.start && m.index < dated.end;
+        if (!exempt) {
+          failures.push(
+            `${page}: "${m[0]}" has no live derivation — a passed/total count belongs under ROADMAP's dated Current assessment, or nowhere`,
+          );
+        }
       }
       for (const m of text.matchAll(/exposes \*\*(\d[\d,]*) commands\*\*/g)) {
         grade(page, m as RegExpExecArray, int(m[1]!) === live.commands, `${live.commands} commands`);
@@ -161,7 +199,7 @@ describe("counted facts are live or dated", () => {
   it("DESIGN's layers row is present and live — a deleted row must not pass vacuously", async () => {
     const design = await read("docs/DESIGN.md");
     const live = `${await commandModuleCount()} command modules, ${commandNames().length} commands`;
-    expect(design, `docs/DESIGN.md's layers table must carry the live "${live}" row`).toContain(live);
+    expect(flat(design), `docs/DESIGN.md's layers table must carry the live "${live}" row`).toContain(live);
   });
 
   it("DESIGN's rule-23 hub tally is present and live — its four counts are derivable, so they must derive", async () => {
@@ -187,7 +225,12 @@ describe("counted facts are live or dated", () => {
 describe("README command table matches buildProgram()", () => {
   it("one row per registered command, set-equal by name", async () => {
     const readme = await read("README.md");
-    const table = readme.slice(readme.indexOf("## Commands"), readme.indexOf("### Command notes"));
+    // Bounded by the NEXT h2, not by a named sibling heading: the per-command
+    // notes moved to WORKFLOW.md, and a slice keyed to a heading that has left
+    // the page reads as "to the end of the file" rather than failing.
+    const from = readme.indexOf("## Commands");
+    const to = readme.indexOf("\n## ", from + 1);
+    const table = readme.slice(from, to === -1 ? undefined : to);
     const rows = [...table.matchAll(/^\| `loam ([a-z-]+)/gm)].map((match) => match[1]!);
     const registered = commandNames();
     // Set equality both ways, then row count: a parse miss (a reformatted row
@@ -236,18 +279,17 @@ describe("public docs name only emitted codes", () => {
   const ALLOWED_PROSE_TOKENS: Record<string, string> = {
     "error.code": "envelope field path — the JSON key documents point readers at, not a code",
     "error.message": "envelope field path, as above",
+    "interrupted.command": "doctor --json writePath field path",
+    "recovered.command": "doctor --json writePath field path",
     "checks.coherent": "status --json payload field path",
     "has.asyncapi": "list --json payload field path",
     "claims.answered": "validate --all --json scorecard payload field path — the confirmed claims' provenance split",
     "landscape.instruction": "adopt brief --json payload field path",
     "readiness.living": "audit-openspec --json payload field path",
     "readiness.active": "audit-openspec --json payload field path",
-    "interrupted.command": "doctor --json writePath field path",
-    "recovered.command": "doctor --json writePath field path",
     "baselines.release": "check-openspec-corpus baseline selector, dev tooling not CLI output",
     "user.email": "git config key quoted in vouch's provenance prose",
     "user.name": "git config key, as above",
-    "core.autocrlf": "git config key — the line-ending rewrite `loam seed`'s stamp is deliberately immune to",
     "components.messages": "AsyncAPI document section path (the slot grammar), not a finding",
     "components.schemas": "AsyncAPI document section path, as above",
     "loam.json.service": "config key path — the service binding inside loam.json",
@@ -368,11 +410,11 @@ describe("known gaps carry owners", () => {
     const roadmap = await read("ROADMAP.md");
     const failures: string[] = [];
     for (const { doc, gap, owner } of KNOWN_GAPS) {
-      const text = await read(doc);
-      if (!text.includes(gap)) {
+      const text = flat(await read(doc));
+      if (!text.includes(flat(gap))) {
         failures.push(`${doc} no longer carries the gap sentence "${gap}" — if the gap closed, remove this registry entry in the same change`);
       }
-      if (!roadmap.includes(owner)) {
+      if (!flat(roadmap).includes(flat(owner))) {
         failures.push(`ROADMAP.md no longer carries the owner "${owner}" for ${doc}'s gap "${gap}" — closing the item must also remove the gap prose and this entry`);
       }
     }
@@ -384,15 +426,118 @@ describe("known gaps carry owners", () => {
     const registered = KNOWN_GAPS.filter((entry) => entry.doc === "SCHEMA.md").map(
       (entry) => entry.gap,
     );
-    const orphans = schema
-      .split("\n")
-      .map((text, index) => ({ text: text.trim(), line: index + 1 }))
+    let line = 1;
+    const paragraphs = schema.split(/\n[ \t]*\n/).map((text) => {
+      const at = line;
+      line += text.split("\n").length + 1;
+      return { text: flat(text), line: at };
+    });
+    const orphans = paragraphs
       .filter(({ text }) => text.includes("[later]"))
-      .filter(({ text }) => !registered.some((gap) => text.includes(gap)))
-      .map(({ line, text }) => `SCHEMA.md:${line} "${text}"`);
+      .filter(({ text }) => !registered.some((gap) => text.includes(flat(gap))))
+      .map(({ line: at, text }) => `SCHEMA.md:${at} "${text.slice(0, 120)}"`);
     expect(
       orphans,
       `[later] line(s) no KNOWN_GAPS entry covers:\n${orphans.join("\n")}\n— register each with its ROADMAP owner, or close the deferral`,
     ).toEqual([]);
+  });
+});
+
+describe("the README names every flag the binary registers", () => {
+  it("each long flag appears in its command's row or the prose around it", async () => {
+    // Flags were the biggest hole the pins left: the command NAME set was
+    // set-equal to the CLI while thirteen shipped flags — `vouch --pack`,
+    // `verify --diff-answers`, `new --capability` among them — appeared on no
+    // page at all. --json is excluded because one sentence covers it for every
+    // command; every other long flag must be spelled where a reader can find it.
+    const readme = flat(await read("README.md"));
+    const missing: string[] = [];
+    for (const command of buildProgram().commands) {
+      for (const option of command.options) {
+        const long = /--[a-z-]+/.exec(option.flags)?.[0];
+        if (long === undefined || long === "--json") continue;
+        // Whole-token match: a prefix test would let `--package` vouch for
+        // `--pack`, and `--services` for `--service`.
+        const named = new RegExp(`\`${long}(?![\\w-])`);
+        if (!named.test(readme)) missing.push(`${command.name()} ${long}`);
+      }
+    }
+    expect(
+      missing,
+      `flag(s) the CLI registers and README never names: ${missing.join(", ")} — add each to its row, or drop the flag`,
+    ).toEqual([]);
+  });
+
+  it("the list row's sections are the sections the CLI accepts", async () => {
+    // The row is an argument list, not a command name, so the set-equality test
+    // above cannot see it: `loam list glossary` shipped and worked while the
+    // table still offered three sections.
+    const readme = await read("README.md");
+    const row = /^\| `loam list \[([^\]]+)\]`/m.exec(readme);
+    expect(row, "README has no `loam list [sections]` row").not.toBeNull();
+    const documented = row![1]!.split("\\|").map((section) => section.trim()).sort();
+    const declared = /"\[section\]", "([^"]+)"/.exec(await read("src/commands/list/list.ts"));
+    expect(declared, "list.ts's [section] argument description no longer parses").not.toBeNull();
+    const real = declared![1]!
+      .replace(/\(default:[^)]*\)/, "")
+      .split("|")
+      .map((section) => section.trim())
+      .filter(Boolean)
+      .sort();
+    expect(documented, "README's list sections and the CLI's disagree").toEqual(real);
+  });
+});
+
+describe("SCHEMA's layout block is the whole map", () => {
+  it("every authored artifact the path builders construct is named in the tree", async () => {
+    // The block readers treat as the map had fallen five paths behind the prose
+    // in its own file: obligations.yaml, the living and feature-local glossary,
+    // the feature-local capability delta and the feature asyncapi delta were all
+    // real, all described lower down, and none of them drawn. Both directions
+    // are checked — the doc must name it AND src/core/repo/ must still build it —
+    // so a retired path fails the doc that still draws it.
+    // Line endings normalized: this checkout may be CRLF (git core.autocrlf),
+    // and the fence probe below is the one assertion here that is byte-anchored.
+    const schema = (await read("SCHEMA.md")).replace(/\r\n/g, "\n");
+    const start = schema.indexOf("```\ndocs/");
+    expect(start, "SCHEMA.md must open its layout with a fenced `docs/` tree").toBeGreaterThan(-1);
+    const layout = schema.slice(start, schema.indexOf("```", start + 4));
+    const repo = await sourceUnder(join(ROOT, "src", "core", "repo"));
+    const failures: string[] = [];
+    for (const [drawn, built] of [
+      ["obligations.yaml", '"obligations.yaml"'],
+      ["glossary/<term>.md", '"glossary"'],
+      ["capabilities/<cap>/spec.md", '"capabilities"'],
+      ["specs/<svc>/asyncapi.yaml", '"asyncapi.yaml"'],
+    ] as const) {
+      const leaf = drawn.split("/").pop()!;
+      if (!layout.includes(leaf)) {
+        failures.push(`SCHEMA's layout block never draws ${drawn} — the tree is what readers take for the whole map`);
+      }
+      if (!repo.includes(built)) {
+        failures.push(`src/core/repo/ no longer builds ${built} — if the path retired, remove it from the layout and from this list`);
+      }
+    }
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+});
+
+describe("the example fleet's headline numbers", () => {
+  it("README and examples/README.md quote the count test/examples.test.ts pins", async () => {
+    // README claimed seven deliberate warnings for nine days after the count
+    // became ten — while the fixture test and examples/README.md both said ten.
+    // The fixture test is the authority because it runs the real command, so
+    // this reads the number out of it rather than carrying a fourth copy.
+    const pinned = /warnings: (\d+)/.exec(await read("test/examples.test.ts"));
+    expect(pinned, "examples.test.ts no longer pins a warning count in its summary literal").not.toBeNull();
+    const warnings = pinned![1]!;
+    expect(
+      flat(await read("README.md")),
+      `README's example-fleet line must quote the pinned ${warnings} warnings`,
+    ).toContain(`0 errors, ${warnings} deliberate warnings`);
+    expect(
+      flat(await read("examples/README.md")),
+      `examples/README.md must quote the pinned ${warnings} warnings`,
+    ).toContain(`**0 errors and ${warnings} warnings**`);
   });
 });

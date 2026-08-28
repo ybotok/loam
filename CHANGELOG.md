@@ -1,697 +1,1673 @@
 # Changelog
 
-All notable project changes are recorded here. The format follows Keep a Changelog, and release versions follow Semantic Versioning.
+All notable project changes are recorded here. The format follows Keep a Changelog, and release
+versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+_Each entry states the change and names every code, flag, path and payload key it introduced. The
+case for a change — the alternative that was rejected, the defect it came from, the rule it
+generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
+[ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
+
+### Documentation — the pages say what the binary does, and four more claims are checked
+
+- **README is the front door again, not the manual.** It carries the pitch, the install, the
+  five-minute trial, one table row per command **with every flag the binary registers**, and links.
+  Day zero, the per-command notes, the archive-protection walkthrough and the MCP server moved to
+  [WORKFLOW.md](WORKFLOW.md); the fleet scorecard to [SCHEMA.md](SCHEMA.md); the measured fleet-run
+  costs to `docs/BENCHMARKS.md`. Nothing was deleted, and the page is 53% shorter.
+- **Five drift fixes, each one a claim that had stopped being true.** `loam list glossary` was
+  missing from the command table; thirteen shipped flags were named on no page; the example fleet's
+  headline read "0 errors, 7 deliberate warnings" against a fixture that has reported ten since the
+  glossary and obligation axes landed; `loam mcp`'s prose listed eleven read commands after
+  `loam_explain` made twelve; and SCHEMA's layout block — the tree readers take for the whole map —
+  never drew `architecture/obligations.yaml`, `glossary/<term>.md`, `features/<FEAT>/glossary/`,
+  `features/<FEAT>/capabilities/<cap>/spec.md` or `features/<FEAT>/specs/<svc>/asyncapi.yaml`.
+- **Four new pins in `test/docs-facts.test.ts`, placed where the drift actually happened**: every
+  registered long flag is named in README, the `loam list` row's sections equal the CLI's, SCHEMA's
+  layout block names every artifact path `src/core/repo/` still builds, and the example fleet's
+  counts are read out of `test/examples.test.ts` rather than carried as a fourth copy. Each was
+  checked by breaking the fact it guards and watching it fail.
+- **A derivable count no longer has a dated exemption.** ROADMAP's assessment claimed 261 modules
+  and 21 commands for nine days against a tree holding 394 and 28, legally, because a dated heading
+  covered counts that derive from one readdir. Only a passed/total test count keeps the exemption
+  now; module, package, test-file and command counts are graded live on every page.
+- **Every Markdown page wraps at 100 columns**, fences, tables and headings excepted, so a prose
+  change reviews as a line-sized diff. The phrase assertions in `docs-drift`, `docs-facts` and
+  `agent-contract` match through a whitespace flattener, which is what makes the wrap a formatting
+  decision rather than a test-breaking one.
+- **`[Unreleased]` states its changes rather than arguing them**, under a contract that is checked
+  rather than promised: every code, flag, path and command an entry introduced — every one written
+  in bold, which is how this file marks its subjects — is still named by the entry. What left is the
+  argument, 31,342 words down to 12,572. One `ALLOWED_PROSE_TOKENS` entry was pruned with it,
+  because the sentence carrying it was the case for a change, not the change.
+
 ### Added — architectural obligations: what the architect hands the team, for the rules that vary
 
-- **`architecture/obligations.yaml`** declares the fleet's architectural obligations — `obligations: {<id>: {description, adr}}` — and a **`#obl-<name>` tag** on an element or an edge in `architecture/landscape.likec4` says where each one applies. loam had exactly one checked architect→team channel before this, and it works: an edge carrying `metadata { op }` obliges the provider to define that operationId or `spine.op-undefined` fails the gate. There was no equivalent for an outbox on this publisher and not that one, and "varies" is why a fleet-wide policy document is the wrong shape. The **ADR** says what was decided, the **tag** says where it applies, the **vocabulary** declares the name so a typo is an error, and the team's **`Covers:`** says it is met.
-- **`obligation.uncovered` (warn) is the prerequisite the roadmap named, discharged.** `c4.uncovered` could always say "this architecture object owes a requirement" — but only about a NEW tagged element in a feature's `delta.likec4`, never about the map the fleet actually runs on. This asks the same question of the LIVING landscape, against the union of every service's living `Covers:` lines. Both requirement documents are read, not just `arch.spec.md`: `Covers:` is one grammar, and a fleet that wrote its outbox requirement in `spec.md` has said the thing loam is asking about. One finding per tagged object, `subject` = the service that owns it, so a fleet report reads as a worklist per team.
-- **`obligation.unknown` (error) and `obligation.unapplied` (warn)** are the same join read in both directions, with the asymmetry `permissions.unknown`/`permissions.unenforced` already carry: a tag that resolves to nothing reads exactly like a rule the fleet keeps, while a declaration nobody has placed yet is an honest state. An undeclared tag does NOT also earn `obligation.uncovered` — one breach, one finding.
-- **`obligation.adr-missing` (error)** — an `adr:` field naming no file. The ADR is where the decision itself is written, so a pointer at nothing leaves every tag citing a rule nobody can read.
-- **`obligation.invalid` (error)** suspends the family, as the permission and capability vocabularies' invalid states do. It also refuses an id a LikeC4 tag name cannot carry, and that is a decision rather than strictness: an obligation id IS its tag suffix, a rejected character TRUNCATES the tag rather than failing it (`#obl-a.b` reads back as `obl-a`), and unlike a capability id — which the `#cap-` join flattens, and pays for with a collision arm at every use — an obligation id has no life outside its own tag.
-- **The file is the opt-in**: a fleet without `architecture/obligations.yaml` produces no obligation finding at all, however many tags its map already carries. A run that could not read the landscape asks none of the map questions rather than answering them empty, while the vocabulary's own two verdicts still hold.
+- **`architecture/obligations.yaml`** declares the fleet's architectural obligations —
+  `obligations: {<id>: {description, adr}}` — and a **`#obl-<name>` tag** on an element or an edge
+  in `architecture/landscape.likec4` says where each one applies. loam had exactly one checked
+  architect→team channel before this, and it works: an edge carrying `metadata { op }` obliges the
+  provider to define that operationId or `spine.op-undefined` fails the gate.
+- **`obligation.uncovered` (warn) is the prerequisite the roadmap named, discharged.**
+  `c4.uncovered` could always say "this architecture object owes a requirement" — but only about a
+  NEW tagged element in a feature's `delta.likec4`, never about the map the fleet actually runs on.
+- **`obligation.unknown` (error) and `obligation.unapplied` (warn)** are the same join read in both
+  directions, with the asymmetry `permissions.unknown`/`permissions.unenforced` already carry: a tag
+  that resolves to nothing reads exactly like a rule the fleet keeps, while a declaration nobody has
+  placed yet is an honest state.
+- **`obligation.adr-missing` (error)** — an `adr:` field naming no file.
+- **`obligation.invalid` (error)** suspends the family, as the permission and capability
+  vocabularies' invalid states do.
+- **The file is the opt-in**: a fleet without `architecture/obligations.yaml` produces no obligation
+  finding at all, however many tags its map already carries.
 
 ### Added — a feature brings its own words, and the merge keeps their links pointing at them
 
-- **`features/<FEAT>/glossary/<term>.md`** is copied into `glossary/` by `loam archive` and removed again by `loam unarchive`, so the vocabulary a change introduces ships and unships with it and is reviewed beside the requirements that use it. Byte-identical: loam merges requirements, never prose, and a term document is all prose. Creating the first one prints the same adoption line `capabilities/` does — the directory's existence is the axis's opt-in, and a merge that widens what `validate --all` grades must not do it silently.
-- **The route is CREATE-ONLY**, and that is a decision rather than an unfinished half. A capability delta is a delta because it merges into a living document part by part; a term document has one part, so the merge is a whole-file copy with nothing to merge partially and no pin to collide on. **`glossary.term-exists` (error)** refuses a term the living glossary already defines, and **`--approve` does not override it** — approving it would be approving a deletion nobody described. That makes it the second member of the never-overridable set beside `c4.service-binding-invalid`; `--json` already spells the verdict per issue as `overridable`, so a consumer branches on data rather than on a code list. Change a definition by editing `glossary/<term>.md` directly in the same pull request, where git produces an ordinary conflict.
-- **A feature may cite the word it is introducing** at that word's future living path. While the feature is in flight, `link.unresolved` treats its own new terms as living — the same overlay the capability axis had to add to `Realizes:` after shipping without one, and for the same reason: an index built from the living tree alone refuses the axis's own headline case. The overlay admits exactly that feature's terms, so a typo is still a broken link.
-- **`loam archive` now re-expresses relative links in the text it moves**, and this closes a defect that predates the glossary. A feature's `specs/<svc>/spec.md` sits four directories below the docs root and the living `services/<svc>/spec.md` sits two, so a relative link copied verbatim landed pointing above the repository — true of a delta requirement citing an ADR since long before a glossary existed. The target is unchanged; only the route to it is. The alternative considered was to have authors write the link relative to where the text will END UP, which resolves nowhere in the delta and gives up the convention's own first argument: that a markdown link renders as a link in pull-request review. Fenced blocks, code spans, absolute URLs, site-root paths and bare `#section` anchors are left exactly as written, and a document's own mixture of CRLF and LF survives untouched.
+- **`features/<FEAT>/glossary/<term>.md`** is copied into `glossary/` by `loam archive` and removed
+  again by `loam unarchive`, so the vocabulary a change introduces ships and unships with it and is
+  reviewed beside the requirements that use it.
+- **The route is CREATE-ONLY**, and that is a decision rather than an unfinished half.
+  **`glossary.term-exists` (error)** refuses a term the living glossary already defines, and
+  **`--approve` does not override it** — approving it would be approving a deletion nobody
+  described.
+- **A feature may cite the word it is introducing** at that word's future living path.
+- **`loam archive` now re-expresses relative links in the text it moves**, and this closes a defect
+  that predates the glossary.
 
 ### Added — the domain glossary: `glossary/<term>.md`, checked through the links that cite it
 
-- **`glossary/<term>.md`** is the fleet's domain vocabulary — one FILE per term, nesting allowed (`glossary/payments/authorization.md` is the term `payments/authorization`), and **no `glossary.yaml` anywhere**. A definition is prose, and the general rule this settles is that an entry with prose gets a file while an entry without prose stays a line in YAML. The DIRECTORY is the list, exactly as it is for `capabilities/`; a second list is the drift `loam init`'s removed service manifest was removed for. The directory's existence is the opt-in: a fleet without one produces no finding and pays a single `existsSync`, and the fleet-wide citation walk is never built. `README.md` is not a term.
-- **`glossary.unlinked` (warn)** — a term no document outside `glossary/` cites: a word the fleet never adopted, or a definition left behind by a rename. The mirror of `permissions.unenforced` and `capability.unrealized`, and it earns its place for their reason — a vocabulary is worth what cites it. It warns and never gates, because writing the vocabulary ahead of the fleet is the intended use.
-- **A citation from another term is not adoption.** A glossary is a network of definitions, so `order-line` linking to `order` is normal and correct and says the glossary is consistent, not that the fleet speaks it. Such terms stay in the finding, with the citing terms listed in `details` rather than hidden — the same judgement `capability.requirement-inert-join` makes one axis over: a join written inside the tree is not evidence about the world outside it. Citations from `features/archive/` do not count either; a shipped feature's documents describe the tree as it was, and a word retired two releases ago must not cite itself alive forever.
-- **A whole glossary nobody cites is ONE finding**, not one per term. A fleet that creates `glossary/` on a Monday and writes its first eight definitions is adopting the axis, not failing it eight times.
-- **The heuristic that was rejected is worth naming**, because it is the obvious one: matching a term's WORDS against prose would convict a payments capability for the word "payments". loam refuses that class of check everywhere else and refuses it here. The axis is exact only because a link is a join loam already resolves — which is why it shipped after `link.unresolved` and not before.
-- **`loam list glossary`** — a fourth explicit-only section beside `capabilities`. `--json` carries `glossary[]` (`id`, `path`, `linkedBy`) and a sibling `links` object whose `unreadable` list names what the citation walk could not decode, so an empty `linkedBy` is never confusable with "nobody looked". Bare `loam list --json` is byte-identical.
+- **`glossary/<term>.md`** is the fleet's domain vocabulary — one FILE per term, nesting allowed
+  (`glossary/payments/authorization.md` is the term `payments/authorization`), and **no
+  `glossary.yaml` anywhere**.
+- **`glossary.unlinked` (warn)** — a term no document outside `glossary/` cites: a word the fleet
+  never adopted, or a definition left behind by a rename.
+- **A whole glossary nobody cites is ONE finding**, not one per term.
+- **`loam list glossary`** — a fourth explicit-only section beside `capabilities`.
 
 ### Added — a markdown link is a join, and `loam validate` now resolves it
 
-- **`link.unresolved` (error)** — a relative markdown link in an authored document whose target does not exist. The convention (standard markdown links, relative-path targets) has been in SCHEMA.md and the generated `AGENTS.md` since the fleet-ADR work, and both said in as many words that nothing validated it. That sentence is now false and has been rewritten in both. **This is user-visible:** a repo whose prose links have rotted goes from exit 0 to exit 1 on its first `loam validate` after upgrading — the same class of widening the use-case and business axes each shipped, one release apart.
-- **One finding per document**, listing every broken link with its line and the link exactly as written. A rotted set of links is one editing session and one reviewer, not ten separate breaches, and per-link findings let a single stale directory rename fill a `validate --all` report with the same fix restated.
-- **The corpus is every authored markdown document**: both spec axes living and delta, `runbook.md`, every `adrs/` file at all three altitudes, `intent.md`, and each capability document. The fleet's own `architecture/adrs/` and living `capabilities/` are graded once, on the `landscape` target, and never repeated per service — the rule `permissions.unenforced` already follows. `AGENTS.md` and the scaffolded `README.md` are excluded because loam writes them: a finding against generated prose names a defect its reader cannot fix by editing.
-- **Three things are deliberately not graded**, and each is a question loam has no answer to rather than a leniency: a target outside the docs repo (a docs repo is routinely checked out beside nothing else, so `../../payment-svc/README.md` is evidence about this checkout, not about the link), a bare `#section` anchor, anything inside a fenced block or an inline code span — which is how a document shows the convention without being convicted for it. CASE, by contrast, IS graded: `existsSync` is case-insensitive on Windows and macOS while GitHub's renderer and every Linux CI runner are not, so a link resolves only when each path segment is spelled the way the directory stores it — and when only the case is wrong, the finding names the stored spelling, on every platform alike. A check that passed on the author's machine and failed where the work is read is the exact shape loam refuses everywhere else.
-- **A wikilink is still not refused, warned about, or repaired.** `[[Order]]` is not a link loam can read, which was always the argument for the markdown form; it is now observable rather than merely stated. A fleet whose only link is a dangling wikilink grades exactly as one with no links at all.
-- **`link.unreadable` (error)** — a document in that corpus that could not be decoded, almost always UTF-16 (PowerShell's `>` and `Out-File` write it unasked). It names itself instead of throwing, because this check is the first to read ADRs and runbooks at all: without it a runbook saved in the wrong encoding would blank its service's entire report as `service.unreadable`, when the only thing that could not be graded is one document's links.
+- **`link.unresolved` (error)** — a relative markdown link in an authored document whose target does
+  not exist.
+- **The corpus is every authored markdown document**: both spec axes living and delta, `runbook.md`,
+  every `adrs/` file at all three altitudes, `intent.md`, and each capability document.
+- **`link.unreadable` (error)** — a document in that corpus that could not be decoded, almost always
+  UTF-16 (PowerShell's `>` and `Out-File` write it unasked).
 
 ### Added — `loam archive` refuses a business promise nothing keeps, in both directions
 
-- **`capability.uncovered`** — a feature ADDS a capability requirement and no `Realizes:` line in the same feature's service deltas names it. A **warning that gates**, `--approve`-overridable, and the severity is the whole judgement: the document is legal (writing a promise ahead of the fleet is the intended use, which is why `capability.requirement-unrealized` warns and never gates), while the MERGE is what is unsafe — once merged, the only thing that will ever mention the promise again is a fleet-scope warning nobody reads. The message names three exits, including the one that is easy to get wrong: **the flow route opens only after the promise is living.** A `#req-` tagged use case deliberately does not count here, and that is a consequence rather than a policy — a `dynamic view` has no feature-delta path, so a tag naming a requirement that is not living yet is already `usecase.requirement-unresolved`.
-- **`capability.remove-requirement-realized`** — the same join taken in the removal direction, and it closes a hole that used to archive at exit 0: a feature removing a capability requirement that a living service requirement still realizes merged cleanly, and the next `loam validate --all` then failed with `capability.realizes-unknown` against a service document nobody had touched. An **error**, not a warning that gates, because unlike the addition it has no legal reading — after the merge a living document carries a pointer at nothing. Graded against the **post-merge** fleet, so both escape hatches fall out rather than being special-cased: retiring the realizing requirement in the same feature, or restating it without the `Realizes:` line, is no breach; a `MODIFIED` that keeps the line still is.
-- **A sibling code rather than one code with two severities**, because the fixes differ (write the line, versus retire the requirement carrying it) and a machine cannot branch on a code whose severity depends on the case. The family already spells every direction of every join as its own code — `openapi.remove-op-consumed` is the same shape one axis over.
-- **`loam status --json` gains `capabilities` artifact rows** (additive; present only when the feature carries the directory, with an optional `capability` key). Before this, a capability fault mapped to `spec` and matched no service, so the business corpus was a blind spot in the artifact table — and in a fleet holding a service and a capability of the same name it named the wrong file. `loam status` already refused to ship such a feature; now it can say which document.
+- **`capability.uncovered`** — a feature ADDS a capability requirement and no `Realizes:` line in
+  the same feature's service deltas names it.
+- **`capability.remove-requirement-realized`** — the same join taken in the removal direction, and
+  it closes a hole that used to archive at exit 0: a feature removing a capability requirement that
+  a living service requirement still realizes merged cleanly, and the next `loam validate --all`
+  then failed with `capability.realizes-unknown` against a service document nobody had touched.
+- **`loam status --json` gains `capabilities` artifact rows** (additive; present only when the
+  feature carries the directory, with an optional `capability` key).
 
 ### Added — a feature can change a capability, and `loam archive` merges it
 
-- **`features/<FEAT>/capabilities/<cap>/spec.md`** carries a delta against the living `capabilities/<cap>/spec.md`, in the requirement grammar and delta algebra every service spec already uses: `## ADDED|MODIFIED|REMOVED Requirements`, `Requirement-ID:` identity, `Based-On:` pins. Nesting is spelled by the tree, exactly as the living corpus spells it — `features/FEAT-9/capabilities/payments/refunds/spec.md`. `loam archive` merges it through the same transactional path as every other document, **creating `capabilities/<cap>/spec.md` — and the `capabilities/` tree itself — when the feature is the first to name that capability**, the way it already materialises a new service. `loam unarchive` takes all of it back, byte for byte, and removes the directories the archive created.
-- **Read this if you edit capability documents directly.** Both lifecycles keep working and nothing makes a direct edit illegal — but a feature that MODIFIES or REMOVES a living capability requirement now needs a `Based-On:` pin, so the first capability-touching feature in a fleet that has been editing those documents by hand reports `delta.baseline-missing` (a warning that gates) and is fixed by `loam rebase <FEAT>`. That is the same migration the adopted OpenSpec corpus already goes through. What it buys is the protection those documents had none of: two PRs rewriting one capability requirement were a git conflict at best and a silent overwrite at worst, and are now `delta.baseline-stale`.
-- **`loam rebase` learned the capability axis**, because `delta.baseline-missing`'s own message tells you to run it. Additive `--json` keys: `capabilities` and `capabilityPins` (a `PinOutcome` carrying `capability` instead of `service`). `pins[]` and `services[]` are untouched.
-- **The three capability-document rules now gate archive**, not just `loam validate`: `capability.requirement-unidentified`, `capability.requirement-service-scoped` and `capability.requirement-inert-join` are graded on the DELTA as well as on the living document. Without that, a capability requirement carrying `Operations:` — the service-altitude line the whole corpus exists to keep out — would merge into the living tree and only then earn its error, against a document whoever reads the finding did not write. No new code string ships; all three already existed and are already in the `/loam-check` table.
-- **A `--json` nuance worth knowing:** `Issue.subject` on a `delta.*` code no longer always names a service. A capability delta files its issues under the capability id, so a consumer matching `subject` against the service list will find no match rather than the wrong one. (`loam status`'s own artifact table has exactly that gap today and is named in the roadmap.)
-- **A fleet with no `features/*/capabilities/` sees no change and pays nothing** — one `existsSync` per feature, no read, no finding. `gherkin` and `verify` still compute from service requirements alone: a capability delta changes their output by not one byte, which is pinned by a test.
+- **`features/<FEAT>/capabilities/<cap>/spec.md`** carries a delta against the living
+  `capabilities/<cap>/spec.md`, in the requirement grammar and delta algebra every service spec
+  already uses: `## ADDED|MODIFIED|REMOVED Requirements`, `Requirement-ID:` identity, `Based-On:`
+  pins.
+- **`loam rebase` learned the capability axis**, because `delta.baseline-missing`'s own message
+  tells you to run it. Additive `--json` keys: `capabilities` and `capabilityPins` (a `PinOutcome`
+  carrying `capability` instead of `service`).
+- **The three capability-document rules now gate archive**, not just `loam validate`:
+  `capability.requirement-unidentified`, `capability.requirement-service-scoped` and
+  `capability.requirement-inert-join` are graded on the DELTA as well as on the living document.
+- **A `--json` nuance worth knowing:** `Issue.subject` on a `delta.*` code no longer always names a
+  service.
+- **A fleet with no `features/*/capabilities/` sees no change and pays nothing** — one `existsSync`
+  per feature, no read, no finding.
 
 ### Changed — `loam list capabilities` and `loam validate` now give the SAME answer to "is this promise kept"
 
-- **`loam list capabilities --json` carries both corpora.** Each `requirements[]` row gains `keptBy` (additive): the ids of the `#cap-`/`#req-` tagged flows that keep that promise, beside the `realizedBy` service requirements that realize it. Neither corpus is derived from the other, and a cross-service promise commonly has an empty `realizedBy` and a non-empty `keptBy` — which the listing previously reported as "realized by nothing" while `validate --all` correctly stayed silent.
-- **Three states, all distinguishable**, and the third is the one that matters: `keptBy` present and non-empty means these flows keep it; present and empty means loam read the fleet's flows and none does; **absent** means nobody looked. A new additive top-level `useCases` key says which kind of absence it was. "Kept by no flow" over an `architecture/` that did not parse is the vacuously-green claim the use-case axis exists to refuse, so it is never said.
-- **An unreadable `architecture/` degrades rather than refusing.** The rows themselves come from `capabilities.yaml` and `capabilities/`, both readable, and `validate --all` already reports the broken document as `landscape.invalid` — so the listing prints what it has and marks the flows unread. That is the opposite call from the invalid-vocabulary refusal, where the broken corpus IS what the rows are built from.
-- **`capability.unrealized` counts flows too.** A capability whose every promise is kept by a tagged flow, named by no service requirement at all, was being told it was "a promise nobody implemented or a word nobody adopted" while loam's own report said the promise was kept. A capability whose criteria all cross services is exactly the shape with no service-side realizer to find. It stays asymmetric with `capability.requirement-unrealized`, which suspends entirely when the flows cannot be read: a capability has independent evidence in its `Capability:`/`Realizes:` lines, so unreadable flows leave it answering from less rather than from nothing.
-- **Bare `loam list --json` is byte-identical**, and pays nothing: the capabilities section stays explicit-opt-in, and the flow read keeps its byte-scan gate in front of any LikeC4 load.
+- **`loam list capabilities --json` carries both corpora.** Each `requirements[]` row gains `keptBy`
+  (additive): the ids of the `#cap-`/`#req-` tagged flows that keep that promise, beside the
+  `realizedBy` service requirements that realize it.
+- **An unreadable `architecture/` degrades rather than refusing.** The rows themselves come from
+  `capabilities.yaml` and `capabilities/`, both readable, and `validate --all` already reports the
+  broken document as `landscape.invalid` — so the listing prints what it has and marks the flows
+  unread.
+- **`capability.unrealized` counts flows too.** A capability whose every promise is kept by a tagged
+  flow, named by no service requirement at all, was being told it was "a promise nobody implemented
+  or a word nobody adopted" while loam's own report said the promise was kept.
+- **Bare `loam list --json` is byte-identical**, and pays nothing: the capabilities section stays
+  explicit-opt-in, and the flow read keeps its byte-scan gate in front of any LikeC4 load.
 
 ### Added — `#req-`: a use case can keep a business promise, which is the only way a cross-service one gets kept
 
-- **A `dynamic view` already tagged `#cap-<slug>` may now carry `#req-<slug>`**, naming one of that capability's requirements. This is the join the business axis was built for and the one `Realizes:` cannot make: "I enter a login and a password and I am in" belongs to no single service's `spec.md`, because each promises only its own part — one announces the order, another sends the message, neither can promise what happens between them. A flow can, because it IS the hop sequence, and loam grades that claim down to the operation through the four `usecase.*` codes it already had.
-- **The second tag is SCOPED by the first.** A `Requirement-ID` is unique only inside its own document, so the view must first say which capability it is about. Several `#req-` tags on one view are legal and normal — a flow commonly keeps two of a capability's promises.
-- **`usecase.requirement-unresolved` (error)** — six failures with six fixes, and the message says which happened: no resolved `#cap-` tag, two of them, a capability with no document, a document with no requirements yet, an id that document does not declare (close ids offered, each already spelled as the tag to write), or two ids flattening to one slug.
-- **Either reserved prefix now opts a view in**, where only `#cap-` did before. A view carrying `#req-` and no `#cap-` used to be invisible; it is an author who asked to be graded and forgot half the claim, and silence is the one answer an opt-in must never give them.
-- **A tag name accepts exactly `[A-Za-z0-9_-]`, measured at the `likec4@1.59.2` pin**, so the slug rule is now a whitelist rather than "flatten a slash": a `Requirement-ID` may legally contain a `.`, and a capability id its `/`. **This widens `#cap-` too** — a capability id containing any character outside that set now flattens instead of producing a tag LikeC4 refuses to parse, which is strictly more permissive and breaks no existing fleet. The measurement also recorded the sharp edge: a rejected character TRUNCATES the tag rather than refusing it (`#x-a.b` reads back as `x-a`), which is why nothing may ever read a model with errors.
-- **Only a RESOLVED claim keeps a promise.** A broken `#req-` tag suppresses nothing, so `capability.requirement-unrealized` goes on firing beside the error — a typo that silenced it would turn a mistake into a green fleet. And a run that could not READ the flows (a single-target run, or an `architecture/` that did not parse) now **suspends** `capability.requirement-unrealized` entirely rather than answering from half the evidence: loam did not look, which is never the same answer as "there is nothing there".
+- **A `dynamic view` already tagged `#cap-<slug>` may now carry `#req-<slug>`**, naming one of that
+  capability's requirements.
+- **`usecase.requirement-unresolved` (error)** — six failures with six fixes, and the message says
+  which happened: no resolved `#cap-` tag, two of them, a capability with no document, a document
+  with no requirements yet, an id that document does not declare (close ids offered, each already
+  spelled as the tag to write), or two ids flattening to one slug.
+- **A tag name accepts exactly `[A-Za-z0-9_-]`, measured at the `likec4@1.59.2` pin**, so the slug
+  rule is now a whitelist rather than "flatten a slash": a `Requirement-ID` may legally contain a
+  `.`, and a capability id its `/`.
+- **Only a RESOLVED claim keeps a promise.** A broken `#req-` tag suppresses nothing, so
+  `capability.requirement-unrealized` goes on firing beside the error — a typo that silenced it
+  would turn a mistake into a green fleet.
 
 ### Added — `Realizes:`, the join that makes the business tree checkable
 
-- **A service requirement says which promise it serves**: `Realizes: checkout#CHECKOUT-CHARGE-ONCE`, a list line resolving against a requirement in `capabilities/<cap>/spec.md`. This is **not** the same claim as `Capability:` beside it and a requirement commonly carries both — `Capability: checkout` names a theme, `Realizes:` names one promise — and only the second can be graded in both directions. Written by whoever implements the requirement, never by the analyst: a business document must not be edited every time the fleet rearranges which service carries which part.
-- **The separator is the LAST `#`, not the first.** The requirement half's grammar excludes `#` while a capability id is a YAML key and a directory name and is constrained nowhere, so splitting at the last one is unambiguous for every id there is. Splitting at the first would mis-parse any capability id containing one, and would do it silently — reporting a declared capability as undeclared.
-- **`capability.realizes-unknown` (error)** — the entry names no capability requirement. Five distinct failures with five different fixes, and the message says which one happened: the entry is not spelled `<capability-id>#<Requirement-ID>`; the capability is undeclared; it is declared but has no document; the document declares no requirements yet; or it declares requirements but not this id. Close names are offered where there are any. In a feature delta it gates `loam archive` (`--approve` overrides), for `capability.unknown`'s reason: the merge would land a pointer at a promise that does not exist, looking exactly like a working join.
-- **`capability.requirement-unrealized` (warn, fleet scope)** — a capability requirement no living `Realizes:` line names, one warning per requirement, subject `<capability>#<id>`. The sharper sibling of `capability.unrealized` and the one that survives a healthy-looking row: a capability with four requirements and three realized reports nothing at all through the other code. It never gates, because writing the business document ahead of the fleet is the intended use.
-- **`capability.requirement-inert-join` (error)** — a requirement in a capability document carrying `Capability:` or `Realizes:`. Both point INTO the tree, so nothing reads them written inside it; both parse and read exactly like the working joins one directory over, which is why they are refused rather than ignored. A capability realizing another capability's requirement is a real idea and is deliberately not being smuggled in as a line that happens to parse.
-- **Realizing a REQUIREMENT realizes its capability.** A requirement carrying only `Realizes:` counts toward `capability.unrealized`, and one carrying both joins is counted once. Without that, a fleet that documented its capabilities carefully enough to join at requirement level would have collected one spurious "realized by nobody" warning per capability.
-- **`loam list capabilities --json` gains `requirements[]` per capability** (additive), each with what realizes it. The key is ABSENT for a capability with no document and an empty array for a document declaring none — those are different answers and only the second means "nobody wrote any".
+- **A service requirement says which promise it serves**: `Realizes: checkout#CHECKOUT-CHARGE-ONCE`,
+  a list line resolving against a requirement in `capabilities/<cap>/spec.md`.
+- **The separator is the LAST `#`, not the first.** The requirement half's grammar excludes `#`
+  while a capability id is a YAML key and a directory name and is constrained nowhere, so splitting
+  at the last one is unambiguous for every id there is.
+- **`capability.realizes-unknown` (error)** — the entry names no capability requirement.
+- **`capability.requirement-unrealized` (warn, fleet scope)** — a capability requirement no living
+  `Realizes:` line names, one warning per requirement, subject `<capability>#<id>`.
+- **`capability.requirement-inert-join` (error)** — a requirement in a capability document carrying
+  `Capability:` or `Realizes:`.
+- **Realizing a REQUIREMENT realizes its capability.** A requirement carrying only `Realizes:`
+  counts toward `capability.unrealized`, and one carrying both joins is counted once.
+- **`loam list capabilities --json` gains `requirements[]` per capability** (additive), each with
+  what realizes it.
 
 ### Added — `capabilities/<cap>/spec.md`: the business tree an analyst can actually write in
 
-- **A capability may now be declared by a DOCUMENT, not only by a name in `architecture/capabilities.yaml`, and the vocabulary is the union of the two.** Nothing is removed and nothing is deprecated: a fleet that declares twenty names in YAML and has written four documents is the normal state of an adoption, and both sides grade. Where an id sits on both, the YAML keeps `description` and `owner` — the document has no field to overwrite them with, because this axis's rule is that an entry with prose gets a file while an entry without prose stays a line in YAML.
-- **The directory IS the list.** A directory under `capabilities/` is a capability if and only if it holds `spec.md`; nesting is spelled by the tree, so the id `payments/refunds` lives at `capabilities/payments/refunds/spec.md` and `payments` may be a capability in its own right beside it. There is no manifest, for the reason `loam init`'s removed `loam.docs.json` was removed: a second list is a second thing that can disagree. **`loam init` does not scaffold the directory** — its existence is the opt-in, exactly as `architecture/adrs/`'s is, and git does not carry an empty one anyway.
-- **The opt-in widened, so a fleet can start grading capabilities without touching the YAML.** `architecture/capabilities.yaml` was this axis's only opt-in; now either file is. A fleet holding NEITHER is silent exactly as before — however many `Capability:` lines its requirements already carry — but a fleet that adds its first `capabilities/<id>/spec.md` starts receiving `capability.unknown` and `capability.unrealized`, which it did not before. **That is the user-visible half of this change**: adding one document turns the family on.
-- **`capability.doc-missing` (warn)** — a directory under `capabilities/` holding neither the document nor a capability beneath it: what `mkdir` leaves behind halfway through creating one. It declares nothing, so a `Capability:` line naming it still reports `capability.unknown`, while a reader browsing the tree counts it. A warning, because a half-finished authoring step must not fail somebody else's `loam validate` on the same tree.
-- **`capability.requirement-unidentified` (error)** — a requirement in a capability document with no `Requirement-ID:`. The line is optional in a service spec for OpenSpec compatibility and REQUIRED here: these documents outlive every service that realizes them, so identity is the line and not the heading — otherwise rewording a heading is a removal and an addition, and every join made to it breaks silently.
-- **`capability.requirement-service-scoped` (error)** — a capability requirement carrying `Operations:`, `Covers:`, `Publishes:` or `Consumes:`. Each resolves against one service's own contract or model, so the requirement is a service requirement filed at the wrong altitude. `Requires:` is deliberately exempt: a permission is a domain fact, observable outside the fleet. **The companion rule that a capability requirement names no service is NOT checked and the documentation says so** — the only mechanical reading of it is scanning prose for declared service ids, which is a heuristic, and loam refuses-and-names rather than guessing. PR review holds that half.
-- **The authored tree's own grades are not suppressed behind `capability.invalid`.** The suppression exists to stop a cascade of grades resolved against a file nobody can read; a directory holding no document, and a requirement with no stable id, consult no vocabulary at all. Hiding them until an unrelated YAML parses would be suppression without the cascade that justifies it.
-- **What is NOT in this release, each owned by the roadmap:** the `Realizes:` join from a service requirement back to a capability requirement, the feature-local `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and `loam new <FEAT> --capability <cap>`. Until those land a capability document is a fleet document edited directly under PR review — the lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already have. `gherkin` and `verify` still compute from service requirements alone, so a service repository validates itself with nothing but its own files.
+- **A capability may now be declared by a DOCUMENT, not only by a name in
+  `architecture/capabilities.yaml`, and the vocabulary is the union of the two.** Nothing is removed
+  and nothing is deprecated: a fleet that declares twenty names in YAML and has written four
+  documents is the normal state of an adoption, and both sides grade.
+- **The directory IS the list.** A directory under `capabilities/` is a capability if and only if it
+  holds `spec.md`; nesting is spelled by the tree, so the id `payments/refunds` lives at
+  `capabilities/payments/refunds/spec.md` and `payments` may be a capability in its own right beside
+  it. There is no manifest, for the reason `loam init`'s removed `loam.docs.json` was removed: a
+  second list is a second thing that can disagree.
+- **The opt-in widened, so a fleet can start grading capabilities without touching the YAML.**
+  `architecture/capabilities.yaml` was this axis's only opt-in; now either file is.
+- **`capability.doc-missing` (warn)** — a directory under `capabilities/` holding neither the
+  document nor a capability beneath it: what `mkdir` leaves behind halfway through creating one.
+- **`capability.requirement-unidentified` (error)** — a requirement in a capability document with no
+  `Requirement-ID:`.
+- **`capability.requirement-service-scoped` (error)** — a capability requirement carrying
+  `Operations:`, `Covers:`, `Publishes:` or `Consumes:`.
+- **The authored tree's own grades are not suppressed behind `capability.invalid`.** The suppression
+  exists to stop a cascade of grades resolved against a file nobody can read; a directory holding no
+  document, and a requirement with no stable id, consult no vocabulary at all.
+- **What is NOT in this release, each owned by the roadmap:** the `Realizes:` join from a service
+  requirement back to a capability requirement, the feature-local
+  `features/<FEAT>/capabilities/<cap>/` delta merged by the transactional archive, and
+  `loam new <FEAT> --capability <cap>`.
 
 ### Changed — a use case is now a CONSUMER, so `loam diff` can refuse where it used to warn
 
-- **Read this one before upgrading CI.** `loam diff --base <ref>` already refused a change that removes an operation somebody still consumes (`diff.op-removed-consumed`, error, exit 1) and merely warned when nothing consumed it (`diff.op-removed`, warn, exit 0). A use-case hop is now a consumer too. So a removal whose ONLY consumer is a step in a `#cap-`-tagged flow moves from **warn/exit 0 to error/exit 1** — the same removal, the same command, a different verdict, because the fleet can now say that a business flow depends on it. This is the axis working, and it is a gate widening: a repository with tagged use cases may see `loam diff` start failing a pipeline that passed.
-- **`loam context` gains one new exit-1 condition**: `architecture/` failing to parse as a LikeC4 project is now a hole in the pack. The pack already carried a flag for whether the fleet map parsed, but it reads `architecture/landscape.likec4` alone and cannot see a broken `architecture/usecases/*.likec4`, so a pack could report holes-none over a fleet whose flows nobody could read. `loam delta` and `loam status` exit codes are **unchanged**: they report the unreadable state as a field and gate nothing on it, because an unparseable `architecture/` is a pre-existing fleet defect `validate --all` already refuses on.
-- **A CONTESTED hop is never a victim.** When the relationships backing a hop disagree about the operation, loam does not know which one the flow exercises — so a removal touching it is reported as a **suspension**, not as a broken flow. Silence would claim nothing depends on it; a victim would claim something does. Neither is true, and the third answer is the honest one.
-- **`loam diff` spends no new code for any of this.** Use-case victims ride the `details[]` of the two codes above, naming the flow, the hop number, the step title and the file: `use case 'uc_checkout' step 4 'authorizes the payment' (architecture/usecases/checkout.likec4)`. That sentence is the whole point of the axis — the fleet map could already say an operation was consumed; only a use case can say which business flow stops working.
+- **Read this one before upgrading CI.** A use-case hop is now a consumer, so a removal whose ONLY
+  consumer is a step in a `#cap-`-tagged flow moves from `diff.op-removed` (warn, exit 0) to
+  `diff.op-removed-consumed` (error, exit 1) — the same removal, the same command, a different
+  verdict. A repository with tagged use cases may see `loam diff` start failing a pipeline that
+  passed.
+- **A CONTESTED hop is never a victim.** When the relationships backing a hop disagree about the
+  operation, a removal touching it is reported as a suspension rather than as a broken flow: silence
+  would claim nothing depends on it, and a victim would claim something does.
+- **`loam context` gains one new exit-1 condition**: `architecture/` failing to parse as a LikeC4
+  project is now a hole in the pack.
+- **`loam diff` spends no new code for any of this.** Use-case victims ride the `details[]` of the
+  two codes above, naming the flow, the hop number, the step title and the file:
+  `use case 'uc_checkout' step 4 'authorizes the payment' (architecture/usecases/checkout.likec4)`.
 
 ### Added — the blast radius of a feature, in hops
 
-- **`loam delta` and `loam status <FEAT>` gain a `useCases` key** (additive; nothing removed): the flows whose hops touch a service the feature addresses, each with its ordered steps and the services each step resolves to. The join is on the step's ENDPOINTS through the shared service resolver, never through a backing relationship — so a flow still answers for a service the feature introduces, whose hops nothing in the model backs yet.
-- **The landscape is loaded lazily**, because `loam delta` sits in `/loam-implement`'s hot path and a LikeC4 workspace spin there is felt on every iteration. The gate is a byte scan of `architecture/*.likec4` for the literal `cap-`: a `#cap-` tag must be both declared and carried, so a document set without those bytes declares no use case. It **fails closed** — a document the scan cannot open opens the gate rather than silently skipping the parse.
-- **`loam context` and `loam explore --capability` see flows too.** The pack carries `useCaseSteps` for the service it is packing and `capabilities[].useCases` fleet-wide, and an `architecture/` that will not parse becomes a **hole** rather than an absence — the pack says it could not look, never that there are none. `explore --capability` unions the services a flow runs through into its seed set, so an exploration that starts from a capability reaches the services its flows cross even where no requirement names them yet.
+- **`loam delta` and `loam status <FEAT>` gain a `useCases` key** (additive; nothing removed): the
+  flows whose hops touch a service the feature addresses, each with its ordered steps and the
+  services each step resolves to.
+- **The landscape is loaded lazily**, because `loam delta` sits in `/loam-implement`'s hot path and
+  a LikeC4 workspace spin there is felt on every iteration.
+- **`loam context` and `loam explore --capability` see flows too.** The pack carries `useCaseSteps`
+  for the service it is packing and `capabilities[].useCases` fleet-wide, and an `architecture/`
+  that will not parse becomes a **hole** rather than an absence — the pack says it could not look,
+  never that there are none.
 
 ### Added — a home for fleet-level decisions, and one way to link between documents
 
-- **`architecture/adrs/NNNN-*.md` — ADRs about the fleet.** They existed at exactly two altitudes before this: a service's own decisions and a feature's. The one altitude where the largest decisions are made — "event publishers use a transactional outbox", "cross-service calls carry a circuit breaker" — had nowhere to record them, and `architecture/` held only the map, the generated subsystem views and two vocabularies. **Nothing grades them**: presence-tracked exactly as a service's `adrs/` are, so a fleet with no decisions written down owes nothing and produces no finding. `loam list --json` gains an additive top-level `fleetAdrs` count and the text view prints one line when there are any. `loam init` deliberately does NOT scaffold the directory — git does not keep an empty one, and an empty `adrs/` teaches nothing.
-- **Documents link to each other with standard markdown links**, target spelled as a relative path — stated once in the generated `AGENTS.md` and in `SCHEMA.md`'s conventions, since agents write most of these files. Two reasons, the second deciding: a markdown link renders as a link in pull-request review, where these documents are actually read, while `[[a wikilink]]` renders there as the brackets somebody typed; and its target is a real relative path, so "does this link resolve" is a filesystem question with a yes-or-no answer, where resolving a wikilink would mean reimplementing Obsidian's shortest-unique-path search — guessing, where loam refuses and names.
-- **Nothing validates this, and the documentation says so.** No check reads a link, a repository holding both spellings produces no finding, and there is no configuration field: it is a convention because a link is a **join** a later check could resolve, not a preference worth a flag. Obsidian reads such a repository with no integration at all — graph, backlinks and search work on markdown links — and its per-vault `Use [[Wikilinks]]` toggle, turned off, makes its own autocomplete and rename-tracking produce them too. The authoring comfort is a setting in an editor rather than a decision the fleet carries.
+- **`architecture/adrs/NNNN-*.md` — ADRs about the fleet.** They existed at exactly two altitudes
+  before this: a service's own decisions and a feature's.
+
 ### Added — `loam validate --all` grades a business use case, hop by hop
 
-- **A `dynamic view` tagged `#cap-<slug>` is now a checked use case**, and four new stable codes grade it. The tag is the opt-in and the only one: an untagged dynamic view is somebody's hand-drawn diagram and produces no finding ever, so a brownfield fleet upgrades without turning red. The slug is the capability id from `architecture/capabilities.yaml` with every `/` flattened to `-`, because a LikeC4 tag name cannot carry a slash. Use cases live in `architecture/usecases/<name>.likec4` — one file per flow, beside the fleet map rather than inside it — and every finding names that file.
-- **`usecase.step-unbacked` (error)** — a hop the model does not declare. This is the code that earns the axis: such a step yields **zero** LikeC4 errors, so if loam does not convict it nothing does, and a drawn interaction with no relationship behind it stays green forever. The message offers both fixes, because two different mistakes land here and only the author knows which: draw the edge in `model { }`, or — if the hop is a return step — write it as `<target> <- <source>`, since a reply is attributed to the call it answers.
-- **`usecase.capability-unresolved` (error)** — a `#cap-` tag that names no declared capability, or two. Zero: close names are offered, already spelled as the tag to write. Two: every colliding id is named, because the slug is not injective (`payments/refunds` and `payments-refunds` are distinct ids that flatten to one tag) and nothing in the tag can say which one a use case realizes. Suppressed entirely while `capabilities.yaml` is absent or unreadable — the vocabulary ladder the capability family already applies.
-- **`usecase.step-contested` (warn)** — the relationships backing one hop disagree about the operation, listed as candidates. Contested is decided by the count of DISTINCT `op` values, never by the count of relationships: a provider drawn as containers gives one call two edges under one operation, and that is not a conflict. It suppresses `usecase.step-unlinked` for the same step, structurally rather than by rule — the warn is derived from the attributed verdict, and the two verdicts are disjoint.
-- **`usecase.step-unlinked` (warn)** — a backed hop that names no operation of the provider's contract, grouped under the OpenAPI adoption axis. **Three guards keep it honest, and each closes a whole class of warnings that would otherwise be simply wrong**: a `publishes`/`consumes` candidate exempts (the hop reaches an API, just not an HTTP one, and the event spine already grades it); the target must resolve to a real `services/<id>/` (a database, a cache, a queue or somebody else's system owns no `openapi.yaml` that could carry the operationId); and the CALLER must not be a person — `customer -> checkoutWeb` is somebody using the app, and the app owes no operationId for a click. That third guard was measured, not predicted: without it the warning fired on the first hop of almost every flow, which is where a sequence diagram puts its actor.
-- **Nothing is asked of a fleet that draws no use cases**, and the axis is silent under `loam validate --service` — a single-target run loads no fleet project, so the question is unanswerable and loam says nothing rather than half-answering. `examples/docs/architecture/usecases/` now carries a worked flow whose first hop is an actor, so deleting that guard moves the example fleet's warning count and fails its own suite.
+- **A `dynamic view` tagged `#cap-<slug>` is now a checked use case**, and four new stable codes
+  grade it.
+- **`usecase.step-unbacked` (error)** — a hop the model does not declare.
+- **`usecase.capability-unresolved` (error)** — a `#cap-` tag that names no declared capability, or
+  two.
+- **`usecase.step-contested` (warn)** — the relationships backing one hop disagree about the
+  operation, listed as candidates. It suppresses `usecase.step-unlinked` for the same step,
+  structurally rather than by rule — the warn is derived from the attributed verdict, and the two
+  verdicts are disjoint.
+- **`usecase.step-unlinked` (warn)** — a backed hop that names no operation of the provider's
+  contract, grouped under the OpenAPI adoption axis.
+
 ### Changed — the source-file limit is 400 lines, up from 300
 
-- **A house limit, not a published contract — but it is in `CONTRIBUTING.md` and `AGENTS.md`, so it is stated here.** `test/code-limits.test.ts` now fails a `src/` file over **400** lines rather than 300. The four-parameter and five-file-per-package limits are unchanged, and `test/code-limits-baseline.json` stays empty: an entry is still a regression, never accepted backlog.
-- **What moved it was a measurement.** Across 359 files in `src/` the median was 150 and p90 was 283 — and **thirteen files sat at exactly 300**, with sixteen more between 290 and 300. That is files growing until something stopped them and then parking against the wall, and each one turned its next change into either a split or a trimmed comment. The second number decided the size: **37% of the non-blank lines in `src/` are comments** (20,521 of 55,587), which is doctrine rather than accident here, so a 300-line ceiling was really a ~190-code-line ceiling and it fell hardest on the modules with the most subtle reasoning to record.
-- **400 rather than 500 or 600, because a ceiling has to keep asking.** The case for having one is that `src/core/agent.ts` reached 2,387 lines with nothing asking; at p90 283 a 500-line ceiling would be inert for years. The 300-line ceiling found four real subject seams in a single session — `core/c4/resolve/`, `core/c4/splice/identity/`, `core/scaffold/`, `core/c4/project/` — which is the evidence that the mechanism works and only its number was wrong. `docs/CODE-STYLE.md` records the whole measurement so the number is not relitigated from taste.
+- **A house limit, not a published contract — but it is in `CONTRIBUTING.md` and `AGENTS.md`, so it
+  is stated here.** `test/code-limits.test.ts` now fails a `src/` file over **400** lines rather
+  than 300.
+- **What moved it was a measurement.** Across 359 files in `src/` the median was 150 and p90 was 283
+  — and **thirteen files sat at exactly 300**, with sixteen more between 290 and 300.
+- **400 rather than 500 or 600, because a ceiling has to keep asking.** The case for having one is
+  that `src/core/agent.ts` reached 2,387 lines with nothing asking; at p90 283 a 500-line ceiling
+  would be inert for years.
+
 ### Changed — `architecture/` is read as one LikeC4 project, so a use case can live in its own file
 
-- **`validate --all` now loads `architecture/landscape.likec4` together with every `architecture/usecases/*.likec4` as ONE project**, the way the LikeC4 renderer has always read that directory. This is the mechanism a fleet use case needs and could not have before: a `dynamic view` declares its steps over the landscape's ELEMENTS, and a file holding only that does not parse on its own — measured at the `likec4@1.59.2` pin, five errors (the capability tag and both endpoints unresolved). The same file beside its landscape in one project is zero errors, and each view comes back carrying the document it was written in.
-- **Why a file of its own, rather than the landscape's `views { }` block.** Readability is the visible half — an analyst opens `usecases/checkout.likec4` and reads one business flow instead of scrolling a fleet-sized map. Ownership is the half that matters at scale: `architecture/landscape.likec4` is the architect's file under CODEOWNERS, so keeping use cases in it would make every analyst edit touch the architect's file and every use-case PR conflict with every landscape PR. SCHEMA already records a trigger for splitting the landscape when conflicts become weekly rather than monthly; use cases inside it only bring that day closer.
-- **Diagnosis improves rather than widening.** A typo'd element in a use-case file is attributed to THAT file: `landscape: architecture/usecases/checkout.likec4 has 2 error(s)`, and when more than one document is broken every detail line carries its own file. The message used to name `architecture/landscape.likec4` unconditionally, which — once a second document could break the project — would have sent an author to the wrong file with a line number pointing at somebody else's text.
-- **Two authoring rules invert inside `architecture/`, and both are enforced by LikeC4 rather than by loam.** Exactly one document declares the `specification` block: every `.likec4` file loam parses alone must declare its own, while a second declaration inside one project is a duplicate error blamed on BOTH files (measured). And errors are per document while the MODEL is all-or-nothing — loam's standing "errors mean no model" rule now applies at project altitude, so a broken use case leaves the fleet map unusable, which is exactly what it already did when the two lived in one file.
-- **The generated `architecture/subsystems.likec4` is excluded from that project**, and docs/DESIGN.md rule 26 already said why: it stays a byte compare, and loam reads its contents in no document. Including it would also invent a failure mode — a file that has drifted since the last `loam subsystem sync` names a removed element, which would be a parse error blanking the whole map instead of the one finding that names the repair.
-- **No new command, no new flag and no `--json` key for THIS change** — the loader is a mechanism, and the codes that grade on it are the use-case section above. A fleet with no `architecture/usecases/` loads exactly its landscape and behaves as it always did. `core/c4/project/` holds the new loader beside `documents.ts`, which owns the question of which files are in the project; `loadBatch`'s opposite contract — one isolated project per document, so an author-written `import` can never resolve against a neighbour — is untouched, and its parity suite with it.
+- **`validate --all` now loads `architecture/landscape.likec4` together with every
+  `architecture/usecases/*.likec4` as ONE project**, the way the LikeC4 renderer has always read
+  that directory.
+- **Why a file of its own, rather than the landscape's `views { }` block.** Readability is the
+  visible half — an analyst opens `usecases/checkout.likec4` and reads one business flow instead of
+  scrolling a fleet-sized map.
+- **Diagnosis improves rather than widening.** A typo'd element in a use-case file is attributed to
+  THAT file: `landscape: architecture/usecases/checkout.likec4 has 2 error(s)`, and when more than
+  one document is broken every detail line carries its own file.
+- **Two authoring rules invert inside `architecture/`, and both are enforced by LikeC4 rather than
+  by loam.** Exactly one document declares the `specification` block: every `.likec4` file loam
+  parses alone must declare its own, while a second declaration inside one project is a duplicate
+  error blamed on BOTH files (measured).
+- **The generated `architecture/subsystems.likec4` is excluded from that project**, and
+  docs/DESIGN.md rule 26 already said why: it stays a byte compare, and loam reads its contents in
+  no document.
+- **No new command, no new flag and no `--json` key for THIS change** — the loader is a mechanism,
+  and the codes that grade on it are the use-case section above.
+
 ### Fixed — a service filed under a subsystem was named at a directory that does not exist
 
-- **Every message that names an existing service's directory now spells it from the enumeration.** `services/<id>/` is right for an unfiled fleet and wrong for every filed one: a service under `services/platform/` lives at `services/platform/<id>/`, and eight separate messages joined the root form anyway — so `loam status` told a reader to go to `services/checkout-web/` when the directory was `services/commerce/checkout-web/`, and `loam gate --service identity-service` reported on `services/identity-service/` for a service at `services/platform/identity-service/`. A reader following either one lands on a path they cannot open; an AGENT following the adopt brief's version could create a second directory beside the one that already exists.
-- **Eight sites, one rule.** `loam status`'s two adoption rungs, `loam gate`'s target and partner rungs, `loam validate --all`'s `landscape.service-unmodelled` and the datastore-placement fix in `fleet-shape`, the `loam adopt` brief's landscape instruction and artifact shape, `loam vouch`'s confirmation prompt, and `loam seed`'s "left exactly where it is" line — which was the worst of them, because that sentence is ABOUT placement. `health.dependency-unmodelled` now prints the model file's resolved path, like every sibling finding in the same command. The rule itself was already written down in `core/repo/entries.ts` ("a finding naming a root directory that does not exist sends the fix to the wrong place") and had no single implementation, which is exactly how the next seven got written.
-- **`serviceTreePath` in `core/kernel/ids/dirs.ts` is that implementation**, with `serviceTreePathOf(docsDir, id)` beside `locateServicePaths` for callers that hold only an id. `test/filed-service-paths.test.ts` pins the whole class in one place — five commands over a filed fixture — and asserts the INVERSE too: a message about a service that does NOT exist keeps `services/<id>/`, because there is no directory to name and that is the path the fix would create. A sweep that "fixed" those would be the regression.
-- No new code, no new flag, no `--json` key: every change is message text and the internals that feed it.
+- **Every message that names an existing service's directory now spells it from the enumeration.**
+  `services/<id>/` is right for an unfiled fleet and wrong for every filed one: a service under
+  `services/platform/` lives at `services/platform/<id>/`, and eight separate messages joined the
+  root form anyway — so `loam status` told a reader to go to `services/checkout-web/` when the
+  directory was `services/commerce/checkout-web/`, and `loam gate --service identity-service`
+  reported on `services/identity-service/` for a service at `services/platform/identity-service/`.
+- **Eight sites, one rule.** `loam status`'s two adoption rungs, `loam gate`'s target and partner
+  rungs, `loam validate --all`'s `landscape.service-unmodelled` and the datastore-placement fix in
+  `fleet-shape`, the `loam adopt` brief's landscape instruction and artifact shape, `loam vouch`'s
+  confirmation prompt, and `loam seed`'s "left exactly where it is" line — which was the worst of
+  them, because that sentence is ABOUT placement.
+- **`serviceTreePath` in `core/kernel/ids/dirs.ts` is that implementation**, with
+  `serviceTreePathOf(docsDir, id)` beside `locateServicePaths` for callers that hold only an id.
+- No new code, no new flag, no `--json` key: every change is message text and the internals that
+  feed it.
 
 ### Added — a docs repo now scaffolds a README, the one file in it addressed to a person
 
-- **`loam init --create` writes `README.md` first.** Everything else a docs repo starts with is either a document about the fleet or `AGENTS.md`, which runs to some 1500 generated lines and is named so that a human does not open it. A forge renders `README.md` as the repository's landing page and nothing else, so a docs repo used to open as a bare directory listing: four folders, two config files, and no sentence anywhere saying what any of it is. The page is deliberately short — what the repo is, what lives in each top-level directory, how to tell a subsystem group from a service, the three commands a person actually types (`loam status`, `loam validate --all`, `loam explain <code>`), how a change is made, and a hand-off to `AGENTS.md` for the full contract. It restates none of it: a second copy of the layout rules would be the first one to go stale.
-- `migrate-openspec` stages the same file, because its target is meant to be the docs repo `loam init` makes. The scaffold's authored templates now live in `core/scaffold/` (`readme.ts`, and `landscape.ts` moved), leaving `core/docs.ts` to say what a docs repo is made of rather than also carrying the bytes.
+- **`loam init --create` writes `README.md` first.** Everything else a docs repo starts with is
+  either a document about the fleet or `AGENTS.md`, which runs to some 1500 generated lines and is
+  named so that a human does not open it.
+- `migrate-openspec` stages the same file, because its target is meant to be the docs repo
+  `loam init` makes.
+
 ### Fixed — an authored view id could take the whole fleet map down while the gate printed green
 
-- **`validate --all` now refuses a landscape view whose id loam generates** (`subsystem.view-id-collision`, **error**, one finding per colliding id, fleet scope). LikeC4 merges every `.likec4` file in a project into one model, and the scaffolded `likec4.config.json` scopes the root project to `architecture/` — so `architecture/landscape.likec4` and the generated `architecture/subsystems.likec4` share ONE flat view-id namespace. Authoring `view subsystem_commerce { }` in the landscape while the tree has a `commerce` subsystem made the renderer refuse the **entire** `architecture/` project — two `Duplicate view` diagnostics, one per file — while `loam validate --all` printed `landscape: 4 service(s) modelled — architecture/landscape.likec4 and services/ agree` and exited 0. Reproduced at the `likec4@1.59.2` pin, on a fleet built by `loam init` + `loam seed`. The message names the colliding id, the subsystem directory whose view claims it, and the one repair: rename the view in the landscape.
-- **Only a REAL collision is refused, never a reserved-looking name.** A landscape view called `subsystem_overview` with no `overview` subsystem breaks nothing, and refusing it would be loam inventing a rule about a name that harms no one. The latent case is not lost: the moment somebody creates that subsystem the generator mints the id and the same check fires on the same run — and the message names the reservation regardless, so an author fixing one collision learns not to make the next.
-- **Exactly one pair is compared, and that is the measured scope rather than a simplification.** A duplicate view id *inside* one document is already two LikeC4 errors, so `landscape.invalid` has had it all along (measured). A service's `model.likec4` and a feature's `delta.likec4` are each their own LikeC4 project — the scaffolded config excludes `services/**` and `features/**` from the root — so their view ids cannot collide with the landscape's, and a delta's views never travel through `archive` anyway. `--all` only: a single-target run walks no fleet tree, so the generated ids are unknown, the question is unanswerable, and the check stays silent rather than half-answering.
-- **The check asks the generator what it mints.** `core/repo/tree/views.ts` now exports its id function and the `subsystem_` prefix instead of keeping them private, because a check carrying its own copy of that escaping would go quiet the day the encoding changed — and going quiet is the failure this whole family exists to prevent. `validate --all`'s two checks over the generated file now sit together in `commands/validate/fleet/views/` (`stale.ts`, moved, and `ids.ts`, new).
+- **`validate --all` now refuses a landscape view whose id loam generates**
+  (`subsystem.view-id-collision`, **error**, one finding per colliding id, fleet scope).
+- **Exactly one pair is compared, and that is the measured scope rather than a simplification.** A
+  duplicate view id *inside* one document is already two LikeC4 errors, so `landscape.invalid` has
+  had it all along (measured).
+- **The check asks the generator what it mints.** `core/repo/tree/views.ts` now exports its id
+  function and the `subsystem_` prefix instead of keeping them private, because a check carrying its
+  own copy of that escaping would go quiet the day the encoding changed — and going quiet is the
+  failure this whole family exists to prevent.
 
 ### Changed — the view doctrine narrows: loam reads what a view DECLARES, never what a view SHOWS
 
-- **`docs/DESIGN.md` gains rule 26, and the written doctrine finally matches the enforced one.** loam's prose said it "never parses views"; what it actually never does is COMPUTE one. The parsed stage — `(await parsedModel()).$data.views` — is a record of what an author wrote, and rule 26 permits reading exactly that and nothing more: for an entry whose `_type` is `"dynamic"`, its `id`, `tags`, `title`, `description`, and its `steps[]` restricted to `source`, `target`, `title`, `notes`, `isBackward` and `astPath`. The computed and layouted stages — which resolve a view's predicates against the model, derive the ancestor edges a diagram needs and place boxes — stay unreachable, on any loader, ever. Fifteen live statements across `src/`, `SCHEMA.md`, `ROADMAP.md`, `docs/DESIGN.md` and one test banner were corrected to say the narrower thing — including the scaffold comment loam writes into every adopted service's `model.likec4`, which had told readers that nothing in a `views` block is ever read by any check; three more were inspected and deliberately left alone, and the two `CHANGELOG` sentences that state the old wording are history and stay as written.
-- **Nothing is asked of any fleet, and nothing grades a views block's absence.** A repo that declares no dynamic view owes loam nothing, today or ever; `loam init` still scaffolds no `views` block — and that stays true after the use-case section above, whose four codes grade only a view somebody deliberately tagged. **Rule 26 itself adds no command, no flag, no stable code, no `--json` key and no severity change** — it records a boundary, not a behaviour.
-- **`npm run arch:check` gains a `view-stage` scan, so the doctrine is a failing build rather than a paragraph.** `computedModel` and `layoutedModel` may not appear in `src/` at all (zero occurrences, so no whitelist — the one mention is inside a comment, which the scan's `codeOnly` blanks), and `$data` may appear only under `src/core/c4/parsed/`, which confines the blast radius of an upstream shape change to one module. Both halves have a negative self-test in `test/arch-gate.test.ts`, and the second also pins that the permitted directory stays permitted — a confinement scan can fail by banning nothing *or* by fencing out the module it exists to allow.
-- **`test/likec4-view-shape.test.ts` pins the parsed record's shape at the `likec4@1.59.2` pin, written before any reader exists.** Ten measured facts, each load-bearing: LikeC4 synthesises an `index` view into every document (`_type: "element"`, no `sourcePath`) that a reader must ignore; a `<-` reply is recorded reversed AND flagged `isBackward`, while a forward step carries no such key; a `loop` is a nested entry with no endpoints and no `astPath` of its own; an untagged view reads `tags: null`; a step carrying `metadata` is a parse error, and a `#cap-` tag written after `title` is five of them. Two of the ten are the reason the axis is worth building at all: a step between two real elements with **no backing relationship** parses with **zero** errors — so if loam does not convict it, nothing does — while a step naming an element that does not exist fails the reference checker and yields that view no steps.
-- **loam now READS a declared `dynamic view`, and grades nothing on it yet.** `src/core/c4/parsed/dynamic-views.ts` normalizes the parsed record into `ParsedView`/`ParsedStep` — id, tags, title, description, and ordered steps carrying `source`, `target`, `title`, `notes`, `isBackward` and `astPath` — and it is the only module permitted to touch `$data`. Nested groups are flattened structurally (any entry with a nested `steps` array is a bracket, whatever LikeC4 calls it, so a group kind added upstream flattens correctly the day it ships), ordinals count the hops the author drew rather than the entries the record holds, and a reply written `a <- b` keeps the endpoints LikeC4 already reversed plus the flag that says why. Every malformed shape degrades to **zero views** — could-not-look — and none of them throws inside a validate run. Both loaders carry the result, `loadSource` and the batched `loadBatch` the fleet gate actually runs: a read wired into one of them only is a read `validate --all` never performs. **No check consumed this when it landed**, deliberately — the read was exercised by CI on real fleets before anything graded on it. The four `usecase.*` codes above are what now consume it.
-- **`astPath` is carried but optional, and that is a refusal rather than an oversight.** Every leaf carries one at the pin, so requiring it would look free — and would mean that an upstream release which stopped emitting the field turned every use case in the fleet into a view with zero steps at exit 0. A hop loam cannot cite is still a hop loam must grade.
-- **Two modules split, no behaviour changed.** `core/c4/likec4.ts` reached the 300-line limit, and the seam was already in it: resolving an element id to the `services/<id>/` directory it stands for is a distinct phase from loading a document, and runs over loam's own records rather than LikeC4's — it moved verbatim to `core/c4/resolve/service.ts` (28 importers rewritten, 22 of them one line longer, which is what splitting a widely-imported module costs and is not payable by squeezing a comment). That rewrite pushed `core/c4/splice/placement.ts` from exactly 300 to 301, and the same rule applied: edge IDENTITY — how the merge decides two relationships are the same edge, and in what order equal ones are written — is a different subject from byte PLACEMENT, so `relKey`, `relSortKey` and `titleOf` moved to `core/c4/splice/identity/edges.ts`, which left both files comfortably under and the package graph acyclic.
-- **`SCHEMA.md`'s planned `services/<svc>/flows/` tree is retired rather than built.** A cross-service interaction flow is a `dynamic view` in `architecture/landscape.likec4` — the one document that already holds every cross-service edge. A flow spanning services never belonged under one service's directory, and a view's steps join to the landscape's own relationships, which is what makes a flow checkable rather than merely drawn. `ROADMAP.md`'s **Rendering:** item is unchanged in substance and now says so explicitly: it is about drawing, which LikeC4 keeps.
-
+- **`docs/DESIGN.md` gains rule 26, and the written doctrine finally matches the enforced one.**
+  loam's prose said it "never parses views"; what it actually never does is COMPUTE one.
+- **Nothing is asked of any fleet, and nothing grades a views block's absence.** A repo that
+  declares no dynamic view owes loam nothing, today or ever; `loam init` still scaffolds no `views`
+  block — and that stays true after the use-case section above, whose four codes grade only a view
+  somebody deliberately tagged. **Rule 26 itself adds no command, no flag, no stable code, no
+  `--json` key and no severity change** — it records a boundary, not a behaviour.
+- **`npm run arch:check` gains a `view-stage` scan, so the doctrine is a failing build rather than a
+  paragraph.** `computedModel` and `layoutedModel` may not appear in `src/` at all (zero
+  occurrences, so no whitelist — the one mention is inside a comment, which the scan's `codeOnly`
+  blanks), and `$data` may appear only under `src/core/c4/parsed/`, which confines the blast radius
+  of an upstream shape change to one module.
+- **`test/likec4-view-shape.test.ts` pins the parsed record's shape at the `likec4@1.59.2` pin,
+  written before any reader exists.** Ten measured facts, each load-bearing: LikeC4 synthesises an
+  `index` view into every document (`_type: "element"`, no `sourcePath`) that a reader must ignore;
+  a `<-` reply is recorded reversed AND flagged `isBackward`, while a forward step carries no such
+  key; a `loop` is a nested entry with no endpoints and no `astPath` of its own; an untagged view
+  reads `tags: null`; a step carrying `metadata` is a parse error, and a `#cap-` tag written after
+  `title` is five of them.
+- **loam now READS a declared `dynamic view`, and grades nothing on it yet.**
+  `src/core/c4/parsed/dynamic-views.ts` normalizes the parsed record into `ParsedView`/`ParsedStep`
+  — id, tags, title, description, and ordered steps carrying `source`, `target`, `title`, `notes`,
+  `isBackward` and `astPath` — and it is the only module permitted to touch `$data`.
+- **`astPath` is carried but optional, and that is a refusal rather than an oversight.** Every leaf
+  carries one at the pin, so requiring it would look free — and would mean that an upstream release
+  which stopped emitting the field turned every use case in the fleet into a view with zero steps at
+  exit 0.
+- **Two modules split, no behaviour changed.** `core/c4/likec4.ts` reached the 300-line limit, and
+  the seam was already in it: resolving an element id to the `services/<id>/` directory it stands
+  for is a distinct phase from loading a document, and runs over loam's own records rather than
+  LikeC4's — it moved verbatim to `core/c4/resolve/service.ts` (28 importers rewritten, 22 of them
+  one line longer, which is what splitting a widely-imported module costs and is not payable by
+  squeezing a comment).
+- **`SCHEMA.md`'s planned `services/<svc>/flows/` tree is retired rather than built.** A
+  cross-service interaction flow is a `dynamic view` in `architecture/landscape.likec4` — the one
+  document that already holds every cross-service edge.
 
 ### Fixed — a tag declared on a LikeC4 specification KIND could switch the fleet gate off
 
-- **`validate --all` no longer reports a fleet it has stopped checking as agreeing.** LikeC4 1.59.0 added tags on specification kinds, and 1.59.2 applies them to every element of the kind before loam sees anything: `specification { element softwareSystem { #external } }` puts `#external` on every `softwareSystem` in the document. loam reads `#external` as "deliberately not ours — stop grading it", so those six words silenced the landscape↔services reconciliation for the whole fleet at once, and the run ended on `landscape.matched` — *"N service(s) modelled — architecture/landscape.likec4 and services/ agree"* — over a map nothing had checked. Reproduced at the current pin: adding that one line turned a `landscape.service-undocumented` warning into a clean green.
-- **One new stable finding code, `landscape.kind-tag-graded` (error).** It fires when the landscape's `specification` block declares `#external` or `#platform` on an element kind **and** at least one element of that kind stands for a real `services/<id>/` directory — by an explicit `metadata { service }` binding, or by a title naming one. The message names the tag, the kind and the exempted elements. loam's reading of the inherited tag is unchanged and stays faithful to LikeC4; what is refused is a kind-wide exemption landing on an element loam can prove is *ours*.
-- **A graded tag on a kind is still legal where it exempts nothing of ours** — and it has to be: `examples/docs/architecture/landscape.likec4` declares `element topic { #external #platform }` so that the Kafka topics nested inside an external broker do not each demand a `services/payment.events/` nobody owes, and that spelling is the one that scales. The check therefore grades what the tag EXEMPTS, not where it is written: a kind whose elements stand for nothing in `services/` is the documented idiom and stays silent; the same kind fires the moment one of its elements binds to a real directory. Two further limits: **any other tag is still safe on a kind** (loam does not read `#tier1`, and inventing a rule about somebody else's vocabulary is not loam's business), and relationship kinds are not graded, since loam reads no relationship tag on the landscape. Known residual, accepted: a kind-wide graded tag over elements that stand for no directory still silences `landscape.service-undocumented` for them — that is the idiom's whole purpose. `landscape.service-unmodelled`, the error that a `services/<id>/` is undrawn, reads no tags at all, so the fleet's own directories are never exempted by any of this.
-- **`loam archive` now refuses a delta that declares its own feature tag on a kind** (`merge-failed`, exit 1, nothing written). The feature tag is the merge's entire selection mechanism, so `specification { element softwareSystem { #FEAT-101 } }` in a delta made every element in the file — the context declarations `loam new` ships commented out precisely so they are *not* merged, included — look like that feature's additions, and archive would have spliced other people's services into the fleet map at exit 0. Mechanical, so `--approve` does not override it.
+- **`validate --all` no longer reports a fleet it has stopped checking as agreeing.** LikeC4 1.59.0
+  added tags on specification kinds, and 1.59.2 applies them to every element of the kind before
+  loam sees anything: `specification { element softwareSystem { #external } }` puts `#external` on
+  every `softwareSystem` in the document. loam reads `#external` as "deliberately not ours — stop
+  grading it", so those six words silenced the landscape↔services reconciliation for the whole fleet
+  at once, and the run ended on `landscape.matched` — *"N service(s) modelled —
+  architecture/landscape.likec4 and services/ agree"* — over a map nothing had checked.
+- **One new stable finding code, `landscape.kind-tag-graded` (error).** It fires when the
+  landscape's `specification` block declares `#external` or `#platform` on an element kind **and**
+  at least one element of that kind stands for a real `services/<id>/` directory — by an explicit
+  `metadata { service }` binding, or by a title naming one.
+- **A graded tag on a kind is still legal where it exempts nothing of ours** — and it has to be:
+  `examples/docs/architecture/landscape.likec4` declares `element topic { #external #platform }` so
+  that the Kafka topics nested inside an external broker do not each demand a
+  `services/payment.events/` nobody owes, and that spelling is the one that scales.
+- **`loam archive` now refuses a delta that declares its own feature tag on a kind**
+  (`merge-failed`, exit 1, nothing written).
 
 ### Fixed — a feature delta's non-model blocks were silently discarded on archive
 
-- **`loam archive` now refuses a delta whose `deployment { }` or `global { }` block, or whose `dynamic view`, the landscape merge cannot carry** (`merge-failed`, exit 1, nothing written; `--approve` does not override — the loss is mechanical, not a judgement about coherence). The merge splices only what is inside `model { }`, so those blocks used to vanish on archive with no error, no warning and no finding, while the run printed `+N element(s), +M relationship(s)` exactly as usual. The merge's own parse net could not catch it either: a landscape with no deployment model is perfectly legal, so there was nothing to fail on. The refusal names the block and says to move it into `architecture/landscape.likec4`.
-- **A static `views { }` block is still accepted and still not merged** — `loam new` scaffolds one into every delta, and it is meant to be rendered while the feature is in flight rather than to travel. The line is recoverability: a static view is a rendering *of* the model, and the merge leaves the whole model in `landscape.likec4`, so the view can be restated from information that still exists; a `dynamic view`'s ordering and a `deployment { }` block's topology are recorded in no other document the fleet keeps, and dropping those loses them for good. Known residual, accepted: a delta carrying a **second** static view still loses it silently — refusing that would mean telling an author with two preview views to delete one.
-- Detection runs over masked source, so the words `deployment`, `global` or `dynamic view` inside a comment or a description string cannot provoke a refusal, and a `deploymentNode` kind inside a `specification` block (or a `deployment view` predicate nested in a view) is not a top-level block.
+- **`loam archive` now refuses a delta whose `deployment { }` or `global { }` block, or whose
+  `dynamic view`, the landscape merge cannot carry** (`merge-failed`, exit 1, nothing written;
+  `--approve` does not override — the loss is mechanical, not a judgement about coherence).
+- **A static `views { }` block is still accepted and still not merged** — `loam new` scaffolds one
+  into every delta, and it is meant to be rendered while the feature is in flight rather than to
+  travel.
 
 ### Added — `loam seed`: the fleet map templated from human-stated facts
 
-- **New command `loam seed [--from <file>] [--json]`** — a tiny human-authored `fleet.yaml` (a `services:` list of ids, optional `subsystems:`, `externals:` and `calls:` lines like `checkout -> payments`) templated mechanically into `architecture/landscape.likec4` — one `softwareSystem` per service bound with `metadata { service '<id>' }`, `#external` systems, plain edges, the scaffold's own two views — plus one `services/<id>/` directory per service (under its subsystem where one is declared, with the marker and the regenerated `architecture/subsystems.likec4` in the same commit), all in one journaled transaction under the docs lock. **Not an extractor**: a human stated every fact in the file, loam guesses nothing — no operationIds are invented, and "who calls whom" remains the human's statement, exactly as the landscape's own doctrine demands. The emitted DSL is parsed in memory before anything is written, and identical input produces identical bytes on any machine.
-- **Seed never overwrites human work.** It writes the landscape only when the file is absent, is the scaffold's untouched stub, or carries seed's own line-1 stamp (`// loam-seed sha256:<digest of the rest>`) with a matching digest — a self-verifying record, no state anywhere else. While the stamp holds, editing `fleet.yaml` and re-running regenerates the map wholesale; the first hand edit makes the file yours and seed refuses. Both the stub check and the digest are content comparisons with line endings normalised out, so an ordinary Windows clone under `core.autocrlf` — which rewrites every line and changes no fact — is not mistaken for a hand edit. Existing `services/<id>/` directories are never moved (fleet.yaml's placement is ignored for them; `loam subsystem move` is the mover) and the only file seed ever removes is the generated `architecture/subsystems.likec4`, when the resulting tree has no subsystems left to view; `fleet.yaml` must name every existing service, or the refusal lists the missing ids as `missingServices`.
-- **Four new stable refusal codes** (exit 1, nothing written): `seed-file-invalid` (the fleet file is missing, unreadable, not YAML, the wrong shape, carries an illegal id, or omits an existing service — the message names file and line), `seed-duplicate-service` (one name declared twice, or as both service and external/subsystem — one flat namespace, both lines named), `seed-unknown-subsystem` (a `subsystem:` reference nothing declares, with a did-you-mean hint), and `seed-landscape-edited` (the never-overwrite refusal above). A call endpoint nothing declares reuses the existing `unknown-service` with close-name hints. `docs-busy`, `commit-interrupted`, `merge-failed` and `rollback-incomplete` keep their shared journaled-writer meanings.
-- **`loam status`'s empty-fleet teaching ladder now names the mechanical path**: the `next.author-landscape` rung over an untouched scaffold stub teaches `loam seed --from fleet.yaml` alongside authoring by hand. The rung's code, `path` and `command` are unchanged. Seed is deliberately not in the MCP facade (it writes; the facade is read-only).
+- **New command `loam seed [--from <file>] [--json]`** — a tiny human-authored `fleet.yaml` (a
+  `services:` list of ids, optional `subsystems:`, `externals:` and `calls:` lines like
+  `checkout -> payments`) templated mechanically into `architecture/landscape.likec4` — one
+  `softwareSystem` per service bound with `metadata { service '<id>' }`, `#external` systems, plain
+  edges, the scaffold's own two views — plus one `services/<id>/` directory per service (under its
+  subsystem where one is declared, with the marker and the regenerated
+  `architecture/subsystems.likec4` in the same commit), all in one journaled transaction under the
+  docs lock.
+- **Seed never overwrites human work.** It writes the landscape only when the file is absent, is the
+  scaffold's untouched stub, or carries seed's own line-1 stamp (`// loam-seed sha256:<digest of the
+  rest>`) with a matching digest — a self-verifying record, no state anywhere else.
+- **`loam status`'s empty-fleet teaching ladder now names the mechanical path**: the
+  `next.author-landscape` rung over an untouched scaffold stub teaches `loam seed --from fleet.yaml`
+  alongside authoring by hand.
 
 ### Added — the single-repo trial: `loam init` teaches the first hour
 
-- **`loam init`'s human output now ends with the first-hour sequence** — `loam adopt --service <id> --json` → `loam validate --service <id>` → `loam vouch --service <id>` → `loam status`, each with a one-line reason — printed exactly when a single run both creates the docs repo (`--create`) and ends with a service bound (`--service`, or a binding the repo's existing `loam.json` already carried): the composition of the README's new five-minute trial. `loam status`'s own first-hour ladder can already derive the early rungs in that state, but it has to be run to say so, and no status rung names `loam vouch` — the one step of the loop that is a person's — so init says the whole hour once, while its output is on screen. A join stays silent (that fleet already exists, with other repositories already through the loop), a create that leaves no service bound stays silent (there is no id to name), and every `--json` payload is byte-identical to before. **No new command, no new flag, no new stable code.**
-- **README's Quick start now leads with "Try loam on one service in five minutes"** — the one-command trial (`loam init --docs loam-docs --create --service <id>`), the first-hour loop above, the honest boundary (the trial pays off on the adopt → validate → vouch mechanics; the cross-service checks that are loam's actual case need a second service), and the graduation note: move the scaffolded docs repo out into its own repository — it carries a self-describing `loam.json`, so nothing in it needs editing — and change the one `docsDir` line in the service repo's committed config. The example-fleet walkthrough stays as its own subsection below, and Day zero is framed as the trial's scale-up path.
+- **`loam init`'s human output now ends with the first-hour sequence** —
+  `loam adopt --service <id> --json` → `loam validate --service <id>` → `loam vouch --service <id>`
+  → `loam status`, each with a one-line reason — printed exactly when a single run both creates the
+  docs repo (`--create`) and ends with a service bound (`--service`, or a binding the repo's
+  existing `loam.json` already carried): the composition of the README's new five-minute trial.
 
 ### Added — `loam explain`: the vocabulary wall, answered from the binary
 
-- **New command `loam explain [<subject>] [--json]`** — what a finding code, a refusal code or a loam concept means, without a docs repo and without wiring: like `loam instructions` it reads no `loam.json`, because the vocabulary wall is hit in the first minute in an unfamiliar repository. A finding code (`spine.op-undefined`) answers with the /loam-check fix table's own row — severity note, "what it means" and "what to do" verbatim, plus the `loam validate` invocation that surfaces it where the adoption brief knows one — **parsed at runtime from the same workflow body the binary ships**, so the explanation cannot drift from the documentation; a code graded in more than one table (service scope and `loam archive` plan time, say) explains every context. A refusal code (`docs-busy`) answers with one sentence per `ErrorCode` union member, kept compiler-exhaustive so a new refusal cannot ship unexplained. A concept term — vouch, attested, spine, delta, axis, baseline, aliases accepted — answers with a paragraph whose key sentences are pinned verbatim to the generated AGENTS.md prose by a drift test. Bare `loam explain` lists the terms; an unknown subject refuses `unknown-target` (exit 1) with close-match suggestions, never an empty success.
-- **`loam validate` and `loam verify` text reports gain a one-line footer** — `` → codes ride in `--json`; `loam explain <code>` says what one means and how to fix it `` — printed only when a non-ok finding (validate) or a notice (verify) was printed, appended as the report's last line, and only in text mode: every `--json` payload is byte-identical to before. A test scans every `code:` literal the validate/verify surfaces emit and asserts `loam explain` answers it, so the footer can never point at a refusal.
-- **`loam mcp` gains `loam_explain`** — the read-tool table grows to twelve; one optional `subject` argument, read-only like the rest. **No new stable code**: the unknown-subject refusal reuses `unknown-target`, and the `--json` payload (`command`, `version`, `subject`, `kind`, `entries[]`/`meaning`/`paragraph`/`terms[]`, `via`) is additive surface.
-- **The /loam-verify protocol gains a compact notice-code table** — the six `verify.*` notice and record codes its own steps describe plus the four `cross.*` diff-answer codes, gathered into one `code | what it means | what to do` table at the end of the body; /loam-check's tables gain rows for `target.ambiguous`, `sources.path-outside` and the `ok`-severity confirmations. Documentation only (the codes and their behaviour are unchanged) — and because `loam explain` reads every workflow body's tables, everything the reports print above their own footer is explainable.
+- **New command `loam explain [<subject>] [--json]`** — what a finding code, a refusal code or a
+  loam concept means, without a docs repo and without wiring: like `loam instructions` it reads no
+  `loam.json`, because the vocabulary wall is hit in the first minute in an unfamiliar repository. A
+  finding code (`spine.op-undefined`) answers with the /loam-check fix table's own row — severity
+  note, "what it means" and "what to do" verbatim, plus the `loam validate` invocation that surfaces
+  it where the adoption brief knows one — **parsed at runtime from the same workflow body the binary
+  ships**, so the explanation cannot drift from the documentation; a code graded in more than one
+  table (service scope and `loam archive` plan time, say) explains every context.
+- **`loam validate` and `loam verify` text reports gain a one-line footer** — `` → codes ride in
+  `--json`; `loam explain <code>` says what one means and how to fix it `` — printed only when a
+  non-ok finding (validate) or a notice (verify) was printed, appended as the report's last line,
+  and only in text mode: every `--json` payload is byte-identical to before.
+- **`loam mcp` gains `loam_explain`** — the read-tool table grows to twelve; one optional `subject`
+  argument, read-only like the rest.
 
 ### Added — `loam list --subsystem` and `--owners`: the adoption campaign, sliced by group and by team
 
-- **`loam list` gains `--subsystem <name>`** — the services section limited to one subsystem's services, at any depth, resolved against the same flat namespace every `loam subsystem` verb reads. Under the filter, `services[]`, the `maturity` rollup and `subsystems[]` reflect the slice, and `unfiledServices` is omitted (a fleet-root fact; 0 would lie) — while every per-row fact (`fanIn`, `apiExpected`, `missing`) is still computed over the FULL fleet, so filtering changes which rows appear, never what a row says. Composition with `--review-order` is pinned filter-first-then-rank: `reviewRank` stays contiguous within the filtered worklist, and a service's `fanIn` is identical with and without the filter (callers outside the slice still count). The reserved name `unfiled` selects the services filed under no subsystem — while nothing in the tree claims that name; a real subsystem or service spelled `unfiled` wins. An unknown name refuses `unknown-target` with close-name hints — never an empty success over a typo; a service name, or either campaign flag with the `features`/`capabilities` section, refuses `invalid-option`. Like `--needs-work`, the flag narrows a bare `loam list` to the services section.
-- **`loam list` gains `--owners <path>`** — a mechanical, read-only join of each listed service's directory to the owning teams in the user-named CODEOWNERS file (loam still has no permission model of its own; the forge's file stays the authority). The implemented subset is deliberate and honestly reported: directory-pattern rules only (optional leading `/`, plain segments, optional trailing `/`, `/*` or `/**`), last match wins, and an owner-less directory rule clears ownership for what it matches — GitHub's own form, landing its services in `unowned[]` rather than leaving them with the earlier broad rule's team; a recognised rule outside the subset — any other wildcard use, the fleet-wide `*` default included — is listed under `skippedRules` (line and pattern, in the text note too), never guessed at. `--json` gains the additive `owners` key: `path`, `teams[]` (owner plus that team's services in the listing's own filtered-and-ordered row order — the per-team campaign worklists), `unowned[]` (rows no rule matched, listed explicitly), `skippedRules[]`. The text view groups the listing under owner headings, unowned last, with a note when rules were skipped.
-- **One new stable refusal, `owners-unreadable`** (exit 1): the CODEOWNERS path cannot be read, or a line in it cannot be parsed as `pattern owner…` — the message names the path and line. Fail-closed on purpose, like `answers-unreadable` for the other user-named file: a half-read ownership file must never file a service under the wrong team. An empty or all-skipped file is NOT a refusal — every service lands in `unowned`, honestly. The MCP facade's `loam_list` gains the matching `subsystem` and `owners` arguments. All `--json` additions are additive; bare `loam list --json` and every flagless payload are byte-identical to before.
-- Considered and deferred: joining `features/**` to teams (the campaign worklist is services-only until someone asks), and any wider CODEOWNERS pattern grammar — implementing the fleet-wide `*` default above all — a half-implemented glob would attribute services the forge never did, so the subset grows only deliberately, with its own CHANGELOG line. Until then a file opening with `* @org/all` reports its services as `unowned` with the `*` rule named in `skippedRules` and the text note.
+- **`loam list` gains `--subsystem <name>`** — the services section limited to one subsystem's
+  services, at any depth, resolved against the same flat namespace every `loam subsystem` verb
+  reads.
+- **`loam list` gains `--owners <path>`** — a mechanical, read-only join of each listed service's
+  directory to the owning teams in the user-named CODEOWNERS file (loam still has no permission
+  model of its own; the forge's file stays the authority). `--json` gains the additive `owners` key:
+  `path`, `teams[]` (owner plus that team's services in the listing's own filtered-and-ordered row
+  order — the per-team campaign worklists), `unowned[]` (rows no rule matched, listed explicitly),
+  `skippedRules[]`.
+- **One new stable refusal, `owners-unreadable`** (exit 1): the CODEOWNERS path cannot be read, or a
+  line in it cannot be parsed as `pattern owner…` — the message names the path and line.
+- Considered and deferred: joining `features/**` to teams (the campaign worklist is services-only
+  until someone asks), and any wider CODEOWNERS pattern grammar — implementing the fleet-wide `*`
+  default above all — a half-implemented glob would attribute services the forge never did, so the
+  subset grows only deliberately, with its own CHANGELOG line.
 
 ### Added — the axis-adoption rollup on `validate --all`
 
-- **`loam validate --all --json` gains the additive `adoption` key on the `scorecard` payload** — services participating in each contract axis (`requirements`, `arch`, `openapi`, `asyncapi`, `permissions`, `capabilities`), one mechanical rule per axis (a requirement block for the two spec axes, file presence for the two contract files, a non-REMOVED `Requires:`/`Capability:` entry for the two vocabularies), the denominator carried once as the payload's existing `services` count. The text scorecard table gains the matching `adoption` row and an `axes adopted: … · not started: …` one-liner. An axis at 0 of N reads "not started" — deliberately distinct from partially adopted.
-- **Text mode groups the warnings a fleet-wide not-started axis alone causes under one banner per axis** — e.g. a freshly declared capability vocabulary's per-capability `capability.unrealized` warns collapse to `⚠ capabilities axis not started fleet-wide (0 of N services), expected during staged adoption — k warning(s) grouped: …`. The qualification rule is mechanical and fail-closed (warn severity, a code on the axis's documented list, axis at zero — anything else prints ungrouped), and grouping is a RENDERING lever only: the `--json` findings, the summary counts, exit codes and `--strict` are computed from the unfiltered findings and are bit-identical to before. A pipeline that pinned the exact line count of `--all` text output will see the two new table lines, plus one banner line per grouped axis in place of the individual warn lines.
-- **No new command, no new flag, no new stable code** — the banner is a rollup, not a finding, so nothing new lands in the code vocabulary; the `adoption` payload key and the text lines are the only additions.
+- **`loam validate --all --json` gains the additive `adoption` key on the `scorecard` payload** —
+  services participating in each contract axis (`requirements`, `arch`, `openapi`, `asyncapi`,
+  `permissions`, `capabilities`), one mechanical rule per axis (a requirement block for the two spec
+  axes, file presence for the two contract files, a non-REMOVED `Requires:`/`Capability:` entry for
+  the two vocabularies), the denominator carried once as the payload's existing `services` count.
+- **Text mode groups the warnings a fleet-wide not-started axis alone causes under one banner per
+  axis** — e.g. a freshly declared capability vocabulary's per-capability `capability.unrealized`
+  warns collapse to
+  `⚠ capabilities axis not started fleet-wide (0 of N services), expected during staged adoption — k warning(s) grouped: …`.
 
 ### Added — `loam vouch --sample <n>`: a partial read, recorded as one
 
-- **New flag `loam vouch --sample <n> [--service <id>] [--yes] [--json]`** — vouch after reading a deterministic sample of `<n>` sections per spec-axis file, instead of the whole document. Before the confirmation the run prints the reading list — the picked headings with their file line numbers, the always-read preamble, and the file's full declared `sources` (entries and expanded file count; the digest still covers every one of them) — and the prompt asks a narrower question: *Have you read the sampled sections and the code?* The trade is deliberate: on a large legacy spec the alternative to a partial read is usually no vouch at all, and an honest partial claim beats a `draft` nobody ever promotes. `--sample` never loosens attendance — no TTY and no `--yes` is still `vouch-unattended`, `--json` without `--yes` still refuses, and vouch stays off the generated agent allowlist.
-- **The scope is stamped beside `vouched_by`, never inside `status`** — a new frontmatter field `vouch_scope: sampled <k>/<n> seed=<16 hex>`, written by `loam vouch` and never by hand. `status: verified` and the `vouched` maturity rung are unchanged: the scope qualifies that claim rather than replacing it, so every existing consumer keeps working. Per FILE, because the seed's inputs are per-file stamps: one run can stamp a sampled `spec.md` beside a fully-read `arch.spec.md`. A file with `<n>` or fewer sections is read in full and stamped with no scope at all, and the output says so.
-- **The sample is reproducible and cannot be steered.** The seed is `sha256(<service> NUL <content_digest> NUL <sources_digest>)` truncated to 16 hex characters; sections — every H2 and H3 heading outside a code fence — are ranked by `sha256(<seed> NUL <index> NUL <heading>)` and the lowest `<n>` taken, listed in document order. Anyone holding the document can recompute exactly what that person was shown. Because the seed is derived from the document's own content, the pick cannot be re-rolled in place — a random seed would let an agent run `--pack --sample` until the section it wrote carelessly fell outside the sample, leaving no trace, where content derivation makes every re-roll an edit the docs repo's history records. It does not make the sample *unpredictable*: the recipe is published, so the pick is computable by anyone before anybody vouches, which is the same property that makes it auditable. That tension is resolved deliberately in favour of the audit — a sample nobody can check is not evidence of anything. Sampling is UNIFORM in this version: it is deliberately not weighted by `list --review-order`'s fan-in, which is a per-service count with no section-level join, would zero-weight exactly the narrative sections most likely to be quietly wrong, and would take its weights from documents an agent can edit — reopening the steering that content-derived seeding closes.
-- **A sampled vouch is distinguishable from a full one on every surface that reports trust.** `loam list` shows `vouched (sampled)` in text and adds `vouchScope: "sampled"` to the row in `--json` (additive, omitted for a full vouch; `maturity` stays `vouched`). `loam show` renders the badge as `verified (sampled)` and prints the scope line, with the field added to `frontmatter` in `--json`. `loam validate` reports the new warning `sources.sampled-vouch`. `validate --all` gains the additive `scorecard.provenance.sampledVouched` count, shown in the text row as `120 vouched (100 sampled)`. `loam vouch --json` gains a per-file `vouchScope` object (`mode`, `sections`, `of`, `seed`, `headings`) — null, never omitted, for a file read in full. `loam context` carries the field beside `last_verified` in both renderings, since an agent reading a context pack takes `status: verified` at face value; and the `loam adopt` brief adds `vouch_scope` to the fields never to write by hand — the one of them an agent could silence by DELETING rather than forging.
-- **One new stable code, `sources.sampled-vouch` (warn)** — one finding per sampled spec file, naming k of n, the seed and `last_verified`, from the docs repo as well (it needs no service repo, like `content.stale`). A warning by the `sources.stale` doctrine: warnings never gate, and a fleet that wants to gate on partial reads branches on this code in its own CI. A `vouch_scope` that does not decode fires it too, and reads as sampled everywhere — fail-closed on the KEY's presence, not on whether its value is legible, so a scope rewritten as a YAML mapping or sequence (a hand edit, a merge tool) is still a partial read on every surface rather than a silently full vouch.
-- **Both spec axes count, and the fleet summaries say so.** The sample is per file, so a service whose `arch.spec.md` alone was sampled is one part of whose documentation nobody read: `loam list`, `loam show` and `loam status` grade the service from EITHER axis, and `show` prints the scope per file (with `archSpec.vouch_scope` additive in `--json`). `loam context` carries the arch axis under the same `archSpec.vouch_scope` spelling in both renderings — it hands an agent every arch requirement verbatim, so a pack that reported spec.md's header alone said `verified` over sections that vouch never covered. The three fleet summary lines that name `vouched` — `loam list`'s `maturity:` rollup, `loam status`'s services line, and the validate scorecard's provenance row — carry the sampled share in the same `118 vouched (90 sampled)` form, because recovering it by scanning 118 rows is not an answer. `loam status --json` gains the additive `services.sampledVouched`, a SUBSET of `vouched`, so the three service counts still sum to the total; every maturity rung, rollup and `--needs-work` filter is unchanged.
-- **A later full vouch clears it.** `loam vouch` with no `--sample` deletes the `vouch_scope` field (the shared frontmatter writer gained an explicit list of keys to remove — deletion is something a call site names, never a null value it happens to hold — leaving the body byte-identical and every neighbouring line in place), so a document that has since been read in full stops reporting as sampled. Nothing else clears it — and an agent editing or deleting the field to silence the warning is a forgery the generated `AGENTS.md` and the `/loam-check` table now name explicitly.
-- **`--sample` composes with `--pack`.** `loam vouch --pack --sample <n>` prints the reading list for the sampled vouch that follows, through the same seeded derivation — so the pack and the stamp can never prescribe different sections — and prints only those sections in place of the full heading list. In the other direction, a pack read AFTER a sampled vouch withdraws its own "already covered" licence: it names which sections that vouch actually read (recomputed from the stamped seed) and which survived it unread, and where the body has since moved it reports the scope and claims nothing covered. A bad `--sample` value (not a whole number, or below 1) refuses `invalid-option` in both modes, and a document that changed while somebody was reading the sample refuses `vouch-raced` and stamps nothing.
+- **New flag `loam vouch --sample <n> [--service <id>] [--yes] [--json]`** — vouch after reading a
+  deterministic sample of `<n>` sections per spec-axis file, instead of the whole document.
+  `--sample` never loosens attendance — no TTY and no `--yes` is still `vouch-unattended`, `--json`
+  without `--yes` still refuses, and vouch stays off the generated agent allowlist.
+- **The scope is stamped beside `vouched_by`, never inside `status`** — a new frontmatter field
+  `vouch_scope: sampled <k>/<n> seed=<16 hex>`, written by `loam vouch` and never by hand.
+- **A sampled vouch is distinguishable from a full one on every surface that reports trust.**
+  `loam list` shows `vouched (sampled)` in text and adds `vouchScope: "sampled"` to the row in
+  `--json` (additive, omitted for a full vouch; `maturity` stays `vouched`). `loam validate` reports
+  the new warning `sources.sampled-vouch`.
+- **One new stable code, `sources.sampled-vouch` (warn)** — one finding per sampled spec file,
+  naming k of n, the seed and `last_verified`, from the docs repo as well (it needs no service repo,
+  like `content.stale`).
+- **Both spec axes count, and the fleet summaries say so.** The sample is per file, so a service
+  whose `arch.spec.md` alone was sampled is one part of whose documentation nobody read:
+  `loam list`, `loam show` and `loam status` grade the service from EITHER axis, and `show` prints
+  the scope per file (with `archSpec.vouch_scope` additive in `--json`).
+- **A later full vouch clears it.** `loam vouch` with no `--sample` deletes the `vouch_scope` field
+  (the shared frontmatter writer gained an explicit list of keys to remove — deletion is something a
+  call site names, never a null value it happens to hold — leaving the body byte-identical and every
+  neighbouring line in place), so a document that has since been read in full stops reporting as
+  sampled.
+- **`--sample` composes with `--pack`.** `loam vouch --pack --sample <n>` prints the reading list
+  for the sampled vouch that follows, through the same seeded derivation — so the pack and the stamp
+  can never prescribe different sections — and prints only those sections in place of the full
+  heading list.
 
 ### Added — `loam vouch --pack`: the re-vouch reading pack
 
-- **New flag `loam vouch --pack [--service <id>] [--json]`** — a re-vouch now starts from a printed delta instead of a full re-read: for each spec-axis file (spec.md, and arch.spec.md when present) the pack prints (a) the file's git diff from the last commit in the DOCS repo's history whose body hashes to the stamped `content_digest`, with a section-level summary (changed/added/removed headings), (b) the source files that moved against the stamped `sources_files` index — added/changed/removed paths in the stale finding's own one-column layout — and (c) the sections whose text is identical to the vouched ancestor's, listed under `vouched_by`/`last_verified` so the read can stop where it should. A never-vouched service gets the whole-document pack ordered landscape-claims-first: what the fleet map says about the service, then every section heading. Read-only throughout — nothing is stamped, no lock is taken, and the docs tree is byte-identical after every run.
-- **Fail-closed to a full read, never a guessed diff**: when git cannot answer (no repository, no history, the body was vouched but never committed, the bounded 200-commit walk runs out) the body half degrades to `full read: body has no vouched ancestor in history` — or git's own bounded words — and no unchanged-section claim survives, because nobody-could-look is not nothing-changed. Broken sources (missing paths, globs, escapes) do not refuse the pack: they come back as the exact sentence the re-vouch would refuse with, which IS the worklist; the run still exits 0.
-- **`--pack --yes` is refused** (`invalid-option`, exit 1): `--pack` is the reading list and `--yes` the unattended stamp, and a pack that immediately stamped would defeat the read it just prescribed. **`--pack --json` needs no `--yes`** — the pack asks nobody anything, so `vouch-unattended` does not apply to it; the vouch itself keeps every gate it had. The `sources.stale`/`content.stale` messages now point at `--pack` for the reading list. No new `ErrorCode`, no new finding code; the `--json` payload (`mode: "pack"`, `packMode`, per-axis `body`/`sources` verdicts) is additive.
+- **New flag `loam vouch --pack [--service <id>] [--json]`** — a re-vouch now starts from a printed
+  delta instead of a full re-read: for each spec-axis file (spec.md, and arch.spec.md when present)
+  the pack prints (a) the file's git diff from the last commit in the DOCS repo's history whose body
+  hashes to the stamped `content_digest`, with a section-level summary (changed/added/removed
+  headings), (b) the source files that moved against the stamped `sources_files` index —
+  added/changed/removed paths in the stale finding's own one-column layout — and (c) the sections
+  whose text is identical to the vouched ancestor's, listed under `vouched_by`/`last_verified` so
+  the read can stop where it should.
+- **`--pack --yes` is refused** (`invalid-option`, exit 1): `--pack` is the reading list and `--yes`
+  the unattended stamp, and a pack that immediately stamped would defeat the read it just
+  prescribed.
 
 ### Added — `loam verify --diff-answers`: mechanical cross-examination of two blind answer sets
 
-- **New flag `loam verify <FEAT> --diff-answers a.json b.json [--service <id>] [--json]`** — a read-only lens that validates BOTH answer sets with the same `checkAnswers` discipline the record path uses, against the same derived checklist, then reports per claim who agrees with whom: `cross.agree-confirmed`, `cross.agree-unconfirmed`, `cross.disagree` — joined by deterministic claim id only, never by claim text — plus the `cross.evidence-disjoint` warn notice naming agreed-confirmed claims whose cited FILE sets do not overlap (a trailing `:line` or `:start-end` suffix is normalized away, so two citations into one file never read as disjoint). Exit 0 and `ok: true` whenever both files validate; disagreements live in the payload's `disagreements[]`, never in the exit code.
-- **Agreement is not verification, structurally**: the payload deliberately carries no `verified`, `verdict` or `attested` key, `verification.yaml` is untouched (byte-identical before and after, no docs lock taken, works while a writer holds one), and nothing this flag does can upgrade `attested` to `verified` — two agents agreeing (usually two contexts of the same model, so correlated) ranks where a reviewer reads first, it proves nothing. The loam-verify workflow gains the optional blind-second-agent step teaching how to run the comparison before recording.
-- **Refusals reuse existing codes and name WHICH file**: `answers-unreadable` / `answers-mismatch` / `answers-unevidenced` prefixed by "first/second answer set (`<file>`)"; `invalid-option` for a combination with `--record`/`--results`/`--contract-results`, for an arity other than exactly two files, and for an archived feature (frozen history has no current checklist to answer). `--service` narrows the compared claims as a pure lens — no repository binding, usable from the docs repo. **No new `ErrorCode`, no exit-code change**; the four `cross.*` strings are payload/notice codes, and every `--json` addition is an additive payload key.
+- **New flag `loam verify <FEAT> --diff-answers a.json b.json [--service <id>] [--json]`** — a
+  read-only lens that validates BOTH answer sets with the same `checkAnswers` discipline the record
+  path uses, against the same derived checklist, then reports per claim who agrees with whom:
+  `cross.agree-confirmed`, `cross.agree-unconfirmed`, `cross.disagree` — joined by deterministic
+  claim id only, never by claim text — plus the `cross.evidence-disjoint` warn notice naming
+  agreed-confirmed claims whose cited FILE sets do not overlap (a trailing `:line` or `:start-end`
+  suffix is normalized away, so two citations into one file never read as disjoint).
+- **Agreement is not verification, structurally**: the payload deliberately carries no `verified`,
+  `verdict` or `attested` key, `verification.yaml` is untouched (byte-identical before and after, no
+  docs lock taken, works while a writer holds one), and nothing this flag does can upgrade
+  `attested` to `verified` — two agents agreeing (usually two contexts of the same model, so
+  correlated) ranks where a reviewer reads first, it proves nothing.
+- **Refusals reuse existing codes and name WHICH file**: `answers-unreadable` / `answers-mismatch` /
+  `answers-unevidenced` prefixed by "first/second answer set (`<file>`)"; `invalid-option` for a
+  combination with `--record`/`--results`/`--contract-results`, for an arity other than exactly two
+  files, and for an archived feature (frozen history has no current checklist to answer).
 
 ### Added — evidence pins: federated records stamp what was cited, and `loam validate` convicts drift
 
-- **`loam verify <FEAT> --service <id> --record` now stamps `evidence_pins` under each agent-confirmed claim** — one pin per `file:line` citation: the cited file's sha256 at the attested commit (CRLF-normalized, so a Windows checkout's line endings can never read as drift), the cited line's text (trimmed, capped at 200 characters), and the literal token the claim asserts (the operationId, message name or edge op), carried structurally so nothing ever parses claim prose — stamped only when the attested blob actually contains it, so the validate-side token lint can only ever convict a disappearance, never re-litigate an absence the record-time notice already reported once. Additive record key, schema stays 2: existing records read back unchanged, pinless claims stay legal forever, runner-answered claims carry no pins, and the legacy all-at-once form stamps none. The one hard edge follows the `contractReport` precedent: a present-but-malformed pins block makes the record `record-unreadable` — reported with the repair path, never overwritten.
-- **One new record-time notice, `verify.evidence-token-missing`** (warn, in the existing `notices[]`, text and `--json` alike): a just-confirmed citation's file at the attested commit does not contain the claim's own token. Verdict-neutral and gating nothing — exit code, `verified` and `verdict` are untouched — it fires at record time because that is when the answerer can still re-read the evidence.
-- **`loam validate`, run in a service's own repository, re-checks the pins** of every ACTIVE feature record that service has attested and reports the new `evidence.*` finding family: ok `evidence.checked` / `evidence.unpinned`, warn `evidence.unresolved` / `evidence.moved` / `evidence.line-changed` / `evidence.token-missing`, plus warn `evidence.record-unreadable` for a verification.yaml that exists but cannot be read — a hand edit that breaks the record must surface here as a finding, not as a silently green run. From the docs repo: silence, by design — `sources.unverifiable-from-here` already names the blind spot. Demote-only, by doctrine: the warnings never flip `valid` or the exit code (`--strict` gates on them as it gates on any warning), no pin state ever moves a record's verdict, and archived records are deliberately not linted (frozen history; post-ship code drift is normal evolution).
-- **No new command, no new flag, no new `ErrorCode`, no exit-code change**; the `--json` additions — `evidence_pins` inside the read and frozen views' `claims[]`, the notice, the findings — are additive payload keys.
+- **`loam verify <FEAT> --service <id> --record` now stamps `evidence_pins` under each
+  agent-confirmed claim** — one pin per `file:line` citation: the cited file's sha256 at the
+  attested commit (CRLF-normalized, so a Windows checkout's line endings can never read as drift),
+  the cited line's text (trimmed, capped at 200 characters), and the literal token the claim asserts
+  (the operationId, message name or edge op), carried structurally so nothing ever parses claim
+  prose — stamped only when the attested blob actually contains it, so the validate-side token lint
+  can only ever convict a disappearance, never re-litigate an absence the record-time notice already
+  reported once.
+- **One new record-time notice, `verify.evidence-token-missing`** (warn, in the existing
+  `notices[]`, text and `--json` alike): a just-confirmed citation's file at the attested commit
+  does not contain the claim's own token.
+- **`loam validate`, run in a service's own repository, re-checks the pins** of every ACTIVE feature
+  record that service has attested and reports the new `evidence.*` finding family: ok
+  `evidence.checked` / `evidence.unpinned`, warn `evidence.unresolved` / `evidence.moved` /
+  `evidence.line-changed` / `evidence.token-missing`, plus warn `evidence.record-unreadable` for a
+  verification.yaml that exists but cannot be read — a hand edit that breaks the record must surface
+  here as a finding, not as a silently green run.
+- **No new command, no new flag, no new `ErrorCode`, no exit-code change**; the `--json` additions —
+  `evidence_pins` inside the read and frozen views' `claims[]`, the notice, the findings — are
+  additive payload keys.
 
 ### Added — `loam list --needs-work --review-order`: the blast-radius review queue
 
-- **`loam list --needs-work` gains `--review-order`** — the adoption worklist sorted by blast radius: for each service, the number of DISTINCT other services that depend on it — drawing a call edge into it (with or without an `op`; a delivery edge carrying `consumes` is not a call, because on the event spine the arrow follows the message), subscribing to a message it produces via a drawn `consumes` edge, or carrying a living `Consumes:` requirement line naming a message its asyncapi.yaml declares `action: send` for. Ties break by id, so the queue is deterministic across runs and machines. The text worklist prints in that order with a `fan-in: N` cell per row; under `--json` each row additionally carries `fanIn` (a number — 0 is a proven zero, since only positive evidence counts) and `reviewRank` (1-based, equal to the row's position). **Both keys are additive and appear ONLY under the flag**: bare `loam list --json` and `--needs-work --json` are byte-identical to before.
-- An absent landscape, or one that does not parse, contributes nothing to the edge joins — the requirement join still ranks the queue, and the run succeeds; a landscape file that cannot be READ refuses `repository-unavailable` exactly as the flagless run does, since a rendering flag must not change what the run refuses. One unreadable service artifact empties only that artifact's evidence, never its service's whole slice and never the queue. `--review-order` without `--needs-work` is refused (`invalid-option`, exit 1): the flag orders the worklist, it does not imply it. The MCP facade's `loam_list` gains the matching `reviewOrder` flag. No new stable code.
-- Considered and deferred: reordering `loam verify --json`'s `claims[]` by the same counts — a shipped array's order is observable to every consumer that diffs or indexes it, and fleet state must not reorder a feature-level artifact. If claim-level blast radius is ever wanted it will ship as an additive per-claim key, never a reorder.
+- **`loam list --needs-work` gains `--review-order`** — the adoption worklist sorted by blast
+  radius: for each service, the number of DISTINCT other services that depend on it — drawing a call
+  edge into it (with or without an `op`; a delivery edge carrying `consumes` is not a call, because
+  on the event spine the arrow follows the message), subscribing to a message it produces via a
+  drawn `consumes` edge, or carrying a living `Consumes:` requirement line naming a message its
+  asyncapi.yaml declares `action: send` for.
 
 ### Changed — `loam status` walks the first hour of an empty docs repo
 
-- **`loam status` in a docs repo with zero services and zero features now teaches the first hour instead of reporting it clean.** Three new stable `next[]` codes, in order: `next.author-landscape` (also emitted when `architecture/landscape.likec4` is still the scaffold's untouched bytes, not only when it is absent — the step names the file and the literal command), `next.bind-service` (wire a service repo's `loam.json` to this fleet) and `next.adopt-first` (write the first baseline). `next.fleet-clean` is **no longer emitted over an empty fleet** — "every service is written down" was vacuously true over zero services — and survives for its truthful case: services exist and nothing is owed. Additive `--json` change only (new codes in the existing `next[]` array); a narrowed `--service <id>` run never receives the ladder, and the ladder's bind/adopt rungs yield to `next.adopt-bound` when this repository's own binding already names the exact adopt to run.
+- **`loam status` in a docs repo with zero services and zero features now teaches the first hour
+  instead of reporting it clean.** Three new stable `next[]` codes, in order:
+  `next.author-landscape` (also emitted when `architecture/landscape.likec4` is still the scaffold's
+  untouched bytes, not only when it is absent — the step names the file and the literal command),
+  `next.bind-service` (wire a service repo's `loam.json` to this fleet) and `next.adopt-first`
+  (write the first baseline).
 
 ### Added — `loam diff`: semantic branch diff of the docs repo, with the victims named
 
-- **New command `loam diff --base <ref> [--json]`** — the fleet-meaningful delta between the living docs and a base git ref of the docs repo (a branch, `origin/main`, a commit sha): services added/removed, living requirements added/removed/modified (by `Requirement-ID:`/heading identity and content digest, so a `loam rebase` pin never reads as a change), OpenAPI operations added/removed/newly-deprecated, AsyncAPI messages added/removed, and cross-service joins that appeared or went away. Every removal is graded against the CURRENT fleet's consumers — landscape edges (containers resolved through the enumerated fleet) and other services' living `Operations:`/`Consumes:` lines, both spec axes for events — and a removal something still names is an error-severity finding with the victims listed in `details[]`. **Exit 1** on any such breaking finding (so a docs-repo PR job gets the one hazard check for free; `validate --all` remains the fleet gate), on a refusal, and when an artifact on either side could not be read: an unreadable file suspends that subject's axis, reported per subject in the payload's `unreadable[]` — never graded as "everything added" off an unreadable base, never as "nothing changed".
-- **Fourteen new stable finding codes, zero new `ErrorCode` union members**: `diff.service-added`/`-removed`, `diff.requirement-added`/`-removed`/`-modified`, `diff.op-added`/`-removed`/`-removed-consumed`/`-deprecated`, `diff.message-added`/`-removed`/`-removed-consumed`, `diff.consumer-added`/`-removed` — documented in the generated AGENTS.md's command map. Refusals reuse existing codes: `repository-unavailable` when the docs repo has no git history loam can ask, `unknown-target` when `--base` resolves to no commit there (both messages quote git's own words, bounded). The `--json` payload keys are additive: `command`, `docsDir`, `base: {ref, commit}`, `services[]` (`id`, `change`, `findings[]`, `unreadable[]`), `breaking`, `summary`.
-- **loam now asks read-only git questions in the DOCS repo** (`rev-parse`/`ls-tree`/`show` — no checkout, no temp writes, every child process bounded by the same timeout and output caps provenance uses). The README's install note previously overstated the boundary as "git only inside a service repo" — `subsystem move`/`history` already asked git in the docs repo — and now states the real rule: read-only git in whichever repository the command is about, plus the one blessed `git add` a subsystem move stages. Unlike provenance's "git will not say" doctrine, `diff` REFUSES when git cannot answer: a silently empty base would report the whole fleet as added.
-- **Deliberately out of scope, stated where a user would look**: byte-level OpenAPI breaking-change analysis (the README command note carries the exact oasdiff invocation over the two states of one contract — loam does not reimplement that catalogue), permission/landscape-element diffing, and features in flight (`loam dependencies`' subject). A service moved between subsystems diffs as UNCHANGED — placement is navigation, not identity.
-- **`loam mcp` gains `loam_diff`** — the read-tool table grows to eleven; the tool schema marks `base` required (the table now models required flags, mirrored against commander's own `requiredOption` by the shape test), and a call without it is refused as invalid params before any argv is built.
+- **New command `loam diff --base <ref> [--json]`** — the fleet-meaningful delta between the living
+  docs and a base git ref of the docs repo (a branch, `origin/main`, a commit sha): services
+  added/removed, living requirements added/removed/modified (by `Requirement-ID:`/heading identity
+  and content digest, so a `loam rebase` pin never reads as a change), OpenAPI operations
+  added/removed/newly-deprecated, AsyncAPI messages added/removed, and cross-service joins that
+  appeared or went away.
+- **Fourteen new stable finding codes, zero new `ErrorCode` union members**:
+  `diff.service-added`/`-removed`, `diff.requirement-added`/`-removed`/`-modified`,
+  `diff.op-added`/`-removed`/`-removed-consumed`/`-deprecated`,
+  `diff.message-added`/`-removed`/`-removed-consumed`, `diff.consumer-added`/`-removed` — documented
+  in the generated AGENTS.md's command map.
+- **loam now asks read-only git questions in the DOCS repo** (`rev-parse`/`ls-tree`/`show` — no
+  checkout, no temp writes, every child process bounded by the same timeout and output caps
+  provenance uses).
+- **`loam mcp` gains `loam_diff`** — the read-tool table grows to eleven; the tool schema marks
+  `base` required (the table now models required flags, mirrored against commander's own
+  `requiredOption` by the shape test), and a call without it is refused as invalid params before any
+  argv is built.
 
 ### Added — `loam verify --contract-results`: contract-test reports answer the `api.exposes` claims
 
-- **New flag `loam verify <FEAT> --contract-results <file>`** — answer the `api.exposes` claims mechanically from an API contract-test report, the way `--results` answers the `scenario.tested` claims from a cucumber one. The accepted format is loam's own documented shape (`{"loamContractReport": 1, "results": [{"operationId": "…", "status": "passed"}]}`, SCHEMA.md "Contract-test reports"): an entry whose status is exactly `passed` confirms the claim whose operationId it names, a failed or unknown status and an unexercised operation leave it `unconfirmed` with the reason, and entries naming operations outside the checklist are ignored. No vendor report is parsed directly, by surveyed decision — Specmatic's coverage JSON reports `"covered"` for operations whose tests failed, and no other candidate carries both honest pass/fail and a deterministic operation join key — so Specmatic/Pact/Dredd/property-harness users emit the generic shape from their tool's report in one transform.
-- **Records gain a `contractReport:` pin and `answered_by: external-runner`** — the consumed report's path, sha256, mtime, distinct-operation count and format land on the record (all-at-once) or inside the recording service's attestation (federated, pruned with its answers, resolved inside the attesting repository and bound to the attested commit exactly as `report:` is), and each contract-confirmed claim says an external runner answered it (`[contract]` on the printed line). Additive and compatible: the record schema stays 2, existing records read back unchanged, and a record written with the new flag reads in an older loam as a schema-2 record with extra keys it ignores.
-- **The verdict ladder does not move** — a contract report can never answer a `scenario.tested` claim, so `attested` versus `verified` still turns on scenario claims alone; a contract-confirmed `api.exposes` claim counts toward `verified` exactly as an agent-confirmed one always has, with strictly more provenance behind it.
-- **Ownership mirrors `--results`, contested operations included**: under the flag the contract report owns every `api.exposes` claim in scope — an answers-file entry for one refuses `answers-mismatch`, a mechanical flag alone refuses while other claims are outstanding, an unreadable or unrecognizable report refuses `answers-unreadable` naming the accepted shape, and the flag refuses on archived features exactly as `--record` does. An operationId that more than one service on the checklist exposes is `verify.digest-contested`'s case on this axis — a report entry names no service, so those claims stay `unconfirmed` and the run carries the new **`verify.operation-contested`** notice (warn, gating nothing, an open-vocabulary notice code exactly as `verify.claims-open` was); `--service` resolves it. **No new `ErrorCode`, no new exit code**; the `--json` additions (`contractReport` on the record/read/frozen payloads and inside `attestations[]`, the new `answered_by` value on claims) are additive payload keys.
+- **New flag `loam verify <FEAT> --contract-results <file>`** — answer the `api.exposes` claims
+  mechanically from an API contract-test report, the way `--results` answers the `scenario.tested`
+  claims from a cucumber one.
+- **Records gain a `contractReport:` pin and `answered_by: external-runner`** — the consumed
+  report's path, sha256, mtime, distinct-operation count and format land on the record (all-at-once)
+  or inside the recording service's attestation (federated, pruned with its answers, resolved inside
+  the attesting repository and bound to the attested commit exactly as `report:` is), and each
+  contract-confirmed claim says an external runner answered it (`[contract]` on the printed line).
+- **The verdict ladder does not move** — a contract report can never answer a `scenario.tested`
+  claim, so `attested` versus `verified` still turns on scenario claims alone; a contract-confirmed
+  `api.exposes` claim counts toward `verified` exactly as an agent-confirmed one always has, with
+  strictly more provenance behind it.
+- **Ownership mirrors `--results`, contested operations included**: under the flag the contract
+  report owns every `api.exposes` claim in scope — an answers-file entry for one refuses
+  `answers-mismatch`, a mechanical flag alone refuses while other claims are outstanding, an
+  unreadable or unrecognizable report refuses `answers-unreadable` naming the accepted shape, and
+  the flag refuses on archived features exactly as `--record` does. An operationId that more than
+  one service on the checklist exposes is `verify.digest-contested`'s case on this axis — a report
+  entry names no service, so those claims stay `unconfirmed` and the run carries the new
+  **`verify.operation-contested`** notice (warn, gating nothing, an open-vocabulary notice code
+  exactly as `verify.claims-open` was); `--service` resolves it.
 
 ### Added — `loam mcp`: the read commands as MCP tools over stdio
 
-- **New command `loam mcp`** — a hand-rolled MCP stdio server (JSON-RPC 2.0, newline-delimited, protocol revision 2025-06-18 negotiated down to 2025-03-26/2024-11-05) for hosts that reach tools through MCP rather than a shell. It answers `initialize` (echoing the client's requested protocol version when supported, else the newest), `ping`, `tools/list` and `tools/call`, ignores notifications, refuses unknown methods with JSON-RPC `-32601` and batch arrays with `-32600`, and exits 0 when the client closes stdin — the MCP stdio lifecycle. stdout carries protocol frames exclusively; the startup line and every tool's captured stderr go to stderr, which MCP designates for logging.
-- **Eleven tools, read-only by construction**: `loam_validate`, `loam_status`, `loam_list`, `loam_show`, `loam_delta`, `loam_diff`, `loam_explore`, `loam_dependencies`, `loam_doctor`, `loam_context`, `loam_gate` — each mirroring its CLI command's exact positionals and flags. **The writers are deliberately not exposed**: `vouch` is a human act the CLI already refuses to perform unattended, an MCP caller is definitionally an agent, and `verify` is excluded whole rather than pretending its read half is separable from its `--record`/`--results` attestation path; `archive`, `unarchive`, `rebase`, `gherkin`, `new`, `init`, `subsystem` and `migrate-openspec` stay under the user's own CLI permission flow.
-- **One machine contract, not two**: every tool result carries the command's `--json` envelope VERBATIM in `content[0].text` (and parsed again as `structuredContent`), with `isError` following the envelope's `ok` — so `ok`, `error.code` and every payload key mean exactly what they mean at the CLI, and a refusal (`no-config`, `unknown-target`, …) arrives as a readable envelope with `isError: true`, not as a dead call. The exit code deliberately does NOT drive `isError`: doctor with blockers, validate on an invalid fleet and a `gate` verdict of fail all exit 1 while answering `ok: true` — graded answers, not failed calls — and a host that renders `isError: true` as failure may discard the structured verdict the caller asked for; the exit code decides only when stdout parsed as no envelope at all. A string argument beginning with `-` is refused before argv construction (`-32602`), so a JSON value can never smuggle a flag. Dispatch is in-process — no child per call, LikeC4 stays warm — and strictly sequential; the server serves the one repository it was started in and never changes directory. There is deliberately no docs-repo gate at startup: a launch-time refusal would corrupt the client's protocol stream, so a missing or broken `loam.json` arrives as the ordinary envelope in each tool result instead.
-- **No new stable codes, no envelope changes, no new dependency** — the server is hand-rolled on `node:stream` and the existing commander wiring; `@modelcontextprotocol/sdk` was considered and declined (three runtime dependencies is a product decision).
+- **New command `loam mcp`** — a hand-rolled MCP stdio server (JSON-RPC 2.0, newline-delimited,
+  protocol revision 2025-06-18 negotiated down to 2025-03-26/2024-11-05) for hosts that reach tools
+  through MCP rather than a shell.
+- **One machine contract, not two**: every tool result carries the command's `--json` envelope
+  VERBATIM in `content[0].text` (and parsed again as `structuredContent`), with `isError` following
+  the envelope's `ok` — so `ok`, `error.code` and every payload key mean exactly what they mean at
+  the CLI, and a refusal (`no-config`, `unknown-target`, …) arrives as a readable envelope with
+  `isError: true`, not as a dead call.
+- **No new stable codes, no envelope changes, no new dependency** — the server is hand-rolled on
+  `node:stream` and the existing commander wiring; `@modelcontextprotocol/sdk` was considered and
+  declined (three runtime dependencies is a product decision).
 
 ### Added — `loam gate`: can-i-deploy, answered from recorded evidence
 
-- **New command `loam gate [--service <id>] [--strict] [--json]`** — a can-i-deploy-shaped PURE QUERY for deploy pipelines outside loam's lifecycle: it executes nothing, writes nothing, takes no lock, and answers only from evidence previous runs recorded. `--service` defaults to loam.json's binding, so the pipeline invocation in a bound service repo is literally `loam gate --json`; a service nobody adopted refuses `unknown-service` (recorded evidence cannot answer for it), a name the id grammar rejects refuses `invalid-option` — the enumeration answers first, exactly as `validate` resolves targets. Four checks: **partners** (the direct joins derived from the living landscape, both ends graded on the adoption ladder; `#external` partners exempt), **freshness** (`content.stale` / `sources.stale` re-reported over the gated service and its documented partners — nothing else from provenance), **verification** (every active feature carrying a specs/ delta for the service, through the verification record's own verdicts — never a re-derivation of "verified"), and **interrupted** (the `.loam-commit` journal).
-- **Four new stable finding codes, all in the open finding vocabulary — zero new `ErrorCode` union members.** `gate.service-undocumented` (error): the gated service itself sits below `documented`, so the docs cannot say what its joins are; re-running succeeds once `loam adopt`'s required artifact set exists — and under a map that cannot be read it fires only when the service is below `documented` regardless of whether an API is owed, because the api question is then unanswerable and one unanswerable fact yields one finding. `gate.partner-undocumented` (warn): a direct join partner below `documented` or with no `services/` directory at all, named per partner with the joining operations/messages; an `#external` partner is exempt, but an ADOPTED service is never exempted by the zone it is drawn inside. `gate.partners-unknown`: the landscape could not answer — warn when the map is absent (a repo before its first adopt legitimately has none), ERROR when it exists but cannot be parsed or read, with the reason in the message, since `validate --all` fails that repo for the same file. `gate.feature-unverified` (warn): a touching feature has no verification record, an unreadable or stale one, or open claims; the message names the state and the exact `loam verify <FEAT> --json`. Reused without addition: `docs.commit-interrupted` (error), `verify.scenario-attested` (warn — the attested case, verbatim), `content.stale` / `sources.stale` (warn), `frontmatter.malformed` (error — retained by the freshness check, because a header that does not parse cannot certify a `content_digest` and dropping it read "cannot judge" as "nothing stale"), and `service.unreadable` / `feature.unreadable` (error) for per-subject containment — one unreadable sibling artifact (a UTF-16 spec.md included: the gate decodes the spec bytes itself) degrades that one subject with the failure recorded, never the whole report.
-- **Exit semantics are validate's, not a new vocabulary**: any error-severity finding fails (`verdict: "fail"`, exit 1) — an undocumented gated service, a half-committed docs repo, an unreadable subject; warnings are advisory (`verdict: "pass"`, exit 0); `--strict` is the per-invocation CI lever that fails warnings too, and it moves only the exit code — the report and the `--json` payload are byte-identical under it. A fleet mid-adoption will see `gate.partner-undocumented` warnings on most deploys; they are advisory precisely so that adopting `--strict` is an informed choice.
-- **The `--json` payload** carries `verdict`, `strict`, `landscape` (`read`/`absent`/`invalid`), `partners[]` (maturity rung, consumer/provider role, the joining operations and messages, `external`), `features[]` (the record's own tallies and three-valued verdict per touching feature) and `checks[]` (findings by check, in the shared finding shape) — so a pipeline wanting a stricter bar (vouched partners, no attested scenarios) branches on data rather than waiting for a flag.
-- **No new ErrorCode strings, no changed envelope fields, and no change to what gates the archive**: verify still never gates the merge, archive still reads no verification record — `loam gate`'s verdict is advice to a deploy pipeline loam does not own (WORKFLOW.md's "What actually gates" now says so beside the other two gates).
+- **New command `loam gate [--service <id>] [--strict] [--json]`** — a can-i-deploy-shaped PURE
+  QUERY for deploy pipelines outside loam's lifecycle: it executes nothing, writes nothing, takes no
+  lock, and answers only from evidence previous runs recorded.
+- **Four new stable finding codes, all in the open finding vocabulary — zero new `ErrorCode` union
+  members.** `gate.service-undocumented` (error): the gated service itself sits below `documented`,
+  so the docs cannot say what its joins are; re-running succeeds once `loam adopt`'s required
+  artifact set exists — and under a map that cannot be read it fires only when the service is below
+  `documented` regardless of whether an API is owed, because the api question is then unanswerable
+  and one unanswerable fact yields one finding.
+- **The `--json` payload** carries `verdict`, `strict`, `landscape` (`read`/`absent`/`invalid`),
+  `partners[]` (maturity rung, consumer/provider role, the joining operations and messages,
+  `external`), `features[]` (the record's own tallies and three-valued verdict per touching feature)
+  and `checks[]` (findings by check, in the shared finding shape) — so a pipeline wanting a stricter
+  bar (vouched partners, no attested scenarios) branches on data rather than waiting for a flag.
+- **No new ErrorCode strings, no changed envelope fields, and no change to what gates the archive**:
+  verify still never gates the merge, archive still reads no verification record — `loam gate`'s
+  verdict is advice to a deploy pipeline loam does not own (WORKFLOW.md's "What actually gates" now
+  says so beside the other two gates).
 
 ### Added — `loam context`: one service's docs slice as one deterministic briefing
 
-- **New command `loam context <service>`** — assemble, for one service, the exact docs slice bound to it as one payload an agent loads before working in that service's repository: the living requirements and arch requirements VERBATIM (bodies and Given/When/Then lines, with the `Operations:`/`Covers:`/`Requires:`/`Capability:`/`Publishes:`/`Consumes:` joins parsed out beside them), the OpenAPI operations with the requirements governing each (`x-loam-remove` filtered), the AsyncAPI messages with their send/receive direction, the fleet edges one hop out with the map's own health beside them (the `landscape` key carries `present` and `parses`, so silence is evidence rather than absence), the `Requires:` permissions resolved against `architecture/permissions.yaml` (an undeclared entry is carried with `declared: false`, never refused), the capabilities the service realizes — with both fleet vocabularies' own health beside their sections, so `declared: false` under an unreadable vocabulary reads as "nobody could look" — maturity and frontmatter provenance, presence pointers for runbook/health/ADRs, and every ACTIVE feature's delta over the service in `loam delta`'s own payload shapes, each ending with the runnable `loam delta <FEAT> --service <id>` line. Writes nothing. A badly-named `services/` directory that exists is briefed, not refused: the enumeration answers first and the grammar only for a name no directory matches, the same order `loam validate` resolves targets in. Default output is a Markdown document for pasting into an agent context; `--json` emits the envelope (`command: "context"`). `--feature <FEAT>` narrows the in-flight section to one feature and is echoed back as the `feature` payload key (null for the default view), so a narrowed pack says it is one — a known feature that does not touch the service still projects, with empty sections and its own services list, exactly as `loam delta` treats it.
-- **Deterministic by construction** — identical state yields identical bytes: no timestamps, repo-relative forward-slash paths, unioned sets sorted, contract entries in document order. Packs are diffable across runs and machines.
-- **Exit 1 with `ok: true` when the pack has a silent hole** — a landscape that is present but does not parse, an unreadable living `openapi.yaml`/`asyncapi.yaml`, an unreadable fleet vocabulary (permissions or capabilities), another service's spec file the capability rollup could not read (degraded per file into the `capabilitiesUnread` payload key, never a refusal — one service's briefing is not hostage to a sibling's encoding), or an included feature whose `delta.likec4` has errors or whose contract delta does not parse — and a feature whose delta does not parse is still INCLUDED in every service's pack with its errors in the payload, because a change nobody can read is in flight, not absent. The empty section beside the flag is the parse failure itself, not "nothing here" — the same guard `loam delta` carries, for the same reason: the pack is consumed by agents that never ran validate, so the exit code must carry the failure. Refusals reuse existing codes only (`invalid-option`, `unknown-service`, `unknown-target`, `no-config`, `docs-missing`, `repository-unavailable`); **no new stable code, no new exit code, no envelope change, and no existing command or flag changed** — `loam delta`'s surface and payload are byte-identical after the internal relocation below.
-- **Internal relocation**: the delta projection helpers (`apiChanges`, `eventChanges`, `archSlice`, `introducedServices`, `livingServices`) moved from `src/commands/delta/slices.ts` to the new `src/core/projection/` package, and `stripFrontmatter` to `src/core/document/frontmatter.ts`, the day the pack became their second caller — commands do not import commands, so the shared projection now lives in core. Behaviour pinned unchanged by the existing delta suites.
-- **`/loam-implement` gains the pack as its load step** — `loam context $2 --feature $1 --json` right after `loam status`, before `loam delta`: the delta is what changes, the pack is what it changes into, and reading it first is how a MODIFIED requirement lands as an edit rather than a rewrite. The generated AGENTS.md command map documents `loam context` beside its siblings.
+- **New command `loam context <service>`** — assemble, for one service, the exact docs slice bound
+  to it as one payload an agent loads before working in that service's repository: the living
+  requirements and arch requirements VERBATIM (bodies and Given/When/Then lines, with the
+  `Operations:`/`Covers:`/`Requires:`/`Capability:`/`Publishes:`/`Consumes:` joins parsed out beside
+  them), the OpenAPI operations with the requirements governing each (`x-loam-remove` filtered), the
+  AsyncAPI messages with their send/receive direction, the fleet edges one hop out with the map's
+  own health beside them (the `landscape` key carries `present` and `parses`, so silence is evidence
+  rather than absence), the `Requires:` permissions resolved against `architecture/permissions.yaml`
+  (an undeclared entry is carried with `declared: false`, never refused), the capabilities the
+  service realizes — with both fleet vocabularies' own health beside their sections, so
+  `declared: false` under an unreadable vocabulary reads as "nobody could look" — maturity and
+  frontmatter provenance, presence pointers for runbook/health/ADRs, and every ACTIVE feature's
+  delta over the service in `loam delta`'s own payload shapes, each ending with the runnable
+  `loam delta <FEAT> --service <id>` line.
+- **Exit 1 with `ok: true` when the pack has a silent hole** — a landscape that is present but does
+  not parse, an unreadable living `openapi.yaml`/`asyncapi.yaml`, an unreadable fleet vocabulary
+  (permissions or capabilities), another service's spec file the capability rollup could not read
+  (degraded per file into the `capabilitiesUnread` payload key, never a refusal — one service's
+  briefing is not hostage to a sibling's encoding), or an included feature whose `delta.likec4` has
+  errors or whose contract delta does not parse — and a feature whose delta does not parse is still
+  INCLUDED in every service's pack with its errors in the payload, because a change nobody can read
+  is in flight, not absent.
+- **Internal relocation**: the delta projection helpers (`apiChanges`, `eventChanges`, `archSlice`,
+  `introducedServices`, `livingServices`) moved from `src/commands/delta/slices.ts` to the new
+  `src/core/projection/` package, and `stripFrontmatter` to `src/core/document/frontmatter.ts`, the
+  day the pack became their second caller — commands do not import commands, so the shared
+  projection now lives in core.
+- **`/loam-implement` gains the pack as its load step** — `loam context $2 --feature $1 --json`
+  right after `loam status`, before `loam delta`: the delta is what changes, the pack is what it
+  changes into, and reading it first is how a MODIFIED requirement lands as an edit rather than a
+  rewrite.
 
 ### Added — `loam open`: an editor workspace derived from the committed bindings
 
-- **New command `loam open`** — writes a `.code-workspace` file joining the docs repo and every service checkout whose committed `loam.json` binds to it. Membership is derived, never configured: the current repo and the docs repo are always members, and siblings are discovered by a depth-1 scan of exactly two default roots — beside the docs repo and beside the current repo — with each candidate's committed binding read through the one config validator and realpath-compared against this docs repo. No fleet manifest, no machine state, nothing written into the docs repo; the file lands in the current directory (default name loam.code-workspace; `--out` overrides) with forward-slash, editor-portable folder paths and deterministic member order. Flags: `--root <dir>` (repeatable; replaces the default scan roots), `--out <file>`, `--force`, `--json`. The `--json` payload carries `command`, `docsDir`, `out`, `written`, `members[]` (`path`, `folder` — the exact spelling written into the file — `name`, `service`, `via`, and `root` for scanned members), `scannedRoots`, `unreadableRoots[]` and `skipped[]`. A `--root` or `--out` that names nothing readable — or a `--root` the scan cannot list — refuses `invalid-option`; an unlistable DEFAULT scan root degrades to an empty scan and is reported in `unreadableRoots[]` instead, because a CI sandbox denying the docs repo's parent directory is survivable and an explicitly named directory is not.
-- **Two new stable error codes.** `no-members` — run from the docs repo, no service checkout bound to it was found under any scanned root, so the workspace would hold only the docs repo; re-running succeeds once a bound checkout exists beside it, or with `--root` pointing where the checkouts live. `binding-duplicate` — two discovered checkouts declare the same `service` for this docs repo (two checkouts of one service, or a copied config); loam will not guess which one speaks for the service — narrow the scan with `--root` or fix the stray binding. An existing workspace file is never silently overwritten: that refusal reuses `already-exists`, and `--force` is the overwrite.
-- A sibling whose `loam.json` exists but cannot be read is reported in `skipped[]` — never fatal, and never a member, because an unreadable binding proves nothing; a sibling bound to a different docs repo is silently not a member. No existing command, flag, exit code, or envelope key changed.
+- **New command `loam open`** — writes a `.code-workspace` file joining the docs repo and every
+  service checkout whose committed `loam.json` binds to it.
+- A sibling whose `loam.json` exists but cannot be read is reported in `skipped[]` — never fatal,
+  and never a member, because an unreadable binding proves nothing; a sibling bound to a different
+  docs repo is silently not a member.
 
 ### Added — the fleet scorecard
 
-- **`loam validate --all --json` gains one additive payload key, `scorecard`** — ceiling-vs-actual aggregates for the whole fleet, recomputed per invocation from the reads the run already makes and never stored: `services` with the maturity rollup (every rung present), `provenance` (vouched services · stale source digests · sources unverifiable from here — the latter two counted off this run's own findings by subject, so each is the same number the report prints beside them), `verification` (recorded records — the features axis's `active` count is their one shared denominator — the three-valued verdicts, and `claims.answered` — the confirmed claims split by their own `answered_by`, one count per provenance with all three keys always present: `runner` (a digest-matched cucumber run), `external-runner` (an operationId-matched contract report) and `agent` (somebody's word, and every record too old to carry the field)), `operations` (defined → governed · deprecated, plus deprecated operations something still joins to), `messages` (defined → linked), `c4` (the fleet map's drawn systems, by the map's own census — actors, externals, groupings and containers excluded — → covered by an arch requirement) and `features` (active, with each feature's fleet stage over all five stage keys). The card fails closed per axis, never whole, on every platform: an unreadable fleet map zeroes the map-derived axes, an unreadable service artifact zeroes only that service's contributions, and the graded report and the card always arrive together. Additive only: no new command, flag, exit code, envelope field or stable code, and single-target runs are byte-unchanged.
-- **`loam validate --all` text output appends a "fleet scorecard" table** after the summary footer — one line per axis, ceiling before actual. It prints under `--errors-only` too, deliberately: like the footer it is a rollup, not a finding, and that flag suppresses findings only. A pipeline that pinned the exact line count of `--errors-only` output will see eight new lines.
-- loam stores no history for it, on purpose — week-over-week is your pipeline's job: capture the `scorecard` key from `loam validate --all --json` into a metrics store per run (README's "Fleet scale" and WORKFLOW.md's "Derived, never stored" spell the pattern).
+- **`loam validate --all --json` gains one additive payload key, `scorecard`** — ceiling-vs-actual
+  aggregates for the whole fleet, recomputed per invocation from the reads the run already makes and
+  never stored: `services` with the maturity rollup (every rung present), `provenance` (vouched
+  services · stale source digests · sources unverifiable from here — the latter two counted off this
+  run's own findings by subject, so each is the same number the report prints beside them),
+  `verification` (recorded records — the features axis's `active` count is their one shared
+  denominator — the three-valued verdicts, and `claims.answered` — the confirmed claims split by
+  their own `answered_by`, one count per provenance with all three keys always present: `runner` (a
+  digest-matched cucumber run), `external-runner` (an operationId-matched contract report) and
+  `agent` (somebody's word, and every record too old to carry the field)), `operations` (defined →
+  governed · deprecated, plus deprecated operations something still joins to), `messages` (defined →
+  linked), `c4` (the fleet map's drawn systems, by the map's own census — actors, externals,
+  groupings and containers excluded — → covered by an arch requirement) and `features` (active, with
+  each feature's fleet stage over all five stage keys).
+- **`loam validate --all` text output appends a "fleet scorecard" table** after the summary footer —
+  one line per axis, ceiling before actual.
 
 ### Added — inverse coverage on the event axis, and the partial-verification honesty line
 
-- **New stable finding code `event.ungoverned`** (warn) — `loam validate --service` / `--all` now warns, per living asyncapi.yaml, when declared message(s) are named by no requirement's `Publishes:`/`Consumes:` line, listing the orphaned names. It is `api.ungoverned`'s event twin and the per-message half `event.messages-unlinked` cannot see: that code fires only when ZERO links exist, so a service with five declared messages and three governed ones reported nothing about the other two. **A partially-linked service that was silent before will warn now, and a fleet running `validate --strict` in CI goes red on it** — severity stays warn, so nothing gates and no exit code changes outside `--strict`. Landscape edges deliberately do not silence it: an edge is a claim about traffic, a requirement is governance. Documented in the /loam-check fix table and the generated AGENTS.md.
-- **New verify notice `verify.claims-open`** (warn) — `loam verify`'s read view and the frozen post-archive view now carry a one-line honesty summary whenever a record EXISTS and leaves claims unconfirmed or unanswered: "not a clean result", with all four counts and the agent's-word share of the confirmed. Additive only — it rides in the existing `notices[]` payload key and the existing `⚠` line loop of the human view; `summary` and `attested` are byte-unchanged. A feature with no record does not carry it (that surface already says "Not verified" — not-started is not partial), and a pure-attested record does not either (`verify.scenario-attested` owns that honesty).
-- **WORKFLOW.md gains "The honestly-small change"** — the walkthrough for a one-service, requirements-only change: scaffold with `--touches`, delete the scaffolded C4 delta on the scaffold's own printed advice, author intent.md and one spec delta, and ship down the three-step `next[]` (`next.generate-tests`, `next.verify`, `next.archive`), with `loam status` printing "(not written — none owed)" beside every artifact the change legitimately skips. Nothing behavioural changed on this path; a status test now pins the walkthrough's central claim so it cannot silently regress.
-- No new command, flag, exit code, or envelope key; both new codes are open-vocabulary finding/notice codes, exactly as `api.ungoverned` and `verify.scenario-attested` were before them.
+- **New stable finding code `event.ungoverned`** (warn) — `loam validate --service` / `--all` now
+  warns, per living asyncapi.yaml, when declared message(s) are named by no requirement's
+  `Publishes:`/`Consumes:` line, listing the orphaned names.
+- **New verify notice `verify.claims-open`** (warn) — `loam verify`'s read view and the frozen
+  post-archive view now carry a one-line honesty summary whenever a record EXISTS and leaves claims
+  unconfirmed or unanswered: "not a clean result", with all four counts and the agent's-word share
+  of the confirmed.
+- **WORKFLOW.md gains "The honestly-small change"** — the walkthrough for a one-service,
+  requirements-only change: scaffold with `--touches`, delete the scaffolded C4 delta on the
+  scaffold's own printed advice, author intent.md and one spec delta, and ship down the three-step
+  `next[]` (`next.generate-tests`, `next.verify`, `next.archive`), with `loam status` printing "(not
+  written — none owed)" beside every artifact the change legitimately skips.
+- No new command, flag, exit code, or envelope key; both new codes are open-vocabulary
+  finding/notice codes, exactly as `api.ungoverned` and `verify.scenario-attested` were before them.
 
 ### Added — the LikeC4 canary
 
-- **A weekly scheduled workflow** (`.github/workflows/likec4-canary.yml`, manual dispatch included) **installs `likec4@latest` over the exact 1.59.2 lockfile pin and runs the LikeC4-touching suites against it**, then the committed 120-service benchmark as informational evidence in the run's step summary. It never gates a merge or a release: no push or pull-request trigger exists, so it cannot post a status on a pull request or become a required check, and the gate and every release keep running against the lockfile pin. When the npm latest equals the pin, the run skips itself green and says so. The runbook — what a red means, how to reproduce it, and the three honest outcomes — is CONTRIBUTING.md's "The LikeC4 canary" section. No new command, flag, exit code, envelope key, or stable code; nothing in `dist/` changed.
+- **A weekly scheduled workflow** (`.github/workflows/likec4-canary.yml`, manual dispatch included)
+  **installs `likec4@latest` over the exact 1.59.2 lockfile pin and runs the LikeC4-touching suites
+  against it**, then the committed 120-service benchmark as informational evidence in the run's step
+  summary.
 
 ### Documentation
 
-- **The product comparison now follows OpenSpec v1.10.0** (released 2026-08-19) while the certified parser/migration corpus stays pinned at the v1.9.0 commit `2826b8889e5223a9a8095d4428b60b56597e1020` — v1.10.0 changed no requirement-Markdown format upstream, and COMPARISON.md, README.md and MIGRATING-from-OpenSpec.md now name the divergence as deliberate. Worksets (beta) and the announced hosted Workspaces are recorded, and COMPARISON.md gains a named position on the unannounced OpenSpec Cloud GitHub App: same citation discipline, trust boundary kept local. No command, flag, exit code, stable code, or envelope change.
+- **The product comparison now follows OpenSpec v1.10.0** (released 2026-08-19) while the certified
+  parser/migration corpus stays pinned at the v1.9.0 commit
+  `2826b8889e5223a9a8095d4428b60b56597e1020` — v1.10.0 changed no requirement-Markdown format
+  upstream, and COMPARISON.md, README.md and MIGRATING-from-OpenSpec.md now name the divergence as
+  deliberate.
 
 ### Added — the shipped documentation is now guarded like a contract
 
-- **The installed-package smoke reads every shipped Markdown page from the tarball users install** (`npm run test:package`): the tarball's Markdown set must equal the reviewed set, every relative link must resolve inside the tarball, every used anchor must slug-match exactly one heading in the shipped target, and every canonical `https://github.com/ybotok/loam/...` link must name a path that exists in the source tree — proving an "intentionally canonical" link is not a euphemism for a rotten one. Other absolute URLs are never fetched; the smoke gains no network beyond its existing npm install. The first run convicted two shipped links in ROADMAP.md, both fixed: a pointer at the pre-split `src/core/kernel/ids.ts`, and a relative `docs/BENCHMARKS.md` link that dangled for every installed user because `docs/` does not ship.
-- **package.json, the release preflight, and the smoke share one reviewed package-file list** (`scripts/package-docs.mjs`): `files[]` set-inequality with the reviewed list is now a release blocker and an `npm test` failure, and every reviewed page must be relatively linked from README — adding a shipped document is deliberately a three-place edit, and the blocker names all three places.
-- **New drift guards run inside `npm test`** (test/docs-facts.test.ts, test/package-docs.test.ts): counted facts in the shipped pages must match the live tree or sit under ROADMAP's dated assessment snapshot; the README command table is set-equal to the built program's commands; SCHEMA's `architecture/permissions.yaml` example is parsed through the real vocabulary reader, pinning the documented `owned_by`/`enforced_by`/`description` spellings; every dotted backticked token in the shipped pages must be a stable code loam actually emits, a verify claim kind, or a reasoned allowlist entry; and each documented known gap is paired with the roadmap sentence that owns closing it, so shipping a roadmap item fails the gate until the gap prose leaves with it.
-- **The prose the guards convicted was corrected honestly**: README no longer calls the AsyncAPI lifecycle living-only, the OpenAPI path-item/component baselines unpinned, or the fleet gate slow — all three landed earlier on `main` — its fleet-scale numbers carry their measurement date and the batched `validate --all` median (~0.7 s on the committed 120-service benchmark, docs/BENCHMARKS.md), the `loam list` row names its `capabilities` section, and docs/DESIGN.md's command and hub counts match the tree, with the command counts now live-pinned.
+- **package.json, the release preflight, and the smoke share one reviewed package-file list**
+  (`scripts/package-docs.mjs`): `files[]` set-inequality with the reviewed list is now a release
+  blocker and an `npm test` failure, and every reviewed page must be relatively linked from README —
+  adding a shipped document is deliberately a three-place edit, and the blocker names all three
+  places.
+- **New drift guards run inside `npm test`** (test/docs-facts.test.ts, test/package-docs.test.ts):
+  counted facts in the shipped pages must match the live tree or sit under ROADMAP's dated
+  assessment snapshot; the README command table is set-equal to the built program's commands;
+  SCHEMA's `architecture/permissions.yaml` example is parsed through the real vocabulary reader,
+  pinning the documented `owned_by`/`enforced_by`/`description` spellings; every dotted backticked
+  token in the shipped pages must be a stable code loam actually emits, a verify claim kind, or a
+  reasoned allowlist entry; and each documented known gap is paired with the roadmap sentence that
+  owns closing it, so shipping a roadmap item fails the gate until the gap prose leaves with it.
 - No new command, flag, exit code, envelope key, or stable code; nothing in `dist/` changed.
 
 ### Added — the capability axis
 
-The fleet can now name the capabilities it promises and join requirements to them, with the total readable in one command. Everything is additive, and the whole axis is opt-in through one file: **a fleet with no `architecture/capabilities.yaml` produces no capability findings at all** — deliberately unlike the authorization axis, where the `Requires:` line is the opt-in and errors against a missing vocabulary. What a user notices:
-
-- **New fleet document `architecture/capabilities.yaml`** — shape `capabilities: {<id>: {description, owner}}`, both leaf fields optional (`{}` is a legal declaration); ids are flat keys with `/` allowed for nesting (`payments/refunds` stays one key, never collapsed). Read with the same defensive shape as permissions.yaml, once per invocation under `validate --all`, and documented in the generated AGENTS.md and the /loam-check fix table.
-- **New requirement-grammar line `Capability:`** (also accepted as `Capabilities:`) — a comma-separated LIST, legal in both spec files, living and delta alike, parsed beside `Operations:`/`Covers:`/`Requires:` with the same keep-last quirk. The parse is additive: the line rides in the requirement body and its digest exactly as `Requires:` does, so **no existing document's digest moves merely because loam learned to read it** — but authoring the line onto a pinned living requirement is an edit like any other and will stale in-flight `Based-On:` pins against it.
-- **New stable finding code `capability.unknown`** (error) — a `Capability:` entry that the vocabulary does not declare, with close-name suggestions; graded on living spec.md/arch.spec.md at the service target and on a feature's deltas of both via coherence. Silent when the vocabulary is absent or invalid.
-- **New IssueCode `capability.unknown`** — the delta-side shape of the same rule **gates `loam archive`** (not-coherent), overridable with `--approve`; the only new archive gate in this item. With an absent or invalid vocabulary nothing new gates.
-- **New stable finding code `capability.invalid`** (error) — the file exists but does not read as a vocabulary; reported exactly once per `validate --all` run (single-target runs stay silent about the file), suppressing the rest of the family, because a hundred findings about one broken file is a cascade rather than a diagnosis.
-- **New stable finding code `capability.unrealized`** (warn) — a declared capability no living non-`REMOVED` requirement names; one finding per capability, subject = the id.
-- **`loam list capabilities`** — new explicit-only section (the no-argument default and every existing section's payload are byte-unchanged); new additive `--json` payload key `capabilities` with deterministic, diff-stable ordering (rows by id, `realizedBy` by service/file/requirement, `statuses` keys sorted). An absent vocabulary answers honestly empty at exit 0; an invalid one refuses through the existing `repository-unavailable` path naming the file.
-- **`loam explore --capability <id>`** — new repeatable flag seeding the exploration from a declared capability's realizing services; every miss (undeclared, or declared and realized by nothing) lands in the new additive payload field `unresolvedCapabilities` — explore still refuses nothing.
-- **`migrate-openspec --apply` preserves capability identity**: the staged target declares the union of living and active-horizon OpenSpec capability ids in `architecture/capabilities.yaml` (empty bodies — no description is invented, the authored `## Purpose` prose stays verbatim under `legacy/`), and every routed requirement — living, delta and rename-materialized alike — carries a `Capability: <id>` line. Capability structure survives migration as a checked join instead of living only in `legacy/`.
-- No new ErrorCode strings, no new exit codes, no changed envelope fields.
+- **New fleet document `architecture/capabilities.yaml`** — shape
+  `capabilities: {<id>: {description, owner}}`, both leaf fields optional (`{}` is a legal
+  declaration); ids are flat keys with `/` allowed for nesting (`payments/refunds` stays one key,
+  never collapsed).
+- **New requirement-grammar line `Capability:`** (also accepted as `Capabilities:`) — a
+  comma-separated LIST, legal in both spec files, living and delta alike, parsed beside
+  `Operations:`/`Covers:`/`Requires:` with the same keep-last quirk.
+- **New stable finding code `capability.unknown`** (error) — a `Capability:` entry that the
+  vocabulary does not declare, with close-name suggestions; graded on living spec.md/arch.spec.md at
+  the service target and on a feature's deltas of both via coherence.
+- **New IssueCode `capability.unknown`** — the delta-side shape of the same rule **gates
+  `loam archive`** (not-coherent), overridable with `--approve`; the only new archive gate in this
+  item.
+- **New stable finding code `capability.invalid`** (error) — the file exists but does not read as a
+  vocabulary; reported exactly once per `validate --all` run (single-target runs stay silent about
+  the file), suppressing the rest of the family, because a hundred findings about one broken file is
+  a cascade rather than a diagnosis.
+- **New stable finding code `capability.unrealized`** (warn) — a declared capability no living
+  non-`REMOVED` requirement names; one finding per capability, subject = the id.
+- **`loam list capabilities`** — new explicit-only section (the no-argument default and every
+  existing section's payload are byte-unchanged); new additive `--json` payload key `capabilities`
+  with deterministic, diff-stable ordering (rows by id, `realizedBy` by service/file/requirement,
+  `statuses` keys sorted).
+- **`loam explore --capability <id>`** — new repeatable flag seeding the exploration from a declared
+  capability's realizing services; every miss (undeclared, or declared and realized by nothing)
+  lands in the new additive payload field `unresolvedCapabilities` — explore still refuses nothing.
+- **`migrate-openspec --apply` preserves capability identity**: the staged target declares the union
+  of living and active-horizon OpenSpec capability ids in `architecture/capabilities.yaml` (empty
+  bodies — no description is invented, the authored `## Purpose` prose stays verbatim under
+  `legacy/`), and every routed requirement — living, delta and rename-materialized alike — carries a
+  `Capability: <id>` line.
 
 ### Added — subsystems: `services/` may now be a tree, and no identity notices
 
-Nested directories under `services/` are now legal: a directory marked by a `subsystem.yaml` is a **subsystem** and is walked, at any depth. A service's identity stays its leaf directory name — `loam.json`'s `service`, `metadata { service }`, spec frontmatter, `features/<FEAT>/specs/<svc>/` and every digest are **byte-stable across a move**, `--service` still never takes a path, and no `subsystem` frontmatter field exists. Every command resolves a service's artifacts through the enumeration, wherever the directory lives; a version-3 archive snapshot restores into the directory its service occupies **now**, so archive → `loam subsystem move` → unarchive is a byte-identical round trip with no `--force`. What a user notices beyond that:
-
-- **Three-way classification, the third branch a refusal.** A directory under `services/` holding `subsystem.yaml` is a subsystem (walked); one holding any service artifact is a service (not walked deeper); one holding **neither** while containing subdirectories is the new error `subsystem.unmarked`, naming every service stranded beneath it — those services stay enumerated and counted, so the fleet is never silently smaller (the deleted-marker merge race). New fleet-scope findings in `validate --all`, each documented in the /loam-check table: `subsystem.unmarked`, `subsystem.marker-misplaced` (a marker beside service artifacts; the directory stays a service), `subsystem.name-collision` (service ids and subsystem names share one flat namespace, unique at any depth — the finding names every claimant), `subsystem.name-invalid` (subsystem names take the service-id grammar), `subsystem.invalid` (a marker that exists but cannot be read — presence still classifies, exactly one finding per file; a `members` key is invalid on purpose, because the directory itself is the membership record). A fleet that was green stays green: a flat `services/` produces none of these, unfiled services are permanent, normal and silent at any count, and an empty subsystem is legal.
-- **`subsystem.yaml` is a marker, not a manifest** — optional `title`, `description`, `owner`; never members (SCHEMA.md, "Subsystems").
-- **The tree is mirrored into a GENERATED views file, never into the authored landscape.** `architecture/subsystems.likec4` holds LikeC4 views only — no model, no tags, no `specification` — one view per subsystem enumerating every service beneath it (members resolved to landscape *element* ids through the same `metadata { service }`-then-title join every check uses; a member nothing models is omitted, which `landscape.service-unmodelled` already reports). Output is deterministic and line-oriented: subsystems sorted by path, members by id, **one `include` per line** — two concurrent moves into different groups touch different lines and git merges the file — and byte-reproducible on any machine (no timestamps, no absolute paths, no readdir-order dependence). **`loam subsystem sync`** regenerates it (creates, updates, or removes it — with zero subsystems the file must be absent), through the same docs lock and crash journal every writer commits under. New fleet-scope error **`subsystem.views-stale`** in `validate --all`: the file's bytes do not match the tree — exactly one finding on exactly one file, graded by byte comparison (nothing in loam ever parses the generated file), fixed by the one command. A fleet with subsystems now owes the committed views file; a flat fleet owes nothing and may not carry a leftover one.
-- **New command `loam subsystem <verb>`** — `new`, `move`, `rename`, `rm`, `list`, `history`, `sync`; options `--into`, `--under`, `--title`, `--description`, `--owner`, `--json`. `new <name>` creates a group (root-level, or `--under <parent>`), writing `subsystem.yaml` and the regenerated views file in one journaled commit — an empty group is legal, and an empty marker file is a valid marker. `rm <name>` removes an EMPTY group and refuses one with members under the new stable code **`subsystem-not-empty`**, naming every member (services, child subsystems, stray files) — a destructive command never picks targets the caller did not name. `list` shows the tree with transitive member counts and the unfiled count. `history <name>` asks git how a service or subsystem moved (following a representative file, since `git log --follow` is defined for one file): two chained moves answer as two hops, and every way git declines answers nothing — exit 0, no finding, "git will not say". Names that resolve to nothing, collide in the flat namespace, or break the grammar reuse `unknown-target`, `already-exists` and `invalid-option`, each with close-name hints.
-- **`loam subsystem move <name>... --into <sub|.>` is ONE transaction over N directory renames plus the generated views file** — the first consumer of the crash journal's new moves half. The `.loam-commit` record gains a version (3, written only when a commit carries renames; version-2 records from every other writer are unchanged and still read): recovery classifies each rename by which end exists and rolls the whole commit FORWARD, refuses when a directory is in neither recorded state, and a live failure mid-renames undoes everything together — renames newest-first, then the views bytes — answering the new stable code **`move-failed`** (nothing changed, re-running can work; distinct from `merge-failed` because no merge was computed) or `rollback-incomplete` when it could not. The move refuses ONLY on positive git evidence of uncommitted work under a moved directory — new stable code **`move-uncommitted`**; where git will not say, the move proceeds. After a landed move loam performs its one blessed git write: a best-effort `git add` of the rename pairs and the regenerated views file, so the move arrives in the index whole — renames recorded as renames, staged, never committed — and `history` stays answerable. `--into .` unfiles; whole subtrees move as one rename; `rename <old> <new>` is a one-rename move through the same transaction (services are never renamed — the id is the identity). Two concurrent moves serialise on the docs lock (`docs-busy`), and two branches moving the same service collide in the generated file's own lines, visibly, at git-merge time.
-- **`loam adopt --subsystem <name>`** — the brief's artifact paths land inside the named group, so an adoption need not land unfiled and cost a second command. Unknown group: `unknown-target` with close-name hints; an already-existing service is briefed where it lives, with a warning naming `loam subsystem move` as the verb that relocates. adopt still writes nothing.
-- **`loam list` gains additive `--json` keys**: `services[].subsystem` (the path as a string array, `[]` = unfiled), top-level `subsystems[]` (`name`, `path`, `title`, transitive `memberCount`) and `unfiledServices` (a count — unfiled is permanent and normal, so it is never a finding). The text view gains one `subsystems: N · unfiled: K` line, only once a tree exists.
-- **Path VALUES follow the move.** `list --json`'s `services[].path`, `show <svc> --json`'s `path` and `adopt --json`'s `path` were always the repo-relative service directory; for a filed service each value now truthfully reads `services/<subsystem>/…/<svc>` — adopt briefs an already-existing service at the directory it occupies now, not at the root. Keys and shapes are unchanged.
-- **Generated view identifiers are now injective.** The views file's `view subsystem_…` names encode every non-identifier byte as `_` + two hex digits and join nesting levels on `__`, because the previous folding (every such byte to a single `_`) let three distinct healthy names — `a_b`, and `b` under `a` — render one duplicate view id that made the LikeC4 renderer refuse the whole `architecture/` project while `validate --all` stayed green. A fleet with subsystems whose names carry `.`, `_` or `-`, or any nesting, will see `subsystem.views-stale` once after upgrading; `loam subsystem sync` regenerates the file.
-- **`subsystem move`/`rename` notice old snapshots.** When an archived feature holds a version-2 snapshot addressing a directory being moved by its literal pre-move path, the move prints a notice (JSON: additive `warnings` key) naming the feature — `loam unarchive <FEAT> --force` after the move would restore into the old location, resurrecting the pre-move directory beside the moved one. A notice only; the move proceeds.
+Nested directories under `services/` are now legal: a directory marked by a `subsystem.yaml` is a
+**subsystem** and is walked, at any depth.
+- **Three-way classification, the third branch a refusal.** A directory under `services/` holding
+  `subsystem.yaml` is a subsystem (walked); one holding any service artifact is a service (not
+  walked deeper); one holding **neither** while containing subdirectories is the new error
+  `subsystem.unmarked`, naming every service stranded beneath it — those services stay enumerated
+  and counted, so the fleet is never silently smaller (the deleted-marker merge race).
+- **`subsystem.yaml` is a marker, not a manifest** — optional `title`, `description`, `owner`; never
+  members (SCHEMA.md, "Subsystems").
+- **The tree is mirrored into a GENERATED views file, never into the authored landscape.**
+  `architecture/subsystems.likec4` holds LikeC4 views only — no model, no tags, no `specification` —
+  one view per subsystem enumerating every service beneath it (members resolved to landscape
+  *element* ids through the same `metadata { service }`-then-title join every check uses; a member
+  nothing models is omitted, which `landscape.service-unmodelled` already reports). New fleet-scope
+  error **`subsystem.views-stale`** in `validate --all`: the file's bytes do not match the tree —
+  exactly one finding on exactly one file, graded by byte comparison (nothing in loam ever parses
+  the generated file), fixed by the one command.
+- **New command `loam subsystem <verb>`** — `new`, `move`, `rename`, `rm`, `list`, `history`,
+  `sync`; options `--into`, `--under`, `--title`, `--description`, `--owner`, `--json`.
+- **`loam subsystem move <name>... --into <sub|.>` is ONE transaction over N directory renames plus
+  the generated views file** — the first consumer of the crash journal's new moves half.
+- **`loam adopt --subsystem <name>`** — the brief's artifact paths land inside the named group, so
+  an adoption need not land unfiled and cost a second command.
+- **`loam list` gains additive `--json` keys**: `services[].subsystem` (the path as a string array,
+  `[]` = unfiled), top-level `subsystems[]` (`name`, `path`, `title`, transitive `memberCount`) and
+  `unfiledServices` (a count — unfiled is permanent and normal, so it is never a finding).
+- **`subsystem move`/`rename` notice old snapshots.** When an archived feature holds a version-2
+  snapshot addressing a directory being moved by its literal pre-move path, the move prints a notice
+  (JSON: additive `warnings` key) naming the feature — `loam unarchive <FEAT> --force` after the
+  move would restore into the old location, resurrecting the pre-move directory beside the moved
+  one.
 
 ### Changed — archive snapshots are re-keyed by service id (manifest version 2 → 3)
 
-The undo snapshot's manifest (`features/archive/<dir>/.loam-before/manifest.json`) bumps to **version 3**: every entry under `services/` now carries `(service, artifact)` — the service id and the artifact's path inside the service directory — beside the as-archived literal `path`, and `loam unarchive` resolves the write target through the **current** services enumeration, falling back to the literal path when the id is not enumerated. Landscape and `features/` entries stay literal-path-only. This is groundwork for the subsystem tree (a service directory that moves after a feature was archived must not make its undo restore into a path that is gone — re-cutting the tree is expected to be routine), landed first on purpose: every archive from this version on writes snapshots that survive a later move. The read side is additive: **version-2 snapshots — which already sit inside archived features and travel with them across loam upgrades — still restore, and still grade a retried archive's staleness question, under their own literal-path rules**; only version-1 snapshots remain refused (`snapshot-missing`). Internal on-disk format, no command, flag, envelope, or exit-code change.
+The undo snapshot's manifest (`features/archive/<dir>/.loam-before/manifest.json`) bumps to
+**version 3**: every entry under `services/` now carries `(service, artifact)` — the service id and
+the artifact's path inside the service directory — beside the as-archived literal `path`, and
+`loam unarchive` resolves the write target through the **current** services enumeration, falling
+back to the literal path when the id is not enumerated.
 
 ### Added — the AsyncAPI feature lifecycle
 
-The event axis now has the same feature lifecycle the OpenAPI axis has, mirrored axis-for-axis: a documented feature-local delta format, slot identity and `rebase` pins, a coherence gate, an archive merge riding the same snapshot/journal transaction (so rollback and `loam unarchive` cover it with no new machinery), a verify claim, and agreement across every command surface. In lifecycle order:
-
-- **File-format contract** (SCHEMA.md): a feature changes an async contract through `features/<FEAT>/specs/<svc>/asyncapi.yaml` — a complete AsyncAPI 3.0 document. Identity is the slot (section, key) over `channels.<key>` / `operations.<key>` / `components.messages.<key>`; `x-loam-based-on` (same spelling and 16-hex digest shape as the OpenAPI axis, over canonical JSON of the slot minus the pin) tells a quote from an edit, and `x-loam-remove: true` inside a slot retires it. Inline channel messages (`channels.<ck>.messages.<mk>`) are channel-slot interior by decision — not individually pinnable; declare or retire an individual message under `components.messages`. This supersedes the previously recorded decision against an event removal family; the consumer-lag rationale survives as an operational warning, not a veto. Payload-schema correctness stays out of scope: digests hash payload bytes as content identity only, and a fleet that wants schema validation runs an external validator (e.g. `@asyncapi/parser`) in CI — no runtime dependency.
-- **`loam rebase` pins asyncapi slots**: every slot a feature's asyncapi.yaml restates is pinned against the living contract; `rebase --json`'s `pins[]` entries may now carry `file: "asyncapi.yaml"` with `kind` = the section name and `target` = the slot key (new values in existing fields — no envelope key changes). Slots the living contract lacks report `unresolved`; a slot whose YAML key is a non-string scalar (a channel named `404:` is the YAML number 404) is located string-matched and pinned like any other, never duplicated; `unwritable` is reserved for what genuinely cannot be stamped — a slot written as a YAML alias (one shared value backs every use of the anchor) or under a key no string can address.
-- **New validate finding `asyncapi.remove-marker-living`** (error): a living asyncapi.yaml carrying `x-loam-remove: true` — at ANY depth: a slot, an inline channel message, or anywhere else one leaked (the document root, `info`), the sweep exactly as deep as the strip — names where it sits, the `openapi.remove-marker-living` discipline on the event axis. A removal marker also stops the declaration joining anything — sent/received sets and the duplicate count alike — wherever it is written, so a marked declaration no longer reads as something the service still produces. On a living contract that means the finding above arrives with company: whatever consumed the message now reports `spine.message-undefined`, `spine.message-unproduced` or `spec-event.message-undefined`, because as far as every join is concerned the message is gone. Delete the marker and all of it clears together.
-- **The coherence gate grades the event axis** (`validate --feature` and the archive gate alike, since the gate consumes coherence issues wholesale). New stable issue codes, each with a /loam-check fix-table row: `asyncapi.baseline-invalid` (malformed pin, or a pin on a slot the living contract lacks), `asyncapi.baseline-missing` (warn that **gates** archive, counted per service — `loam rebase <FEAT>` is the fix), `asyncapi.baseline-stale` (error: the living slot moved; features already in flight that pin asyncapi slots may need one rebase re-run after the living side changes), `asyncapi.remove-target-missing` / `asyncapi.remove-target-mismatch` (marker exactness), `asyncapi.remove-marker-missing` / `asyncapi.remove-marker-unjustified` (message removals and REMOVED requirements' `Publishes:`/`Consumes:` lines must justify each other; net removals only — a marker plus a redeclaration of the same name is a relocation), `asyncapi.remove-message-consumed` (a landscape `consumes` edge or another service's living requirement still consumes the retired message), `asyncapi.message-conflict` (warn: two in-flight features declare one (service, message)), `c4-event.message-undefined` / `c4-event.message-pending` (tagged edges' `publishes`/`consumes` metadata against the bound service's feature ∪ living contract), and `spec-event.message-pending` (delta requirement lines, softened for in-flight producers). Three strings validate already emitted joined the IssueCode union unchanged: `asyncapi.invalid` (now also fired for a FEATURE's own asyncapi.yaml, suspending that service's event checks and gating archive), `asyncapi.ref-unresolved`, and `spec-event.message-undefined` (now also graded on delta requirement lines in feature scope). Two of the removal rules carry the SCHEMA's channel-interior decision end to end: a `channels.<key>` removal marker **is** the removal marker for every message the living channel declares inline — so retiring an inline-declared message is authorable at all, where before it deadlocked between `remove-marker-missing` and `remove-target-missing` — and `asyncapi.remove-message-consumed` is also asked of the WIRE: any channel or operation removal (or edit) after which the merged contract would no longer declare an `action: send` for a message the fleet still consumes, not only a deleted `components.messages` declaration. The `c4-event.*` / `spec-event.*` joins grade the contract **as the feature's merge would leave it** (the real merge, simulated droplessly; feature ∪ living where no delta exists), so a leftover `Publishes:` line on a surviving requirement over a retired message fails this gate instead of breaking `validate --all` on the post-archive docs. **What a `--json` consumer notices.** The event axis grades two things that need no asyncapi.yaml at all: a feature delta's tagged edges carrying `metadata { publishes }` / `{ consumes }` (`c4-event.message-undefined`) and a delta requirement's `Publishes:`/`Consumes:` lines (`spec-event.message-undefined`). Both were previously ungraded in feature scope, so **a feature that exited 0 yesterday can exit 1 today** — from `validate --feature`, from `validate --all`, and from the bare positional `loam validate <FEAT>` — and `loam archive` refuses it at `not-coherent`. The fix is to declare the message in the service's asyncapi contract or correct the link; `--approve` still archives past it. An edge whose bound element is neither a `services/` directory nor one the feature introduces is skipped, not graded, so an `#external` producer stays silent.
-- **The merge is verdict-driven, per slot** (`channels.<key>` / `operations.<key>` / `components.messages.<key>`): a pinned QUOTE is never a merge input — not even under `--approve` — so a change that landed on the living contract after the delta was written survives an archive that merely restates the slot (the lost-update case); an EDIT overwrites; a `stale` pin still writes, because reaching the merge at all means `--approve` said to, and the plan names what it cost. `x-loam-remove: true` deletes its exact target — for a message slot only when the living declaration carries the same join name — and deletes the section key when the section empties. Both loam keys (`x-loam-based-on`, `x-loam-remove`) are stripped from everything published, at slot depth and at the inline-channel-message depth alike, on the merge and the create-a-living-contract branch both; the create branch writes nothing at all when no slot survives the strip, so a pure-removal delta cannot materialise an empty presence-bearing asyncapi.yaml. Every write refuses YAML aliases (one shared value backs every use of an anchor), string-key-matched so a channel named `404` is replaced, never duplicated. A document whose section spells one slot key in two pairs that stringify identically (`404:` beside `"404":` — legal YAML) is refused whole, on either side: the resolved walk and the string-matched writers could not agree which pair the slot names, and refusing beats writing through the wrong one. The marker strip covers the entire document, not only the three sections — a loam key at the document root or under `info` never reaches a living contract on the create branch either.
-- **New stable plan-warn codes**, each with a /loam-check fix-table row: `asyncapi.message-modified`, `asyncapi.channel-modified`, `asyncapi.operation-modified` — the delta redefines a slot the living AsyncAPI already has and the merge overwrites it wholesale, the event axis's mirror of `openapi.op-modified`'s family.
-- **`asyncapi.ref-unresolved` is now also a gating plan issue** (it stays a validate warn on living contracts): a `$ref` the MERGED document would carry that resolves in neither the feature's asyncapi.yaml nor the living one — including a removal that deletes a slot the living document still references — refuses the archive at `not-coherent` unless `--approve`. Refs already dangling in the living contract before the merge stay validate's business and do not gate.
-- **New gating plan code `asyncapi.remove-marker-inline`** (error, `--approve` overrides, with a /loam-check fix-table row): an `x-loam-remove: true` nested on an INLINE channel message (`channels.<ck>.messages.<mk>`). Inline messages are channel interior, never slots, so the marker retires nothing — and when the restated channel is otherwise identical to living, it surfaces nowhere else at all: no write, no plan line, a removal silently not happening. `openapi.remove-marker-path-level`'s discipline at the nested depth; retire the whole channel, or declare the message under `components.messages` and mark that.
-- **`archive --json` gains the additive `asyncapiRemovals` key** (`[{service, slots}]`, the labels of living slots the plan deletes), beside `openapiRemovals`. The BLOCKED refusal's prose now says "contract merge" where it said "OpenAPI merge", since the plan gates cover both axes; the envelope is unchanged.
-- **New verify claim kind `event.declares`** in `CLAIM_KINDS` (the `verification.yaml` value vocabulary), after `api.exposes` in the checklist's story order: one claim per genuinely NEW (direction, message) a feature's asyncapi delta declares relative to the living contract's send/receive sets — `"<svc> declares it <sends|receives> message '<name>'"`. Quotes of the living contract are never questions, and removals are not questions either. Additive in shape, and the digest moves only for a feature that carries an asyncapi delta. If you pre-authored `features/<FEAT>/specs/<svc>/asyncapi.yaml` before this release — the file was inert, not refused — that feature's `verification.yaml` reads STALE and its verdict drops to `unverified` until one `loam verify --record` run against the re-derived checklist. Archived features are untouched; their records are frozen. `--record` accepts and round-trips the new kind unchanged.
-- **`delta --json` gains the additive per-service `events` key** — `{changes: [{slot, message, direction, remove}], unreadable, error?}`, the event-axis mirror of the `api`/`openapi` pair: every message declaration in the feature's asyncapi.yaml with the slot it lives in, the direction the document's own operations give it (`send`/`receive`/null), and its removal marker; the text view prints the same rows. **An unreadable feature asyncapi.yaml now makes `loam delta` exit 1** exactly as the openapi path does — the brief is an implementation task, and "no event work here" over a YAML error is work silently dropped.
-- **`loam status` sees the event axis.** The feature artifact table gains an `asyncapi` row per touched service (additive `--json` value in the `ARTIFACT_IDS` vocabulary; never required — an event contract is genuinely optional, so absence is `done` like arch.spec.md), the `asyncapi.*` / `c4-event.*` / `spec-event.*` finding families now turn their responsible artifact row `draft` (asyncapi.yaml, delta.likec4 and the spec delta respectively), a feature whose findings include `asyncapi.baseline-missing` gets a `next.rebase` step naming `loam rebase`, and a blocked verification's `blockedBy` list names `asyncapi` among the feeders it waits on.
-- **The authoring surfaces teach the axis**: `loam new`'s spec template comment documents the `Publishes:`/`Consumes:` requirement lines and when to hand-create `specs/<svc>/asyncapi.yaml` (nothing is scaffolded — the axis's absence-grading rests on the contract being optional), and the `/loam-feature` workflow carries the event-axis authoring step beside the openapi one, rebase pinning included.
+- **File-format contract** (SCHEMA.md): a feature changes an async contract through
+  `features/<FEAT>/specs/<svc>/asyncapi.yaml` — a complete AsyncAPI 3.0 document.
+- **`loam rebase` pins asyncapi slots**: every slot a feature's asyncapi.yaml restates is pinned
+  against the living contract; `rebase --json`'s `pins[]` entries may now carry
+  `file: "asyncapi.yaml"` with `kind` = the section name and `target` = the slot key (new values in
+  existing fields — no envelope key changes).
+- **New validate finding `asyncapi.remove-marker-living`** (error): a living asyncapi.yaml carrying
+  `x-loam-remove: true` — at ANY depth: a slot, an inline channel message, or anywhere else one
+  leaked (the document root, `info`), the sweep exactly as deep as the strip — names where it sits,
+  the `openapi.remove-marker-living` discipline on the event axis.
+- **The coherence gate grades the event axis** (`validate --feature` and the archive gate alike,
+  since the gate consumes coherence issues wholesale). Three strings validate already emitted joined
+  the IssueCode union unchanged: `asyncapi.invalid` (now also fired for a FEATURE's own
+  asyncapi.yaml, suspending that service's event checks and gating archive),
+  `asyncapi.ref-unresolved`, and `spec-event.message-undefined` (now also graded on delta
+  requirement lines in feature scope). **What a `--json` consumer notices.** The event axis grades
+  two things that need no asyncapi.yaml at all: a feature delta's tagged edges carrying
+  `metadata { publishes }` / `{ consumes }` (`c4-event.message-undefined`) and a delta requirement's
+  `Publishes:`/`Consumes:` lines (`spec-event.message-undefined`).
+- **The merge is verdict-driven, per slot** (`channels.<key>` / `operations.<key>` /
+  `components.messages.<key>`): a pinned QUOTE is never a merge input — not even under `--approve` —
+  so a change that landed on the living contract after the delta was written survives an archive
+  that merely restates the slot (the lost-update case); an EDIT overwrites; a `stale` pin still
+  writes, because reaching the merge at all means `--approve` said to, and the plan names what it
+  cost.
+- **New stable plan-warn codes**, each with a /loam-check fix-table row:
+  `asyncapi.message-modified`, `asyncapi.channel-modified`, `asyncapi.operation-modified` — the
+  delta redefines a slot the living AsyncAPI already has and the merge overwrites it wholesale, the
+  event axis's mirror of `openapi.op-modified`'s family.
+- **`asyncapi.ref-unresolved` is now also a gating plan issue** (it stays a validate warn on living
+  contracts): a `$ref` the MERGED document would carry that resolves in neither the feature's
+  asyncapi.yaml nor the living one — including a removal that deletes a slot the living document
+  still references — refuses the archive at `not-coherent` unless `--approve`.
+- **New gating plan code `asyncapi.remove-marker-inline`** (error, `--approve` overrides, with a
+  /loam-check fix-table row): an `x-loam-remove: true` nested on an INLINE channel message
+  (`channels.<ck>.messages.<mk>`).
+- **`archive --json` gains the additive `asyncapiRemovals` key** (`[{service, slots}]`, the labels
+  of living slots the plan deletes), beside `openapiRemovals`.
+- **New verify claim kind `event.declares`** in `CLAIM_KINDS` (the `verification.yaml` value
+  vocabulary), after `api.exposes` in the checklist's story order: one claim per genuinely NEW
+  (direction, message) a feature's asyncapi delta declares relative to the living contract's
+  send/receive sets — `"<svc> declares it <sends|receives> message '<name>'"`.
+- **`delta --json` gains the additive per-service `events` key** —
+  `{changes: [{slot, message, direction, remove}], unreadable, error?}`, the event-axis mirror of
+  the `api`/`openapi` pair: every message declaration in the feature's asyncapi.yaml with the slot
+  it lives in, the direction the document's own operations give it (`send`/`receive`/null), and its
+  removal marker; the text view prints the same rows. **An unreadable feature asyncapi.yaml now
+  makes `loam delta` exit 1** exactly as the openapi path does — the brief is an implementation
+  task, and "no event work here" over a YAML error is work silently dropped.
+- **`loam status` sees the event axis.** The feature artifact table gains an `asyncapi` row per
+  touched service (additive `--json` value in the `ARTIFACT_IDS` vocabulary; never required — an
+  event contract is genuinely optional, so absence is `done` like arch.spec.md), the `asyncapi.*` /
+  `c4-event.*` / `spec-event.*` finding families now turn their responsible artifact row `draft`
+  (asyncapi.yaml, delta.likec4 and the spec delta respectively), a feature whose findings include
+  `asyncapi.baseline-missing` gets a `next.rebase` step naming `loam rebase`, and a blocked
+  verification's `blockedBy` list names `asyncapi` among the feeders it waits on.
+- **The authoring surfaces teach the axis**: `loam new`'s spec template comment documents the
+  `Publishes:`/`Consumes:` requirement lines and when to hand-create `specs/<svc>/asyncapi.yaml`
+  (nothing is scaffolded — the axis's absence-grading rests on the contract being optional), and the
+  `/loam-feature` workflow carries the event-axis authoring step beside the openapi one, rebase
+  pinning included.
 
 ### Changed — `validate --all` parses the fleet's C4 documents in one workspace
 
-`loam validate --all` now parses the run's C4 documents — every service model, every active feature's delta, and the landscape — in **one** LikeC4 workspace instead of spinning up one workspace per document: measured **~18.8x faster** (13.7s → 0.73s median) on the committed 120-service benchmark, with peak memory roughly halved (docs/BENCHMARKS.md). No flag, envelope, exit-code, or finding-code change: findings, exit codes, and the `--json` payload are byte-for-byte unchanged (test/likec4-batch-parity.test.ts and test/validate-batch-fallback.test.ts pin this), single-service `validate` and `list` keep their untouched code paths, and the command silently falls back to per-document parsing — same findings, the old speed — where a temporary workspace cannot be created (e.g. a sandbox denying tmpdir writes). Two observable edges: `validate --all` may now create and remove a transient `loam-c4-*` directory in the OS temp dir (never in the docs repo), and all C4 documents are read at one instant at the top of the run rather than lazily across it, so a mid-run edit yields the pre-edit document — strictly closer to the one-snapshot-per-invocation contract the fleet context already documents.
+`loam validate --all` now parses the run's C4 documents — every service model, every active
+feature's delta, and the landscape — in **one** LikeC4 workspace instead of spinning up one
+workspace per document: measured **~18.8x faster** (13.7s → 0.73s median) on the committed
+120-service benchmark, with peak memory roughly halved (docs/BENCHMARKS.md).
 
 ### Changed — a restated component or path-level key can no longer silently revert a landed change
 
-The operation pin's discipline now reaches the two surfaces it deliberately did not: path-item non-method keys (`parameters`, `servers`, `summary`, `x-*`) and every `components/<kind>/<name>`. `loam rebase` records a canonical-form digest per restated surface in a single feature-only root key **`x-loam-baselines`** (its `--json` pins gain kinds `COMPONENT` and `PATH-ITEM`); `validate` and the archive gate grade the record through the same three codes — an unpinned restatement counts into the per-service `openapi.baseline-missing` gating warn (its message now reads "N operation(s), M path-level key(s) and K component(s)"), a stale one refuses `openapi.baseline-stale` naming both digests, and a malformed record or an entry naming nothing the delta restates is `openapi.baseline-invalid`. The merge skips quoted surfaces exactly as it skips quoted operations, and component copying is verdict-driven: **archives that used to exit 0 while a restated component or path-level key overwrote another feature's landed change now refuse until `loam rebase <FEAT>` runs or `--approve` says the overwrite is meant.** `loam validate` moves with it: a feature whose delta restates a path-level key or a component another change has since moved now fails where it passed, on the same `openapi.baseline-stale`, before any archive is attempted. Pre-existing in-flight features need one rebase re-run. Two smaller notes: a feature-declared component that differs from living but is referenced by nothing in the feature document used to be silently dropped and is now copied (reported `openapi.component-modified`); and the record is stripped from every living document the archive writes, the create-a-living-contract branch included.
+The operation pin's discipline now reaches the two surfaces it deliberately did not: path-item
+non-method keys (`parameters`, `servers`, `summary`, `x-*`) and every `components/<kind>/<name>`.
+The merge skips quoted surfaces exactly as it skips quoted operations, and component copying is
+verdict-driven: **archives that used to exit 0 while a restated component or path-level key
+overwrote another feature's landed change now refuse until `loam rebase <FEAT>` runs or `--approve`
+says the overwrite is meant.** `loam validate` moves with it: a feature whose delta restates a
+path-level key or a component another change has since moved now fails where it passed, on the same
+`openapi.baseline-stale`, before any archive is attempted.
 
 ### Changed — the architecture rules became one executable gate
 
-- **New contributor gate `npm run arch:check`** runs every architecture check the design docs state — file-level import cycles, the package graph, the core→commands ban (named and type-only imports; a bare side-effect or dynamic import is not seen), the barrel ban, the console/process boundary with `core/envelope/json.ts` as the one named exception, the child-process timeout/`maxBuffer` policy, and brand-cast containment — each with a negative self-test in `test/arch-gate.test.ts`. CI runs it in place of the bare package-graph check; `AGENTS.md`'s and `CONTRIBUTING.md`'s gate lines moved with it.
-- **Under `--json`, an unreadable loam.json no longer prints a stray line on stderr.** The `config-invalid` envelope message now carries the actual parse problem (stdout stays the single machine-readable stream); in text mode the same sentence prints from the command layer. `loadConfig` became a typed outcome — core's last print outside the envelope adapter is gone.
-- **`loam verify --record`'s git questions are bounded** — a 10-second deadline whose refusal says the deadline fired (a blocking credential helper used to hang the record forever), and a deliberate 64 MiB output cap in place of Node's implicit 1 MiB that refused sound evidence over 1 MiB. The provenance reads (`ls-files`, `check-ignore`, `config`) cap their streamed output the same way, answering "git will not say" rather than a truncated list.
-- **Validated identities are branded types end to end.** Feature ids, docs directories and feature directories join service ids: the smart constructors in `core/kernel/ids/` are the only bridge, the path builders in `core/repo/paths.ts` refuse raw strings at compile time, and `arch:check` fails a brand cast outside the constructor modules. Type-only — no behaviour, output, or format changes.
+- **New contributor gate `npm run arch:check`** runs every architecture check the design docs state
+  — file-level import cycles, the package graph, the core→commands ban (named and type-only imports;
+  a bare side-effect or dynamic import is not seen), the barrel ban, the console/process boundary
+  with `core/envelope/json.ts` as the one named exception, the child-process timeout/`maxBuffer`
+  policy, and brand-cast containment — each with a negative self-test in `test/arch-gate.test.ts`.
+- **Under `--json`, an unreadable loam.json no longer prints a stray line on stderr.** The
+  `config-invalid` envelope message now carries the actual parse problem (stdout stays the single
+  machine-readable stream); in text mode the same sentence prints from the command layer.
+- **`loam verify --record`'s git questions are bounded** — a 10-second deadline whose refusal says
+  the deadline fired (a blocking credential helper used to hang the record forever), and a
+  deliberate 64 MiB output cap in place of Node's implicit 1 MiB that refused sound evidence over 1
+  MiB.
+- **Validated identities are branded types end to end.** Feature ids, docs directories and feature
+  directories join service ids: the smart constructors in `core/kernel/ids/` are the only bridge,
+  the path builders in `core/repo/paths.ts` refuse raw strings at compile time, and `arch:check`
+  fails a brand cast outside the constructor modules.
 
 ### Changed — every multi-file writer now commits through a journaled, crash-consistent transaction
 
-`loam archive` and `loam unarchive` have long committed through a lock, a byte-level compare-and-swap, a snapshot and a fsynced `.loam-commit` journal. Every other writer now has the same property, through a smaller roll-forward transaction: the staged bytes are already durable beside their targets before a journal is written, so a run killed between two renames is FINISHED by the next run — file by file, each verified against the digest recorded before the crash — instead of leaving a half-old, half-new tree nothing could see.
-
-- **`loam rebase`** journals its pin writes. A kill between two services' pin swaps used to leave a feature pinned in one service and not the other, with `doctor` calling the repo healthy.
-- **`loam vouch`** now takes the docs lock for its commit window (the roadmap called this lock missing) — the slow half, reading specs and hashing sources, stays unlocked so independent services' vouches do not serialise — and journals the spec.md/arch.spec.md pair. What a user notices: vouch can now answer **`docs-busy`** (bounded — one ~5 s wait, or two when a predecessor's journal has to be recovered first; nothing stamped) and **`commit-interrupted`**, where it previously raced archives and usually won.
-- **`loam new`** builds its entire scaffold in memory, then commits it under the lock as one set of exclusive creates. A crash mid-scaffold used to leave a partial feature that the re-run refused as `already-exists`; now the journal makes the next writer complete the scaffold, and the refusal is truthful. Two concurrent `new`s for one id serialise: one wins, the loser answers `already-exists` (or `docs-busy`), never an interleaved half-scaffold. `new` can also answer `merge-failed`, `commit-interrupted`, and — when a swap failed AND its rollback could not finish — `rollback-incomplete`, the one refusal that needs a human.
-- **`loam gherkin`** — the writer the roadmap named, a plain write/delete loop in the service repo — commits through staging, the lock and the journal at **`<gherkinDir>/loam/.loam-lock`** / **`.loam-commit`**, two new transient dotfiles in the directory loam already owns. Every write and delete is compared against the exact bytes the plan was graded from: a `.feature` edited since planning refuses **`merge-failed`** naming the file, and one that APPEARED after planning loses an exclusive create and is refused, never overwritten. A zero-op run still takes no lock and creates no root.
-- **`loam verify --record`** recovers (or refuses **`commit-interrupted`**) under its held lock before the authoritative read — the last docs-repo writer that could still silently write over a half-commit.
-- **`loam validate` leads every mode with the new error finding `docs.commit-interrupted`** while a `.loam-commit` sits in the docs repo: a half-merged tree graded green would certify bytes no run produced, and in CI that green merges. Exit 1 where a half-merged repo used to validate clean.
-- **`loam doctor` covers the service repo too:** when loam.json names a service, the same residue scan runs over `<gherkinDir>/loam/` and grades with the same `doctor.docs-locked` / `doctor.commit-interrupted` / `doctor.commit-unreadable` / `doctor.staging-temps` codes; the report gains an additive `serviceWritePath` key. For a version-2 journal, doctor's fix prints the exact re-run command the journal stores.
-- **Recovery is reported, not silent:** any journaled writer that first rolls a predecessor's commit forward carries an additive `recovered` key in its `--json` payload and says so in the human view — docs changing beyond the command's own writes would otherwise read as its doing.
-- **`recovered.feature` and `status`'s `interrupted.feature` no longer always name a feature.** When the journal being recovered was left by `loam vouch` or `loam gherkin`, the field holds the **service** id those commands were committing for, and `recovered.command` / `interrupted.command` can now read `rebase`, `vouch`, `new` or `gherkin` where they only ever read `archive` or `unarchive`. Resolve the value against `command` before feeding it to another loam command.
-- **`loam doctor --json`'s `writePath.intent` now has two shapes.** A journal from the smaller transaction reads `{version: 2, command, rerun, target, …}` — no `feature`, and each file carries the staged `tmp` beside its digests. Branch on `version`, or read `rerun` for the repair; `loam status --json` still spells the same fact as `interrupted.feature`.
-- **`loam gherkin --dry-run` recovers before it plans** — archive's own dry-run precedent. A dry run over a `<gherkinDir>/loam/.loam-commit` left by a killed emission finishes that commit first, so a dry run can move files, and can refuse `docs-busy` or `commit-interrupted` at exit 1 where it always exited 0. The plan it then prints is graded against a whole suite rather than a half-written one; `written: false` still describes only this run's own emission.
-- A journal written by this loam and found by an older one grades as `doctor.commit-unreadable` (fail-safe, human-directed) — worth knowing where fleets pin loam per repo.
+`loam archive` and `loam unarchive` have long committed through a lock, a byte-level
+compare-and-swap, a snapshot and a fsynced `.loam-commit` journal.
+- **`loam rebase`** journals its pin writes.
+- **`loam vouch`** now takes the docs lock for its commit window (the roadmap called this lock
+  missing) — the slow half, reading specs and hashing sources, stays unlocked so independent
+  services' vouches do not serialise — and journals the spec.md/arch.spec.md pair.
+- **`loam new`** builds its entire scaffold in memory, then commits it under the lock as one set of
+  exclusive creates.
+- **`loam gherkin`** — the writer the roadmap named, a plain write/delete loop in the service repo —
+  commits through staging, the lock and the journal at **`<gherkinDir>/loam/.loam-lock`** /
+  **`.loam-commit`**, two new transient dotfiles in the directory loam already owns.
+- **`loam verify --record`** recovers (or refuses **`commit-interrupted`**) under its held lock
+  before the authoritative read — the last docs-repo writer that could still silently write over a
+  half-commit.
+- **`loam validate` leads every mode with the new error finding `docs.commit-interrupted`** while a
+  `.loam-commit` sits in the docs repo: a half-merged tree graded green would certify bytes no run
+  produced, and in CI that green merges.
+- **`loam doctor` covers the service repo too:** when loam.json names a service, the same residue
+  scan runs over `<gherkinDir>/loam/` and grades with the same `doctor.docs-locked` /
+  `doctor.commit-interrupted` / `doctor.commit-unreadable` / `doctor.staging-temps` codes; the
+  report gains an additive `serviceWritePath` key.
+- **Recovery is reported, not silent:** any journaled writer that first rolls a predecessor's commit
+  forward carries an additive `recovered` key in its `--json` payload and says so in the human view
+  — docs changing beyond the command's own writes would otherwise read as its doing.
+- **`recovered.feature` and `status`'s `interrupted.feature` no longer always name a feature.** When
+  the journal being recovered was left by `loam vouch` or `loam gherkin`, the field holds the
+  **service** id those commands were committing for, and `recovered.command` / `interrupted.command`
+  can now read `rebase`, `vouch`, `new` or `gherkin` where they only ever read `archive` or
+  `unarchive`.
+- **`loam doctor --json`'s `writePath.intent` now has two shapes.** A journal from the smaller
+  transaction reads `{version: 2, command, rerun, target, …}` — no `feature`, and each file carries
+  the staged `tmp` beside its digests.
+- **`loam gherkin --dry-run` recovers before it plans** — archive's own dry-run precedent.
+- A journal written by this loam and found by an older one grades as `doctor.commit-unreadable`
+  (fail-safe, human-directed) — worth knowing where fleets pin loam per repo.
 
 ### Changed — recording a verification is now atomic, locked, and compare-and-swap
 
-- **`loam verify --record` / `--results` takes the docs repo's advisory lock and commits the record atomically.** The record used to be one plain `writeFile` from an unlocked read, which lost work three ways: two services recording one feature concurrently could read the same pre-image and the last writer silently discarded the other's attestation; a process killed mid-write left the only record truncated (and every later `--record` refusing on `record-unreadable`); and an edit landing between the read and the write was buried. Now recording holds the same `.loam-lock` archive holds — taken *before* the feature is resolved, so a record can no longer be written into a path an `archive` is renaming — re-reads under it, merges, stages the new bytes beside the target and swaps them in with one rename over a byte compare of the exact pre-image the merge consumed. Two records for different services land in either order and **both attestations survive**: the later run waits out the holder (up to 5 s) instead of refusing. What a user notices: **`docs-busy`** can now come from `verify --record` (a writer held the lock longer than the wait; nothing read or written), and the new **`record-raced`** refusal names a `verification.yaml` that changed underneath anyway — an editor, or a writer that skipped the lock — whose bytes are left untouched; re-running merges over the record as it now stands. A kill mid-record leaves the previous record whole plus a staging temp that `loam doctor` already names under its write-path residue. Two codes reach `verify --record` from the shared commit path with the meanings `archive` already gives them: **`merge-failed`** when the swap itself fails — nothing was recorded, the record is as the last writer left it, and re-running can work — and **`rollback-incomplete`** when the staged bytes could not be cleaned up afterwards, which needs a human and names the file. **And the contention runs both ways:** `loam archive`, `loam unarchive` and `loam rebase` can now refuse **`docs-busy`** because a `verify --record` is holding the lock; those three still refuse on first contact rather than waiting, nothing was read or written, and re-running once the record lands works. Finally, `loam verify` against a `docsDir` that does not exist now refuses **`docs-missing`** in both read and record modes, where it used to surface an `internal` envelope. (Not `services-missing`: a features-only docs repo with no `services/` is a legal shape the legacy all-at-once form records against, and that stays exit 0.)
-
-- **The git questions `verify --record` asks now have a deadline and an output cap.** Every `git` call on the record path (`rev-parse`, `diff`, `show`) runs while the docs lock is held, and none of them was bounded: a git blocked on a credential-helper prompt hung the record forever with the lock in hand, wedging every `archive`, `rebase` and other `--record` in the fleet behind a live pid that stale-lock breaking rightly refuses to touch. Each call now times out at 10 s, refusing with a message that says the deadline fired and names the likely causes (a credential prompt — `GIT_TERMINAL_PROMPT=0` disables those — or a hung remote). **The flip side is deliberate:** a git that legitimately needs longer than 10 s, on a cold clone or a network filesystem, now refuses `repository-unavailable` or `answers-unevidenced` where it used to wait indefinitely and pass. The output cap also moved from Node's implicit 1 MiB to a deliberate 64 MiB: `git show` of an evidence file over 1 MiB used to refuse a sound attestation with **`answers-unevidenced`** ("stdout maxBuffer length exceeded") — a size no user action fixes short of shrinking the source file. Files that large now verify. And the lock file itself is now published by `link(2)` over a fully-written sibling, so it can never be observed empty — the old open-then-write create had a window (and a crash state) where the lock existed with no holder written yet.
-- **A staging failure while recording answers `merge-failed`, not `internal`.** A read-only feature directory or a full disk at the staging step escaped as the one code with no stable meaning; it is now the same refusal archive gives the identical condition — nothing was recorded, the record is as the last writer left it.
-- **`loam doctor` grades a `.loam-lock` that cannot name its holder as damage, and exits 1 where it exited 0.** An empty or unparseable lock file — what a crash inside a lock create used to leave, or an editor's accident — got the warning "wait for it to finish", advice that can never work: stale-lock breaking rightly refuses to interpret a lock it cannot read, so nothing was ever going to release it while every writer refused `docs-busy` forever. It is now a blocker whose fix names the file to delete, joining the unreadable `.loam-commit` in the blocker family (that one's remedy remains "hand it to a human", not deletion). **What a `--json` consumer notices:** the finding keeps its `doctor.docs-locked` code but arrives with `severity: "blocker"`, so `healthy` is `false` and a preflight that passed over such a lock now fails. The finding's prose also moved: the dead-holder message now names all four writers (`archive`, `unarchive`, `rebase`, `verify --record`), and the live-holder message says "another loam command is writing this docs repo" instead of naming two of the four.
-- **A `verification.yaml` that is a symlink to a target that does not exist now refuses `record-unreadable`, naming the broken link.** The read side used to call it absent while the commit's exclusive create saw the link itself and refused — so every `--record` answered `record-raced` with advice (re-run) that could never work. A symlink to a real record still reads through the link, and the commit still replaces the link itself rather than writing through it, so a link pointing outside the docs repo can never make loam write outside it.
-- **A hand-edited record whose summary balances its books with a negative count is refused.** `summary.unanswered: -2` made a record that contradicts its own claims pass every consistency check and report `verified` beside two unconfirmed claims, in `status`, `list` and the frozen verdict alike. A count is now a nonnegative integer, so the record refuses **`record-unreadable`** like any other self-contradictory one.
+- **`loam verify --record` / `--results` takes the docs repo's advisory lock and commits the record
+  atomically.** The record used to be one plain `writeFile` from an unlocked read, which lost work
+  three ways: two services recording one feature concurrently could read the same pre-image and the
+  last writer silently discarded the other's attestation; a process killed mid-write left the only
+  record truncated (and every later `--record` refusing on `record-unreadable`); and an edit landing
+  between the read and the write was buried. A kill mid-record leaves the previous record whole plus
+  a staging temp that `loam doctor` already names under its write-path residue.
+- **The git questions `verify --record` asks now have a deadline and an output cap.** Every `git`
+  call on the record path (`rev-parse`, `diff`, `show`) runs while the docs lock is held, and none
+  of them was bounded: a git blocked on a credential-helper prompt hung the record forever with the
+  lock in hand, wedging every `archive`, `rebase` and other `--record` in the fleet behind a live
+  pid that stale-lock breaking rightly refuses to touch.
+- **A staging failure while recording answers `merge-failed`, not `internal`.** A read-only feature
+  directory or a full disk at the staging step escaped as the one code with no stable meaning; it is
+  now the same refusal archive gives the identical condition — nothing was recorded, the record is
+  as the last writer left it.
+- **`loam doctor` grades a `.loam-lock` that cannot name its holder as damage, and exits 1 where it
+  exited 0.** An empty or unparseable lock file — what a crash inside a lock create used to leave,
+  or an editor's accident — got the warning "wait for it to finish", advice that can never work:
+  stale-lock breaking rightly refuses to interpret a lock it cannot read, so nothing was ever going
+  to release it while every writer refused `docs-busy` forever. **What a `--json` consumer
+  notices:** the finding keeps its `doctor.docs-locked` code but arrives with `severity: "blocker"`,
+  so `healthy` is `false` and a preflight that passed over such a lock now fails.
+- **A `verification.yaml` that is a symlink to a target that does not exist now refuses
+  `record-unreadable`, naming the broken link.** The read side used to call it absent while the
+  commit's exclusive create saw the link itself and refused — so every `--record` answered
+  `record-raced` with advice (re-run) that could never work.
 
 ### Changed — the OpenSpec compatibility baseline moves to v1.9.0, and the gate that backs it runs again
 
-- **`audit-openspec` and `migrate-openspec` now report v1.9.0 as the certified release baseline.** The banner line and `baselines.release` under `--json` carry `1.9.0` / `2826b8889e5223a9a8095d4428b60b56597e1020` (2026-08-13, and the tip of `main` when pinned) instead of `1.7.0` / `4e16790`. The payload shape is unchanged and `baselines.mainCanary` still names the post-v1.7 canary, now explicitly as a regression pin rather than a claim about where `main` points. What moved with it: the corpus gate's `--baseline release` is the v1.9.0 corpus — 211 Markdown files, 746 requirements, 2317 scenarios, every file parsed and round-tripped — with the former release pin available as `--baseline legacy` and the canary unchanged, all three in the scheduled CI matrix. The seven vendored fixtures were re-fetched at the v1.9.0 commit; six were already byte-identical, and `living/openspec-conventions.spec.md` moved only where upstream rewrote its capability paths as `<capability-path>/` to document nested capabilities. **What a migration notices:** nothing in the mapping or apply path changes, and the shapes v1.8/v1.9 added — nested capability directories, `skip_specs`, `retire_capabilities`, `initiative`, Stores, the `explorations/`, `initiatives/` and `work/` planning roots — are still inventoried rather than converted, as `MIGRATING-from-OpenSpec.md` describes.
+- **`audit-openspec` and `migrate-openspec` now report v1.9.0 as the certified release baseline.**
+  The banner line and `baselines.release` under `--json` carry `1.9.0` /
+  `2826b8889e5223a9a8095d4428b60b56597e1020` (2026-08-13, and the tip of `main` when pinned) instead
+  of `1.7.0` / `4e16790`.
 
 ### Fixed
 
-- **The OpenSpec corpus gate had not run for eight days: it failed at module resolution, not at a corpus.** `scripts/check-openspec-corpus.ts` imported `../src/core/spec.js`, which moved into `src/core/document/` when core's leaves became packages, so every scheduled and manual invocation died with `ERR_MODULE_NOT_FOUND` while three documents pointed at it as the evidence for the compatibility claim. The import is fixed, and the reason it could break unseen is fixed with it: `tsconfig.json` compiles `src` alone, so nothing under `scripts/` was ever typechecked. `npm run typecheck` now also runs `tsconfig.scripts.json`, which fails on exactly this — a gate that only runs weekly cannot be the first thing to notice its own tooling broke.
+- **The OpenSpec corpus gate had not run for eight days: it failed at module resolution, not at a
+  corpus.** `scripts/check-openspec-corpus.ts` imported `../src/core/spec.js`, which moved into
+  `src/core/document/` when core's leaves became packages, so every scheduled and manual invocation
+  died with `ERR_MODULE_NOT_FOUND` while three documents pointed at it as the evidence for the
+  compatibility claim.
 
 ### Documentation
 
-- Added the evidence-backed `ROADMAP.md`, updated the product comparison to OpenSpec v1.9 while preserving the exact v1.7 compatibility baseline, documented AsyncAPI/authorization/response-governance joins, and reconciled release, pilot, contributor, security and generated-agent guidance with the implemented contracts. `WORKFLOW.md`, `ROADMAP.md` and `CONTRIBUTING.md` are now part of the published package and its release/package smoke checks.
+- Added the evidence-backed `ROADMAP.md`, updated the product comparison to OpenSpec v1.9 while
+  preserving the exact v1.7 compatibility baseline, documented
+  AsyncAPI/authorization/response-governance joins, and reconciled release, pilot, contributor,
+  security and generated-agent guidance with the implemented contracts.
 
 ### Added — the decision layer gets somewhere to live: outlines, an authorization vocabulary, and a walk that asks for both
 
-A baseline can name every endpoint of a service and none of the guards behind them — the permission checks, the fields required only in combination, the transitions a request is refused for. Nothing downstream notices: `api.ungoverned` grades operations against requirements, never branches against scenarios, and `UNCHECKED` has always said COMPLETENESS is unmeasurable. This group is the three places that were actually fixable.
-
-- **A markdown table in a scenario body is now a `Scenario Outline`.** `loam gherkin` emits the table as `Examples` — one row per case, columns padded, deterministic to the byte — instead of dropping it into the scenario description where cucumber ran it as one vacuous scenario. This is what makes a matrix writable at all: a permission matrix is one parameterised test in the code it came from and one outline here, where before it was twenty near-identical scenarios, which is the cost at which an author stops enumerating. Nothing downstream changed and nothing had to: the digest already hashed the whole body, so an edited cell is an edited scenario (`gherkin.stale` fires on it); `parseStampedFeature` already read the `Scenario Outline:` keyword; and `runnerAnswers` already collected every report element sharing one digest and confirmed the claim only when all of them passed — which is exactly one row per case. A table loam cannot read (a row that disagrees with the header, a header with no rows) stays in the description as before, and the emission now **says so per scenario** — text and `malformedExamples` under `--json` — because the file it produces is valid Gherkin and a clean report over twenty silently-collapsed cases is the one failure nothing else could surface.
-- **`architecture/permissions.yaml` — the fleet's authorization vocabulary — and the `Requires:` line that joins to it.** A third spine beside `Operations:` and `Covers:`, because neither can carry a permission: the cardinality is wrong for an operation, a permission is not a C4 element, and OpenAPI's `security` carries permission NAMES only for oauth2/openIdConnect — the spec requires an empty scope array for `http bearer` and `apiKey`, which is what most of a legacy fleet authenticates with. It also answers only for the CALLER, while a permission is as often checked on an entity inside the request. The unit is the pair `<subject>/<permission>` (`user/payments:refund`, `profile/channel:send:sms`) for that reason. Three codes: **`permissions.unknown`** (error — an entry the vocabulary does not declare; an ERROR where its `Covers:` sibling is a warning, because an invented permission reads exactly like a real one in the requirement, in the generated scenario and in the test somebody then writes from it), **`permissions.invalid`** (the file exists and does not read as a vocabulary — reported alone, since grading every `Requires:` line against it would be a cascade rather than a diagnosis), and **`permissions.unenforced`** (warn — a declared permission no requirement anywhere in the fleet names, the mirror of `api.ungoverned`). A fleet with no `Requires:` line anywhere never sees any of them; the line is the opt-in, so a `Requires:` with no vocabulary at all refuses rather than passing silently. Deliberately NOT a domain model: a flat list of names under a subject kind, no entities and no resources — a permission that varies by resource is separate names or a column in an Examples table. What the vocabulary says is true of the running system is checked by nothing and now says so in `unchecked[]`, `owned_by` and `enforced_by` included.
-- **The adopt walk asks for the decision layer, and the hand-back reports it.** The HTTP stop asked for "the operation set, in full" and got exactly that; it now asks for the decisions inside each operation and for both counts. The tests stop is no longer the last sweep it read as — it is stated as the PRIMARY source for scenarios (a behaviour a test already pins is written from that test; the code is read for what no test covers), and it asks for the shape to carry across too, since a parameterised test is one outline rather than one scenario per case. The hand-back grew from four things to seven: the branch-to-scenario count per operation, how well the service is covered by its own tests and how many of them became scenarios, and **three behaviours the service has that the documents do not describe** — phrased that way on purpose, because "is this enough to rebuild the service?" is answered yes by every agent that ever wrote a baseline, the only thing it can be checked against being the document just written. None of these is a check, and `REPRODUCIBILITY` stays in `unchecked[]`; they make the report falsifiable, which is a different thing and the only one available here.
-- **`api.response-ungoverned` (warn) — a declared 4xx/5xx response no scenario reaches.** `api.ungoverned` grades whole OPERATIONS against requirements, so an endpoint with one happy-path requirement and twelve declared failure codes was fully governed by every check loam had — and the refusals are precisely where a service's decision layer surfaces. The contract is the only artifact in the corpus that already enumerates them, so `Operation` now carries `failureCodes` (exact three-digit 4xx/5xx keys; `default` and the `4XX`/`5XX` wildcards are excluded, since neither names a case a scenario could be written for). A scenario "reaches" a code when the number appears as a standalone token in its body, **`Examples` rows included** — which is why this arrived with outline support and not before: a status column is where a matrix puts its codes. Warn, not error: a service may legitimately describe a refusal in words, and an error would teach authors to paste numbers into prose. Operations no requirement governs are skipped — `api.ungoverned` already names those, and reporting their codes too is one defect counted twice.
-- **The message and scheduled-work walk stops ask for their decisions too.** The HTTP stop was the first to be widened; the other two surfaces carried the same gap. The message stop now asks what a consumer refuses to act on — which messages are filtered and on what field, what happens to one whose entity is gone, what is idempotency-keyed against a replay, what is dead-lettered rather than retried — none of which asyncapi.yaml can express. The scheduled-work stop asks which rows a reconciler skips, what a retry loop gives up on, what a migration does when it finds the state already fixed: "runs nightly" is a requirement with no behaviour in it.
-- **`sources` is described as digest input rather than a reading list.** Nobody follows those paths and nothing asks them to — the value is that `vouch` hashes their content so a later `validate` can say the code moved. The brief now says so, and says what dishonesty costs in both directions: a padded path still gets hashed, so its next change reports as drift in a document it never described, and a path that was read but left off moves under the document in silence.
-- **EARS is the stated form for a requirement body** — `WHEN <trigger> THE SYSTEM SHALL <response>`, `IF <precondition> THEN …`, `WHERE <feature is included> …`. Nothing checks it, and the brief says so where it says it: the grammar forces the trigger and the response to be named separately, while free prose lets a requirement read as complete while stating no condition at all, which is the exact shape a guard collapses into when it is summarised.
+- **A markdown table in a scenario body is now a `Scenario Outline`.** `loam gherkin` emits the
+  table as `Examples` — one row per case, columns padded, deterministic to the byte — instead of
+  dropping it into the scenario description where cucumber ran it as one vacuous scenario.
+- **`architecture/permissions.yaml` — the fleet's authorization vocabulary — and the `Requires:`
+  line that joins to it.** A third spine beside `Operations:` and `Covers:`, because neither can
+  carry a permission: the cardinality is wrong for an operation, a permission is not a C4 element,
+  and OpenAPI's `security` carries permission NAMES only for oauth2/openIdConnect — the spec
+  requires an empty scope array for `http bearer` and `apiKey`, which is what most of a legacy fleet
+  authenticates with. Three codes: **`permissions.unknown`** (error — an entry the vocabulary does
+  not declare; an ERROR where its `Covers:` sibling is a warning, because an invented permission
+  reads exactly like a real one in the requirement, in the generated scenario and in the test
+  somebody then writes from it), **`permissions.invalid`** (the file exists and does not read as a
+  vocabulary — reported alone, since grading every `Requires:` line against it would be a cascade
+  rather than a diagnosis), and **`permissions.unenforced`** (warn — a declared permission no
+  requirement anywhere in the fleet names, the mirror of `api.ungoverned`).
+- **`api.response-ungoverned` (warn) — a declared 4xx/5xx response no scenario reaches.**
+  `api.ungoverned` grades whole OPERATIONS against requirements, so an endpoint with one happy-path
+  requirement and twelve declared failure codes was fully governed by every check loam had — and the
+  refusals are precisely where a service's decision layer surfaces.
+- **`sources` is described as digest input rather than a reading list.** Nobody follows those paths
+  and nothing asks them to — the value is that `vouch` hashes their content so a later `validate`
+  can say the code moved.
 
 ### Fixed
 
-- **An optional `arch.spec.md` could refuse an entire `--all` run.** The new fleet-wide `Requires:` sweep read both requirement documents of every service without checking existence first, and `FleetContext.readRequirements` throws ENOENT — which surfaced as `repository-unavailable` with no targets and nothing validated. Caught before release by the vocabulary's own test; recorded because the shape (an absent OPTIONAL artifact taking down a fleet run) is worth recognising again.
+- **An optional `arch.spec.md` could refuse an entire `--all` run.** The new fleet-wide `Requires:`
+  sweep read both requirement documents of every service without checking existence first, and
+  `FleetContext.readRequirements` throws ENOENT — which surfaced as `repository-unavailable` with no
+  targets and nothing validated.
 
 ### Changed — three archives that used to exit 0 now refuse, because each one was a silent loss
 
-- **Unpinned deltas gate the archive.** `delta.baseline-missing` and `openapi.baseline-missing` keep their warn severity — `loam validate` stays green, the documents are legal — but both now carry `gates`, so `loam archive` (dry run included) refuses instead of merging. They were advisory, and advisory was the hole: a feature that merely *quoted* a living requirement or operation it never meant to touch reverted another feature's landed change with `+0 ~1 -0`, exit 0, and nobody told. The fix is unchanged and one command — `loam rebase <FEAT>` — and `--approve` still archives unpinned when the loss is meant. An OpenSpec-migrated corpus (whose deltas never carried `Based-On:`) is not stranded: rebase per staged feature was already the documented follow-up; it is now the gate's answer too.
-- **A scaffold nobody edited cannot archive.** Two new gating warnings from `loam validate --feature`, `loam status` and the archive gate: **`scaffold.placeholder`** — a feature document still carries `loam new`'s exact template text (a `TODO — name the behaviour` requirement, a `TODO — name the case` scenario, an `<angle-bracket>` fill-in, a `TODO — what this service owns` description) — and **`intent.empty`** — intent.md is missing or says nothing outside the scaffold's own comments. Before them, an untouched `loam new` scaffold validated clean and archived a literal TODO requirement into the living spec at exit 0. Both are warnings that gate: validate stays exit 0 while the feature is mid-authoring, archive refuses until a person writes the content, `--approve` overrides. The spec template's example requirement now ships *inside* its HTML comment (the arch template's mechanism), so a fresh scaffold declares no requirement at all — `loam delta` on one now projects zero requirements where it used to project the placeholder.
-- **A feature's own broken openapi.yaml is now named.** `validate --feature` reports **`openapi.invalid`** (error — the same code the living contract gets) when a feature's `specs/<svc>/openapi.yaml` exists but does not parse, and suspends the service's contract-axis checks instead of grading against the empty parse — which used to skip every baseline pin and removal marker in the broken file silently and false-fire `spec-api.op-undefined` against requirements whose operations the unreadable file defined. Archive already refused the merge at plan time; the refusal now arrives where the authoring loop is. Because `validate --all` and the bare positional `loam validate <FEAT>` grade features through the same path, **a repo whose only defect is a broken feature contract exits 1 where it exited 0** — a CI job branching on `validate --all` sees the new error too.
+- **Unpinned deltas gate the archive.** `delta.baseline-missing` and `openapi.baseline-missing` keep
+  their warn severity — `loam validate` stays green, the documents are legal — but both now carry
+  `gates`, so `loam archive` (dry run included) refuses instead of merging.
+- **A scaffold nobody edited cannot archive.** Two new gating warnings from
+  `loam validate --feature`, `loam status` and the archive gate: **`scaffold.placeholder`** — a
+  feature document still carries `loam new`'s exact template text (a `TODO — name the behaviour`
+  requirement, a `TODO — name the case` scenario, an `<angle-bracket>` fill-in, a
+  `TODO — what this service owns` description) — and **`intent.empty`** — intent.md is missing or
+  says nothing outside the scaffold's own comments.
+- **A feature's own broken openapi.yaml is now named.** `validate --feature` reports
+  **`openapi.invalid`** (error — the same code the living contract gets) when a feature's
+  `specs/<svc>/openapi.yaml` exists but does not parse, and suspends the service's contract-axis
+  checks instead of grading against the empty parse — which used to skip every baseline pin and
+  removal marker in the broken file silently and false-fire `spec-api.op-undefined` against
+  requirements whose operations the unreadable file defined.
 
 ### Fixed — the fleet map's containers are visible to the checks that guard removals and ordering
 
-- The element→service resolver was called without the enumerated fleet in exactly the places that are repository-aware: the removal gate's consumer scan, the feature dependency graph, coherence's edge grading, arch coverage and its `Covers:` matcher, the verify checklist, and `loam delta`'s projection. An edge drawn into a modelled container — `checkoutWeb -> paymentService.api` — therefore resolved to a service called `api` that has never existed: `openapi.remove-op-consumed` answered "nobody calls it" while retiring an operation that container still consumed, `loam dependencies` could invent or drop an ordering edge, and `loam delta` briefed the provider with no inbound call and the consumer with a phantom target. All of these now resolve through the fleet's `services/` enumeration (plus the feature's own `specs/`, where a service it introduces lives), exactly as `validate --landscape` always did.
-- **Two consequences a green repo may notice, and one is a migration event.** First, checks now grade container-targeted edges against the owning service instead of a phantom, so previously silent breaches can surface. Second, for an **active** feature whose delta draws an op-tagged edge into a modelled container, the resolved service name is part of every `c4.calls` claim id — so `loam verify`'s checklist digest changes, an existing `verification.yaml` reports **STALE**, and its verdict drops from `attested`/`verified` to `unverified` until the feature is re-recorded (one `loam verify --record` or `--results` run against the re-derived checklist). This is the same one-time cost the digest salts paid before it (`core/gherkin/digest.ts` records that precedent); archived features are untouched — their records are frozen.
-
+- The element→service resolver was called without the enumerated fleet in exactly the places that
+  are repository-aware: the removal gate's consumer scan, the feature dependency graph, coherence's
+  edge grading, arch coverage and its `Covers:` matcher, the verify checklist, and `loam delta`'s
+  projection.
 
 ### Fixed — edge metadata loam parsed but did not keep
 
-- **`loam archive` dropped an event binding at exit 0.** What makes two C4 edges the same edge accounted for `metadata { op }` and ignored `metadata { publishes }` and `metadata { consumes }` entirely. A feature edge differing from a living one only in those keys therefore hashed identically, was counted as already present, and never reached `architecture/landscape.likec4` — with archive printing `architecture: merged into landscape.likec4 — +0 relationship(s)` and closing on "living spec + landscape are now complete + current". Worse variants: a living edge already carrying a *different* message swallowed the new one, and two feature edges publishing different messages collapsed to one, the survivor splicing whichever authored statement came first. The loss was total and silent — the landscape is the fleet's only record of event flow, so `spine.message-undefined` and `spine.message-unproduced` could never fire on the missing binding, and the delta that stated the intent had been moved into `features/archive/` by the same command. All three spine keys are now in the identity, in `relKey`, `relSortKey` and the statement-matching pool alike. **What a fleet notices:** the splicer is add-only and has no amend path, so a feature that binds a message to an edge the landscape already has now lands a *second* edge carrying the metadata, beside the bare one, instead of merging as nothing — visible, and reconcilable by hand, where the old behaviour was neither. Re-archiving an unchanged delta stays idempotent.
-- **An edge naming two operations reported as naming none.** A key written twice in one `metadata { }` block — `metadata { op 'authorize' op 'capture' }` — is legal LikeC4 and parses without an error, and loam dropped *both* values: the edge then read as carrying no operation link at all, so `c4.op-link-missing` told the author the opposite of what they had written, and every join that operation should have made silently did not. The first value now wins, which is what the archive splice's own text scanner already took — the two readers disagreeing about a binding is precisely the failure that pairing exists to prevent. The later values are still dropped; loam models one id per key per edge. The same applies to `publishes`, `consumes` and an element's `service` binding. **A repo may newly report findings on such an edge** — `spine.op-undefined` where the named operation is not in the target's contract — because the edge now joins where it used to be invisible.
+- **`loam archive` dropped an event binding at exit 0.** What makes two C4 edges the same edge
+  accounted for `metadata { op }` and ignored `metadata { publishes }` and `metadata { consumes }`
+  entirely.
 
 ### Added — fleet-shape and contract-depth checks
 
-These checks are specified with repository-owned synthetic docs fixtures and compare artifacts loam already parses. None reads a line of code, and all of them are warnings — `--strict` is the escalation, plain exit codes do not move.
-
-- **`landscape.platform-candidate` (warn)** — an `#external` element consumed by three or more distinct services and not tagged `#platform`. The hairball arrives at service three: one inbound edge per service until the fleet view is unreadable, and deleting the element loses which services depend on a shared identity provider — the question the map answers during an incident. The scaffold now ships the fix: `loam init --create` writes `tag platform` in the specification block and two views — a `fleet` view with `exclude element.tag = #platform`, and a `platform` view whose predicate is the spelling that draws edges, `include * -> element.tag = #platform` (the obvious `include element.tag = #platform` renders the platform boxes with no consumers, which is why it is scaffolded rather than left to memory). Existing docs repos adopt the block by hand-editing `architecture/landscape.likec4` — the scaffold never overwrites.
-- **`landscape.datastore-private` / `landscape.datastore-shared` (warn)** — a fleet-level `database` element graded by its consumer count. One consumer: the drawing is false — the store is that service's internals; move it into `services/<id>/model.likec4` as a nested container so the fleet map retains only cross-service topology. Two or more: the strongest coupling two services can have, stated rather than inferred — and shared means the same DATA; two schemas on one host are operational blast radius, a runbook fact, not an edge. `#external` does not exempt a datastore: private stores get tagged external precisely to silence `landscape.service-undocumented`.
-- **`c4.no-relationships` (warn)** — a parsed model with elements and zero relationships, when its own evidence says it should reach something: more than one nested element, or dependencies declared in this service's health.yaml. Evidence-gated on purpose — the bare root-plus-one-container baseline stays silent, because nothing proves it thin and warning on it would teach agents to invent edges. To support this, `readHealth` now reads the `dependencies:` ids (per entry: `id`, `service`, `name`, or a plain string, because the accepted input forms use more than one key); everything else in health.yaml stays prose no check reads.
-- **`health.dependency-unmodelled` (warn)** — every `dependencies:` id in health.yaml must resolve in the service's OWN `model.likec4`, by element id, `metadata { service }` binding, or title (exact match, did-you-mean hints, no case folding). The model, never the landscape: the landscape carries what crosses the service boundary, the model carries everything the service touches — which is the set the on-call file must agree with. Without this check, a synthetic health fixture can keep a disabled optional service registry as `critical: startup` and preserve a false operational claim under a green validator. The reverse check (a model edge with no health entry) is deliberately absent: health.yaml lists the critical dependencies, the model lists all of them — the containment runs one way.
-- **The contract-depth probes** — form validated and depth did not: an operation whose one response is `description: OK`, a message whose payload is bare `type: object`, and a `$ref` to a schema nobody wrote all validated exactly as cleanly as complete contracts. Four warns close it: **`openapi.response-undescribed`** (no response declares a schema while at least one should — 204/304 excepted), **`asyncapi.payload-undescribed`** (a payload declaring no shape at all; a non-JSON `schemaFormat` is never judged, so the Avro migration stays a document change), and **`openapi.ref-unresolved` / `asyncapi.ref-unresolved`** (internal `$ref`s to nothing — on the async axis these used to vanish silently). All are PRESENCE probes: nothing reads what a schema says, only whether one was declared. `openapi.ref-unresolved` keeps its error severity at archive plan time, where the merge is about to write the breach into the living contract.
-- **`spine.message-external` (warn), and `spine.message-unproduced` narrows to mean what it says** — a message produced outside the fleet was inexpressible: the landscape said the producer was `#external` and the error fired anyway, so a truthful map cost a red build and the exit ramp was deleting the link. An `#external` element (or ancestor) whose edge declares `metadata { publishes '<msg>' }` is now a recognized producer — positive evidence, never suspended by unreadable contracts, and a tag on an element that resolves to a real `services/<id>/` does not count. The contract question then moves to the consuming service's own asyncapi.yaml: `spine.message-external` warns while it defines no shape for the message and goes silent once it does. `spine.message-unproduced` (still error) now means: nobody produces this, anywhere.
+These checks are specified with repository-owned synthetic docs fixtures and compare artifacts loam
+already parses.
+- **`landscape.platform-candidate` (warn)** — an `#external` element consumed by three or more
+  distinct services and not tagged `#platform`.
+- **`landscape.datastore-private` / `landscape.datastore-shared` (warn)** — a fleet-level `database`
+  element graded by its consumer count.
+- **`c4.no-relationships` (warn)** — a parsed model with elements and zero relationships, when its
+  own evidence says it should reach something: more than one nested element, or dependencies
+  declared in this service's health.yaml.
+- **`health.dependency-unmodelled` (warn)** — every `dependencies:` id in health.yaml must resolve
+  in the service's OWN `model.likec4`, by element id, `metadata { service }` binding, or title
+  (exact match, did-you-mean hints, no case folding).
+- **The contract-depth probes** — form validated and depth did not: an operation whose one response
+  is `description: OK`, a message whose payload is bare `type: object`, and a `$ref` to a schema
+  nobody wrote all validated exactly as cleanly as complete contracts. Four warns close it:
+  **`openapi.response-undescribed`** (no response declares a schema while at least one should —
+  204/304 excepted), **`asyncapi.payload-undescribed`** (a payload declaring no shape at all; a
+  non-JSON `schemaFormat` is never judged, so the Avro migration stays a document change), and
+  **`openapi.ref-unresolved` / `asyncapi.ref-unresolved`** (internal `$ref`s to nothing — on the
+  async axis these used to vanish silently).
+- **`spine.message-external` (warn), and `spine.message-unproduced` narrows to mean what it says** —
+  a message produced outside the fleet was inexpressible: the landscape said the producer was
+  `#external` and the error fired anyway, so a truthful map cost a red build and the exit ramp was
+  deleting the link.
 
 ### Changed — the adopt protocol makes deployment evidence boundaries explicit
 
-- **Deployment manifests override configuration files**, and they usually live in another repository — stated at the walk stop that opens them, with the ordering that makes it matter: an outbound edge only configuration attests is provisional until the manifests confirm nothing switches it off. A capability disabled at deploy is not a dependency; it lands in runbook.md's new "configured but not a dependency, and why" list. The out-of-repo manifest read is recorded in the runbook's prose — never in `sources`, where `sources.path-outside` would grade the honesty an error. In the synthetic example, repository configuration wires an optional service registry while a deployment value disables it.
-- **Effective configuration and dependency semantics get a named home**: they are arch requirements — prose with a `Covers:` line naming the element or edge the fact decides ("retries: -1 is unbounded") — stated in the generated AGENTS.md and at the walk stops that surface such facts, which now land arch.spec.md. loam never verifies the values; naming the home is the point.
-- **The reproducibility bar is stated**, beside the honest half: `loam validate` grades form and joins, never depth, so green means the files agree with each other — and `unchecked[]` now says nothing measures a shallow baseline against the service. **"Done" is defined once**: `--service` clean from inside the service's own repo, plus `--all` with no `landscape.*` finding — the fleet run is never silent (`sources.unverifiable-from-here` is a per-service confirmation), so "work until validation is quiet" was a loop with no exit.
-- **`api.covered` carries both counts** — operations governed and living requirements — because the ratio is the one signal that lets a reviewer smell a thin baseline from the summary line.
+- **The reproducibility bar is stated**, beside the honest half: `loam validate` grades form and
+  joins, never depth, so green means the files agree with each other — and `unchecked[]` now says
+  nothing measures a shallow baseline against the service.
+- **`api.covered` carries both counts** — operations governed and living requirements — because the
+  ratio is the one signal that lets a reviewer smell a thin baseline from the summary line.
 
 ### What a `--json` consumer notices, upgrading to this release
 
-- **Repos that were green can newly show warnings** — the eight codes above, plus `agents.stale` from the version bump itself (and this time the AGENTS.md review is real work: the code tables materially changed). `valid` stays true and plain exit codes stay 0, but **a `--strict` CI job that exited 0 yesterday can exit 1 today**. A freshly migrated OpenSpec repo now reports `openapi.response-undescribed` as its honest state — OpenSpec never carried response schemas.
-- **One red case turns green**: a consumed message whose only producer is an `#external` `publishes` edge no longer errors. Fleets that took the old exit ramp — deleting the link to get green — get no signal to restore it; re-add the edge and the consumption, the map is allowed to be truthful now.
-- **`landscape.matched` no longer appears** on a fleet where any fleet-shape warning fires — a map with a shape warning did not fully agree.
-- No envelope keys changed shape; the new findings ride the existing `findings[]`/`details` contract, and prose (including `api.covered`'s message) was reworded freely as always.
+- **Repos that were green can newly show warnings** — the eight codes above, plus `agents.stale`
+  from the version bump itself (and this time the AGENTS.md review is real work: the code tables
+  materially changed). `valid` stays true and plain exit codes stay 0, but **a `--strict` CI job
+  that exited 0 yesterday can exit 1 today**. A freshly migrated OpenSpec repo now reports
+  `openapi.response-undescribed` as its honest state — OpenSpec never carried response schemas.
 
-A feature's per-service deltas live in `features/<FEAT>/specs/<svc>/`, and that `<svc>` is a directory name somebody typed — but unlike `--service`, nothing ever asked the id grammar about it. `specs/Payment Service/` (with the space) validated green — `✓ Payment Service: requirements covered`, even, because a tagged element whose *title* matched the directory counted as introducing the service — and `loam archive` then exited 0 and materialised `services/Payment Service/`. The very next `loam validate --all` failed it with `service.id-invalid`: a directory loam itself wrote, and one no loam command can address or re-create.
+- **One red case turns green**: a consumed message whose only producer is an `#external` `publishes`
+  edge no longer errors. Fleets that took the old exit ramp — deleting the link to get green — get
+  no signal to restore it; re-add the edge and the consumption, the map is allowed to be truthful
+  now.
 
-New finding: **`delta.service-id-invalid`** (error), from `loam validate --feature`, `loam status`, and the archive gate, naming the `specs/<svc>/` directory and the exact rule the name breaks — the same sentence `service.id-invalid` uses, Windows-reserved stems (`NUL`) and trailing dots (`payments.`) included. `loam archive` refuses on it before anything joins the name into a path, `--dry-run` included, and **`--approve` does not override it**: which service you meant is a judgment call, but a name the grammar refuses is a directory loam can never address, mechanically. The fix is a rename of the specs/ directory.
+- **`landscape.matched` no longer appears** on a fleet where any fleet-shape warning fires — a map
+  with a shape warning did not fully agree.
 
-The same guarantee on the architecture axis. A tagged element's explicit `metadata { service '…' }` binding is a name the landscape merge splices into the living `architecture/landscape.likec4` verbatim, and the archive probes `services/<binding>/` with it — `metadata { service '../outside-svc' }` parses in LikeC4 without a single error, validated with nothing but a warning, archived at exit 0, and the `../` collapsed the probe right out of `services/`. The next `validate --all` then failed the very map archive had just written (`landscape.binding-unknown`). New coherence issue: **`c4.service-binding-invalid`** (error), from `loam validate --feature`, `loam status`, and the archive gate, naming the element and the rule its binding breaks; **`--approve` does not override it either**, for the same reason. The check's scope is the splice's, not the tag's: the merge carries a tagged element's authored block into the living landscape byte for byte, untagged children included, so an untagged `container` nested inside a tagged system — `metadata { service '../outside-svc' }` on the child — is held to the same grammar, because its binding reaches the living map exactly as its parent's does. A prose title with no binding stays legal C4 — a title becomes a path only through `specs/<svc>/`, which the finding above now guards. Together the two codes close every text→path route into the archive merge.
-
-**What a `--json` consumer notices.** `loam validate --feature` can now exit 1 on repos that used to pass, with `delta.service-id-invalid` or `c4.service-binding-invalid` in `findings[]` — and the same two findings reach `loam validate --all` and the bare positional `loam validate <FEAT>`, which grade every feature through the same check: a repo that exited 0 yesterday exits 1 today, and a CI job running `validate --all` fails naming the feature. The fix is renaming the `specs/<svc>/` directory or editing the `metadata { service }` binding, never a flag. `loam archive` refuses both with the envelope code `not-coherent` and the offending finding in `issues[]`, whether or not `--approve` was passed; a refusal `--approve` cannot move now also says "--approve does not override this" in `error.message`, and every issue `archive --json` emits (`issues[]`, `warnings[]`, `overridden[]`) carries a new additive `overridable` key — whether `--approve` can move it — so a consumer branches on data instead of keeping its own code list. One ordering change rides along: the illegal `specs/<svc>/` name is refused ahead of the conflict-marker scan, so a feature carrying both defects reports `not-coherent` where it used to report `merge-failed`. A `services/<bad>/` a previous archive already created is repaired by renaming — the `service.id-invalid` message spells the three places the old name is written.
+- No envelope keys changed shape; the new findings ride the existing `findings[]`/`details`
+  contract, and prose (including `api.covered`'s message) was reworded freely as always. A feature's
+  per-service deltas live in `features/<FEAT>/specs/<svc>/`, and that `<svc>` is a directory name
+  somebody typed — but unlike `--service`, nothing ever asked the id grammar about it.
+  `specs/Payment Service/` (with the space) validated green —
+  `✓ Payment Service: requirements covered`, even, because a tagged element whose *title* matched
+  the directory counted as introducing the service — and `loam archive` then exited 0 and
+  materialised `services/Payment Service/`. The very next `loam validate --all` failed it with
+  `service.id-invalid`: a directory loam itself wrote, and one no loam command can address or
+  re-create. New finding: **`delta.service-id-invalid`** (error), from `loam validate --feature`,
+  `loam status`, and the archive gate, naming the `specs/<svc>/` directory and the exact rule the
+  name breaks — the same sentence `service.id-invalid` uses, Windows-reserved stems (`NUL`) and
+  trailing dots (`payments.`) included. `loam archive` refuses on it before anything joins the name
+  into a path, `--dry-run` included, and **`--approve` does not override it**: which service you
+  meant is a judgment call, but a name the grammar refuses is a directory loam can never address,
+  mechanically. The fix is a rename of the specs/ directory. The same guarantee on the architecture
+  axis. A tagged element's explicit `metadata { service '…' }` binding is a name the landscape merge
+  splices into the living `architecture/landscape.likec4` verbatim, and the archive probes
+  `services/<binding>/` with it — `metadata { service '../outside-svc' }` parses in LikeC4 without a
+  single error, validated with nothing but a warning, archived at exit 0, and the `../` collapsed
+  the probe right out of `services/`. The next `validate --all` then failed the very map archive had
+  just written (`landscape.binding-unknown`). New coherence issue: **`c4.service-binding-invalid`**
+  (error), from `loam validate --feature`, `loam status`, and the archive gate, naming the element
+  and the rule its binding breaks; **`--approve` does not override it either**, for the same reason.
+  The check's scope is the splice's, not the tag's: the merge carries a tagged element's authored
+  block into the living landscape byte for byte, untagged children included, so an untagged
+  `container` nested inside a tagged system — `metadata { service '../outside-svc' }` on the child —
+  is held to the same grammar, because its binding reaches the living map exactly as its parent's
+  does. A prose title with no binding stays legal C4 — a title becomes a path only through
+  `specs/<svc>/`, which the finding above now guards. Together the two codes close every text→path
+  route into the archive merge. **What a `--json` consumer notices.** `loam validate --feature` can
+  now exit 1 on repos that used to pass, with `delta.service-id-invalid` or
+  `c4.service-binding-invalid` in `findings[]` — and the same two findings reach
+  `loam validate --all` and the bare positional `loam validate <FEAT>`, which grade every feature
+  through the same check: a repo that exited 0 yesterday exits 1 today, and a CI job running
+  `validate --all` fails naming the feature. The fix is renaming the `specs/<svc>/` directory or
+  editing the `metadata { service }` binding, never a flag. `loam archive` refuses both with the
+  envelope code `not-coherent` and the offending finding in `issues[]`, whether or not `--approve`
+  was passed; a refusal `--approve` cannot move now also says "--approve does not override this" in
+  `error.message`, and every issue `archive --json` emits (`issues[]`, `warnings[]`, `overridden[]`)
+  carries a new additive `overridable` key — whether `--approve` can move it — so a consumer
+  branches on data instead of keeping its own code list. One ordering change rides along: the
+  illegal `specs/<svc>/` name is refused ahead of the conflict-marker scan, so a feature carrying
+  both defects reports `not-coherent` where it used to report `merge-failed`. A `services/<bad>/` a
+  previous archive already created is repaired by renaming — the `service.id-invalid` message spells
+  the three places the old name is written.
 
 ### Fixed — coherence grading resolves an edge's target before it builds a path
 
-The coherence check behind `loam validate --feature`, `loam status` and the archive gate joined an op-edge's *declared* target — the element's `metadata { service '…' }` binding, or its title — straight into `services/<target>/` to read the living spec, the living OpenAPI and the deprecation flags. That name is text somebody wrote in a `.likec4` file, and LikeC4 parses `metadata { service '../../x' }` without one error — so the probes resolved **outside the docs repo**, and where files happened to sit there loam read them and graded the edge against them: a spec out there silenced `c4.op-ungoverned`, an OpenAPI out there silenced `c4-api.op-undefined`.
-
-The target now resolves through the enumeration first — the fleet's `services/` and the feature's own `specs/` directories, names a `readdir` produced — before any path is built, the same order `loam validate --service` has used since it was fixed. A name neither enumeration knows has no living file anywhere, so the living lookups are skipped and the edge grades exactly as one aimed at an absent service, findings spelled with the declared name. Not the grammar, deliberately: `services/Payment Service/` is a directory the enumeration vouches for, and edges into it keep grading. The same resolution now guards the other place a declared target became a path — the dependency graph behind `loam dependencies` and the fleet form of `loam status`, which asked `services/<target>/openapi.yaml` what the target already provides and read an out-of-repo contract to answer it: an unresolvable target goes through the same enumeration bridge, costs no read at all, and its operation counts as one somebody still has to introduce, exactly as an absent service's does.
-
-**What a `--json` consumer notices.** Nothing, unless a feature's delta declared a target that never matched a `services/` or `specs/` directory *and* the joined path landed on a real file: those repos can newly see `c4-api.op-undefined` (error, gates archive) and `c4.op-ungoverned` (warn) where the out-of-repo file used to satisfy the check. Every enumerable target — existing services, services the feature introduces, illegally-named directories included — grades exactly as before. The graph is quieter still: `loam dependencies` emits the same nodes, edges and conflicts either way — an edge is spelled with the declared name, and no feature can own an operation under a name a `specs/` directory could not be called — so the only thing that changes there is that the file above the repo is no longer opened.
+The coherence check behind `loam validate --feature`, `loam status` and the archive gate joined an
+op-edge's *declared* target — the element's `metadata { service '…' }` binding, or its title —
+straight into `services/<target>/` to read the living spec, the living OpenAPI and the deprecation
+flags. **What a `--json` consumer notices.** Nothing, unless a feature's delta declared a target
+that never matched a `services/` or `specs/` directory *and* the joined path landed on a real file:
+those repos can newly see `c4-api.op-undefined` (error, gates archive) and `c4.op-ungoverned` (warn)
+where the out-of-repo file used to satisfy the check.
 
 ### Fixed — `loam validate` resolves a service name before it builds a path
 
-`loam validate --service <name>` and `loam validate <name>` both spelled `<docsDir>/services/<name>/` out of whatever the caller typed, and neither ever checked it. Six commands — `init`, `delta`, `adopt`, `explore`, `rebase`, `new` — guard that argument with the id grammar; `validate` did not, and the two spellings are the same knob into the same call.
-
-`loam validate --service ../../outside/services/x` therefore resolved **above the docs repo**, and where a `spec.md` happened to sit at that path loam opened it, graded it, and reported its frontmatter back through `--json`. Reproduced end to end, including the disclosure. The positional form carries the same reach, and it is the spelling loam's own generated `next` steps print most often.
-
-Both entry points now resolve the name first: **the enumeration answers, and the grammar answers second.** A name that matches a directory under `services/` is used as-is — legal or not, it exists, and joining it lands where the directory is. A name with no directory must pass the id grammar, and then the run continues and grades it `service.unknown` exactly as before, near-miss hints and all. A name that is neither is refused `invalid-option` before any path is built.
-
-That order is the fix, not an implementation detail. `services/Payment Service/` is a directory `loam list` shows, `validate --all` grades, and `service.id-invalid` calls an error nobody can clear without a rename — so it is precisely the directory somebody points `--service` at. Refusing on the grammar alone would have made the one service loam complains about the one service loam cannot look at.
-
-**What a `--json` consumer notices.** For a name that is neither a directory nor a legal id, the envelope changes shape: `ok: true` with `valid: false` and a `targets` array becomes `ok: false` with `error.code: "invalid-option"` and no `targets`. The exit code is `1` either way, so a script keying on the exit code is unaffected; one reading `.valid` or `.targets[0].id` for such an input now reads `undefined`. Every name that used to grade still grades, and nothing that used to be refused changed its code.
+`loam validate --service <name>` and `loam validate <name>` both spelled
+`<docsDir>/services/<name>/` out of whatever the caller typed, and neither ever checked it.
+`loam validate --service ../../outside/services/x` therefore resolved **above the docs repo**, and
+where a `spec.md` happened to sit at that path loam opened it, graded it, and reported its
+frontmatter back through `--json`.
 
 ### Added — `loam adopt` states the walk, and `validate` grades it
 
-`adopt` briefed the artifacts to write and said "read the code: entry points, HTTP routes and handlers, published events, config, deploy manifests, tests" — one sentence, six nouns, no order and no landing site. What came back matched the sentence: the HTTP surface documented well, because it is the surface an agent recognises fastest, and the scheduler, the consumer group and the outbox missing entirely.
-
-- **`walk[]` in the brief** — nine ordered stops, each naming what to open, what to take from it, and which artifacts it feeds (`lands`). It rides `--json` as a new key and is printed in the text view before the artifact table. The order is load-bearing and pinned by a test: the two stops that fix what the service *is* — how many processes, built from what — come before any surface is enumerated, because an agent that opens the routes first has decided the service is an API by the time it meets the scheduler.
-- **`sources.unwalked` (warn) / `sources.walked` (ok)** — the walk graded against the repository, reported by `loam validate --service <id>` run inside the service's own repo. It names the top-level paths git tracks that `sources` never reached into, and carries the covered-file count as a dial. This is the only completeness signal loam can compute: every other check compares the documents with each other, and a corpus agrees with itself perfectly while describing a third of a service. `git ls-files` is the denominator on purpose — it is the repository's own answer to "what is mine", so `node_modules/` and `target/` fall out for free rather than through a hand-maintained exclusion list. Where git cannot answer (not a repository, not installed, a timeout) there is no denominator and therefore no finding. There is no threshold and no percentage grade: a named directory is answerable, an invented ratio is not.
-
-Nothing existing changes grade. `sources.unwalked` is new output on repos that were already green, and it is a warning — `--strict` escalates it, the archive gate does not see it.
+- **`walk[]` in the brief** — nine ordered stops, each naming what to open, what to take from it,
+  and which artifacts it feeds (`lands`).
+- **`sources.unwalked` (warn) / `sources.walked` (ok)** — the walk graded against the repository,
+  reported by `loam validate --service <id>` run inside the service's own repo.
 
 ### Added — how to draw a shared broker, before the fleet map becomes a star
 
-A broker modelled as ONE element is the node every service in the fleet points at: a map that read fine at five services is a star with sixty spokes at sixty, and nothing warns on the way there, because loam parses the model and renders no view. The convention is now written down where it is read — the adopt brief's `unchecked[]`, the generated `AGENTS.md`, the `landscape.likec4` scaffold, `SCHEMA.md`, and `examples/docs/`, which now demonstrates it: nest a `topic` per channel inside the broker's element and point the edges at `kafka.<topic>`, which splits one hub into a dozen small ones and is the truer model besides — what a producer and a consumer share is the channel, never the server.
-
-It is guidance, not a check, and it is on the unchecked list saying so. The one mechanical fact behind it is now pinned by a test: **LikeC4 inherits no tags**, so a topic nested inside an `#external` broker is not external itself and raises `landscape.service-undocumented` asking for a `services/` directory nobody owes. Carry the tag on the kind — `element topic { #external }` — and it is silent. The example also ships the two views this is worth doing for: `exclude element.tag = #external` for the synchronous map, and a second view for the event spine.
+A broker modelled as ONE element is the node every service in the fleet points at: a map that read
+fine at five services is a star with sixty spokes at sixty, and nothing warns on the way there,
+because loam parses the model and renders no view.
 
 ## [0.1.0-beta.3] - 2026-08-08
 
-Still a prerelease under the `beta` dist-tag; the 5–10 service pilot has not run yet. The entries below describe implementation behavior and repository-owned synthetic fixtures; they claim no production-fleet or external execution evidence. One breaking change, in `loam vouch`; read that section before upgrading a CI job.
+Still a prerelease under the `beta` dist-tag; the 5–10 service pilot has not run yet. The entries
+below describe implementation behavior and repository-owned synthetic fixtures; they claim no
+production-fleet or external execution evidence. One breaking change, in `loam vouch`; read that
+section before upgrading a CI job.
 
 ### Changed — `loam vouch` now records a person, and refuses when it cannot
 
 **This is a breaking change for any script or CI job that runs `loam vouch`: add `--yes`.**
 
-`vouch` is the one command in loam whose output is a claim about a human act — everything else it checks is internal consistency, which fluent prose satisfies on its own. Its own docblock called it "the one command that records a person", and it recorded none: no identity of any kind, no interactive gate. Run twice, unattended, from a script, it stamped `status: verified` both times. Meanwhile every generated command and skill file pre-approved `Bash(loam:*)`, which handed the agent that wrote a draft the power to promote its own draft. That inverts the argument loam makes about test evidence everywhere else — an agent must not be able to *say* a scenario is tested — by letting one say a spec matches the code.
+`vouch` is the one command in loam whose output is a claim about a human act — everything else it
+checks is internal consistency, which fluent prose satisfies on its own. Its own docblock called it
+"the one command that records a person", and it recorded none: no identity of any kind, no
+interactive gate. Run twice, unattended, from a script, it stamped `status: verified` both times.
+Meanwhile every generated command and skill file pre-approved `Bash(loam:*)`, which handed the agent
+that wrote a draft the power to promote its own draft. That inverts the argument loam makes about
+test evidence everywhere else — an agent must not be able to *say* a scenario is tested — by letting
+one say a spec matches the code.
 
 Three changes close it, and none of them is a signature:
 
-- **`vouched_by` is stamped beside `status` and `last_verified`**, taken from git — `GIT_COMMITTER_*`/`GIT_AUTHOR_*` first and then `user.name`/`user.email`, which is git's own precedence, so a CI job and a laptop resolve it the same way. It is a name, not a proof: git config is a text file. What it buys is that a reviewer can ask a *specific person* what they read, which is the question `status: verified` was silently answering with nobody. It rides `--json` as `vouched_by`, and a re-vouch refreshes it.
-- **`--yes`, and a confirmation when there is a terminal.** Without `--yes`, `vouch` refuses `vouch-unattended` when stdin is not a TTY, and in `--json` mode regardless (a question cannot be asked on a stream whose contract is one JSON document). On a terminal it states what is about to be claimed and takes only an explicit yes; `vouch-declined` is the answer when the person says no. `vouch-unattributable` is the refusal when git can name nobody at all — better than stamping an anonymous claim.
-- **The generated `allowed-tools` allowlist names loam's verbs one by one** — `Bash(loam adopt:*), Bash(loam validate:*), …` — and deliberately not `vouch`. A verb missing from the list is not forbidden, only unapproved: the agent asks, and a person answers. That is the correct cost for this one, and it is what makes the refusal something a human sees rather than something an agent routes around.
+- **`vouched_by` is stamped beside `status` and `last_verified`**, taken from git —
+  `GIT_COMMITTER_*`/`GIT_AUTHOR_*` first and then `user.name`/`user.email`, which is git's own
+  precedence, so a CI job and a laptop resolve it the same way. It is a name, not a proof: git
+  config is a text file. What it buys is that a reviewer can ask a *specific person* what they read,
+  which is the question `status: verified` was silently answering with nobody. It rides `--json` as
+  `vouched_by`, and a re-vouch refreshes it.
+- **`--yes`, and a confirmation when there is a terminal.** Without `--yes`, `vouch` refuses
+  `vouch-unattended` when stdin is not a TTY, and in `--json` mode regardless (a question cannot be
+  asked on a stream whose contract is one JSON document). On a terminal it states what is about to
+  be claimed and takes only an explicit yes; `vouch-declined` is the answer when the person says no.
+  `vouch-unattributable` is the refusal when git can name nobody at all — better than stamping an
+  anonymous claim.
+- **The generated `allowed-tools` allowlist names loam's verbs one by one** —
+  `Bash(loam adopt:*), Bash(loam validate:*), …` — and deliberately not `vouch`. A verb missing from
+  the list is not forbidden, only unapproved: the agent asks, and a person answers. That is the
+  correct cost for this one, and it is what makes the refusal something a human sees rather than
+  something an agent routes around.
 
-New error codes: `vouch-unattended`, `vouch-unattributable`, `vouch-declined`. Existing specs carrying `status: verified` with no `vouched_by` are not re-graded — nothing new fires on them — but the next vouch stamps a name.
+New error codes: `vouch-unattended`, `vouch-unattributable`, `vouch-declined`. Existing specs
+carrying `status: verified` with no `vouched_by` are not re-graded — nothing new fires on them — but
+the next vouch stamps a name.
 
 ### Fixed — a docs repo that could be cloned, and rendered
 
-- **`loam init --create` writes `services/.gitkeep` and `features/.gitkeep`.** Both directories were created empty; git tracks files, not directories, so after the first push neither existed for anyone who cloned. A missing `services/` is a *blocker* in `doctor`, so the second person to touch the repo got a red preflight on a repository the first person left green.
-- **`loam init --create` writes `likec4.config.json`, and the docs repo is a loadable LikeC4 workspace again.** loam parses every `.likec4` file *alone*, so the landscape, each `services/<id>/model.likec4` and each `features/<FEAT>/delta.likec4` legitimately declares its own `specification { … }` block and re-declares the elements it names. LikeC4's own loader merges the whole tree into one model, so pointing `npx likec4 start` at the repo root — the command loam's own brief recommends — reported every one of those declarations as a duplicate: on loam's four-file `examples/docs`, 16 errors from the renderer and 0 from `loam validate --all`. The scaffolded config declares the root as one project scoped to `architecture/`; a service model or feature delta renders from its own directory (`npx likec4 start services/<id>`), which is what parsing them in isolation meant all along. `doctor` reports `doctor.likec4-config-missing` (warning) on a docs repo created before this, with the exact file to write in its `fix`.
+- **`loam init --create` writes `services/.gitkeep` and `features/.gitkeep`.** Both directories were
+  created empty; git tracks files, not directories, so after the first push neither existed for
+  anyone who cloned. A missing `services/` is a *blocker* in `doctor`, so the second person to touch
+  the repo got a red preflight on a repository the first person left green.
+- **`loam init --create` writes `likec4.config.json`, and the docs repo is a loadable LikeC4
+  workspace again.** loam parses every `.likec4` file *alone*, so the landscape, each
+  `services/<id>/model.likec4` and each `features/<FEAT>/delta.likec4` legitimately declares its own
+  `specification { … }` block and re-declares the elements it names. LikeC4's own loader merges the
+  whole tree into one model, so pointing `npx likec4 start` at the repo root — the command loam's
+  own brief recommends — reported every one of those declarations as a duplicate: on loam's
+  four-file `examples/docs`, 16 errors from the renderer and 0 from `loam validate --all`. The
+  scaffolded config declares the root as one project scoped to `architecture/`; a service model or
+  feature delta renders from its own directory (`npx likec4 start services/<id>`), which is what
+  parsing them in isolation meant all along. `doctor` reports `doctor.likec4-config-missing`
+  (warning) on a docs repo created before this, with the exact file to write in its `fix`.
 
 ### Fixed — three commands that answered the wrong question
 
-- **`loam status` now sees the repository it is standing in.** With `loam.json` naming a service the docs repo has no directory for — a freshly wired service repo, the most common repo there is — the fleet count made "nothing is in flight and every service is written down" vacuously true, and `next.fleet-clean` came out on top. `doctor` had the right answer (`doctor.service-unknown`) at the same moment, and the documented agent loop reads `status --json` and runs `next[0]`: an agent following it was sent to start a feature instead of adopting the service under its feet. The new step is **`next.adopt-bound`**, first in `next[]` (behind only `next.recover-commit`), and suppressed under an explicit `--service`, which is a question about a different service.
-- **`doctor.service-unbound` is no longer raised inside the docs repo.** Having no service binding there is the correct state — the docs repo is the fleet, not any one service — and the `fix` it printed (`loam init --service <id>` here) would have made the repo wrong. `currentService` still reports `unbound`; only the advice is gone.
-- **`loam instructions` checks the arguments it substitutes.** `loam instructions loam-adopt "$PWD"` rendered a protocol reading `services//Users/someone/work/svc/` — a page of confident instructions built around a value no loam command accepts. Each workflow now declares what its `$1`, `$2`, … stand for, and a service-id or feature-id placeholder is checked against the same grammar `loam adopt` and `loam new` use before anything is printed (`invalid-option`). An *unsupplied* placeholder is still left standing, and a free-text one (a feature title) is still free.
+- **`loam status` now sees the repository it is standing in.** With `loam.json` naming a service the
+  docs repo has no directory for — a freshly wired service repo, the most common repo there is — the
+  fleet count made "nothing is in flight and every service is written down" vacuously true, and
+  `next.fleet-clean` came out on top. `doctor` had the right answer (`doctor.service-unknown`) at
+  the same moment, and the documented agent loop reads `status --json` and runs `next[0]`: an agent
+  following it was sent to start a feature instead of adopting the service under its feet. The new
+  step is **`next.adopt-bound`**, first in `next[]` (behind only `next.recover-commit`), and
+  suppressed under an explicit `--service`, which is a question about a different service.
+- **`doctor.service-unbound` is no longer raised inside the docs repo.** Having no service binding
+  there is the correct state — the docs repo is the fleet, not any one service — and the `fix` it
+  printed (`loam init --service <id>` here) would have made the repo wrong. `currentService` still
+  reports `unbound`; only the advice is gone.
+- **`loam instructions` checks the arguments it substitutes.** `loam instructions loam-adopt "$PWD"`
+  rendered a protocol reading `services//Users/someone/work/svc/` — a page of confident instructions
+  built around a value no loam command accepts. Each workflow now declares what its `$1`, `$2`, …
+  stand for, and a service-id or feature-id placeholder is checked against the same grammar
+  `loam adopt` and `loam new` use before anything is printed (`invalid-option`). An *unsupplied*
+  placeholder is still left standing, and a free-text one (a feature title) is still free.
 
 ### Fixed — `doctor.agent-files-stale` and `agents.stale` across a prerelease
 
-`versionTrails` compared only the numeric triple, so `0.1.0-beta.1` neither trailed nor outranked `0.1.0-beta.2`. But beta.2 is precisely the release that changed the *form* of every generated file — embedded protocol text became a pointer at `loam instructions` — and its own changelog told readers to delete the files and re-run `loam init`. The one upgrade that most needed the warning was the one bump shape that could never raise it. Prerelease identifiers are now compared per semver: numerically where they are numbers, a prerelease behind its own final release, and a longer identifier list ahead of a prefix of itself. A stamp whose version is not valid semver still reads as no stamp at all, unchanged.
+`versionTrails` compared only the numeric triple, so `0.1.0-beta.1` neither trailed nor outranked
+`0.1.0-beta.2`. But beta.2 is precisely the release that changed the *form* of every generated file
+— embedded protocol text became a pointer at `loam instructions` — and its own changelog told
+readers to delete the files and re-run `loam init`. The one upgrade that most needed the warning was
+the one bump shape that could never raise it. Prerelease identifiers are now compared per semver:
+numerically where they are numbers, a prerelease behind its own final release, and a longer
+identifier list ahead of a prefix of itself. A stamp whose version is not valid semver still reads
+as no stamp at all, unchanged.
 
 ### Added — the async contract axis (AsyncAPI 3), phase one
 
-Kafka was already drawable in the fleet map and describable in prose, and that was all: a `paymentService -> kafka 'Publishes PaymentAuthorized'` edge read as fully documented while naming no contract anybody could check. The event axis gives it the treatment the HTTP axis has — an artifact, a join token, and findings — in a first slice that reads and grades but does not yet merge.
+Kafka was already drawable in the fleet map and describable in prose, and that was all: a
+`paymentService -> kafka 'Publishes PaymentAuthorized'` edge read as fully documented while naming
+no contract anybody could check. The event axis gives it the treatment the HTTP axis has — an
+artifact, a join token, and findings — in a first slice that reads and grades but does not yet
+merge.
 
-- **`services/<svc>/asyncapi.yaml`** — the async contract, sibling of `openapi.yaml`, optional and adopt-seeded. **AsyncAPI 3.0 only**: its operations are named top-level objects carrying `action: send|receive`, which is the exact analog of an `operationId`, where 2.x spells the same thing as `publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A 2.x document declares no `operations` and reads as a contract with no messages rather than as a mis-parsed one. No new runtime dependency: the document is read with the `yaml` parser already present, by the same shallow structural walk `core/openapi.ts` uses.
-- **The join token is a message name**, spelled three times and required to be identical: a landscape edge's `metadata { publishes '...' }` / `metadata { consumes '...' }`, a requirement's `Publishes:` / `Consumes:` line, and the message's `name` in `asyncapi.yaml` (its declaration key when it has no `name`).
-- **loam never reads inside a message's `payload`.** It joins on names and on the `action` of the operation carrying them, and nothing else. Write payloads as JSON Schema; a fleet that later adopts Avro changes a `schemaFormat` line in its documents and nothing in loam. Keep payloads inside the document rather than `$ref`-ing an external `.avsc` — external references are out of scope here exactly as on the OpenAPI axis.
-- **New finding codes**, all from `loam validate --service <id>`: `service.no-asyncapi`, `asyncapi.invalid`, `asyncapi.duplicate-message`, `spine.message-undefined`, `spec-event.message-undefined`, `spine.message-unproduced`, `asyncapi.message-contested`, `event.messages-unlinked`, and the `ok` confirmation `event.covered`. No existing code changed, and no refusal that used to succeed now fails: every one of these fires only on a file or a `metadata` key that did not exist before this release.
-- **`spine.message-unproduced` is the check with no HTTP analog**, and it is why the axis exists. On the API axis the provider owns the contract, so "does this operation exist" is answered inside one service's directory. An event's schema lives in the *producer's* repository, so "does anybody publish what I consume" is a fleet question — and a consumer joined to nothing was previously indistinguishable from a healthy one. `asyncapi.message-contested` is its other half: two services claiming to send one name means every consumer's join picks one arbitrarily.
-- **`service.no-asyncapi` has two grades, not three.** Its `service.no-openapi` sibling warns when the landscape cannot prove nobody calls a service, because most services expose HTTP. An event contract is genuinely optional and most services touch no topic, so the absent file is an **error** when something already joins into it — the stranded message names ride in `details` — and **silence** otherwise.
-- `asyncapi.yaml` presence rides in `loam list`/`loam show` (`has.asyncapi`, and a lowercase `e` in the text flags, beside the arch spec's `a`). It is deliberately **not** part of the maturity ladder: making it a fourth required artifact would demote every already-`documented` service in the fleet without one byte of their files changing.
+- **`services/<svc>/asyncapi.yaml`** — the async contract, sibling of `openapi.yaml`, optional and
+  adopt-seeded. **AsyncAPI 3.0 only**: its operations are named top-level objects carrying
+  `action: send|receive`, which is the exact analog of an `operationId`, where 2.x spells the same
+  thing as `publish`/`subscribe` under a channel and leaves whose perspective they take ambiguous. A
+  2.x document declares no `operations` and reads as a contract with no messages rather than as a
+  mis-parsed one. No new runtime dependency: the document is read with the `yaml` parser already
+  present, by the same shallow structural walk `core/openapi.ts` uses.
+- **The join token is a message name**, spelled three times and required to be identical: a
+  landscape edge's `metadata { publishes '...' }` / `metadata { consumes '...' }`, a requirement's
+  `Publishes:` / `Consumes:` line, and the message's `name` in `asyncapi.yaml` (its declaration key
+  when it has no `name`).
+- **loam never reads inside a message's `payload`.** It joins on names and on the `action` of the
+  operation carrying them, and nothing else. Write payloads as JSON Schema; a fleet that later
+  adopts Avro changes a `schemaFormat` line in its documents and nothing in loam. Keep payloads
+  inside the document rather than `$ref`-ing an external `.avsc` — external references are out of
+  scope here exactly as on the OpenAPI axis.
+- **New finding codes**, all from `loam validate --service <id>`: `service.no-asyncapi`,
+  `asyncapi.invalid`, `asyncapi.duplicate-message`, `spine.message-undefined`,
+  `spec-event.message-undefined`, `spine.message-unproduced`, `asyncapi.message-contested`,
+  `event.messages-unlinked`, and the `ok` confirmation `event.covered`. No existing code changed,
+  and no refusal that used to succeed now fails: every one of these fires only on a file or a
+  `metadata` key that did not exist before this release.
+- **`spine.message-unproduced` is the check with no HTTP analog**, and it is why the axis exists. On
+  the API axis the provider owns the contract, so "does this operation exist" is answered inside one
+  service's directory. An event's schema lives in the *producer's* repository, so "does anybody
+  publish what I consume" is a fleet question — and a consumer joined to nothing was previously
+  indistinguishable from a healthy one. `asyncapi.message-contested` is its other half: two services
+  claiming to send one name means every consumer's join picks one arbitrarily.
+- **`service.no-asyncapi` has two grades, not three.** Its `service.no-openapi` sibling warns when
+  the landscape cannot prove nobody calls a service, because most services expose HTTP. An event
+  contract is genuinely optional and most services touch no topic, so the absent file is an
+  **error** when something already joins into it — the stranded message names ride in `details` —
+  and **silence** otherwise.
+- `asyncapi.yaml` presence rides in `loam list`/`loam show` (`has.asyncapi`, and a lowercase `e` in
+  the text flags, beside the arch spec's `a`). It is deliberately **not** part of the maturity
+  ladder: making it a fourth required artifact would demote every already-`documented` service in
+  the fleet without one byte of their files changing.
 
-**Not in this slice, and stated so nobody reads the absence as a bug:** a feature cannot yet add a message. There is no `features/<FEAT>/specs/<svc>/asyncapi.yaml`, no merge, no baseline pin, and no `verify` claim on this axis — a message is retired, for now, by editing the living contract in a reviewed PR. Deprecation markers and a removal family are deliberately absent rather than pending: an async contract that only ever grows has nothing to mark, because a consumer reading a topic with lag breaks on a removed field regardless of what the document says about it.
+**Not in this slice, and stated so nobody reads the absence as a bug:** a feature cannot yet add a
+message. There is no `features/<FEAT>/specs/<svc>/asyncapi.yaml`, no merge, no baseline pin, and no
+`verify` claim on this axis — a message is retired, for now, by editing the living contract in a
+reviewed PR. Deprecation markers and a removal family are deliberately absent rather than pending:
+an async contract that only ever grows has nothing to mark, because a consumer reading a topic with
+lag breaks on a removed field regardless of what the document says about it.
 
 ## [0.1.0-beta.2] - 2026-08-07
 
-Still a prerelease, still under the `beta` dist-tag: the 5–10 service pilot has not run yet, and this release changes what `loam init` leaves in a repository, which is exactly the kind of thing a pilot is for. Two new commands, that change to the generated files, and a code-quality pass over `src/` with the defects it turned up. The refactoring half is invisible by construction; what follows is only the part a user can observe.
+Still a prerelease, still under the `beta` dist-tag: the 5–10 service pilot has not run yet, and
+this release changes what `loam init` leaves in a repository, which is exactly the kind of thing a
+pilot is for. Two new commands, that change to the generated files, and a code-quality pass over
+`src/` with the defects it turned up. The refactoring half is invisible by construction; what
+follows is only the part a user can observe.
 
 ### Added
 
-- **`loam explore [<service>...]`** — read the fleet around a change nobody has written down yet, and write nothing. It answers the one question `loam new` takes as an argument: which services a feature touches. For each seed it reports the ring one hop out in the fleet map, each service's maturity rung and living operations, who already calls whom, the active features already covering the same services, and the literal `loam new` line the seeds imply. `--op <operationId>` seeds from an operation when you know the call but not who owns it; `--as <FEAT>` names the feature in the suggested line. A seed naming no `services/<id>/` is reported with its near-misses rather than refused — a feature may be introducing that service, and a typo looks identical until you read the list. The neighbours are deliberately **not** folded into the suggested command: loam knows those services are connected, not whether you change them.
-- **`loam instructions [<workflow>] [args...]`** — print one of the six workflow protocols (`loam-adopt`, `loam-feature`, `loam-implement`, `loam-check`, `loam-verify`, `loam-ship`) with `$1`, `$2` filled in from the arguments given. With no argument it lists them. It is the only command that reads no `loam.json` and no docs repo, deliberately: `loam-adopt`'s own first step is to run `loam init` when there is no config, so it cannot be the step that requires one.
-- **[WORKFLOW.md](WORKFLOW.md)** — the working protocol as a document: the artifact graph and its five derived states, what actually gates and what only advises, the six workflows, how an agent drives the cycle from `--json`, and why there is no task-list artifact.
+- **`loam explore [<service>...]`** — read the fleet around a change nobody has written down yet,
+  and write nothing. It answers the one question `loam new` takes as an argument: which services a
+  feature touches. For each seed it reports the ring one hop out in the fleet map, each service's
+  maturity rung and living operations, who already calls whom, the active features already covering
+  the same services, and the literal `loam new` line the seeds imply. `--op <operationId>` seeds
+  from an operation when you know the call but not who owns it; `--as <FEAT>` names the feature in
+  the suggested line. A seed naming no `services/<id>/` is reported with its near-misses rather than
+  refused — a feature may be introducing that service, and a typo looks identical until you read the
+  list. The neighbours are deliberately **not** folded into the suggested command: loam knows those
+  services are connected, not whether you change them.
+- **`loam instructions [<workflow>] [args...]`** — print one of the six workflow protocols
+  (`loam-adopt`, `loam-feature`, `loam-implement`, `loam-check`, `loam-verify`, `loam-ship`) with
+  `$1`, `$2` filled in from the arguments given. With no argument it lists them. It is the only
+  command that reads no `loam.json` and no docs repo, deliberately: `loam-adopt`'s own first step is
+  to run `loam init` when there is no config, so it cannot be the step that requires one.
+- **[WORKFLOW.md](WORKFLOW.md)** — the working protocol as a document: the artifact graph and its
+  five derived states, what actually gates and what only advises, the six workflows, how an agent
+  drives the cycle from `--json`, and why there is no task-list artifact.
 
 ### Changed — what `loam init` writes into a command or skill file
 
-- **A generated file is now a pointer at `loam instructions`, not a copy of the protocol.** It carries the workflow's purpose and its spine — the verbs, in order — and defers this release's flags, finding codes and fix tables to the binary; a fresh `.claude/commands/` drops from about 53 KB to about 11 KB, and the finding-code tables move with it. The protocol itself is unchanged and complete; only its delivery moved. The reason is that the two go stale in opposite directions and only one is fixable: loam never regenerates a generated file (your edits outrank the template, and that is not changing), so a protocol copied into a repository will eventually describe a different loam with total confidence, while a pointer cannot. `doctor.agent-files-stale` still reports a file whose version stamp has fallen behind, and now has almost nothing to be wrong about.
-- **Nothing rewrites an existing file.** A repository scaffolded by an earlier loam keeps exactly the files it was given, full protocol text and all — re-running `loam init` over it leaves them byte-unchanged. The version stamp is how you tell, and `loam doctor` raises `doctor.agent-files-stale` against them only once this binary's stamp is ahead of theirs. To take the new form, delete the files and re-run `loam init`.
-- Both new commands reuse the existing refusal codes (`invalid-option`, `unknown-target`). No stable code was added, changed or removed.
-- **The feature-id grammar has one home.** It was spelled privately in `loam new` and again in the OpenSpec migration; `core/ids.ts` owns it now, so an id one command accepts cannot be an id the other refuses. The only user-visible edge is wording: `migrate-openspec`'s `mapping.feature-id-invalid` message now ends with the same "e.g. FEAT-101 or BUG-42" example every other refusal gives. The code is unchanged.
+- **A generated file is now a pointer at `loam instructions`, not a copy of the protocol.** It
+  carries the workflow's purpose and its spine — the verbs, in order — and defers this release's
+  flags, finding codes and fix tables to the binary; a fresh `.claude/commands/` drops from about 53
+  KB to about 11 KB, and the finding-code tables move with it. The protocol itself is unchanged and
+  complete; only its delivery moved. The reason is that the two go stale in opposite directions and
+  only one is fixable: loam never regenerates a generated file (your edits outrank the template, and
+  that is not changing), so a protocol copied into a repository will eventually describe a different
+  loam with total confidence, while a pointer cannot. `doctor.agent-files-stale` still reports a
+  file whose version stamp has fallen behind, and now has almost nothing to be wrong about.
+- **Nothing rewrites an existing file.** A repository scaffolded by an earlier loam keeps exactly
+  the files it was given, full protocol text and all — re-running `loam init` over it leaves them
+  byte-unchanged. The version stamp is how you tell, and `loam doctor` raises
+  `doctor.agent-files-stale` against them only once this binary's stamp is ahead of theirs. To take
+  the new form, delete the files and re-run `loam init`.
+- Both new commands reuse the existing refusal codes (`invalid-option`, `unknown-target`). No stable
+  code was added, changed or removed.
+- **The feature-id grammar has one home.** It was spelled privately in `loam new` and again in the
+  OpenSpec migration; `core/ids.ts` owns it now, so an id one command accepts cannot be an id the
+  other refuses. The only user-visible edge is wording: `migrate-openspec`'s
+  `mapping.feature-id-invalid` message now ends with the same "e.g. FEAT-101 or BUG-42" example
+  every other refusal gives. The code is unchanged.
 
 ### Fixed — commands that wrote or attested on evidence they had not checked
 
-- **`archive` no longer installs an unreadable feature contract as the living one.** A feature `openapi.yaml` that does not parse as an OpenAPI document was planned verbatim into `services/<svc>/openapi.yaml` and reported `ok: true`; every other command reads `readOpenapi`'s `unreadable` flag, and the one that writes was the one that did not. It now refuses with `merge-failed`, naming the file. The same code now answers when the contract is being created rather than merged — that case used to escape as `internal`.
-- **`verify --record` no longer attests when it could not check the report.** The committed-report binding check tested for git's exit code 1 and nothing else, so a `git diff` killed by a signal — a CI timeout, the OOM killer, a fork failure — skipped the check and wrote the attestation anyway. A run that cannot reach an exit status is now a refusal that says git could not be run to completion.
-- **An interrupted `archive` can be retried on a docs repo composed of symlinks.** Checking whether the snapshot was stale resolved the manifest's paths through a symlink test meant for writes, so a `services/<svc>/` mounted from a sibling checkout — a layout every walk of the repo follows on purpose — turned every retry into a permanent refusal. That check only reads a file and compares a digest; containment is now judged without resolving the mount. `unarchive`, which writes the pre-image back, deliberately keeps the stricter test.
-- **A malformed `.loam-before/manifest.json` or `.loam-lock` is answered, not assumed.** Both were read through a cast: well-formed JSON that was not an object slipped past as "a different loam", and a bare `null` threw a `TypeError` out of the refusal itself. They now answer `commit-interrupted` and `docs-busy` respectively — the codes that case always deserved.
-- **A `spec.md` whose bytes are UTF-16LE is refused on the write path.** The write path's UTF-8 guard was a weaker copy of the read path's and missed exactly the file the read path had been hardened against: such a document parsed as zero requirements, so a merge computed over an empty baseline and wrote that back.
+- **`archive` no longer installs an unreadable feature contract as the living one.** A feature
+  `openapi.yaml` that does not parse as an OpenAPI document was planned verbatim into
+  `services/<svc>/openapi.yaml` and reported `ok: true`; every other command reads `readOpenapi`'s
+  `unreadable` flag, and the one that writes was the one that did not. It now refuses with
+  `merge-failed`, naming the file. The same code now answers when the contract is being created
+  rather than merged — that case used to escape as `internal`.
+- **`verify --record` no longer attests when it could not check the report.** The committed-report
+  binding check tested for git's exit code 1 and nothing else, so a `git diff` killed by a signal —
+  a CI timeout, the OOM killer, a fork failure — skipped the check and wrote the attestation anyway.
+  A run that cannot reach an exit status is now a refusal that says git could not be run to
+  completion.
+- **An interrupted `archive` can be retried on a docs repo composed of symlinks.** Checking whether
+  the snapshot was stale resolved the manifest's paths through a symlink test meant for writes, so a
+  `services/<svc>/` mounted from a sibling checkout — a layout every walk of the repo follows on
+  purpose — turned every retry into a permanent refusal. That check only reads a file and compares a
+  digest; containment is now judged without resolving the mount. `unarchive`, which writes the
+  pre-image back, deliberately keeps the stricter test.
+- **A malformed `.loam-before/manifest.json` or `.loam-lock` is answered, not assumed.** Both were
+  read through a cast: well-formed JSON that was not an object slipped past as "a different loam",
+  and a bare `null` threw a `TypeError` out of the refusal itself. They now answer
+  `commit-interrupted` and `docs-busy` respectively — the codes that case always deserved.
+- **A `spec.md` whose bytes are UTF-16LE is refused on the write path.** The write path's UTF-8
+  guard was a weaker copy of the read path's and missed exactly the file the read path had been
+  hardened against: such a document parsed as zero requirements, so a merge computed over an empty
+  baseline and wrote that back.
 
 ### Fixed — user errors reported as `internal`
 
-- **`list`, `show` and `validate` report `repository-unavailable`** where a filesystem failure carries no path — a directory where `spec.md` belongs reports EISDIR with no `path`, which defeated the guard. `status` had this fix; the other three copies of the same catch block did not.
-- **`loam.json` that cannot be read reports `config-invalid`.** The read sat one line above its own `try`, so a config file that was a directory, or carried a restrictive permission bit, crashed every command in the CLI.
-- **`loam new` refuses instead of scaffolding into a directory that is not a docs repo**, and **`loam adopt` refuses (`docs-missing`)** instead of briefing an agent to write a baseline into a docs repo that does not exist. Both previously exited 0.
+- **`list`, `show` and `validate` report `repository-unavailable`** where a filesystem failure
+  carries no path — a directory where `spec.md` belongs reports EISDIR with no `path`, which
+  defeated the guard. `status` had this fix; the other three copies of the same catch block did not.
+- **`loam.json` that cannot be read reports `config-invalid`.** The read sat one line above its own
+  `try`, so a config file that was a directory, or carried a restrictive permission bit, crashed
+  every command in the CLI.
+- **`loam new` refuses instead of scaffolding into a directory that is not a docs repo**, and
+  **`loam adopt` refuses (`docs-missing`)** instead of briefing an agent to write a baseline into a
+  docs repo that does not exist. Both previously exited 0.
 
 ### Fixed — checks that answered differently depending on where they were asked
 
-- **A relocated operation grades the same under `validate`, `status` and `archive`.** `FleetContext` carried a second implementation of `serviceOperationIds` that interleaved removals with upserts, so an operation removed at one path and defined at another answered "undefined" or "defined" depending on which the author spelled first — and `spec-api.op-undefined` is a gating error.
-- **`c4.op-ungoverned` joins per service.** Operation ids are unique only within a contract, so an operation governed on one service suppressed the warning for an unrelated service that shared its name.
-- **`api.covered` no longer counts a REMOVED requirement as governing.** An operation whose only governing requirement was removed now reports `api.ungoverned` (a warning; nothing about gating or exit codes changes).
-- **`loam status` (fleet form) reports `blocked` for a repo holding an interrupted commit journal**, agreeing with the per-feature form, which already did. It previously said `done` and "ship it" over a tree the other form called blocked.
-- **`loam delta` exits 1 when the feature's `openapi.yaml` does not parse**, matching the rule the architecture axis already had, and its `--json` payload carries an `openapi` key saying so. An unparseable contract used to project as "no operations".
+- **A relocated operation grades the same under `validate`, `status` and `archive`.** `FleetContext`
+  carried a second implementation of `serviceOperationIds` that interleaved removals with upserts,
+  so an operation removed at one path and defined at another answered "undefined" or "defined"
+  depending on which the author spelled first — and `spec-api.op-undefined` is a gating error.
+- **`c4.op-ungoverned` joins per service.** Operation ids are unique only within a contract, so an
+  operation governed on one service suppressed the warning for an unrelated service that shared its
+  name.
+- **`api.covered` no longer counts a REMOVED requirement as governing.** An operation whose only
+  governing requirement was removed now reports `api.ungoverned` (a warning; nothing about gating or
+  exit codes changes).
+- **`loam status` (fleet form) reports `blocked` for a repo holding an interrupted commit journal**,
+  agreeing with the per-feature form, which already did. It previously said `done` and "ship it"
+  over a tree the other form called blocked.
+- **`loam delta` exits 1 when the feature's `openapi.yaml` does not parse**, matching the rule the
+  architecture axis already had, and its `--json` payload carries an `openapi` key saying so. An
+  unparseable contract used to project as "no operations".
 
 ### Fixed — deletion that reached outside the repository
 
-- **`loam gherkin` orphan cleanup no longer follows a symlinked directory out of the repo.** Enumeration follows symlinks by design, so a planted `<gherkinDir>/loam/sub -> /outside` produced orphan paths that `unlink` resolved and deleted elsewhere. A symlinked `.feature` sitting directly in `loam/` is still removed — the link goes, its target survives — which is the distinction the guard now draws.
+- **`loam gherkin` orphan cleanup no longer follows a symlinked directory out of the repo.**
+  Enumeration follows symlinks by design, so a planted `<gherkinDir>/loam/sub -> /outside` produced
+  orphan paths that `unlink` resolved and deleted elsewhere. A symlinked `.feature` sitting directly
+  in `loam/` is still removed — the link goes, its target survives — which is the distinction the
+  guard now draws.
 
 ### Changed — internal structure
 
-No behaviour depends on this, and it is recorded because the next contributor will notice it: the eight runtime import cycles in `src/core/` are gone, five helper modules were extracted from the modules that happened to hold them (`document-bytes`, `records`, `steps`, `concurrency`, and the docs-repo gate), and the duplicated spellings of six shared rules now have one home each. `docs/CODE-STYLE.md` records the conventions and the defect behind each one.
+No behaviour depends on this, and it is recorded because the next contributor will notice it: the
+eight runtime import cycles in `src/core/` are gone, five helper modules were extracted from the
+modules that happened to hold them (`document-bytes`, `records`, `steps`, `concurrency`, and the
+docs-repo gate), and the duplicated spellings of six shared rules now have one home each.
+`docs/CODE-STYLE.md` records the conventions and the defect behind each one.
 
 ## [0.1.0-beta.1] - 2026-08-06
 
-The first published release, and a prerelease on purpose: it ships under the `beta` dist-tag, not `latest`. This entry covers the pre-publication hardening pass. Most of it is not new capability — it is the difference between a command that reports a problem and one that was quietly blind to it, and in four places it is the difference between an undo that works and one that certifies text nobody wrote. Grouped by what a user would notice.
+The first published release, and a prerelease on purpose: it ships under the `beta` dist-tag, not
+`latest`. This entry covers the pre-publication hardening pass. Most of it is not new capability —
+it is the difference between a command that reports a problem and one that was quietly blind to it,
+and in four places it is the difference between an undo that works and one that certifies text
+nobody wrote. Grouped by what a user would notice.
 
 ### Fixed — data loss and silent failure
 
-- **A file whose bytes are not UTF-8 is no longer rewritten.** The whole write path moves bytes rather than strings; text is produced only where a parser needs it. Undecodable content refuses the merge (`merge-failed`, naming the file) instead of replacing every such byte with U+FFFD — in the living document *and* in the snapshot meant to undo it, which left nothing to restore from. A non-UTF-8 `openapi.yaml` now grades `openapi.invalid` instead of being handed to the YAML parser with the damage already done.
-- **`unarchive` no longer restores an edited snapshot and certifies it.** The snapshot manifest is version 2: every entry records `before`, a sha256 of the pre-image it will restore, alongside the existing `after`. `unarchive` hashes each pre-image before staging anything and refuses on a mismatch (`snapshot-corrupt`) — and `--force` deliberately does not override it, because `--force` discards later changes to the living docs while the damage here is to the undo itself. A version-1 snapshot is refused as `snapshot-missing`.
-- **A commit killed halfway can now be repaired.** `archive` and `unarchive` fsync an intent journal (`.loam-commit`) before the first swap and recover from it on the next run, under the lock: an archive is undone, an unarchive is finished (the merged text it was replacing is recorded nowhere else). Where the files no longer permit a safe repair the answer is `commit-interrupted`, a refusal. Previously a SIGKILL between two renames left a half-merged repo that `doctor` called healthy, `validate` blamed on the author's delta, and nothing could roll back.
-- **A removal marker can no longer be published into a living contract.** `x-loam-remove` written at path level, beside the methods, names no operation and retires nothing; `archive` gates it (`openapi.remove-marker-path-level`) and the marker is stripped from every merge branch, so it never reaches the fleet's living OpenAPI under any flag.
-- **Symlinked service and feature directories are enumerated.** A `services/<svc>` or `features/<FEAT>` reached through a symlink used to vanish from every listing, which also produced a false `landscape.binding-unknown` for the service that was right there. Dangling links are skipped exactly as an absent directory is.
+- **A file whose bytes are not UTF-8 is no longer rewritten.** The whole write path moves bytes
+  rather than strings; text is produced only where a parser needs it. Undecodable content refuses
+  the merge (`merge-failed`, naming the file) instead of replacing every such byte with U+FFFD — in
+  the living document *and* in the snapshot meant to undo it, which left nothing to restore from. A
+  non-UTF-8 `openapi.yaml` now grades `openapi.invalid` instead of being handed to the YAML parser
+  with the damage already done.
+- **`unarchive` no longer restores an edited snapshot and certifies it.** The snapshot manifest is
+  version 2: every entry records `before`, a sha256 of the pre-image it will restore, alongside the
+  existing `after`. `unarchive` hashes each pre-image before staging anything and refuses on a
+  mismatch (`snapshot-corrupt`) — and `--force` deliberately does not override it, because `--force`
+  discards later changes to the living docs while the damage here is to the undo itself. A version-1
+  snapshot is refused as `snapshot-missing`.
+- **A commit killed halfway can now be repaired.** `archive` and `unarchive` fsync an intent journal
+  (`.loam-commit`) before the first swap and recover from it on the next run, under the lock: an
+  archive is undone, an unarchive is finished (the merged text it was replacing is recorded nowhere
+  else). Where the files no longer permit a safe repair the answer is `commit-interrupted`, a
+  refusal. Previously a SIGKILL between two renames left a half-merged repo that `doctor` called
+  healthy, `validate` blamed on the author's delta, and nothing could roll back.
+- **A removal marker can no longer be published into a living contract.** `x-loam-remove` written at
+  path level, beside the methods, names no operation and retires nothing; `archive` gates it
+  (`openapi.remove-marker-path-level`) and the marker is stripped from every merge branch, so it
+  never reaches the fleet's living OpenAPI under any flag.
+- **Symlinked service and feature directories are enumerated.** A `services/<svc>` or
+  `features/<FEAT>` reached through a symlink used to vanish from every listing, which also produced
+  a false `landscape.binding-unknown` for the service that was right there. Dangling links are
+  skipped exactly as an absent directory is.
 
 ### Fixed — checks that were blind
 
-- **Nested landscape elements are graded.** The landscape cross-check kept only top-level elements, so ordinary grouped C4 — services under an `enterprise`, `group` or `boundary` — reported *every* service as unmodelled. The tree is walked instead: an element is at service level when no ancestor already stands for a service, an element that contains a service is a grouping, and `landscape.binding-unknown` is now graded at any depth.
-- **A missing `openapi.yaml` no longer silences the API axis.** It is an **error** when a living non-`REMOVED` `Operations:` line or an op-linked landscape edge already points into the absent file, with the stranded operationIds in `details`; a warning when nothing does and the landscape cannot prove nobody calls the service; silent when it can. Correspondingly, one absent contract is one finding rather than one `spine.op-undefined` per inbound consumer — a file that is not there proves nothing about an edge.
-- **A feature delta addressed to a nonexistent service is refused** (`delta.service-unknown`, naming close ids). A typo in `--touches` used to validate green and materialise a phantom service directory on archive.
-- **`openapi.duplicate-operationid` fires in service scope**, not only through an unrelated feature's delta — so `validate --all` sees it on a fleet with no feature in flight.
-- **`c4.uncovered` no longer fires on a re-declared edge.** A delta that restates a living edge to hang a requirement on it was told to write a decorative architecture requirement.
-- **`loam doctor` reports what it could not see before**: a held or stale `.loam-lock`, an interrupted commit, orphaned staging temp files, and generated command/skill files that have fallen behind (below).
+- **Nested landscape elements are graded.** The landscape cross-check kept only top-level elements,
+  so ordinary grouped C4 — services under an `enterprise`, `group` or `boundary` — reported *every*
+  service as unmodelled. The tree is walked instead: an element is at service level when no ancestor
+  already stands for a service, an element that contains a service is a grouping, and
+  `landscape.binding-unknown` is now graded at any depth.
+- **A missing `openapi.yaml` no longer silences the API axis.** It is an **error** when a living
+  non-`REMOVED` `Operations:` line or an op-linked landscape edge already points into the absent
+  file, with the stranded operationIds in `details`; a warning when nothing does and the landscape
+  cannot prove nobody calls the service; silent when it can. Correspondingly, one absent contract is
+  one finding rather than one `spine.op-undefined` per inbound consumer — a file that is not there
+  proves nothing about an edge.
+- **A feature delta addressed to a nonexistent service is refused** (`delta.service-unknown`, naming
+  close ids). A typo in `--touches` used to validate green and materialise a phantom service
+  directory on archive.
+- **`openapi.duplicate-operationid` fires in service scope**, not only through an unrelated
+  feature's delta — so `validate --all` sees it on a fleet with no feature in flight.
+- **`c4.uncovered` no longer fires on a re-declared edge.** A delta that restates a living edge to
+  hang a requirement on it was told to write a decorative architecture requirement.
+- **`loam doctor` reports what it could not see before**: a held or stale `.loam-lock`, an
+  interrupted commit, orphaned staging temp files, and generated command/skill files that have
+  fallen behind (below).
 
 ### Changed — verification says which answers came from a test run
 
-`--record` may still confirm a `scenario.tested` claim on an agent's word; a service with no runnable suite yet has to be able to record its answers. What changed is that the record now says so, everywhere:
+`--record` may still confirm a `scenario.tested` claim on an agent's word; a service with no
+runnable suite yet has to be able to record its answers. What changed is that the record now says
+so, everywhere:
 
-- a three-valued **`verdict`** — `verified`, `attested`, `unverified` — recomputed from `claims[]` on every read and never taken from the record's own `summary:` block. `verified` in `--json` is exactly `verdict === "verified"`, so a record with zero claims no longer reads as verified by arithmetic;
-- `verify.scenario-attested` (warning, gating nothing) naming each claim, on the read view, the recording view and the frozen post-archive view alike; `loam status` re-reports it and offers `next.verify-attested`, and such a feature reaches `stage: ready`, never `done`;
-- a `summary:` block contradicting its own `claims[]` makes the whole record `record-unreadable` (`verify.record-miscounted`) — neither half can be believed, so neither is reported as fact;
-- `--results` writes down **which report it read** (path, sha256, mtime, tagged-scenario count), must resolve inside the attesting repository in federated mode, and refuses a committed report that differs from the attested commit. That says which file was consumed; it does not say the file came from executing that commit, and no digest can;
-- two services wording a scenario identically share one digest, so a single report cannot say whose suite ran it: those claims are left unconfirmed under `verify.digest-contested` rather than confirming both.
+- a three-valued **`verdict`** — `verified`, `attested`, `unverified` — recomputed from `claims[]`
+  on every read and never taken from the record's own `summary:` block. `verified` in `--json` is
+  exactly `verdict === "verified"`, so a record with zero claims no longer reads as verified by
+  arithmetic;
+- `verify.scenario-attested` (warning, gating nothing) naming each claim, on the read view, the
+  recording view and the frozen post-archive view alike; `loam status` re-reports it and offers
+  `next.verify-attested`, and such a feature reaches `stage: ready`, never `done`;
+- a `summary:` block contradicting its own `claims[]` makes the whole record `record-unreadable`
+  (`verify.record-miscounted`) — neither half can be believed, so neither is reported as fact;
+- `--results` writes down **which report it read** (path, sha256, mtime, tagged-scenario count),
+  must resolve inside the attesting repository in federated mode, and refuses a committed report
+  that differs from the attested commit. That says which file was consumed; it does not say the file
+  came from executing that commit, and no digest can;
+- two services wording a scenario identically share one digest, so a single report cannot say whose
+  suite ran it: those claims are left unconfirmed under `verify.digest-contested` rather than
+  confirming both.
 
 ### Changed — `loam status` is a projection over the gates
 
-`status` used to say "ship it" on trees `archive` refused. It now takes `stage` and `next[]` from the union of what `validate --feature` errors on and what `archive` refuses to merge, so it may be more pessimistic than either and is never greener than both — an invariant with a test behind it. Also: `checks.coherent` runs the same functions `validate` does (coherence, provenance, missing scenarios); `owesContract` keys on the contract *file* rather than the service directory; `next[]` names `loam delta`, `loam gherkin` and `loam rebase`; the fleet form is capped at ten steps plus a `next.elided` notice and always ends on `next.fleet-gate`; and a filesystem failure that carries no path (a directory where a file belongs) is reported rather than crashing the command.
+`status` used to say "ship it" on trees `archive` refused. It now takes `stage` and `next[]` from
+the union of what `validate --feature` errors on and what `archive` refuses to merge, so it may be
+more pessimistic than either and is never greener than both — an invariant with a test behind it.
+Also: `checks.coherent` runs the same functions `validate` does (coherence, provenance, missing
+scenarios); `owesContract` keys on the contract *file* rather than the service directory; `next[]`
+names `loam delta`, `loam gherkin` and `loam rebase`; the fleet form is capped at ten steps plus a
+`next.elided` notice and always ends on `next.fleet-gate`; and a filesystem failure that carries no
+path (a directory where a file belongs) is reported rather than crashing the command.
 
 ### Changed — generated agent files carry a version stamp
 
-Every generated command and skill body now opens with `<!-- generated by loam vX.Y.Z -->`, and `loam doctor` raises `doctor.agent-files-stale` for a file with no stamp or an older one. loam still never rewrites a generated file — the fix is a human's — but drift is now detectable, which it previously was not: a command file mangled to one line left `doctor: healthy: true`. Doctor also stops reporting a repo initialized `--no-skills` as missing its skills.
+Every generated command and skill body now opens with `<!-- generated by loam vX.Y.Z -->`, and
+`loam doctor` raises `doctor.agent-files-stale` for a file with no stamp or an older one. loam still
+never rewrites a generated file — the fix is a human's — but drift is now detectable, which it
+previously was not: a command file mangled to one line left `doctor: healthy: true`. Doctor also
+stops reporting a repo initialized `--no-skills` as missing its skills.
 
-`loam rebase` and `loam status` were added to the shipped workflow bodies, which is where the mechanism that prevents two in-flight features from overwriting each other actually gets run. `doctor`'s fix line now spells `loam adopt --service <id>`; the positional form it used to print is refused by the CLI, and a new test parses every command loam prints against the real CLI so that class of defect cannot return silently.
+`loam rebase` and `loam status` were added to the shipped workflow bodies, which is where the
+mechanism that prevents two in-flight features from overwriting each other actually gets run.
+`doctor`'s fix line now spells `loam adopt --service <id>`; the positional form it used to print is
+refused by the CLI, and a new test parses every command loam prints against the real CLI so that
+class of defect cannot return silently.
 
 ### Changed — `loam init` keeps the pointer it was given
 
-`--docs` wins only when it is actually passed. A re-run in a wired repository keeps the `docsDir` its committed `loam.json` already names, `--create` included, and spreads the rest of the config forward; `--json` reports `docsDirSource` as `flag`, `config` or `default`. Following `doctor`'s advice to re-run `init` used to repoint the repo at an empty decoy over which `validate --all` went green.
+`--docs` wins only when it is actually passed. A re-run in a wired repository keeps the `docsDir`
+its committed `loam.json` already names, `--create` included, and spreads the rest of the config
+forward; `--json` reports `docsDirSource` as `flag`, `config` or `default`. Following `doctor`'s
+advice to re-run `init` used to repoint the repo at an empty decoy over which `validate --all` went
+green.
 
 ### Fixed — the OpenSpec on-ramp
 
-- **A Store checkout is audited by its planning shape, not by its marker.** A `.openspec-store/store.yaml` beside real `specs/` used to make audit look for `<checkout>/openspec`, find nothing, and report `ready: true, capabilities: 0` — then apply a target holding no requirements at all. The shape picks the root; the marker picks only the kind; a checkout with planning content in neither place is refused by name.
+- **A Store checkout is audited by its planning shape, not by its marker.** A
+  `.openspec-store/store.yaml` beside real `specs/` used to make audit look for
+  `<checkout>/openspec`, find nothing, and report `ready: true, capabilities: 0` — then apply a
+  target holding no requirements at all. The shape picks the root; the marker picks only the kind; a
+  checkout with planning content in neither place is refused by name.
 - **A workspace nobody could read is never `ready`** (`openspec.workspace-empty`).
-- New blockers for shapes that silently migrated nothing: `openspec.change-quoted-requirements` (requirements under `## Requirements` inside an active delta — the shape OpenSpec's own living template mandates, which stages nothing in a change), `openspec.nonstandard-living-spec` (markdown under `specs/` named neither `spec.md` nor `design.md`), `openspec.hidden-change-directory` (a dot-prefixed directory under `changes/`, which enumeration skips).
-- **The source digest no longer covers archived changes.** Frozen history never gates, so it must not be able to invalidate a completed mapping either; a living or active edit still does.
-- **The staged target is a real docs repo** — its own `loam.json`, `AGENTS.md` and an empty `architecture/landscape.likec4` — so `FOLLOW-UP.md`'s instructions run where they are written, and `FOLLOW-UP.md` now ends with the cutover procedure: `services/` and `features/` move, everything else is review residue.
-- **A target inside a live loam fleet is refused**, instead of producing phantom features in every `loam list`.
-- The living capability tree is copied verbatim under `legacy/openspec/specs/`, so `## Purpose` prose, section prose and capability `design.md` are preserved rather than dropped; an ISO-8601 `created` timestamp is a valid date; fenced FROM/TO examples inside a `## RENAMED Requirements` block are no longer parsed as renames; and a rename's TO name no longer demands a service allocation the router never asks for.
+- New blockers for shapes that silently migrated nothing: `openspec.change-quoted-requirements`
+  (requirements under `## Requirements` inside an active delta — the shape OpenSpec's own living
+  template mandates, which stages nothing in a change), `openspec.nonstandard-living-spec` (markdown
+  under `specs/` named neither `spec.md` nor `design.md`), `openspec.hidden-change-directory` (a
+  dot-prefixed directory under `changes/`, which enumeration skips).
+- **The source digest no longer covers archived changes.** Frozen history never gates, so it must
+  not be able to invalidate a completed mapping either; a living or active edit still does.
+- **The staged target is a real docs repo** — its own `loam.json`, `AGENTS.md` and an empty
+  `architecture/landscape.likec4` — so `FOLLOW-UP.md`'s instructions run where they are written, and
+  `FOLLOW-UP.md` now ends with the cutover procedure: `services/` and `features/` move, everything
+  else is review residue.
+- **A target inside a live loam fleet is refused**, instead of producing phantom features in every
+  `loam list`.
+- The living capability tree is copied verbatim under `legacy/openspec/specs/`, so `## Purpose`
+  prose, section prose and capability `design.md` are preserved rather than dropped; an ISO-8601
+  `created` timestamp is a valid date; fenced FROM/TO examples inside a `## RENAMED Requirements`
+  block are no longer parsed as renames; and a rename's TO name no longer demands a service
+  allocation the router never asks for.
 
 ### Performance
 
-`loam list` and `loam validate --service` are now flat in landscape edge count: loam reads LikeC4's parsed model and never computes a view, which it had no use for. On a generated 120-service fleet the same commands previously did not finish above roughly 200 edges. Measured at 120 services and 400/800 edges on an 8-core laptop: `list --json` 1.1–1.5 s, `validate --service <id> --json` 1.4–1.6 s. `loam init` no longer scaffolds a `views { view index { include * } }` block it never reads.
+`loam list` and `loam validate --service` are now flat in landscape edge count: loam reads LikeC4's
+parsed model and never computes a view, which it had no use for. On a generated 120-service fleet
+the same commands previously did not finish above roughly 200 edges. Measured at 120 services and
+400/800 edges on an 8-core laptop: `list --json` 1.1–1.5 s, `validate --service <id> --json` 1.4–1.6
+s. `loam init` no longer scaffolds a `views { view index { include * } }` block it never reads.
 
-`loam validate --all` remains ~30 s on that fleet — it parses a fresh LikeC4 workspace per service — and no speedup is claimed for it. Its target loop is now a bounded pool rather than a serial `await`, which is byte-for-byte output-identical and deterministic in ordering, but measured as a wash on the hardware available; the lever that moved this command was the parsed model, not the loop shape.
+`loam validate --all` remains ~30 s on that fleet — it parses a fresh LikeC4 workspace per service —
+and no speedup is claimed for it. Its target loop is now a bounded pool rather than a serial
+`await`, which is byte-for-byte output-identical and deterministic in ordering, but measured as a
+wash on the hardware available; the lever that moved this command was the parsed model, not the loop
+shape.
 
 ### Fixed — release engineering
 
-- The CI `package` job could never pass: `release-check.mjs` refused `--fixture-ready` whenever `GITHUB_ACTIONS` was set. The guard now keys on a tag ref, which is what it was actually protecting against. Any claim that CI had validated release readiness was false before this.
-- `npm run test:package` failed against the current tarball — the smoke test called `loam init --docs docs` without `--create`.
-- Five release scripts spawned `npm.cmd`/`loam.cmd` without a shell, which Node ≥ 20.12 rejects on Windows; they now resolve npm's CLI and run it through `process.execPath`. Windows itself is unexercised here — there is no Windows host — so this is verified structurally and a platform runtime check remains outstanding.
-- `pack-release` and `verify-release-artifact` compared an unpeeled `GITHUB_SHA` against `HEAD`, so an annotated or signed tag — the `npm version` and `git tag -a/-s` default — could never pass. Both peel now; `git tag -s v<version>` works.
-- Release artifact retention raised 1 → 14 days, so a candidate awaiting human approval outlives a weekend; CI narrowed to pushes on `main` with a concurrency group, so tags no longer run both workflows in parallel.
+- The CI `package` job could never pass: `release-check.mjs` refused `--fixture-ready` whenever
+  `GITHUB_ACTIONS` was set. The guard now keys on a tag ref, which is what it was actually
+  protecting against. Any claim that CI had validated release readiness was false before this.
+- `npm run test:package` failed against the current tarball — the smoke test called
+  `loam init --docs docs` without `--create`.
+- Five release scripts spawned `npm.cmd`/`loam.cmd` without a shell, which Node ≥ 20.12 rejects on
+  Windows; they now resolve npm's CLI and run it through `process.execPath`. Windows itself is
+  unexercised here — there is no Windows host — so this is verified structurally and a platform
+  runtime check remains outstanding.
+- `pack-release` and `verify-release-artifact` compared an unpeeled `GITHUB_SHA` against `HEAD`, so
+  an annotated or signed tag — the `npm version` and `git tag -a/-s` default — could never pass.
+  Both peel now; `git tag -s v<version>` works.
+- Release artifact retention raised 1 → 14 days, so a candidate awaiting human approval outlives a
+  weekend; CI narrowed to pushes on `main` with a concurrency group, so tags no longer run both
+  workflows in parallel.
 
 ### Documentation
 
-README, COMPARISON, SCHEMA and MIGRATING were re-checked claim by claim against the code and against upstream OpenSpec live on 2026-08-05. Corrected: the documented migration entry point (`migrate-openspec <root>` returns `invalid-option`; `audit-openspec` is the real first step and appeared nowhere in the README), the corpus and test counts, the `--baseline` flag the reproduction recipe needs, the Executability and agent-surface comparison rows, and the claim that OpenSpec has no multi-repo story — Stores shipped in v1.5.0, and the honest argument is their documented "No sync, ever — by design" plus the absence of any lockfile or commit pin. Removed: the argument that upstream's generated instructions are broken, which upstream fixed inside 48 hours and which loam had in its own surface.
+README, COMPARISON, SCHEMA and MIGRATING were re-checked claim by claim against the code and against
+upstream OpenSpec live on 2026-08-05. Corrected: the documented migration entry point
+(`migrate-openspec <root>` returns `invalid-option`; `audit-openspec` is the real first step and
+appeared nowhere in the README), the corpus and test counts, the `--baseline` flag the reproduction
+recipe needs, the Executability and agent-surface comparison rows, and the claim that OpenSpec has
+no multi-repo story — Stores shipped in v1.5.0, and the honest argument is their documented "No
+sync, ever — by design" plus the absence of any lockfile or commit pin. Removed: the argument that
+upstream's generated instructions are broken, which upstream fixed inside 48 hours and which loam
+had in its own surface.
 
 ### Added
 
@@ -704,4 +1680,9 @@ README, COMPARISON, SCHEMA and MIGRATING were re-checked claim by claim against 
 
 ## Upgrading to this release
 
-Nothing to upgrade from — this is the first published version. One note for a repository initialized from a pre-release build: the first `loam doctor` after installing this one reports `doctor.agent-files-stale` for **every** generated command and skill file. Earlier builds wrote no version stamp, so "no stamp" and "an old stamp" are indistinguishable, and loam refuses to assume the instructions on disk describe this binary. Read each file, then bump its stamp by hand, or delete it and re-run `loam init` — the drift is reported and never repaired for you.
+Nothing to upgrade from — this is the first published version. One note for a repository initialized
+from a pre-release build: the first `loam doctor` after installing this one reports
+`doctor.agent-files-stale` for **every** generated command and skill file. Earlier builds wrote no
+version stamp, so "no stamp" and "an old stamp" are indistinguishable, and loam refuses to assume
+the instructions on disk describe this binary. Read each file, then bump its stamp by hand, or
+delete it and re-run `loam init` — the drift is reported and never repaired for you.
