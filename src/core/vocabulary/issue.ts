@@ -31,15 +31,26 @@ export function gatesArchive(i: Issue): boolean {
  * severity and gating: severity answers "is the DOCUMENT valid", gating
  * answers "is the MERGE safe", and this one answers whose call the refusal is
  * — a human's or the grammar's. Almost every gating issue is a judgment about
- * the feature, which is exactly the judgment `--approve` exists to override;
- * `c4.service-binding-invalid` is not: the binding IS the path the merge
- * would write, so no approval changes what would happen, and the fix is the
- * name, never the flag. `archive` refuses these under the same `not-coherent`
- * envelope and spells this verdict per issue as the additive `overridable`
- * key, so a `--json` consumer branches on data rather than on a code list.
+ * the feature, which is exactly the judgment `--approve` exists to override.
+ *
+ * The exceptions are the ones where approval could not change what happens.
+ * `c4.service-binding-invalid`: the binding IS the path the merge would write,
+ * so the fix is the name, never the flag. `glossary.term-exists`: the merge is
+ * a whole-file copy over an authored definition, so approving it is approving a
+ * deletion nobody described — and the alternative the message names (edit the
+ * living definition in the same change) costs one `git mv` and loses nothing.
+ *
+ * `archive` refuses these under the same `not-coherent` envelope and spells
+ * this verdict per issue as the additive `overridable` key, so a `--json`
+ * consumer branches on data rather than on a code list.
  */
+const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
+  "c4.service-binding-invalid",
+  "glossary.term-exists",
+]);
+
 export function approveOverrides(i: Issue): boolean {
-  return i.code !== "c4.service-binding-invalid";
+  return !NEVER_OVERRIDABLE.has(i.code);
 }
 
 /**
@@ -225,6 +236,9 @@ export type IssueCode =
   /** the same join in the removal direction — this feature RETIRES a capability requirement that something the merge leaves behind still realizes, so the archive would leave `capability.realizes-unknown` standing against a document nobody in the feature touched. An error, exactly as `openapi.remove-op-consumed` is for the identical shape one axis over */
   | "capability.remove-requirement-realized"
   | CapabilityDocCode
+  /* --- the domain glossary: a term a feature introduces --- */
+  /** a `features/<FEAT>/glossary/<term>.md` whose term the living glossary already defines — the merge is a whole-file copy, so it would replace an authored definition wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local glossary document INTRODUCES a term, and rewriting one belongs in a pull request where git produces the conflict */
+  | "glossary.term-exists"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

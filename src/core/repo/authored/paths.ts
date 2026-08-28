@@ -159,3 +159,22 @@ export function featureCapabilityDeltasDir(featureDir: FeatureDir): string {
 export function glossaryDir(docsDir: DocsDir): string {
   return join(docsDir, "glossary");
 }
+
+/**
+ * A feature's own glossary deltas — `features/<FEAT>/glossary/<term>.md`, the
+ * vocabulary axis's answer to `specs/<svc>/spec.md`.
+ *
+ * A term a feature INTRODUCES ships and unships with it: the archive copies the
+ * definition into `glossary/`, and unarchive takes it back out with everything
+ * else the feature landed. That is the whole reason this route exists, and it is
+ * why it is CREATE-ONLY (`core/glossary/delta.ts` states the rule and the
+ * refusal): a definition is prose with no delta algebra to protect, so rewriting
+ * a living one belongs in a pull request where git itself produces the conflict.
+ *
+ * The DIRECTORY'S EXISTENCE is this axis's per-feature opt-in, exactly as
+ * `featureCapabilityDeltasDir`'s is the business axis's: a feature without one
+ * pays a single `existsSync` and produces nothing.
+ */
+export function featureGlossaryDir(featureDir: FeatureDir): string {
+  return join(featureDir, "glossary");
+}

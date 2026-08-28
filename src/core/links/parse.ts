@@ -20,6 +20,7 @@
  * two readers disagreeing about what a fence encloses prescribe a document no
  * author can satisfy.
  */
+import { relative, resolve, sep } from "node:path";
 import { fenceTracker } from "../document/parse.js";
 
 /** One link written in a markdown document. */
@@ -49,7 +50,7 @@ export interface DocumentLink {
  * writes, where over-reading would swallow the rest of a sentence and report a
  * target no author would recognise.
  */
-const INLINE_RE = /!?\[([^\]]*)\]\(\s*(<[^>\n]*>|[^\s)]*)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+const INLINE_RE = /!?\[([^\]]*)\]\(\s*(<[^>\n]*>|[^\s)]*)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/gd;
 
 /**
  * A reference DEFINITION — `[label]: target "title"` on its own line. Included
@@ -57,7 +58,7 @@ const INLINE_RE = /!?\[([^\]]*)\]\(\s*(<[^>\n]*>|[^\s)]*)(?:\s+(?:"[^"]*"|'[^']*
  * that collects its links at the bottom is following the convention, and a
  * reader that only saw inline links would grade it as having none.
  */
-const DEFINITION_RE = /^ {0,3}\[([^\]]+)\]:\s*(<[^>\n]*>|\S+)/;
+const DEFINITION_RE = /^ {0,3}\[([^\]]+)\]:\s*(<[^>\n]*>|\S+)/d;
 
 /**
  * Code spans, blanked before matching. `\`[a](b)\`` is prose ABOUT a link and
@@ -144,4 +145,99 @@ function decodePath(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+/**
+ * Re-express every relative link in `md` from a new base directory — the merge's
+ * half of the link convention.
+ *
+ * THE DEFECT THIS CLOSES is structural and predates the glossary. A feature's
+ * `specs/<svc>/spec.md` sits four directories below the docs root; the living
+ * `services/<svc>/spec.md` it merges into sits two. `loam archive` copies a
+ * requirement's text verbatim, so `[Order](../../../../glossary/order.md)` —
+ * correct where it was written, and clickable in the pull request that reviewed
+ * it — lands in the living document pointing two directories above the
+ * repository. The same is true of a delta requirement citing an ADR, which has
+ * been possible since before this module existed.
+ *
+ * REWRITING IS THE ONLY ANSWER THAT KEEPS BOTH PROPERTIES. The alternative
+ * considered was to have authors write the link relative to where the text will
+ * END UP, leaving loam to touch nothing — but that link does not resolve in the
+ * delta, and "it renders as a link in pull-request review, which is where these
+ * documents are actually read" is the convention's own first argument. So the
+ * author writes what is true where they write it, and the merge makes it true
+ * where it lands. The target is unchanged: only the route to it is.
+ *
+ * It is a positional rewrite, never a re-render: the matched target's own span
+ * is replaced and every other byte of the line — the link text, the title, the
+ * prose around it — is left exactly as written.
+ */
+export function rebaseLinks(md: string, move: { from: string; to: string }): string {
+  const from = resolve(move.from);
+  const to = resolve(move.to);
+  if (from === to) return md;
+  const fenced = fenceTracker();
+  // `split` with a capturing group keeps the separators, so a document's own
+  // mixture of CRLF and LF survives a rewrite that touches neither.
+  const parts = md.split(/(\r?\n)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const rawLine = parts[i]!;
+    if (fenced(rawLine)) continue;
+    parts[i] = rebaseLine(rawLine, from, to);
+  }
+  return parts.join("");
+}
+
+/** One line's links re-expressed, right to left so earlier spans keep their offsets. */
+function rebaseLine(rawLine: string, from: string, to: string): string {
+  const blanked = rawLine.replace(CODE_SPAN_RE, (m) => " ".repeat(m.length));
+  const spans: Array<[number, number, string]> = [];
+  const collect = (m: RegExpExecArray): void => {
+    const at = m.indices?.[2];
+    if (at === undefined) return;
+    const rebased = rebaseTarget(m[2]!, from, to);
+    if (rebased !== null) spans.push([at[0], at[1], rebased]);
+  };
+  const definition = DEFINITION_RE.exec(blanked);
+  if (definition) collect(definition);
+  else {
+    INLINE_RE.lastIndex = 0;
+    for (let m = INLINE_RE.exec(blanked); m !== null; m = INLINE_RE.exec(blanked)) collect(m);
+  }
+  let out = rawLine;
+  for (const [start, end, replacement] of spans.reverse()) {
+    out = out.slice(0, start) + replacement + out.slice(end);
+  }
+  return out;
+}
+
+/**
+ * One target, re-expressed from `to` instead of `from`, or null when there is
+ * nothing to re-express.
+ *
+ * The exclusions are `push`'s exactly — an absolute URL, a site-root path and a
+ * bare fragment mean the same thing from every directory — and the ANGLE-BRACKET
+ * and PERCENT-ESCAPE forms are preserved rather than normalised: a rewrite that
+ * silently changed `<a b.md>` into `a%20b.md` would be editing the author's
+ * spelling under cover of moving their file.
+ */
+function rebaseTarget(target: string, from: string, to: string): string | null {
+  const angled = target.startsWith("<") && target.endsWith(">");
+  const raw = angled ? target.slice(1, -1) : target;
+  if (raw === "" || raw.startsWith("#") || raw.startsWith("/")) return null;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return null;
+  const hash = raw.indexOf("#");
+  const pathPart = hash === -1 ? raw : raw.slice(0, hash);
+  const fragment = hash === -1 ? "" : raw.slice(hash);
+  if (pathPart === "") return null;
+  const encoded = pathPart.includes("%");
+  let rebased = relative(to, resolve(from, decodePath(pathPart))).split(sep).join("/");
+  // `relative` returns a bare name for a sibling, which markdown reads as a
+  // path relative to the file anyway — but `./` is what an author writes and
+  // what keeps the link distinguishable from a reference label.
+  if (rebased !== "" && !rebased.startsWith(".")) rebased = `./${rebased}`;
+  if (rebased === "") return null;
+  if (!angled && (encoded || rebased.includes(" "))) rebased = rebased.split(" ").join("%20");
+  const rewritten = rebased + fragment;
+  return angled ? `<${rewritten}>` : rewritten;
 }

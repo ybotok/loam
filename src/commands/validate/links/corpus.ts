@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { pathCaseIndex } from "../../../core/links/case.js";
 import { featureDocuments, fleetDocuments, serviceDocuments } from "../../../core/links/corpus.js";
 import { unresolvedLinkFindings, type LinkScope } from "../../../core/links/findings.js";
+import { featureGlossaryOverlay } from "../../../core/glossary/delta.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { repoPath } from "../../../core/envelope/json.js";
@@ -27,6 +28,8 @@ export interface LinkCheck {
   /** The service or feature the report is about; absent at fleet scope. */
   subject?: string;
   fleet?: FleetContext;
+  /** Paths an in-flight feature will create — `LinkScope.overlay` says why. */
+  overlay?: ReadonlySet<string>;
 }
 
 /** One service's documents, graded on the service target. */
@@ -34,9 +37,17 @@ export async function serviceLinkFindings(check: LinkCheck, paths: ServicePaths)
   return documentFindings(await serviceDocuments(paths), check);
 }
 
-/** One feature's documents, graded on the feature target. */
+/**
+ * One feature's documents, graded on the feature target — with the glossary
+ * terms it introduces treated as already living. See `LinkScope.overlay`: a
+ * feature cites the word it is adding at that word's future path, and an index
+ * built from the living tree alone would refuse the axis's own headline case.
+ */
 export async function featureLinkFindings(check: LinkCheck, featureDir: FeatureDir): Promise<Finding[]> {
-  return documentFindings(await featureDocuments(featureDir, check.fleet), check);
+  return documentFindings(await featureDocuments(featureDir, check.fleet), {
+    ...check,
+    overlay: await featureGlossaryOverlay(check.docsDir, featureDir),
+  });
 }
 
 /**
