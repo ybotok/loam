@@ -1748,6 +1748,46 @@ the attested commit is refused by name. Be precise about what that proves: it id
 was consumed and, when the file is committed, that it matches the attested commit. It does not prove
 the file came from executing that commit. No digest can.
 
+#### Any runner can answer, through loam's own shape
+
+Cucumber's JSON is not the contract; the **digest** is. `--results` therefore also accepts loam's
+own runner-neutral shape, chosen by its marker key:
+
+```json
+{
+  "loamScenarioReport": 1,
+  "results": [
+    { "digest": "9f2c1a4b6d0e5713", "status": "passed", "test": "RefundPaymentTest#capturedOrder" }
+  ]
+}
+```
+
+`digest` is the 16 lowercase hex of the `@loam-digest-…` tag `loam gherkin` stamped on the scenario.
+`status` is `passed` or `failed` — nothing else. `test` is optional free text: the runner's own name
+for the run, used as the evidence string a reader follows. `loamScenarioReport: 1` is the format
+version this loam reads; any other value refuses rather than being partly understood.
+
+This exists so a fleet on JUnit, pytest, Playwright, Vitest or a house runner can reach `verified` at
+all. Before it, a team whose evidence was a real green run was held at `attested` **by a file
+format** — which is the one thing the attested/verified distinction was never meant to mean. An
+answer from this shape is `answered_by: runner`, identical to a cucumber one, because it is the same
+claim answered to the same standard by the same identity: a content-derived digest, and a status
+saying a run reported it green. **Adapting a runner's output into this shape is a build step you
+own**; loam parses no vendor format it has not documented.
+
+It adds no forgeability. loam cannot prove any JSON came from executing a commit — that is why the
+record stores the file's sha256 and mtime and claims nothing more — and a hand-written cucumber
+array was always exactly as easy to write as this is.
+
+Parsing is strict where the cucumber reader is tolerant, for the reason `--contract-results` is: a
+cucumber report is another tool's file full of entries loam has no business judging, while this shape
+exists for one purpose, so a malformed entry is a malformed report rather than scenery to skip. A
+`status` of `skipped` or `pending` is **refused, not guessed** — a scenario that did not run has no
+place in an answer sheet, and omitting it leaves its claim unanswered rather than confirmed. A file
+carrying the marker is always graded as this shape, even when malformed: falling through to the
+cucumber parser would tell an author their report is not a cucumber array, which is true, useless,
+and hides the real mistake.
+
 **Two services wording a scenario identically share one digest**, and a single report then cannot
 say whose suite ran it. Those claims are left `unconfirmed` with `verify.digest-contested` (warn)
 naming both services and the affected claim ids, rather than confirming both from one run. Record

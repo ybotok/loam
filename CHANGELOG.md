@@ -46,6 +46,27 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   what the service actually serves. Most fleets generate OpenAPI and copy it by hand, and until now
   nothing in the product could notice when the copy stopped being current.
 
+### Any test runner can answer a scenario claim
+
+- **`--results` now also accepts `{"loamScenarioReport": 1, "results": [{"digest": "…", "status":
+  "passed", "test": "…"}]}`**, chosen by its marker key, beside the cucumber JSON it already read.
+  `digest` is the `@loam-digest-…` tag `loam gherkin` stamped; `status` is `passed` or `failed`;
+  `test` is optional free text used as the evidence string.
+- **This is a widened input dialect, not a weakened standard of proof.** The contract was never
+  cucumber's JSON — it is the content-derived digest plus a status saying a real run reported it
+  green, and both halves are present here. An answer from this shape is `answered_by: runner`,
+  identical to a cucumber one, because it is the same claim answered to the same standard by the
+  same identity. A fleet on JUnit, pytest, Playwright, Vitest or a house runner was previously held
+  at `attested` **by a file format**, which is the one thing that distinction was never meant to
+  mean.
+- It adds no forgeability: loam cannot prove any JSON came from executing a commit — which is why
+  the record stores the file's sha256 and mtime and claims nothing more — and a hand-written
+  cucumber array was always exactly as easy to write.
+- **Parsing is strict, and a `skipped` status is refused rather than guessed.** A scenario that did
+  not run has no place in an answer sheet; omitting it leaves the claim unanswered rather than
+  confirmed. A file carrying the marker is always graded as that shape even when malformed, so an
+  author is told the real mistake instead of "this is not a cucumber array".
+
 ### Two corrections from review, before either shipped in a release
 
 - **`spec.unknown-directive` no longer fires inside a fenced block.** A requirement body

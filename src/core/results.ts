@@ -56,6 +56,107 @@ export type ReportRead =
  * Read a parsed cucumber JSON document down to its digest-tagged scenarios.
  * `reportName` is how the caller spelled the file, for the refusal message.
  */
+/** The marker key that makes a JSON document loam's own scenario shape, and the version this loam reads. */
+export const SCENARIO_REPORT_MARKER = "loamScenarioReport";
+export const SCENARIO_REPORT_VERSION = 1;
+
+/**
+ * Is this document loam's own scenario-report shape rather than a cucumber one?
+ *
+ * Marker-only, deliberately: the caller must be able to choose a READER before
+ * either has validated anything, so that a malformed `loamScenarioReport` file
+ * refuses as a malformed report of ITS kind rather than as "not a cucumber
+ * array". A file that claims the shape and then fails it must never fall
+ * through to the other parser and be told it is the wrong sort of document.
+ */
+export function isScenarioReport(doc: unknown): boolean {
+  return isRecord(doc) && doc[SCENARIO_REPORT_MARKER] !== undefined;
+}
+
+/**
+ * `{"loamScenarioReport": 1, "results": [{"digest": "…", "status": "passed"}]}`
+ * — the runner-neutral answer sheet for `scenario.tested` claims.
+ *
+ * WHY THIS EXISTS. `loam gherkin` stamps every generated scenario
+ * `@loam-digest-<16hex>`, and until now only cucumber's JSON carried that tag
+ * back. A fleet on JUnit, pytest, Playwright, Vitest or a house runner could
+ * therefore never reach `verified` — not because its evidence was weaker, but
+ * because of a file format. The example fleet's own shipped record is the proof
+ * of the cost: every claim in it is `answered_by: agent`, so the product's
+ * showcase demonstrates only the lesser verdict.
+ *
+ * THE STANDARD OF PROOF IS UNCHANGED, and that is the whole argument. The
+ * contract was never the JSON dialect: it is the digest — content-derived, so
+ * rewording a `Given` breaks the match — plus a status that says a real run
+ * reported it green. Both halves are here. An answer from this file is
+ * `answered_by: runner` exactly as a cucumber one is, because it is the same
+ * claim answered to the same standard by the same identity.
+ *
+ * It also adds no forgeability. loam cannot prove any JSON came from executing
+ * a commit — SCHEMA says so, and the record stores the file's sha256 and mtime
+ * precisely because that is all it can honestly claim. A hand-written cucumber
+ * array was always exactly as easy to write as this is.
+ *
+ * The strict/tolerant split mirrors `verify/evidence/contract.ts` for its
+ * reason: a cucumber report is another tool's file full of entries loam has no
+ * business judging, while this shape exists for one purpose, so a malformed
+ * entry is a malformed report rather than scenery to skip. `status` must be
+ * exactly `passed` or `failed`; `skipped`, `pending` and vendor spellings are
+ * refused rather than guessed at, because guessing is how a not-run scenario
+ * becomes a confirmation.
+ */
+export function readScenarioReport(doc: unknown, reportName: string): ReportRead {
+  if (!isRecord(doc)) {
+    return { ok: false, message: `${reportName} is not a JSON object.` };
+  }
+  const version = doc[SCENARIO_REPORT_MARKER];
+  if (version !== SCENARIO_REPORT_VERSION) {
+    return {
+      ok: false,
+      message:
+        `${reportName} declares \`${SCENARIO_REPORT_MARKER}: ${JSON.stringify(version)}\`, and this loam reads ` +
+        `version ${SCENARIO_REPORT_VERSION}. A report loam cannot read is refused rather than answered in part.`,
+    };
+  }
+  const results = doc["results"];
+  if (!Array.isArray(results)) {
+    return {
+      ok: false,
+      message: `${reportName} has no \`results\` array — the shape is {"${SCENARIO_REPORT_MARKER}": 1, "results": [{"digest": "…", "status": "passed"}]}.`,
+    };
+  }
+  const scenarios: ReportScenario[] = [];
+  for (const [i, entry] of results.entries()) {
+    const at = `${reportName} results[${i}]`;
+    if (!isRecord(entry)) return { ok: false, message: `${at} is not an object.` };
+    const digest = str(entry["digest"]);
+    if (digest === undefined || !/^[0-9a-f]{16}$/.test(digest)) {
+      return {
+        ok: false,
+        message: `${at} has no \`digest\` of 16 lowercase hex characters — that is the \`@loam-digest-…\` tag \`loam gherkin\` stamped on the scenario.`,
+      };
+    }
+    const status = str(entry["status"]);
+    if (status !== "passed" && status !== "failed") {
+      return {
+        ok: false,
+        message:
+          `${at} has \`status: ${JSON.stringify(entry["status"])}\`; this shape accepts only "passed" or "failed". ` +
+          "A scenario that did not run has no place in an answer sheet — omit it, and its claim stays unanswered rather than becoming a confirmation.",
+      };
+    }
+    scenarios.push({
+      // The runner's own name for the test, when it gave one — this is where a
+      // reader goes to see the run, and it is the only free text here.
+      where: str(entry["test"]) ?? `(${SCENARIO_REPORT_MARKER} entry ${i})`,
+      digests: [digest],
+      steps: [status],
+      hooks: [],
+    });
+  }
+  return { ok: true, scenarios };
+}
+
 export function readCucumberReport(doc: unknown, reportName: string): ReportRead {
   if (!Array.isArray(doc)) {
     return {

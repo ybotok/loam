@@ -115,8 +115,13 @@ integration/ops test, not an acceptance test). Each claim has a stable id, so
 two runs are diffable and an answer cannot drift onto a different question.
 
 Three answer channels, and they never overlap. The \`scenario.tested\` claims
-are the TEST RUNNER's to answer: run the generated suite with a cucumber JSON
-report (\`cucumber-js --format json:report.json\`) and pass it back —
+are the TEST RUNNER's to answer: run the generated suite and pass its report
+back — cucumber JSON (\`cucumber-js --format json:report.json\`), or loam's own
+runner-neutral shape \`{"loamScenarioReport": 1, "results": [{"digest": "…",
+"status": "passed"}]}\` that any runner can be adapted into, chosen by its
+marker key. The digest is the contract, never the dialect: both read
+\`answered_by: runner\` because both are a real run reporting that digest green,
+so a JUnit or pytest fleet is not held at \`attested\` by a file format —
 \`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
 report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
 and every step passed — every occurrence, when the report holds a re-run, and
