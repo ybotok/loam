@@ -208,9 +208,20 @@ export async function record(
   if (service === undefined) {
     verification = buildVerification(checklist, answers, recorded, reports);
   } else {
+    // The docs side of the pin, and it is ASKED FOR rather than required: a
+    // docs repo is not obliged to be a git checkout, and the attestation simply
+    // carries no `docsCommit` when git cannot answer. Failing the record over
+    // it would refuse a working fleet for a field that is optional by design.
+    const docsHead = await repositoryCommit(docsDir);
     const built = buildFederatedVerification(
       checklist,
-      { service, recorded, commit: serviceCommit!, reports },
+      {
+        service,
+        recorded,
+        commit: serviceCommit!,
+        reports,
+        ...(docsHead.ok ? { docsCommit: docsHead.commit } : {}),
+      },
       answers,
       previous?.verification ?? null,
     );

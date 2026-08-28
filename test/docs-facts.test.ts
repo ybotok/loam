@@ -294,6 +294,7 @@ describe("public docs name only emitted codes", () => {
     "components.schemas": "AsyncAPI document section path, as above",
     "loam.json.service": "config key path — the service binding inside loam.json",
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
+    "contracts.openapi": "config key path — where loam.json names the build's OpenAPI output",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */

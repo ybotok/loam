@@ -113,6 +113,35 @@ the record is a reviewable file in your own repo, and re-checking it needs nothi
 not a hedge about cloud products; it is the product decision that evidence you cannot inspect
 locally is not evidence.
 
+## The wider field, and who is actually nearest
+
+This page compares loam to OpenSpec because that is the tool it shares a corpus with. It is not the
+only neighbour, and on six of loam's seven joins it is not the nearest one — a reader deciding
+between tools deserves the rest of the field named, including where somebody else does a piece of
+this better. Surveyed 2026-08-29.
+
+| Neighbour | The mechanism it shares | Who is ahead, and at what |
+|---|---|---|
+| [OpenFastTrace](https://github.com/itsallcode/openfasttrace) | The nearest thing to loam's join table: `Covers:` tokens over a heterogeneous corpus, with coverage verdicts. | **OFT, on one point that matters.** Its items are `req~name~revision` — the version is *in the token* — so a coverer naming revision 3 of a requirement now at 4 is reported `OUTDATED`. loam's `Realizes:` pin is the same idea arrived at independently; `Covers:`, `Requires:` and glossary links are still unversioned. |
+| [Doorstop](https://doorstop.readthedocs.io/en/latest/reference/item.html) | `loam vouch`, thirteen years early: a digest over a declared subset of an item, stored at the moment a human signed off. | **Doorstop, on one axis loam only just gained.** Its links store the *parent's* fingerprint, so a parent edit marks children suspect. loam had no standing suspect link at all until `capability.realizes-stale`. |
+| [Pact Broker](https://docs.pact.io/pact_broker/can_i_deploy) | `can-i-deploy` is `loam gate` described almost word for word: a join over recorded evidence that executes nothing. | **Pact, on strength of evidence.** Its verification is a real execution of a provider against a consumer's expectation, and it knows versions and environments. `loam gate` knows documentation state and feature verdicts, and has no notion of an artifact or an environment. |
+| [Backstage](https://backstage.io/docs/features/software-catalog/descriptor-format) | `catalog-info.yaml` declares services, owners, API entities and `dependsOn` edges — loam's service binding and operation spine, as a server-side graph. | **Backstage, on onboarding and ownership.** Discovery across repos, and owners resolved against real groups where loam reads `owned_by` as prose. It has no requirement→operation join and no delta lifecycle. A fleet already running a catalog should ask why it needs a second map. |
+| [EventCatalog](https://www.eventcatalog.dev/features/documentation) | Joins docs, OpenAPI and AsyncAPI by id and version across domains and services. | **EventCatalog, on contract documentation.** It generates and versions from the specs themselves. It grades nothing against requirements and has no merge. |
+| [oasdiff](https://github.com/Tufin/oasdiff) / [buf](https://buf.build/docs/breaking/overview) | Breaking-change detection over a contract, against a base. | **They are, comprehensively.** loam checks response schemas for *presence*, never content: a narrowed response type archives green. The half they cannot have is loam's — refusing a removal *the fleet still consumes*, which needs a document that knows the whole fleet. Use both. |
+| [StrictDoc](https://strictdoc.readthedocs.io/) / [Sphinx-Needs](https://sphinx-needs.readthedocs.io/) | Typed requirement relations, stable UIDs, traceability over a plain-file corpus. | **Closest in ambition.** Sphinx-Needs' stack is the single project most likely to be pointed at and called "that already exists". Both parse source code to trace requirements into it, which loam refuses by design; neither has a delta lifecycle or a transactional merge. |
+| [ArchUnit](https://www.archunit.org/) / [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) | Architecture conformance, checked against the code. | **They own the check loam declines.** `unchecked.ts`'s second entry — "whether the model is the architecture the code actually has" — is their question, and naming them is more useful than pretending it is nobody's. |
+
+What none of them combines is the whole: an authored C4 delta and requirement deltas merged into
+living documents by one transactional, rollback-capable write, joined by exact tokens across
+Markdown, YAML and LikeC4 DSL, with a per-claim evidence record that keeps an agent's word and a
+test run permanently distinguishable. Every individual piece above exists somewhere, several of them
+done better. The combination appears to be unoccupied — which is a weaker claim than novelty and a
+stronger one than "nothing like this exists", and it is the honest one.
+
+The framing worth keeping: loam is not the first tool with stable requirement ids or human sign-off
+digests. Those are thirty years old in the requirements-management world, and conspicuously absent
+from the 2025-26 agentic-spec wave, which identifies requirements by heading text or not at all.
+
 ## When OpenSpec is enough
 
 For a single repository, a small team, and no important cross-service API contracts, most of loam's

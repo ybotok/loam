@@ -106,7 +106,7 @@ export function registerValidate(program: Command): void {
       /** One service target, from a name the enumeration or the grammar approved. */
       const serviceTarget = (id: RawServiceId): Promise<TargetReport> =>
         guarded({ kind: "service", id }, () =>
-          validateService({ docsDir, service: id, repoDir: repoOf(id), gherkinDir: config.gherkinDir, fleet }),
+          validateService({ docsDir, service: id, repoDir: repoOf(id), gherkinDir: config.gherkinDir, contracts: config.contracts, fleet }),
         );
 
       const targets: TargetReport[] = [];
@@ -163,6 +163,7 @@ export function registerValidate(program: Command): void {
                   repoDir: repoOf(svc.id),
                   preloaded: land,
                   gherkinDir: config.gherkinDir,
+                  contracts: config.contracts,
                   fleet,
                   landscapeReported: true,
                 }),

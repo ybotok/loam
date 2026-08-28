@@ -137,6 +137,42 @@ export function noticesFor(claims: readonly AnsweredClaim[], feature: string): V
 }
 
 /**
+ * `verify.checklist-forked` — two services answered DIFFERENT versions of this
+ * feature{@link ServiceAttestation}'s question set.
+ *
+ * The record carries one top-level `checklist` digest, so before attestations
+ * carried their own the file could not represent this at all: a service that
+ * attested last week against a delta since rewritten wrote the same digest as
+ * one that attested this morning, and the record-level staleness check flagged
+ * both or neither. It could never say WHICH answers went stale, which is the
+ * only question a reader has.
+ *
+ * A warn, and only ever a warn: a fork is normal mid-rollout — services attest
+ * as they finish, and a feature legitimately changes between the first and the
+ * last. What it must not do is stay invisible. Attestations with no `checklist`
+ * field are excluded rather than counted as a third version: they make no claim
+ * about what they answered, and reading silence as disagreement would fire this
+ * on every record written before the field existed.
+ */
+export function forkedChecklistNotices(recorded: Verification | null): VerifyNotice[] {
+  const stated = (recorded?.attestations ?? []).filter((a) => a.checklist !== undefined);
+  const versions = new Set(stated.map((a) => a.checklist!));
+  if (versions.size < 2) return [];
+  const byVersion = [...versions].sort().map((v) => `${v} (${stated.filter((a) => a.checklist === v).map((a) => a.service).sort().join(", ")})`);
+  return [
+    {
+      code: "verify.checklist-forked",
+      severity: "warn",
+      message:
+        `${plural(versions.size, "checklist version")} are answered by this record's attestations: ${byVersion.join("; ")}. ` +
+        "The feature changed between them, so these answers are not all about the same questions. " +
+        "Re-record the services on the older version from their own repositories (`loam verify <FEAT> --service <id> --record`), " +
+        "or accept the split knowingly — nothing gates on it.",
+    },
+  ];
+}
+
+/**
  * The claims one report could not attribute: a scenario digest — and therefore
  * an `@loam-digest-…` tag — that more than one service claims.
  *

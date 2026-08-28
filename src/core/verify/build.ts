@@ -98,6 +98,8 @@ export interface Attestation {
   recorded: string;
   commit: string;
   reports: ConsumedReports;
+  /** The docs-repo HEAD the checklist was derived from, when git could answer. */
+  docsCommit?: string;
 }
 
 export function buildFederatedVerification(
@@ -106,7 +108,7 @@ export function buildFederatedVerification(
   answers: Answer[],
   previous: Verification | null,
 ): FederatedBuild {
-  const { service, recorded, commit, reports } = attestation;
+  const { service, recorded, commit, reports, docsCommit } = attestation;
   const currentById = new Map(checklist.claims.map((claim) => [claim.id, claim]));
   const localIds = new Set(checklist.claims.filter((claim) => claim.subject === service).map((claim) => claim.id));
 
@@ -167,6 +169,12 @@ export function buildFederatedVerification(
       commit,
       recorded,
       claims: checklist.claims.filter((c) => localIds.has(c.id)).map((c) => c.id),
+      // What THIS repository answered, and what it answered it against. Both
+      // ride with the attestation rather than the record for the reason the
+      // reports do: they are one repository's facts, pruned and retained with
+      // that repository's answers.
+      checklist: checklist.digest,
+      ...(docsCommit === undefined ? {} : { docsCommit }),
       // Filed with the attestation, not the record: each report is one
       // repository's run, and it is pruned or retained with that repository's
       // answers rather than outliving them — the contract report under the
