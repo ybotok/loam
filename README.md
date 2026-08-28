@@ -219,9 +219,10 @@ wants in, graduate to the full wiring:
 ### Explore the example fleet
 
 The repo ships a runnable example fleet under
-[`examples/docs/`](https://github.com/ybotok/loam/tree/main/examples/docs) — five services, one
-feature already shipped, two in flight, the event spine, the permission vocabulary, the business
-tree and a verification record.
+[`examples/docs/`](https://github.com/ybotok/loam/tree/main/examples/docs) — five services, two
+features already shipped, two in flight, the event spine, the permission vocabulary, the business
+tree, and two verification records that read `attested` and `verified` so the difference between
+them can be seen standing.
 [`examples/README.md`](https://github.com/ybotok/loam/blob/main/examples/README.md) is the guided
 tour: what each service is there to show, and what every one of the ten deliberate warnings
 demonstrates. From a clone, point a throwaway `loam.json` at it and run the real commands (the file
@@ -234,7 +235,8 @@ npm run dev -- status                        # what to do next, derived from the
 npm run dev -- validate --all                # the CI gate: 0 errors, 10 deliberate warnings
 npm run dev -- archive FEAT-101 --dry-run    # the whole three-axis merge plan, writing nothing
 npm run dev -- archive FEAT-112 --dry-run    # an operation being retired, writing nothing
-npm run dev -- verify FEAT-088               # a shipped feature's done-check, frozen history
+npm run dev -- verify FEAT-088               # a shipped feature's done-check: attested
+npm run dev -- verify FEAT-120               # its pair, same check: verified
 ```
 
 `test/examples.test.ts` pins the validate summary and every finding code, and both archive plans

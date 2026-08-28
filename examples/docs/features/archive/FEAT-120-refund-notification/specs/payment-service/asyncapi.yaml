@@ -1,0 +1,137 @@
+# The async contract — the messages this service puts on the bus.
+#
+# AsyncAPI 3.0 only. Its operations are named top-level objects carrying
+# `action: send|receive`, which is what makes a message's direction legible;
+# 2.x spells the same thing as publish/subscribe under a channel, where the
+# two words are ambiguous about whose perspective they take.
+#
+# loam reads message NAMES and the `action` of the operation carrying them.
+# It never joins on anything inside `payload` — the one look inside is a
+# presence probe (a payload declaring no shape at all warns, a non-JSON
+# `schemaFormat` is skipped) — which is what keeps swapping JSON Schema for
+# Avro a `schemaFormat` line here rather than a change in loam.
+#
+# The name is the spine: the landscape edge's `metadata { publishes }`, the
+# requirement's `Publishes:` line and `name` below are one name spelled three
+# times, and they must be identical.
+asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+
+channels:
+  paymentEvents:
+    address: payment.events.v1
+    description: Payment lifecycle events, published by the outbox relay
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+      PaymentCaptured:
+        $ref: '#/components/messages/PaymentCaptured'
+      # NEW: the refund rides the existing lifecycle topic rather than one of
+      # its own — a consumer already filtering payment.events for a capture is
+      # the same consumer that wants the refund.
+      PaymentRefunded:
+        $ref: '#/components/messages/PaymentRefunded'
+    x-loam-based-on: 036cbb7e0245e1a9
+
+operations:
+  sendPaymentAuthorized:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentAuthorized'
+    x-loam-based-on: 72934fd7ed7f6df9
+  sendPaymentCaptured:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
+    x-loam-based-on: 01ac447e38a868cc
+  # NEW: announced once, and only after the acquirer has reconciled.
+  sendPaymentRefunded:
+    action: send
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentRefunded'
+
+components:
+  messages:
+    # NEW: the money is back and the acquirer agrees. `refundedAmount` is what
+    # the refund actually returned, which is not always the captured amount —
+    # a partial refund is the same event with a smaller number.
+    PaymentRefunded:
+      name: payment.PaymentRefunded
+      title: Payment refunded
+      payload:
+        type: object
+        required: [ paymentId, orderId, refundedAmount, currency, refundedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          refundedAmount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          refundedAt:
+            type: string
+            format: date-time
+    PaymentAuthorized:
+      # Namespaced by the domain that owns it. One message has exactly one
+      # producer: two services declaring they send this name is
+      # `asyncapi.message-contested`, and then which contract a consumer reads
+      # is a coin flip.
+      name: payment.PaymentAuthorized
+      title: Payment authorized
+      # JSON Schema today, because this fleet runs no schema registry. An Avro
+      # record here later needs a `schemaFormat:` line and no other change:
+      # everything below is opaque to loam.
+      payload:
+        type: object
+        required: [ paymentId, orderId, amount, currency, authorizedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          amount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          authorizedAt:
+            type: string
+            format: date-time
+      x-loam-based-on: 0e5a230802d1573b
+    PaymentCaptured:
+      name: payment.PaymentCaptured
+      title: Payment captured
+      payload:
+        type: object
+        required: [ paymentId, orderId, capturedAmount, currency, capturedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          capturedAmount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          capturedAt:
+            type: string
+            format: date-time
+      x-loam-based-on: 449d5409ccf1b59f

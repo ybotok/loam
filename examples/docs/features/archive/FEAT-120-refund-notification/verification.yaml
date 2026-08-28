@@ -1,0 +1,84 @@
+# Verification record for FEAT-120 — written by `loam verify FEAT-120` (--results / --contract-results / --record).
+#
+# Every claim below was derived mechanically from this feature's own artifacts:
+# delta.likec4, specs/<svc>/spec.md, specs/<svc>/arch.spec.md and specs/<svc>/
+# openapi.yaml. Each verdict names who answered it: `answered_by: runner` means a
+# test report's digest-tagged scenarios answered it mechanically — cucumber JSON,
+# or loam's own {"loamScenarioReport": 1, ...} shape that any runner adapts into;
+# `answered_by: external-runner` means a contract-test report's operationId-matched
+# entries did, and `contractReport:` records which file a --contract-results run
+# read; `answered_by: agent` means somebody's word about the code, which loam did
+# not check. Nothing gates on any of them.
+#
+# A `scenario.tested` claim confirmed by an agent is ATTESTED, not run: loam
+# reports it as `verify.scenario-attested` and the feature does not count as
+# verified until a report answers it. `report:` records the file a --results run
+# read — its sha256 and mtime say WHICH file, not that it came from that commit;
+# no digest can say that.
+#
+# `checklist` is a digest of the claim ids. If `loam verify` stops reporting the same
+# one, the feature changed after this was recorded and these answers are stale.
+feature: FEAT-120
+recorded: 2026-08-29
+checklist: 060a0cc49fcb1d64
+summary:
+  claims: 7
+  confirmed: 7
+  unconfirmed: 0
+claims:
+  - id: event.declares-5ba57275
+    kind: event.declares
+    claim: notification-service declares it receives message 'payment.PaymentRefunded'
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - internal/consumer/refund.go:18
+    note: the consumer subscribes to payment.events.v1 and dispatches PaymentRefunded to the refund notice renderer
+  - id: event.declares-02a85dfd
+    kind: event.declares
+    claim: payment-service declares it sends message 'payment.PaymentRefunded'
+    verdict: confirmed
+    answered_by: agent
+    evidence:
+      - src/main/java/com/marketplace/payments/outbox/RefundOutboxRelay.java:44
+    note: the outbox relay publishes payment.PaymentRefunded on the acquirer reconciliation callback
+  - id: scenario.tested-6a899c70
+    kind: scenario.tested
+    claim: scenario 'A completed refund is announced once' of requirement 'Notify a customer when a refund completes' (notification-service) is covered by a test
+    verdict: confirmed
+    answered_by: runner
+    evidence:
+      - "docs/features/FEAT-120-refund-notification/scenario-report.json: TestRefundNotice_SendsOnce"
+  - id: scenario.tested-173ff6e0
+    kind: scenario.tested
+    claim: scenario 'The broker redelivers a refund already announced' of requirement 'Notify a customer when a refund completes' (notification-service) is covered by a test
+    verdict: confirmed
+    answered_by: runner
+    evidence:
+      - "docs/features/FEAT-120-refund-notification/scenario-report.json: TestRefundNotice_IgnoresRedelivery"
+  - id: scenario.tested-b8dc0f33
+    kind: scenario.tested
+    claim: scenario 'Refund a captured payment in full' of requirement 'Refund a captured payment' (payment-service) is covered by a test
+    verdict: confirmed
+    answered_by: runner
+    evidence:
+      - "docs/features/FEAT-120-refund-notification/scenario-report.json: RefundPaymentTest#refundsInFull"
+  - id: scenario.tested-75b9e98d
+    kind: scenario.tested
+    claim: scenario 'A second refund of the same payment is refused' of requirement 'Refund a captured payment' (payment-service) is covered by a test
+    verdict: confirmed
+    answered_by: runner
+    evidence:
+      - "docs/features/FEAT-120-refund-notification/scenario-report.json: RefundPaymentTest#refusesSecondRefund"
+  - id: scenario.tested-8aa6f501
+    kind: scenario.tested
+    claim: scenario 'The refund is announced only after the acquirer reconciles' of requirement 'Refund a captured payment' (payment-service) is covered by a test
+    verdict: confirmed
+    answered_by: runner
+    evidence:
+      - "docs/features/FEAT-120-refund-notification/scenario-report.json: RefundOutboxTest#publishesOnceAfterReconciliation"
+report:
+  path: docs/features/FEAT-120-refund-notification/scenario-report.json
+  digest: 602bd905c7a4878195fccb98f2134b6d883c0ef42c33b5d8772aaee067dfa3f5
+  mtime: 2026-08-28T18:49:56.422Z
+  scenarios: 5

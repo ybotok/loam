@@ -46,6 +46,32 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   what the service actually serves. Most fleets generate OpenAPI and copy it by hand, and until now
   nothing in the product could notice when the copy stopped being current.
 
+### The example fleet now demonstrates both verdicts
+
+- **New archived feature `FEAT-120-refund-notification`** in `examples/docs/`, and it reads
+  **`verified`**. It is the sequel FEAT-088 left open — the money went back and nobody told the
+  customer — so it publishes `payment.PaymentRefunded` from payment-service and has
+  notification-service turn it into the customer's message: the event spine end to end, across two
+  services, with no HTTP anywhere in it.
+- **The two archived records are a matched pair, and that is the point.** FEAT-088's scenario claims
+  rest on an agent's word (`attested`); FEAT-120's on a digest-matched runner report (`verified`).
+  A showcase demonstrating only the lesser verdict teaches that the distinction is decorative —
+  which is the one thing this product may not teach, since keeping those two answers apart is most
+  of what it claims to be for.
+- **Every artifact was produced by the real commands**, not hand-written: `loam new`, `loam rebase`,
+  `loam gherkin` (which is where the five scenario digests came from), `loam verify --results`, then
+  `loam archive` — snapshot, manifest and all. The `scenario-report.json` beside the record is a
+  real `loamScenarioReport` file, and the record's `report:` block carries that file's true sha256.
+- Its two `event.declares` claims still rest on an agent's word, and it is `verified` anyway — the
+  verdict turns on the scenario claims alone. That mix is the honest common case: a suite that
+  answers the scenarios, and wiring claims a human vouches for.
+- The fleet still reports **0 errors and exactly the same ten deliberate warnings**: the merge
+  disturbed nothing. `test/examples.test.ts` now pins both verdicts and asserts they stay different,
+  so "fixing" the example by making both sides agree fails the suite.
+- `examples/README.md` also separates two words that were being read as one: a SERVICE's ladder rung
+  (`draft` → … → `vouched`) is not a feature's verdict. FEAT-120 is `verified` in a fleet whose
+  services are all `draft`, which is exactly where a team stands the day its first suite goes green.
+
 ### `docs.binary-behind` — the run that reports green without having graded the corpus
 
 - **New finding `docs.binary-behind` (warn)**, on `loam validate --all` and `loam doctor`: the docs
