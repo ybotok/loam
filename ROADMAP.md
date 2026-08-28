@@ -232,6 +232,7 @@ criteria, and what each review surfaced — are in this file's history (`git sho
 - Subsystems: a navigable tree under `services/` that no identity depends on — `600a696`…`8aee101`.
 - The capability vocabulary, the requirement join and the `list capabilities` rollup — `2bd9400`…`e26ff9f`.
 - Documentation, package-content and link protection — `6ea2a68`…`08330ea`; paper trails `5cd3942`.
+- The domain glossary, and the link check that makes it exact — `bc1b936`…`44a5386`.
 
 Honest leftovers. Two live outside this repository: the CI `stability` job has still to be observed
 green, which needs a push and then a `workflow_dispatch`; and both pilot fleets meeting their
@@ -261,20 +262,6 @@ item gets promoted — it has already moved to `## Now`.
 - **UI generation:** begin with a disposable projection over the stable JSON contract only after CLI
   consumers demonstrate a repeated navigation problem. It must not introduce a second mutable state,
   hidden workflow state, or a required service.
-- **Domain glossary — queued, and sequenced after the business axis.** Requirements and specs work
-  over a domain, and nothing in loam holds its vocabulary: there is no glossary concept anywhere,
-  not even a rejected one. The shape is `glossary/<term>.md`, one file per term — NOT a
-  `glossary.yaml`, because a single vocabulary file at fleet scale is unworkable and a second list
-  is the drift `loam init`'s removed service manifest was removed for: the directory IS the list.
-  The general rule it settles: **an entry with prose gets a file; an entry without prose stays a
-  line in YAML** — which is why `permissions.yaml` stays as it is.
-
-  It is checkable because **a link is a join**. A spec links to a term's file; loam resolves the
-  target (an error when it does not exist, as `capability.unknown` is) and reports a term nothing
-  links to (a warning, as `capability.unrealized` is). That is exact where matching words in prose
-  would be a heuristic. It is sequenced after the business axis because `capabilities/<cap>/spec.md`
-  is where domain words appear thickest, and a glossary with nothing linking to it proves nothing.
-
 - **Architectural obligations — queued, with a prerequisite.** An architect has one working channel
   to a team today and it is checked: an edge carrying `metadata { op }` obliges the provider to
   define that operationId or `spine.op-undefined` fails the gate. There is no equivalent for the
