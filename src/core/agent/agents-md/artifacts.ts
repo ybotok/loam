@@ -69,14 +69,19 @@ integration at all — graph view, backlinks and search all work on markdown lin
 autocomplete and rename-tracking produce markdown links too. The authoring
 comfort is a toggle in somebody's editor, not a decision this repo carries.
 
-**Nothing validates this today.** No check reads a link, a repo holding both
-spellings produces no finding, and there is no code to branch on. It is a
-convention rather than a preference because a link here is a **join**, not
-decoration: a requirement that names a term wants that term's document linked
-and that document updated, and an ADR that supersedes another wants to say
-which — the same kind of relationship \`Operations:\` and \`Covers:\` already
-state, and the same kind a later check could resolve. Write the resolvable form
-now, and that check stays possible.
+**\`loam validate\` resolves these links** (\`link.unresolved\`, error): a relative
+target that names nothing is a broken join, reported once per document with
+every bad link and its line. A link here is a **join**, not decoration — a
+requirement that names a term wants that term's document linked, and an ADR that
+supersedes another wants to say which, the same kind of relationship
+\`Operations:\` and \`Covers:\` already state.
+
+Three things are deliberately NOT graded, so write them freely: a target outside
+this repository (\`../../some-service/README.md\` — that tree may not be checked
+out beside these documents), a link to a heading (\`#section\`), and any link
+inside a fenced code block or an inline code span, which is how a document shows
+the convention without being convicted for it. Nor is CASE: \`[Order](Order.md)\`
+beside \`order.md\` resolves here and 404s on GitHub.
 
 ## \`loam.json\` — the wiring, in every repo
 

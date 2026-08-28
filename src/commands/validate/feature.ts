@@ -39,6 +39,7 @@ import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "./checks/vocabulary.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
+import { featureLinkFindings } from "./links/corpus.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function validateFeature(
@@ -188,6 +189,11 @@ export async function validateFeature(
     const conflict = documentConflictFinding(`capability ${doc.id}: spec.md`, doc.id, raw);
     if (conflict !== null) findings.push(conflict);
   }
+
+  // The links this feature's own documents write — the intent, each service's
+  // two spec deltas, its ADRs and its capability deltas. Same place in the
+  // order as the service target's: after every join loam defined a line for.
+  findings.push(...(await featureLinkFindings({ docsDir, subject: featureId, fleet }, featureDir)));
 
   findings.push(
     ...(await deltaArchCoverage({

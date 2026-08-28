@@ -32,6 +32,7 @@ import { UnsafePathError } from "../../../core/kernel/path-safety.js";
 import { interruptedCommitFinding } from "../../../core/staging/recovery/finding.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { errorText } from "../checks/vocabulary.js";
+import { serviceLinkFindings } from "../links/corpus.js";
 import { sourceScopeFindings } from "../checks/sources.js";
 import { apiAxisFindings } from "./api.js";
 import { evidencePinFindings } from "./evidence-pins.js";
@@ -251,6 +252,12 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
     findings.push(...realizesUnknownFindings(docReqs, target, capabilityReqs));
   }
+
+  // The links this service's own documents write. Its place in the order is
+  // deliberate: every axis above joins through a LINE loam defined, and this one
+  // grades the join an author writes in prose — so it reads last among the
+  // document checks and adds no input any of them depend on.
+  findings.push(...(await serviceLinkFindings({ docsDir, subject: service, fleet }, paths)));
 
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir, fleet })));
