@@ -12,6 +12,20 @@
  * Both are warnings that GATE (issue.ts: severity says the DOCUMENT is legal —
  * it is, it parses — gating says the MERGE is unsafe). `--approve` overrides,
  * as with every judgment about the feature.
+ *
+ * BOTH DELTA CORPORA ARE READ, because `loam new` scaffolds into both. A
+ * `--capability` run writes `features/<FEAT>/capabilities/<id>/spec.md` from a
+ * template whose example sits inside an HTML comment exactly like the two spec
+ * templates', and an author who copies that block out and archives without
+ * editing it would publish `TODO — name the promise` into a LIVING capability
+ * document — which is strictly worse than the service case this gate was built
+ * for: a capability document outlives every service that realizes it, and a
+ * `Realizes:` line pointed at the placeholder's id would then be a join to a
+ * promise nobody wrote. The capability deltas are read HERE rather than handed
+ * in through `AuthoringScope`, because this is a walk over the feature's own
+ * documents and the scope already names the feature; the read is one
+ * `existsSync` for the fleets that have not adopted the axis, and the memo when
+ * a context was threaded.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -21,6 +35,7 @@ import type { Issue } from "../../vocabulary/issue.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { Requirement } from "../../document/spec.js";
 import { parseRequirements } from "../../document/parse.js";
+import { featureCapabilityDeltas } from "../../capabilities/delta/tree.js";
 import { featurePaths, featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
 import type { FeatureDir } from "../../kernel/ids/dirs.js";
 import {
@@ -65,29 +80,69 @@ export async function authoringIssues(scope: AuthoringScope): Promise<Issue[]> {
     for (const axis of SPEC_AXES) {
       const path = paths[axis.key];
       if (!existsSync(path)) continue;
-      const reqs =
-        scope.context === undefined
-          ? parseRequirements(await readFile(path, "utf8"))
-          : await scope.context.readRequirements(path);
-      const found = new Set<string>();
-      // ADDED/MODIFIED only: those are the texts this MERGE would write. A
-      // BASE requirement is a quote of the living state — if a sentinel sits
-      // there, some earlier archive published it and this feature is not the
-      // author to gate on it — and a REMOVED one is leaving the spec anyway.
-      for (const r of reqs) {
-        if (r.kind === "ADDED" || r.kind === "MODIFIED") sentinelsIn(r, found);
-      }
+      const found = unauthored(await requirementsOf(scope, path));
       if (found.size === 0) continue;
       issues.push({
         severity: "warn",
         gates: true,
         code: "scaffold.placeholder",
         subject: svc,
-        message: `${svc}: ${axis.file} still carries scaffold placeholder(s) nobody authored — ${[...found].map((s) => `'${s}'`).join(", ")}. The merge would write them into the living spec as requirements somebody meant. Replace them, or archive with --approve.`,
+        message: `${svc}: ${axis.file} still carries scaffold placeholder(s) nobody authored — ${quote(found)}. The merge would write them into the living spec as requirements somebody meant. Replace them, or archive with --approve.`,
       });
     }
   }
+
+  // The business corpus. `subject` is the capability id — a THIRD provenance
+  // for this code's subject, after a service id and none at all — and the
+  // artifact table resolves it by MEMBERSHIP against the capability documents
+  // the feature carries (`status/feature/artifacts.ts`), the same resolution
+  // every `delta.*` issue on this axis already relies on. So the capability's
+  // own row turns draft, and a service row does too only where a fleet holds a
+  // service and a capability of one name, which is that module's deliberately
+  // pessimistic answer rather than a mis-attribution here.
+  const capabilities =
+    scope.context === undefined
+      ? await featureCapabilityDeltas(scope.featureDir)
+      : await scope.context.featureCapabilityDeltas(scope.featureDir);
+  for (const doc of capabilities.docs) {
+    const found = unauthored(await requirementsOf(scope, doc.spec));
+    if (found.size === 0) continue;
+    issues.push({
+      severity: "warn",
+      gates: true,
+      code: "scaffold.placeholder",
+      subject: doc.id,
+      message: `capability ${doc.id}: spec.md still carries scaffold placeholder(s) nobody authored — ${quote(found)}. The merge would write them into the living capabilities/${doc.id}/spec.md as promises somebody meant — and a capability document outlives every service that realizes it. Replace them, or archive with --approve.`,
+    });
+  }
   return issues;
+}
+
+/** One delta document's requirements, through the invocation's read index when there is one. */
+async function requirementsOf(scope: AuthoringScope, path: string): Promise<Requirement[]> {
+  if (scope.context === undefined) return parseRequirements(await readFile(path, "utf8"));
+  return scope.context.readRequirements(path);
+}
+
+/**
+ * The scaffold strings a delta's MERGING requirements still carry.
+ *
+ * ADDED/MODIFIED only: those are the texts this MERGE would write. A BASE
+ * requirement is a quote of the living state — if a sentinel sits there, some
+ * earlier archive published it and this feature is not the author to gate on it
+ * — and a REMOVED one is leaving the document anyway.
+ */
+function unauthored(reqs: Requirement[]): Set<string> {
+  const found = new Set<string>();
+  for (const r of reqs) {
+    if (r.kind === "ADDED" || r.kind === "MODIFIED") sentinelsIn(r, found);
+  }
+  return found;
+}
+
+/** The found sentinels as a message fragment — one spelling, so the two corpora read alike. */
+function quote(found: ReadonlySet<string>): string {
+  return [...found].map((s) => `'${s}'`).join(", ");
 }
 
 /** The exact template strings this requirement still carries, if any. */

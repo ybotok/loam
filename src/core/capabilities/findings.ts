@@ -199,7 +199,7 @@ function declaredIn(vocab: CapabilityVocabulary, id: string): string {
 /* ------------------------------------------------------------------ */
 
 /**
- * `capability.doc-missing` — a directory under `capabilities/` that holds no
+ * `capability.doc-missing` — a directory in a `capabilities/` tree that holds no
  * `spec.md` and has no capability beneath it.
  *
  * WARN, not error, and the severity is the whole judgement: the state it names
@@ -209,17 +209,33 @@ function declaredIn(vocab: CapabilityVocabulary, id: string): string {
  * LOOKS declared — a reader browsing `capabilities/` counts it, and a
  * `Capability:` line naming it still reports `capability.unknown`, which is the
  * confusing pair this warning exists to join up.
+ *
+ * BOTH TREES EARN IT, and `featureDirName` is which one. The same walk reads
+ * `features/<dir>/capabilities/`, so the same `mkdir` leaves the same shape
+ * there — quieter, not louder: an empty directory is not a delta, so the delta
+ * algebra, the merge and `loam show` alike do not see it and the business change
+ * ships as nothing at exit 0. One code, one mistake; two messages, because the
+ * path and the fix differ. It is the DIRECTORY name and not the feature id
+ * (`FEAT-1-split` is where the directory is), and `undocumented` is spelled from
+ * the WALK'S root — literally `capabilities/…` on both sides — so a feature's
+ * entry is re-rooted here or the message names a path nobody can open.
  */
-export function docMissingFindings(tree: CapabilityTree): Finding[] {
-  return tree.undocumented.map((path) => ({
-    severity: "warn" as const,
-    code: "capability.doc-missing",
-    subject: path,
-    message:
-      `${path}/ holds no spec.md and no capability beneath it — a directory under capabilities/ is a capability only when it holds the document, ` +
-      `so this one declares nothing and a requirement naming it still reports capability.unknown. ` +
-      `Write ${path}/spec.md (the narrative, then \`## Requirements\`), or remove the directory.`,
-  }));
+export function docMissingFindings(tree: CapabilityTree, featureDirName?: string): Finding[] {
+  return tree.undocumented.map((walked) => {
+    const path = featureDirName === undefined ? walked : `features/${featureDirName}/${walked}`;
+    const rest =
+      featureDirName === undefined
+        ? "so this one declares nothing and a requirement naming it still reports capability.unknown. " +
+          `Write ${path}/spec.md (the narrative, then \`## Requirements\`), or remove the directory.`
+        : "so this one changes nothing — the archive merges the capability deltas the walk FINDS, and an empty directory is not one. " +
+          `Write ${path}/spec.md (a \`## ADDED Requirements\` section), or remove the directory.`;
+    return {
+      severity: "warn" as const,
+      code: "capability.doc-missing",
+      subject: path,
+      message: `${path}/ holds no spec.md and no capability beneath it — a directory under capabilities/ is a capability only when it holds the document, ${rest}`,
+    };
+  });
 }
 
 /**

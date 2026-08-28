@@ -288,6 +288,57 @@ describe("--json contract", () => {
           operations: ["createSplit"],
         },
       ]);
+      // An EMPTY array, never an absent key: a consumer must not have to tell
+      // "this feature changes no capability" from "this loam does not report
+      // them", and the two would be the same absence.
+      expect(json.capabilities).toEqual([]);
+    });
+  });
+
+  it("lists a feature's capability deltas — the promises it changes", async () => {
+    // A feature carrying ONLY a capability delta used to display as a feature
+    // carrying nothing, from the command a person runs to find out what a
+    // feature carries — while the archive would refuse it over those very
+    // documents. `show` and the archive must not be able to disagree about
+    // whether a feature has content.
+    const files = coherentFixture();
+    files["features/FEAT-2-refunds/intent.md"] =
+      "---\nfeature: FEAT-2\nstatus: proposed\n---\n\n# Refunds\n\nMoney back.\n";
+    files["features/FEAT-2-refunds/capabilities/payments/refunds/spec.md"] =
+      "# payments/refunds — capability delta for FEAT-2\n\n## ADDED Requirements\n\n### Requirement: Refund within five days\nRequirement-ID: REF-1\n\nThe fleet SHALL refund within five days.\n\n#### Scenario: It is refunded\n- **Given** a customer\n- **When** they ask\n- **Then** it is refunded\n";
+    await withProject(files, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "show", "FEAT-2", "--json")).stdout);
+      expect(json.services).toEqual([]);
+      expect(json.capabilities).toEqual([
+        {
+          // The NESTED id, spelled whole: resolved by its leaf this would read
+          // `refunds`, which is a different capability entirely.
+          id: "payments/refunds",
+          path: "features/FEAT-2-refunds/capabilities/payments/refunds/spec.md",
+          added: 1,
+          modified: 0,
+          removed: 0,
+          // The id, because `Realizes: payments/refunds#REF-1` is the line
+          // somebody has to write next and the id is the half of it nobody can
+          // guess from the heading.
+          promises: [{ kind: "ADDED", id: "REF-1", name: "Refund within five days" }],
+        },
+      ]);
+
+      const human = await runLoam(p.workDir, "show", "FEAT-2");
+      expect(human.out).toContain("capabilities");
+      expect(human.out).toContain("payments/refunds");
+      expect(human.out).toContain("REF-1");
+    });
+  });
+
+  it("prints no capabilities section for a fleet that has not adopted the axis", async () => {
+    await withProject(coherentFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "show", "FEAT-1");
+      expect(res.code).toBe(0);
+      // An empty heading on every feature of every such fleet is the noise that
+      // teaches people to skim the output.
+      expect(res.out).not.toContain("capabilities");
     });
   });
 

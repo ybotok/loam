@@ -14,8 +14,11 @@ import { listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
 import { sayRecovered } from "../policy/format.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { capabilityIdProblem } from "../../core/kernel/ids/capability.js";
+import { capabilityNotes } from "../../core/capabilities/authoring/notes.js";
 import {
   archSpecTemplate,
+  capabilityDeltaTemplate,
   deltaTemplate,
   intentTemplate,
   openapiTemplate,
@@ -26,6 +29,7 @@ interface NewOptions {
   title?: string;
   touches: string[];
   newService: string[];
+  capability: string[];
   json?: boolean;
 }
 
@@ -33,7 +37,7 @@ export function registerNew(program: Command): void {
   program
     .command("new")
     .argument("<featureId>", "feature id, e.g. FEAT-101")
-    .description("Scaffold a feature: intent, C4 delta, and a requirement delta per service")
+    .description("Scaffold a feature: intent, C4 delta, a requirement delta per service, a capability delta per promise")
     .option("--title <text>", "human title; also becomes the directory slug")
     // `--touches`, not `--service`: everywhere else `--service` selects the ONE
     // operating target (defaulting to config.service), while this is a repeatable
@@ -41,6 +45,21 @@ export function registerNew(program: Command): void {
     // meaning deserve a different name.
     .option("--touches <id>", "a service this feature touches (repeatable)", collect, [])
     .option("--new-service <id>", "a service this feature introduces (repeatable)", collect, [])
+    // The INVERSION of the two flags above, and it composes with them rather
+    // than excluding them. `--touches` asks which services change before the
+    // business change has been written; `--capability` opens the document that
+    // changes and lets the service work be derived from it. A feature that
+    // does both — the analyst writes the promise, and one team already knows it
+    // owns part of the mechanism — is an ordinary shape, and refusing the
+    // combination would fight this axis's own archive gate: `capability.uncovered`
+    // refuses a promise nothing in the same feature keeps, so the fix it names
+    // is precisely a `--touches` service's `Realizes:` line living beside the
+    // capability delta.
+    //
+    // Repeatable, like both flags above: a business change that moves two
+    // promises is as real as a feature touching two services, and the flag that
+    // is not repeatable is the one that sends an author to mkdir by hand.
+    .option("--capability <id>", "a business capability this feature changes (repeatable)", collect, [])
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: NewOptions) => {
       const json = opts.json === true;
@@ -81,6 +100,21 @@ export function registerNew(program: Command): void {
       const newServices = parseServiceIds(opts.newService, "--new-service");
       if (!newServices.ok) return fail(json, "invalid-option", newServices.problem);
 
+      // Same reasoning as the two lists above, one tree over. A capability id
+      // becomes `features/<dirName>/capabilities/<id>/` — a chain of
+      // directories, one per `/`-separated segment — so `--capability
+      // ../../evil` resolves to `features/evil/spec.md`, a directory
+      // `listFeatures` then enumerates as a feature, and one `..` further
+      // reaches the docs-repo root. `resolveInside` below cannot refuse either:
+      // both are still inside the repo. Checked here for that reason, and
+      // against the same directory-name grammar a service id passes
+      // (core/kernel/ids/capability.ts).
+      const capabilities = opts.capability;
+      for (const id of capabilities) {
+        const problem = capabilityIdProblem(id);
+        if (problem !== null) return fail(json, "invalid-option", problem);
+      }
+
       const loaded = await loadConfig();
       if (loaded.kind !== "loaded") {
         reportNoConfig(json, loaded);
@@ -119,6 +153,21 @@ export function registerNew(program: Command): void {
       };
       for (const svc of [...touched, ...created]) {
         files[join("specs", svc, "spec.md")] = specTemplate(featureId, svc);
+      }
+      // The business axis, and the ONE file `--capability` adds. No service
+      // spec rides with it, and that is the inversion rather than an omission:
+      // the whole point of opening the document that changes first is that the
+      // services realizing it are not known until the promise is written.
+      // `--touches` is still how a service the author already knows about gets
+      // its delta, which is why the two compose.
+      //
+      // Spelled relative, mirroring `featureCapabilityDeltasDir` +
+      // `capabilityDocPathsAt` in core/repo/paths.ts — the path builders take a
+      // FeatureDir, whose provenance is an enumeration that read the directory,
+      // and this directory is about to be created rather than read. One
+      // directory per segment, exactly as the living tree spells nesting.
+      for (const cap of capabilities) {
+        files[join("capabilities", ...cap.split("/"), "spec.md")] = capabilityDeltaTemplate(featureId, cap);
       }
       for (const svc of created) {
         files[join("specs", svc, "openapi.yaml")] = openapiTemplate(svc);
@@ -170,7 +219,15 @@ export function registerNew(program: Command): void {
       const recovered = committed.recovered;
       const written = writes.map((w) => repoPath(docsDir, w.path));
 
-      const notes = await unknownServiceNotes(docsDir, touched);
+      // Both note families in ONE list, and the services first so an existing
+      // `--touches` consumer reads the same first element it always did. They
+      // are the same kind of statement — "the thing you named is not there yet,
+      // and here is what that means" — so splitting them into two payload keys
+      // would ask a consumer to learn a second shape for one idea.
+      const notes = [
+        ...(await unknownServiceNotes(docsDir, touched)),
+        ...(await capabilityNotes(docsDir, { dirName, ids: capabilities })),
+      ];
 
       if (json) {
         emitJson({
@@ -179,9 +236,11 @@ export function registerNew(program: Command): void {
           created: written,
           ...(recovered === null ? {} : { recovered }),
           // Not an error and not a finding: `--touches` on a service that does
-          // not exist yet is legal (adopt it later, or say `--new-service`).
-          // It is reported because the silent alternative is a feature whose
-          // spec delta will never merge into anything.
+          // not exist yet is legal (adopt it later, or say `--new-service`),
+          // and `--capability` on a promise nobody has named is the ordinary
+          // way a new business area starts. Both are reported because the
+          // silent alternative is a delta that will never merge into anything,
+          // or a near-miss spelling filed as a second capability.
           notes,
         });
         return;

@@ -34,6 +34,7 @@ import { gatesArchive } from "../../core/vocabulary/issue.js";
 import { featureProvenance } from "../../core/provenance/findings.js";
 import { documentConflictFinding } from "../../core/conflict-markers.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
+import { docMissingFindings } from "../../core/capabilities/findings.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { errorText } from "./checks/vocabulary.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
@@ -173,6 +174,15 @@ export async function validateFeature(
   // carries a delta for them.
   const capabilityDeltas =
     fleet === undefined ? await featureCapabilityDeltas(featureDir) : await fleet.featureCapabilityDeltas(featureDir);
+  // The half-created directory, on the FEATURE side. The living tree has warned
+  // about `capabilities/<id>/` with no document since the axis landed; the same
+  // `mkdir` inside `features/<FEAT>/capabilities/` earned nothing, and it is the
+  // quieter of the two — an empty directory is not a delta, so the walk finds
+  // no document, the merge carries nothing, and the business change ships as
+  // zero at exit 0. Same code, feature-scoped message (`../../core/capabilities/findings.ts`).
+  // `dirName`, not the id: the directory is `features/FEAT-1-split/`, and a
+  // message spelling `features/FEAT-1/` names a path nobody can open.
+  findings.push(...docMissingFindings(capabilityDeltas, feature.dirName));
   for (const doc of capabilityDeltas.docs) {
     const raw = fleet === undefined ? await readFile(doc.spec, "utf8") : await fleet.readText(doc.spec);
     const conflict = documentConflictFinding(`capability ${doc.id}: spec.md`, doc.id, raw);

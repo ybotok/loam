@@ -18,6 +18,19 @@ export const REQUIREMENT_SENTINEL = "TODO — name the behaviour";
 /** The scaffolded architecture-requirement heading (`specs/<svc>/arch.spec.md`). */
 export const ARCH_REQUIREMENT_SENTINEL = "TODO — name the architectural obligation";
 
+/**
+ * The scaffolded capability-requirement heading
+ * (`features/<FEAT>/capabilities/<id>/spec.md`).
+ *
+ * Its own string rather than a reuse of `REQUIREMENT_SENTINEL`, because the two
+ * documents ask for different things and the heading is where the template says
+ * so: a service requirement names a BEHAVIOUR the service performs, a capability
+ * requirement names a PROMISE the fleet keeps. A shared "TODO — name the
+ * behaviour" would scaffold the business document with the altitude
+ * `capability.requirement-service-scoped` exists to refuse.
+ */
+export const CAPABILITY_REQUIREMENT_SENTINEL = "TODO — name the promise";
+
 /** The scaffolded scenario heading, shared by both spec axes. */
 export const SCENARIO_SENTINEL = "TODO — name the case";
 
@@ -29,6 +42,9 @@ export const SHALL_SENTINEL = "<observable behaviour, testable without reading t
 
 /** The scaffolded SHALL fill-in on the architecture axis. */
 export const ARCH_SHALL_SENTINEL = "<the operational/integration behaviour, observable in test>";
+
+/** The scaffolded SHALL fill-in on the business axis — a promise, not a mechanism. */
+export const CAPABILITY_SHALL_SENTINEL = "<the promise, observable outside the fleet — a customer could check it>";
 
 /** The scaffolded Given/When/Then fill-ins, shared by both spec axes. Three
  * constants rather than one keyed object because a `then` property makes an
@@ -46,14 +62,23 @@ export const THEN_SENTINEL = "<the observable outcome>";
 export const BODY_SENTINELS: readonly string[] = [
   SHALL_SENTINEL,
   ARCH_SHALL_SENTINEL,
+  CAPABILITY_SHALL_SENTINEL,
   GIVEN_SENTINEL,
   WHEN_SENTINEL,
   THEN_SENTINEL,
 ];
 
-/** Every scaffolded heading a requirement or scenario may still carry. */
+/**
+ * Every scaffolded heading a requirement or scenario may still carry.
+ *
+ * The list is not partitioned by which document scaffolded which string, and
+ * that is deliberate: the gate asks "did anybody author this line", and a
+ * capability heading pasted into a service delta was authored exactly as little
+ * as it was in the document it came from.
+ */
 export const HEADING_SENTINELS: readonly string[] = [
   REQUIREMENT_SENTINEL,
   ARCH_REQUIREMENT_SENTINEL,
+  CAPABILITY_REQUIREMENT_SENTINEL,
   SCENARIO_SENTINEL,
 ];

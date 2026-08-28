@@ -88,7 +88,11 @@ A FEATURE changes a capability document with a delta, not by editing it:
 \`## ADDED|MODIFIED|REMOVED Requirements\` grammar the service deltas use, the
 same nesting (\`features/<FEAT>/capabilities/payments/refunds/\`), the same
 \`Based-On:\` pins, and the same \`delta.*\` refusals with the capability id as
-the subject. \`loam archive\` merges it into the living document in the same
+the subject. \`scaffold.placeholder\` reads it too, so an unedited template
+heading refuses the archive here as it does in a spec delta, and
+\`capability.doc-missing\` (warn) names a directory in it that holds no
+\`spec.md\` — an empty one is not a delta, so the merge would carry nothing.
+\`loam archive\` merges it into the living document in the same
 transaction as the service merge, creating \`capabilities/<id>/spec.md\` — and
 so the whole tree — when this is the first feature to mention it; the heading
 is the id and the narrative above \`## Requirements\` is yours to write, because
@@ -96,7 +100,10 @@ loam merges requirements and never prose. The document's three rules above are
 graded on the delta BEFORE the merge, so a capability requirement filed at the
 wrong altitude is refused while you still hold it. Editing the living document
 directly is still legal; the delta is what makes two features touching one
-promise collide loudly instead of silently.
+promise collide loudly instead of silently. \`loam new <FEAT> --capability <id>\`
+scaffolds that delta, and \`loam show <FEAT>\` and \`loam delta <FEAT>\` list the
+promises a feature changes — a capability delta names no service, so without
+those two a business-only feature reads as a feature carrying nothing.
 
 A service requirement says which promise it serves with \`Realizes:\`, entries
 spelled \`<capability-id>#<Requirement-ID>\`. This is the join the tree exists

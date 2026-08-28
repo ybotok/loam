@@ -1012,6 +1012,208 @@ The service SHALL keep a durable refund ledger.
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* The authoring round trip: new -> author -> archive -> unarchive      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `loam new --capability` is the front door of this axis, and until it existed
+ * every fixture in this file was hand-built — which proves the merge and proves
+ * nothing about the path an analyst actually walks.
+ *
+ * The round trip below is one test and it is worth more than the rest of this
+ * block: it starts from the command, writes a real promise into the scaffold
+ * the command produced, archives it into a LIVING capability document, and
+ * takes it back byte for byte. Every link is one somebody could break without
+ * any other test noticing — the scaffold path, the walk that finds it, the
+ * grade before the merge, the merge itself, and the snapshot that undoes it.
+ *
+ * NESTED, for the reason this file's banner states: a flat id cannot tell a
+ * correct resolution from one taken by the leaf.
+ */
+describe("loam new --capability, authored and shipped", () => {
+  /** The example block as an author copies it: out of the HTML comment, unindented. */
+  function copiedOut(scaffold: string): string {
+    const start = scaffold.indexOf("    ## ADDED Requirements");
+    const end = scaffold.indexOf("\n-->");
+    expect(start, "the scaffold must carry its example block").toBeGreaterThan(-1);
+    return scaffold
+      .slice(start, end)
+      .split("\n")
+      .map((l) => l.replace(/^ {4}/, ""))
+      .join("\n");
+  }
+
+  it("scaffolds, archives into the living tree and unarchives byte-identically", async () => {
+    const p = await project(coherentFixture());
+    const scaffolded = await runLoam(
+      p.workDir, "new", "FEAT-9", "--capability", "payments/refunds", "--touches", "payment-service",
+    );
+    expect(scaffolded.code, scaffolded.out).toBe(0);
+    expect(p.exists("features/FEAT-9/capabilities/payments/refunds/spec.md")).toBe(true);
+
+    // Authoring, over the scaffold the command wrote: the promise, the service
+    // requirement that keeps it, and a Why. Nothing here is a fixture written
+    // beside the command — every path came out of `loam new`.
+    await p.write(
+      "features/FEAT-9/capabilities/payments/refunds/spec.md",
+      delta("ADDED Requirements", [requirement("REF-1", "Refund within five days")]).replace(
+        "# refunds — delta for FEAT-1",
+        "# payments/refunds — capability delta for FEAT-9",
+      ),
+    );
+    await p.write(
+      "features/FEAT-9/specs/payment-service/spec.md",
+      `# payment-service — requirement delta for FEAT-9
+
+## ADDED Requirements
+
+### Requirement: Issue the refund
+Realizes: payments/refunds#REF-1
+
+The service SHALL issue a refund to the original card.
+
+#### Scenario: A refund is issued
+- **Given** a captured payment
+- **When** a refund is requested
+- **Then** the money returns to the card
+`,
+    );
+    await p.write(
+      "features/FEAT-9/intent.md",
+      "---\nfeature: FEAT-9\nstatus: proposed\n---\n\n# Refunds\n\n## Why\n\nCustomers must be able to get their money back.\n",
+    );
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-9", "--json")).code).toBe(0);
+    const before = await treeHashes(p.docsDir);
+
+    const archived = await runLoam(p.workDir, "archive", "FEAT-9", "--json");
+    expect(archived.code, archived.out).toBe(0);
+    // The living document the scaffold's id addresses, at its nested path —
+    // and the promise inside it, addressable by the id the `Realizes:` line
+    // names. Resolved by the leaf this would be `capabilities/refunds/`.
+    expect(p.exists("capabilities/payments/refunds/spec.md")).toBe(true);
+    expect(p.exists("capabilities/refunds")).toBe(false);
+    const living = parseRequirements(await p.read("capabilities/payments/refunds/spec.md"));
+    expect(living.map((r) => [r.id, r.kind])).toEqual([["REF-1", "BASE"]]);
+    // And the fleet now answers the question the whole axis exists for.
+    const rollup = JSON.parse((await runLoam(p.workDir, "list", "capabilities", "--json")).stdout);
+    const row = (rollup.capabilities as Array<{ id: string; services: string[] }>).find(
+      (c) => c.id === "payments/refunds",
+    );
+    expect(row?.services).toEqual(["payment-service"]);
+
+    const restored = await runLoam(p.workDir, "unarchive", "FEAT-9", "--json");
+    expect(restored.code, restored.out).toBe(0);
+    expect(JSON.parse(restored.stdout).removed).toContain("capabilities/payments/refunds/spec.md");
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+  });
+
+  it("the copied-out block, left unedited, is refused by scaffold.placeholder", async () => {
+    // The gate this template was written to be caught by. Without it the
+    // scaffold's own words reach a LIVING capability document — worse than the
+    // service case the gate was built for, because a capability document
+    // outlives every service that realizes it and a `Realizes:` line pointed at
+    // the placeholder's id is a join to a promise nobody wrote.
+    const p = await project(coherentFixture());
+    expect((await runLoam(p.workDir, "new", "FEAT-9", "--capability", "refunds")).code).toBe(0);
+    const scaffold = await p.read("features/FEAT-9/capabilities/refunds/spec.md");
+    await p.write(
+      "features/FEAT-9/capabilities/refunds/spec.md",
+      `# refunds — capability delta for FEAT-9\n\n${copiedOut(scaffold)}\n`,
+    );
+    await p.write(
+      "features/FEAT-9/intent.md",
+      "---\nfeature: FEAT-9\nstatus: proposed\n---\n\n# Refunds\n\n## Why\n\nMoney back.\n",
+    );
+    const before = await treeHashes(p.docsDir);
+
+    const refused = await runLoam(p.workDir, "archive", "FEAT-9", "--json");
+    expect(refused.code).toBe(1);
+    const payload = JSON.parse(refused.stdout + refused.stderr) as {
+      error: { code: string };
+      issues: Array<{ code: string; subject?: string; gates: boolean; message: string }>;
+    };
+    expect(payload.error.code).toBe("not-coherent");
+    const placeholder = payload.issues.find(
+      (i) => i.code === "scaffold.placeholder" && i.subject === "refunds",
+    );
+    expect(placeholder, JSON.stringify(payload.issues)).toBeDefined();
+    expect(placeholder!.gates).toBe(true);
+    expect(placeholder!.message).toContain("TODO — name the promise");
+    // A warning that GATES: the document is legal, the MERGE is what is unsafe.
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-9", "--json")).code).toBe(0);
+    // And nothing landed.
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+    expect(p.exists("capabilities")).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The half-created directory, on the FEATURE side                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `capability.doc-missing` used to run over the LIVING tree only, so the same
+ * `mkdir` mistake inside `features/<FEAT>/capabilities/` earned nothing at all.
+ *
+ * It is the quieter of the two. An empty directory is not a delta: the walk
+ * finds no document, so the delta algebra grades nothing, the merge carries
+ * nothing and `loam show` lists nothing — the author's business change ships as
+ * zero, at exit 0, with every command agreeing that all is well.
+ *
+ * THE DISCRIMINATOR IS THE GROUP DIRECTORY. `payments/` holding only
+ * `payments/refunds/spec.md` is a legal and ordinary shape — nesting is spelled
+ * by the tree — and a check that warned about it would fire on every nested
+ * capability in the fleet. That case is the second test here, and it is the one
+ * a naive "directory without a spec.md" implementation fails.
+ */
+describe("a half-created capability directory inside a feature", () => {
+  /** Every `capability.doc-missing` a `validate --feature` run reports. */
+  const docMissing = (p: Project): Promise<Array<{ severity: string; subject?: string; message: string }>> =>
+    findings(p, "capability.doc-missing", "--feature", "FEAT-1");
+
+  it("earns the warning, with the path a reader can actually open", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      // A directory and nothing under it. `makeProject` writes files, so the
+      // empty directory is spelled as its own `.gitkeep` — which is exactly what
+      // a half-finished `mkdir` plus a commit leaves behind, and the walk skips
+      // dotfiles so it stays a directory holding no document.
+      [`${FEAT_DIR}/capabilities/half-made/.gitkeep`]: "",
+    });
+    const found = await docMissing(p);
+    expect(found).toHaveLength(1);
+    expect(found[0]!.severity).toBe("warn");
+    // The DIRECTORY name, not the feature id: `features/FEAT-1/…` is a path
+    // nobody can open on this tree.
+    expect(found[0]!.subject).toBe(`${FEAT_DIR}/capabilities/half-made`);
+    expect(found[0]!.message).toContain(`${FEAT_DIR}/capabilities/half-made/spec.md`);
+    expect(found[0]!.message).toContain("ADDED Requirements");
+    // A warning, so the run still passes: a half-finished authoring step must
+    // not fail somebody else's validate on the same tree.
+    expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-1", "--json")).code).toBe(0);
+  });
+
+  it("says nothing about a GROUP directory that holds a capability beneath it", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      [`${FEAT_DIR}/capabilities/payments/refunds/spec.md`]: delta("ADDED Requirements", [
+        requirement("REF-1", "Refund within five days"),
+      ]),
+      [SPLIT_SPEC]: realizing("payments/refunds#REF-1"),
+    });
+    // `payments/` holds no spec.md and is not a defect: it is the nesting the
+    // tree spells. A check that could not tell a group from a half-made
+    // capability would warn once per nested capability in every fleet.
+    expect(await docMissing(p)).toEqual([]);
+  });
+
+  it("stays silent for a feature with no capabilities/ directory at all", async () => {
+    const p = await project(coherentFixture());
+    expect(await docMissing(p)).toEqual([]);
+  });
+});
+
 describe("a fleet that has not adopted the business axis pays nothing and sees nothing", () => {
   it("no capability.* finding, no refusal, and every command still exits 0", async () => {
     const p = await project(coherentFixture());

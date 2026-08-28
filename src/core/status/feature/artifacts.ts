@@ -51,7 +51,9 @@ const CAPABILITY_DOCUMENT_CODES = new Set([
  *
  * THE BUSINESS CORPUS IS THE ONE PLACE THE CODE FAMILY IS NOT ENOUGH. A
  * `delta.*` issue's `subject` is a service id OR a capability id
- * (`core/delta/scope.ts`), and nothing in the code says which — so this
+ * (`core/delta/scope.ts`), and so is a `scaffold.placeholder`'s
+ * (`core/coherence/authoring/scaffold.ts` files one per unedited capability
+ * delta), and nothing in either code says which — so this
  * function answers `spec` for both and `featureArtifacts` below resolves it by
  * MEMBERSHIP, against the two lists it already holds. Where a name is only a
  * capability the capability row is turned `draft` and no service row is; where
@@ -83,8 +85,11 @@ function faultedArtifact(code: string, subject?: string): ArtifactId | null {
   // The authoring gate names exactly one file per finding too — leaving these
   // unmapped had the table calling intent.md `done` ("nothing is owed here")
   // while the archive exited 1 because it says nothing. A placeholder finding
-  // carries its service when the text sits in a per-service spec delta, and
-  // no subject when it is the C4 delta's scaffolded description.
+  // carries no subject when it is the C4 delta's scaffolded description; with a
+  // subject it is a SPEC DELTA IN EITHER CORPUS — a service id when the text
+  // sits in `specs/<svc>/`, a capability id when it sits in
+  // `capabilities/<id>/` — which is why `spec` here is resolved by membership
+  // below and must not be narrowed to the service list.
   if (code === "intent.empty") return "intent";
   if (code === "scaffold.placeholder") return subject === undefined ? "delta" : "spec";
   return null;

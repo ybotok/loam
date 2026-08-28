@@ -15,7 +15,9 @@ import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
 import { archSlice, introducedServices, livingServices } from "../../core/projection/arch-slice.js";
 import { useCaseBlastRadius } from "../../core/usecases/touch.js";
-import { printApi, printArchSlice, printEvents, printRequirements, printUseCases } from "./print.js";
+import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
+import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
+import { printApi, printArchSlice, printCapabilities, printEvents, printRequirements, printUseCases } from "./print.js";
 import { indent } from "./print.js";
 
 interface DeltaOptions {
@@ -163,6 +165,25 @@ export function registerDelta(program: Command): void {
         services: new Set([service]),
       });
 
+      // The business axis. Like the use-case section above it is a fact about
+      // the FEATURE rather than about this service's own files, and it is here
+      // for the sharper version of that section's reason: a capability delta
+      // NAMES NO SERVICE, so projecting the feature onto a service would drop
+      // it entirely — and the implementer handed "add the endpoint" would never
+      // learn which business promise the requirement they are about to write is
+      // supposed to keep. `Realizes: <capability>#<id>` is the line that says
+      // so, it is written on the SERVICE requirement, and the id in it is the
+      // one thing here that cannot be guessed.
+      //
+      // Not narrowed by `--service`, deliberately: the promise is what the
+      // whole feature is for, and narrowing it would report a capability-only
+      // feature as having nothing to say about every service in turn. One
+      // `existsSync` for a fleet that has not adopted the axis.
+      const capabilities = await capabilityDeltaSummaries(
+        (await featureCapabilityDeltas(feature.dir)).docs,
+        async (path) => parseRequirements(await readFile(path, "utf8")),
+      );
+
       // An unparseable delta.likec4 empties the C4 slice, and a consumer
       // reading this projection as a task brief — the JSON payload and the
       // printed view alike — would take that as "no architecture change": the
@@ -235,6 +256,20 @@ export function registerDelta(program: Command): void {
             ...(useCases.error === undefined ? {} : { error: useCases.error }),
             flows: useCases.flows,
           },
+          // Additive, and an empty array rather than an absent key for the same
+          // reason `loam show`'s is: a consumer must not have to tell "this
+          // feature changes no capability" from "this loam does not report
+          // them". The shape is `show`'s, verbatim — the two commands are read
+          // side by side, and a second shape for one idea is a second thing to
+          // learn.
+          capabilities: capabilities.map((c) => ({
+            id: c.id,
+            path: repoPath(config.docsDir, c.spec),
+            added: c.added,
+            modified: c.modified,
+            removed: c.removed,
+            promises: c.promises,
+          })),
         });
         return;
       }
@@ -250,6 +285,7 @@ export function registerDelta(program: Command): void {
       if (existsSync(specPaths.openapi)) printApi(api);
       if (existsSync(specPaths.asyncapi)) printEvents(events);
       if (existsSync(paths.delta)) printArchSlice(arch, service);
+      printCapabilities(capabilities);
       printUseCases(useCases, service);
     });
 }

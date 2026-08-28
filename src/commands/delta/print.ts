@@ -1,15 +1,17 @@
 /**
- * The delta as a person reads it: requirements, contract changes, and the
- * architecture slice for one service.
+ * The delta as a person reads it: requirements, contract changes, the
+ * architecture slice for one service, and the business promises the feature
+ * changes.
  *
- * Rendering only. Everything printed here comes from `../../core/projection/`,
- * which is also what `--json` emits.
+ * Rendering only. Everything printed here comes from `../../core/projection/`
+ * or `../../core/capabilities/`, which is also what `--json` emits.
  */
 import { type Requirement } from "../../core/document/spec.js";
 import { type ApiSlice } from "../../core/projection/api.js";
 import { type ArchSlice } from "../../core/projection/arch-slice.js";
 import { type EventSlice } from "../../core/projection/events.js";
 import { type UseCaseBlastRadius } from "../../core/usecases/touch.js";
+import { type CapabilityDeltaSummary } from "../../core/capabilities/delta/summary.js";
 
 /**
  * The requirement delta, in full.
@@ -147,6 +149,36 @@ export function printUseCases(useCases: UseCaseBlastRadius, service: string): vo
     for (const step of flow.steps) {
       const label = step.title === undefined ? "" : ` '${step.title}'`;
       console.log(`    step ${step.ordinal}${label}: ${step.source} -> ${step.target}`);
+    }
+  }
+  console.log();
+}
+
+/**
+ * The business promises this feature changes, and the exact `Realizes:` entry
+ * each one is addressed by.
+ *
+ * SILENT WHEN THERE ARE NONE, unlike the use-case section above, and the
+ * asymmetry is deliberate. "No declared flow draws this service" is an answer
+ * about the FLEET — the flows exist and none of them names you — so saying so
+ * is informative. A feature with no capability delta is the normal state of
+ * every feature in a fleet that has not adopted the business axis, and a line
+ * announcing that on every projection would be the noise that teaches people to
+ * skim the brief.
+ *
+ * The entry is printed WHOLE (`Realizes: refunds#REF-1`) rather than as a
+ * capability and an id a reader has to assemble: it is text somebody is about
+ * to paste into a requirement, and the one spelling mistake it can carry —
+ * the `#` — is the one nothing downstream can suggest a fix for.
+ */
+export function printCapabilities(capabilities: readonly CapabilityDeltaSummary[]): void {
+  if (capabilities.length === 0) return;
+  console.log("Capabilities (business promises this feature changes):");
+  for (const c of capabilities) {
+    console.log(`  ${c.id}  +${c.added} ~${c.modified} -${c.removed}`);
+    for (const p of c.promises) {
+      const entry = p.id === null ? "(no Requirement-ID: yet)" : `Realizes: ${c.id}#${p.id}`;
+      console.log(`    ${p.kind} '${p.name}' — ${entry}`);
     }
   }
   console.log();
