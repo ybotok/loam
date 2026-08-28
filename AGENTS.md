@@ -89,6 +89,11 @@ implementation details:
 - **Every stable code string** — the `ErrorCode` union in `src/core/envelope/json.ts` and the
   `IssueCode` family in `src/core/vocabulary/issue.ts`. Prose may be reworded freely. Codes may not.
 
+Help LAYOUT is explicitly NOT part of that surface. Command names, flags and descriptions are
+frozen; which `--help` heading a command is printed under is typography, and regrouping is not a
+compatibility event. `src/cli.ts` fails closed on a command with no heading, and
+`test/help-groups.test.ts` grades the same rule at gate time.
+
 Changing any of these means a CHANGELOG entry describing the change in the terms a user would
 notice. Two tests exist to stop this drifting silently:
 
