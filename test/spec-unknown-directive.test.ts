@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import {
   DIRECTIVE_NAMES,
   unknownDirectiveFindings,
-} from "../src/commands/validate/service/specs.js";
+} from "../src/core/document/grammar/directives.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 
 const TARGET = { where: "payment-service: spec.md", subject: "payment-service" };
@@ -110,6 +110,36 @@ describe("spec.unknown-directive", () => {
     for (const name of DIRECTIVE_NAMES) {
       expect(findingsFor(`${name}: something`), `${name} should be a real directive`).toEqual([]);
     }
+  });
+
+  it("stays silent inside a fenced block, where a directive spelling is a sample value", () => {
+    // Reported against the shipped check, and it was a real false positive: a
+    // requirement body legitimately holds a fenced example, and inside one
+    // `Realises:` is sample text rather than a misspelled directive. Firing
+    // there convicts a document that is exactly right — the one thing a
+    // near-miss guard may never do, because the author has no action to take.
+    expect(
+      findingsFor(
+        "The service SHALL reserve funds. Example config:",
+        "",
+        "```yaml",
+        "Realises: not-a-directive",
+        "Capabilties: also-not",
+        "```",
+      ),
+    ).toEqual([]);
+
+    // Tilde fences too, and a real typo AFTER a closed fence is still caught —
+    // the tracker must toggle, not latch.
+    const after = findingsFor("~~~", "Realises: sample", "~~~", "Realises: checkout#CHK-1x");
+    expect(after).toHaveLength(1);
+    expect(after[0]!.message).toContain("Realises:");
+  });
+
+  it("does not fire on a table cell", () => {
+    // A pipe-led cell never matches the candidate pattern, so tables need no
+    // special case. Asserted so a future loosening of that pattern is caught.
+    expect(findingsFor("| Key | Value |", "|---|---|", "| Realises: | in a table |")).toEqual([]);
   });
 
   it("says nothing about a REMOVED requirement", () => {

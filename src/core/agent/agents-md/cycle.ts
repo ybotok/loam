@@ -194,10 +194,14 @@ A federated record also says WHAT EACH SERVICE ANSWERED AGAINST. Every
 attestation carries the \`checklist\` digest it answered and, when the docs repo
 is a git checkout, the \`docsCommit\` that checklist was derived from — so the
 record pins both sides, the service repo through \`commit\` and the question set
-through these two. \`verify.checklist-forked\` (warn) is what that buys: two or
-more services on this record answered DIFFERENT versions of the feature's
-question set, which the record-level \`checklist\` field alone could never show —
-it flagged both services or neither, and never said which answers went stale.
+through these two. \`verify.checklist-forked\` (warn) is what that buys: it names the
+services whose attestation answers a DIFFERENT checklist than the feature now
+asks, which the record-level \`checklist\` field alone could never show — it
+flagged every service or none, and never said which answers went stale. It is
+measured against the present rather than pairwise between attestations, because
+services that all answered a since-rewritten delta agree with each other and are
+every one of them stale. Differing \`docsCommit\` values are NOT a finding:
+recording a week apart is normal for a feature in flight.
 Normal mid-rollout and it gates nothing; re-record the services on the older
 version from their own repositories, or accept the split knowingly.
 Attestations written before the field existed carry no \`checklist\` and are not

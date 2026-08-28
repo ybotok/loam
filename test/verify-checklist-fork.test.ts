@@ -50,38 +50,53 @@ afterEach(async () => {
   project = null;
 });
 
+const CURRENT = "1111111111111111";
+
 describe("verify.checklist-forked", () => {
-  it("says nothing when every attestation answered the same version", () => {
+  it("says nothing when every attestation answered the question set being asked now", () => {
     expect(forkedChecklistNotices(record([
-      { service: "a", checklist: "1111111111111111" },
-      { service: "b", checklist: "1111111111111111" },
-    ]))).toEqual([]);
+      { service: "a", checklist: CURRENT },
+      { service: "b", checklist: CURRENT },
+    ]), CURRENT)).toEqual([]);
   });
 
-  it("fires once, naming each version and who answered it", () => {
+  it("names the services that answered something else, not merely a disagreement", () => {
     const notices = forkedChecklistNotices(record([
       { service: "b", checklist: "2222222222222222" },
-      { service: "a", checklist: "1111111111111111" },
-    ]));
+      { service: "a", checklist: CURRENT },
+    ]), CURRENT);
     expect(notices).toHaveLength(1);
     expect(notices[0]!.code).toBe("verify.checklist-forked");
     // Never an error and never a gate: services attest as they finish, and a
     // feature legitimately changes between the first and the last.
     expect(notices[0]!.severity).toBe("warn");
-    expect(notices[0]!.message).toContain("1111111111111111 (a)");
     expect(notices[0]!.message).toContain("2222222222222222 (b)");
+    // 'a' is current, so it is not named as stale.
+    expect(notices[0]!.message).not.toContain(`${CURRENT} (a)`);
   });
 
-  it("treats a missing checklist as no claim, not as a third version", () => {
-    // A record written before the field existed. Reading its silence as
-    // disagreement would flag every pre-existing federated record in the world.
-    expect(forkedChecklistNotices(record([{ service: "a" }, { service: "b" }]))).toEqual([]);
-    // One stated version plus one silent attestation is still one version.
+  it("fires when every attestation agrees with the others and none with the present", () => {
+    // The case a pairwise comparison calls clean and a reader most needs: three
+    // services attested against a delta that has since been rewritten. They
+    // agree with each other perfectly, and every one of them is stale.
+    const notices = forkedChecklistNotices(record([
+      { service: "a", checklist: "3333333333333333" },
+      { service: "b", checklist: "3333333333333333" },
+    ]), CURRENT);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.message).toContain("3333333333333333 (a, b)");
+  });
+
+  it("treats a missing checklist as no claim, not as a stale one", () => {
+    // A record written before the field existed. Reading its silence as an
+    // answer to some other checklist would flag every pre-existing federated
+    // record in the world.
+    expect(forkedChecklistNotices(record([{ service: "a" }, { service: "b" }]), CURRENT)).toEqual([]);
     expect(forkedChecklistNotices(record([
-      { service: "a", checklist: "1111111111111111" },
+      { service: "a", checklist: CURRENT },
       { service: "b" },
-    ]))).toEqual([]);
-    expect(forkedChecklistNotices(null)).toEqual([]);
+    ]), CURRENT)).toEqual([]);
+    expect(forkedChecklistNotices(null, CURRENT)).toEqual([]);
   });
 
   it("records the checklist it answered, and the docs commit when git can say", async () => {

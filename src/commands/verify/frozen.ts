@@ -154,19 +154,30 @@ export function noticesFor(claims: readonly AnsweredClaim[], feature: string): V
  * about what they answered, and reading silence as disagreement would fire this
  * on every record written before the field existed.
  */
-export function forkedChecklistNotices(recorded: Verification | null): VerifyNotice[] {
+export function forkedChecklistNotices(
+  recorded: Verification | null,
+  current: string,
+): VerifyNotice[] {
   const stated = (recorded?.attestations ?? []).filter((a) => a.checklist !== undefined);
-  const versions = new Set(stated.map((a) => a.checklist!));
-  if (versions.size < 2) return [];
-  const byVersion = [...versions].sort().map((v) => `${v} (${stated.filter((a) => a.checklist === v).map((a) => a.service).sort().join(", ")})`);
+  // Measured against the CURRENT checklist, not pairwise between attestations.
+  // The pairwise reading answers the wrong question: three services that all
+  // attested against a since-rewritten delta agree with each other perfectly
+  // and are all stale, which pairwise calls clean. What a reader needs is
+  // WHICH services answered something other than what is being asked now.
+  const behind = stated.filter((a) => a.checklist !== current);
+  if (behind.length === 0) return [];
+  const byVersion = [...new Set(behind.map((a) => a.checklist!))]
+    .sort()
+    .map((v) => `${v} (${behind.filter((a) => a.checklist === v).map((a) => a.service).sort().join(", ")})`);
   return [
     {
       code: "verify.checklist-forked",
       severity: "warn",
       message:
-        `${plural(versions.size, "checklist version")} are answered by this record's attestations: ${byVersion.join("; ")}. ` +
-        "The feature changed between them, so these answers are not all about the same questions. " +
-        "Re-record the services on the older version from their own repositories (`loam verify <FEAT> --service <id> --record`), " +
+        `${plural(behind.length, "service")} answered a different version of this feature's question set ` +
+        `than the one it now asks (${current}): ${byVersion.join("; ")}. ` +
+        "The feature changed after they recorded, so their answers are not about the questions being asked now. " +
+        "Re-record them from their own repositories (`loam verify <FEAT> --service <id> --record`), " +
         "or accept the split knowingly — nothing gates on it.",
     },
   ];

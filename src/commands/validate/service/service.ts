@@ -38,7 +38,8 @@ import { apiAxisFindings, generatedContractFindings } from "./api.js";
 import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events/events.js";
-import { archAxisFindings, readServiceSpecs, unknownDirectiveFindings } from "./specs.js";
+import { archAxisFindings, readServiceSpecs } from "./specs.js";
+import { unknownDirectiveFindings } from "../../../core/document/grammar/directives.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**

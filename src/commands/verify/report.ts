@@ -140,7 +140,7 @@ export function report(
     ...noticesFor(claims, checklist.feature),
     ...(open === null ? [] : [open]),
     ...contestedNotices(checklist.claims),
-    ...forkedChecklistNotices(recorded),
+    ...forkedChecklistNotices(recorded, checklist.digest),
   ];
 
   if (json) {
