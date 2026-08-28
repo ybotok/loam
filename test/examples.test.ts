@@ -54,13 +54,13 @@ const findings = (payload: {
 }): Array<{ severity: string; code: string }> => payload.targets.flatMap((t) => t.findings);
 
 describe("examples/docs vs loam validate --all", () => {
-  it("is valid: zero errors, and exactly the nine demonstration warnings", async () => {
+  it("is valid: zero errors, and exactly the ten demonstration warnings", async () => {
     const res = await runLoam(workDir, "validate", "--all", "--json");
     expect(res.code).toBe(0);
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.valid).toBe(true);
-    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 9 });
+    expect(payload.summary).toEqual({ services: 5, features: 2, errors: 0, warnings: 10 });
 
     const bySeverity = (sev: string) =>
       findings(payload)
@@ -82,6 +82,11 @@ describe("examples/docs vs loam validate --all", () => {
       "capability.requirement-unrealized",
       // `payments/settlement` — a whole capability nothing realizes.
       "capability.unrealized",
+      // `idempotency-key` — an architectural obligation declared and placed
+      // nowhere. Its sibling `outbox` IS placed, on the publish edge, and IS
+      // covered by ARCH-PAY-OUTBOX, so the axis's working join is silent here:
+      // the example demonstrates the gap, not the machinery.
+      "obligation.unapplied",
       "permissions.unenforced",
       "sources.absent",
       "spine.op-deprecated",

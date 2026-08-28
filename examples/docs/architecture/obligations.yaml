@@ -1,0 +1,23 @@
+# The fleet's ARCHITECTURAL OBLIGATIONS: rules an architect decided once and
+# applies where they apply. The decision itself lives in an ADR; a `#obl-<id>`
+# tag on architecture/landscape.likec4 says WHERE it holds; and the owning
+# team's `Covers:` line in its arch.spec.md says it is met, with a scenario.
+#
+# The three grades this file earns are the point of declaring names at all: a
+# tag naming nothing here is `obligation.unknown` (error — a typo reads exactly
+# like a rule), a name nothing tags is `obligation.unapplied` (warn), and a
+# tagged object no living requirement covers is `obligation.uncovered` (warn).
+#
+# An id is its own tag suffix, so it may hold letters, digits, `_` and `-` only.
+obligations:
+  outbox:
+    description: >-
+      A service that publishes a domain event writes the event and the state
+      change it reports in one transaction, relayed to the broker afterwards —
+      never a dual write.
+    adr: architecture/adrs/0001-transactional-outbox.md
+  idempotency-key:
+    description: >-
+      A write a caller may retry accepts an idempotency key and returns the
+      first result for a repeat. Declared and applied nowhere yet, which is
+      what `obligation.unapplied` is for.

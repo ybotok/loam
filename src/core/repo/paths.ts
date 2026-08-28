@@ -196,6 +196,15 @@ export function capabilitiesPath(docsDir: DocsDir): string {
 }
 
 /**
+ * The fleet's ARCHITECTURAL OBLIGATION vocabulary — beside the landscape it tags
+ * and the two vocabularies it sits with, for their reason: it is a fact about
+ * the fleet that no single service owns.
+ */
+export function obligationsPath(docsDir: DocsDir): string {
+  return join(docsDir, "architecture", "obligations.yaml");
+}
+
+/**
  * The FLEET's decision records — `architecture/adrs/`, beside the landscape and
  * the two vocabularies.
  *
