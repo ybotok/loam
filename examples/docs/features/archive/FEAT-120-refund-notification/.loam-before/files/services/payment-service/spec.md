@@ -68,7 +68,6 @@ refund against the acquirer before reporting it complete, and SHALL refuse a sec
 payment it has already refunded.
 
 Operations: refundPayment
-Publishes: payment.PaymentRefunded
 Requires: user/payments:refund
 
 #### Scenario: Refund a captured payment in full
@@ -81,8 +80,3 @@ Requires: user/payments:refund
 - **Given** a payment already refunded in full
 - **When** a refund is requested for it again
 - **Then** the request is refused with 409 and no second refund is issued
-
-#### Scenario: The refund is announced only after the acquirer reconciles
-- **Given** a refund accepted by the acquirer but not yet reconciled
-- **When** the reconciliation completes
-- **Then** `payment.PaymentRefunded` is published exactly once for that payment

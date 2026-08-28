@@ -11,11 +11,18 @@
  * table naming what each one teaches — and an exact match makes any new code
  * that starts firing on the example loud instead of quietly accumulating.
  *
- * The fleet is five services and three features at three points in their life:
- * FEAT-088 already archived by a real `loam archive` (snapshot and verification
- * record included), FEAT-101 in flight with a new service arriving, FEAT-112 in
- * flight retiring an operation. Both in-flight archives are planned here
- * file-for-file, because the two plans exercise different halves of the merge.
+ * The fleet is five services and four features at four points in their life:
+ * FEAT-088 and FEAT-120 already archived by a real `loam archive` (snapshot and
+ * verification record included), FEAT-101 in flight with a new service arriving,
+ * FEAT-112 in flight retiring an operation. Both in-flight archives are planned
+ * here file-for-file, because the two plans exercise different halves of the merge.
+ *
+ * The two archived records are a MATCHED PAIR and the pairing is the point:
+ * FEAT-088's scenario claims rest on an agent's word (`attested`), FEAT-120's on
+ * a digest-matched runner report (`verified`). A showcase that demonstrated only
+ * one of them would teach that the distinction is decorative — which is the one
+ * thing this product may not teach, since keeping those two answers apart is
+ * most of what it claims to be for.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -224,8 +231,8 @@ describe("examples/docs vs loam archive FEAT-112 --dry-run", () => {
   });
 });
 
-describe("examples/docs vs loam verify FEAT-088", () => {
-  it("reads the archived feature's record as frozen, and as attested rather than verified", async () => {
+describe("examples/docs vs the two archived verification records", () => {
+  it("reads FEAT-088 as frozen, and as attested rather than verified", async () => {
     // The record was written by a real `loam verify --record` before the real
     // `loam archive`, so every claim is confirmed and five of them rest on an
     // agent's word instead of a digest-matched test run. `verified` is reserved
@@ -239,5 +246,34 @@ describe("examples/docs vs loam verify FEAT-088", () => {
     expect(payload.verified).toBe(false);
     expect(payload.attested).toBe(5);
     expect(payload.summary).toEqual({ claims: 7, confirmed: 7, unconfirmed: 0 });
+  });
+
+  it("reads FEAT-120 as verified, on a runner report no cucumber wrote", async () => {
+    // The other half of the pair. Its five scenario claims were answered by
+    // `--results` from `scenario-report.json` — loam's own runner-neutral
+    // `{"loamScenarioReport": 1, …}` shape — so the verdict is `verified` with
+    // nothing attested, while its two `event.declares` claims still rest on an
+    // agent's word. That mix is the honest common case: a fleet whose suite
+    // answers the scenarios and whose wiring claims a human still vouches for.
+    const res = await runLoam(workDir, "verify", "FEAT-120", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.frozen).toBe(true);
+    expect(payload.verdict).toBe("verified");
+    expect(payload.verified).toBe(true);
+    expect(payload.attested).toBe(0);
+    expect(payload.summary).toEqual({ claims: 7, confirmed: 7, unconfirmed: 0 });
+  });
+
+  it("keeps the two verdicts apart — the example exists to show the difference standing", async () => {
+    // If these ever agree, either the distinction collapsed or somebody
+    // "fixed" the example by making both sides the same. Both are regressions.
+    const [attested, verified] = await Promise.all([
+      runLoam(workDir, "verify", "FEAT-088", "--json"),
+      runLoam(workDir, "verify", "FEAT-120", "--json"),
+    ]);
+    expect(JSON.parse(attested.stdout).verdict).toBe("attested");
+    expect(JSON.parse(verified.stdout).verdict).toBe("verified");
   });
 });

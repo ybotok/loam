@@ -1,0 +1,46 @@
+{
+  "version": 3,
+  "feature": "FEAT-120",
+  "dirName": "FEAT-120-refund-notification",
+  "archivedAt": "2026-08-28T18:50:02.492Z",
+  "files": [
+    {
+      "path": "services/platform/notification-service/spec.md",
+      "service": "notification-service",
+      "artifact": "spec.md",
+      "existed": true,
+      "after": "94f8507d205439b713f344663f94c04e54b738d991e84acf381b381889d36264",
+      "before": "3be6c0aaa97062abe82b07ade26d901b1a29d4dfc4efdb9ee8fa2228fd3071c5"
+    },
+    {
+      "path": "services/payment-service/spec.md",
+      "service": "payment-service",
+      "artifact": "spec.md",
+      "existed": true,
+      "after": "14b02e45cbf3ed5a3a2a2f94afea36ee2c95179f0c2a78703af7680d1b4efd3f",
+      "before": "22b06835887686f28b8212a4c1ca89fe2cbf42f49497786fcf76bb9bf1e5ca61"
+    },
+    {
+      "path": "services/platform/notification-service/asyncapi.yaml",
+      "service": "notification-service",
+      "artifact": "asyncapi.yaml",
+      "existed": true,
+      "after": "c868aefa3c3bc2b72cab83c86e4fd4d803480a8a9b2ffc61bfa50af2922bfeae",
+      "before": "f7f788c1b7ee51593bc96441cd062876f4df89932c6ef65d99f451d843f1c0b6"
+    },
+    {
+      "path": "services/payment-service/asyncapi.yaml",
+      "service": "payment-service",
+      "artifact": "asyncapi.yaml",
+      "existed": true,
+      "after": "c79f510cb4d3f7b1a55ee1f1989c033f306e7cc80b96d09f13e95480647ec7b8",
+      "before": "8386d542683df59643eafabdb35ebf77fab370b5622614a82071f8566887b8e9"
+    },
+    {
+      "path": "architecture/landscape.likec4",
+      "existed": true,
+      "after": "eb7325adc158f06f883e15473b97960c6340fa2a046090dd80ba10460d5a8499",
+      "before": "93ce5bbe908a54949700d4a7a8992ca1eebbcbbfb1ffef7eb28548521890148b"
+    }
+  ]
+}

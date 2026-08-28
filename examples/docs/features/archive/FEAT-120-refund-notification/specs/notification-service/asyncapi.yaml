@@ -47,20 +47,25 @@ channels:
     messages:
       OrderPlaced:
         $ref: '#/components/messages/OrderPlaced'
+    x-loam-based-on: dfe4fe6a1cca0df9
   paymentEvents:
     address: payment.events.v1
     description: Payment lifecycle events, produced by payment-service's outbox relay
     messages:
       PaymentCaptured:
-        $ref: "#/components/messages/PaymentCaptured"
+        $ref: '#/components/messages/PaymentCaptured'
+      # NEW: the same topic, one more message. A consumer that already reads
+      # payment.events for the receipt reads the refund from it too.
       PaymentRefunded:
-        $ref: "#/components/messages/PaymentRefunded"
+        $ref: '#/components/messages/PaymentRefunded'
+    x-loam-based-on: 12f1f33accf4b2a1
   crmEvents:
     address: crm.events.v1
     description: Customer master-data events, produced by salesforce (outside the fleet)
     messages:
       CustomerUpdated:
         $ref: '#/components/messages/CustomerUpdated'
+    x-loam-based-on: c3a0af34dc0301d7
 
 # One operation per message rather than one per channel, so that adding a second
 # message to a topic later is an addition here instead of a silent widening: an
@@ -73,27 +78,54 @@ operations:
       $ref: '#/channels/orderEvents'
     messages:
       - $ref: '#/channels/orderEvents/messages/OrderPlaced'
+    x-loam-based-on: 93b230182c7aa28f
   receivePaymentCaptured:
     action: receive
     channel:
       $ref: '#/channels/paymentEvents'
     messages:
       - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
+    x-loam-based-on: 6d19f39f58ff9ef5
+  receivePaymentRefunded:
+    action: receive
+    channel:
+      $ref: '#/channels/paymentEvents'
+    messages:
+      - $ref: '#/channels/paymentEvents/messages/PaymentRefunded'
   receiveCustomerUpdated:
     action: receive
     channel:
       $ref: '#/channels/crmEvents'
     messages:
       - $ref: '#/channels/crmEvents/messages/CustomerUpdated'
-  receivePaymentRefunded:
-    action: receive
-    channel:
-      $ref: "#/channels/paymentEvents"
-    messages:
-      - $ref: "#/channels/paymentEvents/messages/PaymentRefunded"
+    x-loam-based-on: b1a4223de79dc101
 
 components:
   messages:
+    # The consumer's copy of the producer's contract. loam checks the NAME
+    # joins; keeping the payload here is what lets a reader of this service
+    # see what it actually receives without opening payment-service.
+    PaymentRefunded:
+      name: payment.PaymentRefunded
+      title: Payment refunded
+      payload:
+        type: object
+        required: [ paymentId, orderId, refundedAmount, currency, refundedAt ]
+        properties:
+          paymentId:
+            type: string
+            format: uuid
+          orderId:
+            type: string
+          refundedAmount:
+            type: integer
+            description: minor units
+          currency:
+            type: string
+            pattern: '^[A-Z]{3}$'
+          refundedAt:
+            type: string
+            format: date-time
     OrderPlaced:
       # Namespaced by the domain that OWNS the message, never by the service
       # reading it: `order.` says order-service is the one producer, and two
@@ -121,6 +153,7 @@ components:
           placedAt:
             type: string
             format: date-time
+      x-loam-based-on: 15e75c9de066971f
     PaymentCaptured:
       name: payment.PaymentCaptured
       title: Payment captured
@@ -144,6 +177,7 @@ components:
           capturedAt:
             type: string
             format: date-time
+      x-loam-based-on: 543d75dc0e0e3199
     CustomerUpdated:
       name: crm.CustomerUpdated
       title: Customer contact details updated
@@ -171,29 +205,4 @@ components:
           updatedAt:
             type: string
             format: date-time
-    PaymentRefunded:
-      name: payment.PaymentRefunded
-      title: Payment refunded
-      payload:
-        type: object
-        required:
-          - paymentId
-          - orderId
-          - refundedAmount
-          - currency
-          - refundedAt
-        properties:
-          paymentId:
-            type: string
-            format: uuid
-          orderId:
-            type: string
-          refundedAmount:
-            type: integer
-            description: minor units
-          currency:
-            type: string
-            pattern: ^[A-Z]{3}$
-          refundedAt:
-            type: string
-            format: date-time
+      x-loam-based-on: ff659a336b678a26

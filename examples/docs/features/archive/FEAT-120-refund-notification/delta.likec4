@@ -1,0 +1,36 @@
+// FEAT-120 — architecture delta.
+//
+// One new edge: the refund event reaching the service that tells the customer.
+// Everything tagged #FEAT-120 is exactly what `loam archive` folds into
+// architecture/landscape.likec4; the elements below are untagged context so the
+// view has something to draw the edge between.
+
+specification {
+  element softwareSystem
+  element topic
+  tag FEAT-120
+}
+
+model {
+  marketplace = softwareSystem 'marketplace' {
+    notificationService = softwareSystem 'notification-service'
+  }
+  kafka = softwareSystem 'kafka' {
+    paymentEvents = topic 'payment.events'
+  }
+
+  // `consumes` binds the edge's TARGET, which is why this arrow points out of
+  // the topic and into the service: the consumer is what the message reaches.
+  kafka.paymentEvents -> marketplace.notificationService 'PaymentRefunded triggers the refund notice' {
+    #FEAT-120
+    metadata {
+      consumes 'payment.PaymentRefunded'
+    }
+  }
+}
+
+views {
+  view feat_120 {
+    include *
+  }
+}

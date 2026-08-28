@@ -232,11 +232,6 @@ model {
       consumes 'payment.PaymentCaptured'
     }
   }
-  kafka.paymentEvents -> marketplace.notificationService 'PaymentRefunded triggers the refund notice' {
-    metadata {
-      consumes 'payment.PaymentRefunded'
-    }
-  }
   // A producer OUTSIDE the fleet, expressed rather than left implicit. Without
   // this edge notification-service's `consumes 'crm.CustomerUpdated'` would be
   // 'spine.message-unproduced` (error) — nobody in the fleet declares it is

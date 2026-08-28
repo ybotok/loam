@@ -25,11 +25,9 @@ channels:
     description: Payment lifecycle events, published by the outbox relay
     messages:
       PaymentAuthorized:
-        $ref: "#/components/messages/PaymentAuthorized"
+        $ref: '#/components/messages/PaymentAuthorized'
       PaymentCaptured:
-        $ref: "#/components/messages/PaymentCaptured"
-      PaymentRefunded:
-        $ref: "#/components/messages/PaymentRefunded"
+        $ref: '#/components/messages/PaymentCaptured'
 
 operations:
   sendPaymentAuthorized:
@@ -44,12 +42,6 @@ operations:
       $ref: '#/channels/paymentEvents'
     messages:
       - $ref: '#/channels/paymentEvents/messages/PaymentCaptured'
-  sendPaymentRefunded:
-    action: send
-    channel:
-      $ref: "#/channels/paymentEvents"
-    messages:
-      - $ref: "#/channels/paymentEvents/messages/PaymentRefunded"
 
 components:
   messages:
@@ -65,7 +57,7 @@ components:
       # everything below is opaque to loam.
       payload:
         type: object
-        required: [ paymentId, orderId, amount, currency, authorizedAt ]
+        required: [paymentId, orderId, amount, currency, authorizedAt]
         properties:
           paymentId:
             type: string
@@ -86,7 +78,7 @@ components:
       title: Payment captured
       payload:
         type: object
-        required: [ paymentId, orderId, capturedAmount, currency, capturedAt ]
+        required: [paymentId, orderId, capturedAmount, currency, capturedAt]
         properties:
           paymentId:
             type: string
@@ -100,31 +92,5 @@ components:
             type: string
             pattern: '^[A-Z]{3}$'
           capturedAt:
-            type: string
-            format: date-time
-    PaymentRefunded:
-      name: payment.PaymentRefunded
-      title: Payment refunded
-      payload:
-        type: object
-        required:
-          - paymentId
-          - orderId
-          - refundedAmount
-          - currency
-          - refundedAt
-        properties:
-          paymentId:
-            type: string
-            format: uuid
-          orderId:
-            type: string
-          refundedAmount:
-            type: integer
-            description: minor units
-          currency:
-            type: string
-            pattern: ^[A-Z]{3}$
-          refundedAt:
             type: string
             format: date-time

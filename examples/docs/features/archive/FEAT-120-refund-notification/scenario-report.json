@@ -1,0 +1,10 @@
+{
+  "loamScenarioReport": 1,
+  "results": [
+    { "digest": "f8974d79182ec37d", "status": "passed", "test": "RefundPaymentTest#refundsInFull" },
+    { "digest": "24ec0c2dceacc6b0", "status": "passed", "test": "RefundPaymentTest#refusesSecondRefund" },
+    { "digest": "7affc9a6ee57a0d8", "status": "passed", "test": "RefundOutboxTest#publishesOnceAfterReconciliation" },
+    { "digest": "b0bb55d679e9c5c2", "status": "passed", "test": "TestRefundNotice_SendsOnce" },
+    { "digest": "b690937cc4dfdc74", "status": "passed", "test": "TestRefundNotice_IgnoresRedelivery" }
+  ]
+}

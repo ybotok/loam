@@ -52,9 +52,7 @@ channels:
     description: Payment lifecycle events, produced by payment-service's outbox relay
     messages:
       PaymentCaptured:
-        $ref: "#/components/messages/PaymentCaptured"
-      PaymentRefunded:
-        $ref: "#/components/messages/PaymentRefunded"
+        $ref: '#/components/messages/PaymentCaptured'
   crmEvents:
     address: crm.events.v1
     description: Customer master-data events, produced by salesforce (outside the fleet)
@@ -85,12 +83,6 @@ operations:
       $ref: '#/channels/crmEvents'
     messages:
       - $ref: '#/channels/crmEvents/messages/CustomerUpdated'
-  receivePaymentRefunded:
-    action: receive
-    channel:
-      $ref: "#/channels/paymentEvents"
-    messages:
-      - $ref: "#/channels/paymentEvents/messages/PaymentRefunded"
 
 components:
   messages:
@@ -109,7 +101,7 @@ components:
         # says what a handler would read. loam probes for presence and never
         # reads a field, which is what keeps a later move to Avro a
         # `schemaFormat:` line here and no change in loam.
-        required: [ orderId, customerId, placedAt ]
+        required: [orderId, customerId, placedAt]
         properties:
           orderId:
             type: string
@@ -126,7 +118,7 @@ components:
       title: Payment captured
       payload:
         type: object
-        required: [ paymentId, orderId, capturedAmount, currency, capturedAt ]
+        required: [paymentId, orderId, capturedAmount, currency, capturedAt]
         properties:
           paymentId:
             type: string
@@ -153,15 +145,14 @@ components:
         # and reorders, and the "out-of-order update is ignored" scenario in
         # spec.md is only implementable because this field is in the contract.
         # Nothing outside this document defines it.
-        required: [ customerId, version, updatedAt ]
+        required: [customerId, version, updatedAt]
         properties:
           customerId:
             type: string
             format: uuid
           version:
             type: integer
-            description: Monotonic per customer; an update at or below the stored version is
-              dropped
+            description: Monotonic per customer; an update at or below the stored version is dropped
           email:
             type: string
             format: email
@@ -169,31 +160,5 @@ components:
             type: string
             description: E.164; absent when the customer has no phone on record
           updatedAt:
-            type: string
-            format: date-time
-    PaymentRefunded:
-      name: payment.PaymentRefunded
-      title: Payment refunded
-      payload:
-        type: object
-        required:
-          - paymentId
-          - orderId
-          - refundedAmount
-          - currency
-          - refundedAt
-        properties:
-          paymentId:
-            type: string
-            format: uuid
-          orderId:
-            type: string
-          refundedAmount:
-            type: integer
-            description: minor units
-          currency:
-            type: string
-            pattern: ^[A-Z]{3}$
-          refundedAt:
             type: string
             format: date-time

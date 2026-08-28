@@ -13,7 +13,8 @@ npm run dev -- status                        # what to do next, derived from the
 npm run dev -- validate --all                # the gate CI runs
 npm run dev -- archive FEAT-101 --dry-run    # the three-axis merge plan, writing nothing
 npm run dev -- archive FEAT-112 --dry-run    # an operation being retired, writing nothing
-npm run dev -- verify FEAT-088               # a shipped feature's done-check, frozen
+npm run dev -- verify FEAT-088               # a shipped feature's done-check: attested
+npm run dev -- verify FEAT-120               # …and its pair, the same check: verified
 npm run dev -- dependencies                  # the active-feature graph
 ```
 
@@ -77,14 +78,29 @@ edge's source and `consumes` binds its target, so a consume edge drawn the other
 nothing: the metadata parses, the document validates, and the check silently grades zero edges.
 Nothing in loam reports that today, which is why the landscape says so in a comment.
 
-## Three features, at three points in their life
+## Four features, at four points in their life
 
-- **`features/archive/FEAT-088-refunds/`** — shipped. It was merged by the real `loam archive`, so
-  its `.loam-before/` snapshot holds the exact bytes the merge overwrote and
+The two archived ones are a **matched pair**, and the pairing is the point: same command, same
+shape of record, two different verdicts. A showcase that demonstrated only one would teach that the
+distinction is decorative — and keeping those two answers apart is most of what loam claims to be
+for.
+
+- **`features/archive/FEAT-088-refunds/`** — shipped, and **`attested`**. It was merged by the real
+  `loam archive`, so its `.loam-before/` snapshot holds the exact bytes the merge overwrote and
   `loam unarchive FEAT-088` would put them back. Its `verification.yaml` is the done-check written
-  down, and it reads **`attested`** rather than `verified`: every claim is confirmed, but the
-  scenario claims rest on an agent's word instead of a digest-matched test run. loam does not
-  pretend those are the same thing.
+  down: every claim is confirmed, but the scenario claims rest on an agent's word instead of a
+  digest-matched test run. loam does not pretend those are the same thing.
+- **`features/archive/FEAT-120-refund-notification/`** — shipped, and **`verified`**. The sequel
+  FEAT-088 left open: the money went back and nobody told the customer. It publishes
+  `payment.PaymentRefunded` from payment-service and has notification-service turn it into the
+  message the customer is waiting for — so it exercises the event spine end to end, across two
+  services, with no HTTP anywhere in it.
+
+  Its five scenario claims were answered by `--results` from the `scenario-report.json` beside it:
+  loam's own runner-neutral `{"loamScenarioReport": 1, …}` shape, which any runner can be adapted
+  into. Its two `event.declares` claims still rest on an agent's word. That mix is the honest
+  common case — a suite that answers the scenarios, and wiring claims a human vouches for — and it
+  still reads `verified`, because the verdict turns on the scenario claims alone.
 - **`features/FEAT-101-payment-splitting/`** — in flight, and the big one: a new service arriving
   with its own requirements, architecture requirements and contract, a C4 delta that splices a
   nested element into the living landscape, a `MODIFIED` requirement that **renames its heading**
@@ -148,5 +164,11 @@ is what closes it.
   be discovered.
 - **A generated Gherkin suite.** `loam gherkin` writes into a *service's* repository, and there are
   none here — this fleet is six repositories, and `docs/` is one of them. The same reason leaves
-  `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code is, so
-  nothing in this tree can honestly be stamped `verified`.
+  `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code is, so no
+  SERVICE in this tree can be promoted past `draft`.
+
+  That is a different word from FEAT-120's `verified` verdict and the two must not be read as one.
+  A service's ladder rung (`empty → partial → documented → sourced → vouched`) says a human stamped
+  its living spec against the code; a feature's verdict says how its claims were answered. FEAT-120
+  is `verified` in a fleet whose services are all `draft`, which is exactly the state a team is in
+  the day its first suite goes green.
