@@ -84,7 +84,7 @@ describe("the generated AGENTS.md states the link convention", () => {
     expect(AGENTS_MD).toMatch(/autocomplete and rename-tracking/);
   });
 
-  it("names the check that reads a link, and the four things it does not grade", () => {
+  it("names the check that reads a link, its three exclusions, and the one it does grade", () => {
     // An agent that knows the rule and not its boundary writes around the wrong
     // edge: it stops linking to a service's own repository (correctly ignored),
     // or files a bug about a fenced example (correctly ignored). The exclusions
@@ -93,7 +93,7 @@ describe("the generated AGENTS.md states the link convention", () => {
     expect(AGENTS_MD).toMatch(/outside\s+this repository/);
     expect(AGENTS_MD).toMatch(/#section/);
     expect(AGENTS_MD).toMatch(/fenced code block or an inline code span/);
-    expect(AGENTS_MD).toMatch(/Nor is CASE/);
+    expect(AGENTS_MD).toMatch(/CASE \*\*is\*\* graded/);
     // And the old sentence is gone. It said, in bold, that nothing validated
     // this — which is now false, and a stale absence reads as a live promise.
     expect(AGENTS_MD).not.toMatch(/Nothing validates this today/);

@@ -26,6 +26,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathCaseIndex } from "../src/core/links/case.js";
 import { coherentFixture, makeProject, runLoam, type Project } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -219,6 +220,61 @@ describe("what is not a link, and what has no answer here", () => {
       "services/payment-service/spec.md": specWith("[every decision](adrs/)"),
     });
     expect(await broken(p, "--all")).toEqual([]);
+  });
+});
+
+describe("case counts, and the answer does not depend on the operating system", () => {
+  it("a link whose only fault is case is broken, and the message names the stored spelling", async () => {
+    // The two platforms fail this link in different places — `existsSync` on
+    // Linux, the spelling check on Windows and macOS — and must arrive at the
+    // same code and the same words, or the machine contract holds on one CI
+    // runner and not another. That is the whole reason `storedAs` is asked on
+    // both rather than only where the filesystem lied.
+    const p = await project({
+      ...coherentFixture(),
+      "services/payment-service/adrs/0001-outbox.md": ADR,
+      "services/payment-service/spec.md": specWith("[the outbox](adrs/0001-Outbox.md)"),
+    });
+    expect(await broken(p, "--all")).toEqual([
+      "services/payment-service/spec.md:22: [the outbox](adrs/0001-Outbox.md) — stored as '0001-outbox.md'",
+    ]);
+  });
+
+  it("the spelling index answers directly, so the Windows half is covered on Linux too", async () => {
+    // The two tests around this one are end-to-end, and on a case-SENSITIVE
+    // host `existsSync` refuses the link before the spelling check is reached —
+    // so on this suite's own CI they prove the message and not the mechanism.
+    // This exercises the index itself, on every platform, which is where the
+    // case-insensitive host's only defence lives.
+    const p = await project(coherentFixture());
+    const index = pathCaseIndex();
+    const spec = join(p.docsDir, "services", "payment-service", "spec.md");
+    expect(index.spelledExactly(p.docsDir, spec)).toBe(true);
+    expect(index.spelledExactly(p.docsDir, join(p.docsDir, "services", "Payment-Service", "spec.md"))).toBe(false);
+    expect(index.spelledExactly(p.docsDir, join(p.docsDir, "services", "payment-service", "Spec.md"))).toBe(false);
+    // The hint the message carries, and it is a DIFFERENT spelling or nothing:
+    // a name that already matches exactly is not a correction.
+    expect(index.storedAs(join(p.docsDir, "services", "payment-service"), "Spec.md")).toBe("spec.md");
+    expect(index.storedAs(join(p.docsDir, "services", "payment-service"), "spec.md")).toBeUndefined();
+    expect(index.storedAs(join(p.docsDir, "services", "payment-service"), "nothing.md")).toBeUndefined();
+    // The root itself is trivially spelled right, which is the recursion's
+    // base case and the one input a segment loop can get wrong by starting a
+    // step too early.
+    expect(index.spelledExactly(p.docsDir, p.docsDir)).toBe(true);
+  });
+
+  it("a miscased DIRECTORY in the path is caught too, not just the filename", async () => {
+    const p = await project({
+      ...coherentFixture(),
+      "services/payment-service/adrs/0001-outbox.md": ADR,
+      "services/payment-service/spec.md": specWith("[the outbox](ADRS/0001-outbox.md)"),
+    });
+    // No `stored as` hint here: the miscased segment is a directory, and the
+    // hint is about the leaf. Naming a wrong thing would be worse than naming
+    // nothing — the detail already quotes the whole path the author wrote.
+    expect(await broken(p, "--all")).toEqual([
+      "services/payment-service/spec.md:22: [the outbox](ADRS/0001-outbox.md)",
+    ]);
   });
 });
 
