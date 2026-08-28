@@ -10,6 +10,21 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### `loam --help` is grouped
+
+- The twenty-eight commands now print under seven headings — **Set up · Read the fleet · Adopt what
+  exists · Change it · Check it · Ship it · Migrate** — in the order the work happens, mirroring the
+  six shipped workflow protocols rather than inventing a second taxonomy.
+- **Nothing is hidden and nothing is renamed.** Every command still parses, still appears, and still
+  carries the same flags; `test/help-groups.test.ts` asserts that no command is hidden, that every
+  one has a heading, and that no stray heading exists. `src/cli.ts` throws on a command with no
+  heading, so a twenty-ninth added without one fails the first time anybody runs the binary rather
+  than landing quietly at the bottom of the page.
+- [AGENTS.md](https://github.com/ybotok/loam/blob/main/AGENTS.md) now states that **help layout is
+  not part of the frozen surface**: names,
+  flags, exit codes, the envelope and the codes are frozen; which heading a command prints under is
+  typography, and regrouping is not a compatibility event.
+
 ### The build's own contract, read as a check
 
 - **New `contracts` block in `loam.json`**: `{ "contracts": { "openapi": "build/openapi.yaml" } }`

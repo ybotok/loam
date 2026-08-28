@@ -85,7 +85,56 @@ export function buildProgram(): Command {
   registerOpen(program);
   registerMigrateOpenSpec(program);
 
+  groupCommands(program);
+
   return program;
+}
+
+/**
+ * Which heading each command sits under in `loam --help`.
+ *
+ * The order is the order of the work: wire the repo, read the fleet, adopt what
+ * exists, change it, check it, ship it. It mirrors the six shipped workflow
+ * protocols (`loam instructions`) rather than inventing a second taxonomy, so a
+ * reader who has met one has met the other.
+ *
+ * Twenty-eight commands printed as one flat registration-ordered list tells a
+ * new reader nothing about which four to run first. NOTHING IS HIDDEN — a
+ * hidden command is a command an agent cannot discover, and every one of these
+ * still parses, still appears, and still carries the same flags. This is
+ * typography, not surface.
+ */
+const HELP_GROUPS: Record<string, string> = {
+  init: "Set up", seed: "Set up", doctor: "Set up", open: "Set up", mcp: "Set up",
+  list: "Read the fleet", status: "Read the fleet", show: "Read the fleet",
+  explore: "Read the fleet", context: "Read the fleet", dependencies: "Read the fleet",
+  explain: "Read the fleet", instructions: "Read the fleet",
+  adopt: "Adopt what exists", vouch: "Adopt what exists",
+  new: "Change it", delta: "Change it", gherkin: "Change it", rebase: "Change it",
+  subsystem: "Change it",
+  validate: "Check it", diff: "Check it", verify: "Check it", gate: "Check it",
+  archive: "Ship it", unarchive: "Ship it",
+  "audit-openspec": "Migrate", "migrate-openspec": "Migrate",
+};
+
+/**
+ * Apply {@link HELP_GROUPS}, and FAIL CLOSED on a command it does not name.
+ *
+ * The throw is the point. A twenty-ninth command added without a heading would
+ * otherwise land silently in an "unclassified" bucket at the bottom of the
+ * page, which is the drift this whole file's neighbours are written to prevent;
+ * `test/help-groups.test.ts` catches it at gate time, and this catches it the
+ * first time anybody runs the binary. Same discipline as
+ * `test/codes-drift.test.ts` applies to codes.
+ */
+function groupCommands(program: Command): void {
+  for (const command of program.commands) {
+    const group = HELP_GROUPS[command.name()];
+    if (group === undefined) {
+      throw new Error(`cli: command '${command.name()}' has no HELP_GROUPS heading — add one in src/cli.ts`);
+    }
+    command.helpGroup(group);
+  }
 }
 
 /** CommanderError codes whose output (already printed) is the point, not a failure to wrap. */
