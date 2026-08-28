@@ -20,6 +20,7 @@ import { type Finding, type TargetReport } from "../../../core/vocabulary/report
 import { landscapeConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
+import { fleetLinkFindings } from "../links/corpus.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
 import { errorText } from "../checks/vocabulary.js";
 import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
@@ -104,6 +105,11 @@ export async function validateLandscape(
   // vocabularies are fleet facts that do not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));
   findings.push(...(await capabilityFleetFindings(docsDir, entries, fleet, gradableFlows(preloaded))));
+  // The documents that belong to no service and no feature — the fleet's ADRs
+  // and the living capability tree — are graded for their links here, once,
+  // for the same reason the two vocabularies above are: a fleet fact repeated
+  // on every service target is the report.
+  findings.push(...(await fleetLinkFindings({ docsDir, fleet })));
 
   if (!existsSync(path)) {
     const count = entries.length;

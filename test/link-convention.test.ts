@@ -1,23 +1,25 @@
 /**
- * How documents in a docs repo link to one another — a convention loam WRITES
- * and states, and deliberately not a setting, and deliberately not a check.
+ * How documents in a docs repo link to one another — a convention loam WRITES,
+ * states, and now RESOLVES, and deliberately not a setting.
  *
  * The shape was nearly a `loam.json` field, and the reason it is not is the
  * reason this file exists. A link between two documents here is a JOIN, not
  * decoration: a requirement that names a term wants that term's document linked
  * and that document updated, an ADR that supersedes another wants to say which
  * — the same kind of relationship `Operations:` and `Covers:` already carry.
- * A join loam might one day resolve is a contract, and a contract that half a
- * fleet is configured out of is exactly the drift the rejected service manifest
- * was deleted for. So: one form, stated once, with its reason.
+ * A join loam resolves is a contract, and a contract that half a fleet is
+ * configured out of is exactly the drift the rejected service manifest was
+ * deleted for. So: one form, stated once, with its reason.
  *
- * Two properties, and they pull in opposite directions, which is why both are
- * pinned here. The generated AGENTS.md must SAY the form and why — agents write
- * most of these documents, so an unstated convention is not one. And loam must
- * say NOTHING about any actual link today: no check reads one, and a corpus
- * mixing both spellings must grade exactly as one containing neither. The day
- * somebody adds the resolvable-link check, the second half of this file is the
- * conversation that has to happen first.
+ * THE SECOND HALF OF THIS FILE WAS REVERSED, and the header it replaces said
+ * this was the conversation that had to happen first. It used to pin that loam
+ * said NOTHING about any actual link — a corpus mixing both spellings graded
+ * exactly as one containing neither — and the honesty of the stated convention
+ * rested on it. `link.unresolved` is now that check, so what is pinned instead
+ * is the narrower claim the convention actually made: loam resolves the form it
+ * chose, and stays silent about the one it did not. A wikilink is not refused,
+ * not warned about, and not repaired. It is simply not a link loam can read,
+ * which is the whole argument for the markdown form and is now observable.
  */
 import { describe, expect, it, afterEach } from "vitest";
 import { readFile, rm } from "node:fs/promises";
@@ -82,12 +84,19 @@ describe("the generated AGENTS.md states the link convention", () => {
     expect(AGENTS_MD).toMatch(/autocomplete and rename-tracking/);
   });
 
-  it("says plainly that nothing validates it today", () => {
-    // Without this, an agent reading a stated rule looks for the finding that
-    // enforces it, concludes it is missing, and files a bug — or worse, adds
-    // the check. Stating the absence is what makes the convention honest.
-    expect(AGENTS_MD).toMatch(/\*\*Nothing validates this today\.\*\*/);
-    expect(AGENTS_MD).toMatch(/produces no finding/);
+  it("names the check that reads a link, and the four things it does not grade", () => {
+    // An agent that knows the rule and not its boundary writes around the wrong
+    // edge: it stops linking to a service's own repository (correctly ignored),
+    // or files a bug about a fenced example (correctly ignored). The exclusions
+    // are as much of the contract as the code is.
+    expect(AGENTS_MD).toMatch(/`link\.unresolved`/);
+    expect(AGENTS_MD).toMatch(/outside\s+this repository/);
+    expect(AGENTS_MD).toMatch(/#section/);
+    expect(AGENTS_MD).toMatch(/fenced code block or an inline code span/);
+    expect(AGENTS_MD).toMatch(/Nor is CASE/);
+    // And the old sentence is gone. It said, in bold, that nothing validated
+    // this — which is now false, and a stale absence reads as a live promise.
+    expect(AGENTS_MD).not.toMatch(/Nothing validates this today/);
   });
 
   it("offers no choice — there is no style to pick and nothing to configure", async () => {
@@ -138,7 +147,9 @@ describe("SCHEMA states it where the docs-repo conventions live", () => {
     expect(section.length).toBeGreaterThan(0);
     expect(section).toMatch(/\*\*Documents link to each other with standard markdown links\*\*/);
     expect(section).toMatch(/shortest-unique-path/);
-    expect(section).toMatch(/\*\*Nothing validates this today\*\*/);
+    expect(section).toMatch(/`link\.unresolved`/);
+    expect(section).toMatch(/`link\.unreadable`/);
+    expect(section).not.toMatch(/Nothing validates this today/);
   });
 
   it("and not as a loam.json field, because there is none", async () => {
@@ -151,10 +162,10 @@ describe("SCHEMA states it where the docs-repo conventions live", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* And loam says nothing about any actual link                         */
+/* And loam resolves the form it chose, and only that form             */
 /* ------------------------------------------------------------------ */
 
-describe("no check reads a link", () => {
+describe("loam reads a markdown link and nothing else", () => {
   /** A fleet with no feature in flight — nothing pins against this spec, so its body is free. */
   function fleet(spec: string): Record<string, string> {
     return {
@@ -165,18 +176,27 @@ describe("no check reads a link", () => {
     };
   }
 
+  /** The living spec with `body` spliced into the requirement — where a link an author writes actually sits. */
+  function specLinking(body: string): string {
+    return LIVING_SPEC.replace(
+      "The service SHALL authorize a payment before capture.",
+      `The service SHALL authorize a payment before capture.\n${body}`,
+    );
+  }
+
   /**
-   * The same living spec with a paragraph of links spliced into the
-   * requirement's body — BOTH spellings, in one file, which is the state the
-   * convention explicitly tolerates. Placed inside a requirement rather than in
-   * a file nothing reads: a corpus loam merely never opens would prove nothing.
+   * BOTH spellings in one file, which is the state the convention explicitly
+   * tolerates — it refuses neither, it only resolves one. Placed inside a
+   * requirement rather than in a file nothing reads: a corpus loam merely never
+   * opens would prove nothing either way.
    */
-  const MIXED_LINKS = LIVING_SPEC.replace(
-    "The service SHALL authorize a payment before capture.",
-    "The service SHALL authorize a payment before capture.\n" +
-      "See [0001 — transactional outbox](../../architecture/adrs/0001-transactional-outbox.md), " +
+  const MIXED_LINKS = specLinking(
+    "See [the outbox](../../architecture/adrs/0001-transactional-outbox.md), " +
       "[[0002 circuit breakers]] and [a link that resolves nowhere](../nope/missing.md).",
   );
+
+  /** The wikilink alone, and it names nothing — the spelling loam declines to read. */
+  const WIKI_ONLY = specLinking("See [[0002 circuit breakers]], which does not exist.");
 
   /**
    * Every finding, across every target. Flattened from `targets[].findings`,
@@ -185,45 +205,53 @@ describe("no check reads a link", () => {
    * equality below true of nothing. The richness floor is what stops that
    * silently happening again.
    */
-  async function findings(p: Project): Promise<Array<{ code: string; message: string }>> {
+  async function findings(p: Project): Promise<Array<{ code: string; message: string; details?: string[] }>> {
     const res = await runLoam(p.workDir, "validate", "--all", "--json");
     const json = JSON.parse(res.stdout) as {
-      targets?: Array<{ findings?: Array<{ code: string; message: string }> }>;
+      targets?: Array<{ findings?: Array<{ code: string; message: string; details?: string[] }> }>;
     };
     const all = (json.targets ?? []).flatMap((t) => t.findings ?? []);
     expect(all.length, `validate --all reported nothing to compare: ${res.stdout}`).toBeGreaterThan(0);
     return all;
   }
 
-  it("a corpus mixing both spellings grades exactly as one with no links at all", async () => {
-    // The assertion is EQUALITY, not "no link finding": a check that fired on a
-    // wikilink, or on a markdown link whose target does not exist, would show
-    // up here as a difference whatever it chose to call itself. Both runs are
-    // over the same fleet, so any difference is the links.
-    const plain = await project(fleet(LIVING_SPEC));
-    const mixed = await project(fleet(MIXED_LINKS));
-
-    const [a, b] = await Promise.all([findings(plain), findings(mixed)]);
-    expect(b.map((f) => f.code).sort()).toEqual(a.map((f) => f.code).sort());
-  });
-
-  it("the exit code is the same too — no link makes a fleet fail", async () => {
-    const plain = await project(fleet(LIVING_SPEC));
-    const mixed = await project(fleet(MIXED_LINKS));
-
-    const before = await runLoam(plain.workDir, "validate", "--all", "--json");
-    const after = await runLoam(mixed.workDir, "validate", "--all", "--json");
-    expect(after.code).toBe(before.code);
-  });
-
-  it("a dangling markdown link is not a finding — the check is possible, not present", async () => {
-    // `../nope/missing.md` names nothing. The whole argument for the markdown
-    // form is that this question HAS a mechanical answer; the argument for
-    // stating the convention now is that loam does not ask it yet. Both halves
-    // are pinned, because "possible" is what a later change would mistake for
-    // "already done".
+  it("a mixed corpus earns exactly one finding, and it names only the markdown targets", async () => {
+    // The two spellings sit side by side in one requirement, so any difference
+    // in how they are treated shows up in a single run. Both markdown targets
+    // dangle and both are listed; the wikilink is absent — not as a second
+    // finding, and not folded into this one.
     const p = await project(fleet(MIXED_LINKS));
-    const mentions = (await findings(p)).filter((f) => f.message.includes("missing.md"));
-    expect(mentions, JSON.stringify(mentions)).toEqual([]);
+    const links = (await findings(p)).filter((f) => f.code.startsWith("link."));
+    expect(links).toHaveLength(1);
+    expect(links[0]!.details).toEqual([
+      "services/payment-service/spec.md:12: [the outbox](../../architecture/adrs/0001-transactional-outbox.md)",
+      "services/payment-service/spec.md:12: [a link that resolves nowhere](../nope/missing.md)",
+    ]);
+    expect(JSON.stringify(links)).not.toContain("circuit breakers");
+  });
+
+  it("a broken markdown link now fails the fleet, where the same file used to pass", async () => {
+    // The reversal, stated as the exit code a CI job reads. This assertion is
+    // the user-visible half of the change: a repo whose prose links rotted goes
+    // from exit 0 to exit 1 on its first run after the upgrade.
+    const plain = await project(fleet(LIVING_SPEC));
+    const mixed = await project(fleet(MIXED_LINKS));
+
+    expect((await runLoam(plain.workDir, "validate", "--all", "--json")).code).toBe(0);
+    expect((await runLoam(mixed.workDir, "validate", "--all", "--json")).code).toBe(1);
+  });
+
+  it("a wikilink is not a finding however broken — loam declines to guess, it does not refuse", async () => {
+    // The assertion is EQUALITY against a fleet with no links at all: a check
+    // that had learned to resolve `[[…]]`, or one that warned about the
+    // spelling, would show up here as a difference whatever it called itself.
+    // This is the property the whole convention rests on — resolving a wikilink
+    // means reimplementing shortest-unique-path search, which is guessing.
+    const plain = await project(fleet(LIVING_SPEC));
+    const wiki = await project(fleet(WIKI_ONLY));
+
+    const [a, b] = await Promise.all([findings(plain), findings(wiki)]);
+    expect(b.map((f) => f.code).sort()).toEqual(a.map((f) => f.code).sort());
+    expect((await runLoam(wiki.workDir, "validate", "--all", "--json")).code).toBe(0);
   });
 });

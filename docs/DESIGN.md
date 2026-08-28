@@ -303,9 +303,9 @@ only the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how
     many artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts
     it. It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 56 of the 134
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 57 of the 135
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 23 and 26 of them. Slices would duplicate the hubs or
+    and `core/repo/repo.ts` by 23 and 27 of them. Slices would duplicate the hubs or
     produce a `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

@@ -36,15 +36,28 @@ export function entryIs(dir: string, e: Dirent, want: "dir" | "file"): boolean {
 }
 
 /**
- * Markdown files sitting directly in `dir` — the ADR count, and the only place
- * that rule is spelled. Exported because `show` kept a second copy that tested
- * `Dirent.isFile()` itself: always false for a symlink, whatever it points at,
- * so a docs repo composed of symlinks (the layout `entryIs` above exists to
- * support) had `loam list` and `loam show` reporting different ADR counts for
- * the same service. One rule, one answer.
+ * Markdown files sitting directly in `dir`, sorted, as full paths — the ADR
+ * corpus, and the only place that rule is spelled. Symlinks are resolved
+ * through `entryIs`, which is the whole reason this is shared: `show` once kept
+ * a second copy that tested `Dirent.isFile()` itself — always false for a
+ * symlink, whatever it points at — so a docs repo composed of symlinks (the
+ * layout `entryIs` above exists to support) had `loam list` and `loam show`
+ * reporting different ADR counts for the same service. One rule, one answer.
+ *
+ * The list, not the count, is the primitive: the link check reads these same
+ * files, and a corpus that disagreed with the count would grade documents the
+ * fleet listing says are not there.
  */
-export async function countMarkdown(dir: string): Promise<number> {
-  if (!existsSync(dir)) return 0;
+export async function markdownFiles(dir: string): Promise<string[]> {
+  if (!existsSync(dir)) return [];
   const entries = await readdir(dir, { withFileTypes: true });
-  return entries.filter((e) => e.name.endsWith(".md") && entryIs(dir, e, "file")).length;
+  return entries
+    .filter((e) => e.name.endsWith(".md") && entryIs(dir, e, "file"))
+    .map((e) => join(dir, e.name))
+    .sort();
+}
+
+/** How many markdown files sit directly in `dir` — the ADR count, over the corpus above. */
+export async function countMarkdown(dir: string): Promise<number> {
+  return (await markdownFiles(dir)).length;
 }
