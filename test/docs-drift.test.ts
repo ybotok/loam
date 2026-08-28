@@ -9,6 +9,13 @@ async function read(rel: string): Promise<string> {
   return readFile(join(ROOT, rel), "utf8");
 }
 
+/** Collapse whitespace runs: a pinned sentence must survive a reflow. */
+function flat(text: string): string {
+  // Blockquote continuation marks are line furniture, not prose: a wrapped
+  // `> …` callout must match the same sentence an unwrapped one does.
+  return text.replace(/^[ \t]*>[ \t]?/gm, "").replace(/\s+/g, " ");
+}
+
 async function version(): Promise<string> {
   const pkg = JSON.parse(await read("package.json")) as { version: string };
   return pkg.version;
@@ -16,14 +23,14 @@ async function version(): Promise<string> {
 
 describe("mutable release facts", () => {
   it("derives the README version from package.json", async () => {
-    const readme = await read("README.md");
+    const readme = flat(await read("README.md"));
     const current = await version();
     expect(readme).toContain(`**Pre-release: \`${current}\`**`);
     expect(readme).toContain(`currently \`${current}\``);
   });
 
   it("does not restore superseded publication claims", async () => {
-    const readme = await read("README.md");
+    const readme = flat(await read("README.md"));
     expect(readme).not.toMatch(/not on npm yet/i);
     expect(readme).not.toMatch(/until (it|the package) is published/i);
     expect(readme).not.toMatch(/nothing has been released yet/i);
@@ -31,15 +38,15 @@ describe("mutable release facts", () => {
 
   it("derives the pilot tarball path from the release manifest", async () => {
     const pilot = await read("docs/pilot/README.md");
-    expect(pilot).toContain("release-manifest.json");
-    expect(pilot).toContain("manifest.filename");
-    expect(pilot).toMatch(/bump both `package\.json` and `package-lock\.json` to the intended candidate version/i);
+    expect(flat(pilot)).toContain("release-manifest.json");
+    expect(flat(pilot)).toContain("manifest.filename");
+    expect(flat(pilot)).toMatch(/bump both `package\.json` and `package-lock\.json` to the intended candidate version/i);
   });
 
   it("keeps version literals out of the pilot run book", async () => {
     const pilot = await read("docs/pilot/README.md");
-    expect(pilot).not.toContain(await version());
-    expect(pilot).not.toMatch(/ybotok-loam-\d[^\s`"']*\.tgz/i);
+    expect(flat(pilot)).not.toContain(await version());
+    expect(flat(pilot)).not.toMatch(/ybotok-loam-\d[^\s`"']*\.tgz/i);
   });
 
   it("keeps the unrun pilot status explicit", async () => {
@@ -47,8 +54,8 @@ describe("mutable release facts", () => {
       read("docs/pilot/README.md"),
       read("docs/pilot/SCORECARD.md"),
     ]);
-    expect(pilot).toMatch(/not a claim that Loam has already worked in production/i);
-    expect(scorecard).toContain("Current repository status: **not run**");
+    expect(flat(pilot)).toMatch(/not a claim that Loam has already worked in production/i);
+    expect(flat(scorecard)).toContain("Current repository status: **not run**");
   });
 });
 
@@ -69,11 +76,11 @@ describe("the released range and the unreleased head", () => {
     expect(versions.length, "CHANGELOG must carry at least one dated release heading").toBeGreaterThan(0);
     const tail = (version: string): string => version.split("-").slice(1).join("-");
     const range = `released ${tail(versions[versions.length - 1]!)}–${tail(versions[0]!)}`;
-    expect(await read("README.md")).toContain(`${range} plus the changes on \`main\` under \`[Unreleased]\``);
+    expect(flat(await read("README.md"))).toContain(`${range} plus the changes on \`main\` under \`[Unreleased]\``);
   });
 
   it("while README claims `main` is ahead, CHANGELOG's [Unreleased] section backs it", async () => {
-    const readme = await read("README.md");
+    const readme = flat(await read("README.md"));
     if (!readme.includes("`main` is ahead under `[Unreleased]`")) return;
     const changelog = await read("CHANGELOG.md");
     const start = changelog.indexOf("## [Unreleased]");
@@ -89,8 +96,8 @@ describe("the released range and the unreleased head", () => {
 
 describe("the OpenSpec product reference and the corpus pin", () => {
   it("README and COMPARISON both name OpenSpec v1.10.0 as the product reference", async () => {
-    expect(await read("README.md")).toContain("OpenSpec v1.10.0");
-    expect(await read("COMPARISON.md")).toContain("OpenSpec v1.10.0");
+    expect(flat(await read("README.md"))).toContain("OpenSpec v1.10.0");
+    expect(flat(await read("COMPARISON.md"))).toContain("OpenSpec v1.10.0");
   });
 
   it("COMPARISON still pins the certified corpus to the v1.9.0 commit", async () => {
@@ -98,7 +105,7 @@ describe("the OpenSpec product reference and the corpus pin", () => {
   });
 
   it("README no longer claims the product reference and the compatibility pin are one release", async () => {
-    expect(await read("README.md")).not.toContain("the compatibility pin are now the same release");
+    expect(flat(await read("README.md"))).not.toContain("the compatibility pin are now the same release");
   });
 });
 
@@ -108,17 +115,17 @@ describe("private vulnerability reporting status", () => {
       read("SECURITY.md"),
       read("docs/pilot/RELEASE-READINESS.md"),
     ]);
-    expect(security).toContain(PRIVATE_ROUTE_BLOCKER);
-    expect(security).toMatch(/Private Vulnerability Reporting[\s\S]{0,240}not currently confirmed or enabled/i);
-    expect(security).toMatch(/detail-free issue/i);
-    expect(security).toMatch(/release prerequisite/i);
-    expect(readiness).toMatch(/enable and test GitHub Private Vulnerability Reporting/i);
-    expect(readiness).not.toMatch(/currently has no remote/i);
-    expect(readiness).not.toMatch(/first-publication bootstrap/i);
+    expect(flat(security)).toContain(PRIVATE_ROUTE_BLOCKER);
+    expect(flat(security)).toMatch(/Private Vulnerability Reporting[\s\S]{0,240}not currently confirmed or enabled/i);
+    expect(flat(security)).toMatch(/detail-free issue/i);
+    expect(flat(security)).toMatch(/release prerequisite/i);
+    expect(flat(readiness)).toMatch(/enable and test GitHub Private Vulnerability Reporting/i);
+    expect(flat(readiness)).not.toMatch(/currently has no remote/i);
+    expect(flat(readiness)).not.toMatch(/first-publication bootstrap/i);
   });
 
   it("does not tell readers that private reporting is already enabled", async () => {
-    const readme = await read("README.md");
+    const readme = flat(await read("README.md"));
     expect(readme).toMatch(
       /Private Vulnerability Reporting[\s\S]{0,240}not (?:currently )?(?:confirmed|enabled|switched on)/i,
     );

@@ -1,20 +1,25 @@
 # The loam workflow
 
-How work actually moves through a loam repository: what a feature owes, how loam decides where
-that work stands, what gates and what only advises, and how an agent drives the whole thing from
+How work actually moves through a loam repository: what a feature owes, how loam decides where that
+work stands, what gates and what only advises, and how an agent drives the whole thing from
 `--json`.
 
 [SCHEMA.md](SCHEMA.md) is the companion to this file. It is the reference — every artifact's
-grammar, every rule, every decision. This one is the protocol: the order things happen in, and
-why that order.
+grammar, every rule, every decision. This one is the protocol: the order things happen in, and why
+that order.
 
 ## Contents
 
-- [The two flows](#the-two-flows) · [The artifact graph](#the-artifact-graph) · [Derived, never stored](#derived-never-stored)
+- [The two flows](#the-two-flows) · [The artifact graph](#the-artifact-graph) ·
+  [Derived, never stored](#derived-never-stored)
 - [Actions, not phases](#actions-not-phases) · [What actually gates](#what-actually-gates)
-- [The six workflows](#the-six-workflows) · [The honestly-small change](#the-honestly-small-change) · [Driving it from an agent](#driving-it-from-an-agent)
-- [Presence is not trust](#presence-is-not-trust) · [Why there is no task list](#why-there-is-no-task-list)
+- [The six workflows](#the-six-workflows) · [The honestly-small change](#the-honestly-small-change)
+  · [Driving it from an agent](#driving-it-from-an-agent)
+- [Presence is not trust](#presence-is-not-trust) ·
+  [Why there is no task list](#why-there-is-no-task-list)
 - [Picking the work back up](#picking-the-work-back-up)
+- [Day zero: onboarding a fleet](#day-zero-onboarding-a-fleet) · [Command notes](#command-notes) ·
+  [The MCP server](#the-mcp-server)
 
 ## The two flows
 
@@ -28,16 +33,77 @@ FORWARD (per feature, generative):
                  └──── done-check: verify ◄──────────┘
 ```
 
-They run in opposite directions and that is the point. Bootstrap reads a service that already
-exists and writes down what is true about it; the code is the authority and the document is the
-claim. Forward starts from an intent nobody has built yet; the model is the authority and the code
-is the claim. Every rule below is downstream of which direction you are facing.
+They run in opposite directions and that is the point. Bootstrap reads a service that already exists
+and writes down what is true about it; the code is the authority and the document is the claim.
+Forward starts from an intent nobody has built yet; the model is the authority and the code is the
+claim. Every rule below is downstream of which direction you are facing.
 
 **There is no extractor, and there will not be one.** Nothing deterministic reads a legacy service
-and says what its architecture *means*, and a model that was guessed is worse than none —
-everyone downstream has to re-derive it to know whether to believe it. loam takes the half of the
-job that is mechanical: it **states the work** and it **checks the result**. An agent does the
-reading.
+and says what its architecture *means*, and a model that was guessed is worse than none — everyone
+downstream has to re-derive it to know whether to believe it. loam takes the half of the job that is
+mechanical: it **states the work** and it **checks the result**. An agent does the reading.
+
+## Day zero: onboarding a fleet
+
+This is the scale-up path of the
+[five-minute trial](README.md#try-loam-on-one-service-in-five-minutes): the same wiring, done
+deliberately across every repository. A fleet of ten services is **eleven repositories**: one docs
+repo and ten service repos, each with its own committed `loam.json`. There is no batch command and
+no fleet manifest, deliberately — the wiring is one file per repo, and it is reviewable. In order:
+
+1. **Create the docs repo.** In an empty directory that will be the shared source of truth:
+
+   ```bash
+   loam init --docs . --create
+   ```
+
+   That scaffolds `services/`, `features/`, `architecture/landscape.likec4`, `AGENTS.md`, and the
+   docs repo's own `loam.json` (`docsDir: "."`, plus the `agentTools` it wrote for) — so every later
+   command run *inside* the docs repo finds the fleet. An empty directory holds no tool
+   dot-directory to detect, so the Claude Code fallback always fires here too: six slash commands
+   and six Agent Skills under `.claude/` ([Working with AI
+   agents](README.md#working-with-ai-agents)). Commit all of it.
+
+2. **Draw what you already know** in `architecture/landscape.likec4`. It can start almost empty; it
+   is a **required** artifact, not an optional one — `loam validate --all` reports
+   `landscape.missing` as an error the moment `services/` holds a directory (an empty one counts,
+   before a single document lands in it), because with no fleet map every cross-service check is
+   blind rather than passing.
+
+3. **Bind each service repo.** Once per service, in that service's own checkout, beside the docs
+   repo:
+
+   ```bash
+   loam init --docs ../docs-repo --service payment-service   # no --create: it JOINS
+   loam doctor                                               # confirms the wiring
+   ```
+
+   `--service` is the binding: without it `loam vouch` and `loam gherkin` refuse outright, and
+   `loam verify --service --record` / `--results` refuse to attest, because none of them will write
+   a service's documents from a repo that has not said which service it is. Reading —
+   `loam verify --service` on its own — needs no binding, because it writes nothing. Commit the
+   `loam.json`.
+
+4. **Adopt each service.** In its repo: `loam adopt --service <id> --json` emits the brief — every
+   file to write, the grammar of each, what the fleet map already says, and the block the map still
+   owes this service. An agent reads the code and writes the baseline as `draft`. `warnings[]`
+   catches the typo case, where an id one letter off would have produced a complete, validating
+   baseline for a service that does not exist.
+
+5. **Grade it, twice.** `loam validate --service <id> --json` in the service repo (its own axes plus
+   `sources`, which only that repo can resolve), then `loam validate --all --json` in the docs repo
+   — the fleet cross-check that catches a landscape edit which never landed.
+
+6. **Promote it.** A human runs `loam vouch --service <id>` in the service repo: `draft → verified`,
+   stamping the source and content digests that make later staleness detectable. `loam list --json`
+   in the docs repo then grades the whole fleet on the presence ladder
+   `empty → partial → documented → sourced → vouched`, and `loam list --needs-work` is the remaining
+   worklist.
+
+Steps 3–6 repeat per service and are independent — no ordering, no lock, no shared state between two
+services' runs — so ten services can be onboarded by ten people in parallel. The one file they all
+touch is the landscape: step 2 draws it, step 4's brief tells each of them to *add* their own
+element to it where the map does not yet know the service, and step 5's `--all` reads it.
 
 ## The artifact graph
 
@@ -55,19 +121,19 @@ configurable graph, because a fleet needs one lifecycle and one meaning of green
 | `verification.yaml` | feature | yes | The done-check record: every claim, its answer, its evidence, and who gave it |
 
 Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
-`publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, and the event axis
-carries the full feature lifecycle: the delta above is slot-pinned by `loam rebase`, graded by
+`publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, and the event axis carries
+the full feature lifecycle: the delta above is slot-pinned by `loam rebase`, graded by
 `validate --feature` (baseline, removal-justification and conflict findings), merged by
-`loam archive` inside the same transaction as every other write, undone by `loam unarchive`,
-and asked about by `loam verify` (`event.declares`). `architecture/permissions.yaml` is the
-opt-in authorization vocabulary: requirements
-name `<subject>/<permission>` pairs with `Requires:`; unknown pairs are errors and unused
-declarations are warnings. [SCHEMA.md](SCHEMA.md#canonical-joins) is the canonical join table.
+`loam archive` inside the same transaction as every other write, undone by `loam unarchive`, and
+asked about by `loam verify` (`event.declares`). `architecture/permissions.yaml` is the opt-in
+authorization vocabulary: requirements name `<subject>/<permission>` pairs with `Requires:`; unknown
+pairs are errors and unused declarations are warnings. [SCHEMA.md](SCHEMA.md#canonical-joins) is the
+canonical join table.
 
-Three of those "no"s are load-bearing. An artifact that is legitimately absent reads `done` — nothing
-is owed — with `exists: false` beside it, so a reader can tell that from a file that is present and
-fine. Marking everything required is how an axis that is optional everywhere gets reported as
-missing everywhere and then ignored.
+Three of those "no"s are load-bearing. An artifact that is legitimately absent reads `done` —
+nothing is owed — with `exists: false` beside it, so a reader can tell that from a file that is
+present and fine. Marking everything required is how an axis that is optional everywhere gets
+reported as missing everywhere and then ignored.
 
 **Dependencies are enablers, not gates — with one real exception.** You can author these in any
 order. `verification.yaml` is the exception, and it is a genuine impossibility rather than a
@@ -89,13 +155,13 @@ Every artifact grades to one of five words:
 
 The grading asks **two questions in order**: is it there, and does anything reported name it. That
 second question is what separates loam's graph from a file-existence check. A `spec.md` that exists
-and contradicts the living spec is `draft`, not `done` — the file is present, and presence was
-never the claim. A graph that reads existence alone would call that feature finished.
+and contradicts the living spec is `draft`, not `done` — the file is present, and presence was never
+the claim. A graph that reads existence alone would call that feature finished.
 
 ## Derived, never stored
 
-Nothing above is written down anywhere. `loam status` recomputes the whole table on every run,
-from the files, and writes nothing:
+Nothing above is written down anywhere. `loam status` recomputes the whole table on every run, from
+the files, and writes nothing:
 
 ```bash
 loam status --json
@@ -118,10 +184,10 @@ pipeline's job: capture the key from each fleet-gate run into a metrics store an
 
 ## Actions, not phases
 
-There is no phase lock. Any action, any time — because real work does not proceed in one
-direction: building reveals a design flaw, which rewrites a requirement, which regenerates a
-suite. `loam status`'s `next[]` is ordered *advice*, not a sequence you are held to, and running a
-step out of order is not an error state loam has to be talked out of.
+There is no phase lock. Any action, any time — because real work does not proceed in one direction:
+building reveals a design flaw, which rewrites a requirement, which regenerates a suite.
+`loam status`'s `next[]` is ordered *advice*, not a sequence you are held to, and running a step out
+of order is not an error state loam has to be talked out of.
 
 What loam does instead is make the consequences of going backwards visible. Change a requirement
 after generating its Gherkin and the suite's digest no longer matches, so `loam validate` reports
@@ -134,33 +200,33 @@ protocol is not "do these in order"; it is "when you go back, here is what tells
 Two things, and it is worth being precise about which, because everything else is advice.
 
 **1. The archive coherence gate.** `loam archive` is the one command that rewrites the source of
-truth. It computes the whole three-axis merge first, checks it for cross-axis coherence, and
-refuses if the plan is incoherent. `--approve` carries the judgement calls; it deliberately does
-**not** carry the two mechanical losses — a living document still holding git conflict markers, and
-a living requirement that has strayed outside its `## Requirements` section. Those are not
-opinions about risk, they are data loss, and an override for them is a footgun with a label on it.
+truth. It computes the whole three-axis merge first, checks it for cross-axis coherence, and refuses
+if the plan is incoherent. `--approve` carries the judgement calls; it deliberately does **not**
+carry the two mechanical losses — a living document still holding git conflict markers, and a living
+requirement that has strayed outside its `## Requirements` section. Those are not opinions about
+risk, they are data loss, and an override for them is a footgun with a label on it.
 
 **2. The human vouch.** `draft → verified` is a person's act. `loam vouch` stamps the source and
-content digests that make later staleness detectable, and no command promotes a service on its
-own. That is the whole trust chain's anchor.
+content digests that make later staleness detectable, and no command promotes a service on its own.
+That is the whole trust chain's anchor.
 
-Re-vouching starts with `loam vouch --pack`: a read-only run that diffs the document's body from
-its last vouched ancestor in the docs repo's history, lists the source files that moved since the
-stamp, and names the sections a previous vouch already covers — so the person re-reads what
-changed instead of everything. An agent may prepare the pack; the vouch itself is unchanged,
-still a person's act, and `--pack` can never stamp (`--pack --yes` is refused).
+Re-vouching starts with `loam vouch --pack`: a read-only run that diffs the document's body from its
+last vouched ancestor in the docs repo's history, lists the source files that moved since the stamp,
+and names the sections a previous vouch already covers — so the person re-reads what changed instead
+of everything. An agent may prepare the pack; the vouch itself is unchanged, still a person's act,
+and `--pack` can never stamp (`--pack --yes` is refused).
 
 **`verify` does not gate `archive`,** deliberately. Coherence gates because loam *computed* it. A
-verdict is somebody's word about code loam never read, and a gate in front of shipping only
-teaches everyone that the cheapest way past it is to say yes.
+verdict is somebody's word about code loam never read, and a gate in front of shipping only teaches
+everyone that the cheapest way past it is to say yes.
 
 **`loam gate` does not add a third.** It is a pure query for DEPLOY pipelines outside loam's own
 lifecycle — Pact's can-i-deploy insight: the gate executes nothing and asks what evidence previous
-runs already recorded (the join partners' documentation state, staleness, the verification
-verdicts of the features touching the service, an interrupted docs commit). Its verdict is advice
-to a pipeline loam does not own — advisory by default, `--strict` the per-invocation CI lever —
-and it deliberately changes nothing about what gates the archive: verify still never gates the
-merge, and archive still reads no verification record.
+runs already recorded (the join partners' documentation state, staleness, the verification verdicts
+of the features touching the service, an interrupted docs commit). Its verdict is advice to a
+pipeline loam does not own — advisory by default, `--strict` the per-invocation CI lever — and it
+deliberately changes nothing about what gates the archive: verify still never gates the merge, and
+archive still reads no verification record.
 
 **`loam diff` does not add one either — it is the review lens.** On a docs-repo PR,
 `loam diff --base origin/main` says what the branch *changes* in fleet-meaningful terms: services,
@@ -170,9 +236,9 @@ named, which is what a reviewer actually needs to know. `validate --all` remains
 diff exits 1 on a removal the fleet still consumes (`diff.op-removed-consumed`,
 `diff.message-removed-consumed`) — and also whenever a document on either side could not be read,
 because a suspended axis is reported, never graded as "nothing changed" — so a PR job gets those
-checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI breaking-change catalogue, use
-oasdiff on the two states of one contract; the README's `loam diff` command note has the exact
-invocation, and loam deliberately does not reimplement those checks.
+checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI
+breaking-change catalogue, use oasdiff on the two states of one contract; the README's `loam diff`
+command note has the exact invocation, and loam deliberately does not reimplement those checks.
 
 Severity and gating are also two different questions. A coherence finding marked `gates` stops the
 archive even when it is only a warning; an error in `validate` fails the check without necessarily
@@ -218,10 +284,10 @@ rung, what each already exposes, who already calls whom, the active features cov
 services, and the literal `loam new` line the seeds imply. `--op <operationId>` seeds from an
 operation when you know the call but not who owns it.
 
-What it does **not** do is fold the neighbours into that command line. loam knows those services
-are connected; it does not know whether this change touches them, and a suggestion that quietly
-included them would make the judgement on your behalf while looking derived. Weighing the ring is
-the work — this command just makes sure you are weighing all of it.
+What it does **not** do is fold the neighbours into that command line. loam knows those services are
+connected; it does not know whether this change touches them, and a suggestion that quietly included
+them would make the judgement on your behalf while looking derived. Weighing the ring is the work —
+this command just makes sure you are weighing all of it.
 
 ### The honestly-small change
 
@@ -234,25 +300,23 @@ loam new FEAT-214 --touches payment-service
 ```
 
 Delete the scaffolded `delta.likec4` — `loam new` says so on the way out: a requirements-only
-feature is complete without it. Then author the two files that *are* the change: `intent.md`
-(why), and `specs/payment-service/spec.md` (the ADDED/MODIFIED requirements, each with its
-scenarios).
+feature is complete without it. Then author the two files that *are* the change: `intent.md` (why),
+and `specs/payment-service/spec.md` (the ADDED/MODIFIED requirements, each with its scenarios).
 
-Everything else is not owed, and `loam status` says which per row rather than leaving you to
-infer it: the `arch.spec.md` and `asyncapi.yaml` rows read `done` with `(not written — none
-owed)`, and so does `openapi.yaml` while the living contract already defines what the
-requirements govern — write an OpenAPI delta only when the change governs operations the living
-contract does not have. `next[]` collapses to three steps: `next.generate-tests` (emit the
-acceptance scenarios into the service's own repository), `next.verify` (answer the checklist,
-the suite answering the scenario claims), `next.archive` (merge the requirement into the living
-spec). A MODIFIED requirement still takes its `loam rebase` pin on the way — the one step size
-never waives, because the pin is what keeps two small changes from silently reverting each
-other.
+Everything else is not owed, and `loam status` says which per row rather than leaving you to infer
+it: the `arch.spec.md` and `asyncapi.yaml` rows read `done` with `(not written — none owed)`, and so
+does `openapi.yaml` while the living contract already defines what the requirements govern — write
+an OpenAPI delta only when the change governs operations the living contract does not have. `next[]`
+collapses to three steps: `next.generate-tests` (emit the acceptance scenarios into the service's
+own repository), `next.verify` (answer the checklist, the suite answering the scenario claims),
+`next.archive` (merge the requirement into the living spec). A MODIFIED requirement still takes its
+`loam rebase` pin on the way — the one step size never waives, because the pin is what keeps two
+small changes from silently reverting each other.
 
-Small is a fact about the change, not a lighter process: the same gate grades it and the same
-merge ships it. What makes it honestly small is that every skipped artifact is skipped because
-nothing joins into it — status prints the proof beside each row — never because somebody decided
-the documentation could wait.
+Small is a fact about the change, not a lighter process: the same gate grades it and the same merge
+ships it. What makes it honestly small is that every skipped artifact is skipped because nothing
+joins into it — status prints the proof beside each row — never because somebody decided the
+documentation could wait.
 
 ## Driving it from an agent
 
@@ -262,20 +326,20 @@ Every command takes `--json`, and the contract is built so an agent never has to
   code. Prose gets reworded; codes do not.
 - **`next[]` is ordered, and each entry carries the literal command** to run, beside a stable code
   and a one-sentence statement that is actionable without reading any other field.
-- **Three questions are kept apart**, each on the command that can answer it: `ok` (the command
-  ran) on every envelope, `valid` (the docs pass) on `validate`, and `verified` on `verify` —
-  beside `verdict`, which carries the third state, `attested`.
+- **Three questions are kept apart**, each on the command that can answer it: `ok` (the command ran)
+  on every envelope, `valid` (the docs pass) on `validate`, and `verified` on `verify` — beside
+  `verdict`, which carries the third state, `attested`.
 - **`loam status` takes the union** of what `validate --feature` errors on and what `archive`
   refuses to merge. It may be redder than either and is never greener than both.
-- **`loam context <service> --json` is the one-command briefing** an agent loads before working
-  in that service's repository: the living requirements verbatim, both contracts, the fleet edges
-  one hop out, the permission and capability joins, and every feature in flight over the service —
-  one deterministic payload, so two runs over the same state are byte-diffable. `--feature <FEAT>`
+- **`loam context <service> --json` is the one-command briefing** an agent loads before working in
+  that service's repository: the living requirements verbatim, both contracts, the fleet edges one
+  hop out, the permission and capability joins, and every feature in flight over the service — one
+  deterministic payload, so two runs over the same state are byte-diffable. `--feature <FEAT>`
   narrows the in-flight section to the feature being implemented.
 
 The loop is the same every time: `loam status --json`, read `next[0]`, run the command it names,
-repeat. When a command refuses, it refuses with a code and a sentence naming the fix — `loam
-doctor`'s findings carry the exact command in a `fix` field.
+repeat. When a command refuses, it refuses with a code and a sentence naming the fix —
+`loam doctor`'s findings carry the exact command in a `fix` field.
 
 ## Presence is not trust
 
@@ -284,20 +348,20 @@ let one read as the other.
 
 Services climb a ladder — `empty → partial → documented → sourced → vouched`. The rungs are derived
 from artifact presence and provenance state only, never from what the artifacts say: a service with
-one endpoint documented out of thirty climbs exactly as fast as a thorough one, which is why no
-rung is called "adopted". `sources` names the code a document was written from. `vouch` stamps
-digests over both. Later, `content.stale` says the document moved and `sources.stale` says the code
-did — the second one only answerable inside that service's own repository.
+one endpoint documented out of thirty climbs exactly as fast as a thorough one, which is why no rung
+is called "adopted". `sources` names the code a document was written from. `vouch` stamps digests
+over both. Later, `content.stale` says the document moved and `sources.stale` says the code did —
+the second one only answerable inside that service's own repository.
 
 The same distinction runs the done-check. `loam verify` derives the claims; a `scenario.tested`
 claim is confirmed **mechanically in the record** when a digest-matched green Cucumber report
-answers it, and an `api.exposes` claim when an API contract-test report names its operationId
-green (`--contract-results`, recorded as `answered_by: external-runner` with the consumed report
-pinned beside the cucumber one). That proves which passing report bytes loam accepted; it does not
-prove the report was produced by executing the attested commit. An agent
-may confirm one too — a legacy service with no runnable suite has to be able to record its answers
-— but the record then reads **`verdict: "attested"`**, not `verified`, and says so on every
-surface. `verified: true` in the envelope means every scenario claim came from a test run.
+answers it, and an `api.exposes` claim when an API contract-test report names its operationId green
+(`--contract-results`, recorded as `answered_by: external-runner` with the consumed report pinned
+beside the cucumber one). That proves which passing report bytes loam accepted; it does not prove
+the report was produced by executing the attested commit. An agent may confirm one too — a legacy
+service with no runnable suite has to be able to record its answers — but the record then reads
+**`verdict: "attested"`**, not `verified`, and says so on every surface. `verified: true` in the
+envelope means every scenario claim came from a test run.
 
 loam does not claim agent answers are impossible. It claims they are *distinguishable*.
 
@@ -343,11 +407,162 @@ finishes.
 
 **A merge was killed mid-write.** An intent journal is fsynced before the first file swap, and the
 next `archive` or `unarchive` recovers from it under the lock: an interrupted archive is undone, an
-interrupted unarchive is *finished* — the merged text it was replacing is written down nowhere
-else. Where a file has been edited since, it refuses with `commit-interrupted` rather than writing
-over the evidence. `loam doctor` reports that state instead of calling the repo healthy.
+interrupted unarchive is *finished* — the merged text it was replacing is written down nowhere else.
+Where a file has been edited since, it refuses with `commit-interrupted` rather than writing over
+the evidence. `loam doctor` reports that state instead of calling the repo healthy.
 
 And the fourth, which is not recovery but is the same instinct: **you do not know what a command
-will do.** `archive`, `unarchive` and `rebase` all take `--dry-run`, and
-`explore`, `status`, `list`, `show`, `adopt`, `delta`, `dependencies`, `doctor`, `validate` and
-`instructions` write nothing at all, ever.
+will do.** `archive`, `unarchive` and `rebase` all take `--dry-run`, and `explore`, `status`,
+`list`, `show`, `adopt`, `delta`, `dependencies`, `doctor`, `validate` and `instructions` write
+nothing at all, ever.
+
+## Command notes
+
+One note per command that has behaviour a table cannot hold — the refusals, the flag interactions,
+and the reason each is shaped the way it is. [README's command table](README.md#commands) is the
+index: every command and every flag, one row each.
+
+**`loam init`** — `--docs` **joins** an existing docs repo; `--create` is required to make a new
+one, so a mistyped path cannot scaffold a second source of truth. `--service <id>` is what a
+**service** repo needs: it is the binding `vouch`, `gherkin` and
+`verify --service --record`/`--results` require before they will write for that service.
+`--tools <ids>|all` overrides the tool scan; `--no-commands` / `--no-skills` drop one delivery — and
+the two are exclusive, refused together, since one names the files to write and the other suppresses
+them. `docsDir` is stored exactly as you typed it and resolved against `loam.json`, so a relative
+`../docs-repo` works on every clone — and `--docs` wins only when you actually pass it, so a re-run
+in a wired repo keeps the pointer its committed `loam.json` already spells, `--create` included
+(`docsDirSource: "flag" | "config" | "default"` in `--json` says which).
+
+**`loam status`** — the question an agent has when it joins a repo halfway or loses its session.
+Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry
+a stable code plus the literal command. It takes the union of what `validate --feature` errors on
+and what `archive` refuses to merge, so it may be redder than either and is never greener than both.
+There is no state file to go stale.
+
+**`loam new`** — the scaffold passes `loam validate --feature` with **zero errors**, and its
+unauthored state is named in warnings that *gate the archive*: `intent.empty` until you write the
+Why, `scaffold.placeholder` while any template text survives (a feature that introduces a service
+also starts on `c4.uncovered`, until its `arch.spec.md` delta carries a `Covers:` line for the
+element the delta adds). An untouched scaffold can never fold into the living docs — `loam archive`
+refuses it until a person authors the content, or deliberately overrides with `--approve`. For a
+requirements-only feature you delete the scaffolded `delta.likec4` yourself — `new` says so on the
+way out.
+
+**`loam adopt`** — the brief names the target paths, the grammar of each, what the landscape already
+says, the checks that follow, and the ones that do not exist.
+
+**`loam diff`** — the base state is read out of the docs repo's own git history
+(`rev-parse`/`ls-tree`/`show`, read-only, no checkout), so it refuses (`repository-unavailable`)
+when the docs repo has no history to ask and (`unknown-target`) when `--base` resolves to no commit
+there. What it reports is the *joined*, fleet-meaningful delta — a removed operation is graded
+against the landscape edges and living requirements that still name it (`diff.op-removed-consumed`,
+exit 1), a removed message against its `Consumes:` lines and consumes-edges — and an artifact
+unreadable on either side suspends that subject's axis and exits 1, because "nobody could look" must
+never read as "nothing changed". `validate --all` remains the fleet gate; diff is the review lens.
+For the byte-level OpenAPI breaking-change catalogue, run oasdiff on the two states of one contract:
+`git -C <docs> show <ref>:./services/<id>/openapi.yaml > base.yaml && oasdiff breaking base.yaml <docs>/services/<id>/openapi.yaml`
+(the `./` resolves the path relative to the docs directory rather than the git root, so this holds
+when the docs repo lives inside a larger repository) — loam deliberately does not reimplement those
+checks.
+
+**`loam gherkin`** — a feature's changed requirements, or (without a feature) the full living suite.
+Deterministic, digest-stamped, regeneration-owned; run in the service's own repo.
+
+**`loam rebase`** — writes `Based-On:` on every MODIFIED/REMOVED requirement and `x-loam-based-on`
+on every operation in the contract delta that the living docs already hold; what this feature is
+*adding* has nothing to pin against, and the output says so per item. On the requirement axis that
+stops a second feature rewriting the same requirement from landing on top of the first in silence;
+on the contract axis it also marks the rest of the delta as **quotation** — an `openapi.yaml` is a
+complete document, so without the pin the merge upserts operations you only restated and reverts
+whatever landed on them. Restamping is the last step of resolving a collision, not the resolution —
+the output says which pins moved.
+
+**`loam verify`** — `--results <report.json>` answers the scenario claims from a cucumber JSON run,
+digest-matched, so only a green run confirms one, and the record writes down which file it read
+(path, sha256, mtime). It answers *only* those claims, so on a feature with open `service.exists` /
+`api.exposes` claims it is passed alongside `--record` or refused (`answers-mismatch`).
+`--record <answers.json>` takes the agent's answers, refusing anything unevidenced — under
+`--service`, refusing a `file:line` that does not resolve in that repo at the attested commit — and
+a scenario claim answered that way makes the record `attested` rather than `verified`. A
+cross-service feature is recorded **once per service repo** with `--service <id>`, each run adding
+its own commit-bound attestation to one shared record; the `--service`-less `--record` form writes
+the whole record from one place and is refused (`record-federated`) once anyone else has attested.
+
+**`loam unarchive`** — it refuses rather than guesses: `snapshot-stale` when a merged file moved
+since (`--force` says that was meant), and `snapshot-corrupt` when a pre-image no longer hashes to
+what the archive recorded for it, which `--force` deliberately does **not** override — the damage
+there is to the undo itself.
+
+**`loam audit-openspec` / `loam migrate-openspec`** — the audit reports capabilities, active and
+archived changes, counts, RENAMED and unsupported shapes, and every capability→service decision
+still needing a human. The migration validates your completed mapping against a re-read of the
+source, and with `--apply --target <empty-dir>` materializes **staged migration docs** into a
+separate directory. `--map` is required — there is no one-shot form.
+
+### How `archive` protects the source of truth
+
+`archive` is the command that merges a feature into the living source of truth and records the
+reversible pre-images. Other commands also write canonical artifacts (`vouch`, `rebase`, `verify`,
+`new`, and `init`), but archive has the strongest multi-file transaction contract: it takes an
+advisory lock on the docs repo for the whole plan-and-commit (a second writer — another `archive`,
+an `unarchive`, a `rebase` — refuses with `docs-busy` rather than interleaving), computes the whole
+merge before touching disk, commits each file through a temp file swapped in atomically after
+re-checking the bytes it read (a rename for an overwrite, a no-clobber `link(2)` for a create, so a
+file that appeared after the plan was computed is never buried), and rolls back what it already
+swapped if any part fails. It also records the bytes it overwrote inside the archived feature — with
+a digest of each pre-image, so `unarchive` can tell an intact one from an edited one — which is what
+makes `unarchive` an undo rather than a guess. A process **killed mid-commit** is covered too: an
+intent journal (`.loam-commit`) is fsynced before the first swap, and the next `archive`/`unarchive`
+recovers from it under the lock, rewriting each half-written file from the snapshot — an interrupted
+archive is undone, an interrupted unarchive is *finished*, because the merged text it was replacing
+is written down nowhere else — or refusing with `commit-interrupted` when a file has been edited
+since. `loam doctor` reports that state rather than calling the repo healthy.
+
+The gate itself comes in two kinds. Coherence, an unknown service and the OpenAPI plan are judgement
+calls, and `--approve` carries them; two refusals are mechanical loss and `--approve` deliberately
+does not — a living document still holding git conflict markers (`merge-failed`) and a living
+requirement that has strayed outside `## Requirements` (`living-outside-requirements`). loam's docs
+files must be **UTF-8** for the same reason: undecodable bytes refuse the merge (`merge-failed`,
+naming the file) instead of being rewritten as U+FFFD, and a non-UTF-8 `openapi.yaml` grades
+`openapi.invalid`. **`verify` does not gate `archive`** — coherence gates because loam *computed*
+it; a verdict is somebody's word about code loam never read, and a gate in front of shipping only
+teaches everyone that the cheapest way past it is to say yes.
+
+API retirement is explicit and reviewable: a feature marks the exact path/method operation with
+`x-loam-remove: true` — **inside the operation being retired, beside its `operationId`** — and
+removes the governing requirement in the same delta. A marker written one level up, at path level
+beside the methods, addresses no operation and retires nothing; archive refuses it
+(`openapi.remove-marker-path-level`) rather than publishing a meaningless key into the fleet's
+living contract. Validation refuses stale, mismatched, or unjustified markers; archive deletes the
+method without persisting the marker or garbage-collecting components, and reports the removals in
+both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
+
+## The MCP server
+
+For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the twelve read
+commands — `validate`, `status`, `list`, `show`, `delta`, `diff`, `explore`, `dependencies`,
+`doctor`, `context`, `gate`, `explain` — as MCP tools (`loam_validate` … `loam_explain`) over stdio,
+newline-delimited JSON-RPC 2.0, protocol revision 2025-06-18 (older revisions negotiated down;
+JSON-RPC batch arrays refused). A typical host entry:
+
+```json
+{
+  "mcpServers": {
+    "loam": { "command": "loam", "args": ["mcp"] }
+  }
+}
+```
+
+There is one machine contract, not two: every tool result carries the command's `--json` envelope
+**verbatim** in its text content (and parsed again as structured content), with the MCP error flag
+following the envelope's `ok` — so `ok` and the stable `error.code` strings mean exactly what they
+mean at the CLI, and everything above about branching on codes applies unchanged. (Not the exit
+code, deliberately: `doctor`, `validate` and `gate` grade — they can exit 1 while answering
+`ok: true` — and a graded verdict rendered as a failed call would be a verdict discarded.) The
+server serves the repository it is launched in (each call resolves `loam.json` from that directory,
+exactly as the CLI would) and never changes directory — a host that launches it in the wrong place
+gets coherent `no-config` envelopes, not silence. Calls run strictly one at a time, so a fleet-wide
+`loam_validate` blocks the queue for its duration; MCP requests carry ids and hosts tolerate the
+latency. The writing commands — `vouch` above all, and `archive`, `verify`, `new`, `rebase`, the
+rest — are deliberately not exposed: an MCP caller is an agent, `vouch` is a human act, and writes
+stay under your own CLI permission flow.

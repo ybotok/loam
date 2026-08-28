@@ -56,6 +56,13 @@ async function brief(p: Project, ...args: string[]): Promise<Record<string, any>
 const readRepo = (name: string): Promise<string> => readFile(join(ROOT, name), "utf8");
 
 /**
+ * Collapse whitespace runs, blockquote marks included, so a pinned sentence
+ * matches whatever column the page is wrapped at. Every Markdown page in this
+ * repository wraps at 100; a phrase assertion must survive that being changed.
+ */
+const flat = (text: string): string => text.replace(/^[ \t]*>[ \t]?/gm, "").replace(/\s+/g, " ");
+
+/**
  * Every `.ts` under a package, concatenated. Naming a directory rather than a
  * file is what keeps a source-derived assertion honest across a split: reading
  * `src/core/verify.ts` stopped existing the day that module became a package,
@@ -664,14 +671,26 @@ describe("the brief promises only what a check can keep", () => {
 
 describe("README describes the fleet that exists", () => {
   it("spells init with its optional service binding", async () => {
-    const readme = await readRepo("README.md");
-    expect(readme).toContain("loam init --docs <dir> [--service <id>]");
-    expect(readme).toMatch(/`--service <id>` is what a \*\*service\*\* repo needs/);
+    // The command table carries the flags in a column of their own now, and
+    // the per-command notes live in WORKFLOW.md — the binding sentence with
+    // them. Both halves still have to be somewhere a reader will find them.
+    const row = (await readRepo("README.md")).split("\n").find((line) => line.startsWith("| `loam init`"));
+    expect(row, "README has no `loam init` row").toBeDefined();
+    expect(row).toContain("--docs <dir>");
+    expect(row).toContain("--service <id>");
+    expect(flat(await readRepo("WORKFLOW.md"))).toMatch(/`--service <id>` is what a \*\*service\*\* repo needs/);
   });
 
   it("carries a numbered day-zero section covering all eleven repos", async () => {
-    const readme = await readRepo("README.md");
-    const section = readme.slice(readme.indexOf("## Day zero"), readme.indexOf("## Two flows"));
+    // Day zero moved to WORKFLOW.md, where the rest of the protocol lives;
+    // README keeps the five-minute trial and links here. Bounded by the next
+    // h2 rather than by a named sibling, so a heading added after it cannot
+    // silently widen the slice to the rest of the file.
+    const workflow = flat(await readRepo("WORKFLOW.md"));
+    const from = workflow.indexOf("## Day zero");
+    expect(from, "WORKFLOW.md has no day-zero section").toBeGreaterThan(-1);
+    const to = workflow.indexOf("## ", from + 3);
+    const section = workflow.slice(from, to === -1 ? undefined : to);
     expect(section.length).toBeGreaterThan(0);
     for (const step of [
       "loam init --docs . --create",
@@ -700,9 +719,13 @@ describe("README describes the fleet that exists", () => {
   });
 
   it("does not claim the scaffold validates warning-free, because it does not", async () => {
-    const readme = await readRepo("README.md");
+    // The `loam new` note moved to WORKFLOW.md with the rest of the command
+    // notes; the claim it must not make is checked on both pages.
+    const readme = flat(await readRepo("README.md"));
+    const workflow = flat(await readRepo("WORKFLOW.md"));
     expect(readme).not.toContain("Validates clean out of the box");
-    expect(readme).toContain("zero errors");
+    expect(workflow).not.toContain("Validates clean out of the box");
+    expect(workflow).toContain("zero errors");
   });
 
   it("describes what `loam delta` actually prints", async () => {
@@ -725,14 +748,14 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     for (const fact of ["docsDir", "service", "gherkinDir", "docs-missing", "services-missing", "--create"]) {
       expect(section, `the loam.json section never mentions ${fact}`).toContain(fact);
     }
-    expect(section).toMatch(/exactly as it was passed/);
+    expect(flat(section)).toMatch(/exactly as it was passed/);
   });
 
   it("describes the federated record: attestations, the merge, and the refusals", async () => {
     const schema = await readRepo("SCHEMA.md");
     expect(schema).toContain("attestations");
     expect(schema).toContain("`schema: 2`");
-    expect(schema).toMatch(/one attestation per service/i);
+    expect(flat(schema)).toMatch(/one attestation per service/i);
   });
 
   it("every refusal code `loam verify` can emit is documented in SCHEMA", async () => {
@@ -759,9 +782,9 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
 
   it("no longer claims an unreadable record counts as no record at all", async () => {
     const schema = await readRepo("SCHEMA.md");
-    expect(schema).not.toMatch(/counts as \*\*no record at all\*\*/);
+    expect(flat(schema)).not.toMatch(/counts as \*\*no record at all\*\*/);
     expect(schema).toContain("`record-unreadable`");
-    expect(schema).toMatch(/\*\*never overwritten\*\*/);
+    expect(flat(schema)).toMatch(/\*\*never overwritten\*\*/);
   });
 
   it("pins the digest recipe's two exclusions: what git ignores, and symlinks", async () => {
@@ -771,7 +794,7 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
     expect(schema).toContain("`sources.empty`");
     expect(schema).toContain("`sources_files`");
     // the direction of the fallback is the load-bearing part
-    expect(schema).toMatch(/everything is hashed/i);
+    expect(flat(schema)).toMatch(/everything is hashed/i);
   });
 
   it("gives the docs repo its own bootstrap step at fleet scale", async () => {
@@ -785,6 +808,6 @@ describe("SCHEMA documents the parts the CLI now depends on", () => {
   it("says the landscape is required, and how its absence is graded", async () => {
     const schema = await readRepo("SCHEMA.md");
     expect(schema).toContain("`landscape.missing`");
-    expect(schema).toMatch(/error\*\* as soon as `services\/` holds at least one service/);
+    expect(flat(schema)).toMatch(/error\*\* as soon as `services\/` holds at least one service/);
   });
 });

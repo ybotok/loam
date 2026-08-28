@@ -1,8 +1,8 @@
 # The example fleet
 
-`docs/` is a complete, runnable loam docs repo. It is small enough to read in one sitting and
-large enough that every row of [SCHEMA.md](../SCHEMA.md)'s canonical-joins table is exercised by
-something — including the joins that only appear once a fleet has more than two services in it.
+`docs/` is a complete, runnable loam docs repo. It is small enough to read in one sitting and large
+enough that every row of [SCHEMA.md](../SCHEMA.md)'s canonical-joins table is exercised by something
+— including the joins that only appear once a fleet has more than two services in it.
 
 Run it from a clone. The `loam.json` is untracked; delete it when you are done.
 
@@ -32,72 +32,71 @@ Five services, drawn inside one grouping element so the map looks like ordinary 
 | `identity-service` | the permission vocabulary's owner, and a deprecated operation whose consumer has not migrated — filed into `services/platform/` |
 | `notification-service` | a service with no HTTP API at all — three consumed messages, one of them from a producer outside the fleet — filed into `services/platform/` |
 
-Around them: `kafka` as an `#external` `#platform` system with a topic per channel (edges point
-at the topic, never at the broker), `stripe` and `salesforce` as external systems, and
+Around them: `kafka` as an `#external` `#platform` system with a topic per channel (edges point at
+the topic, never at the broker), `stripe` and `salesforce` as external systems, and
 `architecture/permissions.yaml` as the fleet's authorization vocabulary.
 
 **Three authored capability documents**, which are the business tree rather than the architecture:
 `capabilities/checkout/spec.md`, `capabilities/identity/tokens/spec.md` and
 `capabilities/order-notifications/spec.md`. The third carries the axis's second realizer: its one
-promise — "a placed order produces exactly one confirmation" — is cross-service by construction,
-so no service's `spec.md` can keep it, and `architecture/usecases/order-notification.likec4`
-claims it with `#req-NOTIFY-ONCE` beside its `#cap-` tag. The other two are kept by service
-requirements through `Realizes:`. Both ids are also
-declared in `architecture/capabilities.yaml` — the vocabulary is the union of the two sides, and
-a name a document elaborates does not have to leave the YAML, which is what keeps the metadata
-(`description`, `owner`) that a document has no field for. The nested one carries the lesson:
-the id `identity/tokens` keeps its slash everywhere it is written, so the tree spells it as
-directories, and `capabilities/identity/` holding no `spec.md` of its own is a GROUP and earns no
-finding. Each requirement in both files is a promise a customer could check, names no service,
-and carries a `Requirement-ID:` — required here, unlike in a service spec, because these
-documents outlive every service that realizes them.
+promise — "a placed order produces exactly one confirmation" — is cross-service by construction, so
+no service's `spec.md` can keep it, and `architecture/usecases/order-notification.likec4` claims it
+with `#req-NOTIFY-ONCE` beside its `#cap-` tag. The other two are kept by service requirements
+through `Realizes:`. Both ids are also declared in `architecture/capabilities.yaml` — the vocabulary
+is the union of the two sides, and a name a document elaborates does not have to leave the YAML,
+which is what keeps the metadata (`description`, `owner`) that a document has no field for. The
+nested one carries the lesson: the id `identity/tokens` keeps its slash everywhere it is written, so
+the tree spells it as directories, and `capabilities/identity/` holding no `spec.md` of its own is a
+GROUP and earns no finding. Each requirement in both files is a promise a customer could check,
+names no service, and carries a `Requirement-ID:` — required here, unlike in a service spec, because
+these documents outlive every service that realizes them.
 
 **Two glossary terms**, `glossary/order.md` and the nested `glossary/payments/authorization.md`,
 each cited from the capability documents that use the word. This is the axis's whole mechanism in
-two files: the citation is an ordinary markdown link, so `loam validate` resolves it like any
-other and `loam list glossary` can answer "which documents use this term" as a join rather than a
-grep. The two terms also cite EACH OTHER, which is deliberate — a glossary is a network of
-definitions — and that reciprocal pair is exactly what does NOT count as adoption: both terms stay
-out of `glossary.unlinked` because a capability document cites them, not because they cite each
-other. Delete either of those two capability citations and the example gains a tenth warning.
+two files: the citation is an ordinary markdown link, so `loam validate` resolves it like any other
+and `loam list glossary` can answer "which documents use this term" as a join rather than a grep.
+The two terms also cite EACH OTHER, which is deliberate — a glossary is a network of definitions —
+and that reciprocal pair is exactly what does NOT count as adoption: both terms stay out of
+`glossary.unlinked` because a capability document cites them, not because they cite each other.
+Delete either of those two capability citations and the example gains a tenth warning.
 
-**One architectural obligation, declared and applied and met** — which is three files agreeing,
-and the axis's whole mechanism. `architecture/adrs/0001-transactional-outbox.md` says WHAT was
-decided; `#obl-outbox` on the `payment-service → kafka.paymentEvents` edge in the fleet map says
-WHERE it holds (on the publish edge, not on the service — payment-service also serves an API that
-owes nothing of the kind); `architecture/obligations.yaml` declares the name so a mistyped tag is
-an error rather than a word nobody notices; and `ARCH-PAY-OUTBOX` in payment-service's
-`arch.spec.md` covers that same edge, which is the team saying it is met. Because all four line
-up, the example is SILENT about the outbox — the working join produces no finding, which is what
-a working join should do. The second declaration, `idempotency-key`, is the one that talks: it is
-declared and placed nowhere, and `obligation.unapplied` is the warning in the table below.
+**One architectural obligation, declared and applied and met** — which is three files agreeing, and
+the axis's whole mechanism. `architecture/adrs/0001-transactional-outbox.md` says WHAT was decided;
+`#obl-outbox` on the `payment-service → kafka.paymentEvents` edge in the fleet map says WHERE it
+holds (on the publish edge, not on the service — payment-service also serves an API that owes
+nothing of the kind); `architecture/obligations.yaml` declares the name so a mistyped tag is an
+error rather than a word nobody notices; and `ARCH-PAY-OUTBOX` in payment-service's `arch.spec.md`
+covers that same edge, which is the team saying it is met. Because all four line up, the example is
+SILENT about the outbox — the working join produces no finding, which is what a working join should
+do. The second declaration, `idempotency-key`, is the one that talks: it is declared and placed
+nowhere, and `obligation.unapplied` is the warning in the table below.
 
 **On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
 consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
-edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds
-to nothing: the metadata parses, the document validates, and the check silently grades zero
-edges. Nothing in loam reports that today, which is why the landscape says so in a comment.
+edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds to
+nothing: the metadata parses, the document validates, and the check silently grades zero edges.
+Nothing in loam reports that today, which is why the landscape says so in a comment.
 
 ## Three features, at three points in their life
 
-- **`features/archive/FEAT-088-refunds/`** — shipped. It was merged by the real `loam archive`,
-  so its `.loam-before/` snapshot holds the exact bytes the merge overwrote and `loam unarchive
-  FEAT-088` would put them back. Its `verification.yaml` is the done-check written down, and it
-  reads **`attested`** rather than `verified`: every claim is confirmed, but the scenario claims
-  rest on an agent's word instead of a digest-matched test run. loam does not pretend those are
-  the same thing.
+- **`features/archive/FEAT-088-refunds/`** — shipped. It was merged by the real `loam archive`, so
+  its `.loam-before/` snapshot holds the exact bytes the merge overwrote and
+  `loam unarchive FEAT-088` would put them back. Its `verification.yaml` is the done-check written
+  down, and it reads **`attested`** rather than `verified`: every claim is confirmed, but the
+  scenario claims rest on an agent's word instead of a digest-matched test run. loam does not
+  pretend those are the same thing.
 - **`features/FEAT-101-payment-splitting/`** — in flight, and the big one: a new service arriving
   with its own requirements, architecture requirements and contract, a C4 delta that splices a
-  nested element into the living landscape, a `MODIFIED` requirement that **renames its
-  heading** while keeping its `Requirement-ID` — loam's rename mechanism — and an
-  **event-contract delta** (`specs/payment-service/asyncapi.yaml`): a complete AsyncAPI 3.0
-  document restating payment-service's living contract under `loam rebase`-written
-  `x-loam-based-on` pins and adding one new producer side, so the archive merges the new
-  slots and leaves every pinned quote to the living contract's own copy.
+  nested element into the living landscape, a `MODIFIED` requirement that **renames its heading**
+  while keeping its `Requirement-ID` — loam's rename mechanism — and an **event-contract delta**
+  (`specs/payment-service/asyncapi.yaml`): a complete AsyncAPI 3.0 document restating
+  payment-service's living contract under `loam rebase`-written `x-loam-based-on` pins and adding
+  one new producer side, so the archive merges the new slots and leaves every pinned quote to the
+  living contract's own copy.
 - **`features/FEAT-112-retire-order-v1/`** — in flight, and the smallest legal shape: no
   `delta.likec4` at all, because retiring an operation moves no boxes. It carries the two halves
-  loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true`
-  marker inside the operation object.
+  loam requires together for a removal — a `REMOVED` requirement and an `x-loam-remove: true` marker
+  inside the operation object.
 
 ## The warnings are the lesson
 
@@ -116,38 +115,38 @@ deliberate. An example that reported nothing would teach nothing about what thes
 | `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
 | `obligation.unapplied` | `idempotency-key` is declared in `architecture/obligations.yaml` and no `#obl-` tag applies it anywhere on the fleet map — a decision that was reversed and left its word behind, or one nobody has placed yet. Its sibling `outbox` IS placed and IS covered, and says nothing: that contrast is the demonstration |
 
-**Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is
-the marker — title and description, never members) groups `identity-service` and
-`notification-service`, while the other three sit unfiled — the permanent, normal state a
-partially organized fleet lives in, counted by `loam list` and never a finding. Placement is not
-identity: both services' specs, contracts and digests are byte-identical to their unfiled days,
-every command addresses them by bare id, and `architecture/subsystems.likec4` — GENERATED by
-`loam subsystem sync`, one view per subsystem, one `include` per line — is the only file the
-grouping added. Edit the tree with `loam subsystem move|rename|rm` and the views file travels in
-the same transaction; edit it by hand and `validate --all` answers `subsystem.views-stale`.
-(`order-service` and `payment-service` stay unfiled deliberately: FEAT-088's committed
-version-2 snapshot restores them by literal path, and the `loam unarchive FEAT-088` walkthrough
-must keep working byte-for-byte.)
+**Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is the
+marker — title and description, never members) groups `identity-service` and `notification-service`,
+while the other three sit unfiled — the permanent, normal state a partially organized fleet lives
+in, counted by `loam list` and never a finding. Placement is not identity: both services' specs,
+contracts and digests are byte-identical to their unfiled days, every command addresses them by bare
+id, and `architecture/subsystems.likec4` — GENERATED by `loam subsystem sync`, one view per
+subsystem, one `include` per line — is the only file the grouping added. Edit the tree with
+`loam subsystem move|rename|rm` and the views file travels in the same transaction; edit it by hand
+and `validate --all` answers `subsystem.views-stale`. (`order-service` and `payment-service` stay
+unfiled deliberately: FEAT-088's committed version-2 snapshot restores them by literal path, and the
+`loam unarchive FEAT-088` walkthrough must keep working byte-for-byte.)
 
 Plus one count rather than a finding: `sourcesUnverifiableFromHere: 4`. Four specs name paths in
-their own service repositories, and this is none of those repositories — the fleet gate reports
-the blind spot instead of resolving it. Running `loam validate --service <id>` inside each
-service repo is what closes it.
+their own service repositories, and this is none of those repositories — the fleet gate reports the
+blind spot instead of resolving it. Running `loam validate --service <id>` inside each service repo
+is what closes it.
 
 ## What the example deliberately does not carry
 
-- **`AGENTS.md` and `loam.json`.** A real docs repo has both, written by `loam init --docs .
-  --create`. They are left out here so the tree stays a pure set of documents, and so the
-  version stamp in a generated `AGENTS.md` cannot go stale against the running binary.
-- **`payment-split-service`'s own `asyncapi.yaml`.** The async axis has the full feature
-  lifecycle now — FEAT-101's `specs/payment-service/asyncapi.yaml` demonstrates the merge half
-  on a living contract — but the NEW service's contract for the drawn `PaymentSplit` edge is
-  deliberately deferred: the edge keeps the message in its title and no `metadata { publishes }`,
-  because that metadata is a join and the join demands a contract declaring the send
-  (`c4-event.message-undefined` refuses one without it). A `specs/payment-split-service/asyncapi.yaml`
-  would ride the archive's creation branch once the consumer of `PaymentSplit` exists. The
-  comment in `delta.likec4` says so rather than leaving it to be discovered.
-- **A generated Gherkin suite.** `loam gherkin` writes into a *service's* repository, and there
-  are none here — this fleet is six repositories, and `docs/` is one of them. The same reason
-  leaves `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code
-  is, so nothing in this tree can honestly be stamped `verified`.
+- **`AGENTS.md` and `loam.json`.** A real docs repo has both, written by
+  `loam init --docs . --create`. They are left out here so the tree stays a pure set of documents,
+  and so the version stamp in a generated `AGENTS.md` cannot go stale against the running binary.
+- **`payment-split-service`'s own `asyncapi.yaml`.** The async axis has the full feature lifecycle
+  now — FEAT-101's `specs/payment-service/asyncapi.yaml` demonstrates the merge half on a living
+  contract — but the NEW service's contract for the drawn `PaymentSplit` edge is deliberately
+  deferred: the edge keeps the message in its title and no `metadata { publishes }`, because that
+  metadata is a join and the join demands a contract declaring the send
+  (`c4-event.message-undefined` refuses one without it). A
+  `specs/payment-split-service/asyncapi.yaml` would ride the archive's creation branch once the
+  consumer of `PaymentSplit` exists. The comment in `delta.likec4` says so rather than leaving it to
+  be discovered.
+- **A generated Gherkin suite.** `loam gherkin` writes into a *service's* repository, and there are
+  none here — this fleet is six repositories, and `docs/` is one of them. The same reason leaves
+  `sources` unresolvable and every service `draft`: `loam vouch` only runs where the code is, so
+  nothing in this tree can honestly be stamped `verified`.

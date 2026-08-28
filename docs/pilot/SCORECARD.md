@@ -50,4 +50,5 @@ Current repository status: **not run**. This is a blank review contract, not a p
 - Waivers (criterion, evidence, owner, expiry):
 - Final decision and approvers:
 
-Do not mark the pilot complete while a required field is blank, `not-assessed`, unresolved, or supported only by an undocumented verbal claim.
+Do not mark the pilot complete while a required field is blank, `not-assessed`, unresolved, or
+supported only by an undocumented verbal claim.
