@@ -14,12 +14,8 @@
  */
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
-import {
-  capabilityDocsDir,
-  featureSpecPaths,
-  livingCapabilityPaths,
-  SPEC_AXES,
-} from "../../../core/repo/paths.js";
+import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { capabilityDocsDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import {
   isRequirementsHeading,

@@ -157,3 +157,17 @@ export function featureJson(
 /* ------------------------------------------------------------------ */
 
 /** What the features table says about verification without N `loam verify` runs. */
+
+/**
+ * One `glossary[]` row — additive payload, explicit `loam list glossary` only.
+ *
+ * `linkedBy` is the whole reason the section exists: "which documents use this
+ * term" is a grep today and a join here, and it is the same answer
+ * `glossary.unlinked` grades. Repo-relative and sorted by the index itself, so
+ * the payload is diff-stable across machines. Empty means loam read every
+ * authored document and none of them cites the term — never "nobody looked",
+ * which is what the sibling `links.unreadable` list is for.
+ */
+export function glossaryJson(term: { id: string; path: string }, linkedBy: string[], docsDir: string): Record<string, unknown> {
+  return { id: term.id, path: repoPath(docsDir, term.path), linkedBy };
+}

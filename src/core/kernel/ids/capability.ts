@@ -1,6 +1,6 @@
 /**
  * The spelling rule for a capability id that ARRIVED FROM ARGV — the one
- * provenance `repo/paths.ts` says must never reach a path join unchecked.
+ * provenance `repo/authored/paths.ts` says must never reach a path join unchecked.
  *
  * `livingCapabilityPaths` takes a plain `string`, and its comment states why: a
  * capability id has no grammar of its own — it is a YAML key and a chain of

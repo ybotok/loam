@@ -28,7 +28,7 @@
  * calls this; callers holding a context use `context.featureCapabilityDeltas`.
  */
 import { readCapabilityTree, type CapabilityTree } from "../tree.js";
-import { featureCapabilityDeltasDir } from "../../repo/paths.js";
+import { featureCapabilityDeltasDir } from "../../repo/authored/paths.js";
 import type { FeatureDir } from "../../kernel/ids/dirs.js";
 
 /**

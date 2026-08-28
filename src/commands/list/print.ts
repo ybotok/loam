@@ -323,3 +323,31 @@ export function printFeatures(features: FeatureEntry[], verification: (Verificat
     console.log(`  ${flags}  ${f.id.padEnd(width)}  ${cells[i]!.padEnd(cellWidth)}  ${svcs}${tag}`);
   }
 }
+
+/**
+ * The glossary table: what the domain's words are, and who actually uses each.
+ *
+ * The citation count is the column that matters — a definition nothing cites is
+ * the drift `glossary.unlinked` warns about, and this is where a reader sees it
+ * before the gate does. `unreadable` is printed as a note rather than folded
+ * into the counts for `printCapabilities`' reason one section over: "cited by
+ * nobody" and "loam could not read everybody" are different answers, and a
+ * table that let them look alike would be the more comfortable of the two.
+ */
+export function printGlossary(
+  rows: Array<{ id: string; linkedBy: string[] }>,
+  unreadable: string[],
+): void {
+  console.log(`glossary (${rows.length} term${rows.length === 1 ? "" : "s"})`);
+  const width = Math.max(0, ...rows.map((row) => row.id.length));
+  for (const row of rows) {
+    const n = row.linkedBy.length;
+    console.log(`  ${row.id.padEnd(width)}  ${n === 0 ? "cited by nothing" : `${n} document${n === 1 ? "" : "s"}`}`);
+  }
+  if (unreadable.length > 0) {
+    console.log(
+      `  note: ${unreadable.length} document(s) could not be read, so a citation from one of them is not counted here — ` +
+        `\`loam validate --all\` names each as link.unreadable`,
+    );
+  }
+}

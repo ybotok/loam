@@ -8,16 +8,26 @@ import { capabilityRollup, type CapabilityRow } from "../../core/capabilities/ro
 import { invalidVocabularyFinding } from "../../core/capabilities/findings.js";
 import { promisesKeptByFlows } from "../../core/usecases/capability.js";
 import { fleetAdrCount, listFeatures, listFleetTree, listServices } from "../../core/repo/repo.js";
+import { readGlossary } from "../../core/glossary/tree.js";
+import { backlinkIndex } from "../../core/links/backlinks.js";
+import { glossaryDir } from "../../core/repo/authored/paths.js";
 import { docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { featureVerification, serviceViews, type ServiceView } from "./views.js";
-import { capabilityJson, featureJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
-import { printCapabilities, printFeatures, printOwners, printServices, printWorklist } from "./print.js";
+import { capabilityJson, featureJson, glossaryJson, ownersJson, serviceRows, subsystemsJson } from "./json.js";
+import {
+  printCapabilities,
+  printFeatures,
+  printGlossary,
+  printOwners,
+  printServices,
+  printWorklist,
+} from "./print.js";
 import { fanInByService, reviewLandscape, reviewOrder } from "./review.js";
 import { resolveSubsystemSlice } from "./campaign/campaign.js";
 import { ownersJoin, type OwnersJoin } from "./campaign/owners.js";
 
-type Section = "services" | "features" | "capabilities";
-const SECTIONS: Section[] = ["services", "features", "capabilities"];
+type Section = "services" | "features" | "capabilities" | "glossary";
+const SECTIONS: Section[] = ["services", "features", "capabilities", "glossary"];
 /**
  * What a bare `loam list` shows. `capabilities` is explicit-only, NEVER part
  * of this default: the no-argument output and its `--json` payload are a
@@ -37,7 +47,7 @@ interface ListOptions {
 export function registerList(program: Command): void {
   program
     .command("list")
-    .argument("[section]", "services | features | capabilities (default: services + features)")
+    .argument("[section]", "services | features | capabilities | glossary (default: services + features)")
     .description("List the services and features in the docs repo")
     .option("--json", "emit the machine contract instead of the human view")
     .option("--archived", "include archived features")
@@ -78,7 +88,7 @@ export function registerList(program: Command): void {
         fail(json, "invalid-option", "--needs-work is the service adoption worklist; drop the 'features' section.");
         return;
       }
-      if (campaign && (section === "features" || section === "capabilities")) {
+      if (campaign && section !== undefined && section !== "services") {
         fail(json, "invalid-option", `--subsystem and --owners grade the services section; drop the '${section}' section.`);
         return;
       }
@@ -101,7 +111,8 @@ export function registerList(program: Command): void {
       // fleet — the whole point of the gate (see docs-repo-gate.ts).
       // `list features` alone does not need services/, so it asks for less;
       // the capability rollup walks every service's spec files, so it asks for them.
-      const needsServices = wanted.includes("services") || wanted.includes("capabilities");
+      const needsServices =
+        wanted.includes("services") || wanted.includes("capabilities") || wanted.includes("glossary");
       if (!docsRepoReady(json, docsDir, needsServices ? "services" : "docs")) return;
 
       try {
@@ -204,6 +215,21 @@ export function registerList(program: Command): void {
                 ...(promises?.kind === "read" ? { keptByFlows: promises.kept } : {}),
               });
 
+        // The glossary section: the tree, and who cites each term. The
+        // citation index is the expensive half — it reads every authored
+        // document in the repository — so it is built only when the section is
+        // asked for, and not at all when `glossary/` does not exist. The
+        // directory's existence is the axis's opt-in, exactly as it is for
+        // `capabilities/`, so a fleet without one prints an empty section
+        // rather than paying for a fleet-wide walk to say so.
+        const glossary = wanted.includes("glossary") ? await readGlossary(glossaryDir(docsDir)) : undefined;
+        const citations =
+          glossary !== undefined && glossary.terms.length > 0 ? await backlinkIndex(docsDir, fleet) : undefined;
+        const terms = glossary?.terms.map((term) => ({
+          term,
+          linkedBy: citations === undefined ? [] : citations.linkersOf(term.path),
+        }));
+
         const worklist = (shown ?? []).filter((v) => v.maturity !== "vouched");
         // The ranked review queue, derived never stored: fan-in is computed
         // FLEET-WIDE (the joins need every service's slice anyway — and a
@@ -273,6 +299,13 @@ export function registerList(program: Command): void {
               ? { features: features.map((f, i) => featureJson(docsDir, f, verification![i] ?? null)) }
               : {}),
             ...(capabilities ? { capabilities: capabilities.map(capabilityJson) } : {}),
+            ...(terms ? { glossary: terms.map((t) => glossaryJson(t.term, t.linkedBy, docsDir)) } : {}),
+            // What the citation walk could not read, beside the rows it
+            // decorates — `useCases` below is the same shape for the same
+            // reason. An empty `linkedBy` means loam read every authored
+            // document and none cites the term; this key is how a reader tells
+            // that from "one of them would not decode".
+            ...(citations ? { links: { unreadable: citations.unreadable } } : {}),
             // The use-case corpus's own health, beside the rows it decorates —
             // `status --json` and `delta --json` already spell this key this
             // way. It is what makes an absent `keptBy` legible: `unreadable:
@@ -327,6 +360,16 @@ export function registerList(program: Command): void {
         if (capabilities) {
           if (capabilityVocab!.present) printCapabilities(capabilities, promises!);
           else console.log("no architecture/capabilities.yaml — the fleet declares no capabilities");
+        }
+        if (terms && glossary) {
+          if (glossary.present) {
+            printGlossary(
+              terms.map((t) => ({ id: t.term.id, linkedBy: t.linkedBy })),
+              citations?.unreadable ?? [],
+            );
+          } else {
+            console.log("no glossary/ — the fleet defines no domain terms");
+          }
         }
       } catch (err) {
         if (err instanceof DocsRepoUnavailableError) {

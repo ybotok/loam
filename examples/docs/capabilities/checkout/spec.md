@@ -1,9 +1,11 @@
 # Checkout
 
 The customer has chosen what to buy and now wants to be done. Everything from
-the filled cart to the confirmed, paid order is this capability: the prices they
-were shown, the money leaving their card exactly once, and the confirmation that
-tells them it worked.
+the filled cart to the confirmed, paid [order](../../glossary/order.md) is this
+capability: the prices they were shown, the money leaving their card exactly
+once, and the confirmation that tells them it worked. Exactly once means one
+[authorization](../../glossary/payments/authorization.md), which is a word this
+fleet uses in one sense and writes down.
 
 This narrative slot is why the tree exists at all. `architecture/capabilities.yaml`
 can declare the word `checkout` and nothing more; the paragraph above is what a

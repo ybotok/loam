@@ -27,7 +27,8 @@ measured against — a thin baseline that validates is thin, not done.
 \`\`\`
 architecture/landscape.likec4     the living C4 model of the whole fleet
 architecture/permissions.yaml     optional fleet authorization vocabulary
-architecture/adrs/NNNN-*.md       optional FLEET-level decisions (MADR) — nothing grades them
+architecture/adrs/NNNN-*.md       optional FLEET-level decisions (MADR) — only their links are graded
+glossary/<term>.md                optional domain vocabulary — one file per term, nesting allowed
 services/<svc>/
   model.likec4                    this service's C4
   spec.md                         its living requirements (current state)
@@ -85,6 +86,31 @@ the convention without being convicted for it.
 CASE **is** graded, and deliberately: \`[Order](Order.md)\` beside a file called
 \`order.md\` resolves on Windows and macOS and 404s on GitHub and every Linux
 runner, so the message names the stored spelling on all of them alike.
+
+## The glossary — the fleet's domain words
+
+\`glossary/<term>.md\`, one file per term, nesting allowed
+(\`glossary/payments/authorization.md\` is the term \`payments/authorization\`). There is
+no \`glossary.yaml\`: a definition is prose, and the DIRECTORY is the list. The
+directory's existence is the opt-in — a fleet without one hears nothing.
+
+**A term is checkable because a link is a join.** Cite it from the document that
+uses the word — a requirement, a capability document, a feature's intent — with an
+ordinary relative link:
+
+\`\`\`markdown
+An [Order](../../glossary/order.md) is what a customer has confirmed.
+\`\`\`
+
+A citation that does not resolve is \`link.unresolved\` like any other; a term nothing
+outside \`glossary/\` cites is \`glossary.unlinked\` (warn). Terms citing each other is
+normal and does NOT count as adoption — a glossary is a network of definitions, and
+two terms defining each other say nothing about whether the fleet uses either word.
+\`loam list glossary\` prints every term with the documents that cite it.
+
+Write the definition for a reader who knows the business and not this fleet: what the
+word means, and what it is NOT (an order is not a cart). Never which service owns it —
+that is the fleet map's question and it changes.
 
 ## \`loam.json\` — the wiring, in every repo
 

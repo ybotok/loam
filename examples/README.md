@@ -52,6 +52,15 @@ finding. Each requirement in both files is a promise a customer could check, nam
 and carries a `Requirement-ID:` — required here, unlike in a service spec, because these
 documents outlive every service that realizes them.
 
+**Two glossary terms**, `glossary/order.md` and the nested `glossary/payments/authorization.md`,
+each cited from the capability documents that use the word. This is the axis's whole mechanism in
+two files: the citation is an ordinary markdown link, so `loam validate` resolves it like any
+other and `loam list glossary` can answer "which documents use this term" as a join rather than a
+grep. The two terms also cite EACH OTHER, which is deliberate — a glossary is a network of
+definitions — and that reciprocal pair is exactly what does NOT count as adoption: both terms stay
+out of `glossary.unlinked` because a capability document cites them, not because they cite each
+other. Delete either of those two capability citations and the example gains a tenth warning.
+
 **On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
 consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
 edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds
@@ -81,7 +90,7 @@ edges. Nothing in loam reports that today, which is why the landscape says so in
 
 ## The warnings are the lesson
 
-`loam validate --all` reports **0 errors and 8 warnings** here, and every one of them is
+`loam validate --all` reports **0 errors and 9 warnings** here, and every one of them is
 deliberate. An example that reported nothing would teach nothing about what these checks catch:
 
 | finding | what it is demonstrating |
