@@ -13,9 +13,12 @@
  * leaves the living docs exactly as they were.
  */
 import { existsSync } from "node:fs";
+import { dirname } from "node:path";
+import { rebaseLinks } from "../../../core/links/parse.js";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
-import { capabilityDocsDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
+import { capabilityDocsDir, glossaryDir, livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
+import { featureGlossary, livingTermPath } from "../../../core/glossary/delta.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import {
   isRequirementsHeading,
@@ -48,11 +51,19 @@ export async function planSpecs(
     for (const axis of SPEC_AXES) {
       const deltaPath = featureSpecPaths(featureDir, svc)[axis.key];
       if (!existsSync(deltaPath)) continue;
-      const deltaReqs = parseRequirements(await readUtf8(deltaPath));
 
       // The shared context: this is a deltaServices × SPEC_AXES loop, and a
       // context-less locate is a full fleet walk per iteration.
       const livingPath = (await locateServicePaths(config.docsDir, svc, config.fleet))[axis.key];
+      // Resolved BEFORE the delta is parsed, because the parse now depends on
+      // it: a requirement's markdown links are relative to the file they were
+      // written in, and this merge moves the text two directories up the tree.
+      // `core/links/parse.ts`'s `rebaseLinks` states the defect; the ordering
+      // here is what lets the fix see both ends of the move, including a
+      // service filed under a subsystem, whose living directory is deeper still.
+      const deltaReqs = parseRequirements(
+        rebaseLinks(await readUtf8(deltaPath), { from: dirname(deltaPath), to: dirname(livingPath) }),
+      );
       if (!existsSync(livingPath)) {
         // New service (or first arch spec) — create the living file from the
         // ADDED/MODIFIED requirements.
@@ -133,8 +144,13 @@ export async function planCapabilities(
   const adopting = !existsSync(capabilityDocsDir(config.docsDir));
   let creating = false;
   for (const doc of gated.capabilityDeltas) {
-    const deltaReqs = parseRequirements(await readUtf8(doc.spec));
     const livingPath = livingCapabilityPaths(config.docsDir, doc.id).spec;
+    // Same move, same rewrite: `features/<FEAT>/capabilities/<id>/` is two
+    // directories deeper than `capabilities/<id>/`, so a citation of a glossary
+    // term or an ADR would land pointing above the repository.
+    const deltaReqs = parseRequirements(
+      rebaseLinks(await readUtf8(doc.spec), { from: dirname(doc.spec), to: dirname(livingPath) }),
+    );
     if (!existsSync(livingPath)) {
       const created = applyRequirementDelta([], deltaReqs);
       if (created.length === 0) {
@@ -206,4 +222,48 @@ function summarize(reqs: Requirement[]): { ADDED: number; MODIFIED: number; REMO
     else if (r.kind === "REMOVED") c.REMOVED += 1;
   }
   return c;
+}
+
+/**
+ * The vocabulary merge: each `features/<FEAT>/glossary/<term>.md` copied to
+ * `glossary/<term>.md`.
+ *
+ * A WHOLE-FILE COPY, and there is nothing else it could be. A capability delta
+ * is folded into a living document by the requirement algebra because the two
+ * documents share identified parts; a term document has one part, and merging
+ * two definitions of one word is not something a machine may attempt. So the
+ * definition the author wrote in the feature IS the definition that lands,
+ * verbatim — loam re-encodes it as UTF-8 through `readUtf8` and changes nothing
+ * else, not even the trailing newline.
+ *
+ * CREATE-ONLY, which is why this loop has no other branch. A term the living
+ * glossary already defines was refused at the gate (`glossary.term-exists`,
+ * `core/glossary/delta.ts` has the reasoning), so by the time the plan runs
+ * every path here is a file that does not exist. `planWrite` marks it
+ * `exclusive`, so a race that created it between the gate and the commit fails
+ * the write rather than overwriting somebody.
+ *
+ * AND IT SAYS SO OUT LOUD when it creates `glossary/`, exactly as
+ * `planCapabilities` does for `capabilities/`: the directory's existence is the
+ * axis's opt-in, so this merge changes what `loam validate --all` grades from
+ * the next command on, and a merge that widens the fleet's own gate must not do
+ * it silently.
+ */
+export async function planGlossary(
+  config: { docsDir: DocsDir },
+  gated: Gated,
+  plan: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const glossary = await featureGlossary(gated.featureDir);
+  if (!glossary.present || glossary.terms.length === 0) return;
+  // Asked BEFORE the loop, because the loop is what would create it.
+  const adopting = !existsSync(glossaryDir(config.docsDir));
+  for (const term of glossary.terms) {
+    plan.writes.push(planWrite(livingTermPath(config.docsDir, term.id), await readUtf8(term.path)));
+    say(`  glossary: ${term.id} — created glossary/${term.id}.md`);
+  }
+  if (adopting) {
+    say(`  glossary/ did not exist — this archive opts the fleet into the domain vocabulary, and \`loam validate --all\` grades it from now on`);
+  }
 }

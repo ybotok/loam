@@ -27,6 +27,7 @@
 import { featureCapabilityDeltas } from "../capabilities/delta/tree.js";
 import { readCapabilityTree } from "../capabilities/tree.js";
 import type { FleetContext } from "../fleet-context.js";
+import { featureGlossary } from "../glossary/delta.js";
 import { readGlossary } from "../glossary/tree.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import { featurePaths, featureSpecPaths, fleetAdrsDir, servicePathsAt, type ServicePaths } from "../repo/paths.js";
@@ -58,6 +59,10 @@ export async function featureDocuments(featureDir: FeatureDir, fleet?: FleetCont
   const capabilities =
     fleet === undefined ? await featureCapabilityDeltas(featureDir) : await fleet.featureCapabilityDeltas(featureDir);
   docs.push(...capabilities.docs.map((d) => d.spec));
+  // The definitions this feature introduces. Their own links are graded like
+  // any other document's — a term that cites a term the feature is not adding
+  // is a broken join whether or not it has shipped yet.
+  docs.push(...(await featureGlossary(featureDir)).terms.map((t) => t.path));
   return docs;
 }
 

@@ -55,6 +55,18 @@ export interface LinkScope {
    * command would answer for a directory that has since changed.
    */
   cases?: PathCaseIndex;
+  /**
+   * Absolute paths that do not exist yet but WILL once an in-flight feature
+   * archives — today, the glossary terms that feature introduces.
+   *
+   * A feature cites the word it is adding at the word's FUTURE living path,
+   * because that is where the link has to point once the change lands; citing
+   * the delta's own path would resolve now and rot on the day it ships. Without
+   * this set, the axis would refuse its own headline case — which is exactly
+   * the overlay the capability axis had to add to `Realizes:` after shipping
+   * without one.
+   */
+  overlay?: ReadonlySet<string>;
 }
 
 /** A link that points at a real file inside the docs repo, and the file it points at. */
@@ -97,6 +109,13 @@ export function resolveLinks(doc: LinkedDocument, scope: LinkScope): DocumentLin
   for (const link of documentLinks(doc.text)) {
     const target = resolve(dir, link.path);
     if (!isPathInside(scope.docsDir, target)) continue;
+    // The overlay is checked FIRST and without the spelling test: the file is
+    // not on disk, so there is no stored name to compare against, and the id it
+    // came from was a `readdir` entry in the feature's own tree.
+    if (scope.overlay?.has(resolve(target)) === true) {
+      linkage.resolved.push({ link, target });
+      continue;
+    }
     if (existsSync(target) && cases.spelledExactly(scope.docsDir, target)) {
       linkage.resolved.push({ link, target });
       continue;

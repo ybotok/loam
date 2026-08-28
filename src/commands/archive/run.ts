@@ -32,7 +32,7 @@ import { enumeratedServices } from "../../core/repo/service-target.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
-import { planCapabilities, planSpecs } from "./plan/specs.js";
+import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { planLandscape } from "./plan/landscape.js";
@@ -76,6 +76,10 @@ export async function archiveLocked(
   // are requirement merges, and reading them together is how a plan stays
   // legible as "what this feature promises" followed by "how it is built".
   await planCapabilities(read, gated, planned, say);
+  // The vocabulary the change brings with it, beside the promises it makes:
+  // a create-only whole-file copy, refused at the gate if the word already
+  // lives (`core/glossary/delta.ts`).
+  await planGlossary(read, gated, planned, say);
   await planOpenapiContracts(read, gated, planned, say);
   await planAsyncapiContracts(read, gated, planned, say);
   await planLandscape(config, gated, planned, say);

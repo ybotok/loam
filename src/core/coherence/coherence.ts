@@ -13,6 +13,7 @@ import { declaredByService, type DeltaScope } from "./declared.js";
 import { coherenceLookups } from "./lookups.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
+import { glossaryDeltaIssues } from "../glossary/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 
@@ -44,6 +45,13 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // Delta shape first: a diff that does not apply to the living spec explains
   // everything downstream, and it is the one breach that is silent without a check.
   const issues: Issue[] = await deltaShapeIssues(docsDir, featureDir, featureId, context);
+
+  // The vocabulary axis, and it is asked first because it is cheap and
+  // independent: one `existsSync` for a feature with no glossary/, and nothing
+  // downstream reads its answer. A term this feature introduces that the living
+  // glossary already defines is the one thing that can go wrong on a create-only
+  // merge, and it must be caught before the copy, not after.
+  issues.push(...(await glossaryDeltaIssues(docsDir, featureDir)));
 
   // --- C4 delta ---
   let elements: Elem[] = [];

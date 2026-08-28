@@ -108,6 +108,18 @@ normal and does NOT count as adoption — a glossary is a network of definitions
 two terms defining each other say nothing about whether the fleet uses either word.
 \`loam list glossary\` prints every term with the documents that cite it.
 
+**A feature may bring a new word with it**: write it at
+\`features/<FEAT>/glossary/<term>.md\` and \`loam archive\` copies it into \`glossary/\`,
+\`loam unarchive\` takes it back out. This route is CREATE-ONLY — a term the living
+glossary already defines is \`glossary.term-exists\`, which \`--approve\` does not
+override, because the merge is a whole-file copy and would replace an authored
+definition wholesale. To CHANGE a definition, edit \`glossary/<term>.md\` directly in
+the same pull request, where git produces an ordinary conflict.
+
+Cite the new word at its FUTURE living path (\`../../../../glossary/order.md\` from a
+\`specs/<svc>/\` delta) — that link resolves while the feature is in flight, and the
+merge re-expresses it from wherever the text lands, so it keeps resolving afterwards.
+
 Write the definition for a reader who knows the business and not this fleet: what the
 word means, and what it is NOT (an order is not a cart). Never which service owns it —
 that is the fleet map's question and it changes.
