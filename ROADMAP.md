@@ -233,6 +233,7 @@ criteria, and what each review surfaced — are in this file's history (`git sho
 - The capability vocabulary, the requirement join and the `list capabilities` rollup — `2bd9400`…`e26ff9f`.
 - Documentation, package-content and link protection — `6ea2a68`…`08330ea`; paper trails `5cd3942`.
 - The domain glossary, and the link check that makes it exact — `bc1b936`…`44a5386`.
+- Architectural obligations: the ADR, the `#obl-` tag and the living `Covers:` index — `0b5fc24`.
 
 Honest leftovers. Two live outside this repository: the CI `stability` job has still to be observed
 green, which needs a push and then a `workflow_dispatch`; and both pilot fleets meeting their
@@ -262,19 +263,6 @@ item gets promoted — it has already moved to `## Now`.
 - **UI generation:** begin with a disposable projection over the stable JSON contract only after CLI
   consumers demonstrate a repeated navigation problem. It must not introduce a second mutable state,
   hidden workflow state, or a required service.
-- **Architectural obligations — queued, with a prerequisite.** An architect has one working channel
-  to a team today and it is checked: an edge carrying `metadata { op }` obliges the provider to
-  define that operationId or `spine.op-undefined` fails the gate. There is no equivalent for the
-  obligations that vary per service — an outbox here, a circuit breaker there, neither everywhere.
-  The shape reuses what exists: a fleet **ADR** says what was decided, a **tag** on a landscape
-  element or edge says where it applies, and the team's **`Covers:`** says it is met, with a
-  declared vocabulary in the shape `permissions.yaml` and `capabilities.yaml` already have.
-
-  **The prerequisite is that `Covers:` must resolve against the LIVING landscape.** `c4.uncovered`
-  grades a tagged element or edge in a feature's `delta.likec4` only, so loam can already say "this
-  architecture object owes a requirement" — just never about the map a fleet actually runs on.
-  Moving that is the half of the work that is not new code.
-
 - **Landscape scaling:** retain one landscape while conflicts are exceptional. If same-service conflicts
   become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than monthly — evaluate
   service-owned model files plus a thin global cross-service map. Migration must preserve archive/undo,
