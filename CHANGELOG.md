@@ -46,6 +46,21 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   what the service actually serves. Most fleets generate OpenAPI and copy it by hand, and until now
   nothing in the product could notice when the copy stopped being current.
 
+### Two corrections from review, before either shipped in a release
+
+- **`spec.unknown-directive` no longer fires inside a fenced block.** A requirement body
+  legitimately holds a fenced example, and inside one `Realises:` is a sample value rather than a
+  misspelled directive — the check convicted a document that was exactly right, which is the one
+  thing a near-miss guard may never do. Backtick and tilde fences both toggle; a real typo after a
+  closed fence is still caught. Table cells never fired (a pipe-led line does not match the
+  candidate pattern) and there is now a test saying so.
+- **`verify.checklist-forked` is measured against the current checklist, not pairwise between
+  attestations.** The pairwise reading answers the wrong question: three services that all attested
+  against a since-rewritten delta agree with each other perfectly and are every one of them stale,
+  which pairwise called clean. The notice now names the services whose answers are not about the
+  questions being asked now. Differing `docsCommit` values remain **not** a finding — recording a
+  week apart is normal for a feature in flight.
+
 ### A grammar guard: `spec.unknown-directive`
 
 - **New finding `spec.unknown-directive` (warn)** — a requirement body line whose key is one or two
