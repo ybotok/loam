@@ -27,6 +27,7 @@ measured against — a thin baseline that validates is thin, not done.
 \`\`\`
 architecture/landscape.likec4     the living C4 model of the whole fleet
 architecture/permissions.yaml     optional fleet authorization vocabulary
+architecture/obligations.yaml     optional ARCHITECTURAL obligations (#obl-<name> on the map)
 architecture/adrs/NNNN-*.md       optional FLEET-level decisions (MADR) — only their links are graded
 glossary/<term>.md                optional domain vocabulary — one file per term, nesting allowed
 services/<svc>/
@@ -123,6 +124,36 @@ merge re-expresses it from wherever the text lands, so it keeps resolving afterw
 Write the definition for a reader who knows the business and not this fleet: what the
 word means, and what it is NOT (an order is not a cart). Never which service owns it —
 that is the fleet map's question and it changes.
+
+
+## Architectural obligations — what the architect hands the team
+
+An architect has always had one checked channel here: an edge carrying
+\`metadata { op 'authorizePayment' }\` obliges the provider to define that operationId,
+or \`spine.op-undefined\` fails the gate. Obligations are the same handoff for the rules
+that VARY — an outbox on this publisher and not that one, a circuit breaker on two
+edges out of five — and they are three separate things on purpose:
+
+- an **ADR** in \`architecture/adrs/\` says WHAT was decided, as thin or as thick as the
+  decision needs;
+- a **\`#obl-<name>\` tag** on an element or an edge in \`architecture/landscape.likec4\`
+  says WHERE it applies, so one ADR governs three edges and not the fourth without the
+  document forking;
+- **\`architecture/obligations.yaml\`** declares the names, so a mistyped tag is an error
+  rather than a word nobody notices.
+
+\`\`\`yaml
+obligations:
+  outbox:
+    description: Publishers write the event and the state change in one transaction.
+    adr: architecture/adrs/0001-transactional-outbox.md   # relative to the docs repo root
+\`\`\`
+
+**Your side of it is \`Covers:\`**. A tagged object with no living requirement covering it
+is \`obligation.uncovered\` (warn), and the finding names the service, the object and the
+exact line to write — \`Covers: <element>\` or \`Covers: <source> -> <target>\` in that
+service's \`arch.spec.md\`, with a scenario that proves it. An id is its own tag suffix,
+so it may hold letters, digits, \`_\` and \`-\` only.
 
 ## \`loam.json\` — the wiring, in every repo
 

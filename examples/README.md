@@ -61,6 +61,17 @@ definitions — and that reciprocal pair is exactly what does NOT count as adopt
 out of `glossary.unlinked` because a capability document cites them, not because they cite each
 other. Delete either of those two capability citations and the example gains a tenth warning.
 
+**One architectural obligation, declared and applied and met** — which is three files agreeing,
+and the axis's whole mechanism. `architecture/adrs/0001-transactional-outbox.md` says WHAT was
+decided; `#obl-outbox` on the `payment-service → kafka.paymentEvents` edge in the fleet map says
+WHERE it holds (on the publish edge, not on the service — payment-service also serves an API that
+owes nothing of the kind); `architecture/obligations.yaml` declares the name so a mistyped tag is
+an error rather than a word nobody notices; and `ARCH-PAY-OUTBOX` in payment-service's
+`arch.spec.md` covers that same edge, which is the team saying it is met. Because all four line
+up, the example is SILENT about the outbox — the working join produces no finding, which is what
+a working join should do. The second declaration, `idempotency-key`, is the one that talks: it is
+declared and placed nowhere, and `obligation.unapplied` is the warning in the table below.
+
 **On the event spine the arrow follows the message** — producer → topic for `publishes`, topic →
 consumer for `consumes` — and that is load-bearing rather than aesthetic. `publishes` binds the
 edge's source and `consumes` binds its target, so a consume edge drawn the other way round binds
@@ -90,7 +101,7 @@ edges. Nothing in loam reports that today, which is why the landscape says so in
 
 ## The warnings are the lesson
 
-`loam validate --all` reports **0 errors and 9 warnings** here, and every one of them is
+`loam validate --all` reports **0 errors and 10 warnings** here, and every one of them is
 deliberate. An example that reported nothing would teach nothing about what these checks catch:
 
 | finding | what it is demonstrating |
@@ -103,6 +114,7 @@ deliberate. An example that reported nothing would teach nothing about what thes
 | `capability.unrealized` | `payments/settlement` is declared in `architecture/capabilities.yaml` and no living requirement's `Capability:` line names it — a promise nobody implemented, or a word nobody adopted; `loam list capabilities` shows it as `0 — unrealized` beside the realized ones |
 | `capability.requirement-unrealized` | `checkout#CHECKOUT-PRICE-HONOURED` — one promise inside a capability whose OTHER promise three services realize, so the row above says nothing about it. That contrast IS the demonstration: `capability.unrealized` finds a capability nobody claimed, and only this code finds the gap inside a capability that looks healthy. Three requirements do carry `Realizes:` lines — `WEB-CHECKOUT`, `ORD-PLACE` and `PAY-AUTHORIZE` all name `checkout#CHECKOUT-CHARGE-ONCE` — and the fourth promise is simply not implemented, which is a normal state for a business document written ahead of the fleet |
 | `c4.uncovered` | FEAT-101 adds a `checkout-web → payment-split-service` edge that no arch requirement covers, so its architectural obligations would ship untested |
+| `obligation.unapplied` | `idempotency-key` is declared in `architecture/obligations.yaml` and no `#obl-` tag applies it anywhere on the fleet map — a decision that was reversed and left its word behind, or one nobody has placed yet. Its sibling `outbox` IS placed and IS covered, and says nothing: that contrast is the demonstration |
 
 **Two of the five are filed into a subsystem.** `services/platform/` (its `subsystem.yaml` is
 the marker — title and description, never members) groups `identity-service` and

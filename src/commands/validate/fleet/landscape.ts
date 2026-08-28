@@ -22,6 +22,9 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
 import { fleetLinkFindings } from "../links/corpus.js";
 import { glossaryFindings } from "../links/glossary.js";
+import { obligationFindings, obligationVocabularyFindings } from "./obligations.js";
+import { readObligations } from "../../../core/obligations/obligations.js";
+import { obligationsPath } from "../../../core/repo/paths.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
 import { errorText } from "../checks/vocabulary.js";
 import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
@@ -115,6 +118,12 @@ export async function validateLandscape(
   // repository answers — so it belongs here, beside the two vocabularies, and
   // nowhere else.
   findings.push(...(await glossaryFindings(docsDir, fleet)));
+  // The architectural obligation vocabulary, read ONCE here and handed to the
+  // map half below: its own two verdicts hold whether or not the landscape
+  // exists or parses, and a run where somebody is fixing the map must still be
+  // told that this file does not read.
+  const obligations = await readObligations(obligationsPath(docsDir));
+  findings.push(...obligationVocabularyFindings(docsDir, obligations));
 
   if (!existsSync(path)) {
     const count = entries.length;
@@ -196,6 +205,12 @@ export async function validateLandscape(
   // with one loam mints into it takes the whole architecture/ project down in
   // the renderer while every check here stays green — see views/ids.ts.
   findings.push(...viewIdFindings(land.viewIds, tree));
+  // The three obligation questions that need the map — where each declared rule
+  // is applied, which tags resolve to nothing, and which applications no living
+  // arch requirement covers. Here rather than beside the vocabulary above
+  // because all three are about the parsed landscape, and `land` is only
+  // trustworthy past this point.
+  findings.push(...(await obligationFindings({ docsDir, vocabulary: obligations, land, services: entries, fleet })));
 
   const services: ReadonlySet<string> = new Set(entries.map((s) => s.id));
   // Where each service actually sits, for every finding below that names a
