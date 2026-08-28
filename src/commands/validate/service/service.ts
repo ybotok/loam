@@ -18,7 +18,7 @@ import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { capabilityRequirementIndex, capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
-import { realizesUnknownFindings } from "../../../core/capabilities/realizes/findings.js";
+import { realizesStaleFindings, realizesUnknownFindings } from "../../../core/capabilities/realizes/findings.js";
 import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
@@ -251,6 +251,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     findings.push(...requiresUnknownFindings(docReqs, target, vocabulary));
     findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
     findings.push(...realizesUnknownFindings(docReqs, target, capabilityReqs));
+    findings.push(...realizesStaleFindings(docReqs, target, capabilityReqs));
   }
 
   // The links this service's own documents write. Its place in the order is

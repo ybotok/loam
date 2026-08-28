@@ -88,6 +88,77 @@ Drop `--link` to build without a global `loam`; on Windows run `npm ci && npm ru
 
 ## Quick start
 
+### Start from the fleet spine
+
+The path that pays off first, because it is the only one whose checks have two sides to compare.
+It needs **no requirement Markdown, no `loam adopt`, and no `loam vouch`** — just the map and the
+contracts you already have.
+
+Write a `fleet.yaml` naming your services and who calls whom
+([`examples/fleet.yaml`](https://github.com/ybotok/loam/blob/main/examples/fleet.yaml) is a real
+one), then:
+
+```bash
+loam init --docs . --create        # in an empty directory: the docs repo
+loam seed --from fleet.yaml        # the fleet map + one services/<id>/ per service
+```
+
+Now do the two things only you can do:
+
+1. **Drop each service's existing `openapi.yaml`** into `services/<id>/`. Copy the one your build
+   already produces — loam never generates it and never reads your code.
+2. **Name the operation on each call edge** in `architecture/landscape.likec4`:
+   `metadata { op 'createOrder' }`. This is the labour, and it is also the artifact nothing else
+   produces — a drawn arrow becomes a checked join.
+
+```bash
+loam validate --all
+```
+
+That already convicts the fleet's real edges: a call naming an operation its provider does not
+define is `spine.op-undefined`, an **error**, and one letter is enough — `authorisePayment` against
+a contract spelling it `authorizePayment` fails here and nowhere else a team normally runs.
+
+**Expect a red run, and read it correctly.** Five seeded services with no C4 centre report
+`service.no-model` (error) five times, and `service.no-spec` (warn) five times. Those are not
+misconfiguration: they are a truthful reading of a fleet where adoption has not started, and they
+stay until you write those documents. The finding you came for is the spine one.
+[`test/spine-first.test.ts`](https://github.com/ybotok/loam/blob/main/test/spine-first.test.ts)
+pins this whole sequence against the shipped `examples/fleet.yaml`, so the recipe cannot drift from
+the binary.
+
+From here, [WORKFLOW.md's day zero](WORKFLOW.md#day-zero-onboarding-a-fleet) is the rest: bind each
+service repo, adopt, grade, promote.
+
+### Guard the fleet's edges on every PR
+
+One command, installable on its own, with no part of the workflow above adopted: **`loam diff`
+exits 1 when a pull request removes an operation or an event message the fleet still consumes**,
+and names the consumers. That question — *who still calls this?* — is the one a fleet answers wrong,
+and it is answerable only from a document that knows the whole fleet.
+
+```yaml
+# .github/workflows/fleet-edges.yml — in the docs repo
+name: fleet edges
+on: pull_request
+jobs:
+  edges:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }          # diff reads the base out of git history
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npx -y @ybotok/loam diff --base origin/${{ github.base_ref }}
+```
+
+A green `diff` is not a valid fleet — `loam validate --all` is the gate, and both belong in CI. But
+`diff` is the one that repays installation before anything else exists, and it reports every removal
+against the fleet's current consumers rather than against a rule list.
+[WORKFLOW.md](WORKFLOW.md#what-actually-gates) has what it does and
+does not grade — including the oasdiff invocation for the byte-level OpenAPI breaking-change
+catalogue, which loam deliberately does not reimplement.
+
 ### Try loam on one service in five minutes
 
 The full model is a fleet; the trial is one repository. In the service repo you know best (after
@@ -172,7 +243,7 @@ cannot hold.
 | `loam adopt` | `--service <id>` `--subsystem <name>` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, and the checks that follow. Writes nothing |
 | `loam delta <FEAT>` | `--service <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
-| `loam rebase <FEAT>` | `--service <id>` `--dry-run` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis |
+| `loam rebase [<FEAT>]` | `--service <id>` `--dry-run` `--living` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--living` takes no feature: it pins the living corpus's `Realizes:` entries to the capability requirements they name, which is what makes `capability.realizes-stale` able to fire later |
 | `loam validate [<id>]` | `--service <id>` `--feature <id>` `--all` `--strict` `--errors-only` | Validate one service or feature, or the whole fleet in one run (the docs repo's CI gate). `--strict` exits 1 on warnings too; `--errors-only` prints just the errors |
 | `loam verify <FEAT>` | `--record <file>` `--results <file>` `--contract-results <file>` `--diff-answers <files...>` `--service <id>` | The done-check: derive a checklist of the feature's own promises, and record the answers with their evidence. `--results`/`--contract-results` answer claims from a test report; `--diff-answers` cross-examines two blind answer sets |
 | `loam vouch` | `--service <id>` `--yes` `--pack` `--sample <n>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. `--pack` prints the re-vouch reading pack; `--sample <n>` records a partial read as one. Run in the service's own repo |
@@ -277,7 +348,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): a components-only OpenAPI
 delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing, and the two-fleet
 production pilot has not been completed. Speculative `render`, health composition and UI generation
-come later. Behind that status stand **140 test files** (counted 2026-08-28): the count is graded
+come later. Behind that status stand **142 test files** (counted 2026-08-29): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

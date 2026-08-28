@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **394 TypeScript modules in 119 source packages**, with an acyclic package graph
+The tree contains **395 TypeScript modules in 119 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **28 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **140 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **142 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.

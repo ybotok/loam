@@ -7,7 +7,7 @@
  * parser records the heading LINE of each requirement and this module edits
  * exactly there, leaving every other byte as found.
  */
-import { type Requirement } from "../../core/document/spec.js";
+import { REALIZES_LINE_RE, type Requirement } from "../../core/document/spec.js";
 
 export interface LineEdit {
   /** 0-based line index, as `parseRequirements` counts lines. */
@@ -34,6 +34,42 @@ export function pinEdit(r: Requirement, headingLine: number, digest: string): Li
   if (existing >= 0) return { at: headingLine + existing, mode: "replace", text };
   const afterId = r.text.findIndex((line) => /^\s*Requirement-ID:/i.test(line));
   return { at: headingLine + afterId + 1, mode: "insert", text };
+}
+
+/**
+ * Rewrite one requirement's `Realizes:` line so every entry carries the pin
+ * `pinned` supplies for it, or `null` when the line already reads that way.
+ *
+ * ALWAYS A REPLACE, never an insert, and that is the difference from `pinEdit`
+ * above: a `Based-On:` line is bookkeeping loam may add to a requirement that
+ * has none, while a `Realizes:` line is a claim a human made. loam re-spells
+ * the claim it finds and never invents one — a requirement that realizes
+ * nothing has nothing to pin, and writing a line there would be loam asserting
+ * a join on somebody's behalf.
+ *
+ * Entry order, spacing after the colon and the author's own separator run are
+ * preserved by rebuilding from the captured text rather than from the parsed
+ * array: this is line surgery inside a document somebody wrote, and a
+ * normalization nobody asked for would land in every diff.
+ */
+export function realizesPinEdit(
+  r: Requirement,
+  headingLine: number,
+  pinned: (entry: string) => string,
+): LineEdit | null {
+  const at = r.text.findIndex((line) => REALIZES_LINE_RE.test(line));
+  if (at < 0) return null;
+  const line = r.text[at]!;
+  const match = REALIZES_LINE_RE.exec(line)!;
+  const rewritten = match[1]!
+    .split(",")
+    .map((entry) => {
+      const trimmed = entry.trim();
+      return entry.replace(trimmed, pinned(trimmed));
+    })
+    .join(",");
+  if (rewritten === match[1]!) return null;
+  return { at: headingLine + at, mode: "replace", text: line.replace(match[1]!, rewritten) };
 }
 
 /** One line of the document with the terminator it was written with. */

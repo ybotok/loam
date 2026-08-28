@@ -10,6 +10,48 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### A living `Realizes:` pin, so a moved promise stops being invisible
+
+- **New finding `capability.realizes-stale` (warn).** A `Realizes:` entry may now carry the digest of
+  the capability requirement it was written against — `Realizes: checkout#CHK-1@9f2c1a4b` — and
+  `loam validate` reports one warning per pinned entry whose target has been rewritten since. Until
+  now every capability check was an EXISTENCE constraint: `capability.realizes-unknown` fires when
+  the target is *gone* and stays silent when the target merely *changed*, so an analyst could narrow a
+  promise and every requirement claiming to keep it went on claiming so, in a corpus loam rewrote
+  itself. It is a warn and not an error because re-reading a moved promise has three legitimate
+  outcomes and loam cannot tell which; it never gates `loam archive`.
+- **New flag `loam rebase --living`**, which writes and refreshes those pins across the living
+  corpus and takes no feature id — so `rebase`'s `<FEAT>` argument is now optional, and every
+  existing invocation still parses. It commits through the same journaled transaction as every other
+  writer, under the same docs lock, and rewrites exactly one `Realizes:` line per requirement that
+  already has one: it never invents a join on an author's behalf. Its stored rerun is
+  `loam rebase --living`. `--service <id>` and `--dry-run` apply.
+- **Nothing changes for a corpus that has not been pinned.** An entry without a pin grades exactly as
+  it did before, forever, which is what lets this land with no migration.
+- **`requirementDigest` now strips `Realizes:` pins as well as `Based-On:` lines.** Both are
+  bookkeeping a requirement carries about its own joins, and a digest that moved when bookkeeping
+  moved would make every pin self-invalidating — one `rebase --living` would go on to invalidate
+  every `Based-On:` baseline in the fleet. The pinned and unpinned spellings of a requirement
+  therefore digest identically, which `test/capability-realizes-pin.test.ts` asserts directly.
+
+### The first hour starts from the fleet spine
+
+- **`examples/fleet.yaml`** ships as a real `loam seed` input for the five-service example fleet, and
+  **WORKFLOW.md's day zero step 2 now names `loam seed --from fleet.yaml`** instead of telling a
+  reader to draw `architecture/landscape.likec4` by hand. `seed` has shipped since beta.1 and
+  appeared in exactly one place in the prose: a command-table row.
+- **README leads with two entry points that pay off before adoption starts** — "Start from the fleet
+  spine" (seed, drop in the OpenAPI you already have, name the operation on each call edge, then
+  `validate --all` convicts `spine.op-undefined` with no requirement Markdown anywhere) and "Guard
+  the fleet's edges on every PR" (a copy-pasteable GitHub Actions job around `loam diff --base`,
+  which exits 1 on a removal the fleet still consumes). Both state plainly that the run is red:
+  `service.no-model` and `service.no-spec` are what a fleet at the bottom rung honestly looks like.
+- **`test/spine-first.test.ts`** pins that sequence against the shipped `examples/fleet.yaml`,
+  including the exact counts of the expected `service.no-model` and `service.no-spec` findings, so
+  the documented first hour cannot drift from the binary.
+- One stale cross-reference fixed: WORKFLOW.md sent readers to "the README's `loam diff` command
+  note" for the oasdiff invocation, which lives in WORKFLOW.md's own command notes.
+
 ### Documentation — the pages say what the binary does, and four more claims are checked
 
 - **README is the front door again, not the manual.** It carries the pitch, the install, the
