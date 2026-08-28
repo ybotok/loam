@@ -99,6 +99,57 @@ export function versionTrails(stamp: string, binary: string): boolean {
 }
 
 /**
+ * Does `stamp` name a version NEWER than the binary reading it? The mirror of
+ * {@link versionTrails}, and a different subject rather than its negation:
+ * equal versions are neither.
+ */
+export function versionAhead(stamp: string, binary: string): boolean {
+  return versionTrails(binary, stamp);
+}
+
+/**
+ * `docs.binary-behind` — this loam is OLDER than the loam that wrote the docs
+ * repo it is reading.
+ *
+ * The false-green this closes is the sharpest one in the product, because it
+ * inverts the meaning of a passing run rather than merely missing a defect.
+ * loam's whole promise is that a token spelled here must be spelled there — so
+ * every check is an existence constraint over a value the parser recognised.
+ * A binary that predates a grammar addition does not FAIL on the newer
+ * directive; it does not see it, produces no value, has nothing to join, and
+ * reports green. The corpus is checked less than it looks, and nothing anywhere
+ * says so. `agents.stale` is the opposite direction and explicitly declines
+ * this case ("that is an old binary, not a stale file") — correctly, because
+ * the fix is different: upgrade loam, do not edit the file.
+ *
+ * A WARNING, not an error, and the reasoning is the `sources.stale` doctrine.
+ * A mixed-version fleet is ordinary — one engineer's global install trails a
+ * release by a week — and failing every command in that repo would be a
+ * refusal aimed at the wrong person on the wrong day. What the message must do
+ * instead is say plainly that a green run from this binary is worth less than
+ * it appears, which no other finding says. A fleet that wants it to gate has
+ * `--strict`, which is exactly the lever that doctrine reserves for this.
+ *
+ * Silent when there is no file, no stamp, or the stamp is equal or older —
+ * every one of those is somebody else's finding.
+ */
+export function binaryBehindFinding(text: string | null, binary: string): Finding | null {
+  if (text === null) return null;
+  const stamp = agentsStampVersion(text);
+  if (stamp === null || !versionAhead(stamp, binary)) return null;
+  return {
+    severity: "warn",
+    code: "docs.binary-behind",
+    message:
+      `This docs repo was written by loam v${stamp}; this binary is v${binary}. A newer loam may check ` +
+      "joins this one cannot parse — an unrecognised directive is read as prose, so it produces no " +
+      "join to fail and this run reports green without having graded it. Treat a pass from this " +
+      `binary as incomplete rather than clean, and upgrade to v${stamp} or later (\`npm i -g @ybotok/loam\`). ` +
+      "Nothing here is wrong with the documents; the reader is behind them.",
+  };
+}
+
+/**
  * The one finding `loam validate --all` owes the agent contract. `text` is the
  * docs repo's AGENTS.md, or null when there is none — no file means no contract
  * to have drifted, and this check stays silent rather than inventing a second

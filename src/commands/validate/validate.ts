@@ -11,7 +11,7 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { agentsStaleFinding } from "../../core/agent/agents-stamp.js";
+import { agentsStaleFinding, binaryBehindFinding } from "../../core/agent/agents-stamp.js";
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
@@ -149,11 +149,14 @@ export function registerValidate(program: Command): void {
           // honours. It grades the repo, not any service, so it rides on the
           // landscape target.
           const agentsPath = agentsFile(docsDir);
-          const agents = agentsStaleFinding(
-            existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null,
-            LOAM_VERSION,
-          );
+          const agentsText = existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null;
+          const agents = agentsStaleFinding(agentsText, LOAM_VERSION);
           if (agents !== null) landscape.findings.push(agents);
+          // The other direction, and the one that changes what a PASS means:
+          // this binary predates the corpus, so a directive it cannot parse is
+          // read as prose and produces no join to fail.
+          const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
+          if (behind !== null) landscape.findings.push(behind);
           targets.push(
             ...(await inOrder(services, (svc) =>
               guarded({ kind: "service", id: svc.id }, () =>
