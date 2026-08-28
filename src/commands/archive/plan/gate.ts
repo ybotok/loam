@@ -18,13 +18,8 @@ import { approveOverrides, gatesArchive, type Issue } from "../../../core/vocabu
 import { recoverInterruptedCommit } from "../../../core/staging/recovery/recover.js";
 import { readUtf8 } from "../../../core/staging/writes.js";
 import { loadFile } from "../../../core/c4/likec4.js";
-import {
-  archiveDir as archiveRoot,
-  featurePaths,
-  featureSpecPaths,
-  livingCapabilityPaths,
-  SPEC_AXES,
-} from "../../../core/repo/paths.js";
+import { archiveDir as archiveRoot, featurePaths, featureSpecPaths, SPEC_AXES } from "../../../core/repo/paths.js";
+import { livingCapabilityPaths } from "../../../core/repo/authored/paths.js";
 import { featureCapabilityDeltas } from "../../../core/capabilities/delta/tree.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { featureSpecServices, missingFeatureMessage, resolveFeature } from "../../../core/repo/repo.js";

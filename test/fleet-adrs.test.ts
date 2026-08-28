@@ -191,7 +191,13 @@ describe("the human view says it once, and only when there is something to say",
 /* No obligation — the half a later change would break                 */
 /* ------------------------------------------------------------------ */
 
-describe("nothing grades the fleet's ADRs", () => {
+describe("nothing grades the CONTENT of the fleet's ADRs", () => {
+  // Narrowed when `link.unresolved` landed, and the narrowing is the point: an
+  // ADR's markdown links are resolved like every other document's, because an
+  // ADR that supersedes another says which by linking to it. Nothing else in
+  // one is read — no frontmatter, no status, no obligation to write one at all
+  // — which is what the three tests below still hold, over ADRs whose links
+  // resolve.
   it("a fleet with none and a fleet with three produce the same findings", async () => {
     const bare = await project(coherentFixture());
     const decided = await project({
@@ -255,7 +261,7 @@ describe("loam init does not scaffold the directory", () => {
     const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
 
     expect(agents).toContain("architecture/adrs/");
-    expect(agents).toMatch(/architecture\/adrs\/[^\n]*nothing grades them/);
+    expect(agents).toMatch(/architecture\/adrs\/[^\n]*only their links are graded/);
   });
 });
 

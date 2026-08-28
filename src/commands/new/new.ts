@@ -162,7 +162,7 @@ export function registerNew(program: Command): void {
       // its delta, which is why the two compose.
       //
       // Spelled relative, mirroring `featureCapabilityDeltasDir` +
-      // `capabilityDocPathsAt` in core/repo/paths.ts — the path builders take a
+      // `capabilityDocPathsAt` in core/repo/authored/paths.ts — the path builders take a
       // FeatureDir, whose provenance is an enumeration that read the directory,
       // and this directory is about to be created rather than read. One
       // directory per segment, exactly as the living tree spells nesting.

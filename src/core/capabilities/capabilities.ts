@@ -29,7 +29,8 @@ import { existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { isRecord } from "../kernel/records.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
-import { capabilitiesPath, capabilityDocsDir } from "../repo/paths.js";
+import { capabilitiesPath } from "../repo/paths.js";
+import { capabilityDocsDir } from "../repo/authored/paths.js";
 import { readCapabilityTree, type CapabilityTree } from "./tree.js";
 
 /** One declared capability. The id is the full key, slashes preserved. */

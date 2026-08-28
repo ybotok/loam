@@ -37,7 +37,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { compareIds } from "../repo/entries.js";
-import { capabilityDocPathsAt } from "../repo/paths.js";
+import { capabilityDocPathsAt } from "../repo/authored/paths.js";
 import { entryIs } from "../repo/tree/fs.js";
 
 /** One authored capability: where its directory is, and where its document is. */

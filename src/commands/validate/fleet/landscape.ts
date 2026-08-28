@@ -21,6 +21,7 @@ import { landscapeConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 import { capabilityFleetFindings, fleetShapeFindings, permissionFindings } from "../checks/fleet-shape.js";
 import { fleetLinkFindings } from "../links/corpus.js";
+import { glossaryFindings } from "../links/glossary.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
 import { errorText } from "../checks/vocabulary.js";
 import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
@@ -110,6 +111,10 @@ export async function validateLandscape(
   // for the same reason the two vocabularies above are: a fleet fact repeated
   // on every service target is the report.
   findings.push(...(await fleetLinkFindings({ docsDir, fleet })));
+  // The glossary is graded on who cites it, which is a question only the whole
+  // repository answers — so it belongs here, beside the two vocabularies, and
+  // nowhere else.
+  findings.push(...(await glossaryFindings(docsDir, fleet)));
 
   if (!existsSync(path)) {
     const count = entries.length;

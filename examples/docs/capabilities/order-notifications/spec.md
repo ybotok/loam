@@ -1,7 +1,8 @@
 # Order notifications
 
 The customer has bought something and now wants to know it worked. Every event
-in an order's life that they would want to hear about reaches them, once.
+in an [order](../../glossary/order.md)'s life that they would want to hear about
+reaches them, once.
 
 This capability carries the example's demonstration of the axis's second
 realizer, and it is the reason the tree exists at all. The promise below is
