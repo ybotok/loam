@@ -32,7 +32,7 @@
  * entries against a file nobody can parse is the cascade `../findings.ts`
  * suppresses.
  */
-import type { Requirement } from "../../document/spec.js";
+import { requirementDigest, type Requirement } from "../../document/spec.js";
 import type { Capability, CapabilityVocabulary } from "../capabilities.js";
 import type { CapabilityRequirementIndex } from "../realizes/join.js";
 
@@ -120,13 +120,22 @@ export function withFeatureRequirements(
 ): CapabilityRequirementIndex {
   if (index.declared === null || deltas.length === 0) return index;
   const byCapability = new Map<string, ReadonlySet<string>>(index.byCapability);
+  const digests = new Map<string, ReadonlyMap<string, string>>(index.digests);
   for (const delta of deltas) {
     const ids = new Set(byCapability.get(delta.id) ?? []);
+    // The delta's OWN digest wins for a MODIFIED id: inside a feature window,
+    // the version a `Realizes:` pin should agree with is the one this feature
+    // is about to merge, not the living one it is replacing. Overwriting is
+    // therefore the point, not a collision.
+    const withDigests = new Map<string, string>(digests.get(delta.id) ?? []);
     for (const r of delta.reqs) {
       if (r.kind !== "ADDED" && r.kind !== "MODIFIED") continue;
-      if (r.id !== undefined) ids.add(r.id);
+      if (r.id === undefined) continue;
+      ids.add(r.id);
+      withDigests.set(r.id, requirementDigest(r));
     }
     byCapability.set(delta.id, ids);
+    digests.set(delta.id, withDigests);
   }
-  return { declared: index.declared, byCapability };
+  return { declared: index.declared, byCapability, digests };
 }

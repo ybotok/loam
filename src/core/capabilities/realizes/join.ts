@@ -34,6 +34,7 @@
  * as `declared: null`.
  */
 import { closeIds } from "../../c4/arch.js";
+import { splitRealizesPin } from "../../document/spec.js";
 import { compareIds } from "../../repo/entries.js";
 
 /**
@@ -46,10 +47,17 @@ import { compareIds } from "../../repo/entries.js";
  */
 export const REALIZES_SEPARATOR = "#";
 
-/** The two halves of one entry. */
+/** The two halves of one entry, plus the version it was written against. */
 export interface RealizesTarget {
   capability: string;
   requirement: string;
+  /**
+   * The digest of the capability requirement this claim was last pinned to, or
+   * `null` for an unpinned entry. Written by `loam rebase --living`, never by
+   * hand; `null` is the normal state of a corpus that has not been pinned and
+   * grades exactly as it did before pins existed.
+   */
+  pin: string | null;
 }
 
 /**
@@ -68,9 +76,13 @@ export interface RealizesTarget {
  * sentence, and inventing three refusals for one mistake helps nobody.
  */
 export function splitRealizesEntry(entry: string): RealizesTarget | null {
-  const at = entry.lastIndexOf(REALIZES_SEPARATOR);
-  if (at <= 0 || at === entry.length - 1) return null;
-  return { capability: entry.slice(0, at), requirement: entry.slice(at + 1) };
+  // The pin comes off FIRST. It is a suffix of the whole entry, and leaving it
+  // on would put `@<digest>` inside the requirement half, where it would fail
+  // to resolve against an id that never contained one.
+  const { target, pin } = splitRealizesPin(entry);
+  const at = target.lastIndexOf(REALIZES_SEPARATOR);
+  if (at <= 0 || at === target.length - 1) return null;
+  return { capability: target.slice(0, at), requirement: target.slice(at + 1), pin };
 }
 
 /**
@@ -92,6 +104,20 @@ export interface CapabilityRequirementIndex {
   declared: readonly string[] | null;
   /** Requirement ids per capability that HAS a document. Present-and-empty is a real answer. */
   byCapability: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * The current `requirementDigest` of each id in `byCapability`, for the pin
+   * comparison and nothing else.
+   *
+   * A second collection over the same keys, which is a shape this codebase
+   * otherwise refuses — the justification is that the alternative is worse.
+   * Widening `byCapability`'s values to a Map would change what `[...ids]`
+   * iterates at four call sites that legitimately want the ids alone, and a
+   * silent change of meaning in an existing iteration is a far more expensive
+   * mistake than a redundant map built in the same loop. The invariant — same
+   * capabilities, same ids, both sides — is asserted by
+   * `test/capability-realizes-pin.test.ts` rather than left to a comment.
+   */
+  digests: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
 /**
@@ -104,8 +130,21 @@ export interface CapabilityRequirementIndex {
  * requirements section, or correct four characters.
  */
 export type RealizesClaim =
-  /** Both halves resolve. */
-  | { entry: string; kind: "resolved"; capability: string; requirement: string }
+  /**
+   * Both halves resolve. `stale` is the pin verdict, and it is a THIRD state
+   * rather than a boolean: `null` means the entry carries no pin, which is not
+   * the same answer as a pin that still matches. Only `true` is a finding.
+   */
+  | {
+      entry: string;
+      kind: "resolved";
+      capability: string;
+      requirement: string;
+      pin: string | null;
+      /** The target's digest now, or `null` when the index could not supply one. */
+      current: string | null;
+      stale: boolean | null;
+    }
   /** No usable separator — the fix is the spelling of the entry itself. */
   | { entry: string; kind: "malformed" }
   /** Nothing declares the capability half. `close` holds real declared ids. */
@@ -135,21 +174,29 @@ export function resolveRealizes(
   entries: readonly string[],
   index: CapabilityRequirementIndex,
 ): RealizesClaim[] {
-  const { declared, byCapability } = index;
+  const { declared, byCapability, digests } = index;
   if (declared === null) return [];
   const known = new Set(declared);
 
   return entries.map((entry): RealizesClaim => {
     const target = splitRealizesEntry(entry);
     if (target === null) return { entry, kind: "malformed" };
-    const { capability, requirement } = target;
+    const { capability, requirement, pin } = target;
     if (!known.has(capability)) {
       return { entry, kind: "unknown-capability", capability, close: closeIds(capability, declared) };
     }
     const ids = byCapability.get(capability);
     if (ids === undefined) return { entry, kind: "undocumented-capability", capability };
     if (ids.size === 0) return { entry, kind: "empty-capability", capability };
-    if (ids.has(requirement)) return { entry, kind: "resolved", capability, requirement };
+    if (ids.has(requirement)) {
+      // An index with no digest for a resolved id leaves the verdict UNKNOWN
+      // rather than STALE. The two are not the same claim, and a reader who is
+      // told a pin went stale because the grader could not compute the other
+      // side would be told something false.
+      const current = digests.get(capability)?.get(requirement) ?? null;
+      const stale = pin === null || current === null ? null : pin !== current;
+      return { entry, kind: "resolved", capability, requirement, pin, current, stale };
+    }
     return {
       entry,
       kind: "unknown-requirement",

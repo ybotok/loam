@@ -506,6 +506,9 @@ describe("every writer's stored rerun is a command loam has", () => {
       "loam gherkin ${scope.featureId}",
       "loam new ${featureId}",
       "loam rebase ${id}",
+      // The living-corpus mode stores the bare flag: it takes no feature and no
+      // interpolation, so the rerun is the whole command it recovers.
+      "loam rebase --living",
       // Seed stores the `--from` it was given, not the bare verb: the fleet
       // file is the run's whole input and may live anywhere, so a rerun that
       // dropped the flag would re-run a DIFFERENT command against whatever

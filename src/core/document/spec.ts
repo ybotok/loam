@@ -181,6 +181,42 @@ export const CAPABILITY_LINE_RE = /^\s*Capabilit(?:y|ies):\s*(.+?)\s*$/i;
  */
 export const REALIZES_LINE_RE = /^\s*Realizes:\s*(.+?)\s*$/i;
 
+/**
+ * The separator between a `Realizes:` target and the digest of the capability
+ * requirement it was written against — `checkout#CHK-1@9f2c1a4b`.
+ *
+ * `@` and not a second `#`, because the two halves are read by different rules:
+ * `splitRealizesEntry` takes the LAST `#` to find the requirement half, so a
+ * second one would move that boundary and re-parse every existing entry. `@`
+ * is also excluded from `REQUIREMENT_ID_RE`, which is what makes the split
+ * unambiguous rather than a convention — an id can never contain one.
+ *
+ * NOBODY TYPES THIS. `loam rebase --living` writes it and rewrites it; a human
+ * writes `Realizes: checkout#CHK-1` and is never asked for more. An entry
+ * without a pin is not a defect and never becomes one — it is a claim that has
+ * not been pinned yet, and it grades exactly as it did before pins existed.
+ */
+export const REALIZES_PIN_SEPARATOR = "@";
+
+/**
+ * One `Realizes:` entry split into the target it names and the digest it was
+ * written against, or `pin: null` when it carries none.
+ *
+ * A suffix that is not a well-formed digest is NOT a pin and NOT a refusal:
+ * the whole entry stays the target, so `checkout#CHK-1@nonsense` resolves — or
+ * fails to resolve — exactly as it would have before, under
+ * `capability.realizes-unknown`, whose message names the entry the author
+ * actually typed. Inventing a second refusal for one mistake is the failure
+ * `splitRealizesEntry` already refuses two lines up.
+ */
+export function splitRealizesPin(entry: string): { target: string; pin: string | null } {
+  const at = entry.lastIndexOf(REALIZES_PIN_SEPARATOR);
+  if (at <= 0) return { target: entry, pin: null };
+  const suffix = entry.slice(at + 1);
+  if (!REQUIREMENT_DIGEST_RE.test(suffix)) return { target: entry, pin: null };
+  return { target: entry.slice(0, at), pin: suffix };
+}
+
 /** Portable, review-friendly stable IDs. Case-sensitive by design. */
 export const REQUIREMENT_ID_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 
@@ -266,6 +302,37 @@ export function withoutBaseline(requirement: Requirement): Requirement {
 }
 
 /**
+ * The requirement with every `Realizes:` pin stripped back to its bare target —
+ * the second thing a digest is taken over, for the same reason as the first.
+ *
+ * `withoutBaseline`'s argument, one axis over: a pin is a statement ABOUT a
+ * join ("this claim was written against that version of the promise"), never
+ * part of the requirement making the claim. Left in the digest input it would
+ * make re-pinning a content change, so every requirement realizing a capability
+ * would go stale against ITS OWN consumers the moment the capability moved —
+ * one edit cascading through the corpus, which is the failure the pin exists to
+ * report rather than to cause.
+ *
+ * The line is kept and only the suffix removed, unlike `withoutBaseline` which
+ * drops the whole line: the target ids ARE content, and a requirement that
+ * stops naming the promise it keeps is a different requirement.
+ */
+export function withoutRealizesPins(requirement: Requirement): Requirement {
+  return {
+    ...requirement,
+    text: requirement.text.map((line) => {
+      const match = REALIZES_LINE_RE.exec(line);
+      if (match === null) return line;
+      const bare = match[1]!
+        .split(",")
+        .map((entry) => splitRealizesPin(entry.trim()).target)
+        .join(", ");
+      return line.replace(match[1]!, bare);
+    }),
+  };
+}
+
+/**
  * The identity of a requirement's CONTENT: sha256 over its canonical
  * serialization, truncated like every other digest loam stamps.
  *
@@ -278,10 +345,15 @@ export function withoutBaseline(requirement: Requirement): Requirement {
  * included), and every scenario with its Given/When/Then lines. `kind` and
  * `section` are not serialized and so are not hashed — a requirement does not
  * change because the document quoting it moved it under another heading.
+ *
+ * The two normalizations are the two kinds of bookkeeping a requirement can
+ * carry about its own joins — the baseline pointing AT it, and the `Realizes:`
+ * pins pointing OUT of it. Both are stripped for the same reason: a digest that
+ * moved when bookkeeping moved would make every pin self-invalidating.
  */
 export function requirementDigest(requirement: Requirement): string {
   return createHash("sha256")
-    .update(serializeRequirements([withoutBaseline(requirement)]), "utf8")
+    .update(serializeRequirements([withoutRealizesPins(withoutBaseline(requirement))]), "utf8")
     .digest("hex")
     .slice(0, REQUIREMENT_DIGEST_LENGTH);
 }

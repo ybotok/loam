@@ -24,6 +24,7 @@ import {
   type PinOutcome,
 } from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { rebaseLivingLocked } from "./living.js";
 
 /**
  * `loam rebase` — pin a feature's MODIFIED/REMOVED requirements to the living
@@ -51,6 +52,7 @@ interface RebaseOptions {
   service?: string;
   json?: boolean;
   dryRun?: boolean;
+  living?: boolean;
 }
 
 /** What happened to one pin. */
@@ -58,15 +60,22 @@ interface RebaseOptions {
 export function registerRebase(program: Command): void {
   program
     .command("rebase")
-    .argument("<featureId>", "feature id, e.g. FEAT-101")
+    // Optional ONLY because `--living` names no feature: that mode pins the
+    // living corpus itself. Every existing invocation still parses, which is
+    // what makes the relaxation additive rather than a contract change.
+    .argument("[featureId]", "feature id, e.g. FEAT-101 — omitted with --living")
     .description("Pin a feature's MODIFIED/REMOVED requirements to the living text they are written against")
     .option("--service <id>", "restrict to one service (default: every service the feature touches)")
+    .option(
+      "--living",
+      "pin the LIVING corpus's `Realizes:` entries to the capability requirements they name, instead of a feature's deltas",
+    )
     .option(
       "--dry-run",
       "print what would be pinned and write nothing — beyond first finishing a predecessor's interrupted commit, exactly as a real run would",
     )
     .option("--json", "emit the machine contract instead of the human view")
-    .action(async (featureId: string, opts: RebaseOptions) => {
+    .action(async (featureId: string | undefined, opts: RebaseOptions) => {
       const json = opts.json === true;
       const loaded = await loadConfig();
       if (loaded.kind !== "loaded") {
@@ -109,6 +118,20 @@ export function registerRebase(program: Command): void {
         } catch (err) {
           if (!(err instanceof InterruptedCommitError)) throw err;
           return fail(json, "commit-interrupted", err.message);
+        }
+        if (opts.living === true) {
+          await rebaseLivingLocked(config.docsDir, opts);
+          return;
+        }
+        if (featureId === undefined) {
+          // The argument is optional only for the mode that names no feature.
+          // Refusing here rather than making the whole command feature-less
+          // keeps one rule: every pin says which documents it read.
+          return fail(
+            json,
+            "invalid-option",
+            "loam rebase needs a feature id — e.g. `loam rebase FEAT-101`. To pin the living corpus's `Realizes:` entries instead, run `loam rebase --living`.",
+          );
         }
         await rebaseLocked(config.docsDir, featureId, { ...opts, recovered });
       } finally {

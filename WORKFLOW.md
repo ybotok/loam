@@ -64,11 +64,29 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    and six Agent Skills under `.claude/` ([Working with AI
    agents](README.md#working-with-ai-agents)). Commit all of it.
 
-2. **Draw what you already know** in `architecture/landscape.likec4`. It can start almost empty; it
-   is a **required** artifact, not an optional one — `loam validate --all` reports
-   `landscape.missing` as an error the moment `services/` holds a directory (an empty one counts,
-   before a single document lands in it), because with no fleet map every cross-service check is
-   blind rather than passing.
+2. **Template the fleet map** from a tiny file you write by hand, rather than drawing it:
+
+   ```bash
+   loam seed --from fleet.yaml
+   ```
+
+   `fleet.yaml` is service ids, optional `subsystems`, `externals`, and `a -> b` calls — nothing
+   else; [`examples/fleet.yaml`](https://github.com/ybotok/loam/blob/main/examples/fleet.yaml) is a
+   real one for the five-service example fleet. Seed templates `architecture/landscape.likec4` and one `services/<id>/` directory per
+   entry, in one journaled transaction, and guesses nothing: a human stated every fact in the file,
+   which is what keeps seed on the same side of the no-extractor line as `loam new`. Re-running is
+   safe — once the landscape has been hand-edited, seed refuses (`seed-landscape-edited`) rather
+   than overwrite it.
+
+   Drawing it by hand instead is entirely legal, and the landscape is a **required** artifact
+   either way, not an optional one: `loam validate --all` reports `landscape.missing` as an error
+   the moment `services/` holds a directory (an empty one counts, before a single document lands in
+   it), because with no fleet map every cross-service check is blind rather than passing.
+
+   What seed deliberately does not write is the operation on each edge. That token —
+   `metadata { op 'createOrder' }` — is what turns a drawn arrow into a checked join, and adding it
+   is what makes the [spine-first first hour](README.md#start-from-the-fleet-spine) pay off before
+   any of the steps below have run.
 
 3. **Bind each service repo.** Once per service, in that service's own checkout, beside the docs
    repo:
@@ -237,8 +255,9 @@ diff exits 1 on a removal the fleet still consumes (`diff.op-removed-consumed`,
 `diff.message-removed-consumed`) — and also whenever a document on either side could not be read,
 because a suspended axis is reported, never graded as "nothing changed" — so a PR job gets those
 checks for free, but a green diff is not a valid fleet: run both. For the byte-level OpenAPI
-breaking-change catalogue, use oasdiff on the two states of one contract; the README's `loam diff`
-command note has the exact invocation, and loam deliberately does not reimplement those checks.
+breaking-change catalogue, use oasdiff on the two states of one contract; [the `loam diff` command
+note](#command-notes) below has the exact invocation, and loam deliberately does not reimplement
+those checks.
 
 Severity and gating are also two different questions. A coherence finding marked `gates` stops the
 archive even when it is only a warning; an error in `validate` fails the check without necessarily

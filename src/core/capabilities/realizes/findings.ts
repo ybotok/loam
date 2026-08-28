@@ -135,6 +135,73 @@ export function realizesUnknownIssues(
   }));
 }
 
+/** One resolved entry whose pin no longer matches the promise it points at. */
+interface StaleEntry {
+  requirement: string;
+  entry: string;
+  capability: string;
+  target: string;
+  pin: string;
+  current: string;
+}
+
+/**
+ * `capability.realizes-stale` — ONE warn per pinned entry whose target has been
+ * rewritten since the pin was stamped.
+ *
+ * THE ONLY CHECK IN THE PRODUCT THAT NOTICES A LIVING DOCUMENT DECAYING. Every
+ * other join here is an EXISTENCE constraint: `capability.realizes-unknown`
+ * fires when the target is gone, and stays silent when the target is merely
+ * different. That silence is the failure this axis was missing — an analyst
+ * narrows a promise, and every service requirement claiming to keep it goes on
+ * claiming so, in a corpus loam rewrote itself, with nothing anywhere to say
+ * the claim was made about different words.
+ *
+ * WARN, AND IT MUST STAY A WARN. A pin going stale is not a defect: it is the
+ * fleet being told that a promise moved and somebody should re-read the
+ * requirements standing on it. The re-read is a human act with three legitimate
+ * outcomes — change the requirement, change the promise, or decide neither
+ * needed to change — and only the third is `loam rebase --living` on its own.
+ * An error would make the middle outcome unavailable without `--approve`, and a
+ * gate would make an analyst's ordinary edit break other teams' builds.
+ *
+ * Unpinned entries produce nothing, forever. A corpus that has never been
+ * pinned grades exactly as it did before pins existed, which is what lets this
+ * land without a migration.
+ */
+export function realizesStaleFindings(
+  reqs: Requirement[],
+  target: RealizesTargetDoc,
+  index: CapabilityRequirementIndex,
+): Finding[] {
+  const stale: StaleEntry[] = [];
+  for (const r of reqs) {
+    if (r.kind === "REMOVED") continue;
+    for (const claim of resolveRealizes(r.realizes, index)) {
+      if (claim.kind !== "resolved" || claim.stale !== true) continue;
+      stale.push({
+        requirement: r.name,
+        entry: claim.entry,
+        capability: claim.capability,
+        target: claim.requirement,
+        pin: claim.pin!,
+        current: claim.current!,
+      });
+    }
+  }
+  return stale.map((s) => ({
+    severity: "warn" as const,
+    code: "capability.realizes-stale",
+    subject: target.subject,
+    message:
+      `${target.where}: requirement '${s.requirement}' realizes ${s.capability}#${s.target}, ` +
+      `which has been rewritten since this claim was pinned (pinned ${s.pin}, now ${s.current}). ` +
+      "The join still resolves — what changed is the promise, not its address. " +
+      `Re-read capabilities/${s.capability}/spec.md and decide which side is now wrong; ` +
+      "when this requirement is right as it stands, `loam rebase --living` re-pins it",
+  }));
+}
+
 /** One capability requirement nothing realizes, located exactly. */
 export interface UnrealizedRequirement {
   capability: string;

@@ -159,7 +159,7 @@ lives *today*.
 | Architecture coverage | arch requirement `Covers:` | C4 element/edge or `health.yaml` signal | element/edge id, `alert:<id>`, `sli:<id>` |
 | Authorization | requirement `Requires:` | `architecture/permissions.yaml` | `<subject>/<permission>` |
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
-| Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#` |
+| Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#`, with an optional `@<digest>` pin |
 | Capability requirement (flow) | a `dynamic view` tag `#req-<slug>` | a requirement of the capability the view's `#cap-` tag names | the `Requirement-ID` with every character outside `[A-Za-z0-9_-]` flattened to `-` |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred
@@ -1236,6 +1236,44 @@ last one is unambiguous for every id there is.
   healthy-looking row: a capability with four requirements and three realized reports nothing at all
   through the other code. It never gates, because writing the business document ahead of the fleet
   is the intended use.
+
+##### The pin: `@<digest>`, and the one thing it is for
+
+An entry may carry the digest of the capability requirement it was written against:
+
+```markdown
+Realizes: checkout#CHECKOUT-CHARGE-ONCE@9f2c1a4b6d0e5713
+```
+
+**Nobody types this.** `loam rebase --living` writes it and rewrites it; an author writes the bare
+entry and is never asked for more. An entry without a pin is not a defect and never becomes one, so
+a corpus that has never been pinned grades exactly as it did before pins existed.
+
+It exists because every other check on this axis is an EXISTENCE constraint.
+`capability.realizes-unknown` fires when the target is **gone** and is silent when the target has
+merely **changed** — so an analyst can narrow a promise and every requirement claiming to keep it
+goes on claiming so, in a corpus loam rewrote itself, with nothing anywhere recording that the claim
+was made about different words. The pin is what makes that visible:
+
+- `capability.realizes-stale` (**warning**) — a pinned entry whose target has been rewritten since
+  the pin was stamped. The join still resolves; the address is fine and the promise behind it moved.
+
+It stays a **warning** and never gates. A moved promise has three legitimate outcomes — change the
+requirement, change the promise, or decide neither needed changing — and only the third is
+`loam rebase --living` on its own. An error would remove the middle one without `--approve`, and a
+gate would make an analyst's ordinary edit break other teams' builds.
+
+Two grammar consequences are load-bearing. `@` is the separator rather than a second `#` because
+the entry is split at the *last* `#`, so a second one would move that boundary and re-parse every
+existing entry; `@` is excluded from `Requirement-ID`, which makes the split unambiguous rather than
+conventional. And a suffix that is not a well-formed digest is **not** a pin and not a second
+refusal — the whole entry stays the target, so `checkout#CHK-1@nonsense` fails under
+`capability.realizes-unknown` naming what the author actually typed.
+
+Finally, a pin is invisible to `requirementDigest`. Pins and `Based-On:` lines are both bookkeeping
+a requirement carries about its own joins, and a digest that moved when bookkeeping moved would make
+every pin self-invalidating: one `rebase --living` would go on to invalidate every `Based-On:`
+baseline in the fleet — the corpus-wide cascade the pin exists to *report* rather than to cause.
 
 Realizing a REQUIREMENT realizes its capability: a requirement carrying only `Realizes:` counts
 toward `capability.unrealized`, and a requirement carrying both joins is counted once.

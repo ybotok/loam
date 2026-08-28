@@ -1,0 +1,57 @@
+# The whole input to `loam seed` — the fleet map's first hour, stated by a human.
+#
+# This is the file the spine-first entry starts from (README's "Start from the
+# fleet spine", WORKFLOW.md's day zero step 2). It names the five services of
+# `examples/docs`, the one subsystem they are filed under, the externals they
+# reach, and who calls whom. `loam seed --from examples/fleet.yaml` templates
+# `architecture/landscape.likec4` and one `services/<id>/` directory per entry
+# from exactly these facts and guesses nothing else.
+#
+# What it deliberately does NOT carry is the operation on each edge. `seed`
+# draws the call; a human writes `metadata { op 'createOrder' }` on it, and
+# that token is what turns a drawn arrow into a checked join against the
+# provider's `openapi.yaml`. That is the labour the spine-first entry asks for,
+# and it is the artifact nothing else produces.
+#
+# Re-running is safe: seed refuses (`seed-landscape-edited`) rather than
+# overwrite a landscape a human has touched.
+
+services:
+  - checkout-web
+  - order-service
+  - payment-service
+  # A service filed under a subsystem is written as a mapping. The subsystem is
+  # a directory under services/ and a grouping element in the map; no identity
+  # depends on it, so a service can move later without breaking a single join.
+  - id: identity-service
+    subsystem: platform
+  - id: notification-service
+    subsystem: platform
+
+subsystems:
+  - platform
+
+# Named here, they are drawn as elements the fleet reaches but does not own.
+# An external never becomes a directory under services/, so it is never graded
+# for a spec, a contract or provenance — which is the point: `stripe` is not a
+# service anybody here documents.
+externals:
+  - customer
+  - stripe
+  - kafka
+
+# `a -> b`, where each endpoint is a service id or an external declared above.
+# Every one of these becomes an edge in the landscape with no operation on it;
+# the follow-up work is naming the operation each call actually makes.
+calls:
+  - customer -> checkout-web
+  - checkout-web -> order-service
+  - checkout-web -> payment-service
+  - order-service -> payment-service
+  - order-service -> identity-service
+  - payment-service -> identity-service
+  - payment-service -> stripe
+  - payment-service -> kafka
+  - order-service -> kafka
+  - kafka -> order-service
+  - kafka -> notification-service

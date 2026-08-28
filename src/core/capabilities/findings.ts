@@ -24,7 +24,7 @@
  */
 import { closeIds } from "../c4/arch.js";
 import { compareIds } from "../repo/entries.js";
-import type { Requirement } from "../document/spec.js";
+import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Finding } from "../vocabulary/report.js";
 import type { CapabilityDocCode, Issue } from "../vocabulary/issue.js";
 import type { CapabilityVocabulary } from "./capabilities.js";
@@ -384,13 +384,16 @@ export async function capabilityRequirementIndex(
 ): Promise<CapabilityRequirementIndex> {
   const declared = gradableCapabilityIds(vocab);
   const byCapability = new Map<string, ReadonlySet<string>>();
-  if (declared === null) return { declared, byCapability };
+  const digests = new Map<string, ReadonlyMap<string, string>>();
+  if (declared === null) return { declared, byCapability, digests };
   for (const doc of vocab.tree.docs) {
     const reqs = await read(doc.spec);
-    byCapability.set(
-      doc.id,
-      new Set(reqs.flatMap((r) => (r.kind === "REMOVED" || r.id === undefined ? [] : [r.id]))),
-    );
+    // ONE pass fills both, which is what keeps them from disagreeing: an id
+    // reaches the set and the digest map in the same iteration or reaches
+    // neither. The skip rule is stated once, above the loop body it guards.
+    const kept = reqs.filter((r) => r.kind !== "REMOVED" && r.id !== undefined);
+    byCapability.set(doc.id, new Set(kept.map((r) => r.id!)));
+    digests.set(doc.id, new Map(kept.map((r) => [r.id!, requirementDigest(r)])));
   }
-  return { declared, byCapability };
+  return { declared, byCapability, digests };
 }
