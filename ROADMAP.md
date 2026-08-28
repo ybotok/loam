@@ -22,15 +22,15 @@ The tree contains **395 TypeScript modules in 119 source packages**, with an acy
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **28 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **142 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **145 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-08-28 on `88854a5` plus this documentation change, and dated because neither number
+_Measured 2026-08-29 on `54c90ce` plus the changes on top of it, and dated because neither number
 has a cheap derivation:_ lint, typecheck and `npm run arch:check` green; `npm test` passing
-**3,092/3,092 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; and the
-coverage gate passing with **92.24% statements, 84.09% branches, 96.74% functions, and 94.17%
+**3,116/3,116 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; and the
+coverage gate passing with **92.17% statements, 83.98% branches, 96.71% functions, and 94.10%
 lines** against its thresholds of 91 / 82 / 95 / 93.
 
 One qualification remains, and it is observation rather than code: nothing has been pushed since the
@@ -231,6 +231,21 @@ Closed since the 2026-08-18 assessment, each with the commit or commit range tha
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
 5cd3942:ROADMAP.md`).
 
+- The living `Realizes:` pin and `capability.realizes-stale`, with `loam rebase --living` — the
+  product's first standing suspect link over the LIVING corpus, and the answer to the one failure
+  class that decayed silently after a successful archive. Every other capability check is an
+  existence constraint and goes quiet when a target merely changes.
+- The spine-first first hour: `examples/fleet.yaml`, day zero starting at `loam seed`, and a
+  README entry point that reaches a cross-service conviction with no requirement Markdown at all.
+- `contracts.openapi` in `loam.json`: the build's own contract read as a check
+  (`openapi.generated-stale`, `contracts.source-missing`, `contracts.source-invalid`). Closes the
+  most load-bearing untested premise in SCHEMA — that the committed contract is the one the
+  service serves — without becoming a writer or an extractor.
+- `spec.unknown-directive`: the near-miss grammar guard. An unrecognised body-line key is prose,
+  so the join it resembles does not exist and every check over it stays green for want of anything
+  to fail.
+- `checklist` and `docsCommit` on each attestation, plus `verify.checklist-forked` — a federated
+  record can now say WHICH service's answers went stale rather than flagging all or none.
 - Atomic, locked, compare-and-swap verification records — `60f4df6`.
 - Full-gate concurrency stability: the classified stress runner and host probe — `d9b396a`.
 - Crash-consistent multi-file writers: the journaled roll-forward transaction — `88e9026`.

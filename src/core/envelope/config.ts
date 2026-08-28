@@ -37,6 +37,23 @@ export interface LoamConfig {
    */
   gherkinDir?: string;
   /**
+   * Where this repo's BUILD writes its contract documents, relative to the
+   * repo root — the springdoc/FastAPI/NestJS output, not a second copy anybody
+   * maintains.
+   *
+   * loam reads these and compares a digest; it never writes them, never copies
+   * them into the docs repo, and never derives meaning from them. That is what
+   * keeps the field on the right side of the no-extractor line: it parses a
+   * standard document somebody else generated, at a path a human named, in
+   * exactly the way `verify --results` already ingests a cucumber report.
+   *
+   * The committed `services/<id>/openapi.yaml` stays the contract, and the copy
+   * stays a human `cp` reviewed in a pull request. Automating the copy would
+   * make the docs-repo document a cache of the build; leaving it manual and
+   * merely REPORTING the divergence keeps it a document somebody agreed to.
+   */
+  contracts?: { openapi?: string };
+  /**
    * The agent tools `loam init` has written command and skill files for in this
    * repo, by AGENT_TOOLS id.
    *
@@ -195,6 +212,7 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     && (typeof record.gherkinDir !== "string" || record.gherkinDir === "")) {
     throw new ConfigError("gherkinDir", `${file}: "gherkinDir" must be a non-empty string when present.`);
   }
+  const contracts = readContracts(record.contracts, file);
   // Shape only. Which ids are legal is the registry's question, and asking it
   // here would make a config written by a newer binary — one that knows a tool
   // this one does not — unloadable for every command, not just for `init`.
@@ -224,6 +242,7 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     docsDir: docsDirOf(resolve(configDir, record.docsDir)),
     ...(service === undefined ? {} : { service }),
     ...(record.gherkinDir === undefined ? {} : { gherkinDir: record.gherkinDir as string }),
+    ...(contracts === undefined ? {} : { contracts }),
     ...(record.agentTools === undefined ? {} : { agentTools: record.agentTools as string[] }),
     root: resolve(configDir),
     docsDirAsWritten: record.docsDir,
@@ -280,4 +299,35 @@ export async function saveConfig(config: StoredConfig, cwd: string = process.cwd
   const { root: _root, docsDirAsWritten: _asWritten, ...stored } = config;
   await writeFile(p, JSON.stringify(stored, null, 2) + "\n", "utf8");
   return p;
+}
+
+/**
+ * The optional `contracts` block, validated to shape only.
+ *
+ * SHAPE ONLY, exactly as `agentTools` is, and for a sharper version of the same
+ * reason: containment is not checked here because a build output legitimately
+ * sits outside the repo root's own subtree in some layouts, and the reader that
+ * resolves it is where an escaping path must be refused — with the service in
+ * hand, so the refusal can name it. A config that throws takes down every
+ * command, including the ones with nothing to do with contracts.
+ */
+function readContracts(value: unknown, file: string): { openapi?: string } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ConfigError("contracts", `${file}: "contracts" must be a mapping with an optional "openapi" path.`);
+  }
+  const record = value as Record<string, unknown>;
+  // Only `openapi` today. The event axis gets a key when it gets a check —
+  // a config key nothing reads is worse than a missing one, because a fleet
+  // sets it and believes something is being graded.
+  const out: { openapi?: string } = {};
+  for (const key of ["openapi"] as const) {
+    const spelled = record[key];
+    if (spelled === undefined) continue;
+    if (typeof spelled !== "string" || spelled === "") {
+      throw new ConfigError("contracts", `${file}: "contracts.${key}" must be a non-empty string when present.`);
+    }
+    out[key] = spelled;
+  }
+  return out.openapi === undefined ? undefined : out;
 }

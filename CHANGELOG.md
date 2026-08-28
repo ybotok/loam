@@ -10,6 +10,70 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### The build's own contract, read as a check
+
+- **New `contracts` block in `loam.json`**: `{ "contracts": { "openapi": "build/openapi.yaml" } }`
+  names where this repository's BUILD writes its contract. `loam validate --service` digests that
+  document and compares it with the committed `services/<id>/openapi.yaml` — **new finding
+  `openapi.generated-stale` (warn)** when they differ, **`contracts.source-missing` (error)** when
+  the path holds nothing (CI that validates before it builds), and **`contracts.source-invalid`
+  (error)** when it escapes the repository or does not parse.
+- **It reads, and never writes.** The copy into the docs repo stays a human `cp` reviewed in a pull
+  request, which is what keeps the committed contract a document somebody agreed to rather than a
+  cache of the build. This is the same category as `verify --results` ingesting a cucumber report:
+  loam parses a standard document the team's build emitted, at a path a human named, and derives no
+  meaning from it — no line of service code is read.
+- **The digest is over canonical JSON, not bytes**, so two generator versions ordering keys
+  differently, or a dumper re-wrapping a description, produce silence rather than a permanent
+  warning nobody can clear. Service-repo only, and entirely silent for a repo with no `contracts`
+  block — which is every existing repo.
+- The premise this closes is SCHEMA's most load-bearing untested one: that the committed contract is
+  what the service actually serves. Most fleets generate OpenAPI and copy it by hand, and until now
+  nothing in the product could notice when the copy stopped being current.
+
+### A grammar guard: `spec.unknown-directive`
+
+- **New finding `spec.unknown-directive` (warn)** — a requirement body line whose key is one or two
+  edits from a directive and is not one: `Realises:`, `Capabilties:`, `Opertaions:`, `Publsihes:`.
+- This was the one place the corpus was quieter than it looked. Every join is an existence
+  constraint over a *parsed* value, so a key the parser does not recognise yields no value, no join
+  and therefore no finding — the requirement claims to realize a promise, gets nothing, and validates
+  clean. It is the judgement `obligation.unknown` already makes one axis over ("a mistyped tag reads
+  exactly like a rule"), applied to the keys themselves.
+- **Measured by edit distance, not by shared prefix**, deliberately: `closeIds`'s three-character
+  prefix rule would report `Context:` as a near miss for `Consumes:`, in a check whose entire value
+  is that it does not cry wolf. `Note:`, `Owner:`, `Rationale:`, `Status:` and `See:` are silent,
+  and the example fleet's warning count is unchanged at ten.
+
+### An attestation says what it answered, and against what
+
+- **Two optional keys on each `ServiceAttestation`**: `checklist` (the digest that attestation
+  answered) and `docsCommit` (the docs-repo HEAD it was derived from, when the docs repo is a git
+  checkout). `commit` already pinned the service repo — the code the evidence points into — and
+  nothing pinned the side the *question* came from.
+- **New finding `verify.checklist-forked` (warn)** — two or more services on one record answered
+  different versions of the feature's question set. The record carried a single top-level
+  `checklist` digest, so this state could not be represented at all: the staleness check flagged
+  both services or neither, and never said which answers went stale.
+- **An attestation with no `checklist` field is not counted as a third version.** Silence is not
+  disagreement, and reading it as such would fire this on every federated record written before the
+  field existed. `docsCommit` is omitted rather than refused when the docs repo is not a git
+  checkout — a docs repo is not obliged to be one.
+
+### The pages say where loam is behind, not only where it is ahead
+
+- **README's "Why" now carries what green does *not* mean**, pointing at
+  `src/core/brief/unchecked.ts` — the fifteen statements of what no check will ever tell you, which
+  the binary already prints into the adoption brief and no page had ever quoted. Completeness is the
+  one worth naming out loud: forty behaviours documented as one requirement passes every check loam
+  has. The `verified`/`attested` distinction moved up beside it.
+- **COMPARISON.md gains "The wider field, and who is actually nearest"** — OpenFastTrace, Doorstop,
+  Pact Broker, Backstage, EventCatalog, oasdiff/buf, StrictDoc/Sphinx-Needs and ArchUnit, each with
+  the mechanism it shares and **who is ahead at it**. The page compared loam only to OpenSpec, which
+  is the nearest tool on one of loam's seven joins and on none of the other six. Two entries are
+  direct credit: OpenFastTrace put the version inside the coverage token years ago, and Doorstop
+  stored a parent's fingerprint on a link thirteen years before `capability.realizes-stale`.
+
 ### A living `Realizes:` pin, so a moved promise stops being invisible
 
 - **New finding `capability.realizes-stale` (warn).** A `Realizes:` entry may now carry the digest of

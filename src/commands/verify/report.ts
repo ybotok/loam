@@ -20,7 +20,7 @@ import {
   verificationVerdict,
 } from "../../core/verify/record.js";
 import { EXPLAIN_FOOTER, plural } from "../policy/format.js";
-import { answeredMark, contestedNotices, contractReportLine, MARK, noticesFor, reportLine } from "./frozen.js";
+import { answeredMark, contestedNotices, contractReportLine, forkedChecklistNotices, MARK, noticesFor, reportLine } from "./frozen.js";
 
 export interface ClaimStatus {
   id: string;
@@ -140,6 +140,7 @@ export function report(
     ...noticesFor(claims, checklist.feature),
     ...(open === null ? [] : [open]),
     ...contestedNotices(checklist.claims),
+    ...forkedChecklistNotices(recorded),
   ];
 
   if (json) {

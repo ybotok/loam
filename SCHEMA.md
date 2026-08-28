@@ -202,6 +202,29 @@ writes the file where it is standing.)
   `config-invalid`.
 - **`gherkinDir`** (optional, default `features`) — the directory `loam gherkin` writes its own
   `loam/` subtree into.
+- **`contracts`** (optional) — where this repository's **build** writes its OpenAPI document,
+  e.g. `{ "contracts": { "openapi": "build/openapi.yaml" } }`. `loam validate --service`, run in
+  this repo, digests that document and compares it with the committed
+  `services/<id>/openapi.yaml`: `openapi.generated-stale` (warn) when they differ,
+  `contracts.source-missing` (error) when nothing is there, `contracts.source-invalid` (error) when
+  the path escapes the repository or the file does not parse.
+
+  **loam reads it and never writes it.** The copy into the docs repo stays a human `cp` reviewed in
+  a pull request — that is what keeps the committed contract a document somebody agreed to rather
+  than a cache of whatever the build last produced. It also stays on the right side of the
+  no-extractor line: a standard document the team's own build emitted, at a path a human named,
+  parsed and digested, with no meaning derived and no line of service code read. Exactly the
+  category `verify --results` already occupies with a cucumber report.
+
+  The digest is taken over **canonical JSON**, never raw bytes, so two generator versions that order
+  keys differently — or a dumper that re-wraps a description — are silent. A permanent warning
+  nobody can clear is the first thing a fleet turns off. The whole family is silent from the docs
+  repo (there is no build output to read) and for any repo with no `contracts` block.
+
+  The premise this exists to check is the one this document otherwise assumes without saying so:
+  that `services/<id>/openapi.yaml` is the contract the service actually serves. Most fleets
+  generate that file and copy it across by hand, so the assumption decays quietly — the spine checks
+  go on grading last quarter's endpoints, and every one of them stays green.
 
 `loam init --docs <dir>` **joins** an existing docs repo (one with `services/` and `AGENTS.md`);
 creating a new one requires `--create`, so a mistyped path cannot quietly scaffold a second source

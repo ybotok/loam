@@ -190,6 +190,19 @@ re-recording is the repair, never editing the counts. \`verify.digest-contested\
 those scenario claims are left unconfirmed, and each service records its own
 from its own repository with \`--service\`.
 
+A federated record also says WHAT EACH SERVICE ANSWERED AGAINST. Every
+attestation carries the \`checklist\` digest it answered and, when the docs repo
+is a git checkout, the \`docsCommit\` that checklist was derived from — so the
+record pins both sides, the service repo through \`commit\` and the question set
+through these two. \`verify.checklist-forked\` (warn) is what that buys: two or
+more services on this record answered DIFFERENT versions of the feature's
+question set, which the record-level \`checklist\` field alone could never show —
+it flagged both services or neither, and never said which answers went stale.
+Normal mid-rollout and it gates nothing; re-record the services on the older
+version from their own repositories, or accept the split knowingly.
+Attestations written before the field existed carry no \`checklist\` and are not
+counted as a third version — silence is not disagreement.
+
 A consumed report is written down: \`report\` and \`contractReport\` on the
 record (or on that repository's attestation) each carry the path, a sha256 of
 the bytes, the file's mtime and how much it held — tagged scenarios for the

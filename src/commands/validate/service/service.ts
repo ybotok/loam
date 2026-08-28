@@ -34,11 +34,11 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { errorText } from "../checks/vocabulary.js";
 import { serviceLinkFindings } from "../links/corpus.js";
 import { sourceScopeFindings } from "../checks/sources.js";
-import { apiAxisFindings } from "./api.js";
+import { apiAxisFindings, generatedContractFindings } from "./api.js";
 import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events/events.js";
-import { archAxisFindings, readServiceSpecs } from "./specs.js";
+import { archAxisFindings, readServiceSpecs, unknownDirectiveFindings } from "./specs.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
@@ -66,6 +66,8 @@ interface ServiceCheck {
   service: PathableService;
   /** The service's own repo, when loam is standing in it. Undefined from the docs repo. */
   repoDir?: string;
+  /** The build outputs `loam.json` names, when this repo declares any. */
+  contracts?: { openapi?: string };
   /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
   preloaded?: LoadedDoc | null;
   gherkinDir?: string;
@@ -81,7 +83,7 @@ interface ServiceCheck {
 
 
 export async function validateService(check: ServiceCheck): Promise<TargetReport> {
-  const { docsDir, service, repoDir, preloaded, gherkinDir, fleet } = check;
+  const { docsDir, service, repoDir, preloaded, gherkinDir, contracts, fleet } = check;
   // The spine and event joins below all ask the landscape's resolver one
   // question: does this edge's endpoint resolve into the directory being
   // validated? The resolver answers with DOCUMENT text and `service` is the
@@ -252,6 +254,10 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     findings.push(...capabilityUnknownFindings(docReqs, target, capabilities));
     findings.push(...realizesUnknownFindings(docReqs, target, capabilityReqs));
     findings.push(...realizesStaleFindings(docReqs, target, capabilityReqs));
+    // The grammar guard, last in the loop: it grades the KEYS the three checks
+    // above resolve values from, so a line none of them saw is reported here
+    // rather than staying invisible for having produced nothing to check.
+    findings.push(...unknownDirectiveFindings(docReqs, target));
   }
 
   // The links this service's own documents write. Its place in the order is
@@ -263,6 +269,12 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // Provenance last: who vouched for this, and what code it was written from.
   findings.push(...(await serviceProvenance(docsDir, service, { repoDir, fleet })));
   findings.push(...(await sourceScopeFindings(docsDir, service, repoDir, fleet)));
+  // The build's own contract against the committed copy. Service-repo only:
+  // from the docs repo there is no build output to read, and the family stays
+  // silent rather than guessing — the same rule `sources` provenance follows.
+  if (repoDir !== undefined) {
+    findings.push(...(await generatedContractFindings(service, repoDir, contracts?.openapi, paths.openapi)));
+  }
 
   // The generated-gherkin freshness chain, service-repo-scoped like sources.*:
   // it needs the repo (the suite lives there), and it stays quiet until

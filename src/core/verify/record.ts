@@ -110,6 +110,32 @@ export interface ServiceAttestation {
   recorded: string;
   /** Claim ids this commit answered. Kept explicit so stale answers can be pruned safely. */
   claims: string[];
+  /**
+   * The checklist digest THIS attestation answered.
+   *
+   * The record carries one `checklist` for the whole file, which is the right
+   * field for the all-at-once form and an incomplete one for a federated
+   * record: two services attesting a week apart across a changed delta write
+   * the same top-level digest, and nothing in the file can say they answered
+   * different questions. With this, `verify.checklist-forked` can.
+   *
+   * Optional forever. An attestation written before this field existed carries
+   * no claim about which checklist it answered, and inventing one from the
+   * record-level digest would be asserting exactly the thing that cannot be
+   * known — the `evidence.unpinned` precedent, one axis over.
+   */
+  checklist?: string;
+  /**
+   * The docs-repo commit the checklist was computed from, when the docs repo is
+   * a git repository with a committed HEAD.
+   *
+   * `commit` pins the SERVICE repo — the code the evidence points into.
+   * Nothing pinned the side the QUESTION came from, so a reader could not tell
+   * a re-record against an unchanged feature from one against a rewritten
+   * delta. Absent whenever git cannot answer: a docs repo is not required to be
+   * a git checkout, and a missing pin is not a defect.
+   */
+  docsCommit?: string;
   /** The report that answered this service's scenario claims, when `--results` did. */
   report?: ConsumedReport;
   /** The report that answered this service's api.exposes claims, when `--contract-results` did. */

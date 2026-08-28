@@ -53,6 +53,35 @@ is mechanical: it **states the work** and it **checks the result**. An agent doe
 both halves are written down: the question in the brief or the checklist, the answer in `sources` or
 `verification.yaml`.
 
+### What green means here, and what it does not
+
+Most of this category will tell you what it checks. loam ships the other list too, in the binary:
+**[`src/core/brief/unchecked.ts`](https://github.com/ybotok/loam/blob/main/src/core/brief/unchecked.ts)
+is fifteen statements of what no check will ever tell you**, printed into the adoption brief beside
+the checks that do run. It says, in loam's own words, that nothing here knows whether the model is
+the architecture the code actually has, whether a requirement is *true*, whether an `operationId` is
+the one the code serves, or whether `sources` names the files anybody read. And it says the one that
+matters most: **completeness is unchecked** — forty behaviours documented as one requirement passes
+every check loam has, and so does a service with one endpoint documented out of thirty.
+
+That list exists because a check that is silent for want of anything to ask must never read as a
+check that passed. Green here means *the documents agree with each other* — never that they are
+true, and never that they are complete.
+
+The same refusal runs through the evidence model. `loam verify` records who answered every claim,
+and keeps two answers permanently distinguishable:
+
+- **`verified`** — a digest-tagged scenario answered by a green test run. The digest is taken over
+  the scenario's *body*, so rewording a `Given` breaks the link on purpose. Tag-based coverage
+  (`@REQ-1234` and its relatives) survives any rewrite and goes on asserting a claim nobody
+  re-checked.
+- **`attested`** — an agent's word, with `file:line` evidence at an attested commit. Recorded in
+  full, labelled on every surface, and never promoted. A feature whose scenarios rest on attestation
+  does not become verified because a gate would be greener if it did.
+
+Neither gates the archive. The claim loam makes for its evidence is persistence and honest
+provenance — not that every recorded judgement is true.
+
 Files stay the source of truth. Delete `loam` and every artifact remains as Markdown, LikeC4 DSL,
 Gherkin and YAML — no server, no database, no state file, three runtime dependencies. The two flows
 this implies, what gates and what only advises, are in [WORKFLOW.md](WORKFLOW.md).
@@ -302,7 +331,9 @@ are thin wrappers over the CLI. For hosts that reach tools through MCP rather th
   agent drives the cycle from `--json`.
 - [SCHEMA.md](SCHEMA.md) — the docs-repo layout, each artifact's grammar, and the decisions behind
   them: the coherence rules, how `archive` writes and `unarchive` undoes, operating at fleet scale.
-- [COMPARISON.md](COMPARISON.md) — current product comparison with OpenSpec v1.10.0, kept separate
+- [COMPARISON.md](COMPARISON.md) — current product comparison with OpenSpec v1.10.0, plus the wider
+  field named — OpenFastTrace, Doorstop, Pact, Backstage, EventCatalog, oasdiff — including where each
+  one does a piece of this better. Kept separate
   from the pinned v1.9 compatibility corpus. For a single repo without cross-service contracts,
   OpenSpec is simpler *and sufficient*; that page says so, and says where loam starts paying.
 - [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) — moving an OpenSpec repo onto loam: what
@@ -348,7 +379,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): a components-only OpenAPI
 delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing, and the two-fleet
 production pilot has not been completed. Speculative `render`, health composition and UI generation
-come later. Behind that status stand **142 test files** (counted 2026-08-29): the count is graded
+come later. Behind that status stand **145 test files** (counted 2026-08-29): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
