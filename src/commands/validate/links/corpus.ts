@@ -22,7 +22,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { unresolvedLinkFindings } from "../../../core/links/findings.js";
+import { pathCaseIndex } from "../../../core/links/case.js";
+import { unresolvedLinkFindings, type LinkScope } from "../../../core/links/findings.js";
 import { decodeDocument } from "../../../core/kernel/document-bytes.js";
 import { featureCapabilityDeltas } from "../../../core/capabilities/delta/tree.js";
 import { readCapabilityTree } from "../../../core/capabilities/tree.js";
@@ -120,6 +121,11 @@ export async function fleetLinkFindings(check: LinkCheck): Promise<Finding[]> {
  */
 async function documentFindings(paths: string[], check: LinkCheck): Promise<Finding[]> {
   const findings: Finding[] = [];
+  // One directory-listing memo for this target's whole corpus. Built here
+  // rather than per document because a service's ADRs all resolve through the
+  // same two or three directories, and rather than at module scope because a
+  // listing that outlived the command would answer for a tree that has moved.
+  const scope: LinkScope = { ...check, cases: pathCaseIndex() };
   for (const path of paths) {
     if (!existsSync(path)) continue;
     let text: string;
@@ -137,7 +143,7 @@ async function documentFindings(paths: string[], check: LinkCheck): Promise<Find
       });
       continue;
     }
-    findings.push(...unresolvedLinkFindings({ path, text }, check));
+    findings.push(...unresolvedLinkFindings({ path, text }, scope));
   }
   return findings;
 }

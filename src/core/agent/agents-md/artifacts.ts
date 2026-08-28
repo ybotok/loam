@@ -80,8 +80,11 @@ Three things are deliberately NOT graded, so write them freely: a target outside
 this repository (\`../../some-service/README.md\` — that tree may not be checked
 out beside these documents), a link to a heading (\`#section\`), and any link
 inside a fenced code block or an inline code span, which is how a document shows
-the convention without being convicted for it. Nor is CASE: \`[Order](Order.md)\`
-beside \`order.md\` resolves here and 404s on GitHub.
+the convention without being convicted for it.
+
+CASE **is** graded, and deliberately: \`[Order](Order.md)\` beside a file called
+\`order.md\` resolves on Windows and macOS and 404s on GitHub and every Linux
+runner, so the message names the stored spelling on all of them alike.
 
 ## \`loam.json\` — the wiring, in every repo
 
