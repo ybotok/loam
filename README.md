@@ -379,7 +379,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): a components-only OpenAPI
 delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing, and the two-fleet
 production pilot has not been completed. Speculative `render`, health composition and UI generation
-come later. Behind that status stand **146 test files** (counted 2026-08-29): the count is graded
+come later. Behind that status stand **147 test files** (counted 2026-08-29): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

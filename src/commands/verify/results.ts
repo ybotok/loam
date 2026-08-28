@@ -9,7 +9,7 @@
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { resolvePortableFileInside } from "../../core/kernel/path-safety.js";
-import { readCucumberReport, type ReportScenario } from "../../core/results.js";
+import { isScenarioReport, readCucumberReport, readScenarioReport, type ReportScenario } from "../../core/results.js";
 import { type Answer } from "../../core/verify/answers.js";
 import { citedLine, pinnedDigest, sourceLines, type EvidencePin } from "../../core/verify/pins/pin.js";
 import { type ConsumedReport, type ConsumedReports } from "../../core/verify/record.js";
@@ -29,9 +29,16 @@ export type ResultsRead =
  * the record.
  */
 export async function readResults(spelled: string, repoDir: string | undefined): Promise<ResultsRead> {
-  const artifact = await readReportArtifact(spelled, repoDir, "cucumber JSON report");
+  const artifact = await readReportArtifact(spelled, repoDir, "test report");
   if (!artifact.ok) return artifact;
-  const parsed = readCucumberReport(artifact.doc, spelled);
+  // The reader is chosen by MARKER, before either shape has validated
+  // anything. A file declaring `loamScenarioReport` must be graded as that
+  // shape even when it is malformed — falling through to the cucumber parser
+  // would tell an author their report is not a cucumber array, which is true,
+  // useless, and hides the actual mistake.
+  const parsed = isScenarioReport(artifact.doc)
+    ? readScenarioReport(artifact.doc, spelled)
+    : readCucumberReport(artifact.doc, spelled);
   if (!parsed.ok) return { ok: false, code: "answers-unreadable", message: parsed.message };
   return {
     ok: true,

@@ -22,15 +22,15 @@ The tree contains **396 TypeScript modules in 120 source packages**, with an acy
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **28 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **146 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **147 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-08-29 on `df408a7` plus the changes on top of it, and dated because neither number
+_Measured 2026-08-29 on `8c98254` plus the changes on top of it, and dated because neither number
 has a cheap derivation:_ lint, typecheck and `npm run arch:check` green; `npm test` passing
-**3,122/3,122 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; and the
-coverage gate passing with **92.17% statements, 83.98% branches, 96.72% functions, and 94.10%
+**3,126/3,126 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; and the
+coverage gate passing with **92.17% statements, 84.00% branches, 96.72% functions, and 94.10%
 lines** against its thresholds of 91 / 82 / 95 / 93.
 
 One qualification remains, and it is observation rather than code: nothing has been pushed since the
