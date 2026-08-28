@@ -46,6 +46,24 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   what the service actually serves. Most fleets generate OpenAPI and copy it by hand, and until now
   nothing in the product could notice when the copy stopped being current.
 
+### `docs.binary-behind` — the run that reports green without having graded the corpus
+
+- **New finding `docs.binary-behind` (warn)**, on `loam validate --all` and `loam doctor`: the docs
+  repo's `AGENTS.md` stamp names a loam NEWER than the binary reading it.
+- **It is the only finding that changes what a PASS means rather than reporting a defect.** Every
+  check loam has is an existence constraint over a value the parser recognised, so a binary that
+  predates a grammar addition does not fail on the newer directive — it reads it as prose, produces
+  no join, and reports green. Until now nothing said so: `agents.stale` grades only the opposite
+  direction, and explicitly declined this case because the fix is different (upgrade the binary, do
+  not edit the file).
+- **Warn, not error**, on the `sources.stale` doctrine: a mixed-version fleet is ordinary, and
+  failing every command in that repo aims a refusal at the wrong person. `--strict` is the lever
+  for a fleet that wants it to gate. The message says plainly that a pass from this binary is
+  incomplete rather than clean, and never sends anyone to edit `AGENTS.md`.
+- Prerelease identifiers are compared, not ignored — in a 0.x product a prerelease is exactly where
+  a generated file's form and a corpus grammar actually move, which `agents.stale` already learned
+  the hard way at beta.2.
+
 ### Any test runner can answer a scenario claim
 
 - **`--results` now also accepts `{"loamScenarioReport": 1, "results": [{"digest": "…", "status":

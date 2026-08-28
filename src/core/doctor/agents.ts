@@ -19,6 +19,7 @@ import { DELIVERIES, plannedCommandFiles, type Delivery } from "../agent/scaffol
 import { AGENT_TOOLS } from "../agent/tools/registry.js";
 import {
   agentsStaleFinding,
+  binaryBehindFinding,
   agentsStampLine,
   agentsStampVersion,
   versionTrails,
@@ -207,6 +208,17 @@ export async function inspectAgentSurface(
         `Review ${agentsFile} against the current \`loam --help\`, then set its stamp line to `
         + `\`${agentsStampLine(LOAM_VERSION)}\`. loam never rewrites that file — bumping the stamp IS `
         + "the record that somebody looked.",
+    });
+  }
+  // The mirror, and a different fix: nothing is wrong with the documents, the
+  // reader is behind them — so this one never points at AGENTS.md.
+  const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
+  if (behind !== null) {
+    findings.push({
+      severity: "warning",
+      code: behind.code,
+      message: behind.message,
+      fix: "Upgrade loam (`npm i -g @ybotok/loam`), then re-run. Do not edit AGENTS.md: its stamp is correct and this binary is the older half.",
     });
   }
 
