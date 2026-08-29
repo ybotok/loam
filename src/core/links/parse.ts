@@ -21,7 +21,7 @@
  * author can satisfy.
  */
 import { relative, resolve, sep } from "node:path";
-import { fenceTracker } from "../document/parse.js";
+import { fenceTracker } from "../kernel/fences.js";
 
 /** One link written in a markdown document. */
 export interface DocumentLink {

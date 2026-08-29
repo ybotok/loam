@@ -35,7 +35,14 @@ import {
 } from "../src/core/conflict-markers.js";
 import { FleetContext } from "../src/core/fleet-context.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-import { steplessFindings, steplessScenarios } from "../src/core/document/scenarios.js";
+import {
+  assertionlessFindings,
+  assertionlessScenarios,
+  examplesFindings,
+  examplesMismatches,
+  steplessFindings,
+  steplessScenarios,
+} from "../src/core/document/scenarios.js";
 import { renderFeature } from "../src/core/gherkin/emit.js";
 import { serviceBrief } from "../src/core/brief/brief.js";
 
@@ -262,6 +269,144 @@ The card is valid, authorization is requested, and the payment is authorized.
   it("says nothing about a scenario written as steps", () => {
     expect(steplessScenarios(parseRequirements(LIVING_SPEC))).toEqual([]);
     expect(steplessFindings("x", "y", parseRequirements(LIVING_SPEC))).toEqual([]);
+  });
+});
+
+/**
+ * The third state, and the one both checks above let through: steps exist, and
+ * none of them asserts. It reads like a real test, emits real steps, runs green,
+ * and answers a `scenario.tested` claim to the same standard as a scenario that
+ * checks twenty things — and under a runner-neutral answer sheet, where there
+ * are no step results to count, this is the only place the two can be told
+ * apart at all.
+ */
+describe("a scenario with steps and no Then asserts nothing", () => {
+  const MUTE = `## Requirements
+
+### Requirement: Authorize a payment
+The service SHALL authorize a payment.
+
+#### Scenario: Arrange and act, assert nothing
+- **Given** a valid card
+- **When** authorization is requested
+- **And** the ledger is open
+
+#### Scenario: Declined authorization
+- **Given** a card over its limit
+- **Then** the payment is declined
+`;
+
+  it("reports the muted scenario and leaves the asserting one alone", () => {
+    const reqs = parseRequirements(MUTE);
+    expect(assertionlessScenarios(reqs)).toEqual([
+      { requirement: "Authorize a payment", scenario: "Arrange and act, assert nothing" },
+    ]);
+    const findings = assertionlessFindings("payment-service: requirements", "payment-service", reqs);
+    expect(findings.map((f) => f.code)).toEqual(["requirements.assertionless-scenario"]);
+    expect(findings[0]!.severity).toBe("error");
+    expect(findings[0]!.details).toEqual(["Authorize a payment — Arrange and act, assert nothing"]);
+  });
+
+  it("is disjoint from stepless: a body with no steps at all belongs to the other code", () => {
+    const reqs = parseRequirements(
+      `## Requirements\n\n### Requirement: R\nBody.\n\n#### Scenario: Prose only\nThe card is valid and the payment is authorized.\n`,
+    );
+    // A prose-only body is stepless, and must NOT also be reported here — one
+    // defect, one fix, one code, or the report offers two repairs for one hole.
+    expect(steplessScenarios(reqs).map((s) => s.scenario)).toEqual(["Prose only"]);
+    expect(assertionlessScenarios(reqs)).toEqual([]);
+  });
+
+  it("counts an And that follows a Then as the assertion it continues", () => {
+    const reqs = parseRequirements(
+      `## Requirements\n\n### Requirement: R\nBody.\n\n#### Scenario: S\n- **When** it runs\n- **Then** one thing holds\n- **And** another holds\n`,
+    );
+    expect(assertionlessScenarios(reqs)).toEqual([]);
+  });
+
+  it("exempts a REMOVED requirement, exactly as its two siblings do", () => {
+    const reqs = parseRequirements(
+      `## REMOVED Requirements\n\n### Requirement: Retire it\n\n#### Scenario: Gone\n- **Given** nothing\n`,
+    );
+    expect(assertionlessScenarios(reqs)).toEqual([]);
+  });
+
+  it("says nothing about the fixture corpus every other test is written against", () => {
+    expect(assertionlessScenarios(parseRequirements(LIVING_SPEC))).toEqual([]);
+  });
+});
+
+/**
+ * An outline whose header and placeholders disagree is the quietest of the
+ * three: it has steps, it asserts, it emits legal Gherkin, and it runs the row
+ * count the author expected. What it does not do is vary — a column nobody
+ * references makes six identical passes read as six cases of coverage, and a
+ * placeholder no column supplies hands the step definition the literal text.
+ */
+describe("an Examples header and its placeholders must agree", () => {
+  const outline = (steps: string[], table: string[]): ReturnType<typeof parseRequirements> =>
+    parseRequirements(
+      [`## Requirements`, ``, `### Requirement: R`, `Body.`, ``, `#### Scenario: S`, ...steps, ``, ...table].join("\n"),
+    );
+
+  const TABLE = ["| permission | status |", "|------------|--------|", "| refund     | 200    |"];
+
+  it("reports a placeholder no column supplies, as an error", () => {
+    const reqs = outline(
+      ["- **When** a caller holding <permission> asks", "- **Then** the response is <statusCode>"],
+      TABLE,
+    );
+    expect(examplesMismatches(reqs)).toEqual([
+      { requirement: "R", scenario: "S", unbound: ["statusCode"], unreferenced: ["status"] },
+    ]);
+    const findings = examplesFindings("svc: requirements", "svc", reqs);
+    expect(findings.map((f) => [f.code, f.severity])).toEqual([
+      ["requirements.examples-unbound", "error"],
+      ["requirements.examples-unreferenced", "warn"],
+    ]);
+  });
+
+  it("counts a placeholder used only inside a docstring or a data table", () => {
+    const FENCE = "```";
+    const reqs = outline(
+      [
+        "- **When** the caller posts:",
+        "",
+        `  ${FENCE}json`,
+        '  { "permission": "<permission>" }',
+        `  ${FENCE}`,
+        "",
+        "- **Then** the ledger holds:",
+        "",
+        "  | code       |",
+        "  |------------|",
+        "  | <status>   |",
+      ],
+      TABLE,
+    );
+    // Cucumber substitutes into both, so a check that read only the step lines
+    // would call these columns dead and invite the author to delete them.
+    expect(examplesMismatches(reqs)).toEqual([]);
+  });
+
+  it("says nothing about a plain scenario's angle brackets", () => {
+    const reqs = parseRequirements(
+      `## Requirements\n\n### Requirement: R\nBody.\n\n#### Scenario: S\n- **When** GET /orders/<id> is called\n- **Then** it is 200\n`,
+    );
+    // No Examples table, so `<id>` is prose — a URL template, a generic, or one
+    // of loam's own scaffold sentinels. A fleet that writes no outline must
+    // never earn a finding from this check.
+    expect(examplesMismatches(reqs)).toEqual([]);
+    expect(examplesFindings("x", "y", reqs)).toEqual([]);
+  });
+
+  it("is silent on an outline that agrees, and on the fixture corpus", () => {
+    expect(
+      examplesMismatches(
+        outline(["- **When** a caller holding <permission> asks", "- **Then** the response is <status>"], TABLE),
+      ),
+    ).toEqual([]);
+    expect(examplesFindings("x", "y", parseRequirements(LIVING_SPEC))).toEqual([]);
   });
 });
 

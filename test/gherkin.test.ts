@@ -289,6 +289,139 @@ describe("a table in a scenario body becomes a Scenario Outline", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Step arguments                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A dense component test asserts one data pass against several observations:
+ * the body it sent, the rows it left, the meters it moved. Two of those three
+ * are step ARGUMENTS in Gherkin, and until they existed here the emitter had no
+ * way to write either — a payload came out as trimmed prose above the steps and
+ * an expected-state table was stolen to become the scenario's `Examples`, so the
+ * step definition that wanted them received nothing. Both losses emitted valid
+ * Gherkin and graded green, which is why they are pinned rather than reviewed.
+ */
+describe("a step's argument: a fenced payload and an indented table", () => {
+  const FENCE = "```";
+  const emit = (body: string[]): ReturnType<typeof renderFeature> =>
+    renderFeature(requirementWith(body), { tags: [], version: LOAM_VERSION }, "payment-service");
+
+  it("puts a fenced block under its step as a docstring, with its indentation intact", () => {
+    const { content, strandedBlocks } = emit([
+      "- **When** the caller posts:",
+      "",
+      `  ${FENCE}json`,
+      "  {",
+      '    "amount": 100.00',
+      "  }",
+      `  ${FENCE}`,
+      "",
+      "- **Then** the payment is authorized",
+    ]);
+    expect(strandedBlocks).toEqual([]);
+    expect(content).toContain(
+      ['    When the caller posts:', '      """json', "      {", '        "amount": 100.00', "      }", '      """'].join("\n"),
+    );
+    // The step keeps its argument AND its successor: a docstring that swallowed
+    // the following bullet would lose an assertion and still emit legal Gherkin.
+    expect(content).toContain("    Then the payment is authorized");
+  });
+
+  it("attaches an indented table to the step above it and leaves a margin table as Examples", () => {
+    const { content, malformedExamples } = emit([
+      "- **Given** a caller holding <permission>",
+      "- **Then** the ledger holds:",
+      "",
+      "  | account | delta |",
+      "  |---------|-------|",
+      "  | cash    | 100   |",
+      "",
+      "| permission      |",
+      "|-----------------|",
+      "| payments:refund |",
+    ]);
+    expect(malformedExamples).toEqual([]);
+    // The step's own rows, indented past it, with the markdown separator gone.
+    expect(content).toContain(["    Then the ledger holds:", "      | account | delta |", "      | cash    | 100   |"].join("\n"));
+    // …and the margin table is still the case matrix, so the scenario is an outline.
+    expect(content).toContain("  Scenario Outline: By permission");
+    expect(content).toContain("    Examples:");
+    expect(content).toContain("      | payments:refund |");
+    // The expected-state rows must NOT have become cases.
+    expect(content).not.toContain("      | cash    | 100   |\n      | payments:refund |");
+  });
+
+  it("does not hoist a table out of a fenced payload", () => {
+    const { content } = emit([
+      "- **When** the caller posts:",
+      "",
+      `  ${FENCE}`,
+      "  | not | a | case |",
+      "  |-----|---|------|",
+      "  | 1   | 2 | 3    |",
+      `  ${FENCE}`,
+    ]);
+    // Before fences were honoured this emitted a Scenario Outline parameterized
+    // by the contents of its own request body, and reported nothing.
+    expect(content).toContain("  Scenario: By permission");
+    expect(content).not.toContain("Examples:");
+    expect(content).toContain('      """');
+    expect(content).toContain("      | not | a | case |");
+  });
+
+  it("escapes a pipe, a backslash and a stray triple quote instead of corrupting the file", () => {
+    const { content } = emit([
+      "- **Then** the ledger holds:",
+      "",
+      "  | pattern   | path      |",
+      "  |-----------|-----------|",
+      "  | a \\| b    | c\\\\d      |",
+      "",
+      "- **And** the response body is:",
+      "",
+      `  ${FENCE}`,
+      '  he said """loudly"""',
+      `  ${FENCE}`,
+    ]);
+    // A raw `|` would split the cell in two and every row would disagree with
+    // the header; a raw `"""` would close the docstring early and move the rest
+    // of the payload into the step list.
+    expect(content).toContain("      | a \\| b  | c\\\\d |");
+    expect(content).toContain('      he said \\"\\"\\"loudly\\"\\"\\"');
+  });
+
+  it("reports a block no step can carry, and still keeps its text", () => {
+    const { content, strandedBlocks } = emit([
+      "  | orphan | table |",
+      "  |--------|-------|",
+      "  | 1      | 2     |",
+      "",
+      "- **Given** a captured payment",
+      "- **Then** the refund is recorded",
+    ]);
+    expect(strandedBlocks).toEqual(["By permission"]);
+    // Prose is never dropped: it survives as description, which is what makes
+    // the report the only place the LOSS is visible.
+    expect(content).toContain("    | orphan | table |");
+  });
+
+  it("hides a docstring's contents from the stamped-feature reader", () => {
+    const { content, digests } = emit([
+      "- **When** the caller posts:",
+      "",
+      `  ${FENCE}`,
+      "  @loam-digest-0123456789abcdef",
+      "  Scenario: not a scenario at all",
+      `  ${FENCE}`,
+    ]);
+    const parsed = parseStampedFeature(content);
+    // Every staleness verdict rests on this parse. A payload that could add a
+    // scenario to it would be deciding what the suite promises.
+    expect(parsed?.scenarios).toEqual([{ name: "By permission", digest: digests[0] }]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* Emission                                                            */
 /* ------------------------------------------------------------------ */
 

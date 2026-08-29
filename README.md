@@ -264,6 +264,7 @@ cannot hold.
 | `loam diff` | `--base <ref>` | Semantic diff of the living docs against a base git ref of the docs repo — the review lens for a docs-repo PR, with the current consumers of every removal named. Exit 1 on a removal the fleet still consumes |
 | `loam explore [<service>...]` | `--op <operationId>` `--capability <id>` `--as <FEAT>` | Read the fleet around a change nobody has written down yet: the ring one hop out, each service's maturity and living operations, the features already in flight over the same ground, and the `loam new` line the seeds imply |
 | `loam context <service>` | `--feature <FEAT>` | Assemble one service's docs slice — living requirements verbatim, both contracts, the fleet edges around it, permissions, capabilities, provenance, and every active feature's delta over it — as one deterministic briefing |
+| `loam steps` | `--service <id>` `--duplicates` `--json` | Inventory the step phrases of one service's scenarios: how many distinct steps its suite is written in, how few definitions cover most of them, and which phrases differ only by an article or a trailing clause. Reads the living specs, writes nothing — the work-list a team writes its step definitions from |
 | `loam instructions [<workflow>] [args...]` | — | Print one of the six workflow protocols, `$1`/`$2` filled in — version-matched to this binary, which is what the generated command and skill files point at. Reads no config |
 | `loam explain [<subject>]` | — | Explain a finding code, a refusal code, or a concept term. The finding prose is parsed at runtime from the shipped fix tables, so it cannot drift from the binary. Omit the subject to list the terms |
 | `loam open` | `--root <dir>` `--out <file>` `--force` | Write a `.code-workspace` joining the docs repo and every service checkout whose committed `loam.json` binds to it. Never overwrites without `--force` |
@@ -381,7 +382,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): a components-only OpenAPI
 delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing, and the two-fleet
 production pilot has not been completed. Speculative `render`, health composition and UI generation
-come later. Behind that status stand **148 test files** (counted 2026-08-29): the count is graded
+come later. Behind that status stand **149 test files** (counted 2026-08-29): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

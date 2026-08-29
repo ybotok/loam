@@ -38,7 +38,7 @@ const VERB: Record<Action, string> = {
   conflict: "CONFLICT",
 };
 
-/** Both per-scenario losses, in one shape: what was written, and what became of it. */
+/** Every per-scenario loss, in one shape: what was written, and what became of it. */
 const LOSSES = [
   {
     of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.stepless),
@@ -52,6 +52,13 @@ const LOSSES = [
       "has a table loam could not read as Examples — every row must have the header's column count, " +
       "and a header needs at least one row under it. It stayed in the description, so this scenario " +
       "runs ONCE, not once per case",
+  },
+  {
+    of: (a: ActionRow): string[] => (a.action === "kept" ? [] : a.strandedBlocks),
+    why:
+      "wrote a fenced block or an indented table where no step precedes it, or a table loam could " +
+      "not read — it stayed in the description, so the step definition receives NO payload and no " +
+      "data table; put the block under the step it belongs to and give every row equal columns",
   },
 ];
 

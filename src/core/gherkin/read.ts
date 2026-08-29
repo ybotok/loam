@@ -32,6 +32,14 @@ export interface StampedFeature {
  * line after it that carries a `@loam-digest-…` token binds that digest to the
  * immediately following `Scenario:` line (tag lines stack, as Gherkin's do,
  * without breaking the bond); any other non-blank line between them breaks it.
+ *
+ * DOCSTRING BODIES ARE SKIPPED WHOLE, and that is a correctness requirement
+ * rather than tidiness. Since a step may carry a `"""` payload, a request body
+ * containing a line that reads `Scenario: …` or begins with `@` would otherwise
+ * be read here as a real scenario or a real tag — and every staleness verdict
+ * (`gherkin.stale`, `gherkin.missing`, `gherkin.orphaned`) plus the tag that
+ * decides whether an in-flight feature's file may be replaced rests on this
+ * parse. The payload would be quietly deciding what the suite promises.
  */
 export function parseStampedFeature(text: string): StampedFeature | null {
   const lines = text.split(/\r?\n/);
@@ -41,7 +49,16 @@ export function parseStampedFeature(text: string): StampedFeature | null {
   let featureName: string | null = null;
   const scenarios: StampedScenario[] = [];
   let pending: string | null = null;
+  let inDocString = false;
   for (const line of lines.slice(1)) {
+    // `"""` opens and closes; nothing between the two is structure. The emitter
+    // escapes an inner `"""` as `\"\"\"`, so an unescaped one here is always a
+    // real delimiter.
+    if (/^\s*"""/.test(line)) {
+      inDocString = !inDocString;
+      continue;
+    }
+    if (inDocString) continue;
     if (/^\s*@/.test(line)) {
       for (const t of line.trim().split(/\s+/)) {
         if (featureName === null) {

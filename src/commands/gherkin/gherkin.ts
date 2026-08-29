@@ -265,7 +265,11 @@ export function registerGherkin(program: Command): void {
             digests: a.action === "kept" ? a.kept.scenarios.map((s) => s.digest) : a.digests,
             ...(a.action === "kept"
               ? { inFlight: a.kept.tags.filter((t) => activeIds.has(t)) }
-              : { stepless: a.stepless, malformedExamples: a.malformedExamples }),
+              : {
+                  stepless: a.stepless,
+                  malformedExamples: a.malformedExamples,
+                  strandedBlocks: a.strandedBlocks,
+                }),
           })),
           deleted: orphans.map((o) => rel(o.path)),
           ...(recovered === null ? {} : { recovered }),

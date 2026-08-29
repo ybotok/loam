@@ -71,6 +71,14 @@ repository, which needs its own committed ./loam.json — if there is none,
 4. Write step definitions for the generated scenarios FIRST — outside \`loam/\`.
    Do not paraphrase a scenario into something easier to pass; it is the acceptance
    criterion someone else reviews against.
+   Run \`loam steps --service $2 --json\` before you write any: it collapses every
+   written step onto the phrase a definition actually matches, so you see the size
+   of the registry you owe and which phrases already exist. Write ONE definition per
+   phrase row. If \`nearDuplicates\` is non-empty, two rows differ by an article or a
+   trailing \`because …\` clause and one definition was meant — fix the SPEC's wording
+   and regenerate, rather than writing the second definition.
+   A step's argument arrives as an argument: a \`"""\` docstring is the payload, an
+   indented table is a DataTable. Assert against them; do not re-parse the step text.
 5. Implement until the suite passes — run it with a JSON report
    (\`cucumber-js --format json:report.json\`):
    \`loam verify $1 --service $2 --results report.json\` consumes that report as the

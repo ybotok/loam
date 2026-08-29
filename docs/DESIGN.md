@@ -43,7 +43,7 @@ compiler does not check.
 | Layer | Modules | Job |
 |---|---|---|
 | Entry | `src/cli.ts` | Register commands; decide the process exit |
-| Command | `src/commands/` — 27 command modules, 28 commands | Parse flags, refuse, print, set `process.exitCode` |
+| Command | `src/commands/` — 28 command modules, 29 commands | Parse flags, refuse, print, set `process.exitCode` |
 | Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 10 and 14 commands |
 | Core | `src/core/` | Compute and return. Never print, never exit |
 
@@ -300,9 +300,9 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 59 of the 138
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 60 of the 139
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
-    and `core/repo/repo.ts` by 23 and 27 of them. Slices would duplicate the hubs or produce a
+    and `core/repo/repo.ts` by 24 and 27 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
 24. **Do not add a dependency to express structure.** No `madge`, no `dependency-cruiser`, no
     boundaries plugin. `oxlint` already ships the one rule that matters.

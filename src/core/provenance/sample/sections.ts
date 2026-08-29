@@ -9,10 +9,12 @@
  * nine" is only an honest reduction if the units are the size of a thing a
  * person reads.
  *
- * The fence rule is `core/document/parse.ts`'s own `fenceTracker`, imported
- * rather than restated: a `## ` line inside a code block is prose about a
- * heading, not structure, and a sampler that disagreed with `sectionHeadings`
- * about that would prescribe sections no reader can find. On the H2 subset
+ * The fence rule is `core/kernel/fences.ts`'s `fenceTracker`, imported rather
+ * than restated: a `## ` line inside a code block is prose about a heading, not
+ * structure, and a sampler that disagreed with `sectionHeadings` about that
+ * would prescribe sections no reader can find. It sat in `core/document/parse.ts`
+ * when this walk was its only borrower, and moved down to the kernel when a
+ * fourth reader needed it from a package `core/document/` already depends on. On the H2 subset
  * this walk returns exactly what `sectionHeadings` returns — same test, same
  * `line.trim()` spelling, same 1-based line — and test/vouch-sample.test.ts
  * pins that agreement, because the reading list and the re-vouch pack's
@@ -22,7 +24,7 @@
  * a BOM above the frontmatter, and stripping again at position 0 of a *body*
  * would eat an author's zero-width no-break space.
  */
-import { fenceTracker } from "../../document/parse.js";
+import { fenceTracker } from "../../kernel/fences.js";
 
 /** One sampling unit: the heading that names it, and where it starts. */
 export interface DocSection {

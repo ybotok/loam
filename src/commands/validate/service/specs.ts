@@ -22,7 +22,11 @@ import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { parseRequirements } from "../../../core/document/parse.js";
-import { steplessFindings } from "../../../core/document/scenarios.js";
+import {
+  assertionlessFindings,
+  examplesFindings,
+  steplessFindings,
+} from "../../../core/document/scenarios.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
@@ -100,6 +104,8 @@ export async function readServiceSpecs(input: {
     // and `loam verify --results` can never confirm it — so a fleet gate that
     // called it covered was certifying the absence of a test.
     findings.push(...steplessFindings(`${service}: requirements`, service, reqs));
+    findings.push(...assertionlessFindings(`${service}: requirements`, service, reqs));
+    findings.push(...examplesFindings(`${service}: requirements`, service, reqs));
     findings.push(...duplicateRequirementFindings(reqs, `${service}: spec.md`, service));
     findings.push(...requirementIdFindings(reqs, `${service}: spec.md`, service));
     findings.push(...repeatedListLineFindings(reqs, `${service}: spec.md`, service));
@@ -216,6 +222,8 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     if (conflict !== null) findings.push(conflict);
     findings.push(coverageFinding(`${service}: arch requirements`, archReqs));
     findings.push(...steplessFindings(`${service}: arch requirements`, service, archReqs));
+    findings.push(...assertionlessFindings(`${service}: arch requirements`, service, archReqs));
+    findings.push(...examplesFindings(`${service}: arch requirements`, service, archReqs));
     findings.push(...duplicateRequirementFindings(archReqs, `${service}: arch.spec.md`, service));
     findings.push(...requirementIdFindings(archReqs, `${service}: arch.spec.md`, service));
     findings.push(...repeatedListLineFindings(archReqs, `${service}: arch.spec.md`, service));
