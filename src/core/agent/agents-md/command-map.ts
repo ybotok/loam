@@ -51,6 +51,11 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   health.yaml dependencies say it should reach something; a model that reaches
   nothing is almost never true),
   \`requirements.missing-scenarios\`, \`requirements.stepless-scenario\`,
+  \`requirements.assertionless-scenario\` (steps, but no \`Then\` — it asserts
+  nothing and answers its claim anyway),
+  \`requirements.examples-unbound\`, \`requirements.examples-unreferenced\`
+  (an outline whose header and \`<placeholders>\` disagree — the step gets the
+  literal text, or the column is a rename nobody finished),
   \`spec.merge-conflict\`, \`spec.duplicate-requirement\`,
   \`spec.no-requirements\`, \`spec.repeated-operations\`, \`spec.repeated-covers\`,
   \`openapi.invalid\`, \`openapi.duplicate-operationid\` (one operationId in two

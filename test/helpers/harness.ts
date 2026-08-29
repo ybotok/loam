@@ -40,6 +40,7 @@ import { registerVouch } from "../../src/commands/vouch/vouch.js";
 import { registerGate } from "../../src/commands/gate/gate.js";
 import { registerDoctor } from "../../src/commands/doctor.js";
 import { registerDependencies } from "../../src/commands/dependencies.js";
+import { registerSteps } from "../../src/commands/steps/steps.js";
 import { registerExplore } from "../../src/commands/explore.js";
 import { registerContext } from "../../src/commands/context/context.js";
 import { registerOpen } from "../../src/commands/open.js";
@@ -291,6 +292,7 @@ async function runLoamNow(cwd: string, args: string[]): Promise<RunResult> {
     registerGate(program);
     registerDoctor(program);
     registerDependencies(program);
+    registerSteps(program);
     registerInstructions(program);
     registerExplain(program);
     registerOpen(program);

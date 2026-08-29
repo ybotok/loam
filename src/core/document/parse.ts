@@ -12,6 +12,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { decodeDocument } from "../kernel/document-bytes.js";
+import { fenceTracker } from "../kernel/fences.js";
 import {
   BASED_ON_LINE_RE, CAPABILITY_LINE_RE, KIND_RE, REALIZES_LINE_RE, REQUIREMENT_ID_LINE_RE,
   type DeltaKind, type Requirement, type Scenario,
@@ -35,31 +36,6 @@ const REQUIREMENTS_SECTION_RE = /^##\s+Requirements\s*$/i;
 /** Is this H2 heading line (as sectionHeadings/`Requirement.section` spell it) the `## Requirements` heading? */
 export function isRequirementsHeading(heading: string): boolean {
   return REQUIREMENTS_SECTION_RE.test(heading.trim());
-}
-
-/**
- * Track ``` / ~~~ fences line by line. Returns true while the line is fenced
- * content — including the fence marker itself — so heading-like lines inside a
- * code block are never mistaken for structure.
- *
- * Exported for the one heading walk that cannot live in this file:
- * `core/provenance/sample/sections.ts` cuts a body at H2 *and* H3 for the
- * sampled vouch, and this package is at its five-file limit. It is exported
- * rather than restated there because a sampler that disagreed with
- * `sectionHeadings` about whether a `## ` line inside a code fence is
- * structure would prescribe sections no reader can find.
- */
-export function fenceTracker(): (line: string) => boolean {
-  let fence: string | null = null;
-  return (line) => {
-    const m = /^\s*(```|~~~)/.exec(line);
-    if (m) {
-      if (fence === null) fence = m[1]!;
-      else if (fence === m[1]!) fence = null;
-      return true;
-    }
-    return fence !== null;
-  };
 }
 
 /**
@@ -280,4 +256,3 @@ export function parseRequirements(md: string): Requirement[] {
 
   return out;
 }
-

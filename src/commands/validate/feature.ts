@@ -23,7 +23,11 @@ import { docsRepoState } from "../../core/repo/state.js";
 import { featureSpecServices, listServices } from "../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../core/vocabulary/report.js";
 import { parseRequirements } from "../../core/document/parse.js";
-import { steplessFindings } from "../../core/document/scenarios.js";
+import {
+  assertionlessFindings,
+  examplesFindings,
+  steplessFindings,
+} from "../../core/document/scenarios.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { featureCoherence } from "../../core/coherence/coherence.js";
 import {
@@ -148,6 +152,8 @@ export async function validateFeature(
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: requirements`, reqs), subject: svc });
       findings.push(...steplessFindings(`${svc}: requirements`, svc, reqs));
+      findings.push(...assertionlessFindings(`${svc}: requirements`, svc, reqs));
+      findings.push(...examplesFindings(`${svc}: requirements`, svc, reqs));
       // The keep-last quirk loses lines in a delta exactly as in a living spec
       // — and a delta's lost Operations: line then merges into the living one.
       findings.push(...repeatedListLineFindings(reqs, `${svc}: spec.md`, svc));
@@ -161,6 +167,8 @@ export async function validateFeature(
       if (conflict !== null) findings.push(conflict);
       findings.push({ ...coverageFinding(`${svc}: arch requirements`, reqs), subject: svc });
       findings.push(...steplessFindings(`${svc}: arch requirements`, svc, reqs));
+      findings.push(...assertionlessFindings(`${svc}: arch requirements`, svc, reqs));
+      findings.push(...examplesFindings(`${svc}: arch requirements`, svc, reqs));
       findings.push(...repeatedListLineFindings(reqs, `${svc}: arch.spec.md`, svc));
     }
   }

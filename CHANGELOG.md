@@ -10,6 +10,94 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### `loam steps` — how many step definitions a suite actually needs
+
+- **New read-only command `loam steps`** (`--service <id>`, `--duplicates`, `--json`). It collapses
+  every written step in a service's living `spec.md` and `arch.spec.md` onto the phrase a step
+  definition matches, and reports each phrase with its count, the keywords it appears under and the
+  requirements it comes from — plus the two numbers a team plans from: how many steps are written,
+  and how few phrases cover 80% of them.
+- **Why it is a command and not a check.** The glue layer is where a generated suite dies: the step
+  text is free prose from a spec bullet, so one precondition gets three spellings and the registry
+  grows without bound until people go back to hand-written tests. Nothing in loam could previously
+  say how bad that was. It emits **no finding and no stable code** — a near-duplicate is a judgement
+  about writing, and a phrase-similarity warning is the kind of check a fleet turns off, taking the
+  real findings beside it.
+- **The phrase key is a contract** and `test/steps-inventory.test.ts` pins it case by case: the
+  Gherkin keyword is dropped (every runner resolves Given/When/Then/And/But against one registry, so
+  `Given the ledger is open` and `And the ledger is open` are one definition); quoted strings,
+  `<placeholders>` and standalone numbers collapse to `{s}` / `{p}` / `{n}`, because those three are
+  exactly what a definition captures as an argument; `v1` and `oauth2` keep their digits. Nothing
+  measures edit distance.
+- **`nearDuplicates`** groups phrases that differ only by a leading article or a trailing
+  `because …` / `while …` clause — two definitions where one was meant, and the fix is the spec's
+  wording rather than a second definition.
+- **It reads the living specs, not the emitted files**, so it answers the same way in a repo that has
+  never run `loam gherkin`, and needs no service repo to stand in. `/loam-implement` and the
+  generated `AGENTS.md` now both send an agent here before it writes any glue.
+
+### An outline's header and its placeholders must agree
+
+- **New `requirements.examples-unbound` (error)**: a scenario with an `Examples` table uses a
+  `<placeholder>` no column supplies. Cucumber substitutes nothing, so the step definition receives
+  the literal angle-bracket text and either fails obscurely or matches and asserts against a string
+  nobody meant.
+- **New `requirements.examples-unreferenced` (warn)**: an `Examples` column nothing refers to —
+  usually the fossil of a rename. The column still lists six cases, the step that used it now names
+  something else, and the outline runs six identical passes that read as six cases of coverage.
+- **Steps, docstrings and data-table cells all count as references**, because cucumber substitutes
+  into all three: `<fee>` inside a request payload is a real use, and a check that read only the step
+  lines would call its column dead and invite the author to delete it.
+- **Scoped to scenarios that HAVE an `Examples` table.** A plain scenario's angle brackets are prose
+  — a URL template, a generic, one of loam's own scaffold sentinels — and a fleet that writes no
+  outline earns nothing from either code.
+
+### A scenario that asserts nothing is a finding
+
+- **New `requirements.assertionless-scenario` (error)**: a scenario whose body has steps and no
+  `Then` anywhere in it. It arranges and acts and asserts nothing, so the run confirms only that the
+  setup did not throw — and answers its `scenario.tested` claim on that. `And`/`But` are
+  continuations, so with no `Then` above them they continue the setup.
+- **Disjoint from `requirements.stepless-scenario` by construction** (that one has no steps at all),
+  and graded in the same four places: living `spec.md` and `arch.spec.md`, and a feature's deltas of
+  both — a delta merges into the living spec and is called covered from then on.
+- It matters most where the least is left to check: under the runner-neutral answer sheet there are
+  no step results to count, so a document-side check is the only thing that can tell a dense scenario
+  from a mute one.
+
+### A step can carry an argument: payload docstrings and expected-state tables
+
+- **A fenced block written under a step becomes that step's Gherkin docstring**, info string carried
+  through as the content type and **indentation preserved rather than trimmed** — a request or
+  response payload whose leading whitespace has been eaten is one no step definition can compare
+  against. **An indented Markdown table under a step becomes that step's data table** (the markdown
+  separator row is dropped; Gherkin has none), which is how an expected-state assertion — the rows an
+  outbox, a topic or a table must hold after one data pass — can be written at all.
+- **Indentation is the whole disambiguation**, and it is the one behaviour change to existing
+  documents: a table INDENTED under a step is now that step's rows, while a table at the scenario
+  body's left margin is still the `Examples:` of a `Scenario Outline`, unchanged. A spec that wrote
+  its expected rows indented under a `Then` was previously emitting them as the scenario's case
+  matrix — the same scenario run once per expected row, with the step itself receiving nothing.
+- **No digest moves.** The scenario digest hashes the markdown source, not the rendering, so every
+  `@loam-digest-…` stamp, every `scenario.tested` claim and every recorded answer is unchanged by
+  this. A suite generated by an earlier loam keeps its stamps and still grades `gherkin.current`;
+  regenerate to pick up the new rendering.
+- **New per-scenario emission loss `strandedBlocks`** (text, and a new `files[].strandedBlocks` key
+  under `loam gherkin --json` — additive): a fenced block or an indented table that no step precedes,
+  or an indented table loam cannot read. It stays in the description, so the document still reads
+  correctly and the file is still valid Gherkin; what is lost is the ARGUMENT, and nothing downstream
+  can otherwise notice.
+- **Two defects fixed on the way in.** A Markdown table inside a fenced payload was hoisted out and
+  emitted as the scenario's `Examples:`, turning one data pass into an outline parameterized by the
+  contents of its own request body — fences are now recognised before tables. And a table cell
+  holding a literal pipe written `\|` was read as two cells, so the row's width stopped matching the
+  header and the WHOLE table was reported unreadable against the one row that needed the escape;
+  `\|` and `\\` now unescape on the way in and are re-escaped on the way out, along with `|`, `\` and
+  newline in every emitted cell.
+- `parseStampedFeature` now skips docstring bodies. Every staleness verdict rests on that parse, so a
+  payload containing a line reading `Scenario: …` or beginning with `@` would otherwise have been
+  deciding what the suite promises.
+
 ### `loam --help` is grouped
 
 - The twenty-eight commands now print under seven headings — **Set up · Read the fleet · Adopt what

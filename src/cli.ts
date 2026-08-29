@@ -22,6 +22,7 @@ import { registerVouch } from "./commands/vouch/vouch.js";
 import { registerGate } from "./commands/gate/gate.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerDependencies } from "./commands/dependencies.js";
+import { registerSteps } from "./commands/steps/steps.js";
 import { registerExplore } from "./commands/explore.js";
 import { registerContext } from "./commands/context/context.js";
 import { registerMcp } from "./commands/mcp/mcp.js";
@@ -79,6 +80,7 @@ export function buildProgram(): Command {
   registerGate(program);
   registerDoctor(program);
   registerDependencies(program);
+  registerSteps(program);
   registerMcp(program);
   registerInstructions(program);
   registerExplain(program);
@@ -108,7 +110,7 @@ const HELP_GROUPS: Record<string, string> = {
   init: "Set up", seed: "Set up", doctor: "Set up", open: "Set up", mcp: "Set up",
   list: "Read the fleet", status: "Read the fleet", show: "Read the fleet",
   explore: "Read the fleet", context: "Read the fleet", dependencies: "Read the fleet",
-  explain: "Read the fleet", instructions: "Read the fleet",
+  explain: "Read the fleet", instructions: "Read the fleet", steps: "Read the fleet",
   adopt: "Adopt what exists", vouch: "Adopt what exists",
   new: "Change it", delta: "Change it", gherkin: "Change it", rebase: "Change it",
   subsystem: "Change it",

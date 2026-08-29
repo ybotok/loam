@@ -9,7 +9,7 @@
  * checklist matches on, which is why nothing here may reword a scenario body.
  */
 import { type Requirement } from "../document/spec.js";
-import { scenarioGherkin, type Examples } from "../vocabulary/steps.js";
+import { scenarioGherkin } from "../vocabulary/steps.js";
 import { type SpecAxis } from "../repo/paths.js";
 import { type ScenarioAxis } from "./digest.js";
 import { gherkinStampLine, scenarioDigest, scenarioDigestTag } from "./stamp.js";
@@ -75,6 +75,14 @@ export interface PlannedFeature {
    * emission is the only place this is visible at all.
    */
   malformedExamples: string[];
+  /**
+   * Names of scenarios that wrote a fenced block or an indented table where it
+   * could not become a step argument — see `ScenarioGherkin.strandedBlocks`.
+   * The text survives as description, so the file is valid Gherkin and the
+   * document still reads correctly; what is gone is the ARGUMENT, and a step
+   * definition that expected a payload or a table receives nothing.
+   */
+  strandedBlocks: string[];
   content: string;
 }
 
@@ -113,13 +121,13 @@ export function planEmission(
         ...(opts.featureTag === undefined ? [] : [`@${opts.featureTag}`]),
         ...(axis.key === "archSpec" ? ["@architecture"] : []),
       ];
-      const { content, digests, stepless, malformedExamples } = renderFeature(
+      const { content, digests, stepless, malformedExamples, strandedBlocks } = renderFeature(
         r,
         { tags, version: opts.version },
         opts.service,
         axisLabel(axis),
       );
-      out.push({ fileName, axis, requirement: r, digests, stepless, malformedExamples, content });
+      out.push({ fileName, axis, requirement: r, digests, stepless, malformedExamples, strandedBlocks, content });
     }
   }
   return out;
@@ -149,7 +157,7 @@ export function renderFeature(
   stamp: Stamp,
   service: string,
   axis: ScenarioAxis = "business",
-): { content: string; digests: string[]; stepless: string[]; malformedExamples: string[] } {
+): { content: string; digests: string[]; stepless: string[]; malformedExamples: string[]; strandedBlocks: string[] } {
   const { tags, version } = stamp;
   const lines: string[] = [gherkinStampLine(version)];
   if (tags.length > 0) lines.push(tags.join(" "));
@@ -162,40 +170,66 @@ export function renderFeature(
   const digests: string[] = [];
   const stepless: string[] = [];
   const malformedExamples: string[] = [];
+  const strandedBlocks: string[] = [];
   for (const s of r.scenarios) {
     // The digest hashes the WHOLE body, table rows included, so a changed cell
     // is a changed scenario: `gherkin.stale` fires on an edited case exactly as
-    // it does on an edited step, and the claim it answers moves with it.
+    // it does on an edited step, and the claim it answers moves with it. It is
+    // also why a change to THIS renderer moves no digest: the hash is over the
+    // markdown source, so a suite generated before a grammar change keeps its
+    // stamps and grades `gherkin.current` until somebody regenerates it.
     const digest = scenarioDigest(service, s.lines, axis);
     digests.push(digest);
-    const { description, steps, examples, malformedExamples: broken } = scenarioGherkin(s.lines);
+    const { description, steps, examples, malformedExamples: broken, strandedBlocks: stranded } = scenarioGherkin(s.lines);
     if (steps.length === 0) stepless.push(s.name);
     if (broken) malformedExamples.push(s.name);
+    if (stranded) strandedBlocks.push(s.name);
     // The keyword is the whole difference between one case and twenty: cucumber
     // expands an outline into one report element per row, each carrying this
     // scenario's tag, and `runnerAnswers` confirms the claim only when every
     // one of them passed.
     lines.push("", `  ${scenarioDigestTag(digest)}`, `  ${examples === null ? "Scenario" : "Scenario Outline"}: ${s.name}`);
     for (const d of description) lines.push(`    ${d}`);
-    for (const st of steps) lines.push(`    ${st}`);
+    for (const st of steps) {
+      lines.push(`    ${st.text}`);
+      // Gherkin puts a step's argument UNDER the step, indented past it, and
+      // permits at most one of each kind. Docstring first, so a step carrying
+      // both reads request-then-expectation.
+      if (st.docstring !== undefined) {
+        lines.push(`      """${st.docstring.contentType ?? ""}`);
+        // A payload containing its own `"""` would close the block early and
+        // silently move the rest of the request body into the step list.
+        for (const l of st.docstring.lines) lines.push(l.length === 0 ? "" : `      ${l.replace(/"""/g, '\\"\\"\\"')}`);
+        lines.push('      """');
+      }
+      if (st.table !== undefined) for (const row of st.table) lines.push(`      ${tableRow(row, st.table)}`);
+    }
     if (examples !== null) {
       lines.push("", "    Examples:");
-      for (const row of [examples.header, ...examples.rows]) lines.push(`      ${examplesRow(row, examples)}`);
+      for (const row of [examples.header, ...examples.rows]) lines.push(`      ${tableRow(row, [examples.header, ...examples.rows])}`);
     }
   }
-  return { content: lines.join("\n") + "\n", digests, stepless, malformedExamples };
+  return { content: lines.join("\n") + "\n", digests, stepless, malformedExamples, strandedBlocks };
 }
 
 /**
- * One `Examples` row, columns padded to the table's widest cell.
+ * One table row — an `Examples` case or a step's data table — with columns
+ * padded to the widest cell in that table.
  *
  * Padding is cosmetic to cucumber and deliberate here: these files are read in
  * review as often as they are run, and an unaligned twenty-row matrix is where
  * a wrong cell hides. Deterministic to the byte, like everything else the
  * emitter writes — the widths come from the table alone.
+ *
+ * ESCAPING IS NOT COSMETIC. Gherkin's table grammar ends a cell at `|`, so a
+ * cell containing one silently becomes two cells and every row after it
+ * disagrees with the header; `\` and a literal newline are the same class. The
+ * escapes go on before the padding is measured, because the emitted width is
+ * the escaped width — measuring the raw cell produced columns that drifted by
+ * one character per escape.
  */
-function examplesRow(row: string[], table: Examples): string {
-  const all = [table.header, ...table.rows];
-  const cells = row.map((c, i) => c.padEnd(Math.max(...all.map((r) => r[i]!.length))));
-  return `| ${cells.join(" | ")} |`;
+function tableRow(row: string[], all: readonly string[][]): string {
+  const esc = (c: string): string => c.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "\\n");
+  const widths = row.map((_, i) => Math.max(...all.map((r) => esc(r[i] ?? "").length)));
+  return `| ${row.map((c, i) => esc(c).padEnd(widths[i]!)).join(" | ")} |`;
 }
