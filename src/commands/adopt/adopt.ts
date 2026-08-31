@@ -7,7 +7,7 @@ import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listFleetTree, listServices } from "../../core/repo/repo.js";
 import { findInTree, nearestTreeNames } from "../../core/repo/tree/find.js";
 import { servicePathsUnder, type ServicePaths } from "../../core/repo/paths.js";
-import { serviceBrief } from "../../core/brief/brief.js";
+import { serviceBrief, type Brief } from "../../core/brief/brief.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { render } from "./render.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
@@ -27,6 +27,7 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 interface AdoptOptions {
   service?: string;
   subsystem?: string;
+  targets?: boolean;
   json?: boolean;
 }
 
@@ -125,12 +126,63 @@ async function invocationWarnings(
   return warnings;
 }
 
+/**
+ * The half of the brief that is computed from THIS repository, for THIS
+ * service — what `--targets` keeps.
+ *
+ * Everything omitted is a module-level constant: `walk` and `walkClose` are the
+ * code-reading order, `frontmatter` the field rules, `checks` the named checks,
+ * `unchecked` the statements of what nothing checks, `rule` the never-overwrite
+ * instruction. None of them is a function of the service, so a fleet-wide
+ * adoption pays for the same bytes once per service — measured on the shipped
+ * example fleet, about 23 KB of the 42 KB brief, which is four fifths of what
+ * an agent reads and none of what it could not have read once.
+ *
+ * The keys are picked one by one rather than deleted from a rest — a field
+ * added to `Brief` later must land in the DEFAULT payload and stay out of this
+ * one until somebody decides it varies by service. Getting that wrong the
+ * other way round is how a narrowing flag silently becomes the full brief
+ * again.
+ */
+function narrowed(b: Brief): Pick<Brief, "service" | "docsDir" | "path" | "targets" | "landscape"> {
+  return { service: b.service, docsDir: b.docsDir, path: b.path, targets: b.targets, landscape: b.landscape };
+}
+
+/**
+ * The `full` pointer: the run that carries what `--targets` dropped, and the
+ * reason it is worth making.
+ *
+ * It is REQUIRED in the narrowed envelope, and the second sentence is why. The
+ * unchecked list is loam shipping, in the binary, the statements of what no
+ * check will ever tell you — the one thing standing between a green
+ * `loam validate` and being read as more than it means. Merely leaving it out
+ * would not read as "omitted for brevity"; it would read as "there is no such
+ * list", which is the failure `src/core/brief/unchecked.ts` exists to prevent
+ * and the one promise the brief keeps that no validator supplies. So the
+ * narrowed view never hides it — it says how many there are and where to read
+ * them.
+ *
+ * Every count comes off the brief that was just assembled, never off a number
+ * typed here: a literal would be correct until the next check is added and
+ * wrong silently forever after.
+ */
+function fullBrief(b: Brief): string {
+  return (
+    `loam adopt --service ${b.service} --json — everything this view leaves out: the ` +
+    `${b.walk.length}-stop code walk, the frontmatter rules, the ${b.checks.length} named checks, ` +
+    `and the ${b.unchecked.length} statements of what nothing checks. None of it varies by service, ` +
+    `so run it once for the system rather than once per service — but do run it: those ` +
+    `${b.unchecked.length} statements are the only place loam says where its checking stops.`
+  );
+}
+
 export function registerAdopt(program: Command): void {
   program
     .command("adopt")
     .description("Brief an agent to write one service's baseline docs from its code, and say what will be checked")
     .option("--service <id>", "service to adopt (defaults to the configured service)")
     .option("--subsystem <name>", "file the new service's baseline into this subsystem instead of the services/ root")
+    .option("--targets", "narrow the brief to what varies by service; the walk, the checks and the unchecked list are omitted, and a `full` field names the run that carries them")
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: AdoptOptions) => {
       const json = opts.json === true;
@@ -177,10 +229,23 @@ export function registerAdopt(program: Command): void {
         if (target.warning !== undefined) warnings.push(target.warning);
       }
       const brief = await serviceBrief(config.docsDir, service, at);
+      // Computed only under `--targets`, and it is what makes the narrowing
+      // legible from inside the payload: a consumer holding `full` knows there
+      // is more and what it is, and a consumer without it is holding all of it.
+      // The narrowing happens HERE, by omission, so the brief itself is
+      // unchanged and every field it can produce still exists.
+      const full = opts.targets === true ? fullBrief(brief) : undefined;
       if (json) {
-        emitJson({ ...brief, warnings });
+        // Two separate emits rather than one conditional spread: the default
+        // payload is a frozen contract, and it must stay the same bytes in the
+        // same order whatever this flag grows into.
+        if (full !== undefined) {
+          emitJson({ command: "adopt", ...narrowed(brief), warnings, full });
+          return;
+        }
+        emitJson({ command: "adopt", ...brief, warnings });
         return;
       }
-      render(brief, warnings);
+      render(brief, warnings, full);
     });
 }

@@ -494,10 +494,13 @@ describe("element-id sanitizing and the views tripwire", () => {
 describe("a Windows checkout: line endings are not hand edits", () => {
   // `core.autocrlf` is Git for Windows' installer default and the docs repo
   // ships no `.gitattributes`, so an ordinary clone rewrites every line of
-  // both files below and changes not one fact in them. When seed read that as
+  // every file below and changes not one fact in them. When seed read that as
   // hand-authored, `loam status` told the reader to run seed and seed refused
   // on the grounds status had just denied — and after the first success, a
-  // re-clone made seed refuse to regenerate its own output.
+  // re-clone made seed refuse to regenerate its own output. The generated
+  // views file is the same fact one file over: nothing refuses there, so the
+  // cost was a rewrite journaled on every run, of a file whose content had
+  // not moved.
   const crlf = (text: string): string => text.replace(/\n/g, "\r\n");
 
   it("recognises a CRLF-rewritten scaffold stub as the untouched stub", async () => {
@@ -539,6 +542,44 @@ describe("a Windows checkout: line endings are not hand edits", () => {
       await p.write("architecture/landscape.likec4", crlf(seeded).replace("softwareSystem", "softwareSYSTEM"));
       const { message } = await refusedSeed(p, "seed-landscape-edited");
       expect(message).toContain("hand-edited");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("leaves a CRLF-rewritten generated views file out of the journal entirely", async () => {
+    const p = await makeProject({ ...EMPTY_REPO });
+    try {
+      await writeFleet(p, FLEET);
+      expect((await runLoam(p.workDir, "seed", "--json")).code).toBe(0);
+      const generated = await p.read("architecture/subsystems.likec4");
+      await p.write("architecture/subsystems.likec4", crlf(generated));
+
+      const rerun = await runLoam(p.workDir, "seed", "--json");
+      expect(rerun.code, rerun.stdout).toBe(0);
+      expect(JSON.parse(rerun.stdout).created).not.toContain("architecture/subsystems.likec4");
+      // Not journaled means not written: the file is left exactly as the
+      // checkout left it, CRLF and all.
+      expect(await p.read("architecture/subsystems.likec4")).toBe(crlf(generated));
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still regenerates a views file a CRLF checkout ALSO had content edited into", async () => {
+    // The converse, so the compare cannot go blind: one that ignored line
+    // endings by ignoring the file would pass the case above too.
+    const p = await makeProject({ ...EMPTY_REPO });
+    try {
+      await writeFleet(p, FLEET);
+      expect((await runLoam(p.workDir, "seed", "--json")).code).toBe(0);
+      const generated = await p.read("architecture/subsystems.likec4");
+      await p.write("architecture/subsystems.likec4", crlf(generated + "// a hand edit\n"));
+
+      const rerun = await runLoam(p.workDir, "seed", "--json");
+      expect(rerun.code, rerun.stdout).toBe(0);
+      expect(JSON.parse(rerun.stdout).created).toContain("architecture/subsystems.likec4");
+      expect(await p.read("architecture/subsystems.likec4")).toBe(generated);
     } finally {
       await p.destroy();
     }

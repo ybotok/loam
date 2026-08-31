@@ -58,6 +58,7 @@ export async function showFeature(docsDir: string, feature: FeatureEntry, json: 
 
   if (json) {
     emitJson({
+      command: "show",
       type: "feature",
       id: feature.id,
       dirName: feature.dirName,

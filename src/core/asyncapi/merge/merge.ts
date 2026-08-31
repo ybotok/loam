@@ -19,14 +19,14 @@
  */
 import { isDeepStrictEqual } from "node:util";
 import { isMap, parseDocument } from "yaml";
-// Every `isRecord` below asks one question of a resolved plain tree: is this a
-// node that can hold AsyncAPI keys — an object, not an array?
-import { isRecord } from "../../kernel/records.js";
 import { classifyBaselineDigests } from "../../openapi/digest.js";
 import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
+import { readBaselineRecord } from "../../openapi/baseline/record.js";
+import { asyncapiSurfaces } from "../baseline/surfaces.js";
 import { errorMessage, AsyncapiMergeError } from "./error.js";
+import { mergeAsyncapiComponents } from "./components.js";
 import {
   deleteSlot,
   refuseAmbiguousSlotKeys,
@@ -34,6 +34,7 @@ import {
   setSlotValue,
   slotLabel,
   withoutFeatureMarkers,
+  writableSection,
 } from "./markers.js";
 
 /** One slot the merge acted on — the section decides which per-section code the plan reports. */
@@ -45,7 +46,13 @@ export interface AsyncapiSlotOutcome {
 
 /** What an asyncapi slot merge computed, including every condition the caller must surface. */
 export interface AsyncapiMergeResult {
-  /** The merged living document, or null when nothing was written — no slots declared, or every slot a quote. */
+  /**
+   * The merged living document, or null when nothing was written — every slot
+   * and surface a quote, or the delta restating nothing at all. It used to be
+   * null for a document declaring no SLOT whatever its components said, and a
+   * delta whose whole change was a shared schema archived at exit 0 having
+   * merged nothing.
+   */
   text: string | null;
   /** Living slots overwritten with different content. */
   modified: AsyncapiSlotOutcome[];
@@ -65,14 +72,31 @@ export interface AsyncapiMergeResult {
    * overwrites, because reaching it at all means `--approve` said to.
    */
   baselineStale: AsyncapiSlotOutcome[];
+  /**
+   * `<kind>/<name>` of living component SURFACES overwritten with different
+   * content — the three fields below are the surface half's mirror of
+   * `modified`, `quoted` and `baselineStale`, and they are spelled together on
+   * the result and on `noop()` for the same reason those are: the plan reads
+   * this object field by field, and a key present on one shape and missing
+   * from the other makes "no delta" and "a delta that merged nothing"
+   * structurally different answers to the same question.
+   */
+  componentsModified: string[];
+  /** Surfaces the delta QUOTED — not copied, living's copy kept. */
+  componentsQuoted: string[];
+  /** Surfaces written on a stale record entry — under `--approve`, like the slots. */
+  componentsStale: string[];
   /** Local refs the MERGE left dangling: unresolved in the merged tree and not already dangling in living. */
   unresolved: string[];
 }
 
 /**
  * Merge the feature's slots into the living AsyncAPI structurally (YAML AST,
- * not text splicing). A feature document declaring no slots is a successful
- * no-op. Per slot, the pin decides: a QUOTE is never a merge input — not even
+ * not text splicing). A feature document restating NOTHING — neither a slot
+ * nor a component surface — is a successful no-op; one whose whole delta is a
+ * `components.schemas` entry is merged like any other, through
+ * `mergeAsyncapiComponents` at the end of this function. Per slot, the pin
+ * decides: a QUOTE is never a merge input — not even
  * under `--approve`, because overriding a gate is a decision and reverting a
  * slot nobody edited is a bug — while `stale` still writes, since reaching
  * the merge at all means `--approve` said to. A removal marker deletes its
@@ -102,7 +126,17 @@ export function mergeAsyncapiSlots(
     throw new AsyncapiMergeError("feature", service, errorMessage(error));
   }
   const featSlots = asyncapiSlots(featPlain);
-  if (featSlots.length === 0) return noop();
+  // "Is there anything to merge?" is a question about the WHOLE delta, and it
+  // was asked of the three slot sections alone — an absence test standing in
+  // for the decision. It returned before the living document was even parsed,
+  // so `mergeAsyncapiComponents` (the last thing this function does, and the
+  // only thing that writes a component surface) never ran: a feature whose
+  // entire change was a `components.schemas` entry passed the gate and
+  // archived at exit 0 having merged NOTHING. The surfaces answer it too now,
+  // over the ONE enumeration the gate and the rebase plan already grade the
+  // delta with. Deleting the early return alone would have changed nothing:
+  // there was no writer outside the slot loop to fall through to.
+  if (featSlots.length === 0 && asyncapiSurfaces(featPlain).length === 0) return noop();
 
   const living = parseDocument(livingText);
   if (living.errors.length > 0) {
@@ -116,6 +150,11 @@ export function mergeAsyncapiSlots(
     throw new AsyncapiMergeError("living", service, errorMessage(error));
   }
   const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
+  // Read ONCE here, not per surface: `problems` are deliberately ignored — a
+  // malformed record is the gate's diagnosis (`asyncapi.baseline-invalid`) and
+  // a parser never prints, so what reaches the surface merge is whatever read
+  // back cleanly, and an entry that did not is simply absent (= unpinned).
+  const { record } = readBaselineRecord(featPlain);
 
   const modified: AsyncapiSlotOutcome[] = [];
   const removed: AsyncapiSlotOutcome[] = [];
@@ -134,7 +173,7 @@ export function mergeAsyncapiSlots(
       // operation identity IS the key, so presence is the whole match there.
       if (before === undefined) continue;
       if (slot.section === "components.messages" && messageName(before.node, slot.key) !== name) continue;
-      writableSection(living, livingPlain, slot.section, service);
+      writableSection(living, livingPlain, sectionAstPath(slot.section), service);
       if (deleteSlot(living, slot.section, slot.key)) {
         removed.push(at);
         touched.add(slot.section);
@@ -164,7 +203,7 @@ export function mergeAsyncapiSlots(
     // merely restates the contract does not churn its bytes.
     if (before !== undefined && isDeepStrictEqual(before.node, publish)) continue;
     if (before !== undefined) modified.push(at);
-    writableSection(living, livingPlain, slot.section, service);
+    writableSection(living, livingPlain, sectionAstPath(slot.section), service);
     // Without the strip the living contract would grow a pin to a version of
     // itself — and, on this axis, a marker nested on an inline channel
     // message, invisible to the slot walker (SCHEMA.md's channel-interior
@@ -187,10 +226,23 @@ export function mergeAsyncapiSlots(
     }
   }
 
+  // The surface half, after the slot loop and its section cleanup so a write
+  // outside the three sections can never race them. `edited` has to take the
+  // closure's answer: without it the verdicts below would be computed and
+  // reported while the `!edited` return discarded the document they were
+  // computed over — the defect surviving in a new shape, with the plan naming
+  // a schema that never reached the living contract.
+  const surfaces = mergeAsyncapiComponents({ living, featPlain, livingPlain, record, service });
+  const { componentsModified, componentsQuoted, componentsStale } = surfaces;
+  if (surfaces.copied) edited = true;
+
   // Nothing written: the living document must not even be re-serialized —
   // byte-identity under an all-quote delta is the whole point of the pin.
   if (!edited) {
-    return { text: null, modified, removed, quoted, baselineStale, unresolved: [] };
+    return {
+      text: null, modified, removed, quoted, baselineStale,
+      componentsModified, componentsQuoted, componentsStale, unresolved: [],
+    };
   }
 
   let mergedPlain: unknown;
@@ -209,42 +261,20 @@ export function mergeAsyncapiSlots(
   // block every delta over an already-rotten contract.
   const preexisting = new Set(danglingRefs(livingPlain));
   const unresolved = danglingRefs(mergedPlain).filter((ref) => !preexisting.has(ref));
-  return { text, modified, removed, quoted, baselineStale, unresolved };
+  return {
+    text, modified, removed, quoted, baselineStale,
+    componentsModified, componentsQuoted, componentsStale, unresolved,
+  };
 }
 
 /**
- * Refuse a living container the merge cannot write into: a section spelled as
- * something other than a mapping is a document loam cannot merge, and one
- * spelled as a YAML alias would take the write into every node that shares
- * the anchor. Asked at the write, because reading is safe and writing is not
- * — an absent container is fine, `setSlotValue` creates it.
+ * The successful "the feature document restates nothing at all" answer. Every
+ * key of the result is spelled here, empty, rather than left off — the reason
+ * `AsyncapiMergeResult` gives for the three surface fields.
  */
-function writableSection(
-  living: ReturnType<typeof parseDocument>,
-  livingPlain: unknown,
-  section: AsyncapiSection,
-  service: string,
-): void {
-  const path = sectionAstPath(section);
-  for (let depth = 1; depth <= path.length; depth += 1) {
-    const prefix = path.slice(0, depth);
-    const plain = prefix.reduce<unknown>((node, step) => (isRecord(node) ? node[step] : undefined), livingPlain);
-    if (plain === undefined || plain === null) return;
-    const label = prefix.join(".");
-    if (!isRecord(plain)) {
-      throw new AsyncapiMergeError("living", service, `'${label}' is not a mapping`);
-    }
-    if (!isMap(living.getIn(prefix))) {
-      throw new AsyncapiMergeError(
-        "living",
-        service,
-        `'${label}' is written as a YAML alias — one shared value backs every use, so merging into it would rewrite every other node that aliases it. Expand it before archiving.`,
-      );
-    }
-  }
-}
-
-/** The successful "the feature document has nothing to merge" answer. */
 function noop(): AsyncapiMergeResult {
-  return { text: null, modified: [], removed: [], quoted: [], baselineStale: [], unresolved: [] };
+  return {
+    text: null, modified: [], removed: [], quoted: [], baselineStale: [],
+    componentsModified: [], componentsQuoted: [], componentsStale: [], unresolved: [],
+  };
 }

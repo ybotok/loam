@@ -271,6 +271,7 @@ async function rebaseLocked(
 
   if (json) {
     emitJson({
+      command: "rebase",
       feature: id,
       services,
       dryRun,

@@ -36,27 +36,6 @@ describe("mutable release facts", () => {
     expect(readme).not.toMatch(/nothing has been released yet/i);
   });
 
-  it("derives the pilot tarball path from the release manifest", async () => {
-    const pilot = await read("docs/pilot/README.md");
-    expect(flat(pilot)).toContain("release-manifest.json");
-    expect(flat(pilot)).toContain("manifest.filename");
-    expect(flat(pilot)).toMatch(/bump both `package\.json` and `package-lock\.json` to the intended candidate version/i);
-  });
-
-  it("keeps version literals out of the pilot run book", async () => {
-    const pilot = await read("docs/pilot/README.md");
-    expect(flat(pilot)).not.toContain(await version());
-    expect(flat(pilot)).not.toMatch(/ybotok-loam-\d[^\s`"']*\.tgz/i);
-  });
-
-  it("keeps the unrun pilot status explicit", async () => {
-    const [pilot, scorecard] = await Promise.all([
-      read("docs/pilot/README.md"),
-      read("docs/pilot/SCORECARD.md"),
-    ]);
-    expect(flat(pilot)).toMatch(/not a claim that Loam has already worked in production/i);
-    expect(flat(scorecard)).toContain("Current repository status: **not run**");
-  });
 });
 
 describe("the released range and the unreleased head", () => {
@@ -94,18 +73,32 @@ describe("the released range and the unreleased head", () => {
   });
 });
 
-describe("the OpenSpec product reference and the corpus pin", () => {
-  it("README and COMPARISON both name OpenSpec v1.10.0 as the product reference", async () => {
-    expect(flat(await read("README.md"))).toContain("OpenSpec v1.10.0");
-    expect(flat(await read("COMPARISON.md"))).toContain("OpenSpec v1.10.0");
+describe("ecosystem positioning and the separate OpenSpec compatibility boundary", () => {
+  it("COMPARISON maps neighbouring specialists without defining loam against OpenSpec", async () => {
+    const comparison = await read("COMPARISON.md");
+    expect(comparison).not.toMatch(/OpenSpec/i);
+    const neighbours = [
+      "LikeC4",
+      "Backstage",
+      "EventCatalog",
+      "Pact Broker",
+      "oasdiff",
+      "OpenFastTrace",
+      "ArchUnit",
+    ];
+    for (const neighbour of neighbours) {
+      expect(comparison, `COMPARISON never names ${neighbour}`).toContain(neighbour);
+    }
   });
 
-  it("COMPARISON still pins the certified corpus to the v1.9.0 commit", async () => {
-    expect(await read("COMPARISON.md")).toContain("2826b8889e5223a9a8095d4428b60b56597e1020");
+  it("the migration guide, not the ecosystem page, owns the certified corpus pin", async () => {
+    expect(await read("MIGRATING-from-OpenSpec.md")).toContain("2826b8889e5223a9a8095d4428b60b56597e1020");
   });
 
-  it("README no longer claims the product reference and the compatibility pin are one release", async () => {
-    expect(flat(await read("README.md"))).not.toContain("the compatibility pin are now the same release");
+  it("README describes COMPARISON as an ecosystem map, not a product duel", async () => {
+    const readme = flat(await read("README.md"));
+    expect(readme).toContain("neighbouring specialist");
+    expect(readme).not.toContain("current product comparison with OpenSpec");
   });
 });
 
@@ -113,7 +106,7 @@ describe("private vulnerability reporting status", () => {
   it("marks the intended private route as unavailable and release-blocking", async () => {
     const [security, readiness] = await Promise.all([
       read("SECURITY.md"),
-      read("docs/pilot/RELEASE-READINESS.md"),
+      read("docs/RELEASE-READINESS.md"),
     ]);
     expect(flat(security)).toContain(PRIVATE_ROUTE_BLOCKER);
     expect(flat(security)).toMatch(/Private Vulnerability Reporting[\s\S]{0,240}not currently confirmed or enabled/i);

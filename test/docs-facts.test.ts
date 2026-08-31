@@ -141,10 +141,15 @@ async function assessmentRange(): Promise<{ start: number; end: number }> {
     /^_Assessed \d{4}-\d{2}-\d{2}\._$/m.test(roadmap.slice(0, roadmap.indexOf("\n## "))),
     "ROADMAP.md must open with its `_Assessed YYYY-MM-DD._` context line — it is what licenses the Current assessment's snapshot numbers",
   ).toBe(true);
-  const start = roadmap.indexOf("## Current assessment");
+  // Offsets into flat(roadmap), not into the raw page, because every pin below
+  // now matches against the flattened text. A raw offset would put the
+  // exemption window at the wrong characters the moment a paragraph above it
+  // rewrapped — an exemption that silently moves is worse than no exemption.
+  const flatRoadmap = flat(roadmap);
+  const start = flatRoadmap.indexOf("## Current assessment");
   expect(start).toBeGreaterThan(-1);
-  const end = roadmap.indexOf("\n## ", start);
-  return { start, end: end === -1 ? roadmap.length : end };
+  const end = flatRoadmap.indexOf(" ## ", start);
+  return { start, end: end === -1 ? flatRoadmap.length : end };
 }
 
 describe("counted facts are live or dated", () => {
@@ -165,7 +170,17 @@ describe("counted facts are live or dated", () => {
     };
     const int = (text: string): number => Number(text.replace(/,/g, ""));
     for (const page of FACT_PAGES) {
-      const text = await read(page);
+      // flat(), not the raw page, and this is a FIX rather than a tidy. Every
+      // pattern below is a run of words with single spaces in it, and a
+      // hundred-column page wraps wherever it likes: the `register*` pin below
+      // required a literal space before `commands`, docs/DESIGN.md wrapped at
+      // exactly that point, and the pin therefore matched NOTHING for its whole
+      // life while the sentence it was guarding said 27 and 28 against a tree
+      // holding 28 and 29. Every other loop here had the same hole waiting —
+      // `2 test files`, `28 command modules, 29 commands` and `394 modules in
+      // 122 packages` all wrap as readily. The sibling `it` two describes down
+      // already used flat() for this reason; this loop had not.
+      const text = flat(await read(page));
       for (const m of text.matchAll(/(\d[\d,]*) (?:TypeScript )?modules in (\d[\d,]*) (?:source )?packages/g)) {
         grade(page, m as RegExpExecArray, int(m[1]!) === live.modules && int(m[2]!) === live.packages, `${live.modules} modules in ${live.packages} packages`);
       }
@@ -200,6 +215,18 @@ describe("counted facts are live or dated", () => {
     const design = await read("docs/DESIGN.md");
     const live = `${await commandModuleCount()} command modules, ${commandNames().length} commands`;
     expect(flat(design), `docs/DESIGN.md's layers table must carry the live "${live}" row`).toContain(live);
+  });
+
+  it("DESIGN's register-call sentence is present and live — the pin that never once matched", async () => {
+    // The loop above grades this sentence only if it FINDS it, and for the
+    // whole life of that pin it did not: the pattern wanted a literal space
+    // before `commands`, the page wrapped there, and 27/28 sat unchallenged
+    // against a tree of 28/29. The wrap is fixed by flat(); the vacuum is
+    // fixed HERE, by asserting the sentence exists at all. A pin that can pass
+    // by not matching is worse than no pin, which is this file's own doctrine.
+    const design = flat(await read("docs/DESIGN.md"));
+    const live = `makes ${await commandModuleCount()} \`register*\` calls, which produce **${commandNames().length}** commands`;
+    expect(design, `docs/DESIGN.md must carry the live "${live}" sentence`).toContain(live);
   });
 
   it("DESIGN's rule-23 hub tally is present and live — its four counts are derivable, so they must derive", async () => {
@@ -303,9 +330,28 @@ describe("public docs name only emitted codes", () => {
   ]);
   const SEGMENT = /^[a-z][a-z0-9-]*$/;
 
+  /**
+   * The sample docs repo's OWN content is out of scope, and the distinction is
+   * the whole point of this check rather than an exemption from it.
+   *
+   * `examples/docs/**` is a fleet's documentation, not loam's. Its runbooks
+   * name that fleet's Kafka topics (`order.events.v1`), its specs name its
+   * operation ids; every one of them is a dotted backticked token and not one
+   * of them is a claim about what loam emits. Grading them here asks "does
+   * loam emit `order.events.v1`" of a sentence that never said it did, and the
+   * answer would keep being no for every artifact the example ever gains.
+   *
+   * What this check exists for is loam's claims ABOUT ITSELF: a page
+   * advertising `c4.valid` passes only while loam emits that string, and a
+   * retired code fails the page still naming it. `examples/README.md` is
+   * loam's own prose about the example and stays in scope; the tree it
+   * describes does not.
+   */
+  const SAMPLE_DOCS = "examples/docs/";
+
   async function docTokens(): Promise<Map<string, Set<string>>> {
     const tokens = new Map<string, Set<string>>();
-    for (const page of PACKAGED_MARKDOWN) {
+    for (const page of PACKAGED_MARKDOWN.filter((path) => !path.startsWith(SAMPLE_DOCS))) {
       const text = (await read(page)).replace(/```[\s\S]*?```/g, "");
       for (const match of text.matchAll(/`([^`\n]+)`/g)) {
         const segments = match[1]!.split(".");
@@ -367,28 +413,13 @@ describe("known gaps carry owners", () => {
   const KNOWN_GAPS: { doc: string; gap: string; owner: string }[] = [
     {
       doc: "README.md",
-      gap: "the two-fleet production pilot has not been completed",
-      owner: "### Complete the two-fleet pilot",
-    },
-    {
-      doc: "README.md",
-      gap: "a components-only OpenAPI delta — and its slot-less AsyncAPI sibling — passes the gate but merges nothing",
-      owner: "Still open on both axes.",
-    },
-    {
-      doc: "SCHEMA.md",
       gap: "the complete gate still needs repeatable CI and installed-package evidence observed from an actual push",
       owner: "still release evidence to collect",
     },
     {
       doc: "SCHEMA.md",
-      gap: "A components-only feature contract (no `paths` mapping) passes the baseline gate but merges nothing",
-      owner: "Still open on both axes.",
-    },
-    {
-      doc: "SCHEMA.md",
-      gap: "the event axis has the same shape: a feature asyncapi.yaml declaring no channel/operation/message slot",
-      owner: "a slot-less feature asyncapi.yaml merges nothing",
+      gap: "the complete gate still needs repeatable CI and installed-package evidence observed from an actual push",
+      owner: "still release evidence to collect",
     },
     {
       doc: "SCHEMA.md",

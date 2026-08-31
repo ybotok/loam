@@ -3,7 +3,7 @@
  * LENSES this package holds (the agent briefing here, `./gate.ts`'s deploy
  * pipeline, `./diff.ts`'s PR review), the family carved out of `../` when the
  * map package hit its own five-file cap: command-map.ts sits against the
- * 300-line limit, so the pack's documentation lives down here and is
+ * file-line limit, so the pack's documentation lives down here and is
  * concatenated after the map.
  *
  * Same assembly contract as every section: ../../../agents-md.ts concatenates

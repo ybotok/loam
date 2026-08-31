@@ -1,5 +1,6 @@
 /**
- * The fleet map merge, and the services this archive brings into existence.
+ * The fleet map merge, the flows drawn over it, and the services this archive
+ * brings into existence.
  *
  * The landscape is the one document every feature writes into, so it is spliced
  * rather than rewritten: the authored file keeps its shape and the delta's
@@ -7,6 +8,13 @@
  * has no `model.likec4` yet, and the warning for that is carried out of the plan
  * — `validate` would report it next, and reporting it here is what stops that
  * being a surprise.
+ *
+ * `planFlows` at the bottom is the other half of the same axis and shares this
+ * module for that reason rather than for the file cap: both write into
+ * `architecture/`, and the two merges are read together — the map gains the
+ * elements, the flow gains the ordered hops over them. It is a whole-file copy
+ * where the landscape is a splice, because a flow is a document of its own and
+ * there is nothing to merge partially.
  */
 import { existsSync } from "node:fs";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
@@ -18,6 +26,7 @@ import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
 import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";
 import { featurePaths } from "../../../core/repo/paths.js";
+import { featureFlows, livingFlowPath, USECASE_SUBDIR } from "../../../core/usecases/delta/flows.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 export async function planLandscape(
@@ -132,5 +141,37 @@ export async function planLandscape(
       subject: svc,
       message: `${svc}: ${creates} — 'loam validate --all' will report the service as incomplete until it exists. Run 'loam adopt --service ${svc}' from the service repo, or write the model by hand.`,
     });
+  }
+}
+
+/**
+ * The flows this feature brings, copied into `architecture/usecases/`.
+ *
+ * A create-only whole-file copy, and the smallest merge in the command: the
+ * document is views-only, it names nothing the landscape merge has not already
+ * placed (`planFlowOverlay` in the gate is what proves that, before this runs),
+ * and a flow the living tree already holds was refused at the gate
+ * (`usecase.flow-exists`, `core/usecases/delta/flows.ts` has the reasoning). So
+ * by the time this runs every path here is a file that does not exist, and
+ * `planWrite` marks it `exclusive` — a race that created it between the gate and
+ * the commit fails the write rather than overwriting somebody.
+ *
+ * It lives beside `planLandscape` rather than beside the requirement merges
+ * because it writes into `architecture/`, and the two merges are read together:
+ * the landscape gains the elements, the flow gains the hops over them.
+ * `unarchive` needs nothing new — a create is undone by deleting, which the
+ * snapshot manifest already records for every write in the plan.
+ */
+export async function planFlows(
+  config: { docsDir: DocsDir },
+  gated: Gated,
+  plan: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const flows = await featureFlows(gated.featureDir);
+  if (flows.length === 0) return;
+  for (const flow of flows) {
+    plan.writes.push(planWrite(livingFlowPath(config.docsDir, flow.rel), await readUtf8(flow.path)));
+    say(`  use case: ${flow.rel} — created architecture/${USECASE_SUBDIR}/${flow.rel}`);
   }
 }

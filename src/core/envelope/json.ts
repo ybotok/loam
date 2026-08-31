@@ -7,6 +7,13 @@
  * valid JSON, whether the command succeeded or not. The exit code still tells
  * the shell what happened.
  *
+ * Three keys identify the envelope before its payload is read, and they answer
+ * three different questions: `contractVersion` is the SHAPE's version,
+ * `version` is the BINARY's, and `command` (on every success payload) says
+ * which verb produced it. The first two are stamped by the emitters below so
+ * no command can forget them; the third is the payload's own first key,
+ * because only the command knows its name.
+ *
  * Key casing: camelCase, with one deliberate exception — a key that mirrors a
  * frontmatter field verbatim keeps that field's snake_case spelling
  * (`last_verified`, `sources_digest` in vouch's payload), so the envelope and
@@ -14,6 +21,7 @@
  * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
 import { relative } from "node:path";
+import { LOAM_VERSION } from "./version.js";
 
 /**
  * Version of the top-level JSON envelope, independent of the CLI/package
@@ -142,8 +150,25 @@ export type ErrorCode =
   | "seed-landscape-edited"
   | "internal";
 
+/**
+ * `version` is stamped HERE rather than by each command for the reason the
+ * `command` discriminator was not, and had to be retrofitted one call site at a
+ * time: a key every envelope owes is a key no command can be trusted to
+ * remember. Two lines in the two emitters give it to every command and every
+ * refusal at once, and a command added tomorrow cannot ship without it.
+ *
+ * Why a consumer needs it at all: `docs.binary-behind` exists to say that a
+ * green run from an old binary is worth less than it looks, and a caller
+ * holding only a `--json` payload could not tell which loam produced it — so it
+ * could not apply that caution, and could not see a mixed-version fleet in the
+ * contract. It sits beside `contractVersion`, never inside it: the envelope
+ * SHAPE and the binary that filled it version independently, and collapsing
+ * them would make every release look like a contract break.
+ */
 export function emitJson(payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ contractVersion: JSON_CONTRACT_VERSION, ok: true, ...payload }, null, 2));
+  console.log(
+    JSON.stringify({ contractVersion: JSON_CONTRACT_VERSION, version: LOAM_VERSION, ok: true, ...payload }, null, 2),
+  );
 }
 
 /** Paths in the contract are repo-relative, with forward slashes: diffable across machines. */
@@ -151,7 +176,25 @@ export function repoPath(docsDir: string, abs: string): string {
   return relative(docsDir, abs).split(/[\\/]/).join("/");
 }
 
-/** Emit a failure envelope and set the exit code. Returns false, to `return` from a caller. */
+/**
+ * Emit a failure envelope and set the exit code. Returns false, to `return`
+ * from a caller.
+ *
+ * `version` is on this path too, and deliberately: a refusal is the envelope a
+ * consumer is most likely to be holding at the moment it needs to know which
+ * binary answered — "this loam does not have that flag / that code" is a
+ * question about the build, and an unversioned refusal makes it unanswerable.
+ *
+ * There is no `command` here, and adding one is not a small change. The error
+ * emitter has no command in scope: `fail()` is called from deep inside core-ish
+ * helpers that never learn which verb the user typed, so threading it means
+ * either module-level mutable state — a hazard this codebase names outright,
+ * because a value cached at import time leaks across the forked test processes
+ * and across invocations in a long-running host — or one more argument threaded
+ * through `fail()`, `reportNoConfig()` and every deep helper that refuses, each
+ * of which would then carry a value it has no other use for. A consumer that
+ * needs to know which command refused already knows: it made the call.
+ */
 export function emitJsonError(
   code: ErrorCode,
   message: string,
@@ -159,7 +202,7 @@ export function emitJsonError(
 ): false {
   console.log(
     JSON.stringify(
-      { contractVersion: JSON_CONTRACT_VERSION, ok: false, error: { code, message }, ...details },
+      { contractVersion: JSON_CONTRACT_VERSION, version: LOAM_VERSION, ok: false, error: { code, message }, ...details },
       null,
       2,
     ),
@@ -169,8 +212,69 @@ export function emitJsonError(
 }
 
 /**
+ * The refusals that print no `loam explain` pointer, each with the reason it is
+ * here. ONE named set rather than a condition per call site: "is this refusal
+ * worth looking up?" is a single question, and answering it in seven places is
+ * how two of them come to disagree.
+ *
+ * - `vouch-declined` — loam asked whether to stamp, and a person said no.
+ *   Nothing failed and there is nothing to fix, so a pointer would invite
+ *   somebody to go read the meaning of their own answer.
+ *
+ * `internal` was weighed and deliberately LEFT OUT. It is the one code with no
+ * stable meaning, which reads like a reason to stay silent — but its
+ * explanation carries the only instruction available to a person staring at an
+ * unexpected throw (a repeatable `internal` is a loam defect worth reporting),
+ * and that is worth more than the silence the old behaviour gave them.
+ *
+ * Exported so test/explain.test.ts can pin the membership: an entry added here
+ * silently removes a pointer nobody would notice was gone.
+ */
+export const NO_EXPLAIN_POINTER: ReadonlySet<ErrorCode> = new Set<ErrorCode>(["vouch-declined"]);
+
+/**
+ * The one-line pointer from a refusal to the command that explains it.
+ *
+ * Measured over eight wrong invocations a person makes in their first hour —
+ * no loam.json, an unknown service, an unknown feature, an unbound `gherkin`,
+ * a malformed feature id — every single one printed prose and no code, and
+ * only `loam validate` mentioned `loam explain` at all. `explain` is the best
+ * usability asset loam has and the message that most needs it could not reach
+ * it: to look a refusal up you first had to re-run the whole command with
+ * `--json` and read `error.code` out of the envelope, which is precisely the
+ * knowledge a first-hour user does not have. The code is printed as well as
+ * the invocation because the two are different needs: the bare code is what
+ * goes into a bug report, a grep or a CI branch, and the invocation is what
+ * answers it here.
+ *
+ * STDERR, never stdout, and that is the load-bearing half: a refusal's
+ * diagnostic must not pollute a piped payload. `loam show svc > out.json`
+ * already keeps its message off stdout, and a pointer that broke that rule
+ * would corrupt exactly the pipelines text mode was careful never to touch.
+ * (Findings do the opposite — their codes go to stdout with the report, in
+ * document order, for validate/report.ts's own reason. Same fact, two streams,
+ * because a finding is the answer and a refusal is the absence of one.)
+ *
+ * Nothing runs here under `--json`: the envelope already carries `error.code`
+ * as data, and a machine reader has no use for being told a second command
+ * exists — the same doctrine `EXPLAIN_FOOTER` follows in
+ * commands/policy/format.ts.
+ *
+ * No ANSI escape, though the line is meant to READ as dim. Nothing in this
+ * codebase emits escape sequences, the output is graded by tests that compare
+ * strings, and a colour that survives into a redirected file or a CI log is
+ * noise nobody asked for. The typography does the dimming: the code, a spaced
+ * middot, the command — an aside, not a sentence.
+ */
+export function sayExplain(code: ErrorCode): void {
+  if (NO_EXPLAIN_POINTER.has(code)) return;
+  console.error(`${code}  ·  loam explain ${code}`);
+}
+
+/**
  * Report a failure in whichever mode the caller is in. Text mode goes to
- * stderr as it always has; JSON mode goes into the envelope.
+ * stderr as it always has — now with the code and its lookup on a second line;
+ * JSON mode goes into the envelope, whose stdout bytes are unchanged.
  */
 export function fail(json: boolean, code: ErrorCode, message: string): void {
   if (json) {
@@ -178,6 +282,7 @@ export function fail(json: boolean, code: ErrorCode, message: string): void {
     return;
   }
   console.error(message);
+  sayExplain(code);
   process.exitCode = 1;
 }
 

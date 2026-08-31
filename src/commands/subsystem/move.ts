@@ -115,6 +115,7 @@ export async function runMove(docsDir: DocsDir, names: string[], into: string, j
         }));
         if (json) {
           emitJson({
+            command: "subsystem",
             into,
             moved: rows,
             views,
@@ -178,6 +179,7 @@ export async function runRename(docsDir: DocsDir, names: [string, string], json:
         await stageInGit(docsDir, [rename]);
         if (json) {
           emitJson({
+            command: "subsystem",
             renamed: from,
             to,
             path: repoPath(docsDir, rename.to),

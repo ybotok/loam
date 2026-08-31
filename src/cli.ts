@@ -50,8 +50,12 @@ export function buildProgram(): Command {
 
   program
     .name("loam")
-    .description("Architecture-first spec framework for microservice fleets")
-    .version(LOAM_VERSION);
+    .description("Architecture-first semantic integrity and change governance for evolving software systems")
+    .version(LOAM_VERSION)
+    // The blank line is part of the attachment, not part of the text: commander
+    // writes this straight under the `Commands:` block, and two sentences flush
+    // against `help [command]` read as two more commands.
+    .addHelpText("after", `\n${HELP_EPILOG}`);
 
   // Make commander throw a CommanderError instead of process.exit()ing, so a
   // usage error (mistyped flag, unknown command) can still honour the envelope
@@ -93,6 +97,33 @@ export function buildProgram(): Command {
 }
 
 /**
+ * The two lines under the command list: where to start, and what to run when
+ * lost.
+ *
+ * {@link HELP_GROUPS} does nearly all of the orienting work — twenty-nine
+ * commands under seven headings, in the order of the work — but it stops one
+ * step short of the two facts a newcomer does not have. Nothing on the page
+ * said that `init` must run before any of the other twenty-eight, and nothing
+ * named the command that answers "what now"; the last thing a first
+ * `loam --help` printed was `help [command]`.
+ *
+ * Two lines, and no more, because the grouping is what does the work and a
+ * paragraph here would compete with it.
+ *
+ * Both lines name a command that PARSES, and that is not a style rule:
+ * `test/agent-commands-runnable.test.ts` takes this constant BY IMPORT and
+ * hands both invocations to the real program, exactly as it does the `init`
+ * first-hour lines. `loam init --create` is the form that works with no prior
+ * knowledge — bare `loam init` defaults `--docs` to a `.loam-docs` that does
+ * not exist yet and refuses, which is correct for a repo joining an existing
+ * docs repo and wrong as the first thing a newcomer is told to type.
+ */
+export const HELP_EPILOG = [
+  "New here? Run `loam init --create` first — every other command needs the docs repo it writes.",
+  "Lost? Run `loam doctor` — it prints the state, the resolved path, the finding code and a `fix:` line.",
+].join("\n");
+
+/**
  * Which heading each command sits under in `loam --help`.
  *
  * The order is the order of the work: wire the repo, read the fleet, adopt what
@@ -100,7 +131,7 @@ export function buildProgram(): Command {
  * protocols (`loam instructions`) rather than inventing a second taxonomy, so a
  * reader who has met one has met the other.
  *
- * Twenty-eight commands printed as one flat registration-ordered list tells a
+ * Twenty-nine commands printed as one flat registration-ordered list tells a
  * new reader nothing about which four to run first. NOTHING IS HIDDEN — a
  * hidden command is a command an agent cannot discover, and every one of these
  * still parses, still appears, and still carries the same flags. This is
@@ -122,7 +153,7 @@ const HELP_GROUPS: Record<string, string> = {
 /**
  * Apply {@link HELP_GROUPS}, and FAIL CLOSED on a command it does not name.
  *
- * The throw is the point. A twenty-ninth command added without a heading would
+ * The throw is the point. A thirtieth command added without a heading would
  * otherwise land silently in an "unclassified" bucket at the bottom of the
  * page, which is the drift this whole file's neighbours are written to prevent;
  * `test/help-groups.test.ts` catches it at gate time, and this catches it the

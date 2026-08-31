@@ -25,7 +25,7 @@
  * most of what it claims to be for.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeTmpDir, runLoam, treeHashes } from "./helpers/harness.js";
@@ -59,6 +59,36 @@ afterAll(async () => {
 const findings = (payload: {
   targets: Array<{ findings: Array<{ severity: string; code: string }> }>;
 }): Array<{ severity: string; code: string }> => payload.targets.flatMap((t) => t.findings);
+
+describe("examples/docs governs itself", () => {
+  it("carries the loam.json the `cd examples/docs` walkthrough depends on", async () => {
+    // examples/README.md tells a reader to `cd examples/docs` and run the
+    // binary from inside the tree, and that only works because the tree ships
+    // the config `loam init --docs . --create` writes. It did not until now:
+    // `loam status` there answered "No loam.json found" and exited 1, and the
+    // page's workaround was a throwaway config at the loam repository ROOT —
+    // which then governed every directory under it, so `loam init` from a
+    // sibling refused and forgetting to delete it silently redirected later
+    // commands at the example fleet. Nothing pinned the file the walkthrough
+    // needs, so nothing would notice it going missing again.
+    //
+    // Asserted against the COPY rather than examples/ itself, like everything
+    // else in this file: what a reader clones is what has to work. Parsed
+    // rather than compared byte-for-byte because git hands a Windows clone
+    // CRLF and a Linux one LF; the walkthrough depends on the resolved
+    // docsDir, not on the newline.
+    const raw = await readFile(join(docsDir, "loam.json"), "utf8");
+    expect(JSON.parse(raw)).toEqual({ docsDir: "." });
+
+    // And the property that config exists for: a command run from inside the
+    // tree resolves to this fleet, with no loam.json anywhere above it.
+    const res = await runLoam(docsDir, "status", "--json");
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.ok).toBe(true);
+    expect(payload.services.total).toBe(5);
+  });
+});
 
 describe("examples/docs vs loam validate --all", () => {
   it("is valid: zero errors, and exactly the ten demonstration warnings", async () => {

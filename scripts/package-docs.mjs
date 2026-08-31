@@ -10,18 +10,26 @@
  * link rot fails `npm test` before it ever reaches CI. Editing the shipped
  * document set is therefore a three-place change — files[], this list, and a
  * README pointer — and that friction is the review this module exists to force.
+ * (The README pointer is owed by a top-level page, which is what a reader
+ * navigates to from the front page; a directory entry like `dist` or
+ * `examples` owes none, and test/package-docs.test.ts asks only of the `.md`
+ * entries for exactly that reason.)
  *
  * Pure module: no top-level side effects, so both the scripts and vitest can
  * import it without running anything.
  */
 
 /**
- * Exactly package.json's `files[]`, reviewed. `dist` ships the binary; the
- * Markdown pages are the ones a user may reasonably open from
- * node_modules/@ybotok/loam. Order mirrors package.json for diffability.
+ * Exactly package.json's `files[]`, reviewed. `dist` ships the binary and
+ * `examples` ships the runnable example fleet — the tree `loam init --example`
+ * copies out, which is the only way an installed user sees loam working
+ * without modelling their own system first. The Markdown pages are the ones a
+ * user may reasonably open from node_modules/@ybotok/loam. Order mirrors
+ * package.json for diffability: the two directory entries, then the pages.
  */
 export const REVIEWED_PACKAGE_FILES = [
   "dist",
+  "examples",
   "CHANGELOG.md",
   "COMPARISON.md",
   "CONTRIBUTING.md",
@@ -33,13 +41,77 @@ export const REVIEWED_PACKAGE_FILES = [
 ];
 
 /**
- * Every Markdown page the tarball carries: the reviewed `.md` entries plus
+ * Every Markdown page under `examples/`, which ships as one directory entry
+ * the way `dist` does.
+ *
+ * Enumerated rather than scanned, and the reason is the reason this module
+ * exists: PACKAGED_MARKDOWN is what package-smoke.mjs set-equality-checks
+ * against the Markdown the tarball actually carries, so a list derived from
+ * the same tree it is meant to grade would agree with itself and prove
+ * nothing. It is also the set the link audit walks — a page added to the
+ * example tree and not to this list would ship with its links unchecked, and
+ * the example fleet is precisely where cross-file links (the glossary
+ * citations, the ADR pointing at the arch spec it is covered by) are the
+ * demonstration.
+ *
+ * So adding a page to `examples/` adds a line here. The smoke names the exact
+ * file on both sides of the mismatch.
+ */
+export const EXAMPLE_MARKDOWN = [
+  "examples/README.md",
+  "examples/docs/architecture/adrs/0001-transactional-outbox.md",
+  "examples/docs/capabilities/checkout/spec.md",
+  "examples/docs/capabilities/identity/tokens/spec.md",
+  "examples/docs/capabilities/order-notifications/spec.md",
+  "examples/docs/features/FEAT-101-payment-splitting/adrs/0001-dedicated-split-service.md",
+  "examples/docs/features/FEAT-101-payment-splitting/intent.md",
+  "examples/docs/features/FEAT-101-payment-splitting/specs/checkout-web/spec.md",
+  "examples/docs/features/FEAT-101-payment-splitting/specs/payment-service/spec.md",
+  "examples/docs/features/FEAT-101-payment-splitting/specs/payment-split-service/arch.spec.md",
+  "examples/docs/features/FEAT-101-payment-splitting/specs/payment-split-service/spec.md",
+  "examples/docs/features/FEAT-112-retire-order-v1/intent.md",
+  "examples/docs/features/FEAT-112-retire-order-v1/specs/order-service/spec.md",
+  "examples/docs/features/archive/FEAT-088-refunds/.loam-before/files/services/order-service/spec.md",
+  "examples/docs/features/archive/FEAT-088-refunds/.loam-before/files/services/payment-service/spec.md",
+  "examples/docs/features/archive/FEAT-088-refunds/adrs/0001-refunds-stay-in-payment-service.md",
+  "examples/docs/features/archive/FEAT-088-refunds/intent.md",
+  "examples/docs/features/archive/FEAT-088-refunds/specs/order-service/spec.md",
+  "examples/docs/features/archive/FEAT-088-refunds/specs/payment-service/spec.md",
+  "examples/docs/features/archive/FEAT-120-refund-notification/.loam-before/files/services/payment-service/spec.md",
+  "examples/docs/features/archive/FEAT-120-refund-notification/.loam-before/files/services/platform/notification-service/spec.md",
+  "examples/docs/features/archive/FEAT-120-refund-notification/intent.md",
+  "examples/docs/features/archive/FEAT-120-refund-notification/specs/notification-service/spec.md",
+  "examples/docs/features/archive/FEAT-120-refund-notification/specs/payment-service/spec.md",
+  "examples/docs/glossary/order.md",
+  "examples/docs/glossary/payments/authorization.md",
+  "examples/docs/services/checkout-web/spec.md",
+  "examples/docs/services/order-service/adrs/0001-orchestrated-order-lifecycle.md",
+  "examples/docs/services/order-service/arch.spec.md",
+  "examples/docs/services/order-service/runbook.md",
+  "examples/docs/services/order-service/spec.md",
+  "examples/docs/services/payment-service/adrs/0001-payments-outbox.md",
+  "examples/docs/services/payment-service/adrs/0002-idempotency-keys-on-authorization.md",
+  "examples/docs/services/payment-service/arch.spec.md",
+  "examples/docs/services/payment-service/runbook.md",
+  "examples/docs/services/payment-service/spec.md",
+  "examples/docs/services/platform/identity-service/adrs/0001-token-introspection-over-local-validation.md",
+  "examples/docs/services/platform/identity-service/arch.spec.md",
+  "examples/docs/services/platform/identity-service/runbook.md",
+  "examples/docs/services/platform/identity-service/spec.md",
+  "examples/docs/services/platform/notification-service/runbook.md",
+  "examples/docs/services/platform/notification-service/spec.md",
+];
+
+/**
+ * Every Markdown page the tarball carries: the reviewed `.md` entries, plus
  * README.md, which npm includes on its own (as it does LICENSE and
- * package.json). This is the set the link audit walks.
+ * package.json), plus the pages inside the shipped example tree. This is the
+ * set the link audit walks.
  */
 export const PACKAGED_MARKDOWN = [
   "README.md",
   ...REVIEWED_PACKAGE_FILES.filter((path) => path.endsWith(".md")),
+  ...EXAMPLE_MARKDOWN,
 ];
 
 /**
@@ -140,6 +212,39 @@ export function classifyLink(target) {
 }
 
 /**
+ * A relative link target as a package-root-relative path, resolved against the
+ * directory of the page that carries it — or null when it climbs out of the
+ * package altogether.
+ *
+ * Every audited page sat at the tarball root until `examples/` shipped, so the
+ * target and the path were the same string and this function did not exist.
+ * They stopped being the same the moment a page sat in a subdirectory:
+ * `examples/README.md`'s `../SCHEMA.md` resolves at the tarball root and is a
+ * shipped file, while the literal target `../SCHEMA.md` is a path the tarball
+ * never contains — an audit reading it literally would report the one correct
+ * link on that page as broken, and would resolve
+ * `examples/docs/glossary/order.md`'s `payments/authorization.md` against the
+ * root, where nothing of that name exists either.
+ *
+ * Purely lexical: these are paths inside a tarball, not paths on this disk, and
+ * `..` past the root is a real failure rather than something to clamp to "".
+ */
+function resolveTarget(page, target) {
+  const slash = page.lastIndexOf("/");
+  const parts = slash === -1 ? [] : page.slice(0, slash).split("/");
+  for (const part of target.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part !== "..") {
+      parts.push(part);
+      continue;
+    }
+    if (parts.length === 0) return null;
+    parts.pop();
+  }
+  return parts.join("/");
+}
+
+/**
  * Resolve `anchor` against the headings of `text`. Returns null when exactly
  * one heading slugs to it, otherwise the failure reason — quoting the computed
  * slugs, so a mismatch is diagnosable without re-deriving GitHub's rules.
@@ -155,9 +260,15 @@ function anchorFailure(anchor, text) {
  * Audit one shipped page's links. `resolve` supplies the three facts that
  * differ between the tarball audit and the working-tree audit:
  *
- *   hasFile(path)  — may a shipped page link `path` relatively?
+ *   hasFile(path)  — does the tarball carry `path`?
  *   readDoc(path)  — the target page's text for anchor checks (null: unreadable)
  *   hasRepoPath(p) — does the canonical link's repo-relative path exist?
+ *
+ * The first two are asked about PACKAGE-ROOT-RELATIVE paths, never about the
+ * link as written: `resolveTarget` has already resolved it against the page's
+ * own directory. Both resolvers therefore stay flat lookups, which is what
+ * lets the tarball audit answer from a path set and the working-tree audit
+ * from the same list of shipped files.
  *
  * Returns failure strings, each naming the page, the link, and the fix.
  */
@@ -193,16 +304,20 @@ export function auditPageLinks(page, text, resolve) {
       continue;
     }
     if (classified.kind === "relative") {
-      if (!resolve.hasFile(classified.path)) {
+      // Resolved against THIS page's directory, so `hasFile` and `readDoc` are
+      // always asked about a package-root-relative path — the only kind either
+      // resolver knows. `null` is a target that climbed out of the package.
+      const path = resolveTarget(page, classified.path);
+      if (path === null || !resolve.hasFile(path)) {
         failures.push(
-          `${at} relative link ${link} does not resolve for an installed user — use the canonical https://github.com/ybotok/loam/blob/main/${classified.path} form, or add the file to the reviewed package list (package.json files[], scripts/package-docs.mjs, and a README pointer)`,
+          `${at} relative link ${link} does not resolve for an installed user — use the canonical https://github.com/ybotok/loam/blob/main/${path ?? classified.path} form, or add the file to the reviewed package list (package.json files[], scripts/package-docs.mjs, and a README pointer)`,
         );
         continue;
       }
       if (anchor !== null) {
-        const targetText = resolve.readDoc(classified.path);
+        const targetText = resolve.readDoc(path);
         const failure = targetText === null
-          ? `target ${classified.path} is not a shipped Markdown page, so its anchors cannot be checked`
+          ? `target ${path} is not a shipped Markdown page, so its anchors cannot be checked`
           : anchorFailure(anchor, targetText);
         if (failure !== null) failures.push(`${at} link ${link}: ${failure}`);
       }

@@ -21,6 +21,7 @@ import { pinOpenapiOperations, type OpenapiPinPlan } from "../../core/openapi/me
 import { planOpenapiBaselines, type OpenapiBaselinePlan } from "../../core/openapi/baseline/plan.js";
 import { AsyncapiMergeError } from "../../core/asyncapi/merge/error.js";
 import { pinAsyncapiSlots, type AsyncapiPinPlan } from "../../core/asyncapi/merge/pin.js";
+import { planAsyncapiBaselines, type AsyncapiBaselinePlan } from "../../core/asyncapi/baseline/plan.js";
 import { applyEdits, pinEdit, type LineEdit } from "./edit.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../core/fleet-context.js";
@@ -263,12 +264,19 @@ export async function planOpenapi(repo: RepoRead, service: PathableService, open
 }
 
 /**
- * Pin every slot in one feature event contract against the living contract —
- * `planOpenapi`'s mirror on the event axis, one axis lower in ceremony
- * because the event pin has no root record: every slot value is a mapping,
- * so the in-value `x-loam-based-on` reaches everything there is to pin
- * (core/asyncapi/digest.ts owns the slot model; inline channel messages are
- * channel interior and never pinned on their own).
+ * Pin every slot AND every component surface in one feature event contract
+ * against the living contract — `planOpenapi`'s mirror on the event axis, in
+ * both of its halves.
+ *
+ * The in-value `x-loam-based-on` reaches every SLOT, because a slot value is
+ * always a mapping (core/asyncapi/digest.ts owns the slot model; inline
+ * channel messages are channel interior and never pinned on their own). It
+ * reaches nothing else: a `components/schemas/<name>` value is a JSON Schema,
+ * where an in-value loam key would be a schema keyword — so the surfaces are
+ * pinned by the same root `x-loam-baselines` record the OpenAPI axis uses, and
+ * this function writes both. (This comment used to say the event pin has no
+ * root record. It did not, and that is why a `components.schemas`-only delta
+ * merged nothing at all.)
  */
 export async function planAsyncapi(
   repo: RepoRead,
@@ -283,8 +291,15 @@ export async function planAsyncapi(
   const living = existsSync(livingPath) ? decodeDocument(await readFile(livingPath), livingPath) : "";
   const delta = decodeDocument(await readFile(asyncapiPath), asyncapiPath);
   let plan: AsyncapiPinPlan;
+  let baselines: AsyncapiBaselinePlan;
   try {
     plan = pinAsyncapiSlots(delta, living, service);
+    // The surface record, planned over the SLOT pass's output so one run
+    // writes one file once. Order is safe, and load-bearing in both
+    // directions: a surface digest never includes a slot pin (`asyncapiSurfaces`
+    // skips `components.messages` entirely, and no other section is a
+    // surface), and the root record never enters a slot digest.
+    baselines = planAsyncapiBaselines(plan.text ?? delta, living, service);
   } catch (err) {
     // A document loam cannot read is validate's diagnosis to make
     // (`asyncapi.invalid`), not this command's to guess at — and stamping
@@ -293,16 +308,27 @@ export async function planAsyncapi(
     return { outcomes: [], content: null };
   }
   return {
-    outcomes: plan.pins.map((pin) => ({
-      service,
-      file: "asyncapi.yaml",
-      kind: pin.section,
-      target: pin.key,
-      status: pin.status,
-      from: pin.from,
-      to: pin.to,
-    })),
-    content: plan.text,
+    outcomes: [
+      ...plan.pins.map((pin) => ({
+        service,
+        file: "asyncapi.yaml",
+        kind: pin.section,
+        target: pin.key,
+        status: pin.status,
+        from: pin.from,
+        to: pin.to,
+      })),
+      ...baselines.pins.map((pin) => ({
+        service,
+        file: "asyncapi.yaml",
+        kind: "COMPONENT",
+        target: pin.target,
+        status: pin.status,
+        from: pin.from,
+        to: pin.to,
+      })),
+    ],
+    content: baselines.text ?? plan.text,
   };
 }
 

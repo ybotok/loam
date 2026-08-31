@@ -47,6 +47,33 @@ jobs:
       # child-process bounds, and brand-cast containment — each pinned by a
       # negative self-test in test/arch-gate.test.ts.
       - run: npm run arch:check
+      # BESIDE arch:check rather than inside it, and the difference is the whole
+      # point of the self-hosting axis: arch:check proves the layering HOLDS,
+      # this proves the written model still DESCRIBES the tree. They can fail
+      # independently — a package added and drawn nowhere breaks no rule, and a
+      # cycle breaks every rule while the map stays perfectly current — so
+      # folding one into the other would report two subjects under one verdict.
+      # One matrix leg: it reads the same files on both, and the answer cannot
+      # differ by Node version.
+      #
+      # No `--strict` on the loam side of this axis. The self-model legitimately
+      # carries warnings (a spec whose `sources` cannot be spelled from a
+      # subdirectory), and the exact finding set is pinned in
+      # test/self-model.test.ts, which is the tighter grip: --strict would only
+      # turn today's two warnings red, while the pin fails on a third.
+      - run: npm run meta:check
+        if: matrix.node-version == '22.22.3'
+      # The other half of the same axis, and it needs its own step because the
+      # failure it catches is invisible to every check that exists. `AGENTS.md`
+      # in a docs repo is GENERATED and loam deliberately never rewrites it;
+      # `agents.stale` detects on the version STAMP, so a same-version change to
+      # the sections in src/core/agent/ leaves meta/docs/AGENTS.md behind while
+      # every command still calls the repo healthy. In a fleet that is somebody
+      # else's file and a version bump surfaces it. Here the sections and the
+      # file are in one repository and one commit can move the first without the
+      # second — which had already happened when this step was added.
+      - run: npx tsx scripts/meta-agents.ts --check
+        if: matrix.node-version == '22.22.3'
       - run: npm test
         if: matrix.node-version == '22.22.3'
       - run: npm run test:coverage
@@ -76,8 +103,6 @@ jobs:
       - run: npm ci
       - run: npm run test:package
       - run: npm run release:check:selftest
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
-      - run: npm run pilot:check
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24'
 
   # The concurrency-stability proof: three sequential full-suite runs per leg

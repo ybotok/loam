@@ -41,6 +41,21 @@
  * loses it without a word. Refusing that would mean telling an author with two
  * preview views to delete one, which is a false refusal on a harmless file, and
  * the loss there is recoverable by the argument above.
+ *
+ * ## The dynamic-view refusal is unchanged; its ADVICE moved
+ *
+ * A `dynamic view` still cannot ride inside `delta.likec4`, and the reason is
+ * mechanical rather than a policy about where flows belong: this document
+ * re-declares the landscape's own identifiers to anchor its new edges and
+ * carries its own `specification` block because LikeC4 parses it standalone, so
+ * it cannot be staged beside the map in one project — a duplicate specification
+ * is an error blamed on both files, and a re-declared element is a duplicate id.
+ * What changed is where the refusal sends the author. It used to say
+ * `architecture/landscape.likec4`, which was the only honest answer while the
+ * axis had no feature-delta path: a flow could not ship with the change that
+ * made it true. `features/<FEAT>/usecases/<name>.likec4` is that path
+ * (`core/usecases/delta/flows.ts`), and it is a views-only document — which is
+ * exactly why it stages beside the map when this one cannot.
  */
 import { maskSource, matchBrace } from "../source-mask.js";
 import { LandscapeSpliceError } from "./contract.js";
@@ -55,13 +70,21 @@ const TOP_LEVEL_BLOCK = /\b(deployment|global|views)\s*\{/g;
 /** A `dynamic view` / `deployment view` inside a views block — the irrecoverable kinds. */
 const AUTHORED_VIEW = /\b(dynamic|deployment)\s+view\b/;
 
-function refuse(block: string, detail: string): never {
+function refuse(block: string, detail: string, home: string): never {
   throw new LandscapeSpliceError(
     `delta.likec4 declares ${detail}, and the landscape merge splices only what is inside \`model { }\` — ` +
       `archiving would drop it silently, so nothing was written. Move the ${block} into ` +
-      `architecture/landscape.likec4, where the living documents keep it, and re-run the archive.`,
+      `${home} and re-run the archive.`,
   );
 }
+
+/** Where the living documents keep what this delta cannot carry. */
+const LANDSCAPE_HOME = "architecture/landscape.likec4, where the living documents keep it,";
+
+/** Where a FEATURE keeps a flow — a slot of its own, not the living tree. See the header. */
+const FLOW_HOME =
+  "features/<FEAT>/usecases/<name>.likec4 — a views-only document of its own, which `loam archive` copies into " +
+  "architecture/usecases/ and `loam unarchive` takes back —";
 
 /**
  * Refuse a delta whose non-model blocks the merge would discard.
@@ -87,17 +110,24 @@ export function assertMergeableDelta(deltaText: string): void {
     if (depth !== 0) continue;
     const block = m[1]!;
     if (block !== "views") {
-      refuse(`\`${block} { }\` block`, `a top-level \`${block} { }\` block`);
+      refuse(`\`${block} { }\` block`, `a top-level \`${block} { }\` block`, LANDSCAPE_HOME);
     }
     const open = m.index + m[0].length - 1;
     const close = matchBrace(code, open);
     const inner = code.slice(open + 1, close === -1 ? code.length : close);
     const authored = AUTHORED_VIEW.exec(inner);
     if (authored !== null) {
+      const kind = authored[1]!;
       refuse(
-        `\`${authored[1]!} view\``,
-        `a \`${authored[1]!} view\` in its \`views { }\` block — a view of that kind describes ordering or topology ` +
+        `\`${kind} view\``,
+        `a \`${kind} view\` in its \`views { }\` block — a view of that kind describes ordering or topology ` +
           `recorded in no other document, unlike the static preview view \`loam new\` scaffolds`,
+        // A deployment view is topology and belongs in the living map; a dynamic
+        // view is a flow, and a flow now has a feature slot of its own. Sending
+        // an author to the living landscape for one they are introducing WITH
+        // this change was the advice that made the axis's headline case a
+        // two-pull-request job.
+        kind === "dynamic" ? FLOW_HOME : LANDSCAPE_HOME,
       );
     }
   }

@@ -221,12 +221,20 @@ if (pack.status !== 0) {
   try {
     const [packed] = JSON.parse(pack.stdout);
     const paths = new Set(packed.files.map((entry) => entry.path));
+    // `files[]` holds two kinds of entry and they cannot be checked the same
+    // way. A FILE entry is a tarball path in its own right; a DIRECTORY entry
+    // never appears as a path at all, so demanding one fails on a tarball that
+    // carries the whole tree correctly. Each directory therefore names one file
+    // inside it that must have shipped — the entry point for `dist`, the page a
+    // reader lands on for `examples`. Filtering the directories out without
+    // naming a witness would let an empty `examples/` ship unnoticed, which is
+    // exactly the shape this check exists to catch.
+    const directoryWitnesses = { dist: "dist/cli.js", examples: "examples/README.md" };
     const requiredTarballFiles = [
       "package.json",
       "README.md",
       "LICENSE",
-      ...requiredPackageFiles.filter((path) => path !== "dist"),
-      "dist/cli.js",
+      ...requiredPackageFiles.map((path) => directoryWitnesses[path] ?? path),
     ];
     for (const required of requiredTarballFiles) {
       check(paths.has(required), `dry-run tarball contains ${required}`);

@@ -219,3 +219,109 @@ describe("the command", () => {
     expect(payload.error.code).toBe("unknown-target");
   });
 });
+
+/**
+ * The catalogue turns the report into a DIFF against a decision somebody made.
+ *
+ * The two columns are named for what they actually mean, and the tests hold them
+ * to it: loam cannot see a step registry, so a catalogued phrase is one somebody
+ * SAID they would define and nothing here claims the glue exists.
+ *
+ * The three states are separately asserted because two of them are easy to
+ * collapse into one wrong answer: an ABSENT catalogue and an UNREADABLE one both
+ * yield no comparison, and reporting either as "nothing is catalogued" prints
+ * every written phrase as work owed — a work-list invented by a missing file.
+ */
+describe("the step catalogue", () => {
+  const withCatalogue = async (steps: string): Promise<Project> =>
+    project(
+      { "services/payment-service/spec.md": SPEC, "services/payment-service/steps.yaml": steps },
+      "payment-service",
+    );
+
+  interface CataloguePayload {
+    catalogue: {
+      present: boolean;
+      path: string;
+      entries: number;
+      unreadable?: string;
+      uncatalogued?: string[];
+      unwritten?: string[];
+      duplicated?: Array<{ key: string; texts: string[] }>;
+    };
+  }
+
+  const read = async (p: Project): Promise<CataloguePayload> => {
+    const res = await runLoam(p.workDir, "steps", "--json");
+    expect(res.code, res.out).toBe(0);
+    return JSON.parse(res.stdout) as CataloguePayload;
+  };
+
+  it("reports written phrases against catalogued ones, both ways round", async () => {
+    // Two of the four written phrases, plus one nothing writes. The first entry
+    // carries its keyword and the second does not: both are keyed the way a
+    // written step is keyed, which is what makes an author's spelling a
+    // non-issue.
+    const p = await withCatalogue(
+      ["steps:", "  - Given a captured payment", '  - the response is {n}', "  - a phrase nobody wrote"].join("\n") + "\n",
+    );
+    const payload = await read(p);
+    expect(payload.catalogue.present).toBe(true);
+    expect(payload.catalogue.path).toBe("services/payment-service/steps.yaml");
+    expect(payload.catalogue.entries).toBe(3);
+    // Written but not catalogued — the work-list, in the inventory's own
+    // count-descending order so the phrase that pays back most comes first.
+    expect(payload.catalogue.uncatalogued).toEqual([
+      'a caller holding {s} asks',
+      'metric {s} increments by {n}',
+    ]);
+    // Catalogued but not written: a definition with nothing left to match.
+    expect(payload.catalogue.unwritten).toEqual(["a phrase nobody wrote"]);
+    expect(payload.catalogue.duplicated).toEqual([]);
+  });
+
+  it("an ABSENT catalogue is not an empty one — no comparison is reported at all", async () => {
+    const p = await project({ "services/payment-service/spec.md": SPEC }, "payment-service");
+    const payload = await read(p);
+    expect(payload.catalogue.present).toBe(false);
+    expect(payload.catalogue.entries).toBe(0);
+    // Not `[]`: an empty list reads as "nothing is owed", and the absence of a
+    // file is not an answer about the phrases.
+    expect("uncatalogued" in payload.catalogue).toBe(false);
+  });
+
+  it("an UNREADABLE catalogue says so and compares nothing", async () => {
+    const p = await withCatalogue("steps: not-a-list\n");
+    const payload = await read(p);
+    expect(payload.catalogue.present).toBe(true);
+    expect(payload.catalogue.unreadable).toContain("list");
+    expect("uncatalogued" in payload.catalogue, "loam did not look, so it reports no work-list").toBe(false);
+  });
+
+  it("a non-string entry refuses the whole file rather than being skipped", async () => {
+    const p = await withCatalogue(["steps:", "  - a captured payment", "  - 42"].join("\n") + "\n");
+    const payload = await read(p);
+    expect(payload.catalogue.unreadable).toContain("string");
+    expect(payload.catalogue.entries).toBe(0);
+  });
+
+  it("two entries collapsing onto one phrase are reported, not merged away", async () => {
+    const p = await withCatalogue(
+      ["steps:", "  - the response is 200", "  - Then the response is 403"].join("\n") + "\n",
+    );
+    const payload = await read(p);
+    expect(payload.catalogue.entries).toBe(2);
+    expect(payload.catalogue.duplicated).toEqual([
+      { key: "the response is {n}", texts: ["the response is 200", "Then the response is 403"] },
+    ]);
+  });
+
+  it("the catalogue never changes the exit code — `loam steps` stays a read", async () => {
+    const p = await withCatalogue(["steps:", "  - a phrase nobody wrote"].join("\n") + "\n");
+    const res = await runLoam(p.workDir, "steps", "--json");
+    expect(res.code).toBe(0);
+    const human = await runLoam(p.workDir, "steps");
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain("written but not catalogued");
+  });
+});

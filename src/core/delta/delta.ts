@@ -44,7 +44,10 @@ import { type FleetContext } from "../fleet-context.js";
 import { parseRequirements } from "../document/parse.js";
 import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
-import { livingCapabilityPaths } from "../repo/authored/paths.js";
+import { featureUseCasesDir, livingCapabilityPaths } from "../repo/authored/paths.js";
+import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
+
+import { flowCoverage, type FlowPromises } from "../usecases/delta/claims.js";
 import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
 import { featureSpecServices } from "../repo/repo.js";
 import { capabilityDocIssues } from "../capabilities/delta/doc.js";
@@ -99,11 +102,19 @@ export async function deltaShapeIssues(
   // every feature in a fleet that has not adopted the business axis.
   const capabilities =
     context === undefined ? await featureCapabilityDeltas(featureDir) : await context.featureCapabilityDeltas(featureDir);
-  // The early return must ask about BOTH corpora. Asking only about services
+  // The flows this feature brings, and one `existsSync` for a feature that
+  // brings none — which is every feature in a fleet that has not adopted the
+  // axis. The directory, not the documents: what is needed here is whether to
+  // pay for the overlay at all, and the walk that lists them happens once,
+  // inside it.
+  const hasFlows = existsSync(featureUseCasesDir(featureDir));
+  // The early return must ask about EVERY corpus. Asking only about services
   // meant a capability-only feature — a business change with no service touched
   // yet, which is exactly what an analyst writes first — was graded by nothing
-  // and archived whatever its delta said.
-  if (services.length === 0 && capabilities.docs.length === 0) return issues;
+  // and archived whatever its delta said; asking only about those two would do
+  // the same to a feature whose whole content is a cross-service flow, which is
+  // the shape an architect answers an analyst with.
+  if (services.length === 0 && capabilities.docs.length === 0 && !hasFlows) return issues;
 
   // What OTHER features in flight claim. Only built when a claim has to be
   // checked — the common case never pays for the scan.
@@ -181,6 +192,57 @@ export async function deltaShapeIssues(
     capabilityDeltas.push({ id: doc.id, reqs: graded.reqs, living: graded.living.all });
   }
 
+  // The other carrier of a promise, read once and only when this feature
+  // actually brings a flow: the `dynamic view`s under `features/<FEAT>/usecases/`,
+  // parsed over the map this feature's own merge would leave behind
+  // (`core/usecases/delta/overlay.ts`).
+  // A feature with no `usecases/` directory is a REAL empty answer, not an
+  // ungraded one: there is no flow, so "no flow keeps this" is true and the
+  // message may say it.
+  const kept: FlowPromises = hasFlows
+    ? await flowCoverage({
+        docsDir,
+        featureDir,
+        featureId,
+        capabilities: capabilityDeltas,
+        // Read HERE, through the invocation's index, because this module holds
+        // it and `core/usecases/` does not — every other read in this walk does
+        // the same, and `core/repo/service-target.ts` prices a fleet
+        // enumeration per call at ~13 ms on a 120-service fleet.
+        vocabulary: context === undefined ? await readCapabilityVocabulary(docsDir) : await context.capabilities(docsDir),
+        known: new Set(await enumeratedServiceIds(docsDir, context)),
+        // A function rather than the context itself: one memoised LikeC4 read
+        // does not justify an edge from `core/usecases/` to `fleet-context`, and
+        // the edge would push that package up a DAG level for nothing.
+        ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+      })
+    : { kind: "read", kept: [] };
+  if (kept.kind === "unreadable") {
+    // ERROR, and the archive gate's own `NEVER_OVERRIDABLE` keeps `--approve`
+    // off it. This is the refusal that stops a flow being copied into
+    // `architecture/` and the NEXT reader's `loam validate --all` carrying the
+    // failure — including the case the overlay exists for, a hop naming an
+    // element the merge does not land. Mechanical, so it is not loam's judgement
+    // to override.
+    issues.push({
+      severity: "error",
+      code: "usecase.flow-invalid",
+      subject: featureId,
+      // The opening sentence does NOT say whose file is at fault, and that is
+      // deliberate: the corpus this reads is the feature's flows PLUS the living
+      // `architecture/` documents they are drawn over, so the failing path can
+      // be a living one — a landscape that no longer parses, a use case somebody
+      // else wrote. Every message carries its own path, so a reader can place
+      // it; an opening line that blamed `usecases/` would send them to the wrong
+      // file first.
+      message:
+        `this feature's flows could not be graded against the map its own merge would leave behind, so the archive ` +
+        `would land an architecture/ nothing has checked. The corpus is the feature's usecases/ AND the living ` +
+        `architecture/ documents they are drawn over, so the fault may be in either — each message names its file. ` +
+        `${kept.errors.length} problem(s): ${kept.errors.join("; ")}`,
+    });
+  }
+
   // The `Realizes:` join, both directions, over documents this walk has already
   // parsed. Skipped entirely when the feature carries no capability delta,
   // which is every feature in a fleet that has not adopted the business axis —
@@ -188,7 +250,21 @@ export async function deltaShapeIssues(
   // actually retired, so even an adopting fleet pays the fleet-wide read on the
   // features that earn it.
   if (capabilityDeltas.length > 0) {
-    issues.push(...uncoveredIssues(capabilityDeltas, serviceDeltas));
+    // The three arms travel as three, and flattening two of them to `[]` is
+    // the one thing this must not do: `capability.uncovered` says in words that
+    // no flow keeps the promise, so handing it an empty list for a corpus loam
+    // could not read or could not resolve makes it assert a negative it never
+    // evaluated — and gate on it. `claims.ts`'s header states the rule; this is
+    // where a caller could break it.
+    issues.push(
+      ...uncoveredIssues(
+        capabilityDeltas,
+        serviceDeltas,
+        kept.kind === "read"
+          ? { graded: true, kept: kept.kept }
+          : { graded: false, why: kept.kind === "ungraded" ? kept.why : kept.errors.join("; ") },
+      ),
+    );
     issues.push(
       ...(await removedRealizedIssues({
         capabilities: capabilityDeltas,

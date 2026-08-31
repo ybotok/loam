@@ -4,19 +4,25 @@
 enough that every row of [SCHEMA.md](../SCHEMA.md)'s canonical-joins table is exercised by something
 — including the joins that only appear once a fleet has more than two services in it.
 
-Run it from a clone. The `loam.json` is untracked; delete it when you are done.
+Run it from a clone. `docs/loam.json` is committed and says `"docsDir": "."`, so the tree governs
+itself: every command below resolves to this fleet because it is run from inside it. There is
+nothing to write first and nothing to delete afterwards.
 
 ```bash
-echo '{ "docsDir": "examples/docs" }' > loam.json
-npm run dev -- list                          # the fleet and its maturity ladder
-npm run dev -- status                        # what to do next, derived from the files
-npm run dev -- validate --all                # the gate CI runs
-npm run dev -- archive FEAT-101 --dry-run    # the three-axis merge plan, writing nothing
-npm run dev -- archive FEAT-112 --dry-run    # an operation being retired, writing nothing
-npm run dev -- verify FEAT-088               # a shipped feature's done-check: attested
-npm run dev -- verify FEAT-120               # …and its pair, the same check: verified
-npm run dev -- dependencies                  # the active-feature graph
+cd examples/docs
+loam list                          # the fleet and its maturity ladder
+loam status                        # what to do next, derived from the files
+loam validate --all                # the gate CI runs
+loam archive FEAT-101 --dry-run    # the three-axis merge plan, writing nothing
+loam archive FEAT-112 --dry-run    # an operation being retired, writing nothing
+loam verify FEAT-088               # a shipped feature's done-check: attested
+loam verify FEAT-120               # …and its pair, the same check: verified
+loam dependencies                  # the active-feature graph
 ```
+
+Working on loam itself and running from source, use `npx tsx ../../src/cli.ts <args>` in place of
+`loam`. Not `npm run dev --`: npm runs a script from the package root, so it would leave
+`examples/docs` and resolve some other `loam.json` — the fleet it reported would not be this one.
 
 `test/examples.test.ts` pins the validate summary, every finding code and the archive plans
 file-for-file, so nothing below can drift away from the code without a test going red.
@@ -150,9 +156,18 @@ is what closes it.
 
 ## What the example deliberately does not carry
 
-- **`AGENTS.md` and `loam.json`.** A real docs repo has both, written by
-  `loam init --docs . --create`. They are left out here so the tree stays a pure set of documents,
-  and so the version stamp in a generated `AGENTS.md` cannot go stale against the running binary.
+- **`AGENTS.md`.** A real docs repo has one, written by `loam init --docs . --create`. It is left
+  out here because a generated `AGENTS.md` carries the version stamp of the binary that wrote it,
+  and this tree is committed while the binary keeps moving — a stamped copy in the repository would
+  be stale by the next release and would say so to every reader of the example.
+
+  **`loam.json` used to be left out with it**, on the same "keep the tree a pure set of documents"
+  reasoning, and that trade was wrong: without it the example could not be RUN. `loam status` here
+  answered "No loam.json found" and exited 1, and the workaround this page printed instead — a
+  throwaway `loam.json` at the repository root — then governed every other directory in the clone,
+  so `loam init` from anywhere below it refused, and forgetting to delete it silently pointed later
+  commands at the example fleet. It is committed now, byte-for-byte the two lines `loam init` writes
+  for a docs repo that governs itself, which makes `cd examples/docs` the whole of the setup.
 - **`payment-split-service`'s own `asyncapi.yaml`.** The async axis has the full feature lifecycle
   now — FEAT-101's `specs/payment-service/asyncapi.yaml` demonstrates the merge half on a living
   contract — but the NEW service's contract for the drawn `PaymentSplit` edge is deliberately

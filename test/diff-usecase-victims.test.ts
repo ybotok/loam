@@ -18,10 +18,13 @@
  *    guessed victim reads exactly like a real one. It rides as a SUSPENSION
  *    instead, which is the shape `ConsumerScan` already has for "nobody could
  *    answer".
- *  - an UNTAGGED `dynamic view` must contribute nothing. The `#cap-` opt-in is
- *    what lets the axis ship into a fleet that already has diagrams, and a
+ *  - an UNTAGGED `dynamic view` must contribute nothing. The reserved-tag opt-in
+ *    is what lets the axis ship into a fleet that already has diagrams, and a
  *    victim scan that ignored it would grade somebody's hand-drawn sequence as a
  *    contract consumer.
+ *  - and the opt-in is EITHER reserved prefix. `#req-<slug>` alone is an author
+ *    who asked to be graded and forgot half the claim, and this reader used to
+ *    be blind to them while `validate --all` graded them hop by hop.
  */
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -70,7 +73,9 @@ async function findingsFor(p: Project, id: string): Promise<JsonFinding[]> {
  * a hop into `paymentService.api` has to resolve through the enumerated fleet to
  * `payment-service` before it can be filed against the removal. `tag
  * cap-checkout` is declared here because LikeC4 refuses an undeclared tag and one
- * `specification` block serves the whole project.
+ * `specification` block serves the whole project. `tag req-CHK-ONCE` sits beside
+ * it, unused by every case but one: the view that carries a requirement claim and
+ * no capability tag at all.
  *
  * `EXTRA` is spliced into `model { }` so one case can add the second edge that
  * makes a hop contested.
@@ -81,6 +86,7 @@ function landscape(extra = ""): string {
   element container
   element topic
   tag cap-checkout
+  tag req-CHK-ONCE
 }
 
 model {
@@ -305,6 +311,31 @@ describe("loam diff — the use case a removal breaks", () => {
       // The edge victim still fires, which is what proves the scan ran at all
       // rather than the fixture being broken.
       expect(removal.details.some((d) => d.startsWith("edge checkout-web → payment-service"))).toBe(true);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a view tagged only #req- IS a use case — the victim walk reads both reserved prefixes", async () => {
+    // The asymmetry this pins. `validate --all` graded a `#req-`-only flow hop by
+    // hop while every reader — this one included — opted in on `#cap-` alone, so
+    // one fleet had a flow worth an error on its own grade and no existence at
+    // all on somebody's pull request. `req-CHK-ONCE` is DECLARED in the landscape
+    // beside `cap-checkout`, so the byte gate is open under either predicate and
+    // what this measures is which views are read, not whether the project loaded.
+    const p = await makeProject(fixture("", "    #req-CHK-ONCE\n"));
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/openapi.yaml", OP_REMOVED);
+      const removal = byCode(await findingsFor(p, "payment-service"), "diff.op-removed-consumed");
+      expect(removal.details).toContain(
+        "use case 'uc_checkout' step 1 'authorizes the payment' (architecture/usecases/checkout.likec4)",
+      );
+      // The same restraint the `#cap-` case gets: the event hop and the hop into
+      // another service's operation of the same name stay out. What widened is
+      // which VIEWS are read, never which hops are filed against a removal.
+      expect(aboutHop(removal, 2)).toEqual([]);
+      expect(aboutHop(removal, 3)).toEqual([]);
     } finally {
       await p.destroy();
     }

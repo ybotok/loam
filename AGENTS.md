@@ -45,7 +45,7 @@ that make a brand worth its annotations. Read it before splitting anything: the 
 Nothing is done until all of this is green:
 
 ```bash
-npm run lint && npm run typecheck && npm run arch:check && npm test
+npm run lint && npm run typecheck && npm run arch:check && npm run meta:check && npm test
 ```
 
 `arch:check` is the single architecture gate: file-level import cycles, the package graph, the
@@ -53,6 +53,11 @@ core→commands ban, the barrel ban, the console/process boundary (envelope/json
 exception), child-process timeout/maxBuffer policy, and brand-cast containment — each with a
 negative self-test in `test/arch-gate.test.ts`. `npm run arch:graph` remains available alone for
 move-a-module workflows.
+
+`meta:check` sits BESIDE it and answers a different question: `arch:check` proves the layering
+HOLDS, `meta:check` proves the written model still DESCRIBES the tree. They fail independently — a
+package added and drawn nowhere breaks no rule, and a cycle breaks every rule while the map stays
+perfectly current. It costs about 150 ms. See **The self-model** below.
 
 Coverage thresholds are enforced separately and must also hold:
 
@@ -108,7 +113,7 @@ notice. Two tests exist to stop this drifting silently:
 ```
 src/cli.ts        commander wiring; the only place that decides process exit
 src/commands/     one module per CLI command — parse args, call core, print, set exit code
-src/core/         everything else: a 7-level DAG with zero import cycles
+src/core/         everything else: an 11-level package DAG with zero import cycles
 ```
 
 - **`core/` must not print.** No `console.*`, no `process.exit`, no `process.argv`. A core module
@@ -127,6 +132,43 @@ src/core/         everything else: a 7-level DAG with zero import cycles
 - **No barrel or `index.ts` re-exports.** There are none. They would hide the real import edge from
   the cycle check and make every import point at a directory instead of a module. A package is a
   place files live, never a thing you import.
+
+## The self-model — loam documents loam
+
+`meta/docs/` is a real loam docs repo whose subject is this repository:
+`architecture/landscape.likec4` draws one container per top-level subject of `src/` and one
+relationship per value import that crosses two of them, and `services/loam/arch.spec.md` carries
+`docs/DESIGN.md`'s numbered rules as requirements with `Covers:` lines onto those objects. It is not
+a demo. It exists because the layout table in DESIGN was a table nobody was checking, and the axis
+convicted nine missing rows, eleven false `Depends on` cells, a DAG-levels table that placed
+`verify/` below `gherkin/` — which it imports — and two mutual dependencies `arch:graph` cannot see.
+
+**Two obligations come with a change to `src/`, and both are in the gate:**
+
+- `npm run meta:check` — if the change moved an import between two top-level subjects, the model
+  needs the edge. The script prints the exact line and never writes it: deciding what the subjects
+  of `src/` are is the content of that document, and a landscape emitted from a scan would be a
+  picture of the code rather than a claim about it. A new edge can also move a package up a level in
+  DESIGN's DAG table, and everything above it with it.
+- `npm run meta:agents` — if the change touched `src/core/agent/agents-md/` or
+  `src/core/agent/workflows/`, the generated `meta/docs/AGENTS.md` is behind. `agents.stale` cannot
+  see it: that check grades the version STAMP, so a same-version edit leaves the file wrong while
+  every command reports the repo healthy. CI runs the same script with `--check`.
+
+**An architectural change may go through loam's own lifecycle** — `loam new`, author the delta,
+`loam validate --feature`, `loam delta`, `loam archive`, all run from `meta/` — rather than being
+edited into the living documents. That path works end to end and its archived result has been
+compared against the same edits made by hand and found identical. Use it when the change is one
+somebody should be able to read back as a decision; use the direct edit for a one-line edge. The
+`self-model` skill has the commands, the four frictions the scaffold has against a one-service repo,
+and the list of check families that are silent here and must never be read as coverage.
+
+**What self-hosting does NOT buy, and the line is not negotiable.** This repository is one operator
+by construction, so nothing here substitutes for evidence from fleets that are not loam's own. And
+loam's tests are vitest, not cucumber, so `loam verify` would record every scenario claim as
+`attested` and never `verified` — the distinction loam exists to make is the one property this axis
+does not exercise. Building a vitest-to-cucumber-JSON bridge to improve that number is the invented
+need the non-goals forbid.
 
 ## Standards
 

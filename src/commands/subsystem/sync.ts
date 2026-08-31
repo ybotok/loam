@@ -25,7 +25,7 @@ import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/
 import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
-import { sameBytes } from "../../core/staging/writes.js";
+import { viewsAgree } from "../../core/repo/tree/views.js";
 import { expectedViews } from "./txn/views.js";
 
 /** What one sync did to the file. */
@@ -56,8 +56,14 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     const expected = await expectedViews(docsDir, tree);
     const path = subsystemViewsPath(docsDir);
     const expectedBytes = expected === null ? null : Buffer.from(expected, "utf8");
-    const actual = existsSync(path) ? await readFile(path) : null;
-    if (sameBytes(actual, expectedBytes)) {
+    // Content, not bytes: `viewsAgree` records why, beside the generator. A
+    // Windows clone hands this file back CRLF with not one fact changed, and a
+    // byte compare made `sync` answer `updated` and rewrite it LF — after which
+    // git shows the file permanently modified and the next checkout puts the
+    // CRLF back. `validate` stopped demanding that rewrite; `sync` must stop
+    // offering it, or the two disagree about the same file.
+    const actual = existsSync(path) ? await readFile(path, "utf8") : null;
+    if (viewsAgree(actual, expected)) {
       report(json, { action: "current", subsystems: tree.subsystems.length, recovered });
       return;
     }
@@ -84,6 +90,7 @@ function report(
 ): void {
   if (json) {
     emitJson({
+      command: "subsystem",
       path: "architecture/subsystems.likec4",
       action: out.action,
       subsystems: out.subsystems,

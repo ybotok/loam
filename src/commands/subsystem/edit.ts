@@ -116,6 +116,7 @@ export async function runNew(
       report: (views, recovered) => {
         if (json) {
           emitJson({
+            command: "subsystem",
             created: name,
             path: repoPath(docsDir, dir),
             views,
@@ -203,6 +204,7 @@ export async function runRm(docsDir: DocsDir, name: string, json: boolean): Prom
         }
         if (json) {
           emitJson({
+            command: "subsystem",
             removed: name,
             path: repoPath(docsDir, sub.dir),
             directoryRemoved,

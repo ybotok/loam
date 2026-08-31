@@ -145,6 +145,7 @@ export function report(
 
   if (json) {
     emitJson({
+      command: "verify",
       feature: checklist.feature,
       path: repoPath(docsDir, featureDir),
       digest: checklist.digest,
@@ -217,6 +218,16 @@ export function report(
       console.log(`  Contract report read: ${contractReportLine(recorded.contractReport)}.`);
     }
   }
+  // The notice's code LEADS the line here, where validate's findings now carry
+  // theirs in a trailing `(code)` — and the two shapes are deliberate, not
+  // drift. A notice is one line and its code is its subject, so it reads as a
+  // label; a finding is one of hundreds in a report whose subject is the
+  // message, so its code is an aside. Appending a second copy to satisfy the
+  // one-shape instinct would print `⚠ verify.claims-open: … (verify.claims-open)`,
+  // and the leading form is also the one the frozen post-archive view prints
+  // (frozen.ts) — a live record and a shipped one must not describe the same
+  // notice two ways. Either way the code is on screen, which is the whole of
+  // what EXPLAIN_FOOTER below needs to be true.
   for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
   // An attested record has answered every question — telling it to "answer each
   // claim" would send an agent round a loop it has already run. The notice

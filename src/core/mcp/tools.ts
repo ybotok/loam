@@ -11,6 +11,14 @@
  * and a facade that exposes "only the read half" of a writer is one
  * flag-mapping bug away from exposing the writer.
  *
+ * The inclusion of the two commands that read no CONFIG — `explain` and
+ * `instructions` — is equally deliberate, and is recorded here because the
+ * gap is otherwise re-derivable as an oversight: an agent meets both BEFORE
+ * the repository is wired (every generated skill's first line is `loam
+ * instructions <workflow>`, and `loam explain <code>` answers a code from a
+ * run that has not happened yet), so an MCP-only host that could not reach
+ * them could not fetch the protocol its own generated skill points at.
+ *
  * Every table entry mirrors a real registration in `src/commands/` — same
  * positionals, same flags, same spellings — so the contract an MCP client
  * sees is the CLI contract, not a second one. `--json` is appended by
@@ -64,6 +72,36 @@ const SERVICE_FLAG = {
   kind: "string",
   description: "service id (defaults to the one loam.json configures)",
 } as const;
+
+/**
+ * The tool annotations EVERY entry in this table carries — one shared literal,
+ * because the table is read-only by construction and a per-tool copy is a
+ * place for one of them to drift into claiming something else.
+ *
+ * `readOnlyHint` is the whole point: without it a host has no machine signal
+ * that `loam_validate` or `loam_context` is safe, so a call that only reads
+ * files falls into the same approval prompt as a mutating tool. Read-only
+ * hints are what let a host auto-approve, and the reason the writers are
+ * excluded from the table above is precisely so this hint can be true of
+ * everything left. `openWorldHint: false` states the other half a host acts
+ * on: loam reaches no network and no service — it reads the files in the
+ * directory the server started in, and nothing else.
+ *
+ * `idempotentHint` and `destructiveHint` are deliberately ABSENT rather than
+ * spelled `true`/`false`: MCP defines both as meaningful only when
+ * `readOnlyHint` is false, so shipping them would be noise a reviewer has to
+ * justify before deciding they mean nothing here.
+ *
+ * `outputSchema` was considered with these and DEFERRED, which is worth
+ * recording so the next reader does not re-open it as an oversight. It cannot
+ * land as an additive change: MCP 2025-06-18 makes `structuredContent` a MUST
+ * once a tool declares an `outputSchema`, and `toolReply` in `./protocol.ts`
+ * deliberately omits that field for stdout it could not parse as an envelope —
+ * pinned by test/mcp-protocol.test.ts. Declaring the schema would therefore
+ * require changing what `toolReply` emits, which is a behaviour change to the
+ * result contract and a separate decision from advertising a hint.
+ */
+export const READ_ONLY_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false } as const;
 
 /**
  * The `loam_` prefix on every name: multi-server MCP hosts flatten tool names
@@ -224,6 +262,23 @@ export const MCP_TOOLS: readonly McpTool[] = [
     ],
   },
   {
+    name: "loam_steps",
+    command: "steps",
+    description:
+      "Inventory the step phrases of a service's scenarios — how many step definitions its suite needs. " +
+      "CLI equivalent: loam steps [--service <id>] [--duplicates] --json",
+    positionals: [],
+    flags: [
+      { ...SERVICE_FLAG, description: "service to inventory (defaults to the configured service)" },
+      {
+        property: "duplicates",
+        flag: "--duplicates",
+        kind: "boolean",
+        description: "list only the near-duplicate groups — phrases that differ by an article or a trailing clause",
+      },
+    ],
+  },
+  {
     name: "loam_explain",
     command: "explain",
     description:
@@ -238,6 +293,45 @@ export const MCP_TOOLS: readonly McpTool[] = [
       },
     ],
     flags: [],
+  },
+  {
+    name: "loam_instructions",
+    command: "instructions",
+    description:
+      "Print a workflow protocol, version-matched to this binary; reads no config and no docs repo, so it answers " +
+      "before the repository is wired. Ask for loam-check DELIBERATELY: it is by far the largest protocol " +
+      "(its per-code fix tables are ~83 KB of the ~84 KB it prints), and noFixTables true returns the narrowed page " +
+      "— every paragraph that introduces a table, none of the rows — after which loam_explain answers any one code " +
+      "a run reports in under 500 bytes. " +
+      "CLI equivalent: loam instructions [workflow] [args...] [--no-fix-tables] --json",
+    positionals: [
+      {
+        property: "workflow",
+        required: false,
+        variadic: false,
+        description: "workflow name (loam-adopt, loam-feature, …); omit to list them",
+      },
+      {
+        property: "args",
+        required: false,
+        variadic: true,
+        description: "values substituted for the protocol's $1, $2, … placeholders",
+      },
+    ],
+    flags: [
+      {
+        // `noFixTables`, not `fixTables`, and the mismatch with commander's own
+        // attribute name (`fixTables`, because `--no-` negates) is the point:
+        // `toArgv` spells a true boolean as its flag string, so a property named
+        // for the option's ATTRIBUTE would make `{fixTables: true}` emit
+        // `--no-fix-tables` and turn the tables off. The JSON property is named
+        // for what setting it true DOES.
+        property: "noFixTables",
+        flag: "--no-fix-tables",
+        kind: "boolean",
+        description: "drop the per-code fix tables; loam_explain answers any code a run reports",
+      },
+    ],
   },
 ];
 

@@ -38,6 +38,8 @@ import { registerDoctor } from "../doctor.js";
 import { registerContext } from "../context/context.js";
 import { registerGate } from "../gate/gate.js";
 import { registerExplain } from "../explain/explain.js";
+import { registerInstructions } from "../instructions.js";
+import { registerSteps } from "../steps/steps.js";
 
 export interface DispatchResult {
   readonly stdout: string;
@@ -127,6 +129,16 @@ function readProgram(sinks: Sinks): Command {
   registerContext(program);
   registerGate(program);
   registerExplain(program);
+  // The two that read no config at all. They are here for the same reason they
+  // are in MCP_TOOLS: an agent meets `instructions` and `steps` BEFORE the
+  // repository is wired, and every generated skill's first line points at
+  // `loam instructions <workflow>`. This list and MCP_TOOLS are two copies of
+  // one roster, and nothing counted them against each other until a tool
+  // advertised in `tools/list` and absent here answered a `tools/call` with
+  // `unknown command 'instructions'` — an envelope that reads as the caller's
+  // mistake. `test/mcp-serve.test.ts` now calls every advertised tool.
+  registerInstructions(program);
+  registerSteps(program);
   return program;
 }
 

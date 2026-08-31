@@ -1,22 +1,71 @@
 /**
- * Reading loam's output, command by command: the code-by-code map of
- * `status`, `validate`, `doctor`, `rebase`, `dependencies`, `explore` and
- * `instructions`. This is the section that grows when a finding code is
- * added — test/codes-drift.test.ts checks every emitted code is documented
- * here or in a workflow body. (The `status` bullet lives in `./map/status.ts`
- * and is composed back in below, first among the bullets on purpose; `gate`,
- * `context`, `diff` and `mcp` document themselves one package down, in
- * `./map/` and `./map/lenses/` — this file sits against the 300-line limit.)
+ * Reading loam's output, in its two deliveries.
  *
- * One section of the AGENTS.md template. ../agents-md.ts assembles the
- * document by PLAIN CONCATENATION — no join separator — so every section
- * starts at the first character of its opening line and ends with the newline
- * that closes its last one. Keep that shape when editing, or two sections glue
- * onto one line in every docs repo loam scaffolds from now on.
+ * {@link READING_OUTPUT} and {@link REFERENCE_PAGES} are what AGENTS.md keeps:
+ * the `--json` envelope, the rule to branch on codes rather than prose, and the
+ * index of the pages this file no longer carries. {@link CODE_MAP} is the
+ * code-by-code map of `status`, `validate`, `doctor`, `rebase`, `dependencies`,
+ * `explore`, `seed` and `instructions` — the part `loam instructions loam-codes`
+ * prints. ../workflows/reference/codes.ts composes it with `./map/`,
+ * `./map/lenses/` and `./refusals.ts`, in exactly the order ../agents-md.ts used
+ * to concatenate them, so the assembled page is the section byte for byte.
+ *
+ * WHY THE MAP LEFT THE FILE, given that this package's whole subject is a file.
+ * AGENTS.md is auto-loaded from the working directory by every agents.md-aware
+ * host, on every session, and `loam init` writes it once and never refreshes it.
+ * It reached 109,399 bytes; Codex truncates the AGENTS.md chain at 32,768 bytes
+ * and Windsurf caps a workspace rule file at 12,000 characters, both silently.
+ * Roughly seventy percent of the document was being dropped with no error and no
+ * way for the reader to tell which half it held — and this section alone was
+ * 44,433 of those bytes, 41% of the file. It is also the half a reader consults
+ * at a moment it can name (a run reported something) rather than the half it
+ * needs to form a question at all, which is what decided which side of the split
+ * it went. ../workflows/reference/reference.ts carries the rest of that argument.
+ *
+ * The move is a move and not a deletion: every byte is still shipped, still in
+ * the same corpus test/codes-drift.test.ts reads (AGENTS_MD + PROTOCOLS), and
+ * still one command away rather than one file away.
+ *
+ * WHAT THE MAP IS, AND WHAT IT DELIBERATELY IS NOT. The unique content is which
+ * codes which INVOCATION can raise: nothing else in the corpus says that, and an
+ * agent choosing what to run needs it. What it does not carry is a per-code
+ * gloss of what each code MEANS. That half used to be written twice — once here,
+ * once in the /loam-check fix tables — in two independently worded places, in a
+ * file `loam init` writes once and never refreshes, so the two drifted with
+ * nothing able to say which had rotted. `loam explain <code>` now answers
+ * meaning, severity and fix for every code named below, out of the running
+ * binary. test/agent-contract.test.ts holds that pointer honest: every code
+ * backticked in the corpus must resolve through `explainSubject`, so a family
+ * added here without an explanation fails by name. Keep the code list; add the
+ * gloss only where it says something `explain` cannot — a condition on when the
+ * invocation raises it at all, or a cross-reference between two codes.
+ *
+ * ONE PARAGRAPH THE MOVE MADE FALSE, and the reason to look for others like it.
+ * The `agents.stale` entry read "one check on this very file … the reason to
+ * distrust what you are reading", which was true while these bytes WERE the
+ * scaffolded AGENTS.md. On a page printed by the binary it is exactly backwards
+ * — this page cannot be stale, and the file it warns about is somewhere else —
+ * so the entry names AGENTS.md instead. A section that talks about its own
+ * document does not survive being moved to another one; that is the class to
+ * check for whenever anything else leaves this file.
+ *
+ * READING_OUTPUT and REFERENCE_PAGES are sections of the AGENTS.md template.
+ * ../agents-md.ts assembles the document by PLAIN CONCATENATION — no join
+ * separator — so every section starts at the first character of its opening line
+ * and ends with the newline that closes its last one. Keep that shape when
+ * editing, or two sections glue onto one line in every docs repo loam scaffolds
+ * from now on. CODE_MAP owes the same shape for the same reason, one level up:
+ * reference/codes.ts concatenates it with the modules listed above.
  */
 import { STATUS_COMMAND } from "./map/status.js";
 
-const MAP_INTRO = `## Reading loam's output
+/**
+ * The section AGENTS.md keeps. Three facts an agent needs BEFORE it can form a
+ * question — that every command speaks JSON, that the envelope survives a bad
+ * invocation, and that codes are the contract and prose is not — plus the two
+ * places the detail went.
+ */
+export const READING_OUTPUT = `## Reading loam's output
 
 Every command takes \`--json\`, and the envelope holds even when the INVOCATION
 is wrong: with \`--json\` anywhere in the arguments, an unknown flag, unknown
@@ -26,7 +75,77 @@ to stderr; \`--help\` and \`--version\` output pass through untouched). Without
 \`--json\` the same refusal is plain text on stderr with nothing on stdout.
 
 Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
-not. The code-by-code fix table lives in the \`/loam-check\` command \`loam init\` lays
+not.
+
+**What a code MEANS is one command away**, and the answer describes the loam you
+are running rather than the one that scaffolded this repo. \`loam explain <code>\`
+gives one code's meaning, its severity in each scope that grades it, and its fix;
+\`loam explain --codes\` lists the whole vocabulary and \`loam explain --codes --json\`
+is the machine-readable form. Reach for it rather than for any written file,
+including this one, which is written once at \`loam init\` and never refreshed.
+
+**Which codes an INVOCATION can raise** is the other half, and it is the one
+thing nothing else carries. It is a reference page rather than a section here:
+\`loam instructions loam-codes\`.
+
+`;
+
+/**
+ * The index. A reference nobody can find is content deleted with extra steps,
+ * so the exact command is spelled per page rather than described — and
+ * test/agents.test.ts asserts that every name in REFERENCES appears here inside
+ * its own `loam instructions` line, which is what makes a renamed page fail
+ * loudly instead of leaving a pointer at nothing.
+ */
+export const REFERENCE_PAGES = `## The reference pages
+
+This file is the orientation: the layout, the cycle, what gates and what only
+advises, and what the words mean. Four things it does NOT carry — the grammars
+you consult while writing ONE document, and the inventory of what each command
+can report — are **reference pages**, printed by the binary rather than written
+here. That is why: this file is auto-loaded on every session and never
+refreshed, while a page out of the binary describes the loam you are actually
+running, and is read at the one moment it is needed.
+
+- \`loam instructions loam-codes\` — which codes each invocation can raise:
+  \`validate --service\` / \`--feature\` / \`--all\`, \`status\`, \`doctor\`, \`gate\`,
+  \`context\`, \`diff\`, \`explore\`, \`dependencies\`, \`rebase\`, \`seed\`, \`subsystem\`,
+  \`mcp\`, the use-case views, the containment refusals, the error envelope, and
+  the OpenSpec migration surface.
+- \`loam instructions loam-spine\` — the ID spine: every join between the
+  artifacts (\`operationId\`, message name, \`Covers:\`, \`Requires:\`,
+  \`Capability:\`, \`Realizes:\`), the \`Based-On:\` baseline pins on both the
+  requirement and the contract axis, how to draw a shared broker, and how to
+  declare a message produced outside the fleet.
+- \`loam instructions loam-authoring\` — the grammars you author against:
+  the architecture spec axis (\`arch.spec.md\` and its \`Covers:\` line), the
+  generated Gherkin suite, and frontmatter with the vouch chain behind it.
+- \`loam instructions loam-done-check\` — the done-check: how \`loam verify\`
+  derives its claims, the three channels that may answer them, the federated
+  recording form, and what separates **verified** from **attested**.
+
+Each takes no arguments and prints whole. \`loam instructions\` with no argument
+lists them beside the six workflow protocols; \`loam explain <code>\` answers any
+single code without opening a page at all.
+
+`;
+
+/**
+ * The reference page's own opening: what the map is, where the /loam-check fix
+ * tables sit beside it, and the one family `loam explain` cannot answer.
+ */
+const MAP_INTRO = `**What this page is.** It says which codes an INVOCATION can raise. It does
+NOT say what they mean: that half is one command away and describes the loam you
+are running rather than the one that scaffolded this repo. \`loam explain <code>\`
+gives one code's meaning, its severity in each scope that grades it, and its fix;
+\`loam explain --codes\` lists the whole vocabulary and \`loam explain --codes --json\`
+is the machine-readable form. The one family \`explain\` does not answer
+is the OpenSpec migration surface (\`openspec.*\`, \`mapping.*\`) — those commands run
+before a repository has a governed loop to look a code up from — so those entries
+alone keep their notes here.
+
+The code-by-code fix table is a different document again: it lives in the
+\`/loam-check\` command \`loam init\` lays
 down. \`init\` writes that body twice for every tool it configures: once as a slash
 command in the tool's own command directory (you type it), and once as an Agent
 Skill at \`<tool-dir>/skills/loam-check/SKILL.md\` (the model loads it by itself when
@@ -40,85 +159,58 @@ writes for the ones it finds, falling back to Claude Code when it finds none.
 each suppress one delivery. The tools written for are recorded in
 \`loam.json\` as \`agentTools\`, which is how \`loam doctor\` tells a file missing
 because the binary grew a new command from one missing because nobody ever
-selected that tool. The map of which invocation surfaces what:
+selected that tool.
+
+The map:
 
 `;
 
 const MAP_REST = `- \`loam validate --service <id>\` grades one service's own axes: \`service.unknown\`,
   \`service.no-model\`, \`service.no-spec\`, \`service.no-openapi\`, \`c4.invalid\`,
-  \`c4.no-relationships\` (warn — the model declares elements and no edge joins
-  anything, while more than one nested element or this service's own
-  health.yaml dependencies say it should reach something; a model that reaches
-  nothing is almost never true),
-  \`requirements.missing-scenarios\`, \`requirements.stepless-scenario\`,
-  \`requirements.assertionless-scenario\` (steps, but no \`Then\` — it asserts
-  nothing and answers its claim anyway),
-  \`requirements.examples-unbound\`, \`requirements.examples-unreferenced\`
-  (an outline whose header and \`<placeholders>\` disagree — the step gets the
-  literal text, or the column is a rename nobody finished),
-  \`spec.merge-conflict\`, \`spec.duplicate-requirement\`,
-  \`spec.no-requirements\`, \`spec.repeated-operations\`, \`spec.repeated-covers\`,
-  \`openapi.invalid\`, \`openapi.duplicate-operationid\` (one operationId in two
-  (path, method) slots — every join on the id then picks one of them arbitrarily),
-  \`openapi.response-undescribed\` (warn — operations whose responses declare no
-  schema at all; a presence probe, what a schema says is never checked),
-  \`openapi.ref-unresolved\` (warn here, error at archive plan time — an internal
-  \`$ref\` resolving to nothing in the document),
-  \`api.ungoverned\`, \`api.ops-unlinked\`,
-  \`api.requirement-deprecated\`, \`spec-api.op-undefined\` (the living spec's own
-  \`Operations:\` lines, not only a delta's), \`spine.landscape-invalid\`, \`spine.op-undefined\`,
-  \`spine.op-link-missing\`, \`spine.op-deprecated\`,
-  the async contract axis (AsyncAPI 3): \`service.no-asyncapi\`, \`asyncapi.invalid\`,
-  \`asyncapi.duplicate-message\`, \`asyncapi.payload-undescribed\` (warn — a
-  message whose payload declares no shape at all; non-JSON \`schemaFormat\`
-  payloads are never judged), \`asyncapi.ref-unresolved\` (warn — internal
-  \`$ref\`s resolving to nothing), \`spine.message-undefined\`,
-  \`spec-event.message-undefined\`, \`spine.message-unproduced\`,
-  \`spine.message-external\` (warn — the only declared producer is an
-  \`#external\` element, so the consumer's own asyncapi.yaml is the contract;
-  fires while it defines no shape for the message, silent once it does),
-  \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.ungoverned\`, \`event.covered\`, and
-  the architecture spec axis: \`covers.unknown\`, \`health.invalid\`, \`health.uncovered\`,
-  \`health.dependency-unmodelled\` (warn — a health.yaml \`dependencies:\` id that
-  nothing in this service's own model.likec4 answers to by element id, binding
-  or title; the model, not the landscape, is what the on-call file must agree
-  with). Run inside
-  the service's own repo, once a generated suite exists under
+  \`c4.no-relationships\`, \`requirements.missing-scenarios\`,
+  \`requirements.stepless-scenario\`, \`requirements.assertionless-scenario\`,
+  \`requirements.examples-unbound\`, \`requirements.examples-unreferenced\`,
+  \`spec.merge-conflict\`, \`spec.duplicate-requirement\`, \`spec.no-requirements\`,
+  \`spec.repeated-operations\`, \`spec.repeated-covers\`, \`openapi.invalid\`,
+  \`openapi.duplicate-operationid\`, \`openapi.response-undescribed\`,
+  \`openapi.ref-unresolved\`, \`api.ungoverned\`, \`api.ops-unlinked\`,
+  \`api.requirement-deprecated\`, \`spec-api.op-undefined\`,
+  \`spine.landscape-invalid\`, \`spine.op-undefined\`, \`spine.op-link-missing\`,
+  \`spine.op-deprecated\`; the async contract axis (AsyncAPI 3):
+  \`service.no-asyncapi\`, \`asyncapi.invalid\`, \`asyncapi.duplicate-message\`,
+  \`asyncapi.payload-undescribed\`, \`asyncapi.ref-unresolved\`,
+  \`spine.message-undefined\`, \`spec-event.message-undefined\`,
+  \`spine.message-unproduced\`, \`spine.message-external\`,
+  \`asyncapi.message-contested\`, \`event.messages-unlinked\`, \`event.ungoverned\`,
+  \`event.covered\`; and the architecture spec axis: \`covers.unknown\`,
+  \`health.invalid\`, \`health.uncovered\`, \`health.dependency-unmodelled\`.
+  Run inside the service's own repo, once a generated suite exists under
   \`<gherkinDir>/loam/\`, it also grades that suite against the living specs:
-  \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\` (all warn — the fix is
-  always regeneration, never editing a generated file). A service that never ran
-  \`loam gherkin\` stays quiet, and a file tagged with a feature still in flight
-  answers to that feature, not to the living spec it has not merged into yet.
+  \`gherkin.missing\`, \`gherkin.stale\`, \`gherkin.orphaned\`. A service that never
+  ran \`loam gherkin\` stays quiet — that whole trio is conditional on the suite
+  existing here — and a file tagged with a feature still in flight answers to
+  that feature, not to the living spec it has not merged into yet.
 - \`loam validate --feature <id>\` grades a change's three axes against each other and
   against the fleet in flight: \`delta.invalid\`, \`delta.nothing-tagged\`,
-  \`delta.service-unknown\`, \`delta.service-id-invalid\` (a \`specs/<svc>/\`
-  directory whose NAME is not a legal service id — archive refuses it too, and
-  \`--approve\` does not override: the merge would materialise a
-  \`services/<svc>/\` no authoring command can address),
-  \`spec-api.op-undefined\`, \`spec-api.op-pending\`, \`c4-api.op-undefined\`,
-  \`c4-api.op-pending\`, \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
-  \`c4.service-binding-invalid\` (an explicit \`metadata { service }\` binding
-  that is not a legal service id — a tagged element's, or one nested anywhere
-  inside its block, since the merge splices the whole authored block into the
-  living landscape verbatim; archive refuses it too, and \`--approve\` does not
-  override),
-  \`api.op-unconsumed\`, \`service.no-requirement-delta\`, \`archedge.uncovered\`,
-  \`spec.repeated-operations\` / \`spec.repeated-covers\` (on the feature's own
-  spec deltas — same silent-line-loss check as service scope),
-  \`spec.merge-conflict\` / \`requirements.stepless-scenario\` (same codes as
-  service scope, graded on the feature's spec.md and arch.spec.md deltas —
-  both breaches merge into the living document),
-  the architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
-  feature's arch.spec.md deltas), and
-  the delta-shape group: \`delta.unknown-section\`, \`delta.no-delta-sections\`,
+  \`delta.service-unknown\`, \`delta.service-id-invalid\`, \`spec-api.op-undefined\`,
+  \`spec-api.op-pending\`, \`c4-api.op-undefined\`, \`c4-api.op-pending\`,
+  \`c4-api.op-deprecated\`, \`c4.op-ungoverned\`, \`c4.op-link-missing\`,
+  \`c4.service-binding-invalid\`, \`api.op-unconsumed\`,
+  \`service.no-requirement-delta\`, \`archedge.uncovered\`, and — the same four
+  codes service scope raises, graded here on the feature's own spec.md and
+  arch.spec.md deltas, because every one of those breaches merges into the
+  living document — \`spec.repeated-operations\`, \`spec.repeated-covers\`,
+  \`spec.merge-conflict\` and \`requirements.stepless-scenario\`. Then the
+  architecture spec axis (\`c4.uncovered\`, plus \`covers.unknown\` on the
+  feature's arch.spec.md deltas), the delta-shape group:
+  \`delta.unknown-section\`, \`delta.no-delta-sections\`,
   \`delta.requirement-not-merged\`, \`delta.modified-unknown\`, \`delta.removed-unknown\`,
   \`delta.added-duplicate\`, \`delta.added-near-duplicate\`, \`delta.modified-pending\`,
   \`delta.removed-pending\`, \`delta.added-conflict\`, \`delta.modified-conflict\`,
   \`delta.living-duplicate-requirement\`, and the API-removal group:
   \`openapi.remove-marker-anonymous\`, \`openapi.remove-op-consumed\`.
   The event axis is graded in feature scope too — the \`asyncapi.*\`
-  baseline/removal/conflict codes plus \`c4-event.*\` and \`spec-event.*\`, each
-  with its fix in the /loam-check table.
+  baseline/removal/conflict codes plus \`c4-event.*\` and \`spec-event.*\`.
   Where a finding names another feature in flight (\`delta.*-pending\`,
   \`delta.added-conflict\`, \`delta.modified-conflict\`, \`spec-api.op-pending\`,
   \`c4-api.op-pending\`) the ORDER is the answer, and \`loam dependencies --json\`
@@ -130,24 +222,17 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`landscape.service-undocumented\`, \`landscape.binding-unknown\`,
   \`landscape.binding-duplicate\`, the fleet-shape advisories
   \`landscape.platform-candidate\`, \`landscape.datastore-private\` and
-  \`landscape.datastore-shared\` (all warn — the map's legibility and coupling
-  shapes: tag ubiquitous infrastructure \`#platform\` so the fleet view can
-  exclude it, keep a single-consumer datastore inside its service's own model,
-  and let a truly shared one state which data it shares), \`service.id-invalid\` (a \`services/<id>/\`
-  directory every authoring command refuses to address — read commands like
-  \`validate --service\`, \`show\` and \`status\` resolve it against the
-  enumeration and still grade it, so it can be inspected but not changed
-  through loam — fleet scope only, and graded before the map is opened, so it
-  stands even when the landscape is missing or unreadable), plus a per-service
-  \`sources.unverifiable-from-here\` (severity \`ok\`, one per service whose
-  \`sources\` only its own repo can check — it is a confirmation, not work, and
-  the fleet rollup line is derived from those findings), and one check on this very file — \`agents.stale\`
-  (warn) — when the version stamp on line 1 (\`<!-- generated by loam vX.Y.Z -->\`)
-  is missing or older than the running binary: the tables here may describe a
-  loam that no longer exists, so review this file against the current \`--help\`
-  and update the stamp line. A hand-curated file silences it the same way, by
-  keeping the stamp current. The file is never refreshed automatically — your
-  edits outrank the template, so detection is all loam does.
+  \`landscape.datastore-shared\`, \`service.id-invalid\` (fleet scope only, and
+  graded before the map is opened, so it stands even when the landscape is
+  missing or unreadable), a per-service \`sources.unverifiable-from-here\`, and
+  one check on the docs repo's own AGENTS.md, \`agents.stale\`. That last one is
+  the reason to distrust THAT file rather than this page: it fires when its
+  version stamp on line 1 (\`<!-- generated by loam vX.Y.Z -->\`) is missing or
+  older than the running binary, which is exactly when what it says may name a
+  loam that no longer exists. It is never refreshed automatically — your edits
+  outrank the template, so detection is all loam does, and a hand-curated file
+  silences it the same way, by keeping the stamp current. This page has no such
+  failure mode: it is printed by the binary it describes.
   \`loam validate --all\`'s \`--json\` payload also carries the additive \`scorecard\` key — per-axis ceiling-vs-actual fleet
   aggregates, the text report appending the same table; derived per run and never stored, so week-over-week is the pipeline's job: capture the key per run into a metrics store.
   \`scorecard.adoption\` counts the services PARTICIPATING in each contract axis
@@ -158,72 +243,32 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   axis and says so; \`--json\` carries every finding unchanged, and the summary
   counts, exit codes and \`--strict\` are identical either way.
 - \`loam doctor\` is read-only local/fleet preflight — the first thing to run in a
-  repo that behaves as though the fleet were empty, and every finding carries a
-  \`fix\`. Its blockers are
-  \`doctor.config-missing\`, \`doctor.config-invalid\`, \`doctor.docs-missing\`,
-  \`doctor.services-missing\`, and the three that say the fleet map cannot be read
-  at all — \`doctor.landscape-merge-conflict\` (it still holds \`<<<<<<<\` markers,
-  so it is two halves of two different maps), \`doctor.landscape-invalid\` (it does
-  not parse) and \`doctor.landscape-unreadable\` (it is there but could not be
-  read). It also grades what a WRITE that did not finish left in the docs repo,
-  reported as \`writePath\` beside the findings: \`doctor.docs-locked\` (a held
-  \`.loam-lock\` — a warning while its holder is alive, since the answer is to wait
-  and re-run, and a BLOCKER in the two shapes nothing will ever release: a holder
-  that is a process no longer existing on this host, or a lock file that cannot
-  name a holder at all — empty or unparseable, a crash between its create and
-  flush; either way every command that writes through the locked root
-  refuses \`docs-busy\` until it is deleted), \`doctor.commit-interrupted\` (blocker:
-  a \`.loam-commit\` naming a writer that was killed mid-commit, so the files it
-  was committing may be half-written — re-run the command the finding prints and
-  it recovers first, under the lock; when this repo is a service repo the same
-  scan covers \`<gherkinDir>/loam/\`, the root \`loam gherkin\` commits into), \`doctor.commit-unreadable\` (blocker, and the worst case:
-  the record of which files that commit had already written cannot be parsed, so
-  nothing can grade it — compare against version control by hand) and
-  \`doctor.staging-temps\` (warn: orphaned \`.loam-*.tmp\` scratch that was never
-  linked into place — litter, not damage). Accessibility, portability and
-  incomplete binding stay warnings:
-  \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.docs-absolute\`
-  (\`docsDir\` stored as an absolute path in a committed loam.json — it resolves
-  only on the machine that ran \`loam init\`), \`doctor.inventory-unreadable\`,
-  \`doctor.landscape-missing\`, \`doctor.service-unbound\` (no \`service\` in loam.json —
-  never raised inside the docs repo itself, where having none is the correct state
-  and binding one would be meaningless), \`doctor.service-unknown\` (loam.json names
-  a service the docs repo has no directory for — the same state \`loam status\`
-  reports as \`next.adopt-bound\`), \`doctor.likec4-config-missing\` (the docs repo
-  has no \`likec4.config.json\`, so pointing LikeC4's own renderer at it fails:
-  loam parses each \`.likec4\` file alone and each declares its own
-  \`specification\` block, so a workspace load merges them and every declaration
-  reads as a duplicate — the \`fix\` field carries the exact file to write),
-  and the two about this repo's own generated command and skill files:
-  \`doctor.agent-files-missing\` — some of them are absent, because the repo was
-  initialized by an older binary or they were deleted — and
-  \`doctor.agent-files-stale\` — some that ARE here carry no
-  \`<!-- generated by loam vX.Y.Z -->\` stamp, or one older than the running
-  binary, so the protocol and code tables they instruct an agent with may
-  describe a loam that no longer exists. EXPECT the second one on the first
-  \`loam doctor\` after an upgrade, on a repo nobody has touched: stamping is
-  newer than the files, so nothing written by an earlier loam carries a stamp
-  at all, and every one of them reads as unstamped. That is the intended
-  reading — an unstamped file is one nobody has confirmed still describes this
-  binary — but it means the finding is not evidence that anything was edited or
-  broken.
-  For the first, run the command the finding's own \`fix\` field spells: it names
-  this repo's \`docsDir\`, its service binding and its tool ids explicitly, and
-  \`loam init\` writes only the command and skill files that are absent and never
-  touches one that already exists. (It does rewrite \`loam.json\` — but a re-run
-  with no \`--docs\` keeps the pointer the file already commits, so it cannot move
-  the fleet under you. Reach for \`--create\` only to make a docs repo that does
-  not exist yet; beside a working \`docsDir\` it scaffolds a second, empty source
-  of truth and \`validate --all\` then goes green over an empty fleet.)
-  For the second there is no command: the repair is by hand, one file at a
-  time. Read each file the finding names against the body this loam writes,
-  then set (or add) its stamp line to \`<!-- generated by loam vX.Y.Z -->\` for
-  the running version — or, if you have no local edits worth keeping, delete
-  that file and re-run \`loam init\`, which lays the current one down. Neither is
-  ever regenerated in place: your edits outrank the template, so detection is
-  all loam does, and the stamp is a human's claim that the file still means what
-  it says rather than a refresh. Leaving either finding standing costs entry
-  points and the accuracy of what the entry points say, nothing else.
+  repo that behaves as though the fleet were empty. Every finding carries a
+  \`fix\` field naming the exact command or edit, so this is the one family you
+  rarely need \`loam explain\` for. Its blockers are \`doctor.config-missing\`,
+  \`doctor.config-invalid\`, \`doctor.docs-missing\`, \`doctor.services-missing\`, and
+  the three that say the fleet map cannot be read at all —
+  \`doctor.landscape-merge-conflict\`, \`doctor.landscape-invalid\` and
+  \`doctor.landscape-unreadable\`. It also grades what a WRITE that did not finish
+  left in the docs repo, reported as \`writePath\` beside the findings:
+  \`doctor.docs-locked\`, \`doctor.commit-interrupted\`, \`doctor.commit-unreadable\`
+  and \`doctor.staging-temps\`. When this repo is a service repo that same scan
+  covers \`<gherkinDir>/loam/\`, the root \`loam gherkin\` commits into.
+  Accessibility, portability and incomplete binding stay warnings:
+  \`doctor.docs-unreadable\`, \`doctor.docs-readonly\`, \`doctor.docs-absolute\`,
+  \`doctor.inventory-unreadable\`, \`doctor.landscape-missing\`,
+  \`doctor.service-unbound\` (never raised inside the docs repo itself, where
+  having no service binding is the correct state), \`doctor.service-unknown\`
+  (the same state \`loam status\` reports as \`next.adopt-bound\`),
+  \`doctor.likec4-config-missing\`, and the two about this repo's own generated
+  command and skill files: \`doctor.agent-files-missing\` and
+  \`doctor.agent-files-stale\`.
+  EXPECT the second one on the first \`loam doctor\` after an upgrade, on a repo
+  nobody has touched: stamping is newer than the files, so nothing written by an
+  earlier loam carries a stamp at all and every one of them reads as unstamped.
+  That is the intended reading — an unstamped file is one nobody has confirmed
+  still describes this binary — but it means the finding is not evidence that
+  anything was edited or broken, and neither file is ever regenerated in place.
 - \`loam rebase <FEAT>\` writes the baseline pins: \`Based-On:\` under every
   MODIFIED/REMOVED requirement in the feature's spec deltas, and
   \`x-loam-based-on\` on every operation in its openapi.yaml, from the living text
@@ -262,15 +307,23 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   editing fleet.yaml and re-running regenerates the map, and the first hand
   edit makes the file yours — seed then refuses \`seed-landscape-edited\`
   rather than overwrite. Then adopt each service: \`loam adopt --service <id>\`.
-- \`loam instructions [<workflow>] [args...]\` prints one of the six workflow
+- \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
-  pass. The protocol ships inside the binary, so it describes the loam you are
-  about to run rather than the one that scaffolded the repository; the command
-  and skill files \`loam init\` writes are pointers at it. It reads no
+  pass, or one of the four reference pages — \`loam-codes\`, \`loam-spine\`,
+  \`loam-authoring\`, \`loam-done-check\` — which take no arguments. With no
+  argument at all it lists both sets. The pages ship inside the binary, so they
+  describe the loam you are about to run rather than the one that scaffolded the
+  repository; the command and skill files \`loam init\` writes are pointers at it,
+  and so is AGENTS.md's own "The reference pages" section. It reads no
   \`loam.json\` and no docs repo, deliberately: \`loam-adopt\`'s own first step is
   to run \`loam init\` when there is no config, so it cannot be the step that
   requires one.
 `;
 
-export const COMMAND_MAP = MAP_INTRO + STATUS_COMMAND + MAP_REST;
+/**
+ * The reference page's body, up to the modules that continue it. The bullets
+ * are ordered so `status` — the orientation command, the one to run when you
+ * have lost the session — is read first.
+ */
+export const CODE_MAP = MAP_INTRO + STATUS_COMMAND + MAP_REST;

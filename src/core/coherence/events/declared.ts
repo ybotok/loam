@@ -193,7 +193,12 @@ export async function declaredEvents(
     featureDocs.set(svc, featDoc);
 
     const featText = await readOr(featPath, context);
-    const featSlots = featText === undefined ? [] : asyncapiSlots(parse(featText));
+    // Parsed ONCE and kept: the slot walk and the surface half of the baseline
+    // grade read the same resolved tree, and a second `parse` of the same
+    // bytes is a second chance for the two halves to disagree about what the
+    // delta declares.
+    const featPlain: unknown = featText === undefined ? {} : parse(featText);
+    const featSlots = asyncapiSlots(featPlain);
     // The living side of every slot judgement. Absent is a real answer —
     // everything the delta spells is new, and a baseline only means
     // something for a slot that already exists. Unreadable is NOT an
@@ -201,12 +206,13 @@ export async function declaredEvents(
     // every restatement new and every marker stale, so both checks stand
     // down and the (later) merge refuses the unreadable side by name.
     const livingText = !existsSync(livingPath) || livingDoc.unreadable ? undefined : await readOr(livingPath, context);
+    const livingPlain: unknown = livingText === undefined ? {} : parse(livingText);
     const livingSlots = new Map<string, AsyncapiSlot>(
-      (livingText === undefined ? [] : asyncapiSlots(parse(livingText))).map((s) => [`${s.section}\0${s.key}`, s]),
+      asyncapiSlots(livingPlain).map((s) => [`${s.section}\0${s.key}`, s]),
     );
 
     if (livingText !== undefined) {
-      gradeBaselines({ featSlots, livingSlots, svc, featureId }, issues);
+      gradeBaselines({ featSlots, livingSlots, featPlain, livingPlain, svc, featureId }, issues);
       gradeMarkers({ featDoc, livingDoc, featSlots, livingSlots }, svc, issues);
       if (featText !== undefined) {
         const merged = mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service: svc });

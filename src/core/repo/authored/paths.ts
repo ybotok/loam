@@ -178,3 +178,33 @@ export function glossaryDir(docsDir: DocsDir): string {
 export function featureGlossaryDir(featureDir: FeatureDir): string {
   return join(featureDir, "glossary");
 }
+
+/**
+ * A feature's own flows — `features/<FEAT>/usecases/<name>.likec4`, the use-case
+ * axis's answer to `specs/<svc>/spec.md`.
+ *
+ * A `dynamic view` is the only realizer a promise that CROSSES services has, and
+ * it was the one realizer no feature could carry: every other axis had a delta
+ * slot and this one had none, so the business axis's headline case — an analyst
+ * adds a cross-service requirement, the architect answers it with a flow — could
+ * not ship as one change. The promise had to land first, kept by nothing, and
+ * the flow followed in a second pull request.
+ *
+ * The name mirrors the LIVING layout rather than inventing a second one:
+ * `architecture/usecases/` is where a flow already lives, `usecases/` is where a
+ * feature writes the one it brings, and the merge is the same path one directory
+ * over. Nesting is spelled by the tree, as it is for every other authored tree
+ * here.
+ *
+ * CREATE-ONLY (`core/usecases/delta/flows.ts` states the rule and the refusal),
+ * for `featureGlossaryDir`'s reason: a flow is one ordered hop sequence with no
+ * delta algebra to protect, so rewriting a living one belongs in a pull request
+ * where git itself produces the conflict.
+ *
+ * The DIRECTORY'S EXISTENCE is this axis's per-feature opt-in, exactly as the
+ * two above: a feature without one pays a single walk over a directory that is
+ * not there and produces nothing.
+ */
+export function featureUseCasesDir(featureDir: FeatureDir): string {
+  return join(featureDir, "usecases");
+}

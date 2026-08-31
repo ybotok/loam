@@ -566,6 +566,42 @@ Realizes: checkout#CHK-ONCE
     }
   });
 
+  it("a fleet whose only reserved mention is `req-` is READ — the gate takes both prefixes", async () => {
+    // The mirror of the case above, and the one that made the reader-side
+    // widening worth anything. `#req-<slug>` is a reserved prefix in its own
+    // right, so a fleet whose only flow carries one declares `tag req-…` and
+    // writes `cap-` NOWHERE — and a `cap-`-only byte scan short-circuited before
+    // any predicate ran. `list capabilities` then answered `keptBy: []` for every
+    // promise off an `architecture/` nobody had opened, which is the vacuously
+    // green claim this whole axis exists to refuse.
+    //
+    // The use-case document is UNPARSEABLE on purpose: `unreadable: true` is
+    // reachable only if the gate opened on `req-` alone, so this measures the
+    // scan rather than asserting it.
+    const p = await makeProject({
+      "architecture/landscape.likec4":
+        `specification {\n  element service\n  tag req-CHK-ONCE\n}\n\nmodel {\n  web = service 'checkout-web' {\n    metadata { service 'checkout-web' }\n  }\n}\n`,
+      "services/checkout-web/spec.md": spec("checkout-web"),
+      "capabilities/checkout/spec.md": capabilityDoc(["CHK-ONCE"]),
+      "architecture/usecases/junk.likec4":
+        "views {\n  dynamic view uc_junk {\n    #req-CHK-ONCE\n    this is not likec4\n",
+    });
+    try {
+      const res = await runLoam(p.workDir, "list", "capabilities", "--json");
+      expect(res.code, res.out).toBe(0);
+      const payload = JSON.parse(res.stdout) as ListPayload;
+      expect(payload.useCases?.unreadable).toBe(true);
+      expect(payload.useCases?.error).toBeTruthy();
+      for (const row of promisesOf(payload, "checkout")) {
+        // `in` again, and for the same reason: `[]` here would be "no flow keeps
+        // this promise", stated about flows the gate refused to look at.
+        expect("keptBy" in row, `${row.id} answered over an architecture/ the gate skipped`).toBe(false);
+      }
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("plain `loam list --json` carries neither key — the frozen default payload is unchanged", async () => {
     const p = await makeProject(
       fleet({

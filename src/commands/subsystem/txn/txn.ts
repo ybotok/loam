@@ -20,7 +20,8 @@ import { type CommitRecovery, InterruptedCommitError } from "../../../core/stagi
 import { acquireDocsLock, DocsBusyError } from "../../../core/staging/lock.js";
 import { recoverInterruptedCommit } from "../../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../../core/staging/txn/transaction.js";
-import { sameBytes, type PlannedWrite } from "../../../core/staging/writes.js";
+import { type PlannedWrite } from "../../../core/staging/writes.js";
+import { viewsAgree } from "../../../core/repo/tree/views.js";
 import { expectedViews } from "./views.js";
 
 export type ViewsAction = "created" | "updated" | "removed" | "current";
@@ -82,10 +83,13 @@ export async function commitWindow(
     const path = subsystemViewsPath(docsDir);
     const expected = await expectedViews(docsDir, txn.tree);
     const bytes = expected === null ? null : Buffer.from(expected, "utf8");
-    const current = existsSync(path) ? await readFile(path) : null;
+    // Content, not bytes — `viewsAgree` carries the reason. Without it every
+    // subsystem move on a Windows clone folded a rewrite of this file into its
+    // transaction that changed not one fact, and journalled it.
+    const current = existsSync(path) ? await readFile(path, "utf8") : null;
     let views: ViewsAction = "current";
     const writes = [...txn.writes];
-    if (!sameBytes(current, bytes)) {
+    if (!viewsAgree(current, expected)) {
       views = current === null ? "created" : bytes === null ? "removed" : "updated";
       writes.push({ path, content: bytes });
     }

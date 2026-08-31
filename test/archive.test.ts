@@ -933,6 +933,45 @@ describe("openapi merge", () => {
     }
   });
 
+  it("a living openapi with no components key gets a components block appended and still parses", async () => {
+    // The twin of the test above, one section over: `setComponentValue` falls
+    // through to `setIn`, which has to create `components:` AND its `schemas:`
+    // child on a document that has neither. LIVING_OPENAPI has no components
+    // section at all, so this is the first write into both levels. (A delta
+    // whose whole change is a component — no `paths` key at all — is the same
+    // write reached a different way, and rides in
+    // test/openapi-baseline-surfaces.test.ts, which has the fleet for it.)
+    const withComponent = `${REFUND_OPENAPI_2SPACE.replace(
+      "          description: Refunded",
+      `          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Refund'`,
+    )}components:
+  schemas:
+    Refund:
+      type: object
+      properties:
+        refundId:
+          type: string
+`;
+    const p = await refundProject(withComponent);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-3");
+      expect(res.code, res.out).toBe(0);
+      const text = await p.read("services/payment-service/openapi.yaml");
+      let doc: Record<string, any> | undefined;
+      expect(() => {
+        doc = parse(text);
+      }).not.toThrow();
+      expect(doc!.components.schemas.Refund.properties.refundId).toEqual({ type: "string" });
+      expect(doc!.paths["/payments/authorize"].post.operationId, "the living paths survive").toBe("authorizePayment");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("merging a 4-space-indented feature openapi into a 2-space living openapi still yields parseable yaml with all paths", async () => {
     const p = await refundProject(REFUND_OPENAPI_4SPACE);
     try {
@@ -1455,7 +1494,12 @@ views {
   }
 }
 `,
-      ["dynamic view", "architecture/landscape.likec4"],
+      // The refusal is unchanged and the ADVICE moved. It used to send the
+      // author to architecture/landscape.likec4, which was the only honest
+      // answer while a flow had no feature-delta path; now it names the slot,
+      // and a deployment view — topology, not a flow — still goes to the living
+      // map, which the case above pins.
+      ["dynamic view", "features/<FEAT>/usecases/<name>.likec4", "loam unarchive"],
     );
   });
 

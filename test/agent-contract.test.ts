@@ -28,10 +28,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
-import { PROTOCOLS } from "../src/core/agent/protocol.js";
+import { PROTOCOLS, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
 import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
 import { UNCHECKED } from "../src/core/brief/unchecked.js";
 import { loadFile } from "../src/core/c4/likec4.js";
+import { explainSubject } from "../src/core/explain/lookup.js";
+import { collectStableCodes } from "./helpers/stable-codes.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SVC = "payment-service";
@@ -218,20 +220,20 @@ describe("the agent contract teaches the multi-repo forms", () => {
       "`Publishes:`/`Consumes:`",
       "`Scenario Outline`",
     ]) {
-      expect(AGENTS_MD, `AGENTS.md never mentions ${fact}`).toContain(fact);
+      expect(SCAFFOLDED_DOCS, `the shipped contract never mentions ${fact}`).toContain(fact);
     }
-    expect(AGENTS_MD).toMatch(/read-only verify checklist needs no\s+binding/);
-    expect(AGENTS_MD).toMatch(/does not prove\s+the report was produced by executing the attested commit/);
+    expect(SCAFFOLDED_DOCS).toMatch(/read-only verify checklist needs no\s+binding/);
+    expect(SCAFFOLDED_DOCS).toMatch(/does not prove\s+the report was produced by executing the attested commit/);
   });
 
   it("the done-check teaches the federated recording form and warns about the other one", () => {
-    expect(AGENTS_MD).toMatch(
+    expect(SCAFFOLDED_DOCS).toMatch(
       /loam verify FEAT-101 --service payment-service --results report\.json --record answers\.json/,
     );
-    expect(AGENTS_MD).toContain("`record-federated`");
-    expect(AGENTS_MD).toContain("attestation");
+    expect(SCAFFOLDED_DOCS).toContain("`record-federated`");
+    expect(SCAFFOLDED_DOCS).toContain("attestation");
     // the destructiveness is stated, not implied
-    expect(AGENTS_MD).toMatch(/silently erasing[\s\S]{0,30}evidence/);
+    expect(SCAFFOLDED_DOCS).toMatch(/silently erasing[\s\S]{0,30}evidence/);
   });
 
   it("/loam-verify records with --service, in the service's own repo", () => {
@@ -313,12 +315,19 @@ describe("the agent contract teaches the multi-repo forms", () => {
 /* 3. Every code the other workstreams added is documented             */
 /* ------------------------------------------------------------------ */
 
-describe("the code vocabulary reaches AGENTS.md itself", () => {
+describe("the code vocabulary reaches the contract loam ships", () => {
   // codes-drift.test.ts guards the whole corpus (AGENTS.md + every slash
   // command). This narrower list is the set an agent branches on most, and it
-  // has to be in AGENTS.md — the file that travels with the docs repo and is
-  // the only one a non-Claude runner is pointed at.
-  const IN_AGENTS_MD = [
+  // has to be reachable without a Claude-shaped runner.
+  //
+  // It used to say "and it has to be in AGENTS.md — the file that travels with
+  // the docs repo and is the only one a non-Claude runner is pointed at". The
+  // second half stopped being true when the reference pages were split out:
+  // they travel with the BINARY, which is strictly more available than a file
+  // written once at init, and AGENTS.md's own index names the command that
+  // prints each. Requiring all of these in the auto-loaded file would undo the
+  // split it took a 73% cut to earn.
+  const SHIPPED_CODES = [
     "docs-missing",
     "services-missing",
     "landscape.missing",
@@ -349,8 +358,8 @@ describe("the code vocabulary reaches AGENTS.md itself", () => {
   ];
 
   it("each one appears backticked, the way every other code is quoted there", () => {
-    const missing = IN_AGENTS_MD.filter((c) => !AGENTS_MD.includes(`\`${c}\``));
-    expect(missing, `undocumented in AGENTS.md: ${missing.join(", ")}`).toEqual([]);
+    const missing = SHIPPED_CODES.filter((c) => !SCAFFOLDED_DOCS.includes(`\`${c}\``));
+    expect(missing, `undocumented in the shipped contract: ${missing.join(", ")}`).toEqual([]);
   });
 
   it("the ordering commands are on the agent surface, next to the findings that need them", () => {
@@ -373,12 +382,123 @@ describe("the code vocabulary reaches AGENTS.md itself", () => {
     expect(PROTOCOLS["loam-check"]).not.toContain(
       "one fleet-level summary line, not per-service findings",
     );
-    expect(AGENTS_MD).toMatch(/per-service[\s\S]{0,40}`sources\.unverifiable-from-here`/);
+    expect(SCAFFOLDED_DOCS).toMatch(/per-service[\s\S]{0,40}`sources\.unverifiable-from-here`/);
   });
 
   it("the vouch-written fields are listed completely, sources_files included", () => {
-    expect(AGENTS_MD).toContain("sources_files");
+    expect(SCAFFOLDED_DOCS).toContain("sources_files");
     expect(PROTOCOLS["loam-adopt"]).toContain("sources_files");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 3b. the `loam explain` pointer that replaced the per-code gloss     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The families `loam explain` does not answer — and therefore the families
+ * whose gloss must stay WRITTEN OUT in AGENTS.md rather than pointed at.
+ *
+ * Each entry is a promise that the section still explains those codes inline.
+ * The list may only shrink: when src/core/explain/ grows to cover a family,
+ * the entry comes out here and the gloss comes out of AGENTS.md in the same
+ * change, which is the only way the two stay in step. The stale-entry test
+ * below is what forces that — an excused family that `explain` has since
+ * learned to answer fails, rather than sitting here excusing nothing.
+ */
+const EXPLAIN_DOES_NOT_ANSWER: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /^openspec\./,
+    "the OpenSpec import surface grades a repository still in ANOTHER tool's shape — `loam audit-openspec` runs before the repo has a governed loop to look a code up from, and each finding already names its artifact and line — so src/core/explain leaves it unanswered and refusals.ts keeps the notes",
+  ],
+  [
+    /^mapping\./,
+    "the same import surface: the decision file `loam migrate-openspec --map` reads is deleted after one run, so its codes describe an artifact that does not outlive the command",
+  ],
+  [
+    /^(archedge\.covered|gherkin\.current)$/,
+    "the two `ok`-severity confirmations still in explain's own backlog (test/explain.test.ts's INTENTIONALLY_UNLISTED). AGENTS.md names them in its bare confirmations list, which never carried a gloss to remove",
+  ],
+];
+
+/**
+ * The document AGENTS.md used to be: the file itself plus the four reference
+ * pages that were carved out of it.
+ *
+ * The split was a DELIVERY change and nothing else — `loam instructions
+ * loam-codes` prints what `## Reading loam's output` used to hold, byte for
+ * byte — so the property below is about the same prose it was always about,
+ * and grading only the remaining file would have quietly narrowed it from 335
+ * codes to 23. That is the failure this whole area exists to prevent, arriving
+ * as a passing test.
+ *
+ * Deliberately NOT every protocol: the /loam-check fix tables are where
+ * `explainSubject` reads its answers FROM, so including them would make the
+ * assertion partly self-referential. This corpus is the teaching material,
+ * which is the thing that can point at an explanation that does not exist.
+ */
+const SCAFFOLDED_DOCS =
+  AGENTS_MD + REFERENCE_PAGES.map((page) => PROTOCOLS[page.name] ?? "").join("\n");
+
+describe("AGENTS.md points at `loam explain`, and the pointer lands", () => {
+  /**
+   * `## Reading loam's output` was 48% of a 124 KB file because it glossed
+   * every code where it listed it — 143 of them explained a second time, in
+   * prose written independently of the /loam-check fix tables, inside a file
+   * `loam init` writes once and never refreshes. The two drifted and nothing
+   * could say which had rotted. What survives beside each code is a CONDITION
+   * — when that invocation reaches it at all — which is the one thing a
+   * per-code catalogue cannot say; meaning and fix come from
+   * `loam explain <code>`.
+   *
+   * That trade is only safe while the pointer lands. This is the test that
+   * makes it land, and it fails BY NAME on the code whose explanation is
+   * missing — so a family can never again be de-glossed ahead of the
+   * catalogue that is supposed to answer for it.
+   *
+   * The graded set is an intersection of two facts rather than a hand-list: a
+   * code loam actually EMITS (the collector codes-drift.test.ts uses) that the
+   * scaffolded docs actually NAME, backticked. A family added to the inventory
+   * without an entry in the catalogue therefore fails here; a family deleted
+   * from it stops being graded here, which is exactly what
+   * codes-drift.test.ts refuses to allow.
+   */
+  it("every emitted code the scaffolded docs name is answered by `loam explain`", async () => {
+    const { codes } = await collectStableCodes();
+    const named = [...codes].filter((code) => SCAFFOLDED_DOCS.includes(`\`${code}\``)).sort();
+    // The canary. Every assertion below passes vacuously over an empty set, and
+    // the set is built by string matching over prose — the failure mode is the
+    // section being reshaped so nothing matches, not a code being unexplained.
+    expect(named.length, "the scaffolded docs stopped naming emitted codes — the extraction broke").toBeGreaterThan(300);
+
+    const excused = (code: string) => EXPLAIN_DOES_NOT_ANSWER.some(([pattern]) => pattern.test(code));
+    const unexplained = named.filter((code) => !excused(code) && explainSubject(code) === null);
+    expect(
+      unexplained,
+      "The scaffolded docs name these codes and `loam explain` cannot answer them:\n  " +
+        unexplained.join("\n  ") +
+        "\nEither add them to src/core/explain/ (a fix-table row, or a families.ts entry), " +
+        "or keep their gloss written out in src/core/agent/agents-md/ and add them to " +
+        "EXPLAIN_DOES_NOT_ANSWER with the reason. Pointing at an explanation that does not " +
+        "exist is the failure this whole section was rewritten to prevent.",
+    ).toEqual([]);
+  });
+
+  it("the excuse list only shrinks — no entry outlives the hole it names", async () => {
+    const { codes } = await collectStableCodes();
+    const named = [...codes].filter((code) => SCAFFOLDED_DOCS.includes(`\`${code}\``));
+    for (const [pattern, reason] of EXPLAIN_DOES_NOT_ANSWER) {
+      const matched = named.filter((code) => pattern.test(code));
+      expect(matched.length, `EXPLAIN_DOES_NOT_ANSWER entry ${pattern} matches no code the scaffolded docs name — ${reason}`)
+        .toBeGreaterThan(0);
+      const nowAnswered = matched.filter((code) => explainSubject(code) !== null);
+      expect(
+        nowAnswered,
+        `\`loam explain\` now answers ${nowAnswered.join(", ")}, so ${pattern} no longer excuses anything. ` +
+          "Delete the entry AND the inline gloss those codes still carry in src/core/agent/agents-md/ — " +
+          "leaving the gloss is how the duplication grows back.",
+      ).toEqual([]);
+    }
   });
 });
 
@@ -603,9 +723,9 @@ describe("the brief promises only what a check can keep", () => {
     const unchecked: string = (b.unchecked as string[]).join("\n");
     expect(unchecked).toContain("REPRODUCIBILITY");
     expect(unchecked).toContain("loam never verifies the values");
-    expect(AGENTS_MD).toContain("Effective configuration and dependency semantics live here too");
-    expect(AGENTS_MD).toContain("The bar this artifact set aims at is reproducibility");
-    expect(AGENTS_MD).toContain("Done, stated once");
+    expect(SCAFFOLDED_DOCS).toContain("Effective configuration and dependency semantics live here too");
+    expect(SCAFFOLDED_DOCS).toContain("The bar this artifact set aims at is reproducibility");
+    expect(SCAFFOLDED_DOCS).toContain("Done, stated once");
   });
 
   it("the brief's walk survives the text view — an agent reading either gets the same order", async () => {
@@ -733,6 +853,22 @@ describe("README describes the fleet that exists", () => {
     const row = readme.split("\n").find((l) => l.startsWith("| `loam delta"))!;
     expect(row).toMatch(/verbatim/);
     expect(row).toMatch(/Given\/When\/Then/);
+  });
+
+  it("describes what `--errors-only` actually drops", async () => {
+    // The row said "`--errors-only` prints just the errors", and it never did:
+    // the report filters `severity !== "ok"`, so the lever drops the
+    // confirmations and keeps every warning. Measured on the example fleet,
+    // `validate --all --errors-only` printed the same warning lines as the
+    // unfiltered run. The flag's own `--help` string was honest and so was the
+    // generated AGENTS.md; only this page lied, and a table is what a reader
+    // consults instead of running `--help`. The wording pinned here is the one
+    // src/core/agent/workflows/check.ts already uses, so a reader who meets the
+    // flag on either surface meets the same sentence.
+    const readme = await readRepo("README.md");
+    const row = readme.split("\n").find((l) => l.startsWith("| `loam validate"))!;
+    expect(row).toMatch(/drops the `ok` confirmations from the text view/);
+    expect(row).not.toMatch(/just the errors/);
   });
 });
 

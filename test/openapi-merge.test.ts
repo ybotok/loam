@@ -129,7 +129,10 @@ paths:
     ]);
   });
 
-  it("returns a no-op result when the feature has no paths", () => {
+  it("returns a no-op result when the feature restates neither a path nor a component", () => {
+    // `components: {}` declares nothing, so there is genuinely nothing to
+    // merge. The absence of `paths` alone is NOT that answer any more — see
+    // the components-only tests below, where it used to be.
     expect(mergeOpenapiPaths(LIVING, "openapi: 3.1.0\ncomponents: {}\n", "pets")).toEqual({
       text: null,
       modified: [],
@@ -140,10 +143,132 @@ paths:
       pathItemQuoted: [],
       pathItemStale: [],
       componentsModified: [],
+      componentsAdded: [],
       componentsQuoted: [],
       componentsStale: [],
       unresolved: [],
     });
+  });
+
+  it("merges a components-only delta — no `paths` key at all — instead of dropping it", () => {
+    // THE DEFECT. A feature whose whole change is a shared schema is a legal
+    // and ordinary contract delta, and the merge answered "no paths, nothing to
+    // do" before it had even parsed the living document — so archive exited 0
+    // having written nothing, and the schema every consumer was told to expect
+    // was simply not there.
+    const feature = `openapi: 3.1.0
+components:
+  schemas:
+    Split: { type: object, properties: { share: { type: number } } }
+`;
+
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+
+    expect(result.text).not.toBeNull();
+    expect(parse(result.text!).components.schemas.Split).toEqual({
+      type: "object",
+      properties: { share: { type: "number" } },
+    });
+    expect(result.componentsAdded).toEqual(["schemas/Split"]);
+    expect(result.componentsModified).toEqual([]);
+    // The living contract's own components are untouched by a delta that never
+    // mentions them.
+    expect(parse(result.text!).components.schemas.Pet.properties.legacy).toEqual({ type: "boolean" });
+  });
+
+  it("sweeps a components-only delta's own refs, so a dangling one still gates", () => {
+    // The proof the CLOSURE ran rather than a copy shortcut: promoting the
+    // parked components has to happen before the ref fixpoint is seeded, or a
+    // promoted schema carries its own `$ref`s past the sweep and archive
+    // publishes a living contract pointing at a component nobody wrote. The
+    // `from` label is how the queue names a copy: `components/<kind>/<name>`.
+    const feature = `openapi: 3.1.0
+components:
+  schemas:
+    Split:
+      type: object
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+`;
+
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+
+    expect(result.unresolved).toEqual([
+      { ref: "#/components/schemas/Money", from: "components/schemas/Split" },
+    ]);
+  });
+
+  it("grows a `components` section on a living contract that had none", () => {
+    // The components twin of the appended `paths:` block: `setComponentValue`
+    // falls through to `setIn`, which has to create both levels, and the result
+    // still has to parse.
+    const noComponents = `openapi: 3.1.0
+info: { title: pets, version: "1" }
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      responses: {}
+`;
+    const feature = `openapi: 3.1.0
+components:
+  schemas:
+    Split: { type: object }
+`;
+
+    const result = mergeOpenapiPaths(noComponents, feature, "pets");
+    const merged = parse(result.text!);
+
+    expect(result.componentsAdded).toEqual(["schemas/Split"]);
+    expect(merged.components.schemas.Split).toEqual({ type: "object" });
+    expect(merged.paths["/pets"].post.operationId, "the paths it already had survive").toBe("createPet");
+  });
+
+  it("never publishes a feature-only key nested inside a promoted component", () => {
+    // The promotion goes through the same `withoutFeatureKeysDeep` write as
+    // every other copy. A components-only delta must not become the one shape
+    // that publishes loam's bookkeeping into a living contract — the failure
+    // `--approve` already caused once, from a component holding an operation
+    // shape.
+    const feature = `openapi: 3.1.0
+components:
+  schemas:
+    Split:
+      type: object
+      properties:
+        share:
+          type: number
+          x-loam-remove: true
+`;
+
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+
+    expect(result.text).not.toContain("x-loam-remove");
+    expect(parse(result.text!).components.schemas.Split.properties.share).toEqual({ type: "number" });
+  });
+
+  it("still leaves an unreachable NEW component behind when the delta DOES merge paths", () => {
+    // The scope guard on the promotion. One path entry means the reachability
+    // question is a real one — the delta has written content for a new
+    // component to be reachable FROM — so `Orphan` stays behind exactly as the
+    // `Unused` case above pins it. A promotion flag wide enough to catch this
+    // document is a flag that would drag a quoted operation's authoring-time
+    // component over somebody else's landed change.
+    const feature = `openapi: 3.1.0
+paths:
+  /pets/{id}:
+    get:
+      operationId: getPet
+      responses: {}
+components:
+  schemas:
+    Orphan: { type: object, title: "new, and referenced by nothing" }
+`;
+
+    const result = mergeOpenapiPaths(LIVING, feature, "pets");
+
+    expect(parse(result.text!).components.schemas.Orphan).toBeUndefined();
+    expect(result.componentsAdded).toEqual([]);
   });
 
   it("removes only the exact living path+method target and never persists the marker", () => {

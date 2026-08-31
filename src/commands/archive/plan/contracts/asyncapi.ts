@@ -14,6 +14,7 @@ import { featureSpecPaths } from "../../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../../core/repo/service-target.js";
 import { readAsyncapi } from "../../../../core/asyncapi/read.js";
 import { asyncapiSlots, type AsyncapiSection } from "../../../../core/asyncapi/digest.js";
+import { asyncapiSurfaces } from "../../../../core/asyncapi/baseline/surfaces.js";
 import { AsyncapiMergeError } from "../../../../core/asyncapi/merge/error.js";
 import { stripAsyncapiMarkers } from "../../../../core/asyncapi/merge/markers.js";
 import { mergeAsyncapiSlots, type AsyncapiMergeResult } from "../../../../core/asyncapi/merge/merge.js";
@@ -85,6 +86,10 @@ export async function planAsyncapiContracts(
         // (absence is `service.no-asyncapi`'s question, silence otherwise),
         // so a slotless or all-markers delta creating an empty living
         // contract would put a presence claim on a service that has none.
+        // SLOTS only, deliberately, now that component surfaces merge: a
+        // document holding schemas and no channel, operation or message
+        // declares no event at all, and creating it would make exactly the
+        // presence claim this branch exists to refuse.
         const surviving = asyncapiSlots(parse(featText)).filter((slot) => !slot.remove);
         if (surviving.length === 0) {
           say(`  asyncapi: ${svc} — nothing to merge (the delta declares no surviving slots), no living asyncapi.yaml created`);
@@ -95,9 +100,29 @@ export async function planAsyncapiContracts(
         continue;
       }
       const merge: AsyncapiMergeResult = mergeAsyncapiSlots(await readUtf8(livingAsyncapi), featText, svc);
+      // What the delta declares OUTSIDE the three slot sections — the one
+      // question the merge result cannot answer for the silence below, because
+      // a merge that wrote nothing reports nothing to distinguish "the delta
+      // was all quotes" from "the delta was all schemas and I dropped them".
+      const surfaces = asyncapiSurfaces(parse(featText));
       if (merge.text !== null) {
         writes.push(planWrite(livingAsyncapi, merge.text));
-        say(`  asyncapi: ${svc} — merged (${names.join(", ")})`);
+        // The parenthesised list names the MESSAGES the delta declares, and a
+        // delta whose whole change is a component surface has none — so this
+        // printed `merged ()`, the same empty-parenthesis lie the create
+        // branch above is commented for: it reads as "this merge wrote
+        // nothing" about a merge that just published a shared schema to every
+        // consumer of the fleet. Drop the parentheses when there is nothing to
+        // put in them; the surface lines below name what actually moved.
+        say(`  asyncapi: ${svc} — merged${names.length > 0 ? ` (${names.join(", ")})` : ""}`);
+      } else if (surfaces.length > 0) {
+        // "The plan wrote less than my delta spells" is the sentence a reader
+        // cannot infer from an unchanged file — this file's own comment below
+        // names it for slots, and a components-only delta is the shape where
+        // silence is indistinguishable from the defect that made it merge
+        // nothing at all. Not a warning: every surface being a quote is
+        // correct authoring and the correct merge.
+        say(`  asyncapi: ${svc} — nothing to write: every one of the ${surfaces.length} component surface(s) this delta declares already stands as living has it`);
       }
       if (merge.removed.length > 0) {
         asyncapiRemovals.push({ service: svc, slots: merge.removed.map((slot) => slot.label) });
@@ -110,10 +135,28 @@ export async function planAsyncapiContracts(
       for (const slot of merge.quoted) {
         say(`      · quotes ${slot.label} — unchanged since it was pinned, left as living has it`);
       }
+      // The surface half's mirrors of the three lines around them. A component
+      // surface reaches the reader by exactly the same three sentences a slot
+      // does, because it is graded by exactly the same verdict.
+      for (const id of merge.componentsQuoted) {
+        say(`      · quotes components.${id} — unchanged since it was pinned, left as living has it`);
+      }
       // Stale surfaces reaching the merge at all means --approve pushed past
       // the gate's asyncapi.baseline-stale — the plan still names what it cost.
       for (const slot of merge.baselineStale) {
         say(`      ⚠ stale baseline on ${slot.label} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
+      }
+      for (const id of merge.componentsStale) {
+        say(`      ⚠ stale baseline on components.${id} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
+      }
+      for (const id of merge.componentsModified) {
+        planWarns.push({
+          severity: "warn",
+          code: "asyncapi.component-modified",
+          subject: svc,
+          message: `${svc}: the delta declares components.${id}, which the living AsyncAPI already has with different content — the merge overwrites the living component wholesale`,
+        });
+        say(`      ⚠ overwrites components.${id} — the living definition differs`);
       }
       for (const slot of merge.modified) {
         planWarns.push({

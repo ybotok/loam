@@ -468,6 +468,101 @@ describe("--json findings", () => {
   });
 });
 
+/**
+ * `fixes` — the top-level map from a raised code to what to do about it.
+ *
+ * The payload's codes were previously a dead end: a finding says what is wrong
+ * and nothing in it says that `loam explain <code>` knows the next move. The
+ * map answers the lookup in the same envelope, and these tests pin the three
+ * decisions that make it a map and not a per-finding field: it carries only
+ * the codes a NON-ok finding raised, it is always present (empty on a green
+ * run) so nothing has to branch on the key, and every value is byte-identical
+ * to what `loam explain <code> --json` says — the drift guard, since the whole
+ * point is that a consumer need not make that second call.
+ */
+describe("--json fixes", () => {
+  it("carries a fix for every non-ok code raised, and for no other code", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = `# ${SVC}\n\n## Requirements\n\n### Requirement: No scenario\nThe service SHALL do a thing.\n`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "validate", "--json")).stdout);
+      const findings: Finding[] = json.targets.flatMap((t: Target) => t.findings);
+      // The run must actually raise something, or every assertion below is
+      // vacuously true over an empty map.
+      const raised = [...new Set(findings.filter((f) => f.severity !== "ok").map((f) => f.code))];
+      expect(raised).toContain("requirements.missing-scenarios");
+      expect(raised).toContain("frontmatter.missing");
+
+      const keys = Object.keys(json.fixes);
+      // Every key is a code this run raised as a non-ok finding — never an
+      // `ok` confirmation, which has nothing to fix.
+      const confirmations = new Set(findings.filter((f) => f.severity === "ok").map((f) => f.code));
+      for (const key of keys) {
+        expect(raised, `${key} is keyed but was not raised`).toContain(key);
+        expect(confirmations).not.toContain(key);
+      }
+      // And every raised code the fix tables grade is present. A code with no
+      // table row is absent by design (no placeholder string), so this is the
+      // one direction that has to be stated as a subset rather than equality —
+      // these two are named because the tables do grade them.
+      expect(keys).toContain("requirements.missing-scenarios");
+      expect(keys).toContain("frontmatter.missing");
+      for (const value of Object.values(json.fixes)) expect(typeof value).toBe("string");
+      // Sorted, so two runs over the same findings produce identical bytes.
+      expect(keys).toEqual([...keys].sort());
+    });
+  });
+
+  it("is present and empty on a run with nothing to fix — never absent", async () => {
+    // A docs repo with no services and an empty fleet map: the only genuinely
+    // green `--all` run available, one `ok` landscape finding and no others.
+    // (`services/.keep` alone is NOT green — with no landscape.likec4 the run
+    // warns `landscape.missing`, which would put a key in the map.) `fixes` is
+    // emitted anyway, so a consumer reads `json.fixes[code]` without first
+    // testing for the key.
+    const empty = { "services/.keep": "", "architecture/landscape.likec4": "specification {\n  element softwareSystem\n}\n\nmodel {\n}\n" };
+    await withProject(empty, {}, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      const json = JSON.parse(res.stdout);
+      const findings: Finding[] = json.targets.flatMap((t: Target) => t.findings);
+      expect(findings.every((f) => f.severity === "ok")).toBe(true);
+      expect(json).toHaveProperty("fixes");
+      expect(json.fixes).toEqual({});
+    });
+  });
+
+  it("says exactly what `loam explain <code> --json` says, so the two surfaces cannot drift", async () => {
+    const files = coherentFixture();
+    files[`services/${SVC}/spec.md`] = `# ${SVC}\n\n## Requirements\n\n### Requirement: No scenario\nThe service SHALL do a thing.\n`;
+    await withProject(files, { service: SVC }, async (p) => {
+      const fixes: Record<string, string> = JSON.parse(
+        (await runLoam(p.workDir, "validate", "--json")).stdout,
+      ).fixes;
+      expect(Object.keys(fixes).length).toBeGreaterThan(0);
+      for (const [code, value] of Object.entries(fixes)) {
+        const explained = JSON.parse((await runLoam(p.workDir, "explain", code, "--json")).stdout);
+        expect(explained.kind, code).toBe("finding");
+        // The shaping rule, restated here rather than imported, so a change to
+        // `fixesFor` has to be made deliberately in two places: one fix is
+        // emitted verbatim, and a code whose tables disagree (ten of the 227
+        // do) is emitted as its scope-labelled blocks in table order. Picking
+        // the first table's fix would be shorter and sometimes wrong.
+        const byFix = new Map<string, string>();
+        for (const entry of explained.entries as Array<{ scope: string; fix: string }>) {
+          if (entry.fix !== "" && !byFix.has(entry.fix)) byFix.set(entry.fix, entry.scope);
+        }
+        const distinct = [...byFix];
+        expect(value, code).toBe(
+          distinct.length === 1
+            ? distinct[0]![0]
+            : distinct.map(([fix, scope]) => `[${scope}] ${fix}`).join(" "),
+        );
+      }
+    });
+  });
+});
+
 describe("the per-service summary contract (SCHEMA.md, Operating at fleet scale)", () => {
   /**
    * SCHEMA.md documents a jq derivation each service repo's CI runs over

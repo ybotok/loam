@@ -105,6 +105,7 @@ export async function showService(
 
   if (json) {
     emitJson({
+      command: "show",
       type: "service",
       id,
       path: repoPath(docsDir, paths.dir),

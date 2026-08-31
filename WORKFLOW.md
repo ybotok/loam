@@ -10,8 +10,8 @@ that order.
 
 ## Contents
 
-- [The two flows](#the-two-flows) · [The artifact graph](#the-artifact-graph) ·
-  [Derived, never stored](#derived-never-stored)
+- [The two flows](#the-two-flows) · [Topology and the governed boundary](#topology-and-the-governed-boundary) ·
+  [The artifact graph](#the-artifact-graph) · [Derived, never stored](#derived-never-stored)
 - [Actions, not phases](#actions-not-phases) · [What actually gates](#what-actually-gates)
 - [The six workflows](#the-six-workflows) · [The honestly-small change](#the-honestly-small-change)
   · [Driving it from an agent](#driving-it-from-an-agent)
@@ -24,7 +24,7 @@ that order.
 ## The two flows
 
 ```
-BOOTSTRAP (once per service, reverse):
+BOOTSTRAP (once per governed boundary, reverse):
     code ──adopt──►  brief ──agent──►  C4 baseline + capability spec   [truth = code]
 
 FORWARD (per feature, generative):
@@ -33,20 +33,41 @@ FORWARD (per feature, generative):
                  └──── done-check: verify ◄──────────┘
 ```
 
-They run in opposite directions and that is the point. Bootstrap reads a service that already exists
-and writes down what is true about it; the code is the authority and the document is the claim.
-Forward starts from an intent nobody has built yet; the model is the authority and the code is the
-claim. Every rule below is downstream of which direction you are facing.
+They run in opposite directions and that is the point. Bootstrap reads an implementation boundary
+that already exists and writes down what is true about it; the code is the authority and the
+document is the claim. Forward starts from an intent nobody has built yet; the model is the
+authority and the code is the claim. Every rule below is downstream of which direction you are
+facing.
 
 **There is no extractor, and there will not be one.** Nothing deterministic reads a legacy service
 and says what its architecture *means*, and a model that was guessed is worse than none — everyone
 downstream has to re-derive it to know whether to believe it. loam takes the half of the job that is
 mechanical: it **states the work** and it **checks the result**. An agent does the reading.
 
+## Topology and the governed boundary
+
+The lifecycle is topology-neutral; the storage vocabulary is deliberately not. Paths, flags and
+finding codes use the frozen word `service` for one governed implementation boundary. That boundary
+may be a network service, one modular monolith, a CLI, a worker, or another application whose code,
+requirements, contracts and evidence are reviewed together.
+
+In a modular monolith, one bound C4 root resolves to one `services/<app>/` directory and its nested
+modules remain elements inside that boundary. They can be changed by `delta.likec4` and named by
+architecture requirements through `Covers:` without acquiring invented service identities of their
+own. In a distributed system, several bound roots resolve to several service directories and the
+same model gains cross-boundary OpenAPI, AsyncAPI and use-case joins. A hybrid landscape contains
+both shapes; the binding and its nearest bound ancestor decide ownership, not element depth.
+
+This distinction matters operationally. Fleet reports, maturity and deploy dependencies aggregate
+at the bound service boundary. Nested modules participate in model coverage and the change
+lifecycle, but loam does not claim a separate repository, contract, maturity state or deploy order
+for each one. The self-model under `meta/docs/` exercises that exact shape: one `loam` boundary,
+with the source subjects nested inside it and governed through architecture requirements.
+
 ## Day zero: onboarding a fleet
 
 This is the scale-up path of the
-[five-minute trial](README.md#try-loam-on-one-service-in-five-minutes): the same wiring, done
+[five-minute trial](README.md#try-loam-on-one-governed-system-in-five-minutes): the same wiring, done
 deliberately across every repository. A fleet of ten services is **eleven repositories**: one docs
 repo and ten service repos, each with its own committed `loam.json`. There is no batch command and
 no fleet manifest, deliberately — the wiring is one file per repo, and it is reviewable. In order:
@@ -126,7 +147,7 @@ element to it where the map does not yet know the service, and step 5's `--all` 
 ## The artifact graph
 
 A feature is a directory. What it owes is a fixed set of artifacts — no per-project schema, no
-configurable graph, because a fleet needs one lifecycle and one meaning of green:
+configurable graph, because a governed system needs one lifecycle and one meaning of green:
 
 | Artifact | Per | Required | What it is |
 |---|---|---|---|
@@ -278,6 +299,14 @@ purpose and the spine, and defer the flags, the finding codes and the fix tables
 are actually about to run. A generated file is written once and never regenerated, so a copy of the
 protocol in it would be as old as the repository; the pointer cannot go out of date the same way.
 
+`AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
+agent reads — now works the same way, which changes the reading order. It is orientation only (the
+layout, the cycle, what gates and what only advises, at 29,720 bytes rather than 109,399), and the
+four **reference pages** it used to carry inline come out of the binary at the moment the question
+arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
+taking no arguments and printing whole, listed beside the six workflows by a bare
+`loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
+
 | Workflow | When | What it drives |
 |---|---|---|
 | `loam-adopt` | Once per service, before any feature touches it | `loam adopt` briefs the baseline; an agent reads the code and writes it as `draft`; validate twice — the service, then the fleet — and hand to a human to vouch |
@@ -343,6 +372,21 @@ Every command takes `--json`, and the contract is built so an agent never has to
 
 - **Findings carry stable codes** — `c4.valid`, `spine.op-undefined`, `coherence.ok`. Branch on the
   code. Prose gets reworded; codes do not.
+- **The protocol has a narrowed form, and one code is answerable as data** —
+  `loam instructions loam-check` is 84,151 bytes, almost all of it the per-code fix tables, and
+  `--no-fix-tables` prints the same page at 3,541 with each table's scope paragraph kept. Branch on
+  the code, then `loam explain <code> --json` for the two or three a run reported (473 bytes each),
+  or `loam explain --codes --json` once for the whole vocabulary — 293 finding codes and 46 refusal
+  codes, 339 of the 390 loam emits. The four families no fix table grades (`doctor.*`, `next.*`,
+  `diff.*`, `gate.*`) are among them, so a code read out of a `status`, `doctor`, `diff` or `gate`
+  payload is answerable as data like any other; the 51 that are not are the OpenSpec migration
+  surface (`openspec.*`, `mapping.*`), which an agent meets once before the repository is governed
+  at all, and two `ok`-severity confirmations.
+- **`validate --json` already carries the fix for every code it raised** — `fixes` is a map keyed by
+  code, so joining `findings[].code` to `fixes[code]` answers "what now" out of the payload you are
+  holding: no `loam explain` round trip per code, and no fix table loaded into context to read one.
+  Only codes a run actually raised appear, and a run with nothing to fix carries `{}` rather than
+  nothing, so no consumer has to test for the key before looking one up.
 - **`next[]` is ordered, and each entry carries the literal command** to run, beside a stable code
   and a one-sentence statement that is actionable without reading any other field.
 - **Three questions are kept apart**, each on the command that can answer it: `ok` (the command ran)
@@ -454,9 +498,12 @@ in a wired repo keeps the pointer its committed `loam.json` already spells, `--c
 
 **`loam status`** — the question an agent has when it joins a repo halfway or loses its session.
 Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry
-a stable code plus the literal command. It takes the union of what `validate --feature` errors on
-and what `archive` refuses to merge, so it may be redder than either and is never greener than both.
-There is no state file to go stale.
+a stable code plus the literal command. When this repository's `loam.json` binds a boundary the
+fleet already has, that boundary's own steps are partitioned to the front of the fleet worklist
+before its ten-entry cap applies — a stable partition, not a sort, so every other boundary keeps the
+order an unbound reader sees and the work you are standing in can no longer be the entry elided. It
+takes the union of what `validate --feature` errors on and what `archive` refuses to merge, so it
+may be redder than either and is never greener than both. There is no state file to go stale.
 
 **`loam new`** — the scaffold passes `loam validate --feature` with **zero errors**, and its
 unauthored state is named in warnings that *gate the archive*: `intent.empty` until you write the
@@ -468,7 +515,15 @@ requirements-only feature you delete the scaffolded `delta.likec4` yourself — 
 way out.
 
 **`loam adopt`** — the brief names the target paths, the grammar of each, what the landscape already
-says, the checks that follow, and the ones that do not exist.
+says, the checks that follow, and the ones that do not exist. The default human view now opens with
+an orientation block before any of that: how many of those targets are required and still
+outstanding, named, and what each flag in the artifact table means — `MISSING` required and absent,
+lowercase `missing` optional and absent, `present` a document to diff rather than replace, and
+`UNDRAWN` the one row that is the whole system's shared map, which this boundary owes an element
+rather than a file. `--targets` drops the half that is identical for every service — the code walk,
+the frontmatter rules, the 37 named checks and the fifteen statements of what nothing checks — and
+replaces it with a `full` field naming the one run that carries them, which is 42,873 bytes down to
+17,805 on the example fleet.
 
 **`loam diff`** — the base state is read out of the docs repo's own git history
 (`rev-parse`/`ls-tree`/`show`, read-only, no checkout), so it refuses (`repository-unavailable`)
@@ -483,6 +538,15 @@ For the byte-level OpenAPI breaking-change catalogue, run oasdiff on the two sta
 (the `./` resolves the path relative to the docs directory rather than the git root, so this holds
 when the docs repo lives inside a larger repository) — loam deliberately does not reimplement those
 checks.
+
+**`loam validate`** — `--base <ref>` takes `--all` and nothing else (a positional target,
+`--service` or `--feature` beside it is refused `invalid-option`, since two scopes is a
+contradiction rather than a narrowing), and it narrows the run to the boundaries, features and
+landscape the branch changed since a base git ref of the docs repo — which is the only setting
+both passing on the first day of adoption and tightening after it, and which for that reason
+grades nothing outside the branch: the consumer whose living requirement still names an operation
+this branch removed is not in scope, so that finding is `loam diff`'s and never this run's, and a
+scope holding no target says it graded nothing rather than reporting the word valid.
 
 **`loam gherkin`** — a feature's changed requirements, or (without a feature) the full living suite.
 Deterministic, digest-stamped, regeneration-owned; run in the service's own repo.
@@ -558,11 +622,15 @@ both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
 
 ## The MCP server
 
-For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the twelve read
-commands — `validate`, `status`, `list`, `show`, `delta`, `diff`, `explore`, `dependencies`,
-`doctor`, `context`, `gate`, `explain` — as MCP tools (`loam_validate` … `loam_explain`) over stdio,
-newline-delimited JSON-RPC 2.0, protocol revision 2025-06-18 (older revisions negotiated down;
-JSON-RPC batch arrays refused). A typical host entry:
+For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the fourteen read
+commands — `validate`, `status`, `list`, `show`, `delta`, `explore`, `dependencies`, `diff`,
+`doctor`, `context`, `gate`, `steps`, `explain`, `instructions` — as MCP tools (`loam_validate` …
+`loam_instructions`) over stdio, newline-delimited JSON-RPC 2.0, protocol revision 2025-06-18 (older
+revisions negotiated down; JSON-RPC batch arrays refused). Every tool is advertised
+`readOnlyHint: true` and `openWorldHint: false`, which is what a host needs to run one without
+stopping to ask its user: the first says the call cannot change the repository, the second that it
+cannot reach anything outside the directory the server was launched in — and both are true of the
+whole table only because the writing commands are kept out of it. A typical host entry:
 
 ```json
 {
@@ -571,6 +639,12 @@ JSON-RPC batch arrays refused). A typical host entry:
   }
 }
 ```
+
+`loam init --mcp` writes that file at the repository root for you, choosing `npx --no loam mcp` over
+the bare binary shown above when `node_modules/.bin/loam` is there — the per-repo devDependency
+install, whose binary is on no PATH a host inherits. It is opt-in, and it never merges: an
+`.mcp.json` that already exists is reported skipped, byte for byte, with the `loam` key printed for
+you to paste.
 
 There is one machine contract, not two: every tool result carries the command's `--json` envelope
 **verbatim** in its text content (and parsed again as structured content), with the MCP error flag

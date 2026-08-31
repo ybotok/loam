@@ -39,6 +39,14 @@ export function gatesArchive(i: Issue): boolean {
  * a whole-file copy over an authored definition, so approving it is approving a
  * deletion nobody described — and the alternative the message names (edit the
  * living definition in the same change) costs one `git mv` and loses nothing.
+ * `usecase.flow-exists` is the same act one axis over: the merge would copy a
+ * feature's flow over a living one, and an ordered hop sequence is recorded
+ * nowhere else either. `usecase.flow-invalid` is the other kind of exception —
+ * not a deletion but a BLINDNESS: loam could not read the feature's flows
+ * against the map its own merge would leave, so it graded nothing, and
+ * `--approve` overrides loam's judgment about coherence and never its ability
+ * to read an axis. That is the same line `delta.likec4`'s unparseable case is
+ * refused on, one merge over.
  *
  * `archive` refuses these under the same `not-coherent` envelope and spells
  * this verdict per issue as the additive `overridable` key, so a `--json`
@@ -47,6 +55,8 @@ export function gatesArchive(i: Issue): boolean {
 const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "c4.service-binding-invalid",
   "glossary.term-exists",
+  "usecase.flow-exists",
+  "usecase.flow-invalid",
 ]);
 
 export function approveOverrides(i: Issue): boolean {
@@ -110,11 +120,11 @@ export type IssueCode =
   /* --- the event axis: C4 <-> requirements <-> AsyncAPI, joined on the message name --- */
   /** the FEATURE's own asyncapi.yaml exists but does not parse — the same name validate gives a living contract in that state: every event-axis check for the service is suspended */
   | "asyncapi.invalid"
-  /** an `x-loam-based-on` that is not a digest, or one on a slot the living contract does not have */
+  /** an `x-loam-based-on` that is not a digest or one on a slot the living contract does not have; a malformed `x-loam-baselines` record, an entry of it naming a component surface the delta does not declare, or one whose living counterpart is gone */
   | "asyncapi.baseline-invalid"
-  /** a feature slot with no baseline pin — the merge cannot tell whether the delta EDITS it or merely quotes it; warn that gates, counted per service */
+  /** a feature slot or component surface with no baseline pin — the merge cannot tell whether the delta EDITS it or merely quotes it; warn that gates, counted per service */
   | "asyncapi.baseline-missing"
-  /** the living slot changed since this delta pinned it — merging would discard whoever landed in between */
+  /** the living slot or component surface changed since this delta pinned it — merging would discard whoever landed in between */
   | "asyncapi.baseline-stale"
   /** a slot-removal marker addresses a (section, key) the living contract does not have */
   | "asyncapi.remove-target-missing"
@@ -184,9 +194,9 @@ export type IssueCode =
   | "living.requirement-outside-requirements"
   /** the delta redefines an operation the living OpenAPI already has — the merge overwrites it wholesale */
   | "openapi.op-modified"
-  /** a component the merged operations carry already exists in the living OpenAPI with different content — the merge overwrites it wholesale */
+  /** a component the merge carries — reached by a merged operation, or declared by a delta whose whole change is components — already exists in the living OpenAPI with different content, and the merge overwrites it wholesale */
   | "openapi.component-modified"
-  /** a $ref reachable from the merged operations resolves in neither the feature's OpenAPI nor the living one — merging would write a dangling reference */
+  /** a $ref reachable from the merged operations or a merged component resolves in neither the feature's OpenAPI nor the living one — merging would write a dangling reference */
   | "openapi.ref-unresolved"
   /** the delta redefines a PATH-level key (parameters, servers, summary) the living OpenAPI already has — the overwrite applies to every operation on that path */
   | "openapi.path-item-modified"
@@ -196,6 +206,8 @@ export type IssueCode =
   | "asyncapi.channel-modified"
   /** the delta redefines an `operations` slot the living AsyncAPI already has — the merge overwrites it wholesale */
   | "asyncapi.operation-modified"
+  /** the delta declares a component SURFACE outside `components.messages` — a schema, a security scheme — that the living AsyncAPI already has with different content, and the merge copies the feature's version over it wholesale */
+  | "asyncapi.component-modified"
   /** an `x-loam-remove: true` marker with no operationId — loam cannot tell which operation it retires, and the marker itself would reach the living contract */
   | "openapi.remove-marker-anonymous"
   /** an `x-loam-remove: true` written at PATH level, beside the methods — it addresses no operation, so it retires nothing and is not a contract key either */
@@ -239,6 +251,11 @@ export type IssueCode =
   /* --- the domain glossary: a term a feature introduces --- */
   /** a `features/<FEAT>/glossary/<term>.md` whose term the living glossary already defines — the merge is a whole-file copy, so it would replace an authored definition wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local glossary document INTRODUCES a term, and rewriting one belongs in a pull request where git produces the conflict */
   | "glossary.term-exists"
+  /* --- the use-case axis: a flow a feature introduces --- */
+  /** a `features/<FEAT>/usecases/*.likec4` that could not be read against the map this feature's own merge would leave behind — a parse error, an unresolved element, or a landscape merge that itself refuses. The flows were not graded, and archiving would copy them into `architecture/` for the next reader's `loam validate --all` to fail on. Mechanical rather than a judgement, which is why `--approve` does not move it */
+  | "usecase.flow-invalid"
+  /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
+  | "usecase.flow-exists"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

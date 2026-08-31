@@ -245,7 +245,12 @@ describe("what vouch refuses", () => {
     );
   });
 
-  it("refuses to vouch for a service this repo is not — the paths would be someone else's", async () => {
+  it("refuses to vouch for a service this repo is not — `service-mismatch`, not a bad flag", async () => {
+    // This repo IS a service's, just not the one asked for. It used to answer
+    // `invalid-option`, whose `loam explain` row says the invocation is wrong —
+    // false here, where the flags were perfect and the DIRECTORY was wrong, and
+    // unbranchable for CI. `loam verify --record --service` already drew this
+    // line; vouch now agrees with it.
     await withRepo(
       ONE_SOURCE,
       CODE,
@@ -253,11 +258,31 @@ describe("what vouch refuses", () => {
         const res = await runLoam(p.workDir, "vouch", "--yes", "--service", SVC, "--json");
         expect(res.code).toBe(1);
         const json = JSON.parse(res.stdout);
-        expect(json.error.code).toBe("invalid-option");
+        expect(json.error.code).toBe("service-mismatch");
         expect(json.error.message).toContain("checkout-web");
       },
       { service: "checkout-web" },
     );
+  });
+
+  it("refuses to vouch from a docs repo — `repository-unavailable`, the other half of the pair", async () => {
+    // No `service` in loam.json at all, so nothing here is any service's
+    // checkout and `sources` would resolve against the wrong tree. Distinct
+    // from the mismatch above, because the two point at different fixes: clone
+    // and run there, versus you are in the wrong service's repo.
+    const files = coherentFixture();
+    files[SPEC] = `---\n${ONE_SOURCE}\n---\n${BODY}`;
+    const p = await makeProject(files);
+    try {
+      await writeFiles(p.workDir, CODE);
+      const res = await runLoam(p.workDir, "vouch", "--yes", "--service", SVC, "--json");
+      expect(res.code).toBe(1);
+      const json = JSON.parse(res.stdout);
+      expect(json.error.code).toBe("repository-unavailable");
+      expect(json.error.message).toContain("not a service repo");
+    } finally {
+      await p.destroy();
+    }
   });
 
   it("refuses a service with no living spec — there is no document to stamp", async () => {

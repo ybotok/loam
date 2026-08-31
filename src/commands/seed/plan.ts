@@ -22,10 +22,10 @@ import {
   unfiledServicePaths,
 } from "../../core/repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
-import { renderSubsystemViews } from "../../core/repo/tree/views.js";
+import { renderSubsystemViews, viewsAgree } from "../../core/repo/tree/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
-import { planWrite, sameBytes, type PlannedWrite } from "../../core/staging/writes.js";
+import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 
 /** Everything the plan reads. The commit request extends this and adds only `rerun`. */
 export interface SeedPlanInput {
@@ -146,13 +146,22 @@ export async function planSeedWrites(req: SeedPlanInput, tree: FleetTree): Promi
   // `subsystem.views-stale`, so a seed that ignored the file would exit 0 and
   // send the caller, via its own `next` list, into a failing gate over a file
   // it had in hand. `content: null` is the delete the transaction understands
-  // (commands/subsystem/txn/txn.ts's `"removed"`), and an identical file is
-  // left out of the journal entirely rather than written back over itself.
+  // (commands/subsystem/txn/txn.ts's `"removed"`), and a file that already
+  // SAYS this is left out of the journal entirely rather than written back
+  // over itself.
+  //
+  // "Already says this" is content, not bytes: `viewsAgree` performs the
+  // comparison and records the Windows reason for it, beside the generator
+  // that mints the bytes. What gets WRITTEN is unchanged — the LF render, as a
+  // Buffer — so this decode is a comparison only, never the string round trip
+  // to disk that writes.ts forbids; a views file whose bytes are not UTF-8
+  // therefore fails the compare and is regenerated, which is the right answer
+  // for it anyway.
   const viewsPath = subsystemViewsPath(docsDir);
   const views = renderSubsystemViews(plannedTree, req.elements);
   const wanted = views === null ? null : Buffer.from(views, "utf8");
-  const current = existsSync(viewsPath) ? await readFile(viewsPath) : null;
-  if (!sameBytes(current, wanted)) writes.push({ path: viewsPath, content: wanted });
+  const onDisk = existsSync(viewsPath) ? await readFile(viewsPath, "utf8") : null;
+  if (!viewsAgree(onDisk, views)) writes.push({ path: viewsPath, content: wanted });
 
   return { writes, services: { created: created.sort(), existing: existing.sort() } };
 }

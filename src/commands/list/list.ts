@@ -264,6 +264,7 @@ export function registerList(program: Command): void {
 
         if (json) {
           emitJson({
+            command: "list",
             docsDir,
             // Additive, unconditional and flat, mirroring the per-service
             // `adrs` key one row down rather than inventing a second shape for

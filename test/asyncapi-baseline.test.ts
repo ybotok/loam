@@ -25,8 +25,9 @@ import {
   slotBaselineOf,
   slotDigest,
 } from "../src/core/asyncapi/digest.js";
-import { classifyBaselineDigests } from "../src/core/openapi/digest.js";
+import { classifyBaselineDigests, valueDigest } from "../src/core/openapi/digest.js";
 import { pinAsyncapiSlots } from "../src/core/asyncapi/merge/pin.js";
+import { planAsyncapiBaselines } from "../src/core/asyncapi/baseline/plan.js";
 import { readAsyncapi } from "../src/core/asyncapi/read.js";
 import { featureCoherence } from "../src/core/coherence/coherence.js";
 import { gatesArchive, type Issue } from "../src/core/vocabulary/issue.js";
@@ -72,6 +73,25 @@ components:
 }
 
 const LIVING_EVENTS = eventContract("Authorization landed");
+
+/**
+ * The same contract with a `components.schemas` sibling. That entry is a
+ * SURFACE, not a slot: it carries no in-value `x-loam-based-on` (a JSON Schema
+ * has no room for a loam key that would not be a schema keyword), so the root
+ * `x-loam-baselines` record is the only thing that can pin it.
+ */
+function withSchema(yaml: string, title: string): string {
+  return `${yaml}  schemas:
+    Money:
+      type: object
+      title: ${title}
+`;
+}
+
+const LIVING_WITH_SCHEMA = withSchema(LIVING_EVENTS, "an amount");
+
+/** The living value of the one surface these tests pin. */
+const livingSurface = (): unknown => (parseYaml(LIVING_WITH_SCHEMA) as { components: { schemas: { Money: unknown } } }).components.schemas.Money;
 
 const slotOf = (yaml: string, section: string, key: string): unknown => {
   const slot = asyncapiSlots(parseYaml(yaml)).find((s) => s.section === section && s.key === key);
@@ -332,6 +352,76 @@ operations:`,
 });
 
 /* ------------------------------------------------------------------ */
+/* The surface record                                                  */
+/* ------------------------------------------------------------------ */
+
+describe("planAsyncapiBaselines — the surfaces the slot pin cannot reach", () => {
+  it("pins a restated surface to the LIVING digest, which is what yields both verdicts", () => {
+    const edited = withSchema(eventContract("Authorization landed"), "an amount, per this feature");
+    const plan = planAsyncapiBaselines(edited, LIVING_WITH_SCHEMA, SVC);
+    expect(plan.pins).toEqual([
+      expect.objectContaining({ target: "schemas/Money", status: "pinned" }),
+    ]);
+    // The entry is the LIVING value's digest, never the delta's own — the one
+    // rule that makes a quote equal to its entry and an edit differ from it.
+    const record = parseYaml(plan.text!)["x-loam-baselines"];
+    expect(record).toEqual({ components: { "schemas/Money": valueDigest(livingSurface()) } });
+    expect(record.components["schemas/Money"]).not.toBe(valueDigest(parseYaml(edited).components.schemas.Money));
+  });
+
+  it("pins MESSAGES nowhere in the record — that is the third slot section, pinned in-value", () => {
+    // Two identities for one value is the failure: a message carrying both an
+    // in-value `x-loam-based-on` and a root record entry would be classified
+    // twice, by two verdicts that need not agree.
+    const plan = planAsyncapiBaselines(withSchema(eventContract("edited"), "an amount"), LIVING_WITH_SCHEMA, SVC);
+    expect(plan.pins.map((p) => p.target)).toEqual(["schemas/Money"]);
+    expect(Object.keys(parseYaml(plan.text!)["x-loam-baselines"].components)).toEqual(["schemas/Money"]);
+  });
+
+  it("is idempotent, and reports the second run as unchanged", () => {
+    const once = planAsyncapiBaselines(withSchema(eventContract("edited"), "changed"), LIVING_WITH_SCHEMA, SVC);
+    const twice = planAsyncapiBaselines(once.text!, LIVING_WITH_SCHEMA, SVC);
+    expect(twice.text).toBeNull();
+    expect(twice.pins.every((p) => p.status === "unchanged")).toBe(true);
+  });
+
+  it("invents nothing for a surface the living contract does not have", () => {
+    // Stamping a pin against nothing is not a harmless extra key: the gate
+    // grades it `unfounded` and refuses the delta, so rebase would be writing
+    // the file the gate then sends its author back to rebase.
+    const adding = `asyncapi: 3.0.0
+components:
+  schemas:
+    Discount:
+      type: object
+`;
+    const plan = planAsyncapiBaselines(adding, LIVING_WITH_SCHEMA, SVC);
+    expect(plan.pins).toEqual([
+      expect.objectContaining({ target: "schemas/Discount", status: "unresolved", to: null }),
+    ]);
+    expect(plan.text).toBeNull();
+  });
+
+  it("drops the whole key when every surface is new", () => {
+    // A bare `x-loam-baselines: {}` would be bookkeeping about nothing. The
+    // key goes even when the delta arrived carrying one, because rebase
+    // rebuilds the record wholesale rather than patching it.
+    const stale = `asyncapi: 3.0.0
+x-loam-baselines:
+  components:
+    schemas/Gone: "0123456789abcdef"
+components:
+  schemas:
+    Discount:
+      type: object
+`;
+    const plan = planAsyncapiBaselines(stale, LIVING_WITH_SCHEMA, SVC);
+    expect(plan.text).not.toBeNull();
+    expect(parseYaml(plan.text!)["x-loam-baselines"]).toBeUndefined();
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* loam rebase                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -524,6 +614,58 @@ operations:`,
     const issues = await coherenceOf(gateFixture(added));
     expect(only(issues, "asyncapi.baseline-missing")).toEqual([]);
     expect(only(issues, "asyncapi.baseline-invalid")).toEqual([]);
+  });
+
+  /** What `loam rebase` would stamp for the SURFACES — the real planner. */
+  const pinSurfaces = (feature: string, living: string): string =>
+    planAsyncapiBaselines(feature, living, "fixture").text ?? feature;
+
+  it("refuses a stale surface entry, naming both digests and the command that repins", async () => {
+    // Both halves pinned, in rebase's own order: the slots in-value, then the
+    // surfaces into the root record over that output.
+    const edited = withSchema(eventContract("Authorization landed"), "edited here");
+    const delta = pinSurfaces(pinEvents(edited, LIVING_WITH_SCHEMA), LIVING_WITH_SCHEMA);
+    const moved = withSchema(eventContract("Authorization landed"), "as somebody else landed it");
+    const [issue, ...rest] = only(await coherenceOf(gateFixture(delta, moved)), "asyncapi.baseline-stale");
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("error");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("schemas/Money");
+    expect(issue!.message).toContain("loam rebase FEAT-1");
+  });
+
+  it("says nothing about a quoted surface, however far the living value has moved", async () => {
+    const delta = pinSurfaces(pinEvents(LIVING_WITH_SCHEMA, LIVING_WITH_SCHEMA), LIVING_WITH_SCHEMA);
+    const moved = withSchema(eventContract("Authorization landed"), "as somebody else landed it");
+    const issues = await coherenceOf(gateFixture(delta, moved));
+    expect(only(issues, "asyncapi.baseline-stale")).toEqual([]);
+    expect(only(issues, "asyncapi.baseline-missing")).toEqual([]);
+  });
+
+  it("folds unpinned SURFACES into the same single warning as the unpinned slots", async () => {
+    // Counted, not listed, and counted ONCE: a second warning per axis-half
+    // would have a delta over a schema-heavy contract print two findings
+    // naming the same one command, which is how people learn to filter a code
+    // out. Three slots plus one surface, in one issue.
+    const [issue, ...rest] = only(
+      await coherenceOf(gateFixture(withSchema(eventContract("edited"), "edited too"), LIVING_WITH_SCHEMA)),
+      "asyncapi.baseline-missing",
+    );
+    expect(rest).toEqual([]);
+    expect(issue!.severity).toBe("warn");
+    expect(gatesArchive(issue!)).toBe(true);
+    expect(issue!.message).toContain("4 slot(s) and component surface(s)");
+  });
+
+  it("refuses a record entry naming a surface the delta does not declare", async () => {
+    // The orphan check: an entry pinning nothing, usually a surface the author
+    // deleted after rebasing. Distinct from `unfounded`, where the surface IS
+    // declared and the LIVING value is what vanished.
+    const orphaned = `x-loam-baselines:\n  components:\n    schemas/Gone: "0123456789abcdef"\n${LIVING_WITH_SCHEMA}`;
+    const [issue, ...rest] = only(await coherenceOf(gateFixture(orphaned)), "asyncapi.baseline-invalid");
+    expect(rest).toEqual([]);
+    expect(issue!.message).toContain("schemas/Gone");
+    expect(issue!.message).toContain("does not declare it");
   });
 
   it("archive refuses the unpinned delta at exit 1 under not-coherent, and --approve merges", async () => {

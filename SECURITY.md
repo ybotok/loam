@@ -6,8 +6,7 @@ backport.
 
 ## Reporting a vulnerability
 
-Do not disclose a suspected vulnerability in a public issue, pull request, discussion, or pilot
-scorecard. GitHub Private Vulnerability Reporting is the intended durable route, but it is **not
+Do not disclose a suspected vulnerability in a public issue, pull request, or discussion. GitHub Private Vulnerability Reporting is the intended durable route, but it is **not
 currently confirmed or enabled** for this repository. Do not assume that a GitHub form or link is
 private unless it explicitly opens a private vulnerability report.
 

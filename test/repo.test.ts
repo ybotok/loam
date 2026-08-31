@@ -482,6 +482,7 @@ describe("path helpers", () => {
       asyncapi: join("/docs", "services", "payment-service", "asyncapi.yaml"),
       runbook: join("/docs", "services", "payment-service", "runbook.md"),
       health: join("/docs", "services", "payment-service", "health.yaml"),
+      steps: join("/docs", "services", "payment-service", "steps.yaml"),
       adrsDir: join("/docs", "services", "payment-service", "adrs"),
     });
   });

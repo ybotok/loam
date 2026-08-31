@@ -23,6 +23,7 @@ import {
   runLoam,
   type Project,
 } from "./helpers/harness.js";
+import { LOAM_VERSION } from "../src/core/envelope/version.js";
 
 async function withProject(
   files: Record<string, string>,
@@ -488,7 +489,12 @@ describe("--json contract", () => {
       const json = JSON.parse((await runLoam(p.workDir, "list", "--json")).stdout);
       expect(json).toEqual({
         contractVersion: "1.0",
+        // From the constant, never a literal: a hardcoded version here is a
+        // test that goes red on every release and green again once somebody
+        // edits it, which is the opposite of pinning anything.
+        version: LOAM_VERSION,
         ok: true,
+        command: "list",
         docsDir: p.docsDir,
         // A docs repo with no `architecture/adrs/` reports 0, never omission:
         // the key is unconditional so a consumer never has to tell "no fleet

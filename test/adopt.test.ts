@@ -318,6 +318,143 @@ describe("what happens next, and what will never happen", () => {
   });
 });
 
+/**
+ * The orientation block — the human view's own defect, and its fix.
+ *
+ * The default brief is 646 lines and 5,600 words to a terminal, unpaged, and
+ * the two rows that tell a person what to do — `model.likec4 create MISSING`,
+ * `spec.md create MISSING` — land around line 470, behind four hundred lines of
+ * prose. `--json` is explicitly the agent contract, so nothing was being served
+ * by leaving the human view unintroduced. Three sentences at the top say how
+ * much is owed, what the table's flags mean, and what the rest of the page is.
+ *
+ * What these pin is that every number in it is DERIVED. A literal count would
+ * be right until the next check is added and silently wrong forever after, and
+ * a block a reader cannot trust is worse than no block: it costs the scroll to
+ * verify it, on top of the scroll it was meant to save.
+ */
+describe("the orientation block the human view opens with", () => {
+  /** The targets a baseline still owes — required, and either absent or (the fleet map) undrawn. */
+  function owed(b: Record<string, any>): string[] {
+    return b.targets
+      .filter((t: { required: boolean; exists: boolean; action: string }) => t.required && (!t.exists || t.action === "edit"))
+      .map((t: { artifact: string }) => t.artifact);
+  }
+
+  it("lands before the first section header, not four hundred lines into the page", async () => {
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const res = await runLoam(p.workDir, "adopt");
+    expect(res.code, res.out).toBe(0);
+    // Whole trimmed lines, not substrings: the block's own sentences quote the
+    // names of the sections they stand for ("statements of what nothing
+    // checks"), and a substring search would match those instead of the headers.
+    const lines = res.out.split("\n").map((line: string) => line.trim());
+    const orientation = lines.indexOf("read this first");
+    expect(orientation).toBeGreaterThan(-1);
+    for (const header of [
+      "read the code in this order — nothing below is written from anything else",
+      "artifacts",
+      "what the fleet already says about this service",
+      "frontmatter — on every markdown artifact",
+      "what nothing checks",
+    ]) {
+      expect(lines.indexOf(header), header).toBeGreaterThan(orientation);
+    }
+  });
+
+  it("counts what is owed off the brief's own targets, and names them", async () => {
+    // A service the fleet map has never heard of: the common case, and the one
+    // where the count is worth reading.
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const b = await brief(p);
+    const res = await runLoam(p.workDir, "adopt");
+    const flowed = res.out.replace(/\s+/g, " ");
+    expect(flowed).toContain(
+      `${String(owed(b).length)} of the ${String(b.targets.length)} artifacts below are required and not yet done: ${owed(b).join(", ")}.`,
+    );
+  });
+
+  it("counts the fleet-map edit among them — the file exists and the work does not", async () => {
+    // The trap this exists for: `architecture/landscape.likec4` is already there
+    // for every repo after its first service, so `required && !exists` counts
+    // two and the third — an ERROR at `loam validate --all` — goes unmentioned.
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const b = await brief(p);
+    expect(target(b, "landscape.likec4").exists).toBe(true);
+    expect(target(b, "landscape.likec4").action).toBe("edit");
+    expect(owed(b)).toContain("landscape.likec4");
+    const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
+    expect(flowed).toContain("3 of the 9 artifacts below are required and not yet done");
+  });
+
+  it("says so plainly when nothing is owed, rather than printing a count of zero", async () => {
+    // payment-service in the coherent fixture has its model, its spec, its
+    // contract and an element in the fleet map: the whole page is a diff.
+    const p = await project(coherentFixture(), { service: SVC });
+    expect(owed(await brief(p))).toEqual([]);
+    const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
+    expect(flowed).toContain("None of the 8 artifacts below is both required and outstanding");
+  });
+
+  it("decodes the table's own convention, capitals included", async () => {
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
+    // The distinction the table renders as if it were emphasis.
+    expect(flowed).toContain("`MISSING` in capitals is required and not there");
+    expect(flowed).toContain("lowercase `missing` is optional and not there");
+    // And what the fleet map's row is doing among this boundary's files.
+    expect(flowed).toContain("not this boundary's own file");
+    expect(flowed).toContain("landscape.service-unmodelled");
+  });
+
+  it("repeats the legend under the artifacts header, for the reader who scrolls back", async () => {
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const lines = (await runLoam(p.workDir, "adopt")).out.split("\n");
+    const header = lines.findIndex((line: string) => line.trim() === "artifacts");
+    expect(header).toBeGreaterThan(-1);
+    const legend = lines.findIndex((line: string) => line.includes("MISSING required"));
+    expect(legend).toBeGreaterThan(header);
+    // Above the rows it decodes, not below them. Matched on whitespace rather
+    // than a literal gap: the artifact column is padded to the longest name in
+    // the table (`landscape.likec4` today), so a two-space literal asserts a
+    // column width nobody chose and reddens when a longer artifact is briefed.
+    const firstRow = lines.findIndex((line: string) => /model\.likec4\s+create\s+MISSING/.test(line));
+    expect(firstRow, "the artifact rows follow the legend").toBeGreaterThan(legend);
+  });
+
+  it("sizes the rest of the page from the brief, and points an agent at the same targets", async () => {
+    const p = await project(coherentFixture(), { service: "billing-service" });
+    const b = await brief(p);
+    const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
+    expect(flowed).toContain(`${String(b.walk.length)}-stop order to read the code in`);
+    expect(flowed).toContain(`${String(b.checks.length)} named checks`);
+    expect(flowed).toContain(`${String(b.unchecked.length)} statements of what nothing checks`);
+    expect(flowed).toContain("loam adopt --service billing-service --json");
+    expect(flowed).toContain("--targets");
+  });
+
+  it("adds to the default view and takes nothing out of it", async () => {
+    // The long body is not the defect — it was unintroduced, not unwanted. Every
+    // section the page carried before still has to be on it.
+    const p = await project(coherentFixture(), { service: SVC });
+    const res = await runLoam(p.workDir, "adopt");
+    for (const section of [
+      "read the code in this order",
+      "artifacts",
+      "what the fleet already says about this service",
+      "frontmatter — on every markdown artifact",
+      `what \`loam validate --service ${SVC}\` then checks`,
+      "and what only `loam validate --all` surfaces",
+      "what nothing checks",
+      "when you are done",
+    ]) {
+      expect(res.out, section).toContain(section);
+    }
+    // and the never-overwrite rule keeps its place above the body
+    expect(res.out).toContain("Do not overwrite an artifact that already exists");
+  });
+});
+
 describe("the slash command that drives it", () => {
   it("is laid down by init and points at the protocol that ships with the binary", async () => {
     const dir = await makeTmpDir("loam-adopt-cmd-");
@@ -410,5 +547,177 @@ describe("the machine contract", () => {
     expect(res.out).toContain("### Requirement:");
     expect(res.out).toContain("sources");
     expect(res.out).toContain("authorizePayment");
+  });
+
+  it("carries every key it has always carried — the default payload is the frozen one", async () => {
+    // Named one by one rather than counted. `--targets` narrows by OMISSION at
+    // the command layer, so the way it could go wrong is by narrowing the
+    // default too — and a length assertion would pass while the wrong five
+    // keys survived.
+    const p = await project(coherentFixture(), { service: SVC });
+    const b = await brief(p);
+    expect(Object.keys(b)).toEqual([
+      "contractVersion",
+      // Two envelope keys the emitter itself contributes to every command —
+      // the binary's version and the payload's own discriminator. Only their
+      // NAMES belong in a key list; what `version` must equal is
+      // LOAM_VERSION, and test/envelope-identity.test.ts asserts it there
+      // rather than pinning a literal that would go red on every release.
+      "version",
+      "ok",
+      "command",
+      "service",
+      "docsDir",
+      "path",
+      "targets",
+      "walk",
+      "walkClose",
+      "landscape",
+      "frontmatter",
+      "checks",
+      "unchecked",
+      "rule",
+      "warnings",
+    ]);
+    // …and the invariant half is not merely present but populated: an empty
+    // `checks` array is the same key with the contract gone.
+    expect(b.checks.length).toBeGreaterThan(0);
+    expect(b.unchecked.length).toBeGreaterThan(0);
+    expect(b.walk.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * `--targets` — the brief minus everything that is the same for every service.
+ *
+ * The measurement that produced it: one service of the five-service example
+ * fleet is 42,873 bytes of `--json`, and 23 KB of that is `walk`, `checks`,
+ * `unchecked`, `frontmatter`, `walkClose` and `rule` — module constants, byte
+ * for byte identical for every service in every fleet. A twelve-service
+ * adoption paid for them twelve times.
+ *
+ * The risk the flag carries is the one these tests are mostly about: the
+ * unchecked list is loam shipping the statements of what no check will ever
+ * tell you, and a narrowing flag that made it merely ABSENT would read as
+ * "there is no such list" rather than "not repeated here" — quietly undoing
+ * the one promise the brief keeps that no validator supplies.
+ */
+describe("--targets: only what varies by service", () => {
+  it("carries exactly the variant keys, plus the pointer to the rest", async () => {
+    const p = await project(coherentFixture(), { service: SVC });
+    const b = await brief(p, "--targets");
+    expect(Object.keys(b)).toEqual([
+      "contractVersion",
+      "version",
+      "ok",
+      "command",
+      "service",
+      "docsDir",
+      "path",
+      "targets",
+      "landscape",
+      "warnings",
+      "full",
+    ]);
+    // The invariant half is gone, named individually so a partial narrowing
+    // cannot pass.
+    for (const key of ["walk", "walkClose", "frontmatter", "checks", "unchecked", "rule"]) {
+      expect(b[key], `${key} should be omitted under --targets`).toBeUndefined();
+    }
+    // And what remains is the part that is a function of this repository: the
+    // targets still resolve under this service, and the landscape is still read.
+    expect(b.service).toBe(SVC);
+    expect(b.path).toBe(`services/${SVC}`);
+    expect(target(b, "model.likec4").path).toBe(`services/${SVC}/model.likec4`);
+    expect(b.landscape.elements.map((e: { id: string }) => e.id)).toContain("paymentService");
+  });
+
+  it("says how many statements of what nothing checks it left out, counted from the list itself", async () => {
+    // The count is the load-bearing half of the pointer: "there is more" is a
+    // sentence a reader can skip, "there are fifteen statements of what nothing
+    // checks" is one they cannot. Compared against the FULL payload rather than
+    // a literal, so adding a check or an unchecked statement can never leave
+    // this sentence quietly stale.
+    const p = await project(coherentFixture(), { service: SVC });
+    const full = await brief(p);
+    const narrow = await brief(p, "--targets");
+    expect(narrow.full).toContain(`${String(full.unchecked.length)} statements of what nothing checks`);
+    expect(narrow.full).toContain(`${String(full.checks.length)} named checks`);
+    expect(narrow.full).toContain(`${String(full.walk.length)}-stop code walk`);
+    // and it says the omission is once for the whole system, not once per
+    // governed boundary — the reason the flag exists, stated where the agent
+    // deciding what to run next reads it. "System" rather than "fleet"
+    // deliberately: a modular monolith has one `service`, and telling its
+    // adopter to run the full brief "once per fleet" would read as never.
+    expect(narrow.full).toMatch(/once for the system/);
+  });
+
+  it("names a command the real CLI runs, and that returns what it promised", async () => {
+    // `test/agent-commands-runnable.test.ts` makes this claim for every `loam …`
+    // loam PRINTS: an instruction that does not parse is a defect. This one is
+    // assembled at run time from the service id, so it is checked here instead —
+    // and checked by running it, which also proves the pointer is honest rather
+    // than merely syntactic.
+    const p = await project(coherentFixture(), { service: SVC });
+    const narrow = await brief(p, "--targets");
+    const invocation = (narrow.full as string).split(" — ")[0]!.trim();
+    const tokens = invocation.split(/\s+/);
+    expect(tokens[0]).toBe("loam");
+    const res = await runLoam(p.workDir, ...tokens.slice(1));
+    expect(res.code, res.out).toBe(0);
+    const restored = JSON.parse(res.stdout);
+    // What the pointer promised is what came back, by count.
+    expect(narrow.full).toContain(`${String(restored.unchecked.length)} statements of what nothing checks`);
+    expect(narrow.full).toContain(`${String(restored.checks.length)} named checks`);
+    expect(restored.rule).toBeDefined();
+  });
+
+  it("omits the same sections from the prose, and prints the pointer instead", async () => {
+    // The two views have to agree about what the flag MEANS. A text view that
+    // still printed the checks while `--json` dropped them would make
+    // `--targets` two different flags depending on how you read the output.
+    const p = await project(coherentFixture(), { service: SVC });
+    const res = await runLoam(p.workDir, "adopt", "--targets");
+    expect(res.code, res.out).toBe(0);
+    // still there: the artifacts and what the fleet already says
+    expect(res.out).toContain("artifacts");
+    expect(res.out).toContain("what the fleet already says about this service");
+    // Gone: the invariant half, one section HEADER each. Headers rather than
+    // substrings, because the pointer that replaces them quotes the name of the
+    // list it stands for — "15 statements of what nothing checks" contains the
+    // header it is telling you about, and a substring assertion would read that
+    // sentence as the section still being printed.
+    const headers = res.out.split("\n").map((line: string) => line.trim());
+    expect(headers).not.toContain("what nothing checks");
+    expect(headers).not.toContain("frontmatter — on every markdown artifact");
+    expect(headers).not.toContain(`what \`loam validate --service ${SVC}\` then checks`);
+    expect(res.out).not.toContain("read the code in this order");
+    // and in their place, the sentence that says they exist. Whitespace is
+    // collapsed first because the pointer is WRAPPED for the terminal, so the
+    // phrase this asserts straddles a newline in the real output — a raw
+    // toContain would fail on a sentence that is present and correct.
+    const flowed = res.out.replace(/\s+/g, " ");
+    expect(flowed).toContain("the rest of the brief");
+    expect(flowed).toContain("statements of what nothing checks");
+  });
+
+  it("prints no orientation block — bullet three describes sections this view omits", async () => {
+    // The block says what the rest of the page is: a nine-stop walk, 37 checks,
+    // fifteen statements of what nothing checks. Under `--targets` none of the
+    // three is printed, so the sentence would be describing a page that is not
+    // there — and `--targets` already has its own pointer for exactly that job.
+    const p = await project(coherentFixture(), { service: SVC });
+    const res = await runLoam(p.workDir, "adopt", "--targets");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out.split("\n").map((line: string) => line.trim())).not.toContain("read this first");
+  });
+
+  it("changes nothing without the flag — the default view is untouched", async () => {
+    const p = await project(coherentFixture(), { service: SVC });
+    const res = await runLoam(p.workDir, "adopt");
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain("read the code in this order");
+    expect(res.out).toContain("what nothing checks");
+    expect(res.out).not.toContain("the rest of the brief");
   });
 });

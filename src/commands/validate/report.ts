@@ -10,6 +10,7 @@
  * contradict.
  */
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
+import { listCodes } from "../../core/explain/lookup.js";
 import {
   countSeverity,
   subjectsWith,
@@ -215,6 +216,35 @@ export function renderText(targets: TargetReport[], opts: RenderOptions): void {
       : opts.scorecard;
   const grouped = card === null ? new Map<string, AdoptionAxis>() : groupedWarnCodes(card.adoption);
   const isGrouped = (f: Finding): boolean => f.severity === "warn" && grouped.has(f.code);
+
+  // The explain pointer follows any report that printed work — a non-ok
+  // finding, listed or folded under an axis banner. Gated on the UNFILTERED
+  // findings like every other rollup, so `--errors-only` and grouping cannot
+  // print codes the pointer then fails to follow. It is computed HERE rather
+  // than beside the two places it prints because the code column below asks
+  // the same question and must not walk the findings a second time to answer
+  // it differently.
+  const pointer = targets.some((t) => t.findings.some((f) => f.severity !== "ok"));
+  // The lookup key on the line itself.
+  //
+  // Until now a text report printed messages and no codes, so the footer under
+  // it could only say codes were somewhere else — in `--json`, which a reader
+  // would have to re-run the whole command to see. The code is what `loam
+  // explain` takes, what a CI branch tests and what a bug report quotes, and
+  // withholding it from the one surface a person actually reads made the
+  // footer's own offer unreachable.
+  //
+  // Only where a code is genuinely answerable, and that guard is not
+  // decoration: a handful of emitted finding codes still have no fix-table row
+  // (test/explain.test.ts names them), and printing one beside a footer
+  // promising an explanation would send the reader to a refusal. The set is
+  // built ONCE per render, and only when something non-ok will be printed:
+  // `explainSubject` walks the shipped workflow bodies per code (the cost
+  // `fixesFor` measured from the other side, where a handful of lookups is the
+  // cheaper shape), while `listCodes()` walks them once for the whole
+  // vocabulary — and a fleet report has far more finding lines than the fleet
+  // has distinct codes. Measured: 2.7 ms for all 273 codes, once per report.
+  const explainable = pointer ? new Set(listCodes().map((listing) => listing.code)) : new Set<string>();
   for (const t of targets) {
     const shown = t.findings.filter(
       (f) => !isGrouped(f) && (!errorsOnly || f.severity !== "ok"),
@@ -234,16 +264,16 @@ export function renderText(targets: TargetReport[], opts: RenderOptions): void {
       // the report and 2>&1 could reorder it; the exit code carries failure,
       // and stderr stays reserved for refusals (the fail() path).
       const marker = hint.marker === false ? "" : `${SEVERITY_MARK[f.severity]} `;
-      console.log(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}`);
+      // `ok` confirmations stay clean, deliberately. A clean fleet run is
+      // several hundred ✓ lines and two warnings, and a code appended to every
+      // one of them would cost exactly the signal the exceptions carry — there
+      // is nothing to look up about a check that passed.
+      const code = f.severity !== "ok" && explainable.has(f.code) ? `  (${f.code})` : "";
+      console.log(`${" ".repeat(hint.indent ?? 0)}${marker}${f.message}${code}`);
       for (const d of f.details ?? []) console.log(`    ${hint.detailPrefix ?? ""}${d}`);
     }
   }
 
-  // The explain pointer follows any report that printed work — a non-ok
-  // finding, listed or folded under an axis banner. Gated on the UNFILTERED
-  // findings like every other rollup, so `--errors-only` and grouping cannot
-  // print codes the pointer then fails to follow.
-  const pointer = targets.some((t) => t.findings.some((f) => f.severity !== "ok"));
   if (!all) {
     // Without the --all footer there would be nothing at all to print for a
     // clean single target under --errors-only — and silence is the one output

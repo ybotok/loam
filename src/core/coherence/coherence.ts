@@ -14,6 +14,7 @@ import { coherenceLookups } from "./lookups.js";
 import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
+import { flowDeltaIssues } from "../usecases/delta/flows.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 
@@ -52,6 +53,14 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // glossary already defines is the one thing that can go wrong on a create-only
   // merge, and it must be caught before the copy, not after.
   issues.push(...(await glossaryDeltaIssues(docsDir, featureDir)));
+
+  // The use-case axis, and it is asked here for the vocabulary axis's reasons
+  // exactly: one walk over a directory that is usually absent, nothing
+  // downstream reads its answer, and a create-only merge has one thing that can
+  // go wrong. A flow this feature introduces that the living `architecture/`
+  // already holds must be caught before the copy, not after it has replaced an
+  // authored hop sequence.
+  issues.push(...(await flowDeltaIssues(docsDir, featureDir)));
 
   // --- C4 delta ---
   let elements: Elem[] = [];

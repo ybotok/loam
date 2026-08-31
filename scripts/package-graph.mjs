@@ -17,67 +17,25 @@
  * Only VALUE imports are edges. `import type` is erased by
  * `verbatimModuleSyntax`, so a type-only edge is not a runtime edge and cannot
  * make module-evaluation order decide behaviour — the same exemption
- * `import/no-cycle` applies at the file level.
+ * `import/no-cycle` applies at the file level. That rule, and the walk it runs
+ * over, moved to `./source-graph.mjs` when `scripts/self-model.mjs` became the
+ * second reader of the same graph: this file still owns the CYCLE REPORT, which
+ * is the only thing rule 21 names it for.
  */
-import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { readdir } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { collapse, moduleEdges, posix } from "./source-graph.mjs";
 
 // --root lets the self-tests point the same rules at a fixture tree; the
 // default is this repository, byte-identical to the pre-flag behaviour.
 const rootFlag = process.argv.indexOf("--root");
 const projectRoot = rootFlag === -1 ? dirname(dirname(fileURLToPath(import.meta.url))) : resolve(process.argv[rootFlag + 1]);
-const src = join(projectRoot, "src");
 
-const posix = (path) => path.split("\\").join("/");
-
-async function sourceFiles(dir) {
-  const found = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...(await sourceFiles(path)));
-    else if (entry.name.endsWith(".ts")) found.push(path);
-  }
-  return found;
-}
-
-/**
- * Relative imports that survive to runtime. Two type-only spellings exist and
- * both must be skipped: `import type { A } from …` and an import clause whose
- * every named binding carries an inline `type` modifier. Missing the second
- * would report a cycle that does not exist at runtime, and a checker that cries
- * wolf is a checker somebody stops running.
- */
-function valueImports(source) {
-  const targets = [];
-  const pattern = /^[ \t]*import\s+(type\s+)?([^;]*?)\s*from\s*["'](\.[^"']+)["']/gm;
-  for (const match of source.matchAll(pattern)) {
-    const [, typeKeyword, clause, specifier] = match;
-    if (typeKeyword) continue;
-    const named = clause.trim().startsWith("{") && clause.trim().endsWith("}");
-    if (named) {
-      const bindings = clause.trim().slice(1, -1).split(",").filter((b) => b.trim() !== "");
-      if (bindings.length > 0 && bindings.every((b) => /^\s*type\s+/.test(b))) continue;
-    }
-    targets.push(specifier);
-  }
-  return targets;
-}
-
-const files = await sourceFiles(src);
+const modules = await moduleEdges(projectRoot);
+const files = modules.modules;
 /** package → set of packages it imports from, excluding itself. */
-const graph = new Map();
-
-for (const file of files) {
-  const from = posix(relative(projectRoot, dirname(file)));
-  const edges = graph.get(from) ?? new Set();
-  graph.set(from, edges);
-  for (const specifier of valueImports(await readFile(file, "utf8"))) {
-    const target = resolve(dirname(file), specifier.replace(/\.js$/, ".ts"));
-    const to = posix(relative(projectRoot, dirname(target)));
-    if (to !== from) edges.add(to);
-  }
-}
+const graph = collapse(modules, (module) => posix(dirname(module)));
 
 /**
  * Every elementary cycle would be more than anybody reads. One shortest cycle

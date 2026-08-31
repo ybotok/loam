@@ -3,18 +3,25 @@
  * tree: exactly ONE error on exactly one file, repaired by exactly one
  * command (`loam subsystem sync`).
  *
- * A byte compare, deliberately — never a parse. A views-only document does
+ * A content compare, deliberately — never a parse. A views-only document does
  * not parse standalone (its `include` lines reference elements the landscape
  * defines; the spike in `core/repo/tree/views.ts` records it), and no check
- * anywhere reads the file's CONTENT: the file is a scoping convenience for
- * the LikeC4 renderer, so the only question loam owes it is "are these the
- * bytes the tree renders to". Rule 26 leaves this untouched: what loam may
+ * anywhere reads the file's MEANING: the file is a scoping convenience for
+ * the LikeC4 renderer, so the only question loam owes it is "is this what the
+ * tree renders to". Rule 26 leaves this untouched: what loam may
  * read is a `dynamic view`'s declared steps out of a document it already
  * parses — never a static view's `include` predicates, and never this
  * generated file at all. Absent counts as a state of its own: a fleet
  * with subsystems and no file is stale, and a fleet with NO subsystems and a
  * leftover file is stale too — the render contract says the file must then
  * not exist, or a group deleted months ago keeps a view forever.
+ *
+ * The compare is over CONTENT, not BYTES, and `viewsAgree` in
+ * `core/repo/tree/views.ts` both performs it and records why: an ordinary
+ * Windows clone hands this file back with CRLF and not one fact in it changed,
+ * and under a byte compare the advertised repair is a loop rather than a
+ * diagnosis. The rule lives beside the generator because the module that mints
+ * the bytes is the one that owes an answer about them.
  *
  * Graded only when the landscape PARSED (the caller holds that gate): the
  * expected bytes resolve members through the landscape's element→service
@@ -28,7 +35,7 @@ import { readFile } from "node:fs/promises";
 import type { Elem } from "../../../../core/c4/likec4.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { subsystemViewsPath } from "../../../../core/repo/paths.js";
-import { renderSubsystemViews } from "../../../../core/repo/tree/views.js";
+import { renderSubsystemViews, viewsAgree } from "../../../../core/repo/tree/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
@@ -40,7 +47,7 @@ export async function viewsStaleFindings(
   const path = subsystemViewsPath(docsDir);
   const expected = renderSubsystemViews(tree, elements);
   const actual = existsSync(path) ? await readFile(path, "utf8") : null;
-  if (actual === expected) return [];
+  if (viewsAgree(actual, expected)) return [];
   const state =
     actual === null
       ? "does not exist, but the tree has subsystems to mirror"

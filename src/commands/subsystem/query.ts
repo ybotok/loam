@@ -28,6 +28,7 @@ export async function runList(docsDir: DocsDir, json: boolean): Promise<void> {
   const memberCount = (sub: SubsystemEntry): number => servicesUnder(tree, sub).length;
   if (json) {
     emitJson({
+      command: "subsystem",
       subsystems: sorted.map((sub) => ({
         name: sub.name,
         path: repoPath(docsDir, sub.dir),
@@ -88,7 +89,7 @@ export async function runHistory(docsDir: DocsDir, name: string, json: boolean):
     // Additive honesty key: `answered: false` is git DECLINING (or nothing to
     // follow, or a rename record too ambiguous to trust), not git answering
     // "never moved" — exit 0 either way, no finding.
-    emitJson({ name, kind, moves, answered: hops !== null });
+    emitJson({ command: "subsystem", name, kind, moves, answered: hops !== null });
     return;
   }
   if (ambiguous) {

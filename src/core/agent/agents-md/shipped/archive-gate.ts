@@ -45,15 +45,18 @@ requirement first. \`openapi.op-modified\` (warn): the feature redefines an oper
 the living OpenAPI already has, and the merge overwrites the living definition
 wholesale.
 
-The OpenAPI merge also carries the merged operations' \`$ref\` closure: every
-\`#/components/<kind>/<name>\` they reference — recursively, a component's own refs
-included — is copied from the feature document into the living one, so an operation
-never lands pointing at a schema that stayed behind. \`openapi.component-modified\`
-(warn): a carried component overwrites a living one that differs, wholesale, same
-discipline as an operation. \`openapi.ref-unresolved\` (error, \`--approve\`
-overrides): a ref reachable from the merged operations resolves in neither
-document, so merging would write a dangling reference. External refs — URLs, file
-paths, anything not starting \`#/\` — are out of scope: left untouched, never gated.
+The OpenAPI merge also carries a \`$ref\` closure rooted in what it actually WROTE
+— the merged operations and the components this delta declares alike: every
+\`#/components/<kind>/<name>\` they reference, recursively with a component's own
+refs included, is copied from the feature document into the living one, so nothing
+lands pointing at a schema that stayed behind. A delta whose whole change is a
+shared schema, with no \`paths\` at all, is merged the same way and by the same
+rules. \`openapi.component-modified\` (warn): a carried component overwrites a
+living one that differs, wholesale, same discipline as an operation.
+\`openapi.ref-unresolved\` (error, \`--approve\` overrides): a ref reachable from the
+merged operations or a merged component resolves in neither document, so merging
+would write a dangling reference. External refs — URLs, file paths, anything not
+starting \`#/\` — are out of scope: left untouched, never gated.
 
 ## Taking an archive back
 

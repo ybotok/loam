@@ -1,6 +1,6 @@
 ---
 name: gate
-description: Run loam's full verification gate — lint, typecheck, the whole test suite, and the enforced coverage thresholds — and report the result honestly. Use before committing, before opening a PR, and after any wave of edits. Also use when asked whether the tree is green.
+description: Run loam's full verification gate — lint, typecheck, the architecture and self-model checks, the whole test suite, and the enforced coverage thresholds — and report the result honestly. Use before committing, before opening a PR, and after any wave of edits. Also use when asked whether the tree is green.
 ---
 
 # The gate
@@ -17,6 +17,14 @@ npm run lint
 ```
 
 ```bash
+npm run arch:check
+```
+
+```bash
+npm run meta:check
+```
+
+```bash
 npm test
 ```
 
@@ -24,8 +32,25 @@ npm test
 npm run test:coverage
 ```
 
-The full suite is 68 files and takes about two minutes. Do not substitute a subset for the final
-run; per-file runs (`npx vitest run test/archive.test.ts`) are for iterating only.
+The full suite is over 150 files and takes about two minutes. Do not substitute a subset for the
+final run; per-file runs (`npx vitest run test/archive.test.ts`) are for iterating only.
+
+`arch:check` is the architecture gate — cycles, the package graph, the core→commands ban, the
+barrel ban, the console/process boundary, child-process bounds and brand-cast containment.
+`meta:check` is NOT part of it and answers a different question: `arch:check` proves the layering
+holds, `meta:check` proves `meta/docs/`'s written model still describes `src/`. A package added and
+drawn nowhere breaks no rule; a cycle breaks every rule while the map stays current. When it is red
+it prints the exact line to add — use the `self-model` skill, which also says which prose in
+`docs/DESIGN.md` carries the same fact and is not derived from anything.
+
+If the change touched `src/core/agent/agents-md/` or `src/core/agent/workflows/`, also run:
+
+```bash
+npm run meta:agents
+```
+
+The generated `meta/docs/AGENTS.md` goes stale on a same-version edit and NOTHING else notices:
+`agents.stale` grades the version stamp, not the content.
 
 If the diff moved a file between directories, also run:
 
@@ -33,12 +58,12 @@ If the diff moved a file between directories, also run:
 npm run arch:graph
 ```
 
-It reports cycles in the **package** graph. `import/no-cycle` reads the file graph and is blind to
-a cycle that exists only between directories, so nothing else in the gate covers this.
+It reports cycles in the **package** graph alone, which is what `arch:check` already covers — it is
+here as the fast standalone check for a move-a-module workflow, not as extra coverage.
 
 ## When `code-limits` is what is red
 
-`test/code-limits.test.ts` counts three limits — 300 lines, 4 parameters, 5 files per package —
+`test/code-limits.test.ts` counts three limits — 400 lines, 4 parameters, 5 files per package —
 against `test/code-limits-baseline.json`. (The fourth house limit, branded ids, is held by tsc and
 never appears here.) It fails three ways, and the fix differs:
 
@@ -79,6 +104,7 @@ worth more than a green you engineered — report it and stop.
 
 ## Report
 
-State the exact final numbers for all four steps: typecheck errors, lint problems, test files and
-tests passed/failed, and the four coverage percentages against their thresholds. Then list every
-fix you made and why. If anything is still broken, say precisely what and what you tried.
+State the exact final result of every step: typecheck errors, lint problems, the `arch:check` and
+`meta:check` verdicts, test files and tests passed/failed, and the four coverage percentages against
+their thresholds. Then list every fix you made and why. If anything is still broken, say precisely
+what and what you tried.

@@ -14,6 +14,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { coherentFixture, makeProject } from "./helpers/harness.js";
 import { assertNoLiveChildren, spawnLoamStdio } from "./helpers/cli-process.js";
+import { MCP_TOOLS } from "../src/core/mcp/tools.js";
 
 const p = await makeProject(coherentFixture());
 
@@ -56,7 +57,10 @@ describe("the real stdio server", () => {
     expect(init["protocolVersion"]).toBe("2025-06-18");
     expect((init["serverInfo"] as Record<string, unknown>)["name"]).toBe("loam");
     const tools = frames.find((frame) => frame.id === 2)!.result!["tools"] as unknown[];
-    expect(tools).toHaveLength(12);
+    // Counted off MCP_TOOLS: the roster is what this asserts arrived intact
+    // over the real pipe, not how many entries it happened to have the day
+    // the test was written.
+    expect(tools).toHaveLength(MCP_TOOLS.length);
     const status = frames.find((frame) => frame.id === 3)!.result!;
     expect(status["isError"]).toBe(false);
     const envelope = JSON.parse((status["content"] as Array<{ text: string }>)[0]!.text) as Record<string, unknown>;

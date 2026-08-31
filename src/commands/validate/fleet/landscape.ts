@@ -38,6 +38,7 @@ import { readCapabilityVocabulary } from "../../../core/capabilities/capabilitie
 import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../core/capabilities/findings.js";
 import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
 import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
+import { isUseCase } from "../../../core/usecases/fleet.js";
 
 /**
  * The fleet's flows as a grade may read them, or `null` when loam cannot see
@@ -50,10 +51,17 @@ import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
  * run) and a project that did not parse are both "loam did not look", never
  * "there is nothing there". A preload that DID parse and declares no views is a
  * real, empty answer and grades normally.
+ *
+ * Filtered through `isUseCase` — the same opt-in `readUseCases` applies before
+ * `loam list capabilities` asks this question — because the two surfaces must
+ * never disagree about `keptBy`. Handing the unfiltered preload over was
+ * harmless only by luck: an untagged view yields no claims, so the answers
+ * matched for want of an input that could tell them apart. A `#req-`-only view
+ * is exactly that input.
  */
 function gradableFlows(preloaded: LoadedDoc | null | undefined): readonly ParsedView[] | null {
   if (preloaded === null || preloaded === undefined || preloaded.errors.length > 0) return null;
-  return preloaded.views ?? [];
+  return (preloaded.views ?? []).filter(isUseCase);
 }
 
 /**

@@ -504,6 +504,16 @@ describe("every writer's stored rerun is a command loam has", () => {
     expect(templates).toEqual([
       "loam gherkin",
       "loam gherkin ${scope.featureId}",
+      // `init --example` copies the packaged example tree through the same
+      // journaled writer as everything else, so an interrupted copy is rolled
+      // forward by the next writer rather than leaving half a fleet on disk.
+      // Its rerun stores the target directory, because the command means
+      // nothing without one — a bare `loam init --example` would refuse.
+      "loam init --example ${req.dir}",
+      // `init --mcp` stores the bare flag: it writes exactly one file at a
+      // fixed path in the repository it is run from, so the flag IS the whole
+      // command and there is nothing to interpolate.
+      "loam init --mcp",
       "loam new ${featureId}",
       "loam rebase ${id}",
       // The living-corpus mode stores the bare flag: it takes no feature and no

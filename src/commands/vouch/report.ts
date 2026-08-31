@@ -37,6 +37,7 @@ function plannedAxis(report: StampReport, spec: StampedSpec): PlannedAxis | unde
 export function emitStampJson(report: StampReport): void {
   const { spec, archSpec: arch } = report.outcome.stamped;
   emitJson({
+    command: "vouch",
     service: report.service,
     path: repoPath(report.docsDir, spec.path),
     ...(report.outcome.recovered === null ? {} : { recovered: report.outcome.recovered }),

@@ -5,6 +5,7 @@
  * protocol out of the serve loop.
  */
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { frame, splitFrames } from "../src/core/mcp/framing.js";
 import {
   INTERNAL_ERROR,
@@ -24,6 +25,7 @@ import { MCP_TOOLS, toInputSchema, toolByName } from "../src/core/mcp/tools.js";
 import { MCP_COMMAND } from "../src/core/agent/agents-md/map/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { buildProgram } from "../src/cli.js";
+import { moduleEdges } from "../scripts/source-graph.mjs";
 
 /** The route outcome asserted to be an immediate reply, with its response. */
 function replyOf(message: unknown): JsonRpcResponse {
@@ -155,7 +157,7 @@ describe("routing", () => {
 });
 
 describe("tools/list", () => {
-  it("offers exactly the twelve read-only commands — no writer is reachable", () => {
+  it("offers exactly the fourteen read-only commands — no writer is reachable", () => {
     const result = resultOf(replyOf(request(1, "tools/list")));
     const tools = result["tools"] as Array<Record<string, unknown>>;
     expect(tools.map((tool) => tool["name"]).sort()).toEqual([
@@ -167,9 +169,11 @@ describe("tools/list", () => {
       "loam_explain",
       "loam_explore",
       "loam_gate",
+      "loam_instructions",
       "loam_list",
       "loam_show",
       "loam_status",
+      "loam_steps",
       "loam_validate",
     ]);
     // The trust boundary, asserted from the other side: vouch is a HUMAN act
@@ -195,6 +199,27 @@ describe("tools/list", () => {
       for (const required of (schema["required"] as string[] | undefined) ?? []) {
         expect(properties).toContain(required);
       }
+    }
+  });
+
+  it("every tool is advertised read-only — the hint a host needs to approve a call without prompting", () => {
+    // Without this a host has no machine signal that loam_validate or
+    // loam_context is safe, so a call that only reads files falls into the same
+    // approval path as a mutating tool — which is what excluding the writers
+    // from the table was FOR. One shared literal, asserted per tool: a tool
+    // that grew its own annotations object is exactly the drift worth failing.
+    const result = resultOf(replyOf(request(1, "tools/list")));
+    const tools = result["tools"] as Array<Record<string, unknown>>;
+    expect(tools.length).toBe(MCP_TOOLS.length);
+    for (const tool of tools) {
+      const name = String(tool["name"]);
+      expect(tool["annotations"], name).toEqual({ readOnlyHint: true, openWorldHint: false });
+      // The coupling that keeps `toolReply` honest: MCP 2025-06-18 makes
+      // `structuredContent` a MUST once a tool declares an `outputSchema`, and
+      // toolReply deliberately omits that field for stdout it could not parse
+      // as an envelope (pinned below). Declaring one here without changing
+      // toolReply would ship a spec violation, so the absence is the assertion.
+      expect("outputSchema" in tool, `${name} declares an outputSchema; toolReply may omit structuredContent`).toBe(false);
     }
   });
 
@@ -236,6 +261,16 @@ describe("the argv boundary", () => {
       ["loam_doctor", {}, ["doctor", "--json"]],
       ["loam_context", { service: "svc", feature: "FEAT-1" }, ["context", "svc", "--feature", "FEAT-1", "--json"]],
       ["loam_gate", { service: "svc", strict: true }, ["gate", "--service", "svc", "--strict", "--json"]],
+      ["loam_steps", { service: "svc", duplicates: true }, ["steps", "--service", "svc", "--duplicates", "--json"]],
+      // The variadic positional, and the negated boolean. `noFixTables: true`
+      // spells `--no-fix-tables`: the JSON property is named for what setting
+      // it true DOES, not for commander's `fixTables` attribute, because
+      // toArgv spells a true boolean as its flag string and the two names
+      // would otherwise mean opposite things.
+      ["loam_instructions", { workflow: "loam-implement", args: ["FEAT-101", "payment-service"] },
+        ["instructions", "loam-implement", "FEAT-101", "payment-service", "--json"]],
+      ["loam_instructions", { workflow: "loam-check", noFixTables: true },
+        ["instructions", "loam-check", "--no-fix-tables", "--json"]],
     ];
     for (const [name, args, argv] of cases) {
       const built = toArgv(toolByName(name)!, args);
@@ -371,6 +406,105 @@ describe("wrapping a tool run", () => {
     };
     expect(broken(1)).toBe(true);
     expect(broken(0)).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------- */
+/* The read-only claim, derived                                      */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The staging modules that PERFORM a commit — take the snapshot, run the
+ * transaction, roll a journal forward, restore. Every writing command reaches
+ * one of these; no read command reaches any.
+ *
+ * `src/core/staging/txn/` as a whole is NOT the seam, and the difference is
+ * measured rather than assumed: `txn/journal.ts` is a READ as well as a write,
+ * and validate, status, doctor and gate all reach it (through
+ * core/status/interrupted.ts and core/staging/recovery/) to REPORT an
+ * interrupted commit they will not touch. Same for `staging/commit.ts`,
+ * `interrupted.ts`, `writes.ts` and `lock.ts` — journal.ts imports the first
+ * three, so any of them as the target convicts four honest readers. The four
+ * below are the ones a read command never reaches, which is what makes them
+ * the seam and not just a list of files.
+ */
+const COMMIT_EXECUTORS = [
+  "src/core/staging/snapshot.ts",
+  "src/core/staging/txn/transaction.ts",
+  "src/core/staging/txn/forward.ts",
+  "src/core/staging/recovery/recover.ts",
+] as const;
+
+/**
+ * Commands that write, one per shape of writer, used as the guard's NEGATIVE
+ * control: a rule nobody has proved CAN fail is an attestation wearing a
+ * test's clothes. If a refactor moves the commit seam, this list stops
+ * reaching it and the control goes red — instead of the guard silently passing
+ * for everything, which is the failure mode of every "must not reach X" check.
+ */
+const KNOWN_WRITERS = ["vouch", "archive", "unarchive", "new", "seed", "gherkin", "rebase", "subsystem", "verify"] as const;
+
+/**
+ * `command` → every module its imports transitively reach, from
+ * `scripts/source-graph.mjs` — the same graph `arch:check` collapses to
+ * packages and `meta:check` collapses to subjects. Reusing it rather than
+ * re-walking imports here is the point of that module: a second copy would
+ * exempt `import type` on one side and not the other, and this guard would
+ * then convict an edge the architecture gate has already decided is not one.
+ */
+async function importClosures(): Promise<(command: string) => Set<string>> {
+  const { modules, edges } = await moduleEdges(join(import.meta.dirname, ".."));
+  const out = new Map<string, string[]>();
+  for (const module of modules) out.set(module, []);
+  for (const { from, to } of edges) out.get(from)?.push(to);
+  return (command: string): Set<string> => {
+    // A command is a directory (`src/commands/validate/`) or a single module
+    // (`src/commands/explore.ts`); both spellings are live in this repository,
+    // so both are roots.
+    const roots = modules.filter(
+      (module: string) => module === `src/commands/${command}.ts` || module.startsWith(`src/commands/${command}/`),
+    );
+    const seen = new Set<string>(roots);
+    const stack = [...roots];
+    while (stack.length > 0) {
+      for (const next of out.get(stack.pop()!) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    return seen;
+  };
+}
+
+describe("the read-only claim is derived, not attested", () => {
+  it("no served command's import closure reaches a module that performs a commit", async () => {
+    // This is what makes `annotations.readOnlyHint: true` a fact about the
+    // code rather than a promise in a comment: add a writer to MCP_TOOLS and
+    // this goes red, instead of the server shipping a false hint that tells
+    // every host it is safe to auto-approve.
+    const closureOf = await importClosures();
+    for (const tool of MCP_TOOLS) {
+      const closure = closureOf(tool.command);
+      expect(closure.size, `${tool.name}: no module resolved for src/commands/${tool.command}`).toBeGreaterThan(0);
+      for (const executor of COMMIT_EXECUTORS) {
+        expect(
+          closure.has(executor),
+          `${tool.name} reaches ${executor} — a command that can commit must not be an MCP tool`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("the control: every known writer DOES reach one, so the guard can still fail", async () => {
+    const closureOf = await importClosures();
+    for (const writer of KNOWN_WRITERS) {
+      const closure = closureOf(writer);
+      expect(
+        COMMIT_EXECUTORS.some((executor) => closure.has(executor)),
+        `'${writer}' no longer reaches any commit executor — the seam moved, and the guard above now proves nothing`,
+      ).toBe(true);
+    }
   });
 });
 

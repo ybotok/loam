@@ -771,26 +771,45 @@ describe("the loam/ ownership boundary", () => {
 /* ------------------------------------------------------------------ */
 
 describe("the service-repo gate", () => {
-  it("refuses without a service — from a docs-repo checkout or with none configured", async () => {
+  it("refuses with no service named anywhere — that one IS a bad invocation", async () => {
+    // The only member of this trio that `invalid-option` still describes
+    // truthfully: nothing on the command line and nothing in loam.json said
+    // which service, so the fix really is to type a flag. The two below are
+    // wrong-REPOSITORY conditions with entirely correct flags, and they are
+    // the reason the codes split.
     const p = await project(coherentFixture());
     const none = await runLoam(p.workDir, "gherkin", "--json");
     expect(none.code).toBe(1);
     expect(JSON.parse(none.stdout).error.code).toBe("invalid-option");
-
-    const elsewhere = await runLoam(p.workDir, "gherkin", "--service", "payment-service", "--json");
-    expect(elsewhere.code).toBe(1);
-    const payload = JSON.parse(elsewhere.stdout);
-    expect(payload.error.code).toBe("invalid-option");
-    expect(payload.error.message).toContain("not a service repo");
   });
 
-  it("refuses another service's emission from this repo — the files land HERE", async () => {
+  it("refuses from a docs repo under `repository-unavailable` — and writes nothing", async () => {
+    // loam.json declares no `service` at all, so this checkout is not any
+    // service's. The flag was right; the directory was wrong. `invalid-option`
+    // here told a caller whose invocation was fine to go re-read their flags,
+    // and left CI unable to tell that from a typo.
+    const p = await project(coherentFixture());
+    const res = await runLoam(p.workDir, "gherkin", "--service", "payment-service", "--json");
+    expect(res.code).toBe(1);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.error.code).toBe("repository-unavailable");
+    expect(payload.error.message).toContain("not a service repo");
+    // A refusal that wrote is a different defect: gherkin is a write path, and
+    // the gate stands before the emission root is even resolved.
+    expect(existsSync(join(p.workDir, "features"))).toBe(false);
+  });
+
+  it("refuses another service's emission under `service-mismatch` — and writes nothing", async () => {
+    // This repo IS a service's, just not that one — distinct from the docs-repo
+    // case above, and the distinction is exactly what an agent branches on:
+    // "run this in the service repo" versus "this is the wrong service repo".
     const p = await project(coherentFixture(), { service: "checkout-web" });
     const res = await runLoam(p.workDir, "gherkin", "FEAT-1", "--service", "payment-split-service", "--json");
     expect(res.code).toBe(1);
     const payload = JSON.parse(res.stdout);
-    expect(payload.error.code).toBe("invalid-option");
+    expect(payload.error.code).toBe("service-mismatch");
     expect(payload.error.message).toContain("this repo is 'checkout-web'");
+    expect(existsSync(join(p.workDir, "features"))).toBe(false);
   });
 
   it("an unknown feature refuses with the archive-aware diagnosis", async () => {
