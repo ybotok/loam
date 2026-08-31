@@ -97,10 +97,10 @@ describe("init: scaffolding a fresh docs repo", () => {
   });
 
   it("writes a README.md — the one file in the repo addressed to a person", async () => {
-    // Every other scaffolded file is either a document about the fleet or
-    // AGENTS.md, which is written for a coding agent and named so a human does
-    // not open it. A forge renders README.md as the landing page and nothing
-    // else, so without this a docs repo opens as a bare directory listing.
+    // Every other scaffolded file is either a document about the governed
+    // system or AGENTS.md, which is written for a coding agent and named so a
+    // human does not open it. A forge renders README.md as the landing page and
+    // nothing else, so without this a docs repo opens as a bare directory listing.
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--create", "--docs", "./docs-x");
     expect(res.code).toBe(0);
@@ -114,6 +114,8 @@ describe("init: scaffolding a fresh docs repo", () => {
     // the layout rules is the first one to go stale.
     expect(readme).toContain("AGENTS.md");
     expect(readme).toContain("loam status");
+    expect(readme).toContain("governed system's **source of truth**");
+    expect(readme).toContain("modular monolith, a network service, a CLI or");
   });
 
   it("scaffolds README.md FIRST, so a reader meets it before anything else", async () => {
@@ -271,7 +273,7 @@ describe("init: the first-hour epilogue on the single-repo trial composition", (
     // "this loop" false for the reader who just ran init.
     const readme = await readFile(join(import.meta.dirname, "..", "README.md"), "utf8");
     const section = readme.slice(
-      readme.indexOf("### Try loam on one service in five minutes"),
+      readme.indexOf("### Try loam on one governed system in five minutes"),
       readme.indexOf("### Explore the example fleet"),
     );
     const fences = [...section.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]!);
@@ -281,7 +283,10 @@ describe("init: the first-hour epilogue on the single-repo trial composition", (
       const [command = "", why = ""] = line.split("#");
       return [command.trim(), why.trim()];
     });
-    expect(lines).toEqual(firstHour("payment-service"));
+    // The service id is the one the README's own fence uses; the assertion is
+    // that the two copies of the LOOP agree, not that they agree about which
+    // example service prints it.
+    expect(lines).toEqual(firstHour("commerce-app"));
   });
 
   it("stays silent on a JOIN, even one that binds a service — that fleet already exists", async () => {

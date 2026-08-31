@@ -6,11 +6,18 @@
  * The closure is verdict-driven, not reachability-driven: every component the
  * feature DECLARES is classified against its `x-loam-baselines` entry exactly
  * as an operation is classified against its pin, and reachability decides only
- * one thing — whether a genuinely NEW component rides along. The old rule,
- * "copy everything reachable from any feature path item", let a QUOTED
- * operation drag its authoring-time component copy over someone else's landed
- * change; the walk now starts from what this merge actually WROTE, so a quote
- * pulls nothing.
+ * one thing — whether a genuinely NEW component rides along — whenever the
+ * delta merges paths at all. The old rule, "copy everything reachable from any
+ * feature path item", let a QUOTED operation drag its authoring-time component
+ * copy over someone else's landed change; the walk now starts from what this
+ * merge actually WROTE, so a quote pulls nothing.
+ *
+ * Where the delta merges no path, that walk starts from nothing, and "is a new
+ * component reachable?" has no meaningful answer to give: a components-only
+ * delta declared every one of them on purpose and there is no operation for
+ * them to hide behind. Parking them forever is what made such a delta merge
+ * nothing at all, at exit 0 — `componentsAreTheDelta` is that case, and only
+ * that case.
  */
 import { isDeepStrictEqual } from "node:util";
 import { isMap, isScalar, type Document } from "yaml";
@@ -65,11 +72,23 @@ export interface ComponentClosureInput {
   record: BaselineRecord;
   /** The plain values the path merge actually wrote, labelled for the ref sweep. */
   written: Array<{ from: string; value: unknown }>;
+  /**
+   * True only when the feature's `paths` holds no entry at all, so `written` is
+   * empty and nothing this merge wrote can reach a new component. The merge
+   * computes it from the path ENTRIES, not from what the path loop happened to
+   * write: one path entry, even an entirely quoted one, means the reachability
+   * question is real and this stays false. Widening it past that would copy the
+   * authoring-time component a quoted operation carries — the exact revert the
+   * verdict-driven closure exists to stop.
+   */
+  componentsAreTheDelta: boolean;
 }
 
-/** What the closure computed: components overwritten, quoted, stale, and refs nothing resolves. */
+/** What the closure computed: components overwritten, added, quoted, stale, and refs nothing resolves. */
 export interface ComponentClosureOutcome {
   componentsModified: string[];
+  /** `<kind>/<name>` of components written where the living contract had none. */
+  componentsAdded: string[];
   componentsQuoted: string[];
   componentsStale: string[];
   unresolved: Array<{ ref: string; from: string }>;
@@ -88,7 +107,8 @@ export interface ComponentClosureOutcome {
  *  - NEW (unpinned, living-absent) → copied only when reachable from written
  *    content or from another copied component's own refs. The visited-set
  *    fixpoint is what keeps A↔B cycles terminating and unrelated namespaces
- *    uncopied.
+ *    uncopied. When the components ARE the delta there is no written content
+ *    to be reachable from, so every one of them is copied outright.
  *
  * The unresolved sweep is unchanged in meaning: every local ref reachable from
  * written content and copied components must resolve in the copy set or the
@@ -111,8 +131,9 @@ export function setComponentValue(doc: Document, kind: string, name: string, val
 }
 
 export function mergeComponentClosure(input: ComponentClosureInput): ComponentClosureOutcome {
-  const { living, featPlain, livingPlain, record, written } = input;
+  const { living, featPlain, livingPlain, record, written, componentsAreTheDelta } = input;
   const componentsModified: string[] = [];
+  const componentsAdded: string[] = [];
   const componentsQuoted: string[] = [];
   const componentsStale: string[] = [];
   const unresolved: ComponentClosureOutcome["unresolved"] = [];
@@ -120,6 +141,14 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
   const copied = new Set<string>();
   /** Genuinely new components, parked until something written reaches them. */
   const parked = new Map<string, { kind: string; name: string; value: unknown }>();
+  /**
+   * Which declared surfaces the living contract does not have — recorded here,
+   * during classification, because this is the one place that asks. What was
+   * ADDED is decided at the write below instead: a parked component the
+   * fixpoint never reaches is absent from living and stays that way, and
+   * calling it added would name a component the merge did not write.
+   */
+  const absentFromLiving = new Set<string>();
 
   // ONE enumeration (baseline/record.ts) with the rebase plan and the gate —
   // and ONE living lookup — so "which components does this delta declare, and
@@ -130,6 +159,7 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
     const cut = surface.id.indexOf("/");
     const entry = { kind: surface.id.slice(0, cut), name: surface.id.slice(cut + 1), value: surface.value };
     const inLiving = surfaceIn(livingPlain, surface);
+    if (!inLiving.found) absentFromLiving.add(surface.id);
     const verdict = classifyBaselineDigests(
       entryFor(record, surface),
       valueDigest(surface.value),
@@ -154,8 +184,28 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
     copied.add(surface.id);
   }
 
+  // A components-only delta wrote no path, so the fixpoint below would start
+  // from an empty queue and every parked component would stay parked forever —
+  // the merge published a document byte-identical to the living one and archive
+  // said `ok`. The promotion happens HERE, before the queue is built, and that
+  // order is the whole point: a component promoted afterwards would carry its
+  // own `$ref`s past the sweep, and `openapi.ref-unresolved` would stop firing
+  // for exactly the deltas that most need it — a new schema pointing at a
+  // second one the author forgot to bring. Iterated as a SNAPSHOT: this loop
+  // empties `parked` as it goes and `visitRef` deletes from the same Map below,
+  // and neither may read it live while writing it.
+  if (componentsAreTheDelta) {
+    const promotions = [...parked.entries()];
+    for (const [id, entry] of promotions) {
+      parked.delete(id);
+      copies.push(entry);
+      copied.add(id);
+    }
+  }
+
   // The reachability fixpoint: refs out of written content and out of every
-  // copy — classification copies now, parked promotions as they join.
+  // copy — classification copies and any promotions now, parked promotions as
+  // they join.
   const queue: Array<{ node: unknown; from: string }> = [
     ...written.map((w) => ({ node: w.value, from: w.from })),
     ...copies.map((c) => ({ node: c.value, from: `components/${c.kind}/${c.name}` })),
@@ -195,12 +245,16 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
   }
 
   for (const { kind, name, value } of copies) {
+    // Decided at the write, over the copies that actually happened: a promoted
+    // component is an addition, a parked one that nothing reached is not.
+    if (absentFromLiving.has(`${kind}/${name}`)) componentsAdded.push(`${kind}/${name}`);
     // The value is deep-stripped of loam's bookkeeping keys — a component
     // holding an operation shape nests them where the path-level strip never
     // walks, and `--approve` once published `x-loam-remove: true` into a
-    // living component.
+    // living component. Promoted copies go through this same write, so a
+    // components-only delta cannot be the one shape that publishes a marker.
     setComponentValue(living, kind, name, withoutFeatureKeysDeep(value));
   }
 
-  return { componentsModified, componentsQuoted, componentsStale, unresolved };
+  return { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved };
 }

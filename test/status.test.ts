@@ -38,6 +38,7 @@ import { docsRepoFiles } from "../src/core/docs.js";
 import { isLandscapeStub } from "../src/core/scaffold/landscape.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
+import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
 import { type Answer } from "../src/core/verify/answers.js";
 import { buildVerification } from "../src/core/verify/build.js";
 import { featureChecklist } from "../src/core/verify/checklist.js";
@@ -775,6 +776,89 @@ describe("the fleet payload", () => {
 });
 
 /**
+ * Whose worklist this is.
+ *
+ * `loam status` in a service repository is read by someone standing in exactly
+ * ONE governed boundary, and every rung about a different one is a rung they
+ * cannot act on. The fleet form saw the binding only while the fleet had never
+ * heard of it — `next.adopt-bound` — so the moment a service was adopted the
+ * repository it is standing in became invisible again and the list reverted to
+ * the whole system in alphabetical order. In the ten-repo case WORKFLOW.md
+ * describes, every developer's `loam status` opened with nine other services'
+ * adoption work; past ten services the cap finished the job and left their own
+ * rung off the list entirely.
+ *
+ * No new `next.*` code answers this and none should: `next[]` is documented as
+ * most-unblocking first, and these two tests are the ones that make that claim
+ * true from where the reader is standing.
+ */
+describe("the bound service leads the fleet worklist", () => {
+  /**
+   * Service ids zero-padded, so the alphabetical order the partition must
+   * preserve is also the numeric one a reader checking these expectations would
+   * assume. Unpadded, `svc-10` sorts between `svc-1` and `svc-2` and every
+   * assertion below becomes a puzzle.
+   */
+  const svc = (n: number): string => `svc-${String(n).padStart(2, "0")}`;
+
+  /** `n` service directories with no spec.md — undocumented, one `next.adopt` each. */
+  const fleetOf = (n: number): Record<string, string> => ({
+    "features/.gitkeep": "",
+    "architecture/landscape.likec4": coherentFixture()["architecture/landscape.likec4"]!,
+    ...Object.fromEntries(Array.from({ length: n }, (_, i) => [`services/${svc(i + 1)}/.gitkeep`, ""])),
+  });
+
+  /** The service each per-service rung is about, in the order they are printed. */
+  const owners = (next: NextStep[]): Array<string | undefined> =>
+    next.filter((s) => s.code === "next.adopt").map((s) => s.service);
+
+  it("leads with the bound service's own rung, and reorders nothing else", async () => {
+    // The bound service's directory EXISTS — it is adopted, so nothing here is
+    // the `next.adopt-bound` case — and what it still owes is a spec.md, which
+    // is the same rung the other three carry.
+    const p = await makeProject(fleetOf(4), { service: svc(3) });
+    const next = (await statusJson(p)).next as NextStep[];
+
+    expect(next[0]!.code).toBe("next.adopt");
+    expect(next[0]!.service).toBe(svc(3));
+    expect(next[0]!.command).toBe(`loam adopt --service ${svc(3)} --json`);
+    // A stable partition and not a sort: svc-03 moves to the front and the
+    // other three keep the alphabetical order they had, so the list every
+    // unbound reader sees is unchanged below the promotion.
+    expect(owners(next)).toEqual([svc(3), svc(1), svc(2), svc(4)]);
+    await p.destroy();
+  });
+
+  it("survives the cap — the rung the ten-entry limit used to elide is still first", async () => {
+    // The test that matters. Ordering that only reorders what already fits is
+    // presentation; this is the case where the reader's own boundary was not on
+    // the list at all, and no amount of working down the list would have
+    // reached it, because the ten above it are ten other people's services.
+    const bound = svc(FLEET_NEXT_LIMIT + 2);
+    const files = fleetOf(FLEET_NEXT_LIMIT + 2);
+
+    // The counterfactual first, from the identical fixture with no binding: the
+    // bound service is alphabetically last, so the cap drops it. Asserting this
+    // here rather than trusting the arithmetic is what stops the test passing
+    // for the wrong reason the day FLEET_NEXT_LIMIT moves.
+    const unbound = await makeProject(files);
+    const before = (await statusJson(unbound)).next as NextStep[];
+    expect(owners(before)).not.toContain(bound);
+    expect(before.find((s) => s.code === "next.elided")).toBeTruthy();
+    await unbound.destroy();
+
+    const p = await makeProject(files, { service: bound });
+    const next = (await statusJson(p)).next as NextStep[];
+    expect(next[0]!.service).toBe(bound);
+    // Still capped, still honest about it: the promotion buys the bound service
+    // a place on the list, never a longer list.
+    expect(owners(next)).toEqual([bound, ...Array.from({ length: FLEET_NEXT_LIMIT - 1 }, (_, i) => svc(i + 1))]);
+    expect(next.find((s) => s.code === "next.elided")).toBeTruthy();
+    await p.destroy();
+  });
+});
+
+/**
  * The first hour. A docs repo with zero services and zero features used to be
  * the one repository `next[]` had nothing to say to: every loop was vacuous and
  * the tail answered `next.fleet-clean` — "every service is written down", true
@@ -809,12 +893,17 @@ describe("the first-hour ladder over an empty docs repo", () => {
     // The untouched-scaffold variant: the file exists, so the step is "draw",
     // not "scaffold", and it names the file it is about. Since `loam seed`
     // landed, the rung also teaches the mechanical path — fleet.yaml through
-    // seed — because an untouched stub is exactly seed's target state; the
-    // step's command stays the gate, as it always was.
+    // seed — because an untouched stub is exactly seed's target state, and the
+    // command is that same seed rather than the gate. The gate was the defect:
+    // over a repository with no services `validate --all` answers ok:true with
+    // `landscape.matched`, so it is the one command that cannot report on this
+    // rung. An agent running the documented loop — read next[0], run the
+    // command it names, repeat — changed nothing and got the identical next[0]
+    // back, forever, on day zero.
     expect(steps[0]!.statement).toContain("untouched");
     expect(steps[0]!.statement).toContain("loam seed --from fleet.yaml");
     expect(steps[0]!.path).toBe("architecture/landscape.likec4");
-    expect(steps[0]!.command).toBe("loam validate --all --json");
+    expect(steps[0]!.command).toBe("loam seed --from fleet.yaml");
     expect(steps[1]!.command).toBe("loam init --docs <path-to-this-docs-repo> --service <service-id>");
     expect(steps[2]!.command).toBe("loam adopt --service <service-id> --json");
     expect(codes(payload.next)).not.toContain("next.fleet-clean");
@@ -828,6 +917,11 @@ describe("the first-hour ladder over an empty docs repo", () => {
     expect(first.code).toBe("next.author-landscape");
     expect(first.statement).toContain("does not exist");
     expect(first.statement).toContain("loam init --create");
+    // The other arm of the same rung: the command follows the prose here too.
+    // Scaffolding a landscape that is not there and templating one that is are
+    // different jobs, and one shared command could only ever be right for one
+    // of them.
+    expect(first.command).toBe("loam init --create");
     await p.destroy();
   });
 
@@ -852,6 +946,54 @@ describe("the first-hour ladder over an empty docs repo", () => {
     const payload = await statusJson(p);
     expect(codes(payload.next)).toEqual(["next.adopt-bound", "next.author-landscape", "next.fleet-gate"]);
     await p.destroy();
+  });
+
+  /** The verbs a statement names in a markdown-backticked `loam <verb> …` span. */
+  const namedVerbs = (statement: string): string[] =>
+    [...statement.matchAll(/`loam ([a-z][a-z-]*)[^`]*`/g)].map((m) => m[1]!);
+
+  /**
+   * The invariant behind the two command assertions above, and the reason they
+   * are not simply two more pinned strings.
+   *
+   * `command` is the ONE field the shipped instructions tell an agent to act
+   * on — WORKFLOW.md's loop is "read next[0], run the command it names, repeat"
+   * and every generated skill file says "Branch on the codes, never on the
+   * prose". So a step whose statement names one command while its own `command`
+   * names another is not an inconsistency of wording: it is an instruction to
+   * do something other than what the step says, and the author-landscape
+   * livelock was exactly that shape.
+   *
+   * A tripwire, not a sweep, and worth reading as one. Three source strings
+   * satisfy the antecedent today — the two `next.author-landscape` arms and
+   * `next.fleet-gate` — and a statement carrying no backticked `loam` form is
+   * unmatched rather than exempted: nothing here claims a step's prose must
+   * name a command at all, only that a step naming one must hand over that one.
+   */
+  it("gives every step a command whose verb is the one its own statement backticks", async () => {
+    const stub = await makeProject({
+      ...EMPTY_REPO,
+      "architecture/landscape.likec4": scaffoldLandscape(),
+    });
+    const bare = await makeProject({ ...EMPTY_REPO });
+    const steps = [
+      ...((await statusJson(stub)).next as NextStep[]),
+      ...((await statusJson(bare)).next as NextStep[]),
+    ];
+
+    const constrained = steps.filter((s) => namedVerbs(s.statement).length > 0);
+    const disagreeing = constrained
+      .filter((s) => !namedVerbs(s.statement).some((verb) => s.command.startsWith(`loam ${verb}`)))
+      .map((s) => `${s.code}: statement names ${namedVerbs(s.statement).join("/")}, command is '${s.command}'`);
+    expect(disagreeing).toEqual([]);
+    // Non-vacuity. A regex that stopped matching — a rung reworded to drop its
+    // backticks, a span written `loam  seed` — would leave the assertion above
+    // comparing two empty lists forever, which is the failure mode of every
+    // invariant expressed as a filter.
+    expect(constrained.length).toBeGreaterThan(0);
+
+    await stub.destroy();
+    await bare.destroy();
   });
 
   it("never answers an explicit --service question with the onboarding ladder", async () => {

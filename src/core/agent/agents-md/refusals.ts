@@ -5,6 +5,21 @@
  * the continuation section in ./shipped/archive-gate.ts, split there because
  * the two subjects had grown past one file's ceiling.
  *
+ * Codes here are LISTED by the command that raises them, not glossed; the
+ * meanings come from `loam explain <code>`, out of the running binary. See
+ * ./command-map.ts's header for why the duplicated gloss left.
+ *
+ * THE ONE EXCEPTION IS THE FIRST BULLET. `loam explain` cannot answer
+ * `openspec.*` or `mapping.*` — those commands grade a repository still in
+ * another tool's shape, before it has a governed loop to look a code up from,
+ * and the catalogue leaves them unanswered for that reason. Pointing this
+ * section's reader at an explanation that does not exist is the exact failure
+ * the pointer exists to prevent, so the migration notes stay written out here
+ * until the catalogue reaches them. test/agent-contract.test.ts enforces the
+ * boundary from the other side: every OTHER code backticked in AGENTS_MD must
+ * resolve, so a family can never quietly lose its gloss and its explanation
+ * at once.
+ *
  * One section of the AGENTS.md template. ../agents-md.ts assembles the
  * document by PLAIN CONCATENATION — no join separator — so every section
  * starts at the first character of its opening line and ends with the newline
@@ -60,57 +75,47 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
 - Repository containment failures are explicit: \`sources.path-outside\` rejects a
   provenance source outside the service repo and \`gherkin.path-outside\` rejects a
   generated-suite target outside it. Federated verify recording refuses under
-  \`service-mismatch\`, \`unknown-service\`, or \`repository-unavailable\` when the
-  selected service, fleet identity, and repository commit cannot be bound safely,
+  \`service-mismatch\`, \`unknown-service\` or \`repository-unavailable\` when the
+  selected service, fleet identity and repository commit cannot be bound safely,
   and under \`record-federated\` when the legacy all-at-once form would erase other
-  repositories' attestations.
+  repositories' attestations. \`loam gherkin --service <id>\` and
+  \`loam vouch --service <id>\` answer that same wrong-repo pair
+  (\`repository-unavailable\`, \`service-mismatch\`) for the same reason. Neither is
+  \`invalid-option\`: the flags were right and the directory was wrong, so the fix
+  is to re-run in the service's own checkout, never to re-read the invocation.
 - A file loam cannot read is reported, never skipped: \`service.unreadable\` and
   \`feature.unreadable\` (both errors) name the path and say that nothing about
   that target was checked while the rest of the fleet still was. The whole docs
-  repo being unreachable is a refusal instead: \`docs-missing\` (\`docsDir\` points
-  at nothing) or \`services-missing\` (it is a directory with no \`services/\` —
-  usually the service repo after a typo in \`docsDir\`).
+  repo being unreachable is a refusal instead: \`docs-missing\` or
+  \`services-missing\`.
 - Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.malformed\`,
   \`frontmatter.field-mismatch\`,
   \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md —
   and its arch.spec.md, same conventions — additionally carries the sources chain
   (\`sources.absent\`, \`sources.path-missing\`, \`sources.empty\`, \`sources.skipped\`,
-  \`sources.unvouched\`, \`sources.stale\`) plus the two doc-side checks — \`content.stale\`
-  and \`sources.sampled-vouch\` (a person vouched after reading a recorded SAMPLE of the
-  document) — which need no service repo, so they fire from the docs repo too.
+  \`sources.unvouched\`, \`sources.stale\`) plus the two doc-side checks,
+  \`content.stale\` and \`sources.sampled-vouch\`, which need no service repo and so
+  fire from the docs repo too.
 - A service target run from the service's own repository also re-checks the
   \`evidence_pins\` its federated verification records carry, against the working
-  tree: ok \`evidence.checked\` (every pin resolved clean) and \`evidence.unpinned\`
-  (a record from before pins existed), warn \`evidence.unresolved\` (the cited
-  file is gone, unsafe, not a regular file, or the cited line is past its end),
-  \`evidence.moved\` (the file changed, the cited line survives),
-  \`evidence.line-changed\` (the cited line no longer says what was recorded),
-  \`evidence.token-missing\` (the file contained the literal the claim asserts at
-  the attested commit and no longer does) and \`evidence.record-unreadable\` (a
-  verification.yaml that exists but cannot be read — none of its evidence was
-  checked, and silence there would read as clean). Demote-only, by doctrine: a
-  warn here is a reading priority for a reviewer, never a verdict change — no
-  pin state moves \`attested\` or \`verified\` in either direction. From the docs
-  repo the family is silent; \`sources.unverifiable-from-here\` already names
-  that blind spot.
+  tree: \`evidence.checked\` and \`evidence.unpinned\` are the confirmations,
+  \`evidence.unresolved\`, \`evidence.moved\`, \`evidence.line-changed\`,
+  \`evidence.token-missing\` and \`evidence.record-unreadable\` the warnings.
+  Demote-only, by doctrine: a warn here is a reading priority for a reviewer,
+  never a verdict change — no pin state moves \`attested\` or \`verified\` in
+  either direction. From the docs repo the family is silent;
+  \`sources.unverifiable-from-here\` already names that blind spot.
 - \`loam archive\` alone reports the breaches only the merge computation can see:
-  \`living.requirement-outside-requirements\` (error), \`openapi.op-modified\` (warn),
-  \`openapi.path-item-modified\` (warn), \`openapi.component-modified\` (warn),
-  \`openapi.ref-unresolved\` (error), \`openapi.remove-marker-path-level\` (error —
-  an \`x-loam-remove: true\` written at PATH level, beside the methods rather than
-  inside one: it addresses no operation, so it retires nothing, and it is not a
-  contract key either), the event axis's own trio \`asyncapi.message-modified\` /
-  \`asyncapi.channel-modified\` / \`asyncapi.operation-modified\` (warn — the delta
-  redefines a slot the living AsyncAPI already has, and the merge overwrites it
-  wholesale), \`asyncapi.ref-unresolved\` (a validate warn, but an error here when
-  the MERGED document would carry the dangling reference),
-  \`asyncapi.remove-marker-inline\` (error — an \`x-loam-remove: true\` nested on an
-  INLINE channel message: inline messages are channel interior, never slots, so
-  the marker retires nothing; retire the whole channel, or declare the message
-  under \`components.messages\` and mark that)
-  and \`service.no-model\` (warn — the archive creates
-  \`services/<id>/\`, or puts a service in the landscape the fleet has no directory
-  for at all, and nothing writes its model.likec4).
+  \`living.requirement-outside-requirements\`, \`openapi.op-modified\`,
+  \`openapi.path-item-modified\`, \`openapi.component-modified\`,
+  \`openapi.ref-unresolved\`, \`openapi.remove-marker-path-level\`, the event
+  axis's own trio \`asyncapi.message-modified\` / \`asyncapi.channel-modified\` /
+  \`asyncapi.operation-modified\`, \`asyncapi.ref-unresolved\`,
+  \`asyncapi.remove-marker-inline\` and \`service.no-model\`. Two of those are
+  graded at validate time as well and are STRICTER here —
+  \`openapi.ref-unresolved\` and \`asyncapi.ref-unresolved\` are warnings there and
+  errors here, because the merged document is what would carry the dangling
+  reference — so \`loam explain\` on either prints both contexts.
 
 \`loam validate <target>\` is the positional spelling of the first two: a feature id
 or a service id, tried in that order, so the feature wins when one name could be
@@ -178,113 +183,54 @@ Findings with severity \`ok\` are confirmations, not work: \`c4.valid\`, \`delta
 
 A finding's \`subject\` names the service it is about. The envelope separates \`ok\` (the
 command ran) from \`valid\` (the docs pass). A refusal is \`ok: false\` with a stable
-\`error.code\`: \`no-config\` / \`config-invalid\` (no loam.json / a corrupt one),
-\`docs-missing\` / \`services-missing\` (a \`docsDir\` that points at nothing, or at a
-directory that is not a docs repo — the fleet is unreadable, not empty),
-\`unknown-target\` (no such service or feature), \`invalid-option\` (flags that contradict
-each other, or a value that cannot be right — a \`loam list\` section that is not
-services or features, or a service id that is not a legal
-\`services/<id>/\` directory name, included), \`already-exists\` (\`loam new\` refusing
-to scaffold over an existing feature — also the answer when a concurrent \`new\`
-for the same id wins the race; the scaffold commits under the docs lock through
-the same journaled transaction as every other writer, so \`new\` can answer
-\`docs-busy\`, \`commit-interrupted\`, \`merge-failed\` and — the one that needs
-a human — \`rollback-incomplete\` too),
-\`sources-absent\` / \`sources-path-missing\` /
-\`vouch-raced\` (\`loam vouch\` refusing to stamp — the last one when the document
-changed between the read and the write, so nothing was written; vouch now takes
-the docs lock for its commit window and journals it, so it can also answer
-\`docs-busy\`, \`commit-interrupted\`, \`merge-failed\` and \`rollback-incomplete\`),
-\`not-coherent\` / \`living-outside-requirements\` /
-\`archive-exists\` / \`merge-failed\` / \`rollback-incomplete\` / \`docs-busy\` /
-\`commit-interrupted\`
-(\`loam archive\` — see the
-archive gate below; \`docs-busy\` means another writer — an archive, unarchive,
-rebase, vouch, \`new\`, or a \`verify --record\` — holds the docs repo's lock,
-nothing was read or written, and re-running once it finishes works),
-\`feature-active\` / \`snapshot-missing\` / \`snapshot-stale\` / \`snapshot-corrupt\` /
-\`restore-failed\` / \`rollback-incomplete\` / \`docs-busy\` / \`commit-interrupted\`
-(\`loam unarchive\` — the
-\`restore-failed\` / \`rollback-incomplete\` pair splits
-exactly as archive's does; see "Taking an archive back"). \`commit-interrupted\` is
-the pair's shared refusal: a previous archive or unarchive was killed mid-commit
-and this run cannot repair it on its own — a half-written file has been edited
-since, the repairing pre-image is gone or altered, or \`.loam-commit\` itself
-cannot be read. \`loam doctor\` names the same state as
-\`doctor.commit-interrupted\`, \`loam validate\` leads every mode with
-\`docs.commit-interrupted\` while the journal sits there, and every journaled
-writer — archive, unarchive, rebase, vouch, \`new\`, \`gherkin\`,
-\`verify --record\` — recovers a finished predecessor's journal on its next run
-and reports it as \`recovered\` in \`--json\`. And \`gherkin-conflict\`
-(\`loam gherkin <FEAT>\` would overwrite a \`.feature\` file owned by another
-feature still in flight — the whole emission refuses and names the owner;
-\`gherkin\` commits into the service repo's own \`<gherkinDir>/loam/\` through the
-same lock and journal, so it can answer \`docs-busy\`, \`commit-interrupted\`,
-\`merge-failed\` and \`rollback-incomplete\` about that root),
-\`subsystem-not-empty\` / \`move-uncommitted\` / \`move-failed\` / \`merge-failed\` /
-\`unknown-target\` / \`already-exists\` / \`invalid-option\` / \`docs-busy\` /
-\`commit-interrupted\` / \`rollback-incomplete\` (\`loam subsystem\` — \`rm\`
-refuses a group that still holds members, naming them; \`move\`/\`rename\` refuse
-ONLY when git reports uncommitted or untracked paths under a directory being
-moved — commit them, \`git stash -u\` (plain \`stash\` leaves untracked files
-behind), or remove them, then re-run; where git cannot say at all the move
-proceeds, because that refusal needs positive evidence; \`move-failed\` means
-the move's transaction rolled back cleanly — renames undone, the generated
-views file restored, nothing changed, re-running can work — kept distinct
-from \`merge-failed\`, which \`new\`/\`rm\`/\`sync\` answer when their one-file
-commit fails and is rolled back (no merge was computed there either; the word
-is the shared transaction's), while \`rollback-incomplete\` keeps archive's
-meaning: some of it could not be taken back, and the message lists what to
-check by hand. Names that resolve to nothing, collide in the flat namespace,
-or break the grammar reuse \`unknown-target\`, \`already-exists\` and
-\`invalid-option\`),
-\`answers-unreadable\` / \`answers-mismatch\` /
-\`answers-unevidenced\` / \`record-federated\` / \`record-unreadable\` /
-\`record-raced\` / \`docs-busy\`
-(\`loam verify --record\` / \`--results\` / \`--contract-results\` — an unreadable
-or unrecognizable cucumber or contract-test report refuses under
-\`answers-unreadable\` too;
-\`record-federated\` and \`record-unreadable\` are the two records loam will not
-overwrite. Recording holds the docs repo's lock and commits the record
-atomically over the exact bytes it read: \`record-raced\` means the file changed
-underneath anyway — an editor, or a writer that skipped the lock — and nothing
-was written, so re-running merges over the record as it now stands; \`docs-busy\`
-means another writer held the lock for longer than the record was willing to
-wait. Two records for different services land in either order — the later one
-waits, then merges, and both attestations survive. The shared commit path can
-also answer \`merge-failed\` (the swap itself failed — nothing was recorded,
-re-running can work) and \`rollback-incomplete\` (cleanup failed too; the named
-file needs a human), with exactly the meanings archive gives them),
-\`no-members\` / \`binding-duplicate\` / \`invalid-option\` / \`already-exists\`
-(\`loam open\`, deriving an editor workspace from the committed bindings — no
-service checkout bound to this docs repo was found under any scanned root, so
-the workspace would hold only the docs repo, fixable by cloning a bound
-checkout beside it or passing \`--root\`; two discovered checkouts declare the
-same \`service\` and loam will not guess which one speaks for it — narrow the
-scan with \`--root\` or fix the stray binding; a \`--root\` or \`--out\` that names
-nothing readable, or a \`--root\` the scan cannot list, is \`invalid-option\`;
-and the workspace file itself, which loam never silently overwrites — pass
-\`--out\` or \`--force\`),
-\`seed-file-invalid\` / \`seed-duplicate-service\` / \`seed-unknown-subsystem\` /
-\`seed-landscape-edited\` / \`unknown-service\`
-(\`loam seed --from fleet.yaml\`, templating architecture/landscape.likec4 and one
-services/<id>/ directory per service out of a tiny human-authored file — the
-human states the facts, loam guesses nothing. \`seed-file-invalid\` is anything
-wrong with the file itself — missing, not YAML, the wrong shape, an illegal id;
-the message names file and line — and the preflight: fleet.yaml must name every
-existing services/<id>/ (the refusal carries the ids as \`missingServices\`).
-\`seed-duplicate-service\`: one name declared twice — service ids, subsystem
-names and externals share one flat namespace, both lines named.
-\`seed-unknown-subsystem\`: a \`subsystem:\` naming nothing \`subsystems:\`
-declares, with a did-you-mean hint; a call endpoint nothing declares reuses
-\`unknown-service\` — correct the name, re-run. And
-\`seed-landscape-edited\` is the never-overwrite posture: the landscape carries
-hand edits (the line-1 \`loam-seed sha256:\` digest no longer matches) or was
-authored some other way — seed refuses and writes nothing; fold the edits into
-fleet.yaml and delete the file, or keep the map and stop using seed. Seed
-shares every journaled writer's lock, transaction and recovery codes; an
-existing service directory is never moved, and nothing is ever deleted), and
-\`internal\` — an unexpected throw, the one code with no stable meaning.
+\`error.code\`, and \`loam explain <code>\` has the meaning of every one of them. What
+follows is the other half — which command raises which:
+
+- Before any command can read anything: \`no-config\`, \`config-invalid\`,
+  \`docs-missing\`, \`services-missing\`, \`unknown-target\`, \`invalid-option\`.
+  \`invalid-option\` covers flags that contradict each other AND a value that
+  cannot be right — a \`loam list\` section that is not services or features, or a
+  service id that is not a legal \`services/<id>/\` directory name.
+- Every JOURNALED writer — \`archive\`, \`unarchive\`, \`rebase\`, \`vouch\`, \`new\`,
+  \`gherkin\`, \`seed\`, \`subsystem\` and \`verify --record\` — shares one transaction
+  and therefore one set of refusals: \`docs-busy\`, \`commit-interrupted\`,
+  \`merge-failed\` and \`rollback-incomplete\`. Learn them once and you have read
+  them for all nine. \`loam doctor\` names the interrupted state as
+  \`doctor.commit-interrupted\` and \`loam validate\` leads every mode with
+  \`docs.commit-interrupted\` while the journal sits there; every journaled writer
+  recovers a finished predecessor's journal on its next run and reports it as
+  \`recovered\` in \`--json\`.
+- \`loam new\`: \`already-exists\` — also the answer when a concurrent \`new\` for the
+  same id wins the race.
+- \`loam vouch\`: \`sources-absent\`, \`sources-path-missing\`, \`vouch-raced\`, and the
+  wrong-repo pair \`repository-unavailable\` / \`service-mismatch\`, because
+  \`sources\` resolve against the service's own checkout and from anywhere else
+  those paths are somebody else's.
+- \`loam archive\`: \`not-coherent\`, \`living-outside-requirements\`,
+  \`archive-exists\` — see the archive gate below.
+- \`loam unarchive\`: \`feature-active\`, \`snapshot-missing\`, \`snapshot-stale\`,
+  \`snapshot-corrupt\`, \`restore-failed\` — see "Taking an archive back".
+- \`loam gherkin\`: \`gherkin-conflict\`, plus the same wrong-repo pair, refused
+  before anything is written because the generated files land in the repo loam
+  is standing in.
+- \`loam subsystem\`: \`subsystem-not-empty\`, \`move-uncommitted\`, \`move-failed\`,
+  and \`unknown-target\` / \`already-exists\` / \`invalid-option\` for names that
+  resolve to nothing, collide in the flat namespace, or break the grammar.
+  \`move-failed\` is deliberately distinct from \`merge-failed\`: the move's own
+  transaction rolled back cleanly, nothing changed, and re-running can work.
+- \`loam verify --record\` / \`--results\` / \`--contract-results\`:
+  \`answers-unreadable\`, \`answers-mismatch\`, \`answers-unevidenced\`,
+  \`record-federated\`, \`record-unreadable\` and \`record-raced\`. Two records for
+  different services land in either order — the later one waits, then merges,
+  and both attestations survive.
+- \`loam open\`: \`no-members\`, \`binding-duplicate\`, \`already-exists\` (the
+  workspace file, which loam never silently overwrites — pass \`--out\` or
+  \`--force\`) and \`invalid-option\`.
+- \`loam seed --from fleet.yaml\`: \`seed-file-invalid\`, \`seed-duplicate-service\`,
+  \`seed-unknown-subsystem\`, \`seed-landscape-edited\`, and \`unknown-service\` for a
+  call endpoint nothing declares. An existing service directory is never moved,
+  and nothing is ever deleted.
+- \`internal\` — an unexpected throw, the one code with no stable meaning.
 
 \`--all\` reports a target per service, a target per feature in flight, and one target
 of kind \`landscape\` for the fleet-level checks that belong to no single service.

@@ -174,6 +174,7 @@ export async function diffAnswers(
 
   if (json) {
     emitJson({
+      command: "verify",
       feature: checklist.feature,
       path: repoPath(docsDir, featureDir),
       digest: checklist.digest,

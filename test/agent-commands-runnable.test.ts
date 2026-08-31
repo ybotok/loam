@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
-import { buildProgram } from "../src/cli.js";
+import { HELP_EPILOG, buildProgram } from "../src/cli.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
 import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS } from "../src/core/agent/scaffold.js";
@@ -253,6 +253,14 @@ async function corpus(): Promise<Invocation[]> {
       "the init first-hour epilogue (src/commands/init/first-hour.ts)",
       firstHour("PLACEHOLDER").map(([command]) => command),
     ],
+    // The `--help` epilog, by IMPORT for the same reason. Its two lines are the
+    // only instruction a reader who has run nothing yet receives, and one of
+    // them exists to be typed into an empty directory. printedInvocations does
+    // reach src/cli.ts, but only for as long as HELP_EPILOG stays a
+    // double-quoted literal: rewrite it as a template literal and the backtick
+    // parity shifts, the scrape stops seeing the two commands, and the corpus
+    // loses them without a single assertion changing.
+    ["the --help epilog (src/cli.ts)", markdownInvocations(HELP_EPILOG)],
     ...files.map(([where, src]) => [`a message loam prints (${where})`, printedInvocations(src)] as [string, string[]]),
     ...files.map(([where, src]) => [`a next[] step (${where})`, nextCommands(src)] as [string, string[]]),
   ];

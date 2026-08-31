@@ -71,9 +71,31 @@ export interface Fleet {
   teaching: { landscape: "missing" | "stub" | "authored" } | null;
 }
 
-export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextStep[] {
+/**
+ * What this repository says it IS, as the walk needs it — and it needs BOTH
+ * facts, which is why this is a record and not the bare id it used to be.
+ *
+ * `adopted: false` is the case the walk always handled: the fleet has no
+ * `services/<id>/`, and `next.adopt-bound` leads. `adopted: true` was invisible
+ * — the parameter was `string | null` and went null exactly when the directory
+ * existed — so a repository bound to a service the fleet DOES know got the
+ * whole system's worklist in alphabetical order, with its own boundary
+ * somewhere in the middle of it or, past ten services, not on the list at all.
+ */
+export interface Binding {
+  id: string;
+  /** Whether the fleet has a `services/<id>/` for it. */
+  adopted: boolean;
+}
+
+export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
   const { services, features, graph, interrupted, teaching } = fleet;
   const steps: NextStep[] = [];
+  // The two arms of the binding, each named for the question it answers. The
+  // first reproduces the old parameter exactly, so everything reading it below
+  // is unchanged; the second is the fact that used to be thrown away.
+  const unadoptedBinding = binding !== null && !binding.adopted ? binding.id : null;
+  const adoptedBinding = binding !== null && binding.adopted ? binding.id : null;
 
   // The repository this command is standing in names a service the fleet has no
   // directory for. First, ahead of every other service's partial adoption,
@@ -117,7 +139,17 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
               "State the facts in a fleet.yaml (service ids, `a -> b` calls) and run " +
               "`loam seed --from fleet.yaml` to template the map mechanically — or open the file " +
               "and follow its own comments. Either way loam never guesses who calls whom.",
-        command: "loam validate --all --json",
+        // The command each arm's own prose already names, and for a while it
+        // was neither: both arms carried the gate. WORKFLOW.md documents the
+        // agent loop as "read next[0], run the command it names, repeat" and
+        // every generated skill says to branch on the code rather than the
+        // prose — so an agent on the first rung of the first hour ran
+        // `validate --all` against a repository with no services in it, which
+        // answers ok:true with `landscape.matched` and changes nothing, and
+        // came back to the identical next[0] forever. A livelock on day zero,
+        // on the one command built to answer "what now". The gate is still
+        // named: `next.fleet-gate` closes this same list.
+        command: teaching.landscape === "missing" ? "loam init --create" : "loam seed --from fleet.yaml",
         path: "architecture/landscape.likec4",
       });
     }
@@ -139,8 +171,14 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
     }
   }
 
+  // The per-service rungs are collected into their own list rather than pushed
+  // straight onto `steps`, because the partition below acts on them as a group
+  // — and only on them. Nothing here may float above `next.adopt-bound` or the
+  // first-hour ladder, both of which are about the repository rather than about
+  // any one service in the fleet.
+  const perService: NextStep[] = [];
   for (const s of services.filter(undocumented)) {
-    steps.push({
+    perService.push({
       code: "next.adopt",
       statement: `${serviceTreePath(s)}/ has no spec.md — nothing about ${s.id} is written down, so no feature can be graded against it.`,
       command: `loam adopt --service ${s.id} --json`,
@@ -153,13 +191,37 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
   // and the fleet gate reports — invisible here until now, because this form
   // looked at exactly one bit of each service's artifact set.
   for (const s of services.filter((x) => !undocumented(x) && !x.has.model)) {
-    steps.push({
+    perService.push({
       code: "next.complete-service",
       statement: `${serviceTreePath(s)}/ has a spec.md but no model.likec4 — the fleet gate reports the service incomplete until something models it.`,
       command: `loam validate --service ${s.id} --json`,
       service: s.id,
     });
   }
+
+  // The boundary this repository IS comes first among the boundaries it merely
+  // shares a fleet with. A stable PARTITION and deliberately not a sort: the
+  // bound service's rungs move to the front and every other service keeps the
+  // alphabetical order it already had, so the list an unbound reader sees — a
+  // docs repo, CI, `loam validate --all`'s scorecard — is byte-for-byte the one
+  // it saw before.
+  //
+  // The cap is why this is ordering and not cosmetics. Ten rungs print, and in
+  // the ten-repo case WORKFLOW.md describes every developer's `loam status`
+  // opened with nine other services' adoption work; past ten services the one
+  // rung this developer can actually act on was elided entirely, leaving a list
+  // of nothing but other people's boundaries under the heading "next". No new
+  // code is emitted for any of this — `next[]` has always been documented as
+  // most-unblocking first, and this is the line that makes the claim true from
+  // where the reader is standing.
+  steps.push(
+    ...(adoptedBinding === null
+      ? perService
+      : [
+          ...perService.filter((s) => s.service === adoptedBinding),
+          ...perService.filter((s) => s.service !== adoptedBinding),
+        ]),
+  );
 
   const ordered = [...features].sort(
     (a, b) =>
@@ -214,9 +276,16 @@ export function fleetNext(fleet: Fleet, unadoptedBinding: string | null): NextSt
         }
       : {
           code: "next.fleet-gate",
+          // `loam validate --all` inside the backticks, not the bare
+          // `validate --all` this sentence carried for a year: a span without
+          // the binary name is invisible to every check that reads a
+          // backticked `loam <verb>` as an instruction — the parse check in
+          // test/agent-commands-runnable.test.ts, and the statement/command
+          // invariant in test/status.test.ts. A prefix is cheaper than an
+          // exemption, and the exemption is what lets a wrong command through.
           statement:
             `${features.length} feature(s) in flight over ${services.length} service(s) — ` +
-            "status grades none of them; `validate --all` is the gate this repository has to pass, and it is what CI runs.",
+            "status grades none of them; `loam validate --all` is the gate this repository has to pass, and it is what CI runs.",
           command: "loam validate --all --json",
         },
   );

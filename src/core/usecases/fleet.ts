@@ -13,14 +13,22 @@
  * without starting LikeC4 at all.
  *
  * THE CHEAP GATE IS A BYTE SCAN, and it is sound rather than heuristic. A view
- * is a use case only if it carries a `#cap-<slug>` tag, and LikeC4 refuses an
- * undeclared tag — so a fleet with a use case has the literal text `cap-` in the
- * file that declares the view AND in the file that declares the tag. A document
- * set in which no file contains those four bytes therefore declares no use case,
- * and `{ views: [] }` is the correct answer, not an evasion. The scan reads
- * bytes rather than decoded text on purpose: it is looking for an ASCII
- * substring, and `readFile(path, "utf8")` on a document that is not UTF-8 would
- * substitute U+FFFD and could hide it.
+ * is a use case only if it carries a reserved tag — `#cap-<slug>` or
+ * `#req-<slug>`, `isUseCase` below is the whole test — and LikeC4 refuses an
+ * undeclared tag, so a fleet with a use case has the literal text `cap-` or
+ * `req-` in the file that declares the view AND in the file that declares the
+ * tag. A document set in which no file contains either substring therefore
+ * declares no use case, and `{ views: [] }` is the correct answer, not an
+ * evasion. The scan reads bytes rather than decoded text on purpose: it is
+ * looking for an ASCII substring, and `readFile(path, "utf8")` on a document
+ * that is not UTF-8 would substitute U+FFFD and could hide it.
+ *
+ * BOTH PREFIXES, because the gate and the predicate answer one question and a
+ * gate narrower than the predicate is silence rather than a smaller answer. A
+ * fleet whose only flow is tagged `#req-` alone declares `tag req-…` and no
+ * `cap-` anywhere, so a `cap-`-only scan returned `false` and none of the five
+ * readers ever loaded the project — the widening below would have fixed nothing
+ * without this one.
  *
  * The gate FAILS CLOSED. A document this module cannot open is treated as one
  * that might mention the prefix, so the project load happens and reports the
@@ -30,7 +38,7 @@
  */
 import { readFile } from "node:fs/promises";
 import type { StepScope } from "../c4/arch.js";
-import { CAP_TAG_PREFIX } from "../capabilities/usecase-join.js";
+import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../capabilities/usecase-join.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import { architectureDir, loadArchitecture } from "../c4/project/architecture.js";
 import { architectureDocuments } from "../c4/project/documents.js";
@@ -57,7 +65,7 @@ import { subsystemViewsPath } from "../repo/paths.js";
 export type UseCaseScan =
   | {
       kind: "read";
-      /** The capability-tagged views ONLY — the opt-in `validate`'s use-case package states. */
+      /** The reserved-tag views ONLY — `isUseCase` below is the opt-in, and the only one. */
       views: readonly ParsedView[];
       /**
        * What a hop is attributed against, built ONCE per scan. It carries the
@@ -94,17 +102,22 @@ export interface UseCaseRequest {
 }
 
 /**
- * Does any document in the set even mention the reserved tag prefix?
+ * Does any document in the set even mention a reserved tag prefix?
  *
  * Sequential and short-circuiting ON PURPOSE — the usual "no await in a loop"
  * rule is about independent work that all has to finish, and this loop exists
  * precisely so that a fleet whose first file declares a use case stops reading
  * the other ninety-nine.
+ *
+ * `req-` is the looser of the two substrings and that is accepted knowingly: a
+ * document mentioning it in prose costs one project load loam would otherwise
+ * have skipped, which is a slower right answer. Dropping it costs a wrong one.
  */
 async function mentionsTagPrefix(paths: readonly string[]): Promise<boolean> {
   for (const path of paths) {
     try {
-      if ((await readFile(path)).includes(CAP_TAG_PREFIX)) return true;
+      const bytes = await readFile(path);
+      if (bytes.includes(CAP_TAG_PREFIX) || bytes.includes(REQ_TAG_PREFIX)) return true;
     } catch {
       // Unreadable is not "no tag": the project load below owns that failure and
       // will report it as a hole naming the document. Answering `false` here
@@ -115,9 +128,35 @@ async function mentionsTagPrefix(paths: readonly string[]): Promise<boolean> {
   return false;
 }
 
-/** Is this a use case at all? The prefix test matches `resolveCapabilityTags`'s exactly, case included. */
-function isUseCase(view: ParsedView): boolean {
-  return view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX));
+/**
+ * Is this a use case at all? — the ONE answer, for `validate` and every reader
+ * alike.
+ *
+ * EITHER RESERVED PREFIX OPTS A VIEW IN. A view carrying `#req-CHK-ONCE` and no
+ * `#cap-` tag is an author who asked to be graded and forgot half the claim; it
+ * earns `usecase.requirement-unresolved`'s `unscoped` arm rather than silence,
+ * and SCHEMA.md has said so since the tag shipped.
+ *
+ * It is exported because it was the asymmetry, not the rule, that was the
+ * defect. `validate --all` widened here and the readers did not, so a
+ * `#req-`-only flow was graded hop by hop by the gate and invisible to `loam
+ * diff`, `delta`, `status`, the packs and `list capabilities` — a fleet where
+ * the gate and the report disagree about what exists, which is worse than
+ * either answer alone. One predicate is what stops that recurring: a caller
+ * that spells `startsWith` itself is a second answer waiting to drift.
+ *
+ * The parameter is the smallest shape the test needs rather than `ParsedView`,
+ * so a caller holding a view-like row does not have to build one to ask. Both
+ * prefix tests match their resolver's exactly, case included, so a view can
+ * never be opted in here and read as untagged in `resolveCapabilityTags`.
+ *
+ * NOT the same question as `flowsClaiming`'s. That one asks which flows claim
+ * capability X and matches the whole `cap-<slug>` tag; a `#req-`-only view
+ * claims none, and it is correct for it to stay out of that answer while
+ * counting as a use case here.
+ */
+export function isUseCase(view: { tags: readonly string[] }): boolean {
+  return view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX) || tag.startsWith(REQ_TAG_PREFIX));
 }
 
 /**

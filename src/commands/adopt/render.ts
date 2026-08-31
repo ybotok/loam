@@ -16,7 +16,14 @@ import type { BriefTarget } from "../../core/brief/targets.js";
 /* Text                                                                */
 /* ------------------------------------------------------------------ */
 
-export function render(b: Brief, warnings: string[]): void {
+/**
+ * `full` is the `--targets` pointer — the sentence naming the run that carries
+ * the invariant half of the brief. Its PRESENCE is what narrows this view, so
+ * the two views cannot disagree about what `--targets` means: exactly the
+ * sections `--targets` omits from `--json` are the sections skipped here.
+ * `undefined` is the default brief, unchanged byte for byte.
+ */
+export function render(b: Brief, warnings: string[], full?: string): void {
   console.log(`adopt ${b.service} — write the baseline into ${b.path}/\n`);
   // In the header, before the work: a warning printed after eight artifact
   // shapes is a warning read after the agent has started writing.
@@ -24,13 +31,31 @@ export function render(b: Brief, warnings: string[]): void {
     console.log(wrap(`! ${w}`, "  "));
     console.log("");
   }
-  console.log(wrap(b.rule, "  "));
+  if (full === undefined) {
+    // First, above even the never-overwrite rule, because the rule is an
+    // instruction and this is the answer to "what am I looking at": measured on
+    // the example fleet, this view is over 650 lines and 5,600 words to an
+    // unpaged terminal, and the two rows that actually orient a person —
+    // `model.likec4 create MISSING`, `spec.md create MISSING` — land past line
+    // 450, behind four hundred lines of prose. `--json` is explicitly the agent
+    // contract, so nothing was served by leaving the human view unintroduced.
+    // `--targets` skips it — bullet three describes sections that view omits,
+    // and that view has its own pointer for the same job.
+    printOrientation(b);
+    console.log(wrap(b.rule, "  "));
 
-  // Before the artifact table, because the table is the output and this is the
-  // input: an agent that meets the file list first starts writing files.
-  printWalk(b);
+    // Before the artifact table, because the table is the output and this is the
+    // input: an agent that meets the file list first starts writing files.
+    printWalk(b);
+  }
 
   console.log("\n  artifacts\n");
+  // The legend again, next to the thing it decodes. A reader who scrolls back
+  // to the table two hundred lines later arrives at four flags and no key, and
+  // the capital/lowercase distinction is invisible to anyone who has to
+  // remember it rather than read it.
+  console.log(wrap(LEGEND_LINE, "    "));
+  console.log("");
   const width = Math.max(...b.targets.map((t) => t.artifact.length));
   for (const t of b.targets) {
     // `edit` is the shared fleet map: the file exists, but "present" would read
@@ -43,6 +68,109 @@ export function render(b: Brief, warnings: string[]): void {
 
   printLandscape(b);
 
+  if (full === undefined) printChecking(b);
+  else {
+    // The pointer takes the place of the sections it stands for, in the same
+    // position they would have occupied. Anywhere else — a footnote under the
+    // closing instructions, say — and it reads as a cross-reference rather
+    // than as the notice that this brief is not all of the brief.
+    console.log("\n  the rest of the brief\n");
+    console.log(wrap(full, "    "));
+  }
+
+  console.log("\n  when you are done\n");
+  console.log(`    loam validate --service ${b.service} --json    # fix every error`);
+  // The fleet run is not a nicety: --service never reports the landscape
+  // cross-check, so a baseline can pass the line above with the fleet map
+  // never edited at all.
+  console.log(`    loam validate --all --json                        # in the docs repo: the fleet map`);
+  console.log(`    loam vouch --service ${b.service}              # a HUMAN, in the service's own repo`);
+  console.log("");
+  console.log(
+    wrap(
+      "Leave everything `status: draft`. Vouching is somebody reading the code and saying the document matches it — it is not yours to do, and a status with no digest behind it is a claim with nothing behind it.",
+      "    ",
+    ),
+  );
+}
+
+/** The table's four flags, compressed to one terminal line for the scroll-back reader. */
+const LEGEND_LINE = "MISSING required · missing optional · present diff it · UNDRAWN add to the map";
+
+/**
+ * A required target whose work is still outstanding.
+ *
+ * `!t.exists` alone is the wrong test, and the fleet map is the reason: for
+ * every repo after its first service `architecture/landscape.likec4` already
+ * exists, so `exists` is true while nothing in it resolves to this boundary —
+ * which `loam validate --all` grades `landscape.service-unmodelled`, an ERROR.
+ * `action` carries that distinction and nothing else does: `edit` is only ever
+ * the undrawn fleet map (see `BriefTarget.action`, core/brief/targets.ts).
+ */
+function outstanding(t: BriefTarget): boolean {
+  return t.required && (!t.exists || t.action === "edit");
+}
+
+/**
+ * The three sentences that make the rest of the page readable: how much of it
+ * is owed, what the table's own convention means, and what the four hundred
+ * lines below it are.
+ *
+ * Every number here is computed from the brief that was just assembled — the
+ * outstanding count off `targets`, the section sizes off `walk`, `checks` and
+ * `unchecked`. A literal would be right until the next check is added and
+ * silently wrong forever after, and this block's whole value is that a reader
+ * can trust it instead of scrolling to verify it.
+ */
+function printOrientation(b: Brief): void {
+  const owed = b.targets.filter(outstanding);
+  console.log("  read this first\n");
+
+  // What is actually owed, named. The count is the load-bearing half: "some of
+  // these are required" is a sentence a reader skips, "three of the nine, and
+  // here they are" is one they act on.
+  console.log(
+    bullet(
+      owed.length === 0
+        ? `None of the ${String(b.targets.length)} artifacts below is both required and outstanding — every required one is already there. What is left is optional, or an existing document to diff your findings against.`
+        : `${String(owed.length)} of the ${String(b.targets.length)} artifacts below ${owed.length === 1 ? "is" : "are"} required and not yet done: ${owed.map((t) => t.artifact).join(", ")}. Everything else in the table is optional, or already written and wants diffing rather than replacing.`,
+      "    ",
+    ),
+  );
+  console.log("");
+
+  // The legend, in full. The table prints `MISSING` and `missing` as if the
+  // capitals were emphasis; they are the required/optional distinction, and
+  // nothing on the page said so. `UNDRAWN` needs more than a gloss — it is the
+  // one row that is not this boundary's file at all.
+  console.log(
+    bullet(
+      "The flags in that table: `MISSING` in capitals is required and not there, lowercase `missing` is optional and not there, `present` means the file exists — diff it, never replace it. `UNDRAWN` marks the one row that is not this boundary's own file: `architecture/landscape.likec4` is the whole system's map and already holds every other boundary, so ADD to it rather than rewriting it. Until an element in it resolves to this directory, `loam validate --all` reports `landscape.service-unmodelled` (error).",
+      "    ",
+    ),
+  );
+  console.log("");
+
+  // What the rest of the page is, so a reader who stops here still knows what
+  // they scrolled past — and where the same content lives for an agent, which
+  // is the reader this long body was written for.
+  console.log(
+    bullet(
+      `The rest of this page, in order: the ${String(b.walk.length)}-stop order to read the code in, then the grammar of each artifact — every rule there is one a later check depends on — then the ${String(b.checks.length)} named checks the result will face and the ${String(b.unchecked.length)} statements of what nothing checks. \`loam adopt --service ${b.service} --json\` carries the same targets for an agent, and \`--targets\` narrows that to only the part that varies by boundary.`,
+      "    ",
+    ),
+  );
+  console.log("");
+}
+
+/**
+ * The invariant half: the frontmatter rules, the checks that run, and the
+ * checks that do not exist. A function of its own only so `--targets` can skip
+ * all three in one place — the three sections are the exact set `--targets`
+ * omits from `--json`, and splitting them here is what keeps that a single
+ * decision instead of three that can drift apart.
+ */
+function printChecking(b: Brief): void {
   console.log("\n  frontmatter — on every markdown artifact\n");
   for (const [field, what] of Object.entries(b.frontmatter.fields)) {
     console.log(`    ${field}`);
@@ -65,21 +193,6 @@ export function render(b: Brief, warnings: string[]): void {
 
   console.log("\n  what nothing checks\n");
   for (const u of b.unchecked) console.log(bullet(u, "    "));
-
-  console.log("\n  when you are done\n");
-  console.log(`    loam validate --service ${b.service} --json    # fix every error`);
-  // The fleet run is not a nicety: --service never reports the landscape
-  // cross-check, so a baseline can pass the line above with the fleet map
-  // never edited at all.
-  console.log(`    loam validate --all --json                        # in the docs repo: the fleet map`);
-  console.log(`    loam vouch --service ${b.service}              # a HUMAN, in the service's own repo`);
-  console.log("");
-  console.log(
-    wrap(
-      "Leave everything `status: draft`. Vouching is somebody reading the code and saying the document matches it — it is not yours to do, and a status with no digest behind it is a claim with nothing behind it.",
-      "    ",
-    ),
-  );
 }
 
 /**

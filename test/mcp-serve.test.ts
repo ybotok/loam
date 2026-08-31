@@ -14,6 +14,7 @@ import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, runToolArgv, type Sinks } from "../src/commands/mcp/dispatch.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
+import { MCP_TOOLS } from "../src/core/mcp/tools.js";
 
 interface SessionResult {
   /** Every stdout frame, parsed — parsing IS the purity assertion, so it throws on a stray byte. */
@@ -118,9 +119,12 @@ describe("a full session over the coherent fixture", () => {
     expect(String(result["instructions"])).toContain("--json envelope");
   });
 
-  it("tools/list serves the twelve read tools, each with a schema", () => {
+  it("tools/list serves the read tools MCP_TOOLS declares, each with a schema", () => {
+    // Counted off MCP_TOOLS rather than a literal: the roster grew from twelve
+    // to fourteen when `instructions` and `steps` landed, and a hand-typed
+    // count is a test that has to be remembered rather than one that holds.
     const tools = resultOf(main.frames, 2)["tools"] as Array<Record<string, unknown>>;
-    expect(tools).toHaveLength(12);
+    expect(tools).toHaveLength(MCP_TOOLS.length);
     for (const tool of tools) {
       expect(typeof tool["name"]).toBe("string");
       expect(typeof tool["description"]).toBe("string");
@@ -222,6 +226,32 @@ describe("protocol errors surface per call and never kill the loop", () => {
   });
 });
 
+describe("every advertised tool is a command the dispatcher can actually run", () => {
+  it("no tool in MCP_TOOLS answers `unknown command` — the two rosters are one roster", async () => {
+    // The hole this closes shipped once. `MCP_TOOLS` is what `tools/list`
+    // advertises; `readProgram` in dispatch.ts is what `tools/call` runs, and
+    // the two are separate lists because core/ may not import commands/. When
+    // `loam_instructions` and `loam_steps` were added to the first and not the
+    // second, `tools/list` promised fourteen tools and two of them answered
+    // `{ ok: false, error: { code: "invalid-option", message: "unknown
+    // command 'instructions'" } }` — an envelope that reads as the CALLER's
+    // mistake, which is the worst shape a server-side gap can take. Every
+    // suite stayed green: nothing called a tool it had just been told about.
+    //
+    // Run with no arguments beyond the command name: most tools then refuse
+    // for a real reason (`no-config` in a bare directory), and that is fine —
+    // this asserts only that the verb REACHES a command, never that it
+    // succeeds.
+    for (const tool of MCP_TOOLS) {
+      const res = await runToolArgv([tool.command, "--json"]);
+      expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
+      const envelope = JSON.parse(res.stdout) as { ok: boolean; error?: { message?: string } };
+      const message = envelope.error?.message ?? "";
+      expect(message, `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+    }
+  });
+});
+
 describe("console capture covers the whole stdout surface", () => {
   it("every stdout-writing console method lands in the stdout sink; warn and error in stderr", () => {
     // console.log alone was the reviewed defect: a console.info anywhere in a
@@ -299,7 +329,7 @@ describe("framing at the stream level", () => {
         JSON.stringify(request(4, "ping")),
       ]);
       expect(res.frames.map((f) => f["id"])).toEqual([1, 2, 3, 4]);
-      expect((resultOf(res.frames, 3)["tools"] as unknown[]).length).toBe(12);
+      expect((resultOf(res.frames, 3)["tools"] as unknown[]).length).toBe(MCP_TOOLS.length);
     } finally {
       await rm(bare, { recursive: true, force: true });
     }

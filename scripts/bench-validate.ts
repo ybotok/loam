@@ -4,7 +4,7 @@
  * Builds the synthetic fleet from test/helpers/fleet-fixture.ts at benchmark
  * shape (120 services / 20 features — the scale suite's services ×4, features ×2), writes
  * a workdir whose loam.json mirrors test/helpers/harness.ts makeProject, and
- * measures the BUILT CLI the way scripts/pilot-harness.mjs run() does: a fresh
+ * measures the BUILT CLI in a fresh
  * `node dist/cli.js <args> --json` child process per run, so every run pays
  * real startup and parses from a cold in-process state (the OS page cache stays
  * warm — that is the documented policy, not an accident). Per command: one
@@ -54,7 +54,7 @@ function sampleRss(pid: number): Promise<number> {
   });
 }
 
-/** One fresh-process run of the built CLI, exactly as the pilot harness spawns it. */
+/** One fresh-process run of the built CLI: a cold child process per measurement. */
 function runOnce(cliPath: string, args: string[], cwd: string): Promise<Measured> {
   return new Promise((done, failed) => {
     const started = performance.now();

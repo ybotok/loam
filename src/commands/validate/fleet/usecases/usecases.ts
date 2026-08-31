@@ -29,11 +29,8 @@
  * against every hop in the fleet.
  */
 import { compareIds } from "../../../../core/repo/entries.js";
-import {
-  CAP_TAG_PREFIX,
-  REQ_TAG_PREFIX,
-  resolveCapabilityTags,
-} from "../../../../core/capabilities/usecase-join.js";
+import { resolveCapabilityTags } from "../../../../core/capabilities/usecase-join.js";
+import { isUseCase } from "../../../../core/usecases/fleet.js";
 import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
@@ -89,23 +86,23 @@ export interface UseCaseScope {
 /**
  * The views that opted in, in a stable order.
  *
- * EITHER reserved prefix opts a view in, not only `#cap-`. A view carrying
- * `#req-CHK-ONCE` and no capability tag is an author who asked to be graded and
- * forgot half the claim; opting in on `#cap-` alone would leave that view
- * silently ungraded — the one outcome an opt-in must never produce, because the
- * author believes they have said something. What they get instead is
- * `usecase.requirement-unresolved`'s `unscoped` arm, naming the missing tag.
+ * The opt-in itself is `isUseCase` in `core/usecases/fleet.ts` and is not
+ * restated here. It used to be — the same `startsWith` pair, spelled a second
+ * time — and the two spellings drifted: this one took either reserved prefix
+ * while the reader-side one took `#cap-` alone, so `validate` graded a
+ * `#req-`-only flow that `loam diff`, `delta`, `status`, the packs and `list
+ * capabilities` could not see. What is left here is the ORDER, which is this
+ * package's own concern.
  *
  * Sorted by (file, view id) rather than reported in LikeC4's own record order:
  * nothing in loam has measured that the parse preserves declaration order, so a
  * report whose row order depends on that would reorder under a dependency bump
  * — the diff-stability rule `core/capabilities/rollup.ts` states for its rows,
- * applied to findings. Both prefix tests match their resolver's exactly, case
- * included, so a view can never be opted in here and read as untagged there.
+ * applied to findings.
  */
 function gradedViews(views: readonly ParsedView[]): ParsedView[] {
   return views
-    .filter((view) => view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX) || tag.startsWith(REQ_TAG_PREFIX)))
+    .filter(isUseCase)
     .sort((a, b) => compareIds(viewFile(a), viewFile(b)) || compareIds(a.id, b.id));
 }
 

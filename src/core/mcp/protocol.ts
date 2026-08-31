@@ -17,7 +17,7 @@
 import { isRecord } from "../kernel/records.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { toArgv } from "./argv.js";
-import { MCP_TOOLS, toInputSchema, toolByName } from "./tools.js";
+import { MCP_TOOLS, READ_ONLY_ANNOTATIONS, toInputSchema, toolByName } from "./tools.js";
 
 /** JSON-RPC 2.0 error codes this server emits. */
 export const PARSE_ERROR = -32700;
@@ -132,6 +132,11 @@ function routeRequest(id: JsonRpcId, method: string, params: unknown): RouteOutc
           name: tool.name,
           description: tool.description,
           inputSchema: toInputSchema(tool),
+          // The same literal on every tool, because the table is read-only by
+          // construction. `./tools.ts` holds why these two hints and not the
+          // other two, and why `outputSchema` was deferred rather than shipped
+          // beside them — that decision is about `toolReply` below.
+          annotations: READ_ONLY_ANNOTATIONS,
         })),
       }));
     case "tools/call":

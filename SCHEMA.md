@@ -1,7 +1,7 @@
 # loam docs-repo schema
 
-This documents the layout of the **docs repo** — the single shared source of truth that `loam` reads
-and writes. A runnable example lives in the repository under
+This documents the layout of the **docs repo** — the single shared source of truth for the governed
+system that `loam` reads and writes. A runnable distributed example lives in the repository under
 [`examples/docs/`](https://github.com/ybotok/loam/tree/main/examples/docs).
 
 Everything here is plain files. `loam` derives **projections** and indexes from them; delete `loam`
@@ -18,16 +18,39 @@ behavior     │ gherkin scenarios ──(govern)──► pages         source
 arch behavior│ arch.spec.md ──(covers)──► C4 · health        source
 contract     │ OpenAPI  ◄──(detail of C4 "exposes/calls")    hybrid
 async        │ AsyncAPI ◄──(detail of C4 "publishes/consumes")  hybrid
-authorization│ permissions.yaml ◄──(required by)── requirements source [fleet vocabulary]
+authorization│ permissions.yaml ◄──(required by)── requirements source [system vocabulary]
 capability   │ capabilities/<cap>/spec.md + capabilities.yaml            source [business tree + vocabulary, opt-in]
              │   ◄──(realized by)── requirements
-structure    │ C4 model — services, relationships            source (adopt-seeded)
+structure    │ C4 model — governed boundaries and relationships source (adopt-seeded)
 ops / why    │ ADR · runbook · health                        source
 truth        │ code                                          ground truth
 ```
 
 The artifacts are wired by a family of explicit joins rather than filenames that merely look
 related. The canonical join table below is the contract; `loam validate` grades each mechanically.
+
+## Topology and the frozen `service` term
+
+`service` is loam's frozen CLI, path and finding vocabulary for **one governed implementation
+boundary**. It does not assert that the boundary is a network service or a microservice. A boundary
+is the unit whose code, living requirements, contracts, provenance and verification evidence are
+reviewed together and filed under one `services/<id>/` directory.
+
+- A **modular monolith** normally has one service id. Its bound C4 root contains nested modules or
+  components; architecture requirements can name those elements and their edges with `Covers:`, and
+  feature deltas can change them without turning them into fictional services.
+- A **distributed system** normally has several service ids. Relationships between their bound
+  roots or descendants can join to OpenAPI operations, AsyncAPI messages and cross-boundary use
+  cases.
+- A **hybrid** uses both forms in one landscape. The nearest bound ancestor decides which service
+  owns a nested element, so C4 depth never decides topology on its own.
+
+The boundary is also the aggregation level of the existing fleet reports: maturity, dependency
+order and the scorecard do not mint independent deployment states for nested modules. A module that
+needs its own repository binding, contracts, evidence and deploy status is a separate governed
+boundary; one that does not stays an element inside its application. The schema therefore broadens
+no command or path and weakens no service-level check — it states what the resolver and loam's own
+single-binary self-model already do.
 
 ## Layout
 
@@ -37,18 +60,18 @@ docs/
   loam.json                        {"docsDir": "."} — makes the repo self-describing  [init --create]
   likec4.config.json               one LikeC4 project, scoped to architecture/       [init --create]
   architecture/
-    landscape.likec4                    global C4 (fleet landscape)
+    landscape.likec4                    global C4 (system landscape)
     subsystems.likec4                   one view per subsystem, views only    [GENERATED: loam subsystem sync]
-    permissions.yaml                    fleet authorization vocabulary        [authored, opt-in]
-    capabilities.yaml                   fleet capability vocabulary           [authored, opt-in]
-    obligations.yaml                    fleet architectural obligations       [authored, opt-in]
-    adrs/NNNN-*.md                      FLEET-level MADR decisions            [authored, opt-in]
+    permissions.yaml                    system-wide authorization vocabulary  [authored, opt-in]
+    capabilities.yaml                   system-wide capability vocabulary     [authored, opt-in]
+    obligations.yaml                    system-wide architectural obligations [authored, opt-in]
+    adrs/NNNN-*.md                      SYSTEM-level MADR decisions           [authored, opt-in]
     landscape.health.yaml            composed health model              [derived, later]
   capabilities/<cap>/                the AUTHORED business tree; nesting spelled by the tree  [authored, opt-in]
     spec.md                             narrative, then `## Requirements` — `Requirement-ID:` REQUIRED
-  glossary/<term>.md                 the fleet's domain vocabulary, one file per term; nesting allowed  [authored, opt-in]
+  glossary/<term>.md                 the system's domain vocabulary, one file per term; nesting allowed [authored, opt-in]
   services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
-    model.likec4                        service C4 (containers/components)  [adopt]
+    model.likec4                        boundary C4 (containers/components) [adopt]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
     arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
     openapi.yaml                     API contract                        [adopt / authored]
@@ -56,6 +79,7 @@ docs/
     adrs/NNNN-*.md                   MADR decisions                      [adopt-seed / authored]
     runbook.md                       operational runbook                 [adopt-draft / authored]
     health.yaml                      SLI/SLO, checks, critical deps       [authored]
+    steps.yaml                       the step phrases this suite defines  [authored, opt-in]
     ui/pages/*.page.yaml             page-specs (UI services)            [later]
   features/<FEAT>/
     intent.md                        business intent / proposal (why)     [authored]
@@ -66,6 +90,7 @@ docs/
     specs/<svc>/asyncapi.yaml        the event-contract delta, slot-pinned  [authored]
     capabilities/<cap>/spec.md       capability delta, same requirement grammar  [authored]
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
+    usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
     adrs/NNNN-*.md                   feature-level decisions             [authored]
     verification.yaml                the done-check: claims + verdicts + evidence, one attestation per service  [loam verify --service <id> --record]
   features/archive/<FEAT>/           a shipped change — the same files, plus:
@@ -75,10 +100,17 @@ docs/
 ```
 
 There is no `flows/` tree, and there will not be one. A cross-service **interaction flow** is a
-`dynamic view` in `architecture/landscape.likec4` — the one document that already holds every
-cross-service edge — tagged with the capability it realizes. A flow that spans services does not
-belong under one service's directory, and the view's steps join to the landscape's own
-relationships, which is what makes the flow checkable rather than merely drawn.
+`dynamic view` under `architecture/` — the one place that already holds every cross-service edge —
+tagged with the capability it realizes. A flow that spans services does not belong under one
+service's directory, and the view's steps join to the landscape's own relationships, which is what
+makes the flow checkable rather than merely drawn.
+
+A feature **brings** one the way it brings every other axis: `features/<FEAT>/usecases/<name>.likec4`
+is a views-only document that `loam archive` copies into `architecture/usecases/` and
+`loam unarchive` takes back. Create-only, and graded before the copy against the map the same merge
+would leave behind — so a flow may draw a hop into a service the feature's own `delta.likec4` adds,
+and a hop into an element the merge does NOT land is refused at plan time rather than archived into
+a map the next reader's `loam validate --all` fails on.
 
 ## Subsystems — a navigable tree under `services/`
 
@@ -172,12 +204,12 @@ belong in the docs repo's `.gitignore`. Finding one at rest means a write did no
 
 ## `loam.json` — the wiring, one file per repository
 
-The docs repo is one repository; each service is another. Every one of them carries a **committed**
-`loam.json` at its root, and that file is the only thing joining them: there is no environment
-variable, no global config, no registry. A command that finds no `loam.json` at or above its working
-directory refuses with `no-config` rather than guessing which fleet it is in. (Discovery walks
-upward from the cwd to the repository root, so running loam from a subdirectory works; `loam init`
-writes the file where it is standing.)
+The docs repo is one repository; each governed implementation boundary is represented by a code
+repository binding. Every one of them carries a **committed** `loam.json` at its root, and that file
+is the only thing joining them: there is no environment variable, no global config, no registry. A
+command that finds no `loam.json` at or above its working directory refuses with `no-config` rather
+than guessing which system it is in. (Discovery walks upward from the cwd to the repository root,
+so running loam from a subdirectory works; `loam init` writes the file where it is standing.)
 
 ```json
 { "docsDir": "../docs-repo", "service": "payment-service", "gherkinDir": "features" }
@@ -192,8 +224,11 @@ writes the file where it is standing.)
   `docs-missing`; one pointing at a directory with no `services/` refuses with `services-missing`
   (most often the service repo itself, after a typo), because an unreadable fleet and an empty fleet
   are different facts and only one of them is fine.
-- **`service`** (required in a service repo, absent in the docs repo) — the canonical id of the
-  service this repository contains: the `services/<id>/` directory it is allowed to speak for.
+- **`service`** (required in a governed code repo, absent in the docs repo) — the canonical id of
+  the implementation boundary this repository speaks for: the `services/<id>/` directory it is
+  allowed to write evidence about. The field name is a frozen compatibility term, not a topology
+  claim: `commerce-app` may be a modular monolith with dozens of nested C4 elements and still have
+  exactly one service id.
   `loam vouch`, `loam gherkin`, and `loam verify --service` **when it writes with `--record` or
   `--results`** bind to it and refuse (`repository-unavailable`) without it — a stamp, generated
   suite or attestation has to be tied to the code it is about. The read-only
@@ -759,17 +794,30 @@ broker leaves a row of untagged hubs behind it.
 openapi delta is a complete document: the author restates the living contract around the part they
 are changing, and the machinery tells restatement from edit. Identity is the **slot** — the pair
 (section, key) over the three named sections `channels.<key>`, `operations.<key>` and
-`components.messages.<key>` — and the join token stays the message name. Two feature-only keys,
+`components.messages.<key>` — and the join token stays the message name. Three feature-only keys,
 spelled and shaped exactly as on the OpenAPI axis: `x-loam-based-on` inside a slot's value (written
 by `loam rebase`; the same 16-hex sha256, taken over canonical JSON of the slot's value with the pin
 itself excluded) records which living version of the slot the delta was written against, so the
 merge can tell a **quote** (equal to its own pin — never a merge input) from an **edit** (differs —
-written); and `x-loam-remove: true` inside a slot's value retires that slot at archive. Nothing
+written); `x-loam-remove: true` inside a slot's value retires that slot at archive; and the root
+record **`x-loam-baselines`** (`{ components: {"<kind>/<name>": <16-hex>} }`) pins what an in-value
+key cannot reach — every `components.<kind>.<name>` **outside `messages`**, which is a **surface**
+rather than a slot. A `components.schemas` value is a JSON Schema, where an in-value loam key would
+be a schema keyword and where JSON Schema's own `true` is a legal component no in-value key survives
+at all; `components.messages` is deliberately absent from the record, because a message already
+carries its own pin and two identities for one value would be two verdicts that need not agree.
+Surfaces are merged, graded and reported exactly as slots are — a quote is skipped, an edit is
+written and warned as `asyncapi.component-modified`, an unpinned restatement counts into the same
+per-service `asyncapi.baseline-missing`, a stale entry is `asyncapi.baseline-stale`, and a malformed
+record or an entry naming nothing the delta declares is `asyncapi.baseline-invalid`. Nothing
 under `payload` ever contributes a join token: a slot digest hashes payload bytes as **content
 identity only** — equality, never a join on payload fields — so Avro stays a `schemaFormat` line.
 One honest consequence: a `schemaFormat` migration changes payload bytes, so even quoted slots
 surface `asyncapi.baseline-stale` — that is the pin reporting a real content change under a delta
-that restates it, not a false positive; re-read the living slot and `loam rebase`.
+that restates it, not a false positive; re-read the living slot and `loam rebase`. The same is true
+of a surface: a migration that rewrites a `components.schemas` entry moves its digest, so a delta
+that merely restates the schema reports the change rather than hiding it, and the fix is the same
+one command.
 
 **Inline channel messages are channel interior, by decision.** A message declared inline at
 `channels.<ck>.messages.<mk>` still joins the spine (the reader declares it as a first-class
@@ -1151,6 +1199,31 @@ and SpecFlow emit the same format — → implement until green →
 service's own repo. The digest tags ride through the runner into the report, so the done-check's
 `scenario.tested` claims are answered by the green run itself; see "The verification record".
 
+**How much glue that second step is, and how much of it is already written**, is `loam steps`. It
+counts the distinct step PHRASES a service's living scenarios collapse onto — `{n}`, `{s}` and `{p}`
+placeholders folded, keyword dropped, because a runner resolves `Given` and `When` through one
+registry — reports how few phrases cover 80% of every written step, and groups the near-duplicates
+that differ only by an article or a trailing clause. It reads the living specs, so it answers in a
+repo that has never run `loam gherkin`, and it emits no file and no finding.
+
+`services/<svc>/steps.yaml` is the optional other half: **the step catalogue**, a `steps:` list of
+step texts recording which phrases the team has decided its suite defines. `loam steps` reports the
+written phrases against it — written-but-not-catalogued is the work-list, catalogued-but-not-written
+is a definition with nothing left to match — so the report becomes a diff against a decision instead
+of the same recount every time.
+
+It is **authored, not emitted**, and that is the axis's one real design decision. loam does not read
+code and must not present a derived thing as truth, so what a team can honestly write down is which
+phrases they have AGREED to define; nothing here claims a step definition exists. It stays a line in
+YAML rather than a file per phrase for the rule the glossary and capability trees settled — an entry
+with prose gets a file, an entry without prose stays a line — and it lives in the docs repo rather
+than beside the code because `loam steps` needs no service repo to stand in, and because
+`<gherkinDir>/loam/` is written and deleted wholesale by `loam gherkin`. Entries are step TEXTS, not
+keys: the key is loam's normalisation, and asking an author to type it would make an internal
+spelling a hand-written contract. **The axis carries no finding code and `loam validate` never reads
+it** — a phrase written before its glue is the normal order of work, and a phrase-similarity warning
+is the kind of check a fleet turns off, taking the real findings beside it with it.
+
 ### The smallest legal feature
 
 A one-service bugfix needs two authored files: a non-empty `features/<FEAT>/intent.md`, and
@@ -1351,6 +1424,34 @@ refusing it, which is why the flattening is a whitelist and not a list of substi
 
 **Either reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
 asked to be graded and forgot half the claim; it earns the `unscoped` message rather than silence.
+That opt-in is **one predicate**, and every reader takes it: `loam validate`, `loam diff`,
+`loam delta`, `loam status`, the context and explore packs and `loam list capabilities` all decide
+"is this a use case" the same way, so a flow one of them can see is a flow all of them can see. The
+byte scan that lets a fleet with no use cases skip the LikeC4 load looks for both prefixes for the
+same reason — a gate narrower than the predicate is silence, not a smaller answer.
+
+Being SEEN is not the same as claiming something, and the difference is worth stating because it
+looks like a gap and is not. A view with no resolved `#cap-` tag claims no capability, so it seeds
+nothing in `loam explore --capability` and keeps no promise in `loam list capabilities`' `keptBy` —
+a `#req-` tag is scoped by a `#cap-` tag and means nothing without one. What the shared predicate
+buys those two is that the flow is read at all: the fleet opts in, the flows are loaded, and
+`useCases.unreadable` answers honestly instead of the scan reporting a fleet that draws none.
+
+**A feature can bring a flow with it**: `features/<FEAT>/usecases/<name>.likec4` is a views-only
+document copied into `architecture/usecases/` by `loam archive` and removed again by
+`loam unarchive`, so the flow that answers a cross-service promise ships in the same change as the
+promise. The route is **create-only**, for the glossary's reason exactly: a flow is one ordered hop
+sequence, the merge is a whole-file copy, and there is nothing to merge partially — a flow the
+living tree already holds is `usecase.flow-exists` (error, not `--approve`-overridable), and the fix
+is to edit `architecture/usecases/<name>.likec4` directly in the same pull request.
+
+Its `#req-` tag resolves against **both corpora** — the living capability tree and this feature's own
+capability deltas — which is the rule `Realizes:` already follows, and without it the axis's headline
+case is refused by an error of its own making: an analyst adds `NOTIFY-ONCE`, the architect answers
+it with a flow, and the tag names a promise that is not living *yet*. The flow itself is graded
+against the map the same merge would leave behind, so a hop may name a service the feature's
+`delta.likec4` adds; a hop naming an element the merge does NOT land is `usecase.flow-invalid`
+(error, not `--approve`-overridable) and stops the archive before anything is written.
 
 **Only a RESOLVED claim keeps a promise.** A broken `#req-` tag suppresses nothing, so
 `capability.requirement-unrealized` goes on firing beside the error — a typo that silenced it would
@@ -1429,12 +1530,27 @@ only then earn its error, against a document whoever reads the finding did not w
 **The archive refuses a promise nothing keeps, in both directions.**
 
 - `capability.uncovered` (**warning that gates**, `--approve`-overridable) — the feature ADDS a
-  capability requirement and no `Realizes:` line in its own service deltas names it. The severity is
-  the judgement: the document is legal, the merge is what is unsafe, because once merged the only
-  thing that will mention the promise again is a fleet-scope warning nobody reads. A `#req-` tagged
-  flow does not count here, and that is a consequence rather than a policy — a `dynamic view` has no
-  feature-delta path, so a tag naming a requirement that is not living yet is already
-  `usecase.requirement-unresolved`. **The flow route opens only after the promise is living.**
+  capability requirement and nothing in the same feature keeps it: no `Realizes:` line in its own
+  service deltas, and no `#req-` tag in its own `usecases/` flows. The severity is the judgement:
+  the document is legal, the merge is what is unsafe, because once merged the only thing that will
+  mention the promise again is a fleet-scope warning nobody reads. **Both carriers count, and only
+  a resolved claim does** — the `#cap-` tag to exactly one declared capability and the `#req-` tag
+  to exactly one of its requirements, resolved against the vocabulary and the requirement ids this
+  feature's own merge would leave behind. A broken tag of either kind is an error in its own right
+  and never also marks a promise kept; a typo that silenced this gate would turn a mistake into a
+  green archive. A **living** flow does not count either — a use case already in `architecture/`
+  cannot be keeping a promise this feature has not merged yet, and the flow that keeps it ships in
+  the same change.
+- `usecase.flow-invalid` (**error**, never `--approve`-overridable) — the feature's `usecases/`
+  could not be read against that post-merge map: a parse error, a hop naming an element the merge
+  does not land, or a landscape merge that itself refuses. The flows were not graded, so the archive
+  would copy them into `architecture/` for somebody else's `validate --all` to fail on. `--approve`
+  overrides loam's judgement about coherence, never its ability to read an axis.
+- `usecase.flow-exists` (**error**, never `--approve`-overridable) — a flow this feature introduces
+  that `architecture/usecases/` already holds. The merge is a whole-file copy, so it would replace
+  an authored hop sequence wholesale; the same shape and the same severity as `glossary.term-exists`,
+  and the fix is the same — edit the living document directly in this change, where git produces an
+  ordinary conflict.
 - `capability.remove-requirement-realized` (**error**) — the same join in the removal direction.
   Unlike the addition it has no legal reading: after the merge a living service document nobody
   touched would carry a pointer at nothing. Graded against the POST-MERGE fleet, so the escape
@@ -1448,12 +1564,13 @@ Two `--json` notes. `loam rebase` gains the additive `capabilities` and `capabil
 under the capability id, so a consumer matching `subject` against the service list finds no match
 rather than the wrong one.
 
-What the tree does NOT yet carry, and the roadmap owns each: `loam new <FEAT> --capability <cap>`,
-and the informational surfaces (`loam show`, `loam delta` and the context pack say nothing about a
-capability delta). Until those land, a capability document is a fleet document edited directly under
-PR review — the same lifecycle `capabilities.yaml`, `permissions.yaml` and the use cases already
-have. Two rules keep the corpus from becoming a second copy of the living specs and neither may be
-softened: a capability requirement must be observable outside the fleet (above), and **neither
+`loam new <FEAT> --capability <cap>` scaffolds the delta, and `loam show` and `loam delta` project
+it. The context pack still says nothing about a capability delta — it reports the fleet's
+capabilities and the flows claiming them, not what a feature is changing about one. A capability
+document also remains editable directly under PR review, which is the same lifecycle
+`capabilities.yaml`, `permissions.yaml` and the living use cases already have; the feature route
+does not replace it. Two rules keep the corpus from becoming a second copy of the living specs and
+neither may be softened: a capability requirement must be observable outside the fleet (above), and **neither
 corpus is derived from the other** — `gherkin` and `verify` keep computing from service
 requirements, so a service repository can still validate itself with nothing but its own files.
 
@@ -1461,44 +1578,29 @@ For a theme that crosses services and matches no structural unit, a **LikeC4 tag
 available and checkable: tags are declared in a `specification` block, so a misspelling is a parse
 error rather than quiet drift.
 
-### Considered and rejected: the rest of the OpenSpec feature set
+### Deliberate limits of the workflow surface
 
-loam takes OpenSpec's requirement format and leaves most of its machinery, deliberately. OpenSpec
-and loam optimize different units: a capability-oriented repository versus a contract-linked service
-fleet. The points below describe the actual v1.7 concepts rather than treating every upstream
-feature as a workaround for not having a model.
+loam keeps one fixed lifecycle because its cross-artifact checks need one versioned meaning of
+ready. Several useful product shapes remain outside that boundary on purpose:
 
-- **Workflow schema / DAG engine** — OpenSpec derives artifact completion from whether each
-  schema-declared output exists; it is not a separate mutable workflow-state database. loam still
-  declines arbitrary project graphs because its fleet checks depend on one versioned lifecycle and
-  one meaning of ready. The trade-off is lower workflow customizability, not duplicate state.
-- **Stores** — OpenSpec Stores are standalone Git planning roots with explicit root selection,
-  optional project pointers and read-only references to other Stores. They solve shared planning
-  ownership, not caching. loam keeps one docs root because it also owns the fleet topology; an
-  external reference index should be reconsidered if several independent fleet-doc roots become
-  common.
-- **Worksets** — upstream Worksets are personal sets of folders/editor state reopened together, not
-  hand-curated evidence bundles consumed by validation. loam has no editor-session manager;
-  `loam delta <FEAT> --service <id>` separately derives a model-scoped work view.
-- **Profiles** — upstream profiles select which workflow commands are installed for a user; project
-  artifact behavior comes from config/schema. loam keeps a smaller fixed command surface. The
-  invariant to protect is fleet validation semantics, not a claim that an OpenSpec profile itself
-  changes them per repository.
+- **Configurable workflow DAGs** — arbitrary project graphs offer more workflow freedom, but would
+  make readiness project-specific. loam derives state from one fixed artifact graph instead.
+- **External planning roots** — loam keeps one docs root because that root also owns the system
+  topology. Reconsider an external reference index if several independently governed docs roots
+  become a common deployment shape.
+- **Worksets and editor sessions** — loam has no workspace manager. `loam delta <FEAT> --service
+  <id>` derives a model-scoped work view without owning folders, windows or editor state.
+- **Profiles** — project behavior does not change with the agent or user invoking it. The smaller
+  fixed command surface protects validation semantics across repositories.
 - **TUI** — agents and CI get `--json`; humans get the files and the forge. A third surface would be
   a third thing to keep truthful.
 - **Authored `tasks.md` as authoritative state** — loam derives its actionable checklist (`loam
-  delta`, `loam verify`), so it cannot drift from the delta. During migration, however, upstream
-  tasks may still contain implementation order and progress, especially for `skip_specs: true`
-  changes; the audit requires an explicit disposition and preserves them as non-authoritative legacy
-  checklists until reviewed.
-- **Per-tool adapter matrix** — mostly. `AGENTS.md` travels with the docs as the one tool-agnostic
-  contract, so any runner that can read a file and exec a binary is already supported.
-  `loam init --tools` does emit the slash commands for several tools, but each adapter is only a
-  path plus a format wrapper around the one shared body — never per-tool prose, profiles, delivery
-  modes, or a managed marker block in someone else's file, and like everything init writes, never
-  overwritten once on disk.
+  delta`, `loam verify`), so it cannot drift from the delta. Imported task lists are preserved as
+  non-authoritative migration evidence until a human chooses their disposition.
+- **Per-tool workflow forks** — `AGENTS.md` is the tool-agnostic contract. Generated adapters wrap
+  shared bodies and are never independent process definitions.
 
-The compatibility stance follows the same one-way logic: **loam reads OpenSpec, never writes it.**
+Separately, the compatibility stance is one-way: **loam reads OpenSpec, never writes it.**
 Serializing drops `## Purpose` and the `## Requirements` wrapper, both of which OpenSpec's parser
 requires — so loam output is not OpenSpec input, and pretending otherwise would corrupt someone's
 repo politely. [MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) has the full account, with
@@ -2199,7 +2301,11 @@ repairing anything:
   command CI runs; a fleet whose services exist and owe nothing says so instead, with
   `next.fleet-clean` — while a docs repo with no services and no features gets the first-hour ladder
   in place of that vacuously green sentence: `next.author-landscape` when the fleet map is missing
-  or still the scaffold's untouched bytes, `next.bind-service`, `next.adopt-first`). The cap is
+  or still the scaffold's untouched bytes, `next.bind-service`, `next.adopt-first`).
+  `next.author-landscape` carries the command its own arm names — `loam init --create` when the map
+  is absent, `loam seed --from fleet.yaml` when it is the untouched stub — and never the gate: over a
+  repository with no services `validate --all` answers `ok: true`, so an agent running the documented
+  loop against it would change nothing and read the identical `next[0]` on the next run. The cap is
   applied before the gate entry, so the gate is never the thing elided. It deliberately does not
   parse the landscape: that is a LikeC4 workspace spin, which is exactly the cost the fleet form
   refuses to pay, and `next.fleet-gate` is the handoff.
@@ -2376,19 +2482,19 @@ owns the reading. `sources` and `verification.yaml` are where the answers are wr
 (preflight and the active-feature graph), `adopt` (the baseline brief), `new` (feature scaffolding),
 `validate` (C4 + requirements + OpenAPI + AsyncAPI + permissions + cross-axis coherence, single
 target or `--all`), `delta` (per-service projection), `gherkin` (the generated `.feature` suite,
-including Scenario Outlines), `rebase` (requirement, operation and asyncapi slot pins), `verify`,
+including Scenario Outlines), `rebase` (requirement, operation, asyncapi slot and asyncapi
+component-surface pins), `verify`,
 transactional `archive` / `unarchive`, `vouch`, and the OpenSpec audit/migration on-ramp are
 implemented, each with a `--json` contract.
 
 Known and unclosed, so nobody has to discover them: the complete gate still needs repeatable CI and
 installed-package evidence observed from an actual push, even though behavior, coverage and the
-local stress runner pass. A components-only feature contract (no `paths` mapping) passes the
-baseline gate but merges nothing — the merge answers no-op before the closure runs — which is
-recorded on the roadmap rather than silently true; the event axis has the same shape: a feature
+local stress runner pass. Both contract axes now merge a components-only delta: a feature
 asyncapi.yaml declaring no channel/operation/message slot (`components.schemas`-only, say) merges
-nothing, and content outside the three slot sections never merges — with the one guard that a merged
-slot whose `$ref` resolves only in the feature document gates `asyncapi.ref-unresolved` rather than
-landing a dangling pointer. (The verification record, the multi-file writers, the OpenAPI
+the component surfaces it declares, pinned by the root `x-loam-baselines` record, and they enter the
+ref sweep like anything else the merge wrote — so a `$ref` whose target the delta itself defines
+resolves instead of gating `asyncapi.ref-unresolved`, while one nothing anywhere defines still does.
+(The verification record, the multi-file writers, the OpenAPI
 path-item/component surfaces, the `validate --all` cost — the ~13–14 s that used to be listed here
 is measured at ~0.7 s, docs/BENCHMARKS.md — and the AsyncAPI feature lifecycle, all previously
 listed here, are closed: lock/CAS records, the journaled roll-forward transaction,

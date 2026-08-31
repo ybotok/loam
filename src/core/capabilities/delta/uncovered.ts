@@ -39,25 +39,34 @@
  *     `capability.requirement-unrealized` name the promise nobody keeps. A pair
  *     here is the shape a reader of that list already expects.
  *
- * WHY A `#req-` TAGGED FLOW DOES NOT COUNT AS COVER — a consequence, not a
- * policy. A `dynamic view` is a fleet document in `architecture/` with no
- * feature-delta path, so a living `#req-` tag naming a capability requirement
- * that is not living yet is ALREADY `usecase.requirement-unresolved` — an error
- * on `validate --all` — for the whole window before the archive. At the moment
- * `capability.uncovered` is evaluated, a legal flow claim on a newly-ADDED
- * requirement cannot exist; reading `architecture/` here would mean spinning a
- * Langium workspace to look for something either absent or already red. The
- * refusal message says so: the flow route opens only AFTER the promise is
- * living.
+ * A `#req-` TAGGED FLOW COUNTS AS COVER, and the reason it did not is worth
+ * recording because it was a consequence rather than a policy. A `dynamic view`
+ * used to be a fleet document with no feature-delta path, so a `#req-` tag
+ * naming a capability requirement that was not living yet was ALREADY
+ * `usecase.requirement-unresolved` — an error on `validate --all` — for the
+ * whole window before the archive. At the moment this ran, a legal flow claim on
+ * a newly-ADDED requirement could not exist, and the message said so: archive
+ * with `--approve` first, tag the flow afterwards. That advice lands a promise
+ * kept by nothing and relies on somebody coming back.
  *
- * NO FILESYSTEM, deliberately, exactly as `../realizes/join.ts` has none. The
+ * `features/<FEAT>/usecases/` closed that (`core/usecases/delta/flows.ts`), so
+ * the claim can now be legal at the moment it is graded, and the third arm of
+ * `flows` below is it. What has NOT changed is which claims count: both tags
+ * must resolve, against the vocabulary and requirement index this feature's own
+ * merge would leave behind. A broken tag of either kind is an error in its own
+ * right and must never also mark a promise kept — a typo that silenced this gate
+ * would turn a mistake into a green archive.
+ *
+ * NO FILESYSTEM, deliberately, exactly as `../realizes/join.ts` has none — and
+ * that is why the flows arrive as resolved pairs rather than as a docsDir. The
  * living side of the removal direction arrives as a thunk the caller supplies,
- * so the fleet-wide read happens only when this feature retires something — and
- * so this module stays testable without a tree.
+ * so the fleet-wide read happens only when this feature retires something, and
+ * this module stays testable without a tree.
  */
 import type { Requirement } from "../../document/spec.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { splitRealizesEntry } from "../realizes/join.js";
+import { tagSlug } from "../usecase-join.js";
 
 /**
  * One requirements document on the SERVICE side of the join, and the two facts
@@ -129,6 +138,44 @@ function docLabel(doc: RealizingDoc): string {
 }
 
 /**
+ * One promise a `#req-` tagged flow in the SAME feature keeps.
+ *
+ * Structurally typed rather than imported from `core/usecases/delta/claims.ts`,
+ * where the caller builds it, and the reason is the package graph rather than
+ * taste: `core/usecases/` already imports this package, so importing it back
+ * would be a cycle that `import/no-cycle` cannot see — the acyclicity obligation
+ * `scripts/package-graph.mjs` exists to hold. The shape is three fields; the
+ * RULE that produced them (both tags resolved, or the claim does not count) is
+ * that module's, and this one grades what it is handed.
+ */
+export interface KeptByFlow {
+  capability: string;
+  requirement: string;
+  /** The view ids keeping it. Carried for a caller's report; nothing here reads it. */
+  flows: readonly string[];
+}
+
+/**
+ * The flow corpus, or the honest statement that there was not one to read.
+ *
+ * A TRI-STATE and not a possibly-empty list, because the message says what was
+ * checked and an empty list would make it say something loam never looked at.
+ * "No flow keeps this" and "the flows were not graded" are different sentences
+ * and only one of them is an accusation — the standing rule this axis states
+ * everywhere else, applied to the message rather than to a severity.
+ *
+ * `why` is printed, so it names the cause an author can act on: an
+ * `architecture/` that did not parse is one thing, a `capabilities.yaml` that
+ * does not read as a vocabulary is another, and inside a feature gate NOTHING
+ * ELSE reports the second — `core/coherence/declared.ts` keeps
+ * `capability.invalid` for `validate --all`. Without the sentence the run
+ * refuses, names the wrong cause, and points at nothing.
+ */
+export type FlowCorpus =
+  | { graded: true; kept: readonly KeptByFlow[] }
+  | { graded: false; why: string };
+
+/**
  * `capability.uncovered` — a capability requirement this feature ADDS that no
  * `Realizes:` line in the same feature's service deltas names.
  *
@@ -152,6 +199,12 @@ function docLabel(doc: RealizingDoc): string {
 export function uncoveredIssues(
   capabilities: readonly CapabilityDeltaDoc[],
   services: readonly RealizingDoc[],
+  // REQUIRED, with no default. A default would have to be one of the two arms,
+  // and either choice is wrong for a caller that forgot: `graded: true` with an
+  // empty list makes the message assert a negative, and `graded: false` makes it
+  // quietly stop checking a corpus the caller does have. The compiler asking is
+  // cheaper than either.
+  flows: FlowCorpus,
 ): Issue[] {
   if (capabilities.length === 0) return [];
   const kept = new Set<string>();
@@ -161,6 +214,19 @@ export function uncoveredIssues(
       for (const pair of realizedPairs(r)) kept.add(pair);
     }
   }
+  // The other carrier, through the SAME `pairKey` as the `Realizes:` side: two
+  // corpora answering one question must not be able to disagree about which
+  // promise a claim addresses. The caller resolved these; a claim whose tags did
+  // not both resolve never reaches here, which is what stops a typo from
+  // silencing the gate.
+  if (flows.graded) for (const flow of flows.kept) kept.add(pairKey(flow.capability, flow.requirement));
+  // What the message may CLAIM about the flow half. Ungraded, it claims nothing
+  // and says so — the `Realizes:` half was still checked and is still worth
+  // gating on, so the finding stands; what must not stand is a sentence
+  // convicting a flow nobody resolved.
+  const flowClause = flows.graded
+    ? "and no `dynamic view` under this feature's usecases/ resolves a `#req-` tag to it. "
+    : `and the flow half of the join was NOT checked — ${flows.why}, so a \`#req-\` claim could not be resolved either way. `;
   const issues: Issue[] = [];
   for (const doc of capabilities) {
     for (const r of doc.reqs) {
@@ -174,14 +240,15 @@ export function uncoveredIssues(
         subject: doc.id,
         message:
           `capability ${doc.id}: ADDED requirement '${r.name}' (${r.id}) is realized by nothing this feature changes — ` +
-          `no ADDED or MODIFIED requirement in its specs/ deltas carries \`Realizes: ${entry}\`. ` +
+          `no ADDED or MODIFIED requirement in its specs/ deltas carries \`Realizes: ${entry}\`, ` +
+          flowClause +
           "The document is legal; the MERGE is what is unsafe: once it lands, the only thing that will ever mention " +
           "this promise again is a fleet-scope warning (capability.requirement-unrealized) nobody reads. " +
           `Three ways on: add \`Realizes: ${entry}\` to the service requirement that carries part of it; ` +
-          "archive with --approve to land the promise ahead of the fleet and let capability.requirement-unrealized " +
-          "carry it; or, if a business FLOW is what keeps it, archive with --approve first and tag the `dynamic view` " +
-          "with `#req-` afterwards — a dynamic view is a fleet document with no feature-delta path, so the flow route " +
-          "opens only once the promise is living.",
+          `if the promise CROSSES services, write the flow that keeps it as features/<FEAT>/usecases/<name>.likec4 and ` +
+          `tag its \`dynamic view\` \`#cap-${tagSlug(doc.id)}\` and \`#req-${tagSlug(r.id)}\` — the archive merges it into ` +
+          "architecture/usecases/ with everything else this feature lands; or archive with --approve to land the promise " +
+          "ahead of the fleet and let capability.requirement-unrealized carry it.",
       });
     }
   }

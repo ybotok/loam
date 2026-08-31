@@ -597,7 +597,11 @@ describe("a promise this feature adds that nothing in it keeps", () => {
     // flow route that only opens once the promise is living.
     expect(found[0]!.message).toContain("Realizes: refunds#REF-1");
     expect(found[0]!.message).toContain("--approve");
-    expect(found[0]!.message).toContain("no feature-delta path");
+    // The third way on used to be "archive with --approve and tag the flow
+    // afterwards, because a dynamic view has no feature-delta path". It has one
+    // now, so the advice names the slot and the two tags to write.
+    expect(found[0]!.message).toContain("features/<FEAT>/usecases/<name>.likec4");
+    expect(found[0]!.message).toContain("#req-REF-1");
 
     const refused = await refusal(p);
     expect(refused.code).toBe("not-coherent");
@@ -717,16 +721,22 @@ The service SHALL keep it.
       uncoveredIssues(
         [{ id: "pay#ments", reqs: promise, living: [] }],
         [{ service: "svc", file: "spec.md", reqs: cover }],
+        // The `Realizes:` half covers it, so the flow arm decides nothing here —
+        // stated rather than defaulted, because the two arms say different
+        // things in the message and a caller must pick one on purpose.
+        { graded: true, kept: [] },
       ),
     ).toEqual([]);
   });
 
   it("a living `#req-` tagged flow does NOT silence it — the flow route opens later", async () => {
-    // A `dynamic view` is a fleet document with no feature-delta path, so a tag
-    // naming a promise that is not living yet is ALREADY
-    // `usecase.requirement-unresolved` for the whole window before the archive.
-    // Reading `architecture/` in the gate would mean spinning a Langium
-    // workspace to look for something either absent or already red.
+    // A feature-local flow DOES cover a promise now
+    // (`test/usecase-feature-flow.test.ts`), and this is the other half of that
+    // rule rather than a leftover from before it: only the feature's OWN flows
+    // count. A living `dynamic view` in `architecture/` is claiming a promise
+    // that is not merged yet — which is `usecase.requirement-unresolved` on
+    // every `validate --all` until the archive lands — so letting it silence the
+    // gate would let a broken living claim wave a merge through.
     const p = await project(
       adding({
         "architecture/landscape.likec4": LANDSCAPE.replace(

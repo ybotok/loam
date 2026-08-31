@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
-import { emitJson, repoPath } from "../../core/envelope/json.js";
+import { emitJson, repoPath, sayExplain } from "../../core/envelope/json.js";
 import {
   message,
   quietPruneEmptyParents,
@@ -35,7 +35,7 @@ import { type ArchiveOptions } from "./plan/refusal.js";
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
-import { planLandscape } from "./plan/landscape.js";
+import { planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { issueJson, refuseJson } from "./plan/refusal.js";
 import { ArchiveFailure } from "./plan/refusal.js";
@@ -83,6 +83,12 @@ export async function archiveLocked(
   await planOpenapiContracts(read, gated, planned, say);
   await planAsyncapiContracts(read, gated, planned, say);
   await planLandscape(config, gated, planned, say);
+  // The flows this feature brings, after the elements they draw hops over: the
+  // copy is create-only and refused at the gate if the living tree already holds
+  // one (`core/usecases/delta/flows.ts`), and it is ordered after the landscape
+  // merge so a reader of the plan sees the map change before the sequence drawn
+  // on it.
+  await planFlows(config, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
 
   // Gate on what only the plan could see: a merged operation pointing at a
@@ -100,6 +106,7 @@ export async function archiveLocked(
     console.error(`${msg}:`);
     for (const i of planGates) console.error(`  ✗ ${i.message}`);
     console.error(`\nFix them in the feature's openapi.yaml / asyncapi.yaml — or re-run with --approve to merge anyway.`);
+    sayExplain("not-coherent");
     process.exitCode = 1;
     return;
   }
@@ -119,6 +126,7 @@ export async function archiveLocked(
   }));
   plan.push({ path: `features/${dirName}`, action: "move", to: `features/archive/${dirName}` });
   const payload = (archived: boolean): Record<string, unknown> => ({
+    command: "archive",
     feature: id,
     archived,
     path: repoPath(config.docsDir, archiveDest),

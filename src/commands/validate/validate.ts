@@ -29,12 +29,14 @@ import {
 } from "../../core/vocabulary/report.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
 import { FleetContext } from "../../core/fleet-context.js";
+import { fixesFor } from "../policy/format.js";
 import {
   docsRepoReady,
   reportDocsRepoError,
   reportRepositoryUnavailable,
 } from "../policy/gate.js";
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
+import { scopeJson, scopeLine, scopeSince, type ValidateScope } from "../../core/diff/scope/changed-paths.js";
 import { validateLandscape } from "./fleet/landscape.js";
 import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { readLandscape } from "./fleet/load.js";
@@ -48,6 +50,7 @@ interface ValidateOptions {
   service?: string;
   feature?: string;
   all?: boolean;
+  base?: string;
   strict?: boolean;
   errorsOnly?: boolean;
   json?: boolean;
@@ -61,6 +64,7 @@ export function registerValidate(program: Command): void {
     .option("--service <id>", "service to validate (defaults to the configured service)")
     .option("--feature <id>", "validate a feature delta instead of a service")
     .option("--all", "validate every service and every active feature")
+    .option("--base <ref>", "with --all: grade only the targets changed since a base git ref of the docs repo — the adoption ratchet")
     .option("--strict", "exit 1 on any warning too — a per-invocation CI lever; the report and --json payload do not change")
     .option("--errors-only", "print only errors and warnings — a rendering lever; the --json payload does not change")
     .option("--json", "emit the machine contract instead of the human view")
@@ -79,6 +83,22 @@ export function registerValidate(program: Command): void {
       // callers that --service had been honoured when it had been dropped.
       if (opts.service && opts.feature) {
         fail(json, "invalid-option", "--service and --feature name different targets; pass one or the other.");
+        return;
+      }
+      // `--base` NARROWS a whole-fleet run; it does not name one. Beside a
+      // positional, `--service` or `--feature` it is a scope over a scope — a
+      // contradiction rather than a narrowing, whose "this service if it
+      // changed" reading nobody could tell apart from a green over a service
+      // never looked at. `--base` and not `--since`: `--base <ref>` is already
+      // loam's word for a base git ref of the docs repo on diff and vouch.
+      if (opts.base !== undefined && opts.all !== true) {
+        fail(
+          json,
+          "invalid-option",
+          target !== undefined || opts.service || opts.feature
+            ? "--base narrows --all to what changed since a ref; a named target is already a scope. Pass one or the other."
+            : "--base narrows --all to what changed since a ref — pass --all with it.",
+        );
         return;
       }
 
@@ -112,6 +132,8 @@ export function registerValidate(program: Command): void {
       const targets: TargetReport[] = [];
       /** What the positional argument turned out to name, for the JSON payload. */
       let resolvedKind: "service" | "feature" | undefined;
+      /** The `--base` narrowing, once it is known. Null on every unscoped run — including every run without --base. */
+      let scope: ValidateScope | null = null;
 
       try {
         if (opts.all) {
@@ -130,33 +152,55 @@ export function registerValidate(program: Command): void {
           // list keep their untouched code paths on purpose — the ≤10%
           // regression bound in docs/BENCHMARKS.md holds by construction.
           const lp = landscapeFile(docsDir);
-          const services = await listServices(docsDir, fleet);
-          const features = await listFeatures(docsDir, {}, fleet);
+          const enumerated = await listServices(docsDir, fleet);
+          const active = await listFeatures(docsDir, {}, fleet);
+          // `--base` narrows the enumerations and nothing else: a kept target is
+          // graded by exactly the checks `--all` would have run on it, at the
+          // same severities, through the same `--strict`. It matches through the
+          // ENUMERATIONS' own directories — changed-paths.ts says why a split
+          // on "/" silently drops every filed service.
+          if (opts.base !== undefined) {
+            const narrowed = await scopeSince({ docsDir, ref: opts.base, services: enumerated, features: active });
+            if (narrowed.kind === "refused") {
+              fail(json, narrowed.code, narrowed.message);
+              return;
+            }
+            scope = narrowed;
+          }
+          const services = scope === null ? enumerated : scope.services;
+          const features = scope === null ? active : scope.features;
           await fleet.prefetchLikeC4([
             ...(existsSync(lp) ? [lp] : []),
             ...services.filter((svc) => svc.has.model).map((svc) => servicePathsAt(svc.dir).model),
             ...features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
           ]);
+          // Read whether or not the landscape is a TARGET: every service check
+          // below joins against it, so a scoped run needs the map in hand even
+          // when it does not grade the map itself.
           const land = existsSync(lp) ? await readLandscape(() => loadArchitecture(docsDir)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
-          targets.push(await validateLandscape(docsDir, land, fleet));
-          const landscape = targets[0]!;
-          // The agent contract check, --all only: AGENTS.md is written once and
-          // never refreshed (the ownership contract), so the one thing the
-          // docs-repo-wide mode owes it is detection — a stamp older than the
-          // binary means agents are branching on tables the binary no longer
-          // honours. It grades the repo, not any service, so it rides on the
-          // landscape target.
-          const agentsPath = agentsFile(docsDir);
-          const agentsText = existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null;
-          const agents = agentsStaleFinding(agentsText, LOAM_VERSION);
-          if (agents !== null) landscape.findings.push(agents);
-          // The other direction, and the one that changes what a PASS means:
-          // this binary predates the corpus, so a directive it cannot parse is
-          // read as prose and produces no join to fail.
-          const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
-          if (behind !== null) landscape.findings.push(behind);
+          // Under `--base` it is a target only when `architecture/` changed — the
+          // landscape owns no service directory, so that is its whole footprint.
+          if (scope === null || scope.landscape) {
+            const landscape = await validateLandscape(docsDir, land, fleet);
+            targets.push(landscape);
+            // The agent contract check, --all only: AGENTS.md is written once and
+            // never refreshed (the ownership contract), so the one thing the
+            // docs-repo-wide mode owes it is detection — a stamp older than the
+            // binary means agents are branching on tables the binary no longer
+            // honours. It grades the repo, not any service, so it rides on the
+            // landscape target.
+            const agentsPath = agentsFile(docsDir);
+            const agentsText = existsSync(agentsPath) ? await readFile(agentsPath, "utf8") : null;
+            const agents = agentsStaleFinding(agentsText, LOAM_VERSION);
+            if (agents !== null) landscape.findings.push(agents);
+            // The other direction, and the one that changes what a PASS means:
+            // this binary predates the corpus, so a directive it cannot parse is
+            // read as prose and produces no join to fail.
+            const behind = binaryBehindFinding(agentsText, LOAM_VERSION);
+            if (behind !== null) landscape.findings.push(behind);
+          }
           targets.push(
             ...(await inOrder(services, (svc) =>
               guarded({ kind: "service", id: svc.id }, () =>
@@ -263,25 +307,75 @@ export function registerValidate(program: Command): void {
       // The fleet scorecard, --all only: recomputed per invocation off the same
       // memoized reads this run already made — loam stores no history — and it
       // fails closed per axis, never whole (fleet/scorecard/scorecard.ts).
-      const scorecard = opts.all
-        ? await buildScorecard({ docsDir, targets, fleet, boundService: config.service })
-        : null;
+      //
+      // Suppressed under `--base`: its denominators are the graded targets, so
+      // over a narrowed set it reads "2 of 2 services documented" for a fleet
+      // where ten more are not — and its axes license report.ts's grouping,
+      // which would drop real warnings because an unlooked-at axis reads zero.
+      const scorecard =
+        opts.all && scope === null
+          ? await buildScorecard({ docsDir, targets, fleet, boundService: config.service })
+          : null;
 
       const valid = reportValid(targets);
       const capped = targets.map(capDetails);
       if (json) {
         emitJson({
+          command: "validate",
           valid,
           summary: summary(targets),
           ...(resolvedKind === undefined ? {} : { resolvedKind }),
+          // What this run looked at. Only under `--base`, so an unscoped payload
+          // is today's document and its ABSENCE says `summary` counts the whole
+          // fleet — scopeJson has why a scoped one may not stay silent.
+          ...(scope === null ? {} : { scope: scopeJson(scope) }),
           // Emitted in every mode now that it is derived per service: a
           // single-service run knows exactly as much about its own blind spot
           // as `--all` knows about the fleet's.
           sourcesUnverifiableFromHere: unverifiable,
           ...(scorecard === null ? {} : { scorecard }),
+          // What to do about every code this run raised — the one thing the
+          // payload could not previously answer. `validate` is step 1 of every
+          // generated protocol and the command an agent reads first, and until
+          // now it replied in prose: a finding names a code and says what is
+          // wrong, and nothing in it said that `loam explain <code>` knows what
+          // to do next.
+          //
+          // A top-level MAP, not a field on each finding, for the reason
+          // report.ts's DETAIL_LIMIT gives about evidence: a hundred-service
+          // fleet raising one code a hundred times would ship the same
+          // sentence a hundred times, in the interface an agent pipes into a
+          // context window. The consumer joins `findings[].code` to
+          // `fixes[code]` — one lookup, no round trip, no repetition.
+          //
+          // Keyed ONLY by codes a non-`ok` finding raised. A confirmation has
+          // nothing to fix, and on a clean fleet the `ok` codes are the
+          // overwhelming majority of findings; attaching fixes to them would
+          // pay the whole vocabulary's byte cost to tell a reader that nothing
+          // is wrong. `targets` is read here rather than `capped` because
+          // capping truncates evidence, not findings — the two raise the same
+          // codes, and reading the uncapped set keeps this rollup computed off
+          // the same targets as `summary()`.
+          //
+          // Not behind a flag, deliberately. It is additive, so no consumer
+          // that ignores it is affected; it is small, because it carries only
+          // the handful of codes this run actually raised rather than the
+          // 227-row vocabulary; and a flag would mean an agent has to already
+          // know the fixes exist in order to ask for them — which is the exact
+          // gap being closed. It is emitted on a green run too, as `{}`, so a
+          // consumer never has to branch on the key's presence before looking
+          // a code up in it.
+          fixes: fixesFor(
+            targets.flatMap((t) => t.findings.filter((f) => f.severity !== "ok").map((f) => f.code)),
+          ),
           targets: capped.map(targetJson),
         });
       } else {
+        // The scope FIRST: a reader has to know what the report below is a
+        // report ABOUT, and in the zero-target case there is nothing below at
+        // all — printed after the findings, the one run that most needs words
+        // would read as a green over the whole system.
+        if (scope !== null) console.log(scopeLine(scope));
         renderText(capped, {
           all: opts.all === true,
           errorsOnly: opts.errorsOnly === true,

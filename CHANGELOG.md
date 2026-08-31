@@ -10,6 +10,602 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — the product boundary is a governed system, not a microservice topology
+
+- **The public position is now “architecture-first semantic integrity and change governance for
+  evolving software systems.”** README and npm metadata no longer define loam as a microservice-only
+  framework. Distributed service fleets remain the richest contract-spine case; modular monoliths
+  and hybrid systems take the same lifecycle without pretending their internal modules are network
+  services.
+- **The existing `service` vocabulary is defined, not renamed.** In flags, paths, config and stable
+  codes it remains the frozen term for one governed implementation boundary. A modular monolith uses
+  one `services/<app>/` directory and one bound C4 root; nested modules participate in feature
+  deltas and `Covers:` while fleet maturity, dependency and scorecard views continue to aggregate at
+  the bound service level. No command, flag, path, envelope field or stable code changed.
+- **README, WORKFLOW, SCHEMA, the ecosystem overview and the generated docs-repo README and agent
+  contract carry the same topology contract.** They distinguish modular, distributed and hybrid
+  shapes, show the nested C4 spelling, and state the current module-level reporting limit rather
+  than turning the broader position into a claim the binary does not make.
+- **The ecosystem page no longer defines loam against OpenSpec.** It now gives short, non-adversarial
+  boundaries with architecture-as-code tools, catalogs, contract tooling, traceability systems and
+  code-level architecture checks. OpenSpec remains documented only where the product has a real
+  compatibility concern: the one-way migration guide and its pinned parser corpus.
+
+### Fixed — a Windows checkout read the generated subsystem views file as stale
+
+- **The generated `architecture/subsystems.likec4` is now compared by content, not by bytes, in all
+  four places that ask the question.** `renderSubsystemViews` only ever emits LF; `core.autocrlf=true`
+  is Git for Windows' installer default and a docs repo ships no `.gitattributes`, so an ordinary
+  Windows clone got the file back with CRLF and not one fact in it changed. Under a byte compare
+  `loam validate --all` reported one error, and the repair the finding advertises made it worse:
+  `loam subsystem sync` answered `updated`, rewrote with LF, git then showed the file permanently
+  modified, and the next checkout restored the CRLF — a loop with no stable exit. The rule now lives
+  once, as `viewsAgree` beside the generator that mints the bytes, and `loam validate`,
+  `loam seed`, `loam subsystem sync` and every subsystem transaction take it. The compare is still
+  never a parse, absent / must-be-absent / mismatched are still three distinct messages, and a real
+  content edit under CRLF is still `subsystem.views-stale`. Measured on this repository's own
+  `examples/docs`: 1 error to 0, with no other check moving.
+- **`loam seed` and `loam subsystem move` no longer journal a no-op rewrite of that file** on such a
+  clone. What gets written when the file really has moved is unchanged.
+
+### Fixed — `loam status`'s first rung sent the agent to the gate
+
+- **`next.author-landscape` now carries the command its own statement names** — `loam init --create`
+  when `architecture/landscape.likec4` is absent, `loam seed --from fleet.yaml` when it is still the
+  scaffold's untouched stub — where both arms used to carry `loam validate --all --json`. Over a
+  repository with no services `validate --all` answers `ok: true` with `landscape.matched`, so an
+  agent running the documented loop (WORKFLOW.md: read `next[0]`, run the command it names, repeat)
+  changed nothing and read back the identical `next[0]` on every pass: a livelock on the first rung
+  of the first hour, on the one command built to answer "what now". No new `next.*` code and no new
+  payload key.
+- **`next.fleet-gate`'s statement writes `` `loam validate --all` `` where it wrote
+  `` `validate --all` ``**, so the sentence is visible to the checks that read a backticked
+  `loam <verb>` span as an instruction rather than exempt from them.
+
+### Fixed — `loam gherkin` and `loam vouch` said `invalid-option` when the flags were fine
+
+- **A wrong-repo refusal now carries a wrong-repo code.** `loam gherkin --service <id>` and
+  `loam vouch --service <id>` run from the docs repo, or from a repo bound to a different service,
+  both refused under `invalid-option` — whose `loam explain` row says the invocation itself is
+  wrong, which was false for both and sent a user whose flags were correct off to re-read their
+  flags. Each now emits the pair `loam verify --record --service` has always emitted for the
+  identical condition: **`repository-unavailable`** when loam.json declares no `service` at all, and
+  **`service-mismatch`** when it declares a different one. Both human-facing messages are unchanged,
+  exit stays 1, the `--json` envelope is unchanged, and no code is new. Refusing with no service
+  named anywhere is still `invalid-option`; that one really is a bad invocation.
+- **`loam explain service-mismatch` and `loam explain repository-unavailable` name all three
+  commands** that can now answer with them, where both rows described only `loam verify`.
+- **The generated `AGENTS.md` lists the two codes on the `gherkin` and `vouch` rows.**
+
+### Fixed — the example fleet could not be run
+
+- **`examples/docs/` now carries its own `loam.json`**, holding the same `{ "docsDir": "." }` that
+  `loam init --docs . --create` writes for a docs repo that governs itself. `cd examples/docs &&
+  loam status` used to answer "No loam.json found" and exit 1, and the workaround both READMEs
+  printed — a throwaway `loam.json` at the loam repository root — then governed every directory
+  under it, so `loam init` from a sibling refused with "loam.json already governs this directory"
+  and forgetting to delete it silently redirected later commands at the example fleet.
+- **`examples/README.md`'s runnable block is now `cd examples/docs` plus the installed binary**,
+  with no file to write first and none to delete afterwards, and it names the from-source
+  substitute (`npx tsx ../../src/cli.ts`) explicitly. `test/examples.test.ts` pins the file the
+  walkthrough depends on; neither archive dry-run plan enumerates it.
+
+### Fixed — three README claims the tree had stopped supporting
+
+- **The Windows caveat under "Explore the example fleet" is gone.** It advised a re-clone with
+  `core.autocrlf=false` — advice that never transferred to the reader's own docs repo, where the
+  same defect lived and no re-clone was on offer. The comparison is by content now, so the caveat is
+  simply false.
+- **"Explore the example fleet" is `cd examples/docs` plus the installed binary**, the same commands
+  in the same order. ROADMAP's claim that the throwaway root config is the documented first
+  experience is dropped with it.
+- **The commands table said `--errors-only` "prints just the errors". It never did.** The report
+  drops only the `ok` confirmations, so every warning survives the filter. The row now carries the
+  sentence the workflow protocol and the generated `AGENTS.md` already use, and
+  `test/agent-contract.test.ts` pins it against both the corrected wording and the old claim. No
+  flag changed and no behaviour moved.
+
+### Added — three narrowing flags, because the agent-facing payloads had outgrown the work they describe
+
+- **`loam instructions [<workflow>] --no-fix-tables`.** Every generated command and skill file says
+  "run this first" and points at `loam instructions loam-check`, which was **83,731 bytes** — about
+  21k tokens, 223 fix-table rows — with no way to narrow it. The flag collapses each
+  `| code | what it means | what to do |` block to one line naming how many rows went and how to get
+  them back, and the page becomes **3,541 bytes**; `--json` goes 84,201 to 3,769, the narrowed text
+  riding in the existing `body` field so no envelope key is added or renamed. `/loam-verify`'s
+  notice table strips through the same path (12,439 to 8,839); the four protocols carrying no table
+  come back untouched. **The paragraph that introduces each table stays** — it is what says which
+  scope graded a code, and `spec.merge-conflict` means different things in two of them. Off by
+  default, so all six protocols are byte-identical without it, asserted against the shipped bodies
+  rather than claimed.
+- **The stripper shares the parser's block detection** (`withoutFixTables` beside `parseFixRows` in
+  `src/core/explain/fix-tables.ts`) rather than carrying a regex of its own. A stripper that
+  disagreed with the parser about where a table begins would ship a page that reads perfectly and
+  sends an agent to look up a code nothing explains; a test asserts every code the narrowing removes
+  still resolves through `explainSubject`.
+- **A generated command and skill file now says how to READ the protocol, not only to run it** — add
+  `--no-fix-tables`, then `loam explain <code>` for each code the run actually reports. One
+  sentence; the stub stays under 2.3 KB. Existing generated files are never rewritten, so the clause
+  reaches repositories scaffolded from this release on.
+- **`loam adopt --targets`.** The brief was **42,873 bytes** per service and had no narrowing flag,
+  while `walk`, `checks` and `unchecked` are the same bytes for every service — a twelve-service
+  adoption paid that invariant text twelve times. `--targets` emits only what varies by service and
+  comes back at **17,805 bytes**. It carries one required extra key, **`full`**, naming the run that
+  returns the rest, because a narrowing flag that made
+  [the fifteen statements of what nothing checks](https://github.com/ybotok/loam/blob/main/src/core/brief/unchecked.ts)
+  invisible would quietly undo the one promise the brief exists to keep. The default payload is
+  unchanged.
+- **`loam explain --codes`.** The code vocabulary could not be enumerated through the machine
+  contract: `loam explain --json` with no subject returned six concept terms, and the ~100 issue
+  codes and 46 refusal codes were reachable only from TypeScript source or from a 223-row prose
+  table inside an 84 KB body. `--codes` lists **273 codes — 227 findings and 46 refusals** — each row
+  the same answer `explain <code> --json` already gives for that one, so there is no second shape to
+  keep in sync. No derived `severity` or `gates` field: those have one authority in
+  `core/vocabulary/issue.ts` and a second answer here could disagree with it. Like every other
+  `explain` form it reads no config, so it works in an unfamiliar directory before anything is
+  wired.
+- **A named backlog rather than a silent gap.** The coverage test that holds `--codes` against every
+  stable code loam emits ships with an explicit list of the families that have no `explain` row yet —
+  `doctor.*`, `next.*`, `diff.*`, `gate.*` and the `openspec.*` / `mapping.*` migration surface —
+  with a written reason per family. It can only shrink.
+
+### Added — `loam explain` answers the four families it has never been able to
+
+- **`doctor.*`, `next.*`, `diff.*` and `gate.*` — 65 codes no fix table anywhere graded.**
+  `loam explain`'s finding content is parsed at runtime out of the `/loam-check` tables, and those
+  grade documents; these families grade wiring, a recommendation, a change between two refs and a
+  deploy question, so `explain` returned nothing for any of them. `loam explain <code>`,
+  `<code> --json` and `--codes` now answer them in the shape they already returned — no new key, no
+  second envelope. The listing goes from 274 codes to **339** (293 finding, 46 refusal).
+- **A registry, and it is not the duplication `fix-tables.ts` argues against.** That argument is
+  about a second copy of prose the `/loam-check` bodies already ship, which would silently trail
+  them. These 65 have no row anywhere, so the registry is the only copy — the same shape, and the
+  same reason, as the sibling `refusals.ts`. Every meaning and fix is written from the emitter:
+  `doctor`'s own `fix` fields, each `next[]` step's `statement` and `command`, the `DiffCode` union's
+  doc comments. Where the "what to do" column is genuinely empty — a `next.*` step's action IS the
+  step — it says so instead of inventing a second instruction.
+- **A test keeps the two sources disjoint**: the registry may not answer a code a fix table already
+  answers, so the parsed and hand-written halves can never drift into two answers a reader cannot
+  tell apart. The backlog of unanswerable codes shrinks from 116 to **51** — the OpenSpec migration
+  surface and two `ok`-severity confirmations, each with its written reason.
+
+### Changed — the scaffolded `AGENTS.md` becomes a pointer, and the reference ships with the binary
+
+- **109,399 B to 29,720 B (−73%), under the 32,768 bytes Codex truncates the AGENTS.md chain at for
+  the first time.** Every agents.md-aware host auto-loads that file from the working directory, every
+  session, and it is never regenerated — so for those hosts roughly 70% of it was being silently
+  dropped, with no error and no way for the reader to tell which half it got.
+- **This is loam's own doctrine, finally applied to the file that never got it.** `scaffold.ts`
+  argues it for the command files in its own words — *"Thinning the file is the third option. What
+  remains is what does not move between releases"* — and README's "a generated file is a pointer,
+  not a protocol" makes the same case. Nothing new was decided here.
+- **`loam instructions` now serves four reference pages beside the six workflow protocols**:
+  `loam-codes` (44,132 B — which codes each invocation can raise), `loam-spine` (15,590 — the ID
+  spine and the `Based-On:` pins), `loam-authoring` (12,021 — `arch.spec.md`, the generated Gherkin
+  suite, frontmatter) and `loam-done-check` (11,126 — how `loam verify` derives its claims, and
+  verified versus attested). Each takes no arguments and prints whole. Bare `loam instructions`
+  lists them under their own heading — **not** flattened in with the workflows, because a list of
+  ten names would read as a ten-step process, which is the one thing the six-step cycle must not be
+  confused with. `--json` carries them in an additive `references` key beside `workflows`.
+- **`loam init` writes no new file for a page.** They feed `PROTOCOLS`, never `SLASH_COMMANDS` or
+  the scaffold's file list, so moving 44 KB out of `AGENTS.md` did not put it back as four new
+  artifacts in every repository loam touches. Printed by the binary, they describe the loam you are
+  about to run rather than the one that scaffolded the repository — which is strictly better than
+  what they replaced, since `AGENTS.md` is written once and never refreshed.
+- **What stays is what a reader needs to form a question at all**: the layout, the cycle, which
+  element is which service, `loam.json`, linking, the glossary, obligations, the validator's rules,
+  the archive gate and its undo. A new `## The reference pages` section names each page with the
+  exact command that prints it, and the cycle's steps 4 and 7 name the command where they used to
+  name a heading that has left the file.
+- **The move was verbatim, and that was checked rather than assumed**: zero headings and zero stable
+  codes lost, audited against the index. `codes-drift` is untouched and green by construction — the
+  codes moved from one half of the `AGENTS_MD + PROTOCOLS` corpus into the other.
+- **Still over Windsurf's 12,000-character cap**, and no further move fixes that: what remains is
+  the teaching, not duplication.
+
+### Changed — the scaffolded `AGENTS.md` stops storing the code vocabulary twice
+
+- **124,587 B to 109,399 B (−12%).** `loam init` writes that file into the docs repo and every
+  agents.md-aware host auto-loads it from the working directory. Its `## Reading loam's output`
+  section is a per-invocation inventory — which codes each way of running loam can raise — and each
+  code carried a gloss of what it means. The `/loam-check` tables carry the same codes with
+  meaning-and-fix. **143 codes were explained twice, in two independently worded places, in a file
+  nothing regenerates** — so the two drift and nothing says which copy rotted.
+- **The inventory stays; the gloss goes.** All 335 codes the file named are still named, still
+  backticked, still grouped by the invocation that raises them — that is unique content and
+  `codes-drift` reads this file as half its corpus. What a code MEANS now comes from
+  `loam explain <code>`, out of the running binary. `## Reading loam's output` falls from 59,621 B
+  to 44,433 B and every other section is byte-identical. A parenthetical that carried something
+  other than the meaning — a cross-reference, a severity that differs by scope — was kept.
+- **The OpenSpec migration codes keep their notes inline**, because `loam explain` does not answer
+  them. **A test fails by name if any other code this file mentions cannot be explained**, so the
+  pointer can never outrun the catalogue.
+- **A size assertion** now stands beside the file, because the number is load-bearing: Codex
+  truncates the AGENTS.md chain at 32,768 bytes by default and Windsurf caps a workspace rule file
+  at 12,000 characters, so a file over the cap loses its tail with no error at all. **This change
+  does not reach that cap and does not claim to** — the twenty-two remaining sections are 64,548 B
+  of teaching, not duplication, and cutting them is a separate decision about what a scaffolded
+  `AGENTS.md` is for.
+
+### Added — `loam validate --all --base <ref>`, the ratchet a partly-adopted system had no setting for
+
+- **Grade only the targets changed since a base git ref of the docs repo.** `--all` is green over
+  undocumented boundaries because warnings do not gate, and `--all --strict` is red from the first
+  minute of adoption until the last boundary is written — so a team could install a gate that never
+  notices adoption stalling at 8%, or one they could not turn on until the work everyone hoped CI
+  would motivate was already done. Measured on a twelve-boundary system with one documented:
+  `--all --strict` exits 1 on thirteen warnings, eleven of them on boundaries nobody touched;
+  `--all --base HEAD~1 --strict` exits 1 on two, both on the branch's own boundary.
+- **Spelled `--base`, not `--since`** — already loam's word for "a base git ref of the docs repo" on
+  `loam diff` and `loam vouch --pack`. It requires `--all` and refuses `invalid-option` beside a
+  positional target, `--service` or `--feature`: two scopes is a contradiction, not a narrowing.
+- **Changed paths map to targets through the service and feature enumerations, never a path split.**
+  A service filed under a subsystem does not live at `services/<id>/`, and a `split("/")` would
+  return the subsystem name, match no id, and print a green over nothing. Untracked files count:
+  `validate` grades the working tree, so a boundary adopted five minutes ago and not yet committed
+  is in scope.
+- **The run says what it looked at, in both views.** The summary reads "N of M services, K of L
+  features in scope since `<ref>`", and the payload gains an additive `scope` object naming the base,
+  the resolved commit and the targets. **A run with zero targets in scope prints that it graded
+  nothing and exits 0 — never the bare word "valid".** The fleet scorecard is omitted from a scoped
+  run: its denominators are the graded targets, so over a narrowed set it would describe adoption the
+  run never measured.
+- No new stable code: an unreachable repository or an unresolvable ref refuse with the codes
+  `loam diff` already uses.
+- **The honest limit, stated in the docs beside the recipe:** a `--base`-scoped validate cannot see a
+  victim boundary the change did not touch. `loam diff --base` remains the gate for that.
+
+### Added — one vendor-neutral skills root, and the machine surface wired at `init`
+
+- **`loam init --tools` gains `agents`: the `.agents/skills/<name>/SKILL.md` root**, read by Cursor,
+  GitHub Copilot, Codex, Gemini CLI, Zed and Roo Code, each cited per its own documentation. Skills
+  only — none of the six documents a command file under that root, so none is written. Purely
+  additive: no existing tool's skill path moved. Detection is `.agents/skills`, never a bare
+  `.agents/` — the same rule that keeps a bare `.github/` from meaning Copilot.
+- **`loam init --mcp` writes a repo-root `.mcp.json`** pointing an MCP host at `loam mcp` for this
+  repository. The MCP facade is the only typed, schema-carrying delivery loam has, and it was the
+  one that required a human to hand-edit JSON — so in practice scaffolded repositories got the prose
+  deliveries and never the machine one. Opt-in and default off: the file arranges for a process to be
+  launched on every machine that checks the repository out.
+- **The launch form follows the install.** Where `node_modules/.bin/loam` exists — the per-repo
+  devDependency install the README documents — the entry is `npx --no loam mcp`; otherwise the bare
+  binary. A fixed `"loam"` would have written an unlaunchable entry into exactly those repositories.
+- **Only the repo-root `.mcp.json`.** `.github/.mcp.json` is already a Copilot detection marker, so
+  writing it would make the next scan detect a tool loam itself installed; `.cursor/mcp.json` and
+  `.vscode/mcp.json` carry different schemas; `.gemini/settings.json` is a general settings file that
+  could only be merged into. An existing file is reported skipped and left byte for byte alone.
+
+### Added — an evaluator can see loam working without modelling anything first
+
+- **`loam init --example <dir>`** copies the packaged example fleet — five services, four features
+  at four points in their life, and its own `loam.json` — into a fresh directory through the same
+  journaled transaction every other loam writer uses, and prints the three commands that make the
+  point. It binds no repository, records no `docsDir` and generates no agent files, so it refuses
+  `invalid-option` beside `--docs`, `--service`, `--create` or `--tools`, and `already-exists` when
+  the target is occupied. No new stable code.
+- **The `examples/` tree now ships in the published package.** `npm i -g @ybotok/loam` delivered no
+  example at all, so the first question an evaluating team asks — "show me a working one" — was
+  answered with "model your own boundaries first, then come back". The tarball grows by 89 files and
+  about 77 kB packed.
+- **Fixed with it: the shipped-page link audit resolved relative targets against the package root
+  rather than against the page carrying them.** Every audited page sat at the root until `examples/`
+  shipped, so the two were the same string. For a page in a subdirectory they are not, and the audit
+  would have called correct links broken and missed broken ones.
+
+### Added — `loam --help` says where to start, and what to run when lost
+
+- **The help page ends with two lines: `loam init --create` for a first run, `loam doctor` for a
+  lost one.** The seven headings already put thirty commands in the order of the work, but nothing
+  on the page said that `init` must precede all of them or which command answers "what now" — the
+  last thing a newcomer read was `help [command]`. Both lines name a command that parses:
+  `test/agent-commands-runnable.test.ts` takes `HELP_EPILOG` by import and hands both invocations to
+  the real program, exactly as it takes the `init` first-hour lines.
+
+### Changed — `loam explain` is reachable from the message that needs it
+
+- **Every text-mode refusal now prints its stable code and the lookup on stderr**, as one line after
+  the message: `<code>  ·  loam explain <code>`. Measured over eight wrong first-hour invocations,
+  all eight printed prose and no code, and only `loam validate` mentioned `loam explain` at all — so
+  reaching an explanation meant re-running the whole command with `--json` and reading `error.code`,
+  which is the knowledge a new user does not yet have. `vouch-declined` is the one refusal that
+  stays silent: loam asked, a person said no, and there is nothing to look up.
+- **`loam validate`'s text report carries each finding's code**, appended to every line whose
+  severity is not `ok`; the `ok` confirmations stay clean, so a mostly-green report keeps its
+  contrast. A code is printed only where `loam explain` can answer it — a pointer to an explanation
+  that does not exist is worse than none. `gherkin.path-outside` gained the fix-table row it had
+  been missing, which is what made that true rather than nearly true.
+- **The explain footer was reworded to match**: the old "codes ride in `--json`" clause existed only
+  because no code was ever on screen.
+- **`--json` stdout is byte-identical on every path**: the refusal pointer is a stderr line, and the
+  finding codes are the ones the envelope already carried.
+
+### Fixed — `loam adopt`'s human view printed 650 lines with nothing telling a reader what they were
+
+- **The default view opens with a three-line orientation block**: how many briefed artifacts are
+  required and still outstanding and which, a decode of the artifact table's flags (`MISSING` in
+  capitals is required and absent, lowercase `missing` optional, `present` means diff it, `UNDRAWN`
+  is the shared map this boundary owes an element), and what the remaining four hundred lines are.
+  This is step 1 of the five-minute trial, and the two rows that orient a person landed around line
+  470 of 646.
+- **The outstanding count includes the fleet-map edit, which `required && !exists` misses.**
+  `architecture/landscape.likec4` exists for every docs repo after its first service, so the file is
+  present while nothing in it resolves to the new boundary — an error the moment `validate --all`
+  runs. A fresh boundary is briefed as three artifacts owed, not two.
+- Every number is computed from the brief just assembled. No new flag, nothing moved behind one, and
+  no change to `--json` or to `--targets`.
+
+### Changed — `loam status` leads with the boundary you are standing in
+
+- **The fleet form now leads its `next[]` with the service this repository's `loam.json` binds.**
+  The binding was visible to the worklist only while that service was *un*adopted; once adopted, the
+  repository you are standing in became invisible again and the list reverted to every service,
+  alphabetically. In a ten-repo system that opened every developer's `status` with nine other
+  boundaries' adoption work, and past ten services the ten-entry cap elided their own step entirely
+  — so working down the list as documented never reached it.
+- **A stable partition applied before the cap, not a sort**: the bound service's steps move to the
+  front and every other service keeps the order it had, so an unbound reader sees exactly the list
+  it saw before. `--service <id>` is unaffected — that flag is an explicit question about one
+  service. No `next.*` code added, removed or changed.
+
+### Added — a `--json` envelope now says which loam wrote it, and which command answered
+
+- **Every envelope carries `version`, the binary's own, beside `contractVersion`.** The two are
+  separate on purpose: `contractVersion` versions the SHAPE, `version` versions the BUILD, so a
+  release never reads as a contract break. Only `instructions` and `explain` said which loam
+  produced their output; `validate --all`, `status`, `list`, `context` and `gate` did not — so a
+  consumer holding a payload could not apply the caution `docs.binary-behind` exists to express, and
+  could not detect a mixed-version system from the contract at all. It is stamped by the two
+  emitters in `src/core/envelope/json.ts`, not by each command, which is why no command can be added
+  without it. **`version` is on the refusal envelope too**: a refusal is what a caller is most
+  likely to be holding when the build is the question.
+- **Every success payload now carries `command`, the CLI command name.** `adopt`, `archive`,
+  `delta`, `gherkin`, `init`, `list`, `new`, `rebase`, `seed`, `show`, `subsystem`, `unarchive`,
+  `validate`, `verify` and `vouch`'s stamp payload gained it, so an MCP host multiplexing tool
+  results branches on one field instead of sniffing for the presence of `valid` or `services`. All
+  seven `subsystem` verbs emit `command: "subsystem"` — it is one registered command with a verb
+  positional. **A refusal deliberately carries no `command`, and a test now says so**: the error
+  emitter has no command in scope, and threading one would cost module-level mutable state or an
+  extra argument through every deep caller of `fail()`.
+- Every key here is additive: no existing key changed name, type, value or relative order.
+
+### Added — `loam validate --json` now says what to do about the codes it raised
+
+- **The payload carries `fixes`, a top-level map from each raised code to its fix.**
+  `loam validate --all --json` is the command every generated protocol names at step 1, and it was
+  the one that answered "what do I do next" in prose only. An agent holding the payload either had
+  the fix tables in context already or spawned a separate `loam explain` process per code — having
+  first guessed that it could.
+- **A map keyed by code, not a field on each finding** — the argument `report.ts` already makes
+  about its `DETAIL_LIMIT`: ten services raising `sources.absent` produce ONE entry, and the whole
+  map costs 398 bytes there. On `examples/docs`, 51 findings become 9 entries and the payload grows
+  16,433 → 17,731 bytes.
+- **Only codes a non-`ok` finding raised**, **resolved through the same function
+  `loam explain <code>` calls** so the two surfaces cannot disagree (a test asserts every value
+  equals what `explain --json` returns), and **a code no fix table grades is absent, not a
+  placeholder** — the named backlog in `test/explain.test.ts` is where that gap is supposed to itch.
+  Nine codes that two tables grade differently carry both, each prefixed by its scope.
+- Not behind a flag: a flag would mean an agent has to already know the fixes exist in order to ask
+  for them, which is the gap being closed. `{}` on a green run, so no consumer branches on the key.
+
+### Added — `loam mcp`: read-only annotations, and `instructions` + `steps` as tools
+
+- **Every MCP tool advertises `annotations: { readOnlyHint: true, openWorldHint: false }`.**
+  `tools/list` emitted exactly `{name, description, inputSchema}`, so a host had no machine signal
+  that `loam_validate` or `loam_status` only reads files, and every call fell into the same approval
+  path as a mutating tool — which is the friction the read-only-only table was built to avoid.
+  `idempotentHint` and `destructiveHint` are deliberately absent: MCP defines both as meaningful
+  only when `readOnlyHint` is false. `outputSchema` was considered and deferred, with the reason
+  recorded beside the annotations.
+- **The read-only claim is derived, not attested.** `test/mcp-protocol.test.ts` computes the
+  transitive value-import closure of every served command from `scripts/source-graph.mjs` and fails
+  if one reaches a module that commits. Adding a writer to the table now goes red instead of
+  shipping a hint that tells every host it is safe to auto-approve; a negative control asserts nine
+  known writers still DO reach that seam, so the guard cannot pass for everything if the seam moves.
+- **`loam_instructions` and `loam_steps` join the table — twelve read tools become fourteen.** Both
+  read nothing and write nothing, and both were unreachable over MCP, so an MCP-only host could not
+  fetch the protocol its own generated skill points at. `--no-fix-tables` rides as the JSON property
+  `noFixTables`, named for what setting it true DOES, because commander's own attribute for a
+  negated option is `fixTables` and the two would otherwise mean opposite things.
+- **`tools/call` can actually run them, and a test now proves that for every advertised tool.** The
+  dispatcher builds its own program from a second, hand-written roster — `core/` may not import
+  `commands/`, so the two lists cannot be one — and nothing counted them against each other. Landing
+  the tools without the dispatcher made `tools/list` promise fourteen while two of them answered
+  `{ ok: false, error: { code: "invalid-option", message: "unknown command 'instructions'" } }`, an
+  envelope that reads as the CALLER's mistake. `test/mcp-serve.test.ts` now calls every tool in
+  `MCP_TOOLS` and fails on `unknown command`.
+
+### Fixed — the generated allowlist stopped short of the verbs the protocols instruct
+
+- **`allowed-tools:` in every generated skill file now names 23 of loam's 29 verbs, and the six it
+  omits carry a written reason.** It named 17, and four of the missing were verbs loam's own
+  protocols call mandatory: `/loam-implement` opens with `loam context` and requires `loam steps`,
+  `/loam-check`'s fix table says to run `loam subsystem sync`, and every generated file now tells
+  the agent to read the protocol narrow and run `loam explain <code>` per reported code. Each
+  stalled on a permission prompt at exactly the step its own protocol calls required — worst for
+  `loam explain`, the documented escape from an 84 KB page. Added: `context`, `diff`, `explain`,
+  `gate`, `steps`, `subsystem`.
+- **The rule is now "every verb the CLI registers except the named exclusions", and it admits no
+  silent third category.** `UNAPPROVED` maps each excluded verb to its reason — `vouch` (an agent
+  must not be able to say a spec matches the code), `mcp` (a long-running server, not a call that
+  returns), `seed` and `open` (a human's statement and a human's editor), `audit-openspec` and
+  `migrate-openspec` (a one-time on-ramp against a foreign workspace). Still an enumeration, never
+  `Bash(loam:*)`: the wildcard is what would let an agent promote its own draft to `verified`.
+- **`test/agents.test.ts` grades both halves against the binary** instead of spot-checking six
+  verbs: one test requires every backticked `loam <verb>` the protocols teach to be pre-approved or
+  named in `UNAPPROVED`; the other asserts the emitted list equals the registered commands minus
+  `UNAPPROVED`'s keys.
+
+### Fixed — a tool that does not substitute `$1` got a refusal instead of the protocol
+
+- **`loam instructions <workflow> $1` prints the protocol instead of refusing.** Every generated
+  command file carries Claude's positional `$1`/`$2` spelling into all twenty dialects, and Cline,
+  Kilo Code and Roo Code substitute nothing — so those three sent loam the literal `$1` and got
+  `invalid-option` on the first instruction of the workflow. A literal `$1`…`$9` now reads as an
+  unsupplied argument and the placeholder is left standing, exactly as passing no argument does. An
+  argument that merely contains one (`FEAT-$1`) is still checked and still refused.
+
+### Fixed — `loam delta` printed `Covers:` twice
+
+- **The text briefing printed each requirement's body verbatim and then re-printed `Operations:`
+  and `Covers:` from the parsed fields**, so a requirement carrying either line showed it twice
+  while the five other directives showed it once. A directive line is a body line by design — it
+  stays in the requirement's text so the document round-trips and its digest is stable — so the
+  re-print was always redundant. The duplicated lines are gone; `--json` is unchanged, and so is
+  every other command. Found by running `loam delta` over loam's own self-model.
+
+### Added — a feature can bring a use case
+
+- **New feature-delta slot: `features/<FEAT>/usecases/<name>.likec4`.** A views-only LikeC4 document
+  holding the `dynamic view`s a change brings with it. `loam archive` copies each one into
+  `architecture/usecases/<name>.likec4` and `loam unarchive` removes it again, through the same
+  transaction and the same `.loam-before/` snapshot as every other axis. The route is CREATE-ONLY:
+  to change a living flow, edit `architecture/usecases/<name>.likec4` directly in the same pull
+  request.
+- **New issue code `usecase.flow-exists`** (error, archive-gating, **not** `--approve`-overridable):
+  the feature introduces a flow the living `architecture/usecases/` already holds, and the merge is a
+  whole-file copy that would replace an authored hop sequence wholesale. The same shape and severity
+  as `glossary.term-exists`.
+- **New issue code `usecase.flow-invalid`** (error, archive-gating, **not** `--approve`-overridable):
+  the feature's flows could not be read against the map its own merge would leave behind — a parse
+  error, a hop naming an element the merge does not land, or a landscape merge that itself refuses.
+  Nothing is written; the archive stops at plan time rather than copying a flow into `architecture/`
+  for the next reader's `loam validate --all` to fail on.
+- **`capability.uncovered` now counts a feature-local flow as cover.** A `dynamic view` under the
+  feature's own `usecases/` whose `#cap-` and `#req-` tags both resolve keeps the promise, resolving
+  against the capability vocabulary and requirement ids the same feature's merge would leave behind —
+  the both-corpora rule `Realizes:` already follows. Only a resolved claim counts, so a broken tag
+  still earns its own error and silences nothing. **Its message changed**: it now names
+  `features/<FEAT>/usecases/<name>.likec4` and the two tags to write, where it used to say the flow
+  route opened only after the promise was living. When the flow half could not be evaluated — the
+  flows unreadable, or `architecture/capabilities.yaml` not readable as a vocabulary so no `#cap-`
+  tag resolves — the message says so and makes no claim about the flows, rather than reporting that
+  none of them keeps the promise. The `Realizes:` half is still checked and still gates.
+- **`delta.likec4` still refuses a `dynamic view`, and now says where one goes.** The refusal is
+  unchanged and mechanical — that document re-declares the landscape's identifiers and carries its
+  own `specification` block, so it cannot be read beside the map in one LikeC4 project — but its
+  message names the new slot instead of sending the author to `architecture/landscape.likec4`. A
+  `deployment view` still goes to the living map.
+- **New path in the layout: `features/<FEAT>/usecases/`** (`SCHEMA.md`, the shipped `AGENTS.md`).
+
+### Added — one predicate decides what a use case is
+
+- **A `dynamic view` tagged only `#req-<slug>` is now visible to every reader**, not just to
+  `loam validate --all`. `loam diff`'s victim walk, `loam delta` and `loam status`'s blast radius,
+  the context and explore packs and `loam list capabilities` all take the same opt-in, which is
+  exported as `isUseCase`; no caller spells the prefix test itself any more. The cheap byte scan that
+  lets a fleet with no use cases skip the LikeC4 load was widened with it — a fleet whose only flow
+  was `#req-`-tagged declared `tag req-…` and no `cap-` anywhere, so the scan answered "no use cases"
+  and nothing loaded the project at all.
+- No code, flag, exit code or payload key changed. A fleet whose flows all carry `#cap-` sees no
+  difference; a fleet with a `#req-`-only flow sees it appear in reports that previously omitted it.
+
+### Added — the step catalogue
+
+- **New authored document: `services/<svc>/steps.yaml`** — a `steps:` list of step TEXTS recording
+  which phrases a team has decided its suite defines. Optional; the file's existence is the opt-in.
+- **`loam steps` reports written phrases against catalogued ones.** New additive `--json` key
+  `catalogue` carrying `present`, `path`, `entries`, and — when the file exists and parses —
+  `uncatalogued` (written, not catalogued: the work-list, in the inventory's own order), `unwritten`
+  (catalogued, nothing writes it) and `duplicated` (two entries collapsing onto one phrase). An
+  absent catalogue and an unreadable one are different answers and neither reports a work-list:
+  `unreadable` carries the reason instead. Existing keys are untouched.
+- **No new stable code, and `loam validate` does not read the catalogue.** A phrase written before
+  its glue is the normal order of work; the near-duplicate groups stay a report, and no
+  phrase-similarity finding ships. The exit code is unchanged in every case — `loam steps` remains a
+  read.
+
+### Fixed — a slot-less AsyncAPI delta merges instead of archiving silently
+
+- **A feature `asyncapi.yaml` that declares component surfaces and no channel, operation or message
+  slot now merges them.** It archived at exit 0 having written nothing, and unlike its OpenAPI twin
+  the early return was the symptom rather than the cause: the only write loop ran over the slots, so there was no writer for anything else, no enumeration of what lay outside the three slot
+  sections, and no pin that could reach a `components.schemas` value — the event pin is written INTO
+  a slot value, which works because every slot value is a mapping and a JSON Schema is not.
+- **`loam rebase` writes a root `x-loam-baselines` record into a feature `asyncapi.yaml`**, pinning
+  each component surface to the digest of the living value, ordered after the slot pins so a surface
+  digest never contains a slot pin and the record never enters a slot digest.
+  `stripAsyncapiMarkers` removes that record on every branch, including the early one — otherwise
+  the archive's create path published it into the living contract and nothing caught it, because the
+  removal-marker walk only looks for `x-loam-remove`.
+- **New code `asyncapi.component-modified`** (warn, archive plan), the event-axis sibling of
+  `openapi.component-modified`. `asyncapi.baseline-missing`, `-stale` and `-invalid` now grade
+  component surfaces as well as slots, with unpinned surfaces folded into the SAME per-service
+  counter rather than a second warning.
+- **`asyncapi.ref-unresolved` no longer fires for a target the delta itself declares.** A feature
+  that adds `components.messages.Refunded` alongside the `components.schemas.RefundPayload` its
+  payload references now merges both and resolves; one whose target nothing anywhere defines still
+  gates, and that case is the negative control in the suite.
+
+### loam models its own architecture in loam
+
+- **`meta/docs/` is a docs repo describing loam itself.** Its landscape holds 70 containers — the
+  top-level subjects of `src/` — and 403 relationships, the real value imports;
+  `services/loam/arch.spec.md` carries fourteen of `docs/DESIGN.md`'s numbered rules as requirements
+  with `Covers:` lines onto real model objects, and opens by naming the twelve it cannot cover,
+  because `Covers:` can only point at an object that EXISTS and roughly a third of loam's own rules
+  prohibit edges that do not.
+- **`npm run meta:check` (`scripts/self-model.mjs`) runs in CI beside `npm run arch:check`.** It
+  fails on a package with no box, a box with no package, an import with no relationship, a
+  relationship with no import, and a mutual dependency between top-level subjects outside its named
+  baseline. It prints the fix and never applies it: loam reads no source tree, by standing non-goal,
+  so this script CONVICTS the model and does not generate it. `scripts/source-graph.mjs` is the one
+  definition of an edge, shared with `scripts/package-graph.mjs` so `import type` cannot be exempt
+  on one side and not the other.
+- **`.gitignore`'s `loam.json` is anchored to `/loam.json`.** Unanchored, it ignored a file of that
+  name at any depth — which is why a self-model directory could not be committed at all. The
+  throwaway root config the Quick start writes is still ignored; a committed one in a subdirectory
+  is not.
+- No command, flag, exit code, envelope field or stable code changed.
+
+### Fixed — `docs/DESIGN.md` had stopped describing the tree, and its pin had never fired
+
+- **The package-layout table had no row for nine `core/` packages** (`brief`, `explain`, `glossary`,
+  `links`, `obligations`, `owners`, `provenance`, `scaffold`, `usecases`) and a false `Depends on`
+  cell in eleven more — `core/c4/` claimed to depend on nothing while importing `repo` and
+  `kernel`. The column is recomputed from the derived graph and now has a machine-checked
+  counterpart. The DAG-levels table placed `verify/` below `gherkin/`, which it imports, and the
+  "7-level DAG" is ten levels per package and eleven per file.
+- **DESIGN said loam makes 27 `register*` calls producing 28 commands**; it is 28 and 29, and the
+  page contradicted itself two rows later. **The pin that should have caught it had never matched**:
+  it required a literal space before `commands` and the page wraps at exactly that point. That loop
+  in `test/docs-facts.test.ts` now runs over the flattened text — every other pattern in it had the
+  same hole — and a new assertion requires the sentence to be PRESENT before anything grades it. A
+  pin that can pass vacuously is worse than none, which is the doctrine that file already states.
+- **"Every edge points up the row order" is now qualified**, because it was false at a granularity
+  nothing checked: `core/c4` ↔ `core/repo` and `core/repo` ↔ `core/provenance` are mutual, and
+  `scripts/package-graph.mjs` cannot see either — it keys on the full relative directory, so
+  `core/c4/project` and `core/c4` are different nodes. Both are held in an `ACCEPTED_CYCLES`
+  baseline that may only shrink; breaking them is a hub move and a follow-up.
+
+### Fixed — a components-only OpenAPI delta merges instead of archiving silently
+
+- **A feature `openapi.yaml` that declares `components` and no `paths` now merges those components
+  into the living contract.** It used to archive at exit 0 having written nothing: `mergeOpenapiPaths`
+  answered no-op on the absence of `paths` before it had even parsed the living document, and the
+  component closure is the last thing the merge runs — so components merged only as a side effect of
+  merging a path. The no-op now consults the surface enumeration the baseline gate and `loam rebase`
+  already share, so a contract delta whose entire content is a component is a merge, not silence.
+- **A genuinely new component in such a delta is promoted before the ref fixpoint is seeded**, not
+  after, so its own `$ref`s ride the same sweep: a components-only delta pointing at a schema neither
+  document defines still gates `openapi.ref-unresolved`, naming `components/<kind>/<name>` as the
+  source. Reachability still decides the new-component question whenever the delta merges paths at
+  all — an unreferenced schema riding in beside a path change stays behind, as before.
+- The archive plan names what it merged (`openapi: <svc> — merged (component schemas/Split)`) and no
+  longer prints an empty `merged ()`. No command, flag, exit code, envelope key or stable code
+  changed.
+
+### The two-fleet pilot is removed
+
+- **Removed `docs/pilot/`, `scripts/pilot-harness.mjs`, the `pilot:run` and `pilot:check` npm
+  scripts, and the CI step that ran them.** The pilot was a plan for evidence, not evidence, and it
+  had become the one `## Now` item that no work inside this repository could advance. Nothing in
+  the shipped binary referenced it: no command, flag, code or payload key changes, and no page loam
+  writes into a docs repo mentioned it.
+- **`docs/pilot/RELEASE-READINESS.md` moved to `docs/RELEASE-READINESS.md`.** It is a release
+  document — npm trusted publishing, tag discipline, provenance, post-publication verification — and
+  it outlives the pilot that happened to file it. Its one pilot-specific checklist item is now the
+  security review alone.
+
 ### `loam steps` — how many step definitions a suite actually needs
 
 - **New read-only command `loam steps`** (`--service <id>`, `--duplicates`, `--json`). It collapses
@@ -1300,7 +1896,7 @@ compare-and-swap, a snapshot and a fsynced `.loam-commit` journal.
 
 - Added the evidence-backed `ROADMAP.md`, updated the product comparison to OpenSpec v1.9 while
   preserving the exact v1.7 compatibility baseline, documented
-  AsyncAPI/authorization/response-governance joins, and reconciled release, pilot, contributor,
+  AsyncAPI/authorization/response-governance joins, and reconciled release, contributor,
   security and generated-agent guidance with the implemented contracts.
 
 ### Added — the decision layer gets somewhere to live: outlines, an authorization vocabulary, and a walk that asks for both

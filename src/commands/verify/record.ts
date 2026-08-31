@@ -253,6 +253,7 @@ export async function record(
 
   if (json) {
     emitJson({
+      command: "verify",
       feature: verification.feature,
       path: repoPath(docsDir, path),
       ...(target.recovered == null ? {} : { recovered: target.recovered }),

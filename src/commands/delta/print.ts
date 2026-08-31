@@ -33,10 +33,22 @@ export function printRequirements(reqs: Requirement[], label: string): void {
     const tag = r.kind === "BASE" ? "" : `[${r.kind}] `;
     const n = r.scenarios.length;
     console.log(`  ${tag}${r.name}  (${n} scenario${n === 1 ? "" : "s"})`);
+    // The body VERBATIM, and that is the whole of the requirement's text —
+    // `Operations:`, `Covers:`, `Publishes:`, `Consumes:`, `Requires:`,
+    // `Realizes:`, `Requirement-ID:` and `Based-On:` are body lines, kept in
+    // `text` on purpose so a requirement round-trips through
+    // `serializeRequirements` and rides inside its own digest
+    // (core/document/parse.ts states that rule).
+    //
+    // This used to print `Operations:` and `Covers:` AGAIN from the parsed
+    // fields underneath, so every requirement carrying either line showed it
+    // twice — and the other five directives, which have no such re-print, showed
+    // it once. Nothing caught it: the human view is not asserted anywhere, and
+    // the duplication is only visible on a requirement that has one. Found by
+    // running `loam delta` over loam's own self-model, which is the kind of
+    // pressure ROADMAP.md's self-hosting section says the axis buys.
     const body = r.text.join("\n").trim();
     if (body.length > 0) console.log(indent(body, "    "));
-    if (r.operations.length > 0) console.log(`    Operations: ${r.operations.join(", ")}`);
-    if (r.covers.length > 0) console.log(`    Covers: ${r.covers.join(", ")}`);
     for (const s of r.scenarios) {
       console.log(`\n    Scenario: ${s.name}`);
       // Verbatim, bullets and markdown emphasis included: these lines are the

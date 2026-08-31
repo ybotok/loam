@@ -197,6 +197,7 @@ export async function unarchiveLocked(
 
   if (json) {
     emitJson({
+      command: "unarchive",
       feature: feature.id,
       dirName: feature.dirName,
       path: repoPath(docsDir, dest),

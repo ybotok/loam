@@ -1,7 +1,8 @@
 /**
  * The keys loam adds to a feature's event contract that must never reach the
- * living one: `x-loam-based-on` and `x-loam-remove` — the same two spellings
- * the OpenAPI axis strips, gathered here for the same reason its markers
+ * living one: `x-loam-based-on`, `x-loam-remove`, and the root
+ * `x-loam-baselines` record — the same three spellings the OpenAPI axis
+ * strips, gathered here for the same reason its markers
  * module exists: `stripAsyncapiMarkers` takes them out for the create branch
  * that publishes a feature document verbatim, and the merge takes them out
  * again on the way into a living document. Two spellings of "which keys are
@@ -27,7 +28,7 @@ import { isRecord } from "../../kernel/records.js";
 // outright), so a drift between the strips would be two definitions of one
 // rule (the openapi digest module's own failure mode).
 import { FEATURE_ONLY_KEYS, withoutFeatureKeysDeep } from "../../openapi/digest.js";
-import { isSlotRemoval, type AsyncapiSection } from "../digest.js";
+import { ASYNCAPI_BASELINES_KEY, isSlotRemoval, type AsyncapiSection } from "../digest.js";
 import { errorMessage, AsyncapiMergeError, type AsyncapiMergeSource } from "./error.js";
 
 /** The three slot sections, in document order — every whole-document walk here goes over them. */
@@ -97,6 +98,46 @@ export function setSlotValue(doc: Document, section: AsyncapiSection, key: strin
  */
 export function deleteSlot(doc: Document, section: AsyncapiSection, key: string): boolean {
   return deleteKeyIn(doc.getIn(sectionAstPath(section)), key);
+}
+
+/**
+ * Refuse a living container the merge cannot write into: a container spelled
+ * as something other than a mapping is a document loam cannot merge, and one
+ * spelled as a YAML alias would take the write into every node that shares
+ * the anchor. Asked at the WRITE, because reading is safe and writing is not
+ * — an absent container is fine, the writers above create it.
+ *
+ * Takes a raw path rather than an `AsyncapiSection`, because the merge writes
+ * outside the three slot sections too: a component surface lands at
+ * `["components", <kind>]`, and a section-typed guard simply could not be
+ * asked about it. Skipping the question there would let a living
+ * `components: *alias` take a surface write into every node sharing the
+ * anchor — the exact corruption this function exists to refuse, at the one
+ * depth it could not see. Lives beside the writers rather than in the merge
+ * so the guard and the write cannot disagree about which node a path names.
+ */
+export function writableSection(
+  living: Document,
+  livingPlain: unknown,
+  path: string[],
+  service: string,
+): void {
+  for (let depth = 1; depth <= path.length; depth += 1) {
+    const prefix = path.slice(0, depth);
+    const plain = prefix.reduce<unknown>((node, step) => (isRecord(node) ? node[step] : undefined), livingPlain);
+    if (plain === undefined || plain === null) return;
+    const label = prefix.join(".");
+    if (!isRecord(plain)) {
+      throw new AsyncapiMergeError("living", service, `'${label}' is not a mapping`);
+    }
+    if (!isMap(living.getIn(prefix))) {
+      throw new AsyncapiMergeError(
+        "living",
+        service,
+        `'${label}' is written as a YAML alias — one shared value backs every use, so merging into it would rewrite every other node that aliases it. Expand it before archiving.`,
+      );
+    }
+  }
 }
 
 /** One slot's human label: `channels.<key>` — with the message's join name where it has one. */
@@ -215,6 +256,19 @@ export function stripAsyncapiMarkers(featureText: string, service: string): stri
   }
 
   if (isRecord(plain)) stripped = stripBeyondSections(feature, plain) || stripped;
+
+  // The root `x-loam-baselines` record, on EVERY branch — including the
+  // verbatim early return below. `stripBeyondSections` cannot do it: it
+  // filters on FEATURE_ONLY_KEYS, which holds the two IN-VALUE keys and not
+  // this one, so the record's own subtree (16-hex digests) carries no loam key
+  // for the deep strip to find and the whole entry rides out untouched. That
+  // is the create branch publishing loam's bookkeeping into a living
+  // asyncapi.yaml, where nothing catches it: `removalMarkerPaths` — validate's
+  // marker sweep on this axis — only ever looks for `x-loam-remove`.
+  if (isRecord(plain) && ASYNCAPI_BASELINES_KEY in plain) {
+    feature.deleteIn([ASYNCAPI_BASELINES_KEY]);
+    stripped = true;
+  }
 
   if (!stripped) return featureText;
   try {

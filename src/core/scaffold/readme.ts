@@ -2,12 +2,12 @@
  * The README a new docs repo starts with — the one file in it addressed to a
  * person.
  *
- * Everything else the scaffold lays down is either a document about the fleet
- * or `AGENTS.md`, which is 1500 lines written for a coding agent and named so
- * that a human does not open it. A forge renders `README.md` as the repository's
- * landing page and nothing else, so without this file a docs repo opens as a
- * bare directory listing: four folders and two config files, and no sentence
- * anywhere saying what any of it is.
+ * Everything else the scaffold lays down is either a document about the
+ * governed system or `AGENTS.md`, which is 1500 lines written for a coding
+ * agent and named so that a human does not open it. A forge renders `README.md`
+ * as the repository's landing page and nothing else, so without this file a
+ * docs repo opens as a bare directory listing: four folders and two config
+ * files, and no sentence anywhere saying what any of it is.
  *
  * Deliberately SHORT, and deliberately not a second copy of anything. The
  * layout table and the cycle are AGENTS.md's, in full; this page says what the
@@ -19,9 +19,15 @@ export const README_FILENAME = "README.md";
 
 export const README_MD = `# Architecture & specs
 
-This repository is the fleet's **source of truth**: what each service is, what it
-promises, what it exposes, and how the services fit together. It is plain files —
-Markdown, YAML and LikeC4 — reviewed like code, in pull requests.
+This repository is a governed system's **source of truth**: its architecture,
+requirements, contracts, domain vocabulary and verification evidence, kept in
+explicit agreement. It is plain files — Markdown, YAML and LikeC4 — reviewed like
+code, in pull requests.
+
+In paths and commands, loam calls one governed implementation boundary a
+**service**. That boundary may be a modular monolith, a network service, a CLI or
+a worker. Nested C4 elements remain modules or components unless they need their
+own repository binding, contracts, evidence and deployment boundary.
 
 It is read and written with [**loam**](https://github.com/ybotok/loam). Delete
 loam and these documents still make sense; that is the point of keeping them this
@@ -31,8 +37,8 @@ way.
 
 | | |
 |---|---|
-| \`architecture/landscape.likec4\` | the fleet map — every service, and every call between two of them |
-| \`services/<id>/\` | one directory per service: what it does, what it exposes, how it is run |
+| \`architecture/landscape.likec4\` | the system map — governed boundaries, nested structure and their relationships |
+| \`services/<id>/\` | one directory per governed boundary: what it promises, exposes and verifies |
 | \`features/<FEAT>/\` | a change in flight — why it exists, and the delta it makes to the documents above |
 | \`features/archive/\` | changes that shipped; their deltas are already merged into the living documents |
 
@@ -67,8 +73,8 @@ loam explain <code>
 Documents here are edited through a **feature**: \`loam new <FEAT>\` scaffolds one,
 you write the intent and the deltas, \`loam validate --feature <FEAT>\` grades it,
 and \`loam archive <FEAT>\` merges it into the living documents. Living documents
-are not edited directly once a service is adopted — the feature is the reviewable
-unit, and the archive is what makes the change traceable afterwards.
+are not edited directly once a boundary is adopted — the feature is the
+reviewable unit, and the archive is what makes the change traceable afterwards.
 
 ## For coding agents
 

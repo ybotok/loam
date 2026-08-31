@@ -31,6 +31,7 @@
 import {
   isRemoval,
   OPENAPI_BASELINE_KEY,
+  OPENAPI_BASELINES_KEY,
   OPENAPI_REMOVE_KEY,
   operationBaselineOf,
   operationDigest,
@@ -46,6 +47,21 @@ import {
  * QUOTE from an EDIT.
  */
 export const ASYNCAPI_BASELINE_KEY = OPENAPI_BASELINE_KEY;
+
+/**
+ * The feature-only ROOT record that pins what the SLOT pin cannot reach: every
+ * `components/<kind>/<name>` outside `messages`. The OpenAPI axis's key and
+ * the OpenAPI axis's reader (core/openapi/baseline/record.ts) — one record
+ * shape for both axes, because a second spelling of "which living version was
+ * this written against" is the drift this module's header names.
+ *
+ * A root record rather than an in-value pin here for the reason it is one
+ * there: a slot value is always a mapping, so `x-loam-based-on` has somewhere
+ * to live inside it, but a `components/schemas/<name>` value is a JSON Schema
+ * — an in-value loam key there would be a schema keyword, and JSON Schema's
+ * own `true` is a legal component that no in-value key survives at all.
+ */
+export const ASYNCAPI_BASELINES_KEY = OPENAPI_BASELINES_KEY;
 
 /** The feature-only explicit removal marker's key — the OpenAPI axis's, aliased. */
 export const ASYNCAPI_REMOVE_KEY = OPENAPI_REMOVE_KEY;

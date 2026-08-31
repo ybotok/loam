@@ -1116,4 +1116,27 @@ describe("loam delta carries arch requirement deltas", () => {
       expect(res.out).toContain("[ADDED] Split arrives exactly once");
     });
   });
+
+  /**
+   * A directive line is a BODY line — `core/document/parse.ts` keeps it in
+   * `text` on purpose, so a requirement round-trips and its digest is stable.
+   * The briefing prints that body verbatim, so printing `Covers:` again from the
+   * parsed field showed it twice while the five directives with no such
+   * re-print showed it once. Nothing caught it, because the human view is
+   * asserted almost nowhere and the duplication is invisible on a requirement
+   * that carries neither line.
+   *
+   * Counting is the assertion rather than a `toContain`: the defect was two
+   * occurrences of a string that must appear once, which `toContain` cannot see.
+   */
+  it("prints each directive line exactly once — the body already carries it", async () => {
+    await withProject(archMergeFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", "payment-split-service");
+      expect(res.code).toBe(0);
+      const covers = res.out.split("\n").filter((l) => l.trim().startsWith("Covers:"));
+      expect(covers.length, `Covers: printed ${covers.length} time(s):\n${res.out}`).toBe(1);
+      const ops = res.out.split("\n").filter((l) => l.trim().startsWith("Operations:"));
+      expect(ops.length, "Operations: has the same shape and the same hazard").toBeLessThanOrEqual(1);
+    });
+  });
 });

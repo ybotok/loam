@@ -125,6 +125,7 @@ export function registerSeed(program: Command): void {
 
       if (json) {
         emitJson({
+          command: "seed",
           fleetFile: fromArg,
           landscape: committed.landscape,
           created: written,

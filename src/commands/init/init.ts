@@ -22,7 +22,9 @@ import {
   type Delivery,
 } from "../../core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
+import { initExample } from "./example.js";
 import { firstHour } from "./first-hour.js";
+import { MCP_CONFIG_FILENAME, mcpConfigPath, mcpServerSnippet, writeMcpConfig } from "./mcp.js";
 import { isDocsRepo, resolveTools, storedDocsDir } from "./options.js";
 
 interface InitOptions {
@@ -36,8 +38,17 @@ interface InitOptions {
   commands: boolean;
   /** commander's --no-skills: true unless the flag is passed. */
   skills: boolean;
+  /**
+   * --mcp: also write the repo-root `.mcp.json`. Opt-in and default off — a
+   * third delivery, independent of the two `--no-*` flags rather than a
+   * variation on them, so it neither contradicts them nor is suppressed by
+   * either. See ./mcp.ts for why the file is opt-in at all.
+   */
+  mcp?: boolean;
   /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = autodetect. */
   tools?: string;
+  /** --example: copy the packaged example fleet to this directory and do nothing else. */
+  example?: string;
   json?: boolean;
 }
 
@@ -54,12 +65,45 @@ export function registerInit(program: Command): void {
       "agent tools to generate for, overriding the scan of this directory: " +
         `comma-separated (${Object.keys(AGENT_TOOLS).join(", ")}) or "all"`,
     )
+    .option(
+      "--example <dir>",
+      "copy the packaged example fleet to <dir> and stop: no repository is bound, nothing is scaffolded",
+    )
     .option("--no-commands", "skip the slash commands for this repo entirely")
     .option("--no-skills", "skip the agent skills for this repo entirely")
+    .option(
+      "--mcp",
+      `also write ${MCP_CONFIG_FILENAME} here, so an MCP host launches \`loam mcp\` for this repo`,
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: InitOptions, command: Command) => {
       const json = opts.json === true;
       const cwd = process.cwd();
+
+      // FIRST, before every guard below including the governing-config one:
+      // `--example` writes a fresh tree, it does not join a system. A
+      // loam.json in an ancestor governs the directories a repository is bound
+      // INTO, and this flag binds nothing — refusing here would be the tool
+      // declining to show itself working because of a config that has no
+      // bearing on the copy. Before the --service id check too, so a run
+      // combining the two answers the contradiction rather than grading an id
+      // it is about to refuse to use.
+      if (opts.example !== undefined) {
+        await initExample({
+          dir: opts.example,
+          conflicts: [
+            // `--docs` carries a default, so only its SOURCE can say whether
+            // anybody typed it — the same question the docsDir precedence
+            // below asks, for the same reason.
+            ...(command.getOptionValueSource("docs") !== "default" ? ["--docs"] : []),
+            ...(opts.service !== undefined ? ["--service"] : []),
+            ...(opts.create === true ? ["--create"] : []),
+            ...(opts.tools !== undefined ? ["--tools"] : []),
+          ],
+          json,
+        });
+        return;
+      }
 
       // The id becomes services/<id>/ in the shared repo, so it is validated
       // before anything is written — by the same rule adopt, vouch and gherkin
@@ -185,7 +229,15 @@ export function registerInit(program: Command): void {
       // the scaffolds' own planned-file lists, so the probe cannot drift from
       // what is actually written.
       const agentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery) : [];
-      const candidates = [...plannedDocsFiles(docsDir), ...agentFiles.map((f) => f.path)];
+      // `.mcp.json` joins the same list rather than being reported on the side:
+      // it is a scaffolded path like any other, so it must appear in `created`
+      // or in `skipped` by the one rule that governs both. Last, because it is
+      // written last.
+      const candidates = [
+        ...plannedDocsFiles(docsDir),
+        ...agentFiles.map((f) => f.path),
+        ...(opts.mcp === true ? [mcpConfigPath(cwd)] : []),
+      ];
       const skipped = candidates.filter((p) => existsSync(p));
 
       // Joining touches the docs repo not at all: it is somebody's committed
@@ -194,6 +246,22 @@ export function registerInit(program: Command): void {
       const generatedFor = delivery.length > 0 ? tools : [];
       if (delivery.length > 0) {
         created.push(...(await scaffoldAgentCommands(cwd, tools, delivery)));
+      }
+
+      // The third delivery, and the only machine-readable one. It refuses out
+      // loud rather than being written best-effort: a `.mcp.json` half-landed
+      // is a host that starts a broken server, and the caller asked for it by
+      // name. Before saveConfig, so a run that cannot write this file has not
+      // yet moved the committed pointer either.
+      let mcpWritten = false;
+      if (opts.mcp === true) {
+        const write = await writeMcpConfig(cwd);
+        if (write.kind === "failed") {
+          fail(json, write.code, write.message);
+          return;
+        }
+        mcpWritten = write.kind === "created";
+        if (mcpWritten) created.push(mcpConfigPath(cwd));
       }
 
       const stored = storedDocsDir(docsOption);
@@ -221,6 +289,7 @@ export function registerInit(program: Command): void {
         // changing: an agent comparing the two learns whether its selection
         // matches the repo.
         emitJson({
+          command: "init",
           docsDir,
           docsDirStored: stored,
           // Where the pointer came from: `flag` (a --docs somebody typed),
@@ -259,6 +328,19 @@ export function registerInit(program: Command): void {
       if (created.length > 0) {
         console.log("  scaffolded:");
         for (const c of created) console.log(`    + ${c}`);
+      }
+
+      // The one skipped path that earns more than its line in `skipped`: loam
+      // will not merge into a `.mcp.json` a human owns, and the caller asked
+      // for this delivery by name — so they are handed the exact key to paste
+      // into their own `mcpServers` object. Nothing was read out of their file
+      // to produce it; the snippet is the same bytes a fresh write would have
+      // used, which is also why it names the launch form this install shape
+      // actually needs.
+      if (opts.mcp === true && !mcpWritten) {
+        console.log(`  mcp:       ${MCP_CONFIG_FILENAME} is already here — left exactly as it is.`);
+        console.log(`             paste this into its "mcpServers" object:`);
+        for (const line of mcpServerSnippet(cwd)) console.log(`               ${line}`);
       }
 
       // Printed ONLY for the single-repo trial composition: one run that both

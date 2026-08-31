@@ -86,12 +86,21 @@ export async function planOpenapiContracts(
         throw err;
       }
       const {
-        text, modified, pathItemModified, removed, quoted,
-        pathItemQuoted, pathItemStale, componentsModified, componentsQuoted, componentsStale, unresolved,
+        text, modified, pathItemModified, removed, quoted, pathItemQuoted, pathItemStale,
+        componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,
       } = merge;
       if (text !== null) {
         writes.push(planWrite(livingOpenapi, text));
-        say(`  openapi: ${svc} — merged (${ops.join(", ")})`);
+        // The parenthesised list names the OPERATIONS the delta merged, and a
+        // delta whose whole change is a component has none — so this printed
+        // `merged ()`, the same empty-parenthesis lie the create branch above
+        // is commented for: it reads as "this merge wrote nothing" about a
+        // merge that just published a shared schema to every consumer of the
+        // fleet. Name the components it added instead, and drop the
+        // parentheses entirely when there is nothing to put in them — a delta
+        // that only EDITED existing surfaces is named by the lines below.
+        const mergedNames = ops.length > 0 ? ops : componentsAdded.map((comp) => `component ${comp}`);
+        say(`  openapi: ${svc} — merged${mergedNames.length > 0 ? ` (${mergedNames.join(", ")})` : ""}`);
       }
       if (removed.length > 0) {
         openapiRemovals.push({ service: svc, operations: removed });

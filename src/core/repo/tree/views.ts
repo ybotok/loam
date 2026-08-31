@@ -143,3 +143,35 @@ export function subsystemViewId(sub: SubsystemEntry): string {
     [...name].map((ch) => (/[A-Za-z0-9]/.test(ch) ? ch : `_${ch.codePointAt(0)!.toString(16).padStart(2, "0")}`)).join("");
   return `subsystem_${sub.path.map(segment).join("__")}`;
 }
+
+/**
+ * Does the file on disk already SAY what `renderSubsystemViews` renders?
+ *
+ * The generator above only ever emits LF. `core.autocrlf=true` is Git for
+ * Windows' installer default and a docs repo ships no `.gitattributes`, so an
+ * ordinary Windows clone hands the file back with CRLF and not one fact
+ * changed. Four call sites asked this question with a byte equality and all
+ * four answered "stale" on such a clone: `loam validate` reported an error,
+ * `loam subsystem sync` reported `updated` and rewrote with LF, git then showed
+ * the file permanently modified, and the next checkout restored the CRLF. That
+ * is a loop rather than a diagnosis, which is why the comparison lives here
+ * now — the module that mints the bytes is the one that owes an answer about
+ * them, and three near-copies of this rule would go stale one at a time.
+ *
+ * Still never a parse: a views-only document does not parse standalone, and no
+ * check anywhere reads this file's content. The narrowing is from BYTES to
+ * CONTENT, which is what `subsystem.views-stale`'s own message ("does not match
+ * the tree") already claims. The symmetric cost is accepted and is the one
+ * `core/verify/pins/pin.ts` documents for `pinnedDigest`: a pure line-ending
+ * change is invisible, correctly, because it is not a change to what the file
+ * says.
+ *
+ * `null` is carried through as itself rather than collapsing into `""`: absent,
+ * must-be-absent and present-but-different are three distinct states with three
+ * distinct messages, and a fleet whose views file does not exist is not a fleet
+ * whose views file is blank.
+ */
+export function viewsAgree(actual: string | null, expected: string | null): boolean {
+  const lf = (text: string | null): string | null => (text === null ? null : text.replace(/\r\n|\r/g, "\n"));
+  return lf(actual) === lf(expected);
+}

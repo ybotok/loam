@@ -19,18 +19,28 @@
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { ARTIFACTS } from "./agents-md/artifacts.js";
-import { COMMAND_MAP } from "./agents-md/command-map.js";
-import { CONTEXT_COMMAND } from "./agents-md/map/lenses/context.js";
-import { DIFF_COMMAND } from "./agents-md/map/lenses/diff.js";
-import { GATE_COMMAND } from "./agents-md/map/lenses/gate.js";
-import { EXPLAIN_COMMAND } from "./agents-md/map/explain.js";
-import { MCP_COMMAND } from "./agents-md/map/mcp.js";
-import { SUBSYSTEM_COMMANDS } from "./agents-md/map/subsystem.js";
-import { USECASE_VIEWS } from "./agents-md/map/usecases.js";
+import { READING_OUTPUT, REFERENCE_PAGES } from "./agents-md/command-map.js";
 import { CYCLE } from "./agents-md/cycle.js";
-import { REFUSALS } from "./agents-md/refusals.js";
 import { ARCHIVE_GATE } from "./agents-md/shipped/archive-gate.js";
 import { SPINE } from "./agents-md/spine.js";
 
+/**
+ * Seven sections, and the ones that are NOT here are the point.
+ *
+ * The per-invocation code inventory, the ID spine's grammars, the authoring
+ * grammars and the done-check used to sit between CYCLE and ARCHIVE_GATE. They
+ * are now the four pages `loam instructions` prints
+ * (./workflows/reference/reference.ts records why), and REFERENCE_PAGES is the
+ * index that names each with its exact command — a reference nobody can find
+ * being content deleted with extra steps.
+ *
+ * Nothing was rewritten to move: `codes-drift` reads `AGENTS_MD + PROTOCOLS`
+ * and the pages are in `PROTOCOLS`, so every stable code that left this
+ * document is still in the corpus that guard grades. The modules the pages are
+ * assembled from (`./agents-md/map/`, `./agents-md/map/lenses/`,
+ * `./agents-md/refusals.js`) stayed exactly where they were and are imported by
+ * ./workflows/reference/codes.ts instead of here — a move of one import, not a
+ * repackaging.
+ */
 export const AGENTS_MD =
-  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + COMMAND_MAP + CONTEXT_COMMAND + GATE_COMMAND + SUBSYSTEM_COMMANDS + USECASE_VIEWS + DIFF_COMMAND + EXPLAIN_COMMAND + MCP_COMMAND + REFUSALS + ARCHIVE_GATE;
+  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + READING_OUTPUT + REFERENCE_PAGES + ARCHIVE_GATE;

@@ -18,7 +18,10 @@
  *  - the merge: the closure is VERDICT-driven, not reachability-driven, so a
  *    quoted component no longer drags an authoring-time copy over somebody
  *    else's landed change — and a genuinely new component rides in only when
- *    the content this merge actually WROTE reaches it
+ *    the content this merge actually WROTE reaches it, whenever the delta
+ *    merges paths at all. A delta with no path entry wrote nothing for a walk
+ *    to start from, so its declared components ARE the delta and every one of
+ *    them is merged
  *  - the strip: neither key may reach a living contract, on any branch
  *
  * The end-to-end tests are the point of all of it: two features editing
@@ -84,6 +87,18 @@ const LIVING = contract();
 function withSchema(yaml: string, line: string): string {
   return `${yaml}    ${line}\n`;
 }
+
+/**
+ * The head of a delta with NO `paths` key at all — components and nothing else,
+ * ready for `withSchema`. This is the shape the merge answered "no paths,
+ * nothing to merge" for whatever it declared, so a feature whose whole change
+ * was a shared schema archived at exit 0 having written nothing.
+ */
+const COMPONENTS_ONLY = `openapi: 3.1.0
+info: { title: orders, version: "1.0" }
+components:
+  schemas:
+`;
 
 type Plain = Record<string, any>;
 const plain = (yaml: string): Plain => parseYaml(yaml) as Plain;
@@ -716,6 +731,79 @@ components:
     );
     const merged = mergeOpenapiPaths(LIVING, pinOpenapi(edited, LIVING), SVC);
     expect(merged.unresolved).toEqual([{ ref: "#/components/parameters/Missing", from: "paths /orders" }]);
+  });
+
+  // A delta with no `paths` key runs every verdict above with an EMPTY set of
+  // written content. That is the case the closure never reached: the merge
+  // returned "nothing to do" on the absence of `paths` before the living
+  // document was parsed, so all three verdicts below were computed by nobody.
+  it("EDITS a pinned component with no path in the delta at all", () => {
+    const delta = pinOpenapi(withSchema(COMPONENTS_ONLY, 'Money: { type: object, title: "an amount" }'), LIVING)
+      .replace('title: "an amount"', 'title: "an amount, per this feature"');
+    const merged = mergeOpenapiPaths(LIVING, delta, SVC);
+    expect(merged.componentsModified).toEqual(["schemas/Money"]);
+    expect(merged.componentsAdded, "Money is living's already — an edit is not an addition").toEqual([]);
+    expect(titles(merged.text!)).toEqual({ order: "an order", money: "an amount, per this feature" });
+  });
+
+  it("QUOTES an unchanged pinned component even when the living one has moved since", () => {
+    // The revert this whole axis exists to stop, in the shape that used to be
+    // exempt by accident: the delta restates Money because a contract document
+    // is complete, and somebody else's edit landed in between. A quote is not a
+    // merge input whether or not the delta also carries paths.
+    const delta = pinOpenapi(withSchema(COMPONENTS_ONLY, 'Money: { type: object, title: "an amount" }'), LIVING);
+    const moved = contract({ money: "an amount, as somebody else landed it" });
+    const merged = mergeOpenapiPaths(moved, delta, SVC);
+    expect(merged.componentsQuoted).toEqual(["schemas/Money"]);
+    expect(merged.componentsModified).toEqual([]);
+    expect(titles(merged.text!).money).toBe("an amount, as somebody else landed it");
+  });
+
+  it("ADDS a component the living contract has never had, with nothing written to reach it", () => {
+    // No pin, because there is no living value to pin against — which is
+    // exactly the classification that parked it forever. Nothing this merge
+    // wrote can reach it and nothing ever will: the author declared it, and
+    // that IS the delta.
+    const delta = pinOpenapi(withSchema(COMPONENTS_ONLY, 'Discount: { type: object, title: "a discount" }'), LIVING);
+    const merged = mergeOpenapiPaths(LIVING, delta, SVC);
+    expect(merged.componentsAdded).toEqual(["schemas/Discount"]);
+    expect(componentOf(merged.text!, "Discount")).toEqual({ type: "object", title: "a discount" });
+    expect(merged.unresolved).toEqual([]);
+    expect(titles(merged.text!), "the living components it never mentions are untouched").toEqual({
+      order: "an order",
+      money: "an amount",
+    });
+  });
+
+  it("archives a components-only delta over an EXISTING living contract", async () => {
+    // The end-to-end the defect actually needed. The unit tests above prove the
+    // merge computes a document; this proves the plan writes it — `if (text !==
+    // null)` in commands/archive/plan/contracts/openapi.ts was never once
+    // exercised for this shape, and it is the branch between a merged document
+    // and a living contract that still says nothing about the schema every
+    // consumer was told to expect. The delta also QUOTES Money, so it carries a
+    // real record for the strip to lose.
+    const delta = pinOpenapi(
+      withSchema(
+        withSchema(COMPONENTS_ONLY, 'Money: { type: object, title: "an amount" }'),
+        'Discount: { type: object, title: "a discount" }',
+      ),
+      LIVING,
+    );
+    const p = await makeProject(fleet({ "FEAT-2": delta }));
+    try {
+      const run = await runLoam(p.workDir, "archive", "FEAT-2");
+      expect(run.code, run.out).toBe(0);
+      const living = await p.read(LIVING_PATH);
+      expect(componentOf(living, "Discount")).toEqual({ type: "object", title: "a discount" });
+      expect(living, "the record is feature bookkeeping on every branch").not.toContain(OPENAPI_BASELINES_KEY);
+      expect(titles(living), "and the surfaces it merely restated stand as living has them").toEqual({
+        order: "an order",
+        money: "an amount",
+      });
+    } finally {
+      await p.destroy();
+    }
   });
 });
 

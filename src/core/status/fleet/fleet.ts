@@ -32,7 +32,7 @@ import {
 } from "../report.js";
 import { governedServices, scanDeltas } from "../scan.js";
 import { fullyVerified, verificationState } from "../verification.js";
-import { fleetNext } from "./next.js";
+import { fleetNext, type Binding } from "./next.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 
 /**
@@ -51,11 +51,17 @@ export async function fleetStatus(
   const narrowed = opts.service;
   const all = await listServices(docsDir, context);
   const services = narrowed === undefined ? all : all.filter((s) => s.id === narrowed);
-  // The service this repository says it IS, when the fleet has never heard of
+  // The service this repository says it IS, and whether the fleet has heard of
   // it. Asked against the UNNARROWED list, because "is it adopted" is a question
   // about the fleet and not about the view.
-  const unadopted =
-    opts.bound !== undefined && !all.some((s) => s.id === opts.bound) ? opts.bound : null;
+  //
+  // Both facts travel, where only the unadopted case used to. This value was a
+  // `string | null` that went null exactly when the service directory EXISTED,
+  // so the walk could see the repository it stands in only while that
+  // repository was undocumented — and a developer in an adopted service repo
+  // got the whole fleet's worklist with their own boundary buried in it.
+  const binding: Binding | null =
+    opts.bound === undefined ? null : { id: opts.bound, adopted: all.some((s) => s.id === opts.bound) };
   const graph = await analyzeDependencies(docsDir, undefined, context);
   const entries = await listFeatures(docsDir, {}, context);
   const inScope = narrowed === undefined ? entries : entries.filter((f) => f.services.some((s) => s === narrowed));
@@ -107,13 +113,18 @@ export async function fleetStatus(
     features,
     order: graph.order.filter((id) => features.some((f) => f.id === id)),
     service: narrowed ?? null,
-    // The binding is passed only when this run was NOT narrowed. `--service X`
-    // is an explicit question about X, and answering it with a step about
-    // whichever service loam.json happens to name would be a different
-    // question's answer at the top of the list.
+    // The binding is passed only when this run was NOT narrowed, and that guard
+    // is unchanged now that the binding also decides ORDER. `--service X` is an
+    // explicit question about X, and answering it with a step about whichever
+    // service loam.json happens to name would be a different question's answer
+    // at the top of the list — which is as true of a rung promoted to the front
+    // as it was of `next.adopt-bound` emitted out of nowhere. A narrowed run
+    // sees at most the one service it asked about anyway, so withholding the
+    // binding here costs the reader nothing and keeps `--service X` answering
+    // only about X.
     next: fleetNext(
       { services, features, graph, interrupted, teaching },
-      narrowed === undefined ? unadopted : null,
+      narrowed === undefined ? binding : null,
     ),
   };
 }

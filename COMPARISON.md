@@ -1,201 +1,80 @@
-# loam vs OpenSpec
+# Where loam fits
 
-loam reads part of [OpenSpec](https://github.com/Fission-AI/OpenSpec)'s requirement Markdown from
-the outside, but the two tools solve different problems.
-[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) covers the one-way migration mechanics.
+loam is not a replacement for an architecture renderer, a software catalog, a contract-testing
+broker, an API-diff engine, or a code-level architecture test. It is the layer that keeps an
+authored C4 model, requirements, contracts and verification evidence semantically connected while
+the system changes. Most of the tools below can sit beside it; the useful question is which part of
+the problem each one should own.
 
-This product comparison follows **[OpenSpec
-v1.10.0](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.10.0)**, released 2026-08-19, and
-was checked on 2026-08-25. The certified parser/migration corpus deliberately stays at the
-**v1.9.0** commit `2826b8889e5223a9a8095d4428b60b56597e1020` (released 2026-08-13): v1.10.0 changed
-no requirement-Markdown format, so the certified boundary covers documents either release writes.
-The product reference and the compatibility pin are therefore different releases on purpose, and the
-pins below are corpus baselines, not competing claims:
+## Architecture as code: LikeC4 and Structurizr
 
-| Purpose | Exact upstream pin | What the pin supports |
-|---|---|---|
-| Product comparison | OpenSpec v1.10.0 (release tag, 2026-08-19) | The product and workflow claims in this document. |
-| Certified parser/migration corpus | OpenSpec v1.9.0, `2826b8889e5223a9a8095d4428b60b56597e1020` | Seven vendored regression fixtures and a full living + active + archived corpus sweep. |
-| Previously certified corpus | OpenSpec v1.7.0, `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | A reproducible older corpus a parser change may not break to fix the current one. |
-| Historical parser canary | Former `main`, `45cca5db6137ed209117cc70510eb3e057fb981b` | A third reproducible corpus. It is neither a release nor a moving compatibility claim. |
+[LikeC4](https://likec4.dev/) and the [Structurizr
+DSL](https://docs.structurizr.com/dsl) describe architecture as code and turn it into navigable C4
+views. They own modeling and visualization; loam deliberately uses LikeC4 for that job instead of
+building another renderer. loam adds checked joins from the model to requirements, contracts and
+evidence, plus the feature transaction that changes those artifacts together. Structurizr is an
+alternative modeling environment, not a format loam currently reads.
 
-The v1.9.0 corpus contains 211 files / 746 requirements / 2317 scenarios; v1.7.0 contains 207 / 739
-/ 2273 and the historical canary 209 / 742 / 2284. Routine CI runs the
-[seven verbatim fixtures](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts).
-The exact-checkout sweep is reproducible with
-`npm run test:openspec-corpus -- --baseline release|legacy|canary /path/to/OpenSpec`; it refuses any
-other HEAD. This proves the documented Markdown boundary and the staged migration path, not that
-loam implements v1.9's CLI, schema engine, Stores or workflow semantics.
+## Software catalogs: Backstage
 
-Primary sources — corpus at v1.9.0, product at v1.10.0. Product sources: the
-[v1.10.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.10.0) and the
-[OpenSpec docs site](https://openspec.dev/docs), which documents the beta Stores and Worksets.
-Corpus sources, at the certified commit:
-[concepts](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/concepts.md),
-[workflows](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/workflows.md),
-[default schema](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/schemas/spec-driven/schema.yaml),
-[CLI](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/cli.md),
-[agent contract](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/agent-contract.md),
-[supported tools](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/supported-tools.md),
-[Stores guide](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/docs/stores-beta/user-guide.md),
-the deterministic
-[CLI archive implementation](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/src/core/archive.ts),
-and the separate
-[agent archive workflow](https://github.com/Fission-AI/OpenSpec/blob/v1.9.0/src/core/templates/workflows/archive-change.ts).
+The [Backstage Software Catalog](https://backstage.io/docs/features/software-catalog/) makes
+software components, APIs, ownership and dependencies discoverable across an organization. It is
+the stronger home for inventory, search, team ownership and a portal assembled from many systems.
+loam keeps a smaller Git-native authority for architecture change: it checks what a feature means
+across authored artifacts, but it does not provide a catalog server, discovery pipeline or portal.
 
-**What v1.10.0 changed:** Zed Agent support, `init --language`, removed npm install scripts,
-generated tasks that now require explicit completion criteria, a Stores spec-path resolution fix,
-clearer archive capability-retirement errors, and telemetry routed to stderr. Around the release,
-OpenSpec's new docs site (published 2026-08-21) documents Stores (beta) and Worksets (beta:
-machine-local folder lists that generate a `.code-workspace`), and the project homepage announces
-hosted Workspaces as coming soon, behind an early-access signup. None of it touches the
-requirement-Markdown grammar the certified corpus covers.
+## Architecture and event catalogs: EventCatalog
 
-## The one-paragraph verdict
+[EventCatalog](https://www.eventcatalog.dev/) gives domains, systems, services, APIs, events,
+schemas and owners a connected, versioned and searchable documentation experience, with generation
+from contract sources. It is closer to loam's subject matter than a general software catalog and is
+the better presentation and discovery surface for event-driven architecture. loam's distinct job is
+the local change protocol: exact requirement/model/contract joins, a deterministic validation gate
+and a rollback-capable merge into living documents. There is no built-in connector between the two
+today.
 
-OpenSpec is the lower-friction choice for behavior-first planning in one repository. Its canonical
-specs, isolated change folders, delta algebra, configurable artifact graph, incremental brownfield
-workflow, and unusually broad agent integration make it quick to adopt. loam accepts more setup to
-solve a narrower fleet problem: it puts a C4 service topology at the center, joins behavior,
-architecture, and API contracts through one identity spine, projects cross-service work, and
-persists drift and implementation evidence. OpenSpec's flexibility is a strength when teams need
-different planning workflows; loam's fixed lifecycle is a strength when “green” must mean the same
-thing across a fleet.
+## Contract verification and deployability: Pact Broker
 
-## Comparison by axis
+The [Pact Broker](https://docs.pact.io/pact_broker/overview) stores consumer contracts and provider
+verification results; its [`can-i-deploy`](https://docs.pact.io/pact_broker/can_i_deploy) decision
+uses tested application versions and deployment environments. That is stronger runtime-facing
+evidence than loam's documentation and attestation record. loam sees a wider design transaction —
+C4, requirements, OpenAPI, AsyncAPI and feature intent — but has no environment matrix and does not
+replace consumer-driven contract tests.
 
-| Axis | OpenSpec v1.10.0 | loam |
-|---|---|---|
-| **System model** | Capability-oriented behavioral specs are the source of truth. A capability may be organized by feature, component, or bounded context; service topology and contract edges are not part of the core model. | A LikeC4 fleet landscape is first-class. Behavioral and architecture requirements join services, C4 elements, OpenAPI operations, AsyncAPI messages, health signals, permission pairs, and declared capability ids (`architecture/capabilities.yaml`, joined by `Capability:` lines and rolled up by `loam list capabilities`) through explicit checked keys. |
-| **Brownfield entry** | Deliberately change-first: initialize in an existing repo, specify a small real change, then let canonical specs accumulate as touched behavior is archived. OpenSpec explicitly avoids requiring a complete up-front codebase description. | Reverse onboarding can establish an explicit service and topology baseline before feature work. That exposes fleet gaps earlier, but costs more review and modeling before the first cross-service checks pay off. |
-| **Artifacts and workflow** | `specs/` describes current behavior; each `changes/<id>/` holds proposal, delta specs, optional design, tasks, and metadata. Explore/propose/apply/update/sync/verify/archive are fluid actions. Schemas can replace the default proposal → specs/design → tasks graph. Since v1.10, generated tasks require explicit completion criteria. | A fixed lifecycle spans requirements, landscape, service models, OpenAPI, evidence, archive, rebase, and unarchive. One fleet-wide lifecycle means less workflow freedom but one versioned meaning of readiness. |
-| **Requirement identity** | The requirement heading is identity. `RENAMED` records FROM/TO; `MODIFIED` replaces the entire matching requirement, including every scenario. v1.8/v1.9 added scenario-loss checks, but an incomplete copied block remains the authoring hazard those checks defend against. | A stable `Requirement-ID` survives heading changes. Rename is normally a same-id `MODIFIED`; `REMOVED` + `ADDED` is the fallback only when identity cannot be established. |
-| **Validation and implementation evidence** | CLI validation checks document/schema structure, deltas, duplicates, scenario presence/loss, and task shape. `/opsx:verify` asks the coding agent to inspect completeness, correctness, and coherence; it is advisory and does not create a durable, independently checkable verification record by default. | `validate` checks topology plus behavior, architecture, HTTP, event, health and authorization joins. `verify` derives a deterministic claim set and persists answers, `file:line` evidence, answer origin, checklist digest, and per-service commit attestations. A digest-tagged green Cucumber result can answer scenarios mechanically; an agent answer remains visibly `attested`, not `verified`. Verification is still advisory: archive does not gate on the record. |
-| **Drift control** | Canonical specs and structural validation control planning drift. There is no source/content digest binding a spec to implementation for comparison on a later run. The unannounced OpenSpec Cloud GitHub App adds scheduled scans that compare requirements to code and propose citation-gated corrections — see [OpenSpec Cloud, and loam's answer](#openspec-cloud-and-loams-answer). | `vouch` stamps source and document digests. `content.stale` is checkable from the docs repo; `sources.stale` is checkable only inside the service repo, and the fleet view reports when that provenance is unverifiable from its current location. Staleness is a warning unless CI uses `--strict`. |
-| **Archive and recovery** | The v1.9 CLI archive is not a naive sequence of writes: it validates by default, claims the archive destination before mutating canonical specs, applies the delta, moves the change, and restores specs/change on failure. It supports spec-less changes, nested capabilities, renames, and explicit capability retirement. The agent `/opsx:archive` workflow is a separate path: it may warn and continue on incomplete artifacts/tasks and performs agent-led sync before moving the change. v1.10 clarified capability-retirement errors. | `archive` computes and coherence-gates the whole three-axis plan, locks the docs repo, stages atomic swaps, snapshots pre-images, rolls back failed writes, and journals interrupted commits. `unarchive` restores recorded bytes and refuses if later edits make restoration ambiguous. |
-| **Multi-repo and topology** | Beta Stores provide standalone Git planning roots, root selection, references, and personal worksets — beta Worksets are machine-local folder lists that generate a `.code-workspace`; hosted Workspaces are announced as coming soon. Stores intentionally do not clone/pull/push; a stale checkout serves stale specs, registry/worksets are local, and one checkout is registered per store id. Most importantly, Stores do not discover code repositories or route tasks to them. | One docs repository owns the fleet topology. Cross-service calls are checked against provider `operationId`s, and one feature is projected into service-scoped work. Git remains the version and ownership mechanism for the shared truth. |
-| **Machine contract** | Main commands offer JSON, but the official agent contract documents heterogeneous envelopes and casing: workflow camelCase versus Store snake_case, several envelope declarations, `version` only on validation, legacy unenveloped forms, and health findings that can still exit 0. | Every command has `--json`; stable codes are documented and drift-tested. The envelope keeps command execution (`ok`), document validity (`valid`), and implementation verification (`verified`/`verdict`) separate. |
-| **Agent integration and generated ownership** | The v1.9 supported-tools table documents 38 integration targets: 37 named targets plus the shared vendor-neutral `.agents` target; v1.10.0 added Zed Agent support on top. Profiles choose workflows and delivery modes; `openspec update` refreshes OpenSpec-managed files. This is much broader coverage, with adapter-specific paths and capabilities to maintain. | Twenty tool adapters are supported; Codex consumes skills only and nineteen tools also receive commands. Generated files are never refreshed in place: a version stamp makes drift reportable, and a human decides whether to update or replace the file. Unsupported agents can operate from `AGENTS.md` and the CLI. |
+## Contract change detection: oasdiff and buf
 
-## Evidence boundaries, stated plainly
+[oasdiff](https://github.com/oasdiff/oasdiff) and [Buf breaking-change
+detection](https://buf.build/docs/breaking/overview/) inspect contract revisions in much greater
+depth than loam. They answer whether an OpenAPI or Protobuf change is structurally breaking; loam
+answers which authored consumers and requirements are joined to the operation or message being
+changed. Use the specialist diff in CI beside loam rather than expecting either tool to infer the
+other half.
 
-loam's extra evidence is useful only within what it actually proves:
+## Requirements traceability: OpenFastTrace, Doorstop, StrictDoc and Sphinx-Needs
 
-- A Cucumber report is matched to a generated scenario by digest and must report a green run. The
-  verification record stores the report path, full SHA-256, mtime, and tagged-scenario count. Those
-  identify the exact bytes loam read; they do **not** prove that writable JSON was produced by
-  executing a particular commit. In federated mode a tracked report must match the attested commit,
-  but most build reports are untracked and cannot receive that binding.
-- Agent evidence is attribution, not execution. Federated `file:line` evidence must exist inside the
-  service repo and be unchanged at the recorded commit, but the agent still made the semantic
-  judgment.
-- `vouch` records a deliberate human act, git `user.email`, and source/content digests. It provides
-  attribution and makes later movement detectable. It is **not a cryptographic signature or proof of
-  identity**: git configuration is editable, and `--yes` permits explicit non-interactive use.
-- Neither OpenSpec `/opsx:verify` nor loam `verify` is an archive gate. loam's advantage is
-  persistence and distinguishable provenance, not a claim that every recorded judgment is
-  mechanically true.
+[OpenFastTrace](https://github.com/itsallcode/openfasttrace/blob/main/doc/user_guide.md),
+[Doorstop](https://doorstop.readthedocs.io/en/latest/),
+[StrictDoc](https://strictdoc.readthedocs.io/) and
+[Sphinx-Needs](https://sphinx-needs.readthedocs.io/) provide mature ways to identify requirements,
+link them to other artifacts and report traceability. They are broader choices when requirements
+engineering, compliance matrices or configurable document relations are the primary problem. loam
+uses a deliberately fixed vocabulary of joins because those links also drive C4 projection,
+contract coherence and one transactional feature lifecycle.
 
-## OpenSpec Cloud, and loam's answer
+## Architecture conformance in code: ArchUnit and dependency-cruiser
 
-An unannounced OpenSpec Cloud GitHub App has been live on OpenSpec's own repository since around
-2026-08-20: scheduled scans compare requirements to code; findings are citation-gated, each pinned
-`file:line` at a specific commit; correction PRs edit only `openspec/` files, self-label as
-AI-generated, report scan incompleteness, and never merge. That discipline is good, and loam shares
-its central idea: a claim about code is worth recording only with a citation pinned to a commit.
+[ArchUnit](https://www.archunit.org/userguide/html/000_Index.html) and
+[dependency-cruiser](https://github.com/sverweij/dependency-cruiser) inspect implementation
+dependencies and enforce rules such as layers, allowed imports and cycle freedom. They answer a
+question loam intentionally does not: whether the code actually has the structure the architecture
+claims. Use them to turn selected architecture rules into executable code checks; use loam to keep
+the authored system model and the rest of its semantic record coherent.
 
-Where the two part is the trust boundary. OpenSpec Cloud is an extractor as a service: a cloud agent
-reads your code on a schedule and proposes what the spec should say. loam keeps the same
-citation-gating local: `loam verify` derives precise questions from the docs the fleet already owns,
-the agent you already run answers them, and every answer is recorded with `file:line` evidence at an
-attested commit — distinguishable forever from a mechanical test result. No service reads your code,
-the record is a reviewable file in your own repo, and re-checking it needs nothing but git. That is
-not a hedge about cloud products; it is the product decision that evidence you cannot inspect
-locally is not evidence.
+## The boundary
 
-## The wider field, and who is actually nearest
-
-This page compares loam to OpenSpec because that is the tool it shares a corpus with. It is not the
-only neighbour, and on six of loam's seven joins it is not the nearest one — a reader deciding
-between tools deserves the rest of the field named, including where somebody else does a piece of
-this better. Surveyed 2026-08-29.
-
-| Neighbour | The mechanism it shares | Who is ahead, and at what |
-|---|---|---|
-| [OpenFastTrace](https://github.com/itsallcode/openfasttrace) | The nearest thing to loam's join table: `Covers:` tokens over a heterogeneous corpus, with coverage verdicts. | **OFT, on one point that matters.** Its items are `req~name~revision` — the version is *in the token* — so a coverer naming revision 3 of a requirement now at 4 is reported `OUTDATED`. loam's `Realizes:` pin is the same idea arrived at independently; `Covers:`, `Requires:` and glossary links are still unversioned. |
-| [Doorstop](https://doorstop.readthedocs.io/en/latest/reference/item.html) | `loam vouch`, thirteen years early: a digest over a declared subset of an item, stored at the moment a human signed off. | **Doorstop, on one axis loam only just gained.** Its links store the *parent's* fingerprint, so a parent edit marks children suspect. loam had no standing suspect link at all until `capability.realizes-stale`. |
-| [Pact Broker](https://docs.pact.io/pact_broker/can_i_deploy) | `can-i-deploy` is `loam gate` described almost word for word: a join over recorded evidence that executes nothing. | **Pact, on strength of evidence.** Its verification is a real execution of a provider against a consumer's expectation, and it knows versions and environments. `loam gate` knows documentation state and feature verdicts, and has no notion of an artifact or an environment. |
-| [Backstage](https://backstage.io/docs/features/software-catalog/descriptor-format) | `catalog-info.yaml` declares services, owners, API entities and `dependsOn` edges — loam's service binding and operation spine, as a server-side graph. | **Backstage, on onboarding and ownership.** Discovery across repos, and owners resolved against real groups where loam reads `owned_by` as prose. It has no requirement→operation join and no delta lifecycle. A fleet already running a catalog should ask why it needs a second map. |
-| [EventCatalog](https://www.eventcatalog.dev/features/documentation) | Joins docs, OpenAPI and AsyncAPI by id and version across domains and services. | **EventCatalog, on contract documentation.** It generates and versions from the specs themselves. It grades nothing against requirements and has no merge. |
-| [oasdiff](https://github.com/Tufin/oasdiff) / [buf](https://buf.build/docs/breaking/overview) | Breaking-change detection over a contract, against a base. | **They are, comprehensively.** loam checks response schemas for *presence*, never content: a narrowed response type archives green. The half they cannot have is loam's — refusing a removal *the fleet still consumes*, which needs a document that knows the whole fleet. Use both. |
-| [StrictDoc](https://strictdoc.readthedocs.io/) / [Sphinx-Needs](https://sphinx-needs.readthedocs.io/) | Typed requirement relations, stable UIDs, traceability over a plain-file corpus. | **Closest in ambition.** Sphinx-Needs' stack is the single project most likely to be pointed at and called "that already exists". Both parse source code to trace requirements into it, which loam refuses by design; neither has a delta lifecycle or a transactional merge. |
-| [ArchUnit](https://www.archunit.org/) / [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) | Architecture conformance, checked against the code. | **They own the check loam declines.** `unchecked.ts`'s second entry — "whether the model is the architecture the code actually has" — is their question, and naming them is more useful than pretending it is nobody's. |
-
-What none of them combines is the whole: an authored C4 delta and requirement deltas merged into
-living documents by one transactional, rollback-capable write, joined by exact tokens across
-Markdown, YAML and LikeC4 DSL, with a per-claim evidence record that keeps an agent's word and a
-test run permanently distinguishable. Every individual piece above exists somewhere, several of them
-done better. The combination appears to be unoccupied — which is a weaker claim than novelty and a
-stronger one than "nothing like this exists", and it is the honest one.
-
-The framing worth keeping: loam is not the first tool with stable requirement ids or human sign-off
-digests. Those are thirty years old in the requirements-management world, and conspicuously absent
-from the 2025-26 agentic-spec wave, which identifies requirements by heading text or not at all.
-
-## When OpenSpec is enough
-
-For a single repository, a small team, and no important cross-service API contracts, most of loam's
-topology, operation spine, provenance, and transactional lifecycle is weight. OpenSpec's incremental
-“specify the change you are making” model is simpler and usually sufficient. Its flexible schemas
-are also the better fit when different projects genuinely need different artifact workflows.
-
-## When loam pays for itself
-
-- A fleet where apparently small features cross several services and failures live on
-  provider/consumer edges.
-- An adoption campaign where agent-authored baseline documentation needs explicit human attribution
-  and later drift detection.
-- A team that needs a derived, persistent done-check whose agent assertions and test-run results
-  cannot be mistaken for each other.
-- A change process that needs one transaction and undo story across behavioral specs, architecture,
-  and API contracts.
-
-## What loam takes from OpenSpec
-
-loam reads `### Requirement:` headings, `#### Scenario:` blocks, and
-`## ADDED | MODIFIED | REMOVED Requirements`. Seven upstream files are vendored as byte-for-byte
-fixtures at the v1.9.0 commit, and three exact corpus pins test living, active, and archived trees
-plus parse/serialize/parse stability. This is deliberately a Markdown compatibility claim, not a
-claim that loam implements OpenSpec's current CLI, schema engine, Stores, or workflow semantics.
-
-loam also borrowed the multi-tool delivery pattern: one workflow source with thin tool-specific
-command/skill adapters. The exact upstream paths have since evolved — notably toward shared
-`.agents` skills — while loam's own per-adapter layout remains its own contract. OpenSpec
-regenerates the files it owns; loam only reports an old stamp.
-
-## What loam deliberately does not copy
-
-- **Configurable workflow DAGs.** They give OpenSpec its fluid workflow. loam instead keeps one
-  fleet lifecycle so validation has one meaning across every service.
-- **Stores as another planning root.** Stores solve real ownership and location problems, but do not
-  model service relationships or route implementation work. loam currently lets one docs repo own
-  both planning and topology.
-- **Heading-based rename identity.** loam uses stable requirement ids because headings are expected
-  to improve without changing identity.
-- **Bidirectional OpenSpec serialization.** loam serialization does not preserve OpenSpec's required
-  `## Purpose` and `## Requirements` framing as an OpenSpec round trip. Migration is one-way and
-  preserves original source separately instead of pretending otherwise.
-- **Authored tasks as lifecycle state.** OpenSpec's checkbox list is part of apply/archive workflow.
-  loam derives its authoritative next steps and preserves migrated `tasks.md` only as a legacy
-  checklist until a human chooses its disposition.
-
-## Migrating
-
-[MIGRATING-from-OpenSpec.md](MIGRATING-from-OpenSpec.md) states what the certified v1.9 corpus does
-and does not cover — the Markdown boundary and the staged migration, never OpenSpec's own lifecycle
-behavior — and which workspace shapes the audit inventories rather than converts. It also documents
-capability→service mapping, stable ids for `RENAMED`, artifact dispositions, topology/OpenAPI
-follow-up, and the one-way cutover boundary. Capability identity survives the mapping mechanically:
-every OpenSpec capability id is declared in the staged `architecture/capabilities.yaml` and every
-routed requirement carries a `Capability:` line, so the analyst's structure lands as a checked join
-rather than surviving only in `legacy/`.
+Every individual mechanism loam uses has neighbours with more depth in that mechanism. loam's
+boundary is their intersection: an authored C4 change and requirement deltas, joined to contracts
+and distinguishable evidence, validated and merged as one reviewable filesystem transaction. If
+only one of those axes matters, choose the specialist. loam starts paying when a change crosses
+several of them and “all the files are valid” is weaker than “all the claims still agree.”

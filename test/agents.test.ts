@@ -17,9 +17,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { coherentFixture, makeProject, makeTmpDir, runLoam } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
-import { PROTOCOLS as COMMAND_BODIES } from "../src/core/agent/protocol.js";
+import { PROTOCOLS as COMMAND_BODIES, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
 import { SLASH_COMMANDS as COMMAND_FILES } from "../src/core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../src/core/agent/tools/registry.js";
+import { UNAPPROVED } from "../src/core/agent/tools/dialects.js";
 import { buildProgram } from "../src/cli.js";
 import {
   agentsStaleFinding,
@@ -49,6 +50,14 @@ describe("AGENTS.md in the docs repo", () => {
     expect(res.code).toBe(0);
     expect(existsSync(join(dir, "d", "AGENTS.md"))).toBe(true);
     expect(res.out).toContain("AGENTS.md");
+  });
+
+  it("defines service as a topology-neutral governed boundary", async () => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d", "--create");
+    const agents = await readFile(join(dir, "d", "AGENTS.md"), "utf8");
+    expect(agents).toContain("source of truth for a governed software");
+    expect(agents).toContain("may be a modular monolith, a network service, a CLI or a worker");
   });
 
   it("names every command in the cycle", async () => {
@@ -126,6 +135,31 @@ describe("slash commands in the working repo", () => {
     expect(await read("loam-ship")).toContain("loam archive");
   });
 
+  it("tells the agent how to READ the protocol it points at, not only to run it", async () => {
+    // The stub is 1.9 KB; the protocol it names is 84 KB for /loam-check —
+    // about a fifth of a 100k-token window, 223 fix-table rows of which any one
+    // run needs two or three. This clause is the one line in a generated file
+    // that changes what an agent DOES about that: narrow the page, then look up
+    // the codes the run actually reported. `loam instructions --no-fix-tables`
+    // is what makes the narrow page payable; this sentence is what makes an
+    // agent take it, and without it the flag is a feature nobody invokes.
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d", "--create");
+    const clauses = [
+      "add `--no-fix-tables` to the command above",
+      "`loam explain <code>` for each code the run actually reports",
+    ];
+    // Both deliveries, because a skill that drifts from its command is two
+    // contracts wearing one name — and it is the SKILL a model loads unasked.
+    for (const segs of [
+      [".claude", "commands", "loam-check.md"],
+      [".claude", "skills", "loam-check", "SKILL.md"],
+    ]) {
+      const file = await readFile(join(dir, ...segs), "utf8");
+      for (const clause of clauses) expect(file, `${segs.join("/")}: ${clause}`).toContain(clause);
+    }
+  });
+
   it("--no-commands leaves the command directory alone", async () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--no-commands");
@@ -161,11 +195,12 @@ describe("multi-tool command generation (init --tools)", () => {
   // moved path must fail HERE, not in some user's repo — and the registry
   // growing a tool must extend this table (the exactness test below).
   //
-  // `command: null` is Codex, which reads skills and registers no command files
-  // at all; every other tool declares both deliveries. The skill column is the
-  // Agent Skills convention — `<tool-dir>/skills/<name>/SKILL.md` — and its
-  // directory is the tool's OWN, which for cline is not the directory its
-  // commands go in.
+  // `command: null` is a skills-only target — Codex, which reads skills and
+  // registers no command files at all, and `agents`, the vendor-neutral
+  // `.agents/skills/` root several tools read in addition to their own; every
+  // other tool declares both deliveries. The skill column is the Agent Skills
+  // convention — `<tool-dir>/skills/<name>/SKILL.md` — and its directory is the
+  // tool's OWN, which for cline is not the directory its commands go in.
   interface Pin {
     command: string[] | null;
     skill: string[];
@@ -248,6 +283,7 @@ describe("multi-tool command generation (init --tools)", () => {
       command: [".trae", "commands", "loam-check.md"],
       skill: [".trae", "skills", "loam-check", "SKILL.md"],
     },
+    agents: { command: null, skill: [".agents", "skills", "loam-check", "SKILL.md"] },
   };
   it("the pinned path table covers exactly the registry — a new tool must be pinned here", () => {
     expect(Object.keys(CHECK_FILE).sort()).toEqual(Object.keys(AGENT_TOOLS).sort());
@@ -326,6 +362,21 @@ describe("multi-tool command generation (init --tools)", () => {
     // codex is skills-only: nothing under a command directory of its own
     expect(existsSync(join(dir, ".codex", "commands"))).toBe(false);
     expect(existsSync(join(dir, ".codex", "prompts"))).toBe(false);
+    // and so is the vendor-neutral root, for the same reason: the six tools
+    // that read `.agents/skills/` document no command file under `.agents/`, so
+    // one written there would be bytes nothing ever opens.
+    expect(existsSync(join(dir, ".agents", "skills", "loam-check", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(dir, ".agents", "commands"))).toBe(false);
+    expect(existsSync(join(dir, ".agents", "prompts"))).toBe(false);
+  });
+
+  it("the vendor-neutral root is detected by `.agents/skills`, never a bare `.agents/`", () => {
+    // The same rule `github-copilot` is spelled out for: `.agents/` is a shared
+    // root other conventions also write into, so a bare marker would
+    // auto-scaffold into any repository where something else made the
+    // directory. Pinned on the registry datum because that is where the
+    // decision lives — a widened marker must fail here, not in a user's repo.
+    expect(AGENT_TOOLS["agents"]!.detect).toEqual([".agents/skills"]);
   });
 
   it("every skill file is the Agent Skills header over the byte-identical shared body", async () => {
@@ -344,23 +395,71 @@ describe("multi-tool command generation (init --tools)", () => {
     }
   });
 
-  it("the pre-approved allowlist names every loam verb EXCEPT vouch", async () => {
+  /** The `allowed-tools:` value a real `init` writes, read off the file on disk. */
+  const emittedAllowlist = async (): Promise<string> => {
+    const dir = await throwawayDir();
+    await runLoam(dir, "init", "--docs", "./d", "--create");
+    const skill = await readFile(join(dir, ".claude", "skills", "loam-check", "SKILL.md"), "utf8");
+    return /^allowed-tools: (.+)$/m.exec(skill)![1]!;
+  };
+
+  it("the pre-approved allowlist is an enumeration, and vouch is not in it", async () => {
     // `Bash(loam:*)` pre-approved the one command whose output is a claim about
     // a human act, which handed the agent that wrote a draft the power to
     // promote its own draft to `verified`. The refusal in commands/vouch.ts is
     // the other half; this is the half that makes the refusal something a person
     // sees rather than something an agent routes around.
-    const dir = await throwawayDir();
-    await runLoam(dir, "init", "--docs", "./d", "--create");
-    const skill = await readFile(join(dir, ".claude", "skills", "loam-check", "SKILL.md"), "utf8");
-    const allowed = /^allowed-tools: (.+)$/m.exec(skill)![1]!;
+    const allowed = await emittedAllowlist();
 
     expect(allowed).not.toContain("Bash(loam:*)");
     expect(allowed).not.toContain("vouch");
-    // and it is an allowlist worth having: the verbs an agent actually runs are
-    // on it, so this is not "ask about everything" wearing a different hat.
-    for (const verb of ["adopt", "validate", "status", "new", "archive", "verify"]) {
-      expect(allowed, verb).toContain(`Bash(loam ${verb}:*)`);
+  });
+
+  it("every loam verb the protocols instruct is pre-approved, or is named in UNAPPROVED", async () => {
+    // The assertion that would have caught `steps`. The old spot check named
+    // six verbs by hand and passed while `loam-implement` step 1 told the agent
+    // to run `loam context` and step 5 called `loam steps` mandatory — both
+    // unapproved, so the workflow stopped for a prompt at exactly the step its
+    // own protocol calls required. Reading the instructions instead of a list
+    // means the next protocol edit that reaches for a new verb fails here.
+    //
+    // Both corpora, because they instruct differently: PROTOCOLS is what
+    // `loam instructions` prints, and SLASH_COMMANDS is the stub every
+    // generated file carries — which is the only place `loam explain` is
+    // taught, and it is the documented escape from an 84 KB protocol.
+    const allowed = await emittedAllowlist();
+    const registered = new Set(buildProgram().commands.map((c) => c.name()));
+    const instructed = new Set<string>();
+    for (const text of [...Object.values(COMMAND_BODIES), ...Object.values(COMMAND_FILES)]) {
+      for (const [, verb] of text.matchAll(/`loam ([a-z][a-z-]*)/g)) {
+        if (registered.has(verb!)) instructed.add(verb!);
+      }
+    }
+    // A scan that matched nothing would satisfy every assertion below it.
+    expect(instructed.size).toBeGreaterThan(10);
+    for (const verb of [...instructed].sort()) {
+      expect(
+        allowed.includes(`Bash(loam ${verb}:*)`) || verb in UNAPPROVED,
+        `the protocols instruct \`loam ${verb}\`, which is neither pre-approved nor in UNAPPROVED`,
+      ).toBe(true);
+    }
+  });
+
+  it("the allowlist is exactly the registered verbs minus UNAPPROVED — no silent third category", async () => {
+    // dialects.ts may not compute this itself: deriving the list from the
+    // command registry would make `core/` import `commands/`, which AGENTS.md
+    // forbids. The TEST layer may do what core may not — it imports both sides
+    // — so the equality core cannot express is checked here instead, and an
+    // added command is either approved or explained rather than forgotten.
+    const allowed = await emittedAllowlist();
+    const registered = buildProgram().commands.map((c) => c.name());
+    const emitted = [...allowed.matchAll(/Bash\(loam ([a-z][a-z-]*):\*\)/g)].map(([, v]) => v!);
+
+    expect(emitted.sort()).toEqual(registered.filter((n) => !(n in UNAPPROVED)).sort());
+    // and an exclusion is a decision about a real command, carrying a reason
+    for (const [verb, why] of Object.entries(UNAPPROVED)) {
+      expect(registered, `UNAPPROVED names \`${verb}\`, which loam does not register`).toContain(verb);
+      expect(why.trim().length, `UNAPPROVED.${verb} has no reason written`).toBeGreaterThan(20);
     }
   });
 
@@ -521,6 +620,148 @@ describe("multi-tool command generation (init --tools)", () => {
   });
 });
 
+describe("AGENTS.md stays inside the budget its readers actually have", () => {
+  /**
+   * A ceiling, and now a REACHED one — which changes what it is for.
+   *
+   * AGENTS.md is auto-loaded from the working directory by every host that
+   * reads agents.md, so its bytes are paid on every single invocation before
+   * an agent has done anything. Two of those hosts truncate rather than
+   * refuse, silently: Codex cuts the AGENTS.md chain at 32,768 bytes, and
+   * Windsurf caps a workspace rule file at 12,000 characters. A file over
+   * either limit loses its TAIL with no error at all — which is the archive
+   * gate and the refusal vocabulary, the two sections an agent reaches last
+   * and needs most.
+   *
+   * The file used to be 109,399 bytes and this ceiling used to be a bound on
+   * how much worse it could get. Moving the four reference pages behind
+   * `loam instructions` (src/core/agent/workflows/reference/reference.ts) put
+   * it under the Codex cap for the first time, so the number is now that cap
+   * rather than a made-up one, and clearing it is a property of the document
+   * rather than an aspiration in a comment.
+   *
+   * Windsurf's 12,000 is NOT cleared and cannot be by a move: what remains is
+   * the teaching a docs repo needs to form a question at all — layout, cycle,
+   * the validator's rules, the archive gate — and there is no reader for whom
+   * dropping half of that is better than a truncated tail. Raising the number
+   * below needs a sentence here saying what grew and why it had to; the first
+   * thing to look for is content written twice, which is what took
+   * `## Reading loam's output` to 48% of the old document before anybody
+   * measured.
+   */
+  const CEILING = 32_768;
+
+  it("the whole document fits in the smallest chain a host will read", () => {
+    const bytes = Buffer.byteLength(AGENTS_MD, "utf8");
+    expect(
+      bytes,
+      `AGENTS.md is ${bytes} B, over the ${CEILING} B Codex cap. A host over this loses the TAIL ` +
+        "silently — the archive gate and the refusals. Find what is written twice, or what belongs " +
+        "on a reference page, before raising it.",
+    ).toBeLessThan(CEILING);
+  });
+
+  it("the per-invocation code inventory is not in the file at all", () => {
+    // It is `loam instructions loam-codes` now. This is the assertion that the
+    // move HAPPENED rather than being described: the inventory's own bullets
+    // are the thing to look for, not the heading, because the heading stayed
+    // behind on purpose (the three facts about the `--json` envelope are
+    // orientation, and an agent needs them before it can form a question).
+    const start = AGENTS_MD.indexOf("## Reading loam's output");
+    expect(start, "the orientation section is gone or renamed").toBeGreaterThan(-1);
+    const rest = AGENTS_MD.slice(start + 1);
+    const next = rest.indexOf("\n## ");
+    const section = next === -1 ? rest : rest.slice(0, next);
+    const bytes = Buffer.byteLength(section, "utf8");
+    expect(
+      bytes,
+      `\`## Reading loam's output\` is ${bytes} B. It is the three facts an agent needs BEFORE it ` +
+        "can form a question; the inventory of which invocation raises which code belongs on " +
+        "`loam instructions loam-codes`.",
+    ).toBeLessThan(2_000);
+    // The bullets themselves, sampled across the three modules the page is
+    // assembled from, so a partial move fails as loudly as no move.
+    for (const bullet of [
+      "- `loam validate --service <id>` grades",
+      "- `loam doctor` is read-only local/fleet preflight",
+      "- `loam audit-openspec <root>`",
+    ]) {
+      expect(AGENTS_MD, `\`${bullet}…\` is back in AGENTS.md`).not.toContain(bullet);
+    }
+  });
+
+  it("says out loud that the meanings live one command away", () => {
+    // The pointer is what makes the missing gloss a design rather than a hole.
+    // test/agent-contract.test.ts proves it resolves for every code named.
+    expect(AGENTS_MD).toContain("`loam explain <code>`");
+    expect(AGENTS_MD).toContain("`loam explain --codes --json`");
+    expect(AGENTS_MD).toMatch(/Which codes an INVOCATION can raise/);
+  });
+});
+
+/**
+ * The reference pages, as a MECHANISM rather than as content.
+ *
+ * Two properties make the move a move instead of a deletion, and a future edit
+ * can break either one alone — so they are asserted apart. Every page is
+ * reachable by name from `loam instructions`, and `loam init` writes no file
+ * for any of them. Merge the pages into `COMMANDS` and the first still passes
+ * while the second fails; drop them from `PROTOCOLS` and the reverse.
+ */
+describe("the reference pages are printed, never scaffolded", () => {
+  it("every page is reachable by name from the binary", async () => {
+    const dir = await throwawayDir();
+    expect(REFERENCE_PAGES.length).toBe(4);
+    for (const page of REFERENCE_PAGES) {
+      // Unwired on purpose: a page must print with no loam.json and no docs
+      // repo, for the same reason the workflows must.
+      const res = await runLoam(dir, "instructions", page.name);
+      expect(res.code, `${page.name}: ${res.out}`).toBe(0);
+      expect(Buffer.byteLength(res.stdout, "utf8")).toBeGreaterThan(5_000);
+      // A page takes no arguments; the hint is empty rather than invented.
+      expect(page.argumentHint).toBe("");
+    }
+  });
+
+  it("AGENTS.md names each page with the exact command that prints it", () => {
+    // A reference nobody can find is content deleted with extra steps. The
+    // COMMAND is what is pinned, not a description of it: a renamed page has
+    // to fail here rather than leave a pointer at nothing.
+    for (const page of REFERENCE_PAGES) {
+      expect(AGENTS_MD, `AGENTS.md never says \`loam instructions ${page.name}\``).toContain(
+        `\`loam instructions ${page.name}\``,
+      );
+    }
+  });
+
+  it("init writes no file for any of them, in any tool's layout", async () => {
+    const dir = await throwawayDir();
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--tools", "all");
+    expect(res.code, res.out).toBe(0);
+    const written = (await readdir(dir, { recursive: true })).map(String);
+    for (const page of REFERENCE_PAGES) {
+      const hits = written.filter((f) => f.includes(page.name));
+      expect(
+        hits,
+        `init wrote ${hits.join(", ")} for ${page.name}. The pages are printed by the binary; ` +
+          "scaffolding them puts back the bytes the move took out, in every repo loam touches.",
+      ).toEqual([]);
+    }
+    // The control: the six workflows ARE written, so an empty tree cannot pass
+    // the assertion above by accident.
+    expect(written.some((f) => f.includes("loam-check"))).toBe(true);
+  });
+
+  it("no page leaks into the generated-command corpus", () => {
+    // The same property one level in, read off the exports rather than off a
+    // scaffolded tree — this is the line a refactor actually crosses.
+    for (const page of REFERENCE_PAGES) {
+      expect(Object.keys(COMMAND_FILES)).not.toContain(page.name);
+      expect(Object.keys(COMMAND_BODIES)).toContain(page.name);
+    }
+  });
+});
+
 describe("the contract's claims are checked against the CLI, not asserted", () => {
   it("'every command takes --json' is true of every registration in src/commands/", async () => {
     // The sentence was written when it was aspiration; archive and init closed
@@ -582,21 +823,43 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
     expect(AGENTS_MD).toMatch(/--help.*--version.*pass through/s);
   });
 
+  // Both claims moved out of AGENTS.md when the reference pages were split
+  // out, and they moved to DIFFERENT pages — which is why each names its own
+  // rather than sharing one constant. `--strict` travels with the refusal
+  // vocabulary onto `loam instructions loam-codes`; the recording form travels
+  // with the done-check onto `loam instructions loam-done-check`. The text is
+  // verbatim in both cases, so the assertions followed it rather than being
+  // relaxed. Reading the PROTOCOL body and not the generated command file is
+  // the same choice codes-drift makes: the file is a pointer, and the claim
+  // lives in what it points at.
+  const CODES = COMMAND_BODIES["loam-codes"]!;
+  const DONE_CHECK = COMMAND_BODIES["loam-done-check"]!;
+
   it("states --strict honestly: errors and warnings trip it, ok confirmations never do", () => {
-    expect(AGENTS_MD).not.toMatch(/any finding\s+exists at all/);
-    expect(AGENTS_MD).toMatch(/any error\s+or warning exists/);
-    expect(AGENTS_MD).toMatch(/`ok`-severity findings are confirmations and never trip/);
+    expect(CODES).not.toMatch(/any finding\s+exists at all/);
+    expect(CODES).toMatch(/any error\s+or warning exists/);
+    expect(CODES).toMatch(/`ok`-severity findings are confirmations and never trip/);
   });
 
   it("does not overclaim runner exclusivity: --record without --results is the documented fallback", () => {
-    expect(AGENTS_MD).not.toMatch(/no agent can SAY a scenario is tested/);
-    expect(AGENTS_MD).toMatch(/ALWAYS pass `--results`/);
+    expect(DONE_CHECK).not.toMatch(/no agent can SAY a scenario is tested/);
+    expect(DONE_CHECK).toMatch(/ALWAYS pass `--results`/);
     // Asserted without the line wrap: the claim is the sentence, not its reflow.
-    expect(AGENTS_MD).toMatch(/`--record` without `--results` is\s+the fallback/);
-    expect(AGENTS_MD).toMatch(/answered_by: agent/);
+    expect(DONE_CHECK).toMatch(/`--record` without `--results` is\s+the fallback/);
+    expect(DONE_CHECK).toMatch(/answered_by: agent/);
     // The fallback is visible, and says what it costs.
-    expect(AGENTS_MD).toMatch(/\*\*attested\*\*, not verified/);
-    expect(AGENTS_MD).toContain("`verify.scenario-attested`");
+    expect(DONE_CHECK).toMatch(/\*\*attested\*\*, not verified/);
+    expect(DONE_CHECK).toContain("`verify.scenario-attested`");
+  });
+
+  it("AGENTS.md's step 7 still sends the reader to the page that holds it", () => {
+    // The half of the move that makes the two tests above legitimate rather
+    // than a relocation of the goalposts: a claim that is only on a page is
+    // only reachable if the file names the page.
+    expect(AGENTS_MD).toContain("`loam instructions loam-done-check`");
+    // Step 7 itself, not merely the index — a reader following the cycle must
+    // meet the pointer where the work is, not only in a list at the end.
+    expect(AGENTS_MD).toMatch(/7\. \*\*Verify\*\*[\s\S]{0,900}loam instructions loam-done-check/);
   });
 });
 

@@ -11,6 +11,7 @@ import { AsyncapiMergeError } from "../src/core/asyncapi/merge/error.js";
 import { stripAsyncapiMarkers } from "../src/core/asyncapi/merge/markers.js";
 import { mergeAsyncapiSlots } from "../src/core/asyncapi/merge/merge.js";
 import { pinAsyncapiSlots } from "../src/core/asyncapi/merge/pin.js";
+import { planAsyncapiBaselines } from "../src/core/asyncapi/baseline/plan.js";
 import { slotDigest } from "../src/core/asyncapi/digest.js";
 import { makeProject, runLoam } from "./helpers/harness.js";
 
@@ -43,6 +44,35 @@ components:
 
 /** The living contract after somebody ELSE landed a change on the Authorized payload. */
 const LIVING_MOVED = LIVING.replace("          paymentId:\n            type: string", "          paymentId:\n            type: string\n          settledAt:\n            type: string");
+
+/**
+ * The same living contract with a `components.schemas` sibling — a SURFACE,
+ * not a slot: it carries no in-value pin (a JSON Schema has no room for one),
+ * and the root `x-loam-baselines` record is what a delta pins it with.
+ */
+const LIVING_WITH_SCHEMA = `${LIVING}  schemas:
+    Money:
+      type: object
+      title: an amount
+`;
+
+/** A delta whose ENTIRE change is a component surface: not one slot in it. */
+function schemasOnly(title: string): string {
+  return `asyncapi: 3.0.0
+info:
+  title: payment-service events
+  version: "1.0"
+components:
+  schemas:
+    Money:
+      type: object
+      title: ${title}
+`;
+}
+
+/** What `loam rebase` would stamp for the surfaces — the real planner, never a hand copy. */
+const pinSurfaces = (feature: string, living: string): string =>
+  planAsyncapiBaselines(feature, living, "payment-service").text ?? feature;
 
 /** A delta that only restates the Authorized message, pinned against `against`. */
 function quoteDelta(against: string): string {
@@ -245,10 +275,145 @@ components:
     expect(result.text).toBeNull();
   });
 
-  it("a feature document with no slots is a successful no-op", () => {
+  it("a feature document with neither slots nor surfaces is a successful no-op", () => {
+    // The absence of SLOTS alone is not this answer any more — see the
+    // components-only tests below, where it used to be. A document holding
+    // nothing but `info` genuinely restates nothing.
     const feature = `asyncapi: 3.0.0\ninfo:\n  title: payment-service events\n  version: "1.0"\n`;
     const result = mergeAsyncapiSlots(LIVING, feature, "payment-service");
-    expect(result).toEqual({ text: null, modified: [], removed: [], quoted: [], baselineStale: [], unresolved: [] });
+    expect(result).toEqual({
+      text: null,
+      modified: [],
+      removed: [],
+      quoted: [],
+      baselineStale: [],
+      componentsModified: [],
+      componentsQuoted: [],
+      componentsStale: [],
+      unresolved: [],
+    });
+  });
+
+  it("merges a components.schemas-only delta — no slot at all — instead of dropping it", () => {
+    // THE DEFECT. A feature whose whole change is a shared schema is a legal
+    // and ordinary event delta, and the merge answered "no slots, nothing to
+    // do" before it had even parsed the living document — so archive exited 0
+    // having written nothing, and the schema every consumer was told to expect
+    // was simply not there.
+    const delta = pinSurfaces(schemasOnly("an amount"), LIVING_WITH_SCHEMA)
+      .replace("title: an amount", "title: an amount, per this feature");
+
+    const result = mergeAsyncapiSlots(LIVING_WITH_SCHEMA, delta, "payment-service");
+
+    expect(result.componentsModified).toEqual(["schemas/Money"]);
+    expect(result.componentsQuoted).toEqual([]);
+    expect(result.text).not.toBeNull();
+    expect(result.text).toContain("# living comment");
+    expect(parse(result.text!).components.schemas.Money.title).toBe("an amount, per this feature");
+    // The messages it never mentions are living's, untouched.
+    expect(parse(result.text!).components.messages.Authorized.name).toBe("payment.Authorized");
+    expect(result.text, "the record is feature bookkeeping, never merged").not.toContain("x-loam");
+  });
+
+  it("a components-only delta that only QUOTES writes nothing at all — text stays null", () => {
+    // The byte-identity guarantee, at surface depth: the merge computes three
+    // surface verdicts now, and `edited` must still be false when every one of
+    // them is a quote, or an all-quote delta re-serializes the living contract
+    // it was supposed to leave alone.
+    const delta = pinSurfaces(schemasOnly("an amount"), LIVING_WITH_SCHEMA);
+
+    const result = mergeAsyncapiSlots(LIVING_WITH_SCHEMA, delta, "payment-service");
+
+    expect(result.text).toBeNull();
+    expect(result.componentsQuoted).toEqual(["schemas/Money"]);
+    expect(result.componentsModified).toEqual([]);
+  });
+
+  it("a QUOTED surface keeps the LIVING copy even when the living one has moved since", () => {
+    // The lost-update case the pin exists for, on the surface half: the delta
+    // restates Money because an asyncapi delta is a COMPLETE document, and
+    // somebody else's edit landed in between.
+    const delta = pinSurfaces(schemasOnly("an amount"), LIVING_WITH_SCHEMA);
+    const moved = LIVING_WITH_SCHEMA.replace("title: an amount", "title: an amount, as somebody else landed it");
+
+    const result = mergeAsyncapiSlots(moved, delta, "payment-service");
+
+    expect(result.componentsQuoted).toEqual(["schemas/Money"]);
+    expect(result.text).toBeNull();
+  });
+
+  it("a schema the delta declares beside the message that $refs it resolves — the ref sweep changed", () => {
+    // The proof that the surfaces are MERGED rather than merely reported. This
+    // exact document used to come back
+    // `unresolved: ["#/components/schemas/RefundPayload"]` and gate the
+    // archive: the message slot merged, its `$ref` target did not, and the
+    // author was told to define a schema they had already written down.
+    const feature = `asyncapi: 3.0.0
+components:
+  messages:
+    Refunded:
+      name: payment.Refunded
+      payload:
+        $ref: '#/components/schemas/RefundPayload'
+  schemas:
+    RefundPayload:
+      type: object
+      properties:
+        refundId:
+          type: string
+`;
+
+    const result = mergeAsyncapiSlots(LIVING, feature, "payment-service");
+
+    expect(result.unresolved).toEqual([]);
+    expect(parse(result.text!).components.schemas.RefundPayload).toEqual({
+      type: "object",
+      properties: { refundId: { type: "string" } },
+    });
+  });
+
+  it("never publishes a feature-only key nested inside a copied surface", () => {
+    // Every surface write goes through the deep strip. A components-only delta
+    // must not become the one shape that publishes loam's bookkeeping into a
+    // living contract — the failure `--approve` already caused once on the
+    // OpenAPI axis, from a component holding an operation shape.
+    const feature = `asyncapi: 3.0.0
+components:
+  schemas:
+    RefundPayload:
+      type: object
+      properties:
+        refundId:
+          type: string
+          x-loam-remove: true
+`;
+
+    const result = mergeAsyncapiSlots(LIVING, feature, "payment-service");
+
+    expect(result.text).not.toContain("x-loam-remove");
+    expect(parse(result.text!).components.schemas.RefundPayload.properties.refundId).toEqual({ type: "string" });
+  });
+
+  it("refuses to write a surface through a YAML alias, at the components depth", () => {
+    // `writableSection` is asked over `["components", <kind>]` now, not only
+    // over the three slot sections. Without that the write would go through
+    // the anchor and rewrite every other node sharing it — the corruption the
+    // slot guard already refuses, at the one depth it could not see.
+    const aliased = `asyncapi: 3.0.0
+x-template: &tpl
+  Money:
+    type: object
+components:
+  schemas: *tpl
+`;
+    const feature = `asyncapi: 3.0.0
+components:
+  schemas:
+    RefundPayload:
+      type: object
+`;
+    expect(() => mergeAsyncapiSlots(aliased, feature, "payment-service")).toThrowError(AsyncapiMergeError);
+    expect(() => mergeAsyncapiSlots(aliased, feature, "payment-service")).toThrowError(/YAML alias/);
   });
 
   it("a merged slot whose #/ ref resolves in neither document is returned unresolved", () => {
@@ -414,13 +579,36 @@ components:
     expect(stripAsyncapiMarkers(LIVING, "payment-service")).toBe(LIVING);
   });
 
+  it("drops a root x-loam-baselines that is the ONLY thing to strip", () => {
+    // The early-exit branch by itself. Every in-value key here is already
+    // clean, so `stripped` is false at the end of both walks — and the create
+    // branch publishes this function's output VERBATIM, so a record riding out
+    // on that return is a living contract carrying loam's bookkeeping.
+    const feature = `${LIVING}x-loam-baselines:
+  components:
+    schemas/Money: "0123456789abcdef"
+`;
+    const stripped = stripAsyncapiMarkers(feature, "payment-service");
+    expect(stripped).not.toContain("x-loam");
+    expect(parse(stripped).components.messages.Authorized.name).toBe("payment.Authorized");
+  });
+
   it("strips loam keys OUTSIDE the three sections — the document root, info, and components siblings", () => {
     // The create branch publishes this text verbatim as a living contract. A
     // marker at the root or a pin under `info` sits outside every section,
     // and the section-scoped strip used to ship both into the fleet's living
     // docs — unseen even by validate's marker sweep at the time.
+    // The root `x-loam-baselines` record is the third key, and the one
+    // `stripBeyondSections` cannot reach: it filters on FEATURE_ONLY_KEYS,
+    // which holds the two in-value keys only, and the record's own subtree is
+    // nothing but hex digests — so the deep strip finds no loam key in it and
+    // the whole entry used to ride out into the living contract, unseen even
+    // by validate's marker sweep (which looks for `x-loam-remove` alone).
     const feature = `asyncapi: 3.0.0
 x-loam-remove: true
+x-loam-baselines:
+  components:
+    schemas/Payment: "0123456789abcdef"
 info:
   title: payment-service events
   version: "1.0"
@@ -441,6 +629,7 @@ components:
     const stripped = stripAsyncapiMarkers(feature, "payment-service");
     expect(stripped).not.toContain("x-loam");
     const doc = parse(stripped);
+    expect(doc["x-loam-baselines"]).toBeUndefined();
     expect(doc.info).toEqual({ title: "payment-service events", version: "1.0" });
     expect(doc.components.schemas.Payment).toEqual({ type: "object" });
     expect(doc.components.messages.Authorized).toEqual({ name: "payment.Authorized" });
@@ -533,6 +722,50 @@ components:
       const living = await p.read("services/payment-service/asyncapi.yaml");
       expect(living).not.toContain("x-loam");
       expect(parse(living).channels.paymentEvents.address).toBe("payment.events.v2");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("archives a components-only delta, warning asyncapi.component-modified for the surface it overwrites", async () => {
+    // The end-to-end the defect actually needed. The unit tests above prove
+    // the merge computes a document; this proves the PLAN writes it — the
+    // `if (merge.text !== null)` branch in the archive planner was never once
+    // exercised for a delta with no slot, and it is what stands between a
+    // merged contract and a living one that still says nothing about the
+    // schema every consumer was told to expect.
+    const delta = pinSurfaces(schemasOnly("an amount"), LIVING_WITH_SCHEMA)
+      .replace("title: an amount", "title: an amount, in minor units");
+    const p = await makeProject(
+      fixture(delta, { "services/payment-service/asyncapi.yaml": LIVING_WITH_SCHEMA }),
+    );
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-50", "--json");
+      expect(res.code, res.stdout).toBe(0);
+      const payload = JSON.parse(res.stdout);
+      expect((payload.warnings as Array<{ code: string }>).map((w) => w.code)).toContain("asyncapi.component-modified");
+      const living = await p.read("services/payment-service/asyncapi.yaml");
+      expect(parse(living).components.schemas.Money.title).toBe("an amount, in minor units");
+      expect(living, "the record is feature bookkeeping on every branch").not.toContain("x-loam");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("says so when a delta declares surfaces and the merge wrote none of them", async () => {
+    // "The plan wrote less than my delta spells" is the sentence a reader
+    // cannot infer from an unchanged file, and for a components-only delta
+    // silence is indistinguishable from the defect that made it merge nothing
+    // at all. Not a warning — an all-quote delta is correct authoring.
+    const delta = pinSurfaces(schemasOnly("an amount"), LIVING_WITH_SCHEMA);
+    const p = await makeProject(
+      fixture(delta, { "services/payment-service/asyncapi.yaml": LIVING_WITH_SCHEMA }),
+    );
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-50");
+      expect(res.code, res.out).toBe(0);
+      expect(res.out).toContain("1 component surface(s) this delta declares already stands as living has it");
+      expect(await p.read("services/payment-service/asyncapi.yaml")).toBe(LIVING_WITH_SCHEMA);
     } finally {
       await p.destroy();
     }

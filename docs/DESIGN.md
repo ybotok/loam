@@ -10,12 +10,15 @@ checks it is given.
 
 No — but the tree does not show you why, and that gap is the real finding.
 
-- `src/cli.ts` is registration and nothing else. It makes 27 `register*` calls, which produce **28**
+- `src/cli.ts` is registration and nothing else. It makes 28 `register*` calls, which produce **29**
   commands — `migrate-openspec/migrate-openspec.ts` declares two (`audit-openspec` and
   `migrate-openspec`), which is why `test/agents.test.ts` compares against
   `buildProgram().commands.length` rather than counting registrations. (Both numbers are pinned live
-  by `test/docs-facts.test.ts`, so this sentence moves when the CLI does.)
-- `src/commands/` owns the printing and the exit codes. Twenty-two of the twenty-seven command
+  by `test/docs-facts.test.ts`, so this sentence moves when the CLI does. It said 27 and 28 for as
+  long as the pin existed, because the pin required a literal space before `commands` and this line
+  wraps at exactly that point — a pin that can pass vacuously is worse than none, and that one now
+  asserts it matched before it asserts what it matched.)
+- `src/commands/` owns the printing and the exit codes. Twenty-three of the twenty-eight command
   modules are packages; five sit loose as files (`dependencies`, `doctor`, `explore`,
   `instructions`, `open`), and `commands/policy/` holds the two things in that directory which are
   not commands.
@@ -47,17 +50,41 @@ compiler does not check.
 | Shared command policy | `commands/policy/` — `format.ts`, `gate.ts` | Wording and gating shared by 10 and 14 commands |
 | Core | `src/core/` | Compute and return. Never print, never exit |
 
-Inside `core/`, the DAG levels are a real division of labour:
+Inside `core/`, the DAG levels are a real division of labour. **Levels are per top-level package**,
+and a package's level is the longest path below it — the granularity matters, because the file-level
+graph is deeper than this one and the two numbers are not interchangeable. The two mutual
+dependencies the package-layout table names below (`repo` ↔ `c4`, `repo` ↔ `provenance`) are
+resolved here the way that table resolves them, by reading `repo`'s two edges as the down-pointing
+pair; without that there is no level assignment at all.
 
-| Level | Modules | For |
+This table used to have seven rows and to place `verify/` a level BELOW `gherkin/`, which
+`core/verify/` has imported for as long as both have existed. Nothing was checking it. It is
+recomputed from `npm run meta:model` now, and it is **eleven** levels rather than seven. The four
+loose modules ride along with the packages and are left out of the rows: `conflict-markers` at L0,
+`docs` at L4, `results` at L5, `fleet-context` at L6.
+
+The eleventh level arrived with the use-case feature slot, and it is worth naming because it is a
+statement about the code and not about the table: `core/delta/` now reads the flows a feature brings
+(`core/usecases/delta/`), so it sits ABOVE `core/usecases/` where the two used to share L6, and
+`core/coherence/` is pushed onto a level of its own. That placement is the honest one and it is also
+the one to watch — resolving a business claim is arguably `coherence/`'s subject ("do the axes
+agree") rather than `delta/`'s ("does the diff apply"), and the only thing keeping the call in
+`delta/` is that `capability.uncovered` is computed there from documents that walk has already
+parsed. If a second reader of the same claims appears, that is the seam to move.
+
+| Level | Packages | For |
 |---|---|---|
-| L0 | `ids/` `path-safety` `records` `document-bytes` `version` `report` `issue` `agents-stamp` `steps` `concurrency` `health` `likec4` | Zero core dependencies — grammar, bytes, vocabulary. Not "cheap": `likec4.ts` is L0 and is the most expensive module in the repo |
-| L1 | `config` `spec` `frontmatter` `agent` `arch` | Parse one document kind into a record |
-| L2 | `repo` (fan-in 28) `json` (27) | The read model over the docs tree; the output envelope |
-| L3 | `openapi/` `asyncapi/` `permissions/` `staging/` `provenance/` `docs` `brief/` `delta/` `openspec/` `maturity` | Read and write one artifact family |
-| L4 | `fleet-context` `verify/` `openapi/merge/` | Whole-fleet caching and evidence |
-| L5 | `coherence/` `gherkin/` `dependencies/` `doctor/` `explore/` `diff/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
-| L6 | `results` `status/` | Aggregate answers for a feature or a fleet |
+| L0 | `kernel/` `owners/` `scaffold/` | Zero core dependencies — grammar, bytes, path safety, the two readers that consult nothing |
+| L1 | `envelope/` `obligations/` `permissions/` `vocabulary/` | The output envelope, and the three declared vocabularies |
+| L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
+| L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
+| L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
+| L5 | `asyncapi/` `brief/` `capabilities/` `doctor/` | One artifact family that needs another one first |
+| L6 | `explain/` `links/` `projection/` `usecases/` | One link, one flow, projected onto the model |
+| L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
+| L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
+| L9 | `status/` | Aggregate answers for a feature or a fleet |
+| L10 | `gate/` | The deploy-time query over everything above |
 
 ## The package layout
 
@@ -67,41 +94,84 @@ how far each one nests — 300 lines while this tree was taking shape, 400 since
 `test/code-limits-baseline.json` is empty — so this table describes the tree rather than a plan for
 it.
 
+One row per top-level package. **The `Depends on` column is derived, not asserted**: it is the
+top-level `core/` packages each one value-imports, printed by `npm run meta:model` and drawn edge for
+edge in `meta/docs/architecture/landscape.likec4`, which `npm run meta:check` fails when the two
+disagree. Before that check existed the column was written by hand and had gone quietly wrong in
+eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` and `kernel`,
+`core/vocabulary/` claimed nothing while importing `kernel`, `core/mcp/` had gained `explain`, and
+`core/coherence/` had never depended on `verify` at all. The nine packages the table had no row for
+(`brief`, `explain`, `glossary`, `links`, `obligations`, `owners`, `provenance`, `scaffold`,
+`usecases`) are the drift the self-hosting axis was written to catch, and are the reason it exists.
+
 | Package | Holds | Depends on |
 |---|---|---|
 | `core/kernel/` | `ids/` (service feature dirs) `path-safety` `records` `document-bytes` `concurrency` | nothing |
-| `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | nothing |
+| `core/owners/` | the deliberately small CODEOWNERS subset behind `loam list --owners`: directory-pattern rules, parsed fail-closed, last match winning | nothing |
+| `core/scaffold/` | the CONTENT of the templates a brand-new docs repo is laid down with — the starting `landscape` and `readme` — as against `docs.ts`, which says what a docs repo is made of | nothing |
 | `core/envelope/` | `json` `config` `version` | kernel |
-| `core/mcp/` | the MCP facade's pure half: stdio `framing`, JSON-RPC routing (`protocol`), the read-only `tools` table and its `argv` boundary | envelope, kernel |
-| `core/c4/` | `likec4` `arch` `source-mask` `source-scan` | — |
+| `core/obligations/` | the fleet's architectural-obligation vocabulary, which a `#obl-<name>` tag on the map resolves against or is refused by | kernel |
+| `core/permissions/` | the fleet authorization vocabulary joined by `Requires:` | kernel |
+| `core/vocabulary/` | `issue` `report` `health` `steps` `maturity` | kernel |
+| `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | envelope, kernel |
+| `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
+| `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
+| `core/repo/` | `entries` `paths` `state` `repo` `service-target` | c4, document, kernel, provenance |
+| `core/c4/` | `likec4` `arch` `source-mask` `source-scan`, with `parsed/` `project/` `resolve/` beneath | kernel, repo |
 | `core/c4/splice/` | `contract` `landscape-merge` `authored-source` `placement` | c4 |
 | `core/c4/seed/` | `loam seed`'s file grammar and templater: `fleet-file` (`items` reads one node) `template` `stamp` | c4, kernel |
-| `core/document/` | `frontmatter` `spec` `parse` `apply` `scenarios` | kernel, vocabulary |
-| `core/agent/` | the generated AGENTS.md, the slash commands, the tool registry | kernel |
-| `core/repo/` | `entries` `paths` `state` `repo` `service-target` | document, kernel |
-| `core/workspace/` | `loam open`'s editor workspace: sibling-repo `discover`y through committed bindings, deterministic `.code-workspace` `render`ing | envelope, repo, kernel |
-| `core/openapi/` `core/asyncapi/` | the two contract axes; `openapi/merge/` is the delta path | repo, kernel |
-| `core/permissions/` | the fleet authorization vocabulary joined by `Requires:` | kernel |
-| `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | repo, document, kernel |
-| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | openapi, asyncapi, c4, repo |
-| `core/staging/` | the write path; `staging/recovery/` is the crash half | envelope, kernel |
-| `core/verify/` | the done-check: questions, answers, the record | openapi, repo, c4, document |
-| `core/delta/` `core/coherence/` | does the diff apply, and do the three axes agree | verify, repo, document |
-| `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | repo, document, kernel |
-| `core/gherkin/` `core/dependencies/` `core/explore/` `core/doctor/` | cross-artifact rules | everything above |
-| `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | provenance, fleet-context, openapi, asyncapi, c4, repo, document, envelope, vocabulary, kernel |
-| `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | everything above |
-| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | everything above |
-| `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | everything above |
+| `core/gherkin/` | the generated `.feature` files and the step catalogue over them | document, kernel, repo, vocabulary |
+| `core/glossary/` | `glossary/<term>.md` as a tree where presence classifies, and the fleet-wide backlinks into it | repo |
+| `core/openapi/` | the synchronous contract axis; `openapi/merge/` is the delta path | kernel, repo |
+| `core/openspec/` | the OpenSpec model (`model/`), the scan, and the decisions over it | document, kernel, repo |
+| `core/provenance/` | the `sources` list — vetting, digesting, walking — plus the bounded `git` child, `gitq/` and `sample/` | document, kernel, repo |
+| `core/workspace/` | `loam open`'s editor workspace: sibling-repo `discover`y through committed bindings, deterministic `.code-workspace` `render`ing | envelope, kernel, repo |
+| `core/asyncapi/` | the event contract axis; `asyncapi/merge/` is the delta path | kernel, openapi, repo |
+| `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked | c4, repo |
+| `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
+| `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
+| `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
+| `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
+| `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
+| `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, kernel, repo |
+| `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
+| `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
+| `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |
+| `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
+| `core/mcp/` | the MCP facade's pure half: stdio `framing`, JSON-RPC routing (`protocol`), the read-only `tools` table and its `argv` boundary | envelope, explain, kernel |
+| `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
+| `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
+| `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
+| `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | c4, kernel, provenance, repo, staging, status, vocabulary |
 
 Four modules stay loose in `core/`: `conflict-markers.ts`, `docs.ts`, `fleet-context.ts` and
 `results.ts`. That is not an oversight — a package of one is a directory pretending to be a subject,
-and the five-file limit counts files, not folders.
+and the five-file limit counts files, not folders. They are units of the graph all the same, and
+they interleave with the rows above: `conflict-markers` sits at the very top with `kernel`, `docs`
+just below `c4`, `results` beside `delta`, and `fleet-context` beside `explain`. Seven of the rows
+above name one of them in their `Depends on` cell, which is what makes them units rather than
+footnotes.
 
-The order of the rows is the dependency order, and every edge points up it. That is not a
-coincidence — the subjects were derived from the seven DAG levels this document already measured,
-which is why a grouping exists at all: a tree whose packages do not follow its levels has no acyclic
-grouping to find.
+The order of the rows is the dependency order, and **every edge points up it with exactly two
+exceptions, both out of `core/repo/`**: `repo -> c4` and `repo -> provenance`, each answered by an
+edge coming back (`core/c4/project/architecture.ts` imports `repo/paths.ts`;
+`core/provenance/findings.ts` imports `repo/paths.ts` and `repo/service-target.ts`). Those two are
+mutual dependencies between top-level subjects, and this claim used to be made without them.
+
+**Which granularity is checked, and by what, because the unqualified version of the sentence above
+is how this defect got here.** `npm run arch:graph` keys on the FULL relative directory, so
+`core/c4/project` and `core/c4` are different nodes to it — the graph it proves acyclic is finer
+than the subjects this table has rows for, and it is silent about both exceptions by construction.
+`npm run meta:check` (`scripts/self-model.mjs`) is what grades the collapsed graph these rows
+describe: it carries the two as a named baseline with the refactor each is waiting for, fails on a
+third, and fails again on a baseline entry that has been fixed and not deleted. Breaking either is a
+real move under the `git mv`-in-its-own-commit obligation below, and is deliberately not done in the
+change that recorded them.
+
+That the rest of the order holds is not a coincidence — the subjects were derived from the DAG
+levels this document already measured, which is why a grouping exists at all: a tree whose packages
+do not follow its levels has no acyclic grouping to find.
 
 **The obligation caught a real cycle in the first draft of this table.** `fleet-context` looked like
 it belonged with `repo` — it is the read model's cache, and `repo` is the read model. But `openapi`
@@ -300,7 +370,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 60 of the 139
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 61 of the 141
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 24 and 27 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
@@ -448,6 +518,23 @@ annotation sites is a one-time cost rather than an ongoing one.
 package-level import graph and reports its cycles. `import/no-cycle` reads the file graph and is
 blind to a cycle that exists only between directories, so rule 21's acyclicity obligation is this
 script or it is nothing.
+
+**And a second script holds the one thing THIS PAGE cannot see: whether this page is still true.**
+`scripts/package-graph.mjs` and `scripts/self-model.mjs` read one graph, built once in
+`scripts/source-graph.mjs`, so `import type` is exempt on both sides and neither can demand what the
+other forgives. The first proves the layering HOLDS. The second — `npm run meta:check`, in CI beside
+`npm run arch:check` — proves that `meta/docs/architecture/landscape.likec4`, which draws this
+table's 36 packages and every edge between them, still DESCRIBES `src/`: a package with no box, a
+box with no package, an import with no relationship, a relationship with no import, and a mutual
+dependency between top-level subjects that is not in its named baseline. It prints the fix and never
+applies it; a landscape emitted from a scan is a picture of the code, not a claim about it, and the
+non-goal against generated architecture applies to loam's own repository too.
+
+`loam validate --all` over that same tree (`cd meta && npx tsx ../src/cli.ts validate --all`; pinned
+at gate time by `test/self-model.test.ts`) is the third thing, and it is worth knowing exactly what
+it adds and what it cannot: it proves every `Covers:` line in `meta/docs/services/loam/arch.spec.md`
+resolves to a model object that exists, and it will never answer either of the questions above,
+because loam reads no source tree.
 
 **Review convention only, and that is fine:** rules 8, 9, 13, and 22–25. They are decisions, not
 properties. Writing them down is what makes the next "should we restructure?" a five-minute

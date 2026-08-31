@@ -3,8 +3,15 @@ dist/
 coverage/
 *.log
 .DS_Store
-# local pointer at a docs repo (the README "Try it" block writes one here)
-loam.json
+.idea/
+# a developer's own local pointer at some docs repo, made by hand and never
+# meant to be shared. ANCHORED: an unanchored `loam.json` matches that name at
+# any depth, which silently swallowed meta/loam.json and meta/docs/loam.json —
+# the committed self-model's own config — so `git add` reported nothing and the
+# axis could not be landed at all. That anchoring is also what lets
+# examples/docs/loam.json be committed, so the shipped example fleet runs from
+# a clone with no throwaway file anywhere. Only the ROOT one is disposable.
+/loam.json
 # per-machine tool permissions, not project configuration — the agents/ and
 # skills/ beside it ARE shared, which is why this is excluded by name
 .claude/settings.local.json

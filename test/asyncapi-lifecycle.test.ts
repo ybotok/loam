@@ -24,6 +24,7 @@ import {
   runLoam,
   treeHashes,
 } from "./helpers/harness.js";
+import { planAsyncapiBaselines } from "../src/core/asyncapi/baseline/plan.js";
 
 /** Fault injection for the commit phase — passthrough while `onRename` is unset. */
 const fsFault = vi.hoisted(() => ({
@@ -162,13 +163,32 @@ status: proposed
 billing-service already consumes payment.Refunded; give it a producer.
 `;
 
-function lifecycleFixture(featureAsyncapi: string = FEATURE_ASYNCAPI): Record<string, string> {
+/**
+ * A `components.schemas` sibling on both sides of the pair — a SURFACE, not a
+ * slot, and the half of the delta that used to vanish. The feature EDITS its
+ * title, so the whole lifecycle has to carry it: rebase writes the root
+ * `x-loam-baselines` record for it, the gate grades that record, archive
+ * merges the edit as part of the SAME journaled plan the slots go through,
+ * and unarchive restores every byte. A components write outside that plan
+ * would leave a half-merged contract behind a rolled-back one — which is what
+ * the fault-injection test at the end of this file is the guard against.
+ */
+const withSchema = (yaml: string, title: string): string => `${yaml}  schemas:
+    RefundAmount:
+      type: object
+      title: ${title}
+`;
+
+const LIVING_EVENTS = withSchema(LIVING_ASYNCAPI, "an amount");
+const FEATURE_EVENTS = withSchema(FEATURE_ASYNCAPI, "an amount, in minor units");
+
+function lifecycleFixture(featureAsyncapi: string = FEATURE_EVENTS): Record<string, string> {
   return {
     "architecture/landscape.likec4": EVENT_LANDSCAPE,
     "services/payment-service/model.likec4": SERVICE_MODEL,
     "services/payment-service/spec.md": LIVING_SPEC,
     "services/payment-service/openapi.yaml": LIVING_OPENAPI,
-    "services/payment-service/asyncapi.yaml": LIVING_ASYNCAPI,
+    "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
     "services/billing-service/model.likec4": BILLING_MODEL,
     "services/billing-service/spec.md": BILLING_SPEC,
     "services/billing-service/asyncapi.yaml": BILLING_ASYNCAPI,
@@ -216,7 +236,14 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
         ["operations", "sendRefunded", "unresolved"],
         ["components.messages", "Authorized", "pinned"],
         ["components.messages", "Refunded", "unresolved"],
+        // The SURFACE half, planned over the slot pass's output so one run
+        // writes one file once — the root record, not an in-value pin.
+        ["COMPONENT", "schemas/RefundAmount", "pinned"],
       ]);
+      expect(
+        parse(await p.read("features/FEAT-60-refunds/specs/payment-service/asyncapi.yaml"))["x-loam-baselines"],
+        "the surface record survives rebase alongside the in-value slot pins",
+      ).toEqual({ components: { "schemas/RefundAmount": expect.stringMatching(/^[0-9a-f]{16}$/) } });
 
       expect((await runLoam(p.workDir, "validate", "--feature", "FEAT-60")).code).toBe(0);
 
@@ -237,6 +264,10 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
       const doc = parse(living);
       expect(doc.operations.sendRefunded.action).toBe("send");
       expect(doc.components.messages.Refunded.name).toBe("payment.Refunded");
+      // The surface edit lands in the same merged document as the slots, and
+      // `asyncapi.component-modified` is the plan's word for it.
+      expect(doc.components.schemas.RefundAmount.title).toBe("an amount, in minor units");
+      expect((payload.warnings as Array<{ code: string }>).map((w) => w.code)).toContain("asyncapi.component-modified");
       // The quoted Authorized slot is living's own copy, not a rewrite.
       expect(doc.components.messages.Authorized).toEqual(parse(LIVING_ASYNCAPI).components.messages.Authorized);
 
@@ -291,9 +322,14 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
   });
 
   it("a fault-injected commit failure rolls the asyncapi write back with the rest of the plan", async () => {
-    // Pre-pinned via the same function `loam rebase` runs, so the fixture is
-    // deterministic without a rebase pass.
-    const p = await makeProject(lifecycleFixture(pinAsyncapi(FEATURE_ASYNCAPI, LIVING_ASYNCAPI)));
+    // Pre-pinned via the same two functions `loam rebase` runs, in its own
+    // order — slots in-value, then the surface record over that output — so
+    // the fixture is deterministic without a rebase pass. BOTH halves, because
+    // the surface write is the half that must ride in the same journaled plan:
+    // a components write outside it would survive the rollback below and leave
+    // a living contract half-merged behind one that was restored.
+    const pinned = planAsyncapiBaselines(pinAsyncapi(FEATURE_EVENTS, LIVING_EVENTS), LIVING_EVENTS, "payment-service");
+    const p = await makeProject(lifecycleFixture(pinned.text!));
     try {
       const before = await treeHashes(p.docsDir);
       // The asyncapi swap is the SECOND of the plan's three moves (after the

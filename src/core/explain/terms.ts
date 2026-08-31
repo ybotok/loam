@@ -3,27 +3,54 @@
  * in its first minute, before any docs repo exists to read.
  *
  * Each paragraph is authored HERE, but it is not free to drift: every entry
- * carries pin phrases lifted VERBATIM from the agents-md section that teaches
- * the concept, and test/explain.test.ts asserts each phrase appears both in
- * the paragraph and in its named source constant. Rewording the AGENTS.md
- * prose therefore breaks the pairing loudly — the same discipline the
- * compiler applies to refusals.ts, done with a test because prose has no type.
- * A pin phrase is kept to one source LINE, because the sections wrap at ~80
- * columns and a phrase spanning a wrap would never match.
+ * carries pin phrases lifted VERBATIM from the section that teaches the
+ * concept, and test/explain.test.ts asserts each phrase appears both in the
+ * paragraph and in its named source constant. Rewording that prose therefore
+ * breaks the pairing loudly — the same discipline the compiler applies to
+ * refusals.ts, done with a test because prose has no type. A pin phrase is
+ * kept to one source LINE, because the sections wrap at ~80 columns and a
+ * phrase spanning a wrap would never match.
+ *
+ * A source is no longer always an agents-md section. When the reference pages
+ * were split out of the scaffolded AGENTS.md, the frontmatter teaching went
+ * with them, and `vouch`'s pin went with the text rather than being reworded
+ * to something still in the file — the pairing is with whatever loam SHIPS as
+ * the teaching, not with one delivery of it.
  */
 import { ARTIFACTS } from "../agent/agents-md/artifacts.js";
 import { CYCLE } from "../agent/agents-md/cycle.js";
 import { REFUSALS } from "../agent/agents-md/refusals.js";
 import { SPINE } from "../agent/agents-md/spine.js";
+import { LOAM_AUTHORING } from "../agent/workflows/reference/authoring.js";
+import { LOAM_DONE_CHECK } from "../agent/workflows/reference/done-check.js";
+import { LOAM_SPINE } from "../agent/workflows/reference/spine.js";
 
-export type PinSource = "SPINE" | "REFUSALS" | "CYCLE" | "ARTIFACTS";
+export type PinSource =
+  | "SPINE"
+  | "SPINE_PAGE"
+  | "REFUSALS"
+  | "CYCLE"
+  | "ARTIFACTS"
+  | "AUTHORING"
+  | "DONE_CHECK";
 
-/** The section constants the pins point at, for the drift test and for anyone auditing a pairing. */
+/**
+ * The section constants the pins point at, for the drift test and for anyone
+ * auditing a pairing.
+ *
+ * `REFUSALS` is still listed and still pinned against, and it is no longer a
+ * section of AGENTS.md — it is the refusal half of the `loam-codes` page. The
+ * constant is what a pin names, and the constant did not move; only its
+ * delivery did.
+ */
 export const PIN_SOURCE_TEXT: Record<PinSource, string> = {
   SPINE,
+  SPINE_PAGE: LOAM_SPINE.body,
   REFUSALS,
   CYCLE,
   ARTIFACTS,
+  AUTHORING: LOAM_AUTHORING.body,
+  DONE_CHECK: LOAM_DONE_CHECK.body,
 };
 
 export interface TermPin {
@@ -53,8 +80,13 @@ export const TERMS: readonly TermEntry[] = [
       "records a no as `vouch-declined`, and refuses to stamp when git can name nobody (`vouch-unattributable`); " +
       "when your work leaves a document ready, hand back and say a vouch is owed.",
     pins: [
-      { source: "ARTIFACTS", phrase: "Promoting draft to verified is their call, not yours" },
-      { source: "ARTIFACTS", phrase: "**`loam vouch` is not yours to run**, and it is built so that it cannot be." },
+      // Both phrases left AGENTS.md with the frontmatter teaching and are now
+      // in `loam instructions loam-authoring`. Repaired by following the text,
+      // not by rewording the paragraph to something still in the file: the
+      // pairing exists so this paragraph and the teaching cannot drift, and
+      // re-pinning to a different sentence would have quietly ended it.
+      { source: "AUTHORING", phrase: "Promoting draft to verified is their call, not yours" },
+      { source: "AUTHORING", phrase: "**`loam vouch` is not yours to run**, and it is built so that it cannot be." },
     ],
   },
   {
@@ -69,7 +101,9 @@ export const TERMS: readonly TermEntry[] = [
       "pass `--results <report>` the moment a suite runs and the verdict moves on its own.",
     pins: [
       { source: "REFUSALS", phrase: "somebody says the code was built and showed evidence" },
-      { source: "CYCLE", phrase: "scenario claims rest on an agent's word is **attested**, not verified" },
+      // Left the cycle with the done-check teaching; repaired by following the
+      // text, as `vouch`'s two were.
+      { source: "DONE_CHECK", phrase: "scenario claims rest on an agent's word is **attested**, not verified" },
     ],
   },
   {
@@ -83,8 +117,8 @@ export const TERMS: readonly TermEntry[] = [
       "join is what `loam validate` checks. Spell it identically in all three places. The `spine.*` findings are exactly " +
       "these joins failing to resolve, and a mismatch is a broken contract between services, not a style problem.",
     pins: [
-      { source: "SPINE", phrase: "The spine is a family of exact joins, not one magic id" },
-      { source: "SPINE", phrase: "Spell it identically in all three places." },
+      { source: "SPINE_PAGE", phrase: "The spine is a family of exact joins, not one magic id" },
+      { source: "SPINE_PAGE", phrase: "Spell it identically in all three places." },
     ],
   },
   {
@@ -114,9 +148,9 @@ export const TERMS: readonly TermEntry[] = [
       "axes that disagree — `spec-api.op-undefined` is the behaviour axis joined against the contract axis — and the fix " +
       "is whichever side is wrong about the world.",
     pins: [
-      { source: "SPINE", phrase: "architecture — a C4 edge names the operation it calls" },
-      { source: "SPINE", phrase: "behaviour — a requirement declares the operations it governs" },
-      { source: "SPINE", phrase: "contract — the provider's `openapi.yaml` defines it" },
+      { source: "SPINE_PAGE", phrase: "architecture — a C4 edge names the operation it calls" },
+      { source: "SPINE_PAGE", phrase: "behaviour — a requirement declares the operations it governs" },
+      { source: "SPINE_PAGE", phrase: "contract — the provider's `openapi.yaml` defines it" },
     ],
   },
   {
@@ -133,8 +167,8 @@ export const TERMS: readonly TermEntry[] = [
     pins: [
       // Without the sentence-initial "A": the paragraph embeds the clause
       // mid-sentence, and a pin is a verbatim substring of BOTH sides.
-      { source: "SPINE", phrase: "MODIFIED requirement carries its FULL new text, not a diff" },
-      { source: "SPINE", phrase: `**Restamping is not resolving.** A pin claims "I read this version".` },
+      { source: "SPINE_PAGE", phrase: "MODIFIED requirement carries its FULL new text, not a diff" },
+      { source: "SPINE_PAGE", phrase: `**Restamping is not resolving.** A pin claims "I read this version".` },
     ],
   },
 ];

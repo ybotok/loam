@@ -223,7 +223,7 @@ export async function rebaseLivingLocked(
   }
 
   if (json) {
-    return emitJson({ ok: true, mode: "living", dryRun, pinned: changed.length, outcomes });
+    return emitJson({ command: "rebase", ok: true, mode: "living", dryRun, pinned: changed.length, outcomes });
   }
   const unresolved = outcomes.filter((o) => o.status === "unresolved");
   console.log(

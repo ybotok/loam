@@ -41,12 +41,11 @@ Before tagging:
 
 1. Bump `package.json` and `package-lock.json` to the intended version.
 2. Move release notes from `Unreleased` to a dated `## [version] - YYYY-MM-DD` changelog section.
-3. Complete security review and the two-fleet exit scorecard against one digest-bound `release:pack`
-   candidate; do not substitute the blank template for evidence.
+3. Complete the security review against one digest-bound `release:pack` candidate.
 4. Confirm CI is green on Node 22.22.3 and Node 24, including the installed-tarball smoke.
 5. From a clean checkout, run `npm run release:check -- --tag v<version>`. Any blocker stops the
    release.
-6. Review `npm pack --dry-run` contents and ensure no internal pilot artifacts or credentials are
+6. Review `npm pack --dry-run` contents and ensure no internal fleet artifacts or credentials are
    present.
 7. Merge the candidate. An authorized maintainer may then create the exact `v<version>` tag; the
    workflow performs the gate again before publishing.

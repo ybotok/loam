@@ -48,6 +48,7 @@ export const ARTIFACT_FILES = {
   asyncapi: "asyncapi.yaml",
   runbook: "runbook.md",
   health: "health.yaml",
+  steps: "steps.yaml",
 } as const;
 const ADRS_DIR = "adrs";
 
@@ -67,6 +68,19 @@ export interface ServicePaths {
   asyncapi: string;
   runbook: string;
   health: string;
+  /**
+   * The step catalogue — which phrases this service's suite has DECIDED to
+   * define. Authored and opt-in; its CONTENTS are read by `loam steps` alone and
+   * nothing in `validate` consults them
+   * (`core/gherkin/steps/catalogue.ts` records why).
+   *
+   * Its EXISTENCE is read more widely, and that is not the same statement: the
+   * filename is in `ARTIFACT_FILES`, so `isServiceArtifactName` classifies it
+   * and the tree walk treats a directory holding one as a service. That is
+   * correct — it is a service artifact — and it is worth writing down, because
+   * it means a `steps.yaml` written at the wrong path mints a service.
+   */
+  steps: string;
   adrsDir: string;
 }
 
@@ -87,6 +101,7 @@ export function servicePathsAt(dir: ServiceDir): ServicePaths {
     asyncapi: join(dir, ARTIFACT_FILES.asyncapi),
     runbook: join(dir, ARTIFACT_FILES.runbook),
     health: join(dir, ARTIFACT_FILES.health),
+    steps: join(dir, ARTIFACT_FILES.steps),
     adrsDir: join(dir, ADRS_DIR),
   };
 }

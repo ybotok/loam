@@ -208,4 +208,50 @@ export const AGENT_TOOLS: Record<string, AgentTool> = {
     skill: skillsIn(".trae"),
     detect: [".trae"],
   },
+  // The vendor-neutral skills root, and the only id here that names no vendor.
+  // `.agents/skills/<name>/SKILL.md` is read by six of the tools that already
+  // have entries above, each documenting it in its own words:
+  //
+  //   Cursor — "Skills are automatically loaded from `.agents/skills/`,
+  //     `.cursor/skills/`, `~/.agents/skills/` … and `~/.cursor/skills/`"
+  //     (Agent Skills, cursor.com/docs/skills).
+  //   GitHub Copilot — "For project skills, specific to a single repository,
+  //     create a `.github/skills`, `.claude/skills`, or `.agents/skills`
+  //     directory in your repository" (Adding agent skills for GitHub Copilot,
+  //     docs.github.com/en/copilot → customize-cloud-agent/add-skills).
+  //   Codex — "Codex scans `.agents/skills` in every directory from your
+  //     current working directory up to the repository root" (Build skills,
+  //     developers.openai.com/codex/skills).
+  //   Gemini CLI — `.agents/skills/` is the workspace-tier alias for
+  //     `.gemini/skills/`, and "within the same tier … takes precedence over
+  //     the `.gemini/skills/` directory" (docs/cli/skills.md in
+  //     google-gemini/gemini-cli).
+  //   Zed — "Skills are loaded from `~/.agents/skills/` and
+  //     `<worktree>/.agents/skills/` only" (Agent Skills, zed.dev/docs/ai/skills).
+  //   Roo Code — `.agents/skills/` is its cross-agent project location, ranked
+  //     below `.roo/skills/` at the same level (Skills,
+  //     docs.roocode.com/features/skills).
+  //
+  // Skills only, for the reason spelled out on `codex`: not one of those six
+  // documents a COMMAND file under this root, so a `.agents/commands/` would be
+  // files nothing will ever open — the thing this entry exists to stop.
+  //
+  // Purely ADDITIVE, and that is the design rather than an implementation
+  // detail. No tool above loses or re-points its own skill path: a repo already
+  // carrying `.claude/skills/` keeps getting them there. This entry is for the
+  // team that would rather have ONE copy those six read than six copies of the
+  // same bytes, and choosing that is the user's call — which is why selecting
+  // `agents` adds a target and never removes one.
+  //
+  // `detect` is `.agents/skills`, never a bare `.agents/`, for exactly
+  // `github-copilot`'s reason. `.agents/` is a shared root that other
+  // conventions also write into, so a bare marker would auto-scaffold into any
+  // repository where something else had made the directory — the failure that
+  // rules out `.github/` one entry up. It is also NOT `antigravity`'s
+  // `.agent/`: one letter apart, unrelated conventions, and `existsSync` on
+  // either says nothing about the other.
+  agents: {
+    skill: skillsIn(".agents"),
+    detect: [".agents/skills"],
+  },
 };

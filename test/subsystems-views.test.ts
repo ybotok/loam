@@ -288,6 +288,46 @@ describe("validate --all — subsystem.views-stale", () => {
   });
 });
 
+describe("a Windows checkout: line endings are not a stale render", () => {
+  // The generated file is the one file loam forbids editing by hand, and
+  // `core.autocrlf` is Git for Windows' installer default while a docs repo
+  // ships no `.gitattributes` — so an ordinary clone rewrites every line of it
+  // and changes not one fact. Under a byte compare that read as stale, and the
+  // repair the finding advertises made it worse: `loam subsystem sync` rewrote
+  // with LF, git reported the file permanently modified, and the next checkout
+  // put the CRLF back. Measured on this repository's own `examples/docs`: one
+  // error where every other check was green.
+  const crlf = (text: string): string => text.replace(/\n/g, "\r\n");
+
+  it("reads a CRLF-rewritten generated views file as agreeing with the tree", async () => {
+    const p = await makeProject(nestedFixture());
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      await p.write(VIEWS, crlf(await p.read(VIEWS)));
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code, res.stdout).toBe(0);
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still reads a real edit made on a CRLF checkout as stale — normalising endings is not normalising content", async () => {
+    // The converse, so the check does not go blind: a compare that ignored
+    // line endings by ignoring the comparison would pass the case above too.
+    const p = await makeProject(nestedFixture());
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      await p.write(VIEWS, crlf((await p.read(VIEWS)) + "// a hand edit\n"));
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(1);
+      expect(subsystemFindings(res.stdout).map((f) => f.code)).toEqual(["subsystem.views-stale"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("validate --all — subsystem.view-id-collision", () => {
   /** `nestedFixture()` with the landscape authoring the view id the generator mints. */
   function collidingFixture(viewId: string): Record<string, string> {

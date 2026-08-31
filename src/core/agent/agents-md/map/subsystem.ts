@@ -1,6 +1,6 @@
 /**
  * The `loam subsystem` half of the command map — its own section module
- * because command-map.ts sits against the 300-line limit and the agents-md
+ * because command-map.ts sat against the file-line limit and the agents-md
  * package against the five-file cap, so the tree surface's documentation
  * lives one package down and is concatenated after the map.
  *

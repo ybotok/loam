@@ -43,6 +43,7 @@ export function reportFrozen(
 
   if (json) {
     emitJson({
+      command: "verify",
       feature: featureId,
       path: repoPath(docsDir, featureDir),
       frozen: true,

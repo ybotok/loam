@@ -84,13 +84,31 @@ export function registerGherkin(program: Command): void {
       }
       // The emission writes into the repo loam is standing in, so it can only
       // run where that repo is this service's — vouch's refusal, verbatim logic.
-      if (config.service !== service) {
-        const here =
-          config.service === undefined ? "this is not a service repo" : `this repo is '${config.service}'`;
+      //
+      // TWO conditions, two codes, and the split is the whole point. Both used
+      // to answer `invalid-option`, whose `loam explain` row says the
+      // invocation itself is wrong — contradictory flags, a mistyped one, a
+      // value that cannot be right. Here the invocation is perfectly correct
+      // and the REPOSITORY is the wrong one, so that code sent a user whose
+      // flags were fine off to re-read their flags, and left CI and agents
+      // unable to tell "run this in the service repo" from "you typed the flag
+      // wrong". `loam verify --record --service` already draws exactly this
+      // line for exactly this reason (see commands/verify/verify.ts); gherkin
+      // and vouch now answer the same pair, so a caller branching on
+      // `error.code` gets one answer from all three. The messages are
+      // unchanged — only the code moved.
+      if (config.service === undefined) {
         return fail(
           json,
-          "invalid-option",
-          `Cannot emit gherkin for '${service}' from here: ${here}. Generated .feature files land in the service's own repo — run it there.`,
+          "repository-unavailable",
+          `Cannot emit gherkin for '${service}' from here: this is not a service repo. Generated .feature files land in the service's own repo — run it there.`,
+        );
+      }
+      if (config.service !== service) {
+        return fail(
+          json,
+          "service-mismatch",
+          `Cannot emit gherkin for '${service}' from here: this repo is '${config.service}'. Generated .feature files land in the service's own repo — run it there.`,
         );
       }
 
@@ -249,6 +267,7 @@ export function registerGherkin(program: Command): void {
 
       if (json) {
         emitJson({
+          command: "gherkin",
           mode: scope.mode,
           ...(scope.mode === "feature" ? { feature: scope.featureId } : {}),
           service,

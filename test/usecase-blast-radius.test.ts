@@ -58,6 +58,7 @@ const UC_LANDSCAPE = `specification {
   element softwareSystem
   element person
   tag cap-checkout
+  tag req-CHK-ONCE
 }
 
 model {
@@ -95,6 +96,17 @@ const UC_FLOW = `views {
   }
 }
 `;
+
+/**
+ * The same three hops under `#req-CHK-ONCE` and NO `#cap-` tag — a flow whose
+ * author claimed a business promise and never said which capability it is under.
+ * Derived from `UC_FLOW` rather than written out, so the hops cannot drift apart
+ * from the `#cap-` case and leave the two answers incomparable.
+ *
+ * `UC_LANDSCAPE` still declares `cap-checkout`, so the byte gate opens under
+ * either spelling of it and these cases measure the PREDICATE alone.
+ */
+const REQ_ONLY_FLOW = UC_FLOW.replace("#cap-checkout", "#req-CHK-ONCE");
 
 /**
  * A document that CANNOT parse — `ghost` is declared nowhere — and that never
@@ -183,6 +195,35 @@ describe("loam delta — the flows a service is a hop of", () => {
     }
   });
 
+  it("reports a view tagged only #req- — the opt-in is either reserved prefix", async () => {
+    // `validate --all` graded such a flow hop by hop while `loam delta` filtered
+    // on `#cap-` alone, so an implementer's brief silently omitted a business
+    // flow their fleet grade was failing them over. The tag is verbatim in the
+    // payload — `keptBy` is a different join and a `#req-` tag with no capability
+    // to scope it keeps nothing — so what is asserted here is visibility, which
+    // is the whole claim.
+    const p = await makeProject(
+      fixture({
+        "architecture/landscape.likec4": UC_LANDSCAPE,
+        "architecture/usecases/checkout.likec4": REQ_ONLY_FLOW,
+      }),
+    );
+    try {
+      const useCases = await deltaUseCases(p, "payment-service");
+      expect(useCases.unreadable).toBe(false);
+      expect(useCases.flows).toHaveLength(1);
+      const flow = useCases.flows[0]!;
+      expect(flow.id).toBe("uc_checkout");
+      expect(flow.tags).toEqual(["req-CHK-ONCE"]);
+      // The hop narrowing is unchanged: step 2 alone, exactly as for the
+      // `#cap-`-tagged flow drawn over the same three hops.
+      expect(flow.steps.map((s) => s.ordinal)).toEqual([2]);
+      expect(flow.steps[0]!.services).toEqual(["payment-service"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("prints the section for a person, and says so when no flow draws the service", async () => {
     const p = await makeProject(
       fixture({
@@ -220,6 +261,28 @@ describe("loam status — the flows a feature's services are hops of", () => {
       expect(useCases.flows).toHaveLength(1);
       // FEAT-1 touches payment-split-service alone, so step 3 is the whole
       // answer — the report narrows to what the feature is about.
+      expect(useCases.flows[0]!.steps.map((s) => s.ordinal)).toEqual([3]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("sees a view tagged only #req- as well — status and delta share the one predicate", async () => {
+    // Asserted separately from delta's rather than trusted to the shared load:
+    // the two commands are what a reader compares, and a status that could not
+    // see the flow would be a feature reporting a clean blast radius while
+    // `loam delta --service` on one of its own services named the flow.
+    const p = await makeProject(
+      fixture({
+        "architecture/landscape.likec4": UC_LANDSCAPE,
+        "architecture/usecases/checkout.likec4": REQ_ONLY_FLOW,
+      }),
+    );
+    try {
+      const useCases = await statusUseCases(p);
+      expect(useCases.unreadable).toBe(false);
+      expect(useCases.flows).toHaveLength(1);
+      expect(useCases.flows[0]!.tags).toEqual(["req-CHK-ONCE"]);
       expect(useCases.flows[0]!.steps.map((s) => s.ordinal)).toEqual([3]);
     } finally {
       await p.destroy();
@@ -274,6 +337,28 @@ describe("the landscape load is lazy, and its emptiness is never ambiguous", () 
       // Not "no use cases" — loam could not look, and says so. An empty `flows`
       // beside `unreadable: false` here would be a positive claim about a
       // directory nobody read.
+      expect(useCases.unreadable).toBe(true);
+      expect(useCases.flows).toEqual([]);
+      expect(useCases.error).toBeDefined();
+      expect(await statusUseCases(p)).toMatchObject({ unreadable: true, flows: [] });
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a `req-` mention alone opens it too — a gate narrower than the predicate is silence", async () => {
+    // The other half of the widening, and the half that would have made the
+    // first half do nothing. A fleet whose only flow carries `#req-<slug>`
+    // declares `tag req-…` and writes `cap-` NOWHERE, so a `cap-`-only byte scan
+    // answered "no use cases" and the project was never loaded — every reader
+    // then agreed about a fleet none of them had looked at. The same broken
+    // document as above measures it: `unreadable: true` is only reachable if the
+    // scan opened the gate on `req-` alone.
+    const p = await makeProject(
+      fixture({ "architecture/landscape.likec4": brokenArchitecture("  tag req-CHK-ONCE\n") }),
+    );
+    try {
+      const useCases = await deltaUseCases(p, "payment-split-service");
       expect(useCases.unreadable).toBe(true);
       expect(useCases.flows).toEqual([]);
       expect(useCases.error).toBeDefined();

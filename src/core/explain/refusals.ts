@@ -59,11 +59,11 @@ export const REFUSAL_MEANINGS = {
   "answers-unevidenced":
     "A `confirmed` answer carries no evidence — evidence is `file:line`, and a claim you cannot show is `unconfirmed` with a note saying why, which is a successful record, not a failure.",
   "service-mismatch":
-    "A recording `loam verify` was told `--service` for a service this repository's loam.json does not declare — an attestation must be bound to the code it is about, so record from that service's own repo.",
+    "A command that must run inside one service's own repository was told `--service` for a service this repository's loam.json does not declare: a recording `loam verify`, whose attestation must be bound to the code it is about; `loam gherkin`, whose .feature files land in that service's checkout; or `loam vouch`, whose `sources` resolve there. Run it from that service's own repo.",
   "unknown-service":
     "Federated verify recording: the selected service is not one this feature's checklist (or the docs repo) knows, so there is nothing its attestation could bind to — fix the id.",
   "repository-unavailable":
-    "The repository this operation must be bound to (or read from) cannot be answered for — most commonly a writing `loam verify` in a repo whose loam.json declares no `service`, or a docs repo that cannot be enumerated — so the command refuses rather than guessing.",
+    "The repository this operation must be bound to (or read from) cannot be answered for — most commonly a writing `loam verify`, a `loam gherkin` or a `loam vouch` run where loam.json declares no `service` at all (the docs repo, usually), or a docs repo that cannot be enumerated — so the command refuses rather than guessing which service it is about.",
   "record-federated":
     "`loam verify --record` without `--service` over a federated (schema 2) record — the all-at-once form would erase other repositories' attestations, so it is refused naming the attestors; record per service instead.",
   "record-unreadable":

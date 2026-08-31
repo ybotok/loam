@@ -13,7 +13,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { fail, repoPath } from "../../../core/envelope/json.js";
+import { fail, repoPath, sayExplain } from "../../../core/envelope/json.js";
 import { approveOverrides, gatesArchive, type Issue } from "../../../core/vocabulary/issue.js";
 import { recoverInterruptedCommit } from "../../../core/staging/recovery/recover.js";
 import { readUtf8 } from "../../../core/staging/writes.js";
@@ -106,6 +106,14 @@ export async function gate(
     console.error(`${msg}:`);
     for (const f of illegalServices) console.error(`  ✗ ${f.message}`);
     console.error(`\n--approve does not override this — the directory the merge would create is one loam can never address, mechanically.`);
+    // Every arm in this file refuses by hand — it prints a headline, a list and
+    // a closing sentence rather than the one message `fail()` takes — so the
+    // code and its lookup have to be asked for explicitly. `sayExplain` is
+    // called rather than the format being copied six times, and the code passed
+    // is the SAME one the `--json` branch a few lines up emits: text and
+    // envelope must name one refusal, or a reader who switches modes to find
+    // the code is handed a different answer than the one they saw.
+    sayExplain("not-coherent");
     process.exitCode = 1;
     return null;
   }
@@ -132,6 +140,7 @@ export async function gate(
     console.error(`${msg}:`);
     for (const f of conflicted) console.error(`  ✗ ${f.message}`);
     console.error(`\n--approve does not override this — the loss is mechanical, not a judgment call.`);
+    sayExplain("merge-failed");
     process.exitCode = 1;
     return null;
   }
@@ -176,6 +185,7 @@ export async function gate(
     console.error(
       `\nOf these, --approve does not override the ${nonOverridable.length} illegal binding(s) — the merge would write a name loam can never resolve into services/, mechanically. Fix the binding(s); the other issues gate as usual.`,
     );
+    sayExplain("not-coherent");
     process.exitCode = 1;
     return null;
   }
@@ -190,6 +200,7 @@ export async function gate(
     console.error(`${msg}:`);
     for (const i of issues) console.error(`  ${SEVERITY_MARK[i.severity]} ${i.message}`);
     console.error(`\nFix the gating issues (advisory warnings never block), or re-run with --approve to override them (may corrupt the living docs).`);
+    sayExplain("not-coherent");
     process.exitCode = 1;
     return null;
   }
@@ -226,6 +237,7 @@ export async function gate(
     console.error(`${msg}:`);
     for (const f of unknownServices) console.error(`  ✗ ${f.message}`);
     console.error(`\nFix the id, or introduce the service in this feature's delta.likec4 — or re-run with --approve to create it anyway.`);
+    sayExplain("not-coherent");
     process.exitCode = 1;
     return null;
   }
@@ -285,6 +297,7 @@ export async function gate(
     console.error(`${msg}:`);
     for (const i of strayed) console.error(`  ✗ ${i.message}`);
     console.error(`\n--approve does not override this — the duplication is mechanical, not a judgment call.`);
+    sayExplain("living-outside-requirements");
     process.exitCode = 1;
     return null;
   }

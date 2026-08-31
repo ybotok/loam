@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../../core/envelope/config.js";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
-import { emitJson, emitJsonError, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { emitJson, emitJsonError, fail, repoPath, reportNoConfig, sayExplain } from "../../core/envelope/json.js";
 import { loadFile } from "../../core/c4/likec4.js";
 import { compareIds, nearestIds } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
@@ -89,6 +89,12 @@ export function registerDelta(program: Command): void {
         if (json) emitJsonError("invalid-option", message, { feature: id, services: featureServices });
         else {
           console.error(message);
+          // This arm refuses by hand because the envelope carries `services` as
+          // data, which `fail()` has no room for — so the code and its lookup
+          // are asked for explicitly, with the same code the branch above
+          // emits. Without it this was one of the two refusals that most needed
+          // `loam explain` and had no way to name it.
+          sayExplain("invalid-option");
           process.exitCode = 1;
         }
         return;
@@ -214,6 +220,7 @@ export function registerDelta(program: Command): void {
           scenarios: r.scenarios.map((s) => ({ name: s.name, lines: s.lines })),
         });
         emitJson({
+          command: "delta",
           feature: id,
           service,
           services: featureServices,

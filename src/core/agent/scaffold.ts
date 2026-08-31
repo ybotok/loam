@@ -59,6 +59,15 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  * below the spine is a loam invocation, so an agent that cannot run loam was
  * never going to complete this workflow from the file either — it was going to
  * try, using a year-old flag.
+ *
+ * The last clause of the pointer is the one sentence here that changes what an
+ * agent DOES rather than what it knows. `loam instructions loam-check` prints
+ * 84 KB — about a fifth of a 100k-token window, 223 fix-table rows of which a
+ * run needs two or three — and every file written from this stub opens by
+ * telling the agent to run it. `--no-fix-tables` (commands/instructions.ts)
+ * drops the rows, and `loam explain <code>` answers the one row the run turned
+ * out to need in under 500 bytes. The flag is what makes the lazy path payable;
+ * this sentence is what makes an agent take it.
  */
 function stubBody(c: CommandContent): string {
   const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
@@ -77,7 +86,9 @@ ${steps}
 Every step above is a \`loam\` invocation, and each command's own \`--json\` output
 carries what to do next: findings have stable codes, and \`loam status --json\` puts
 the ordered \`next[]\` — each entry a code and the literal command — in one place.
-Branch on the codes, never on the prose.
+Branch on the codes, never on the prose — which is also how to read the protocol
+itself: add \`--no-fix-tables\` to the command above for the page without its per-code
+tables, then \`loam explain <code>\` for each code the run actually reports.
 
 This file is a pointer, not the protocol. loam wrote it once and will never
 rewrite it, so your edits here outrank the template and nothing will quietly

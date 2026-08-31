@@ -12,8 +12,8 @@
  * check is worth having at all:
  *
  * 1. A near miss is reported, with the directive it was near.
- * 2. Ordinary prose keys are NOT. The pilot's exit criterion caps false
- *    positives at 10% of classified findings, and a grammar guard that fires on
+ * 2. Ordinary prose keys are NOT. A fleet's false-positive budget is small —
+ *    10% of classified findings — and a grammar guard that fires on
  *    `Note:` or `Context:` would spend that budget by itself. The negative cases
  *    below are the check's real specification.
  *

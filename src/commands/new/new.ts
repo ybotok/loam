@@ -231,6 +231,7 @@ export function registerNew(program: Command): void {
 
       if (json) {
         emitJson({
+          command: "new",
           feature: featureId,
           path: repoPath(docsDir, dir),
           created: written,

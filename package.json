@@ -1,7 +1,7 @@
 {
   "name": "@ybotok/loam",
   "version": "0.1.0-beta.3",
-  "description": "Architecture-first specification framework for microservice fleets: connect C4, requirements, APIs, events, permissions, and verification evidence.",
+  "description": "Architecture-first semantic integrity and change governance for evolving software systems: connect C4, requirements, contracts, and verification evidence.",
   "author": "spentsov",
   "repository": {
     "type": "git",
@@ -13,9 +13,13 @@
   },
   "keywords": [
     "architecture",
+    "architecture-governance",
     "c4",
+    "distributed-systems",
     "gherkin",
     "microservices",
+    "modular-monolith",
+    "semantic-integrity",
     "spec-driven-development"
   ],
   "type": "module",
@@ -24,6 +28,7 @@
   },
   "files": [
     "dist",
+    "examples",
     "CHANGELOG.md",
     "COMPARISON.md",
     "CONTRIBUTING.md",
@@ -52,12 +57,13 @@
     "test:coverage": "vitest run --coverage",
     "arch:graph": "node scripts/package-graph.mjs",
     "arch:check": "node scripts/arch-check.mjs",
+    "meta:model": "node scripts/self-model.mjs --print",
+    "meta:agents": "tsx scripts/meta-agents.ts",
+    "meta:check": "node scripts/self-model.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:check:selftest": "node scripts/release-check.mjs --fixture-ready",
     "release:pack": "node scripts/pack-release.mjs",
-    "pilot:run": "node scripts/pilot-harness.mjs",
-    "pilot:check": "node scripts/pilot-harness.mjs --check-manifest docs/pilot/manifest.example.json --selftest",
     "test:openspec-corpus": "tsx scripts/check-openspec-corpus.ts",
     "bench:validate": "tsx scripts/bench-validate.ts",
     "setup": "bash scripts/setup.sh"

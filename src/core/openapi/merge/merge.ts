@@ -17,13 +17,19 @@ import { HTTP_METHODS } from "../doc.js";
 import { errorMessage, OpenapiMergeError } from "./error.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
-import { entryFor, readBaselineRecord } from "../baseline/record.js";
+import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";
 import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { mergeComponentClosure } from "./components.js";
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */
 export interface OpenapiMergeResult {
-  /** The merged living document, or null when the feature document has no paths to merge. */
+  /**
+   * The merged living document, or null when the feature document restates
+   * nothing at all — neither a path entry nor a component. It used to be null
+   * for a document with no `paths` key whatever its components said, and a
+   * delta whose whole change was a shared schema archived at exit 0 having
+   * merged nothing.
+   */
   text: string | null;
   /** Labels of existing operations overwritten with different content. */
   modified: string[];
@@ -57,6 +63,15 @@ export interface OpenapiMergeResult {
   pathItemStale: string[];
   /** `<kind>/<name>` of living components overwritten with different content. */
   componentsModified: string[];
+  /**
+   * `<kind>/<name>` of components written into a living contract that did not
+   * have them. Beside `componentsModified` because the plan needs a name for
+   * what a merge ADDED: a components-only delta merges no operation, and the
+   * plan line naming the merged operation ids read `merged ()` for it — empty
+   * parentheses, which is how a merge that published a new shared schema
+   * looked exactly like one that did nothing.
+   */
+  componentsAdded: string[];
   /** Components the delta QUOTED — not copied, living's copy kept. */
   componentsQuoted: string[];
   /** Components written on a stale record entry — under `--approve`, like the operations. */
@@ -68,7 +83,9 @@ export interface OpenapiMergeResult {
 
 /**
  * Merge the feature's `paths` into the living OpenAPI structurally (YAML AST, not
- * text splicing). A feature document without paths is a successful no-op.
+ * text splicing). A feature document restating NOTHING — no path entry and no
+ * component — is a successful no-op; one whose whole delta is a component is
+ * merged like any other, through the closure at the end of this function.
  * The merged operations' local component-ref closure rides along recursively;
  * external refs are left untouched and never gated.
  *
@@ -103,14 +120,27 @@ export function mergeOpenapiPaths(
     throw new OpenapiMergeError("feature", service, errorMessage(error));
   }
   const featPathsPlain = plainChild(featPlain, "paths");
-  if (featPathsPlain === undefined || featPathsPlain === null) {
-    return noop();
-  }
-  if (!isRecord(featPathsPlain)) {
+  // The SHAPE refusal is unchanged and stays first: a `paths` that is a
+  // sequence or a scalar is a document loam cannot merge. Absent and null
+  // (`paths:` with nothing under it) are not shape faults — they are documents
+  // holding no path entries, which is a different sentence and now has a
+  // different answer.
+  if (featPathsPlain !== undefined && featPathsPlain !== null && !isRecord(featPathsPlain)) {
     throw new OpenapiMergeError("feature", service, "`paths` is not a mapping");
   }
-  const featPathEntries = Object.entries(featPathsPlain);
-  if (featPathEntries.length === 0) return noop();
+  const featPathEntries = isRecord(featPathsPlain) ? Object.entries(featPathsPlain) : [];
+  // "Is there anything to merge?" is a question about the whole delta, and for
+  // years it was asked of `paths` alone — an absence test standing in for the
+  // decision. It returned here, before the living document was even parsed, so
+  // the component closure (the last statement of this function, and the only
+  // thing that writes a component) never ran: a feature whose entire change was
+  // a shared schema passed the gate and archived at exit 0 having merged
+  // NOTHING. The components answer it too now, over the ONE surface
+  // enumeration the gate and the rebase plan already grade the delta with.
+  const componentsAreTheDelta = featPathEntries.length === 0;
+  if (componentsAreTheDelta && !restatedSurfaces(featPlain).some((s) => s.kind === "component")) {
+    return noop();
+  }
 
   const living = parseDocument(livingText);
   if (living.errors.length > 0) {
@@ -266,8 +296,8 @@ export function mergeOpenapiPaths(
     }
   }
 
-  const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written });
-  const { componentsModified, componentsQuoted, componentsStale, unresolved } = closure;
+  const closure = mergeComponentClosure({ living, featPlain, livingPlain, record, written, componentsAreTheDelta });
+  const { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved } = closure;
 
   let text: string;
   try {
@@ -277,15 +307,22 @@ export function mergeOpenapiPaths(
   }
   return {
     text, modified, pathItemModified, removed, quoted, baselineStale,
-    pathItemQuoted, pathItemStale, componentsModified, componentsQuoted, componentsStale, unresolved,
+    pathItemQuoted, pathItemStale, componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,
   };
 }
 
-/** The successful "the feature document has nothing to merge" answer. */
+/**
+ * The successful "the feature document has nothing to merge" answer. Every key
+ * of the result is spelled here, empty, rather than left off: the two objects
+ * are compared field by field in the tests and read field by field by the plan,
+ * and a `noop()` that quietly lacked a key would make "no delta" and "a delta
+ * that merged nothing" structurally different shapes of the same answer.
+ */
 function noop(): OpenapiMergeResult {
   return {
     text: null, modified: [], pathItemModified: [], removed: [], quoted: [], baselineStale: [],
-    pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsQuoted: [], componentsStale: [], unresolved: [],
+    pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsAdded: [],
+    componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }
 

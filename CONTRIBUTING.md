@@ -14,7 +14,7 @@ npm run test:package
 
 The one-shot `npm run setup` command performs installation, build, and a CLI smoke check. Keep
 changes scoped, add tests for behavior changes, and do not commit generated `dist/`, coverage, local
-`loam.json`, pilot fleet data, or pilot outputs containing internal paths.
+`loam.json`, fleet data, or command outputs containing internal paths.
 
 Read [AGENTS.md](https://github.com/ybotok/loam/blob/main/AGENTS.md) before changing Loam itself.
 [docs/DESIGN.md](https://github.com/ybotok/loam/blob/main/docs/DESIGN.md) explains the module
@@ -80,5 +80,5 @@ environment, npm trusted publisher, changelog date, private security channel, an
 release-readiness checks must be in place first.
 
 See the
-[fail-closed release checklist](https://github.com/ybotok/loam/blob/main/docs/pilot/RELEASE-READINESS.md).
+[fail-closed release checklist](https://github.com/ybotok/loam/blob/main/docs/RELEASE-READINESS.md).
 Creating a tag or publishing a package is never part of an ordinary contribution.

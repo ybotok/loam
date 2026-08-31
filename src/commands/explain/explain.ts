@@ -11,15 +11,33 @@
  * finding prose is parsed at runtime out of the same workflow bodies this
  * binary ships (core/explain/fix-tables.ts), so what `explain` says and what
  * /loam-check teaches cannot disagree.
+ *
+ * `--codes` adds the missing half: per-code lookup was always cheap, but
+ * nothing could discover WHICH codes exist — the ~230 finding codes and 46
+ * refusal codes were enumerable only from erased TypeScript unions or by
+ * parsing the 83 KB prose body of `loam instructions loam-check`. It is opt-in
+ * and off by default precisely so the term listing and every per-code page
+ * stay byte-for-byte what they were: this is an addition to the contract, not
+ * a change to it, and the term listing's own footer is left alone for the same
+ * reason.
  */
 import type { Command } from "commander";
 import { emitJson, fail } from "../../core/envelope/json.js";
 import { LOAM_VERSION } from "../../core/envelope/version.js";
-import { explainSubject, knownSubjects, listTerms, type Explanation } from "../../core/explain/lookup.js";
+import {
+  explainSubject,
+  firstSentence,
+  knownSubjects,
+  listCodes,
+  listTerms,
+  type CodeListing,
+  type Explanation,
+} from "../../core/explain/lookup.js";
 import { nearestIds } from "../../core/repo/entries.js";
 
 interface ExplainOptions {
   json?: boolean;
+  codes?: boolean;
 }
 
 // Interpolated from the registry that owns the terms, never hand-listed: a
@@ -42,6 +60,57 @@ function printTermListing(json: boolean): void {
     "\nFinding codes come from `loam validate` and `loam verify` output; refusal codes arrive as error.code" +
       "\nin any --json envelope. `loam explain <subject>` explains one.",
   );
+}
+
+/**
+ * How much of a code's meaning the inventory shows before it stops.
+ *
+ * The term listing prints whole first sentences because there are six of them
+ * and each is under 200 characters. The code listing prints 270-odd rows whose
+ * first sentences run to 377 characters, and a row that wraps four times is a
+ * paragraph, not a line of a table — it destroys the one thing this listing is
+ * for, which is scanning names. Nothing is lost: the sentence is verbatim in
+ * `--json`, and `loam explain <code>` prints the whole entry.
+ */
+const SUMMARY_WIDTH = 72;
+
+/** The listing's one-line gloss: the first sentence of the meaning, cut at a word boundary if it runs long. */
+function summarize(listing: CodeListing): string {
+  // A code graded in two tables is glossed by the FIRST table's meaning — the
+  // listing answers "what is this about", and the per-scope difference (which
+  // `explain <code>` prints in full, one block per table) is exactly the
+  // detail a one-line row cannot carry honestly.
+  const sentence = firstSentence(listing.kind === "finding" ? listing.entries[0]!.meaning : listing.meaning);
+  if (sentence.length <= SUMMARY_WIDTH) return sentence;
+  const cut = sentence.lastIndexOf(" ", SUMMARY_WIDTH);
+  return `${sentence.slice(0, cut === -1 ? SUMMARY_WIDTH : cut)}…`;
+}
+
+/**
+ * `--codes`: the whole code vocabulary, the inventory that was previously
+ * enumerable only out of TypeScript unions or the 83 KB /loam-check prose.
+ * The JSON rows are the per-code answers verbatim (core/explain/lookup.ts
+ * derives `CodeListing` from `Explanation`), so a consumer can build a
+ * code-to-fix cache from one call instead of one call per code.
+ */
+function printCodeListing(json: boolean): void {
+  const codes = listCodes();
+  if (json) {
+    emitJson({ command: "explain", version: LOAM_VERSION, codes });
+    return;
+  }
+  const findings = codes.filter((listing) => listing.kind === "finding");
+  const refusals = codes.filter((listing) => listing.kind === "refusal");
+  const width = Math.max(...codes.map(({ code }) => code.length));
+  const print = (group: CodeListing[]): void => {
+    for (const listing of group) console.log(`  ${listing.code.padEnd(width)}  ${summarize(listing)}`);
+  };
+  console.log(`loam ${LOAM_VERSION} — the code vocabulary (${findings.length} finding, ${refusals.length} refusal)\n`);
+  console.log("finding codes — graded by `loam validate` and `loam verify`, in their findings[]");
+  print(findings);
+  console.log("\nrefusal codes — the `error.code` of a --json envelope, exit 1");
+  print(refusals);
+  console.log("\n`loam explain <code>` prints one in full; `loam explain` with no argument lists the concept terms.");
 }
 
 function printText(subject: string, explanation: Explanation): void {
@@ -77,8 +146,24 @@ export function registerExplain(program: Command): void {
     )
     .description("Explain a finding code, refusal code or concept term, version-matched to this binary")
     .option("--json", "emit the machine contract instead of the human view")
+    .option("--codes", "list every finding and refusal code this binary can explain")
     .action((subject: string | undefined, opts: ExplainOptions) => {
       const json = opts.json === true;
+      if (opts.codes === true) {
+        // Refused rather than quietly preferring one: `loam explain
+        // spine.op-undefined --codes` asks two different questions, and a
+        // caller who typed both wanted whichever one this run did NOT pick.
+        if (subject !== undefined) {
+          fail(
+            json,
+            "invalid-option",
+            `--codes lists the whole vocabulary and takes no subject — drop '${subject}' for the inventory, or drop --codes to explain that one.`,
+          );
+          return;
+        }
+        printCodeListing(json);
+        return;
+      }
       if (subject === undefined) {
         printTermListing(json);
         return;

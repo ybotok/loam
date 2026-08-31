@@ -1,0 +1,89 @@
+// loam at RUNTIME — one invocation, and everything outside the process it
+// touches. Deliberately NOT a second drawing of the package graph: that is
+// `architecture/landscape.likec4`, 70 boxes of `src/`, and a copy of it here
+// would be a copy that drifts with nothing gating the two.
+//
+// This document answers what the import graph structurally cannot: WHERE THE
+// SIDE EFFECTS ARE. `docs/DESIGN.md`'s rules 1, 2, 19 and 20 are all statements
+// about crossings out of the process — printing, exiting, spawning, writing —
+// and a graph of which directory imports which has no object for any of them.
+// Every element below is a real crossing, and `services/loam/arch.spec.md`
+// covers the four of them that a numbered rule governs.
+//
+// loam parses every `.likec4` file ALONE, so this document declares its own
+// `specification` block; a renderer handed the whole tree at once would merge
+// them and call every declaration a duplicate, which is why
+// `likec4.config.json` scopes the root project to `architecture/`.
+specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  // The thing on the other side of stdio. It is drawn because loam PRINTS
+  // commands for it to run back — `test/agent-commands-runnable.test.ts`
+  // exists because an instruction that does not parse is a defect — and
+  // because `loam mcp` serves it over JSON-RPC on the same two pipes.
+  agent = softwareSystem 'coding agent'
+
+  loam = softwareSystem 'loam' {
+    // The binding, spelled here as well as in the landscape: this document is
+    // read on its own, and a reader of it alone should not have to infer which
+    // directory it belongs to from the title.
+    metadata {
+      service 'loam'
+    }
+
+    // One process, started by `loam <verb>` and finished when commander's
+    // action handler returns. There is no server, no daemon and no background
+    // worker: every box below lives and dies inside this one.
+    invocation = container 'one invocation'
+
+    // The output layer, and the ONE place in core/ allowed to print or to set
+    // an exit code (`src/core/envelope/json.ts`). Rules 1 and 2 are about this
+    // element and nothing else — which is why they can be covered at all.
+    envelope = container 'the envelope'
+
+    // The embedded LikeC4 workspace. It is drawn separately because it is the
+    // most expensive thing in the process by an order of magnitude, and
+    // because rule 26's boundary — parsed, never computed — is a property of
+    // this box rather than of the directory that holds it.
+    parser = container 'the LikeC4 workspace'
+
+    // The write path: a staged tree, an atomic rename, a recovery half. Drawn
+    // as a container rather than a `database` on purpose — it is a phase of
+    // this process, not a store a second system could reach.
+    writer = container 'the write path'
+  }
+
+  // The plain files that are the product. `loam validate` reads this tree and
+  // `loam new` / `archive` / `rebase` write it; delete loam and it still makes
+  // sense, which is the property every design choice in the repository is
+  // constrained by.
+  docsRepo = softwareSystem 'the docs repo'
+
+  // The repository loam is standing in, when it is standing in one: the tree a
+  // service spec's `sources` describe and the tree its generated `.feature`
+  // files land in.
+  serviceRepo = softwareSystem 'the service repository'
+
+  // A child process, and the only one loam spawns. Rule 20 is a rule about
+  // this edge: every call across it carries a timeout, and every buffering
+  // call an explicit maxBuffer.
+  git = softwareSystem 'git'
+
+  // stdout and stderr, drawn because the whole point of rule 1 is that
+  // exactly one box in `src/core/` may reach them.
+  console = softwareSystem 'stdout and stderr'
+
+  agent -> loam.invocation 'Runs a loam command, or speaks JSON-RPC to `loam mcp`'
+  loam.invocation -> loam.envelope 'Hands back a result to print'
+  loam.invocation -> loam.parser 'Loads the fleet C4 for a check'
+  loam.invocation -> loam.writer 'Stages a change'
+  loam.envelope -> console 'Writes the human view or the --json envelope, and sets the exit code'
+  loam.parser -> docsRepo 'Parses architecture/, a service model, a feature delta'
+  loam.writer -> docsRepo 'Renames a staged tree into place'
+  loam.invocation -> docsRepo 'Reads the documents'
+  loam.invocation -> serviceRepo 'Reads sources, writes generated .feature files'
+  loam.invocation -> git 'Spawns a bounded child for provenance and the base-ref read'
+}

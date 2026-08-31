@@ -86,6 +86,7 @@ const UC_LANDSCAPE = `specification {
   element softwareSystem
   element person
   tag cap-checkout
+  tag req-CHK-ONCE
 }
 
 model {
@@ -114,6 +115,14 @@ const UC_FLOW = `views {
   }
 }
 `;
+
+/**
+ * The same two hops under `#req-CHK-ONCE` and NO `#cap-` tag. Derived from
+ * `UC_FLOW` so the hops cannot drift, and read over a landscape that still
+ * declares `cap-checkout` — the byte gate is therefore open under either
+ * spelling of it, and what the case below measures is the opt-in predicate.
+ */
+const REQ_ONLY_FLOW = UC_FLOW.replace("#cap-checkout", "#req-CHK-ONCE");
 
 /** Unparseable — `ghost` is declared nowhere — while declaring the tag, so the gate opens. */
 const BROKEN_FLOW = `views {
@@ -162,6 +171,28 @@ describe("loam context — the flows a service is a hop of", () => {
       expect(capability!.useCases).toEqual([
         { id: "uc_checkout", title: "Checkout", file: "architecture/usecases/checkout.likec4" },
       ]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a view tagged only #req- reaches the pack's hop list, and claims no capability", async () => {
+    // Both halves of one answer, and they pull in opposite directions on
+    // purpose. `useCaseSteps` is "which flows run through you", so a `#req-`-only
+    // view belongs in it — it is a use case, and a reader who cannot see it
+    // reads a pack that disagrees with the fleet grade. `capabilities[].useCases`
+    // is "which flows claim capability X", and a view carrying no `#cap-` tag
+    // claims none, so widening the opt-in must NOT widen that. A predicate reused
+    // in the wrong place would put the flow under `checkout` on no evidence.
+    const p = await makeProject(fixture(REQ_ONLY_FLOW));
+    try {
+      const { code, payload } = await pack(p, "checkout-web");
+      expect(code).toBe(0);
+      expect(payload.useCaseScan).toEqual({ unreadable: false });
+      expect(payload.useCaseSteps).toHaveLength(1);
+      expect(payload.useCaseSteps![0]!.id).toBe("uc_checkout");
+      expect(payload.useCaseSteps![0]!.steps.map((s) => s.ordinal)).toEqual([1, 2]);
+      expect(payload.capabilities?.find((c) => c.id === "checkout")?.useCases).toEqual([]);
     } finally {
       await p.destroy();
     }
