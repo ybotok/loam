@@ -100,7 +100,7 @@ export async function gate(
   if (illegalServices.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${illegalServices.length} per-service delta(s) named by an illegal service id; --approve does not override this`;
     if (json) {
-      refuseFindings("not-coherent", msg, illegalServices);
+      refuseFindings("not-coherent", msg, illegalServices, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);
@@ -134,7 +134,7 @@ export async function gate(
   if (conflicted.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${conflicted.length} living document(s) still hold git conflict markers`;
     if (json) {
-      refuseFindings("merge-failed", msg, conflicted);
+      refuseFindings("merge-failed", msg, conflicted, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);
@@ -173,7 +173,7 @@ export async function gate(
   if (nonOverridable.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${nonOverridable.length} element binding(s) name an illegal service id; --approve does not override this`;
     if (json) {
-      refuseJson("not-coherent", msg, issues);
+      refuseJson("not-coherent", msg, issues, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);
@@ -194,7 +194,7 @@ export async function gate(
   if (gating.length > 0 && !opts.approve) {
     const msg = `archive ${id} — BLOCKED: not coherent (${gating.length} gating issue(s), ${advisory.length} advisory warning(s))`;
     if (json) {
-      refuseJson("not-coherent", msg, issues);
+      refuseJson("not-coherent", msg, issues, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);
@@ -231,7 +231,7 @@ export async function gate(
   if (unknownServices.length > 0 && !opts.approve) {
     const msg = `archive ${id} — BLOCKED: ${unknownServices.length} per-service delta(s) address a service that does not exist`;
     if (json) {
-      refuseFindings("not-coherent", msg, unknownServices);
+      refuseFindings("not-coherent", msg, unknownServices, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);
@@ -291,7 +291,7 @@ export async function gate(
   if (strayed.length > 0) {
     const msg = `archive ${id} — BLOCKED: ${strayed.length} living requirement(s) outside '## Requirements'`;
     if (json) {
-      refuseJson("living-outside-requirements", msg, strayed);
+      refuseJson("living-outside-requirements", msg, strayed, `features/${dirName}`);
       return null;
     }
     console.error(`${msg}:`);

@@ -260,6 +260,11 @@ so running loam from a subdirectory works; `loam init` writes the file where it 
   that `services/<id>/openapi.yaml` is the contract the service actually serves. Most fleets
   generate that file and copy it across by hand, so the assumption decays quietly — the spine checks
   go on grading last quarter's endpoints, and every one of them stays green.
+- **`agentTools` / `agentProfile` / `agentFiles`** (optional, written by `loam init`) — the selected
+  tool adapters, the `full|service|docs` workflow subset, and a repo-relative path → lowercase
+  sha256 manifest for generated command/skill pointers. A digest grants narrowly scoped refresh
+  authority: init may update that file only while its current bytes still match. A human edit breaks
+  the match and is preserved. These fields never affect validation or lifecycle semantics.
 
 `loam init --docs <dir>` **joins** an existing docs repo (one with `services/` and `AGENTS.md`);
 creating a new one requires `--create`, so a mistyped path cannot quietly scaffold a second source
@@ -1590,8 +1595,9 @@ ready. Several useful product shapes remain outside that boundary on purpose:
   become a common deployment shape.
 - **Worksets and editor sessions** — loam has no workspace manager. `loam delta <FEAT> --service
   <id>` derives a model-scoped work view without owning folders, windows or editor state.
-- **Profiles** — project behavior does not change with the agent or user invoking it. The smaller
-  fixed command surface protects validation semantics across repositories.
+- **Configurable lifecycle profiles** — project behavior does not change with the agent or user.
+  `init --agent-profile` narrows only which shared workflow entry points are installed; it does not
+  fork the artifact graph, gates or command semantics.
 - **TUI** — agents and CI get `--json`; humans get the files and the forge. A third surface would be
   a third thing to keep truthful.
 - **Authored `tasks.md` as authoritative state** — loam derives its actionable checklist (`loam
@@ -2242,6 +2248,10 @@ through the forge, not through loam features:
   `loam validate --all`, which counts what it cannot check from there
   (`sourcesUnverifiableFromHere`). Aggregating the per-repo results into a fleet view happens
   outside loam, on purpose: the stable codes are the interface, and any CI system can pivot on them.
+- **A finding is addressable data.** JSON findings always carry `locations[]`. A producer that can
+  prove a file, line, column or structural pointer emits a `primary` location and may add `related`
+  ones; otherwise the serializer supplies the smallest `scope` path of the service or feature target.
+  Consumers never need to mine a path out of `message` prose.
 - **What it costs, measured.** On a generated 120-service fleet with 400 and 800 op-linked landscape
   edges (measured 2026-08: compiled binary, 8-core laptop, wall clock including Node startup):
   `loam list --json` ~0.45 s, and `loam validate --service <id> --json` — the command above, the one
@@ -2291,7 +2301,9 @@ repairing anything:
 - **`loam status [<FEAT>] [--json]`** answers "where does this stand and what do I do next", derived
   every run from the files — there is no state file to go stale. Per feature it grades each artifact
   `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered most-unblocking first, each
-  entry a stable `next.*` code plus the literal command. It is a **projection over the gates, never
+  entry a stable `next.*` code plus the compatible `command` hint and a typed `execution` plan:
+  `kind`, `cwd`, `runnable`, a concrete `command` only when no placeholder remains, otherwise
+  `needs` and (for authored files) the grading command in `after`. It is a **projection over the gates, never
   a second opinion**: `stage` is taken from the union of what `validate --feature` errors on and
   what `archive` refuses to merge (severity *or* `gates`), so status may be more pessimistic than
   either and is never greener than both — an invariant with a test behind it. The fleet form is
@@ -2309,6 +2321,12 @@ repairing anything:
   applied before the gate entry, so the gate is never the thing elided. It deliberately does not
   parse the landscape: that is a LikeC4 workspace spin, which is exactly the cost the fleet form
   refuses to pay, and `next.fleet-gate` is the handoff.
+
+- **`loam show <FEAT> --json`** includes a semantic `review` pack in addition to its original feature
+  summary: intent excerpt, exact tagged C4 objects and relationships, per-service requirement/API/
+  event slices, dependency blockers, artifact and verification states, use-case blast radius,
+  gating blockers, advisories and the same executable next actions. It is assembled from the shared
+  projections and status functions, so review does not invent a second readiness verdict.
 
 - **`loam doctor [--json]`** reads `loam.json` defensively (including corrupt JSON), resolves its
   `docsDir` against the config location, probes existence/read/write access, checks `services/`,
@@ -2336,15 +2354,15 @@ repairing anything:
   `doctor.staging-temps` (warning — orphaned `.loam-*.tmp` files a killed writer never linked into
   place; litter, not damage). The whole picture rides in `--json` as a `writePath` block.
 
-  And it reports the **agent surface**: which tool the repo is wired for, how many command and skill
+  And it reports the **agent surface**: which tool and profile the repo is wired for, how many command and skill
   files it holds, how many a newer loam would lay down (`doctor.agent-files-missing`), and how many
   have fallen behind (`doctor.agent-files-stale`). The staleness check reads exactly one thing — the
   `<!-- generated by loam vX.Y.Z -->` line every generated body opens with — and nothing else.
-  Comparing bodies would yield "your file differs from the template", which is one step from
-  offering to rewrite it, and loam never rewrites a generated file; a stamp is a different and
-  smaller claim, and it can be false while every edit around it is legitimate. Which deliveries a
-  repo holds is asked of the files rather than of a record: `loam.json` stores tools, not
-  deliveries, and a repo initialized `--no-skills` is not reported as missing six skills.
+  The digest manifest is what authorizes `init` to refresh an unchanged pointer; a different body is
+  treated as human-owned and never overwritten. A stamp is a separate claim and can be stale while
+  every edit around it is legitimate. Which deliveries a repo holds is asked of the files rather
+  than of a record: `loam.json` stores tools and profile, not deliveries, and a repo initialized
+  `--no-skills` is not reported as missing six skills.
 - **`loam dependencies [<FEAT>] [--json]`** derives a deterministic graph from parsed active
   artifacts, never from validator message prose. A MODIFIED/REMOVED requirement depends on the
   active feature that ADDS the same stable `Requirement-ID` (or legacy exact name); an operation

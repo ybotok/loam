@@ -1,46 +1,149 @@
 /**
- * The agent contract's docs-repo half: AGENTS.md, which `loam init` lays down
- * so a coding agent can run the cycle without being told it each time.
- * AGENTS.md goes into the docs repo — it travels with the thing it describes.
- * It is never overwritten: it is a starting point, and a team's edits to it
- * outrank ours. (The other half — the per-tool command and skill files — is
- * scaffold.ts.)
+ * The small, always-loaded orientation contract for a loam docs repository.
  *
- * The stamp on the first line is the one concession to that never-refresh
- * contract: it records which loam wrote the file, so `loam validate --all` can
- * say when the tables below describe a binary that no longer exists
- * (`agents.stale` — detection only, never a rewrite; agents-stamp.ts).
- *
- * The document is assembled from its sections by PLAIN CONCATENATION — no join
- * separator. Each section is carved at line boundaries and carries its own
- * trailing newline, so the assembled string is byte-identical to the single
- * template literal this package replaced.
+ * Detailed grammars and workflows live behind `loam instructions`: those pages
+ * describe the binary that is about to run, while this file is written once and
+ * may be loaded into every agent turn for years. Keep only enough here to form
+ * the next question, find the relevant page, and avoid an unsafe write.
  */
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
-import { ARTIFACTS } from "./agents-md/artifacts.js";
-import { READING_OUTPUT, REFERENCE_PAGES } from "./agents-md/command-map.js";
-import { CYCLE } from "./agents-md/cycle.js";
-import { ARCHIVE_GATE } from "./agents-md/shipped/archive-gate.js";
-import { SPINE } from "./agents-md/spine.js";
 
-/**
- * Seven sections, and the ones that are NOT here are the point.
- *
- * The per-invocation code inventory, the ID spine's grammars, the authoring
- * grammars and the done-check used to sit between CYCLE and ARCHIVE_GATE. They
- * are now the four pages `loam instructions` prints
- * (./workflows/reference/reference.ts records why), and REFERENCE_PAGES is the
- * index that names each with its exact command — a reference nobody can find
- * being content deleted with extra steps.
- *
- * Nothing was rewritten to move: `codes-drift` reads `AGENTS_MD + PROTOCOLS`
- * and the pages are in `PROTOCOLS`, so every stable code that left this
- * document is still in the corpus that guard grades. The modules the pages are
- * assembled from (`./agents-md/map/`, `./agents-md/map/lenses/`,
- * `./agents-md/refusals.js`) stayed exactly where they were and are imported by
- * ./workflows/reference/codes.ts instead of here — a move of one import, not a
- * repackaging.
- */
-export const AGENTS_MD =
-  `${agentsStampLine(LOAM_VERSION)}\n` + ARTIFACTS + SPINE + CYCLE + READING_OUTPUT + REFERENCE_PAGES + ARCHIVE_GATE;
+const ORIENTATION = `# Working in this docs repo
+
+This is a **loam** docs repo: plain files are the shared source of truth for a governed software
+fleet's architecture, requirements, contracts and verification evidence. A service may be a modular monolith, a network service, a CLI or a worker.
+loam has no server or database. Delete it and the documents still make sense.
+
+## What is where
+
+\`architecture/landscape.likec4\` is the fleet map. \`services/<id>/\` holds a
+boundary's living \`model.likec4\`, \`spec.md\`, \`arch.spec.md\`, OpenAPI,
+AsyncAPI, runbook and health facts. \`features/<FEAT>/\` holds a change in flight:
+intent, \`delta.likec4\`, per-service requirement and contract deltas, and
+\`verification.yaml\`. \`features/archive/\` is shipped history.
+
+Living documents are the complete current state. A feature document is a diff
+against them, reviewed as a diff; \`loam archive\` folds it into living state.
+Do not hand-edit the living landscape to add a feature change.
+
+## Linking between documents
+
+Documents join with **standard markdown links** whose targets are real relative
+paths, for example \`[decision](../adrs/ADR-001.md)\`. They render in pull-request
+review instead of showing literal brackets,
+and make “does this link resolve” a filesystem question; \`[[Wikilinks]]\` would
+require shortest-unique-path guessing.
+Obsidian supports markdown links, autocomplete and rename-tracking when its
+wikilink setting is off. \`link.unresolved\` grades missing targets and CASE
+**is** graded; links outside this repository, \`#section\` targets, a fenced code
+block or an inline code span are deliberately not graded.
+
+## \`loam.json\` — the wiring
+
+Every repository commits its own \`loam.json\`:
+
+\`{ "docsDir": "../docs", "service": "payment-service", "gherkinDir": "features" }\`
+
+\`docsDir\` is stored exactly as it was passed and resolved against the directory
+holding \`loam.json\`, so a relative path survives a clone; an absolute one raises
+\`doctor.docs-absolute\`. \`service\` binds a service checkout to the one boundary
+it may write evidence for. \`gherkinDir\` is optional. \`agentTools\` and
+\`agentProfile\` record which agent surfaces and workflow subset init manages;
+\`agentFiles\` records digests so unchanged generated pointers can refresh while
+customized ones remain untouched. With no config, loam refuses with \`no-config\`
+rather than guessing.
+
+\`loam init --docs <dir>\` **joins** an existing docs repo. Add \`--create\` only
+when creating a new one; a typo must not scaffold a second source of truth.
+
+## The cycle
+
+0. **Wire the repo** — in each service checkout run
+   \`loam init --docs <path-to-docs-repo> --service <id>\`, then \`loam doctor\`.
+1. **Adopt** — for an undocumented boundary load \`loam instructions loam-adopt
+   <id>\`, then use \`loam adopt --service <id> --json\`. Write drafts; a person,
+   never an agent, later vouches for them.
+2. **Understand** — start or resume with \`loam status --json\`; its ordered
+   \`next[]\` is the work queue. Read \`next[0].execution\`: run it only when
+   \`runnable\` is true; otherwise use \`kind\`, \`cwd\`, \`needs\` and \`after\`
+   to complete the edit or external-repo step. Use \`loam list --json\`, \`loam show <id> --json\`
+   and \`loam explore <id> --json\` before proposing a change. Never propose a
+   change to a service you have not read.
+3. **Scaffold** — load \`loam instructions loam-feature <FEAT>\`, then run
+   \`loam new <FEAT> --title "..." --touches <service>\`.
+4. **Author** — fill the scaffolded TODOs and run \`loam rebase <FEAT>\` after
+   reading the living baselines. The exact joins and authoring grammars are in
+   the reference pages below.
+5. **Check** — load \`loam instructions loam-check --no-fix-tables\`, run
+   \`loam validate <FEAT> --json\`, and use \`loam explain <code>\` for reported
+   codes. \`loam dependencies --json\` names features that must archive first.
+6. **Build** — load \`loam instructions loam-implement <FEAT>\`.
+   \`loam delta <FEAT> --service <id> --json\` is one service's task; in that
+   service checkout, \`loam gherkin <FEAT>\` emits its executable scenarios.
+7. **Verify** — \`loam verify <FEAT> --json\` is the checklist. Record evidence
+   from each affected service's own checkout. Read
+   \`loam instructions loam-done-check\` before recording anything.
+8. **Ship** — load \`loam instructions loam-ship <FEAT>\`; begin with
+   \`loam archive <FEAT> --dry-run --json\`, then archive only after the code is
+   merged and the plan is the one reviewed.
+
+## Reading loam's output
+
+Every command takes \`--json\`. The envelope has \`contractVersion\`, \`ok\` and,
+on refusal, \`error.code\`. Unknown flags are \`invalid-option\`; \`--help\` and
+\`--version\` pass through. Branch on stable codes, never message prose.
+
+Validation \`findings[]\` carry \`severity\`; archive-related findings also carry
+\`gates\`. Severity and gating are two different questions: errors invalidate,
+while \`gates: true\` makes archive refuse. Advisory warnings never block.
+\`--approve\` overrides the gating issues — only those that are judgement calls —
+and never a mechanical loss. For example \`delta.requirement-not-merged\` warns but gates;
+\`living.requirement-outside-requirements\` cannot be approved, while
+\`openapi.op-modified\` is reviewable.
+
+\`loam status --json\` orders executable next actions. Findings include structured
+\`locations[]\`; use their paths instead of extracting filenames from prose.
+\`loam show <FEAT> --json\` includes a \`review\` pack with intent, architecture,
+contracts, dependencies, verification, blockers and the same next actions.
+\`loam explain <code> --json\`
+returns one code's meaning and fix; \`loam explain --codes --json\` lists them.
+Which codes an INVOCATION can raise is in \`loam instructions loam-codes\`.
+
+## The identity rule
+
+A service is the element whose \`metadata { service '<id>' }\` matches its
+\`services/<id>/\` directory. An exact element id is the legacy fallback. Never
+infer identity from display names or containment. Relationships join to contracts
+through exact ids: OpenAPI \`operationId\`, requirement \`Operations:\`, and C4
+\`metadata { op '...' }\`. Consult \`loam instructions loam-spine\` before editing
+a join.
+
+## Reference pages — fetch when needed
+
+- \`loam instructions loam-codes\` — finding/refusal inventory and fixes.
+- \`loam instructions loam-spine\` — operation, message, coverage, permission,
+  capability and baseline joins.
+- \`loam instructions loam-authoring\` — arch requirements, generated Gherkin
+  and frontmatter/vouch grammar.
+- \`loam instructions loam-done-check\` — verification evidence and verdicts.
+
+Bare \`loam instructions\` lists the six workflows and these references. Generated
+agent command/skill files are small pointers to them, so the runtime page wins if
+an old pointer disagrees with the installed binary. MCP clients can read the same
+pages as \`loam://orientation\` and \`loam://instructions/<name>\` resources.
+
+## Safety and hand-back
+
+loam's writers are journaled, but the lifecycle still matters. Do not run
+\`loam vouch\` for a human, do not invent evidence, do not archive before code is
+merged, and do not edit generated files under \`<gherkinDir>/loam/\` by hand.
+\`loam unarchive <FEAT>\` is the supported undo. To abandon a feature that was
+never archived, review it and use \`git rm -r features/<FEAT>\`; loam deliberately
+has no destructive drop command.
+
+Finish by reporting remaining warnings, unverifiable claims, files or directories
+you did not inspect, and the exact human action still owed.
+`;
+
+export const AGENTS_MD = `${agentsStampLine(LOAM_VERSION)}\n${ORIENTATION}`;

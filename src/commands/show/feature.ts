@@ -18,26 +18,54 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { emitJson, repoPath } from "../../core/envelope/json.js";
-import { loadFile, type Elem } from "../../core/c4/likec4.js";
+import { type Elem } from "../../core/c4/likec4.js";
+import { FleetContext } from "../../core/fleet-context.js";
 import { type FeatureEntry } from "../../core/repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { capabilityDeltaSummaries } from "../../core/capabilities/delta/summary.js";
+import { apiChanges } from "../../core/projection/api.js";
+import { eventChanges } from "../../core/projection/events.js";
+import { featureStatus } from "../../core/status/feature/feature.js";
+import { executableNext } from "../../core/status/actions/execution.js";
+import { findingJson } from "../../core/vocabulary/report.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { plural } from "../policy/format.js";
 import { errorText, mark } from "./marks.js";
 
-export async function showFeature(docsDir: string, feature: FeatureEntry, json: boolean): Promise<void> {
+const REVIEW_INTENT_LIMIT = 1_200;
+
+function intentSummary(text: string): string {
+  const withoutFrontmatter = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
+  const prose = withoutFrontmatter
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .join(" ");
+  return prose.length <= REVIEW_INTENT_LIMIT
+    ? prose
+    : `${prose.slice(0, REVIEW_INTENT_LIMIT - 1).trimEnd()}…`;
+}
+
+export async function showFeature(
+  docsDir: DocsDir,
+  feature: FeatureEntry,
+  json: boolean,
+  context = new FleetContext(),
+): Promise<void> {
   const paths = featurePaths(feature.dir);
   const delta = feature.has.delta
-    ? await loadFile(paths.delta)
+    ? await context.loadLikeC4(paths.delta)
     : { errors: [], elements: [] as Elem[], relationships: [] };
   const taggedEls = delta.elements.filter((e) => e.tags.includes(feature.id));
   const taggedRels = delta.relationships.filter((r) => r.tags.includes(feature.id));
 
   const services = [];
   for (const svc of feature.services) {
-    const specPath = featureSpecPaths(feature.dir, svc).spec;
+    const servicePaths = featureSpecPaths(feature.dir, svc);
+    const specPath = servicePaths.spec;
     const reqs = existsSync(specPath) ? parseRequirements(await readFile(specPath, "utf8")) : [];
     services.push({
       id: svc,
@@ -45,6 +73,8 @@ export async function showFeature(docsDir: string, feature: FeatureEntry, json: 
       modified: reqs.filter((r) => r.kind === "MODIFIED").length,
       removed: reqs.filter((r) => r.kind === "REMOVED").length,
       operations: [...new Set(reqs.flatMap((r) => r.operations))],
+      api: await apiChanges(servicePaths.openapi),
+      events: await eventChanges(servicePaths.asyncapi),
     });
   }
 
@@ -57,6 +87,14 @@ export async function showFeature(docsDir: string, feature: FeatureEntry, json: 
   );
 
   if (json) {
+    const status = await featureStatus(docsDir, feature, { context });
+    const issues = status.checks.issues.map((finding) =>
+      findingJson(finding, { path: status.feature.path, role: "scope" }),
+    );
+    const blockers = issues.filter(
+      (finding) => finding["severity"] === "error" || finding["gates"] === true,
+    );
+    const intent = existsSync(paths.intent) ? intentSummary(await readFile(paths.intent, "utf8")) : "";
     emitJson({
       command: "show",
       type: "feature",
@@ -83,6 +121,38 @@ export async function showFeature(docsDir: string, feature: FeatureEntry, json: 
         removed: c.removed,
         promises: c.promises,
       })),
+      review: {
+        readyToArchive: !feature.archived && status.feature.stage === "done" && blockers.length === 0,
+        intent: {
+          path: repoPath(docsDir, paths.intent),
+          summary: intent,
+        },
+        architecture: {
+          path: repoPath(docsDir, paths.delta),
+          elements: taggedEls.map((element) => ({
+            id: element.id,
+            kind: element.kind,
+            title: element.title,
+          })),
+          relationships: taggedRels.map((relationship) => ({
+            source: relationship.source,
+            target: relationship.target,
+            title: relationship.title ?? null,
+            operation: relationship.op ?? null,
+          })),
+          errors: delta.errors.map(errorText),
+        },
+        services,
+        dependencies: { blockedBy: status.feature.blockedBy },
+        artifacts: status.artifacts,
+        verification: status.verification,
+        blockers,
+        advisories: issues.filter(
+          (finding) => finding["severity"] === "warn" && finding["gates"] !== true,
+        ),
+        useCases: status.useCases,
+        next: status.next.map(executableNext),
+      },
     });
     return;
   }

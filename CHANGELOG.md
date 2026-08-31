@@ -10,6 +10,29 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — the agent interface is progressive, executable and ownership-aware
+
+- **The always-loaded generated `AGENTS.md` is now 7,458 bytes.** Detailed workflow, authoring and
+  code material stays behind `loam instructions`; `loam-check` pointers start with
+  `--no-fix-tables` and fetch individual fixes through `loam explain <code>`.
+- **`loam status --json` adds `next[].execution`.** It distinguishes runnable commands from edits,
+  external-repository work and human review; carries `cwd`; and never presents a command containing
+  unresolved `<placeholders>` as runnable. The original `command` field remains compatible.
+- **Serialized findings add `locations[]`, and validate targets add `path`.** Producers may emit
+  exact file/line/pointer locations; otherwise the shared serializer supplies the narrowest proved
+  service, feature or landscape scope. Codes and message text are unchanged.
+- **`loam show <FEAT> --json` adds `review`.** The pack joins the intent excerpt, tagged C4 objects,
+  API/event changes, dependencies, artifact and verification state, use cases, blockers, advisories
+  and executable next actions from the existing semantic projections.
+- **`loam init` adds `--agent-profile <full|service|docs>` and safe refresh.** `loam.json` gains
+  additive `agentProfile` and `agentFiles` fields. An unchanged generated command/skill pointer is
+  refreshed when its recorded sha256 still matches; a customized file is never overwritten.
+- **`loam mcp` adds resources, a common output schema and opt-in `--author`.** Orientation and every
+  workflow/reference page are readable at `loam://orientation` and
+  `loam://instructions/<name>`. `--author` adds `loam_new`, `loam_rebase`, `loam_gherkin` and
+  `loam_archive_plan` (server-enforced `--dry-run`); `vouch`, verification recording and a committing
+  archive remain excluded. `loam init --mcp-author` writes this launch mode.
+
 ### Changed — the product boundary is a governed system, not a microservice topology
 
 - **The public position is now “architecture-first semantic integrity and change governance for

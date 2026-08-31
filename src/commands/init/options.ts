@@ -15,6 +15,21 @@ import { fail } from "../../core/envelope/json.js";
 import { agentsPath } from "../../core/repo/paths.js";
 import { docsRepoState } from "../../core/repo/state.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
+import {
+  AGENT_PROFILES,
+  type AgentProfile,
+} from "../../core/agent/scaffold.js";
+
+export function resolveAgentProfile(
+  raw: string | undefined,
+  current: AgentProfile | undefined,
+  json: boolean,
+): AgentProfile | null {
+  const value = raw ?? current ?? "full";
+  if (AGENT_PROFILES.includes(value as AgentProfile)) return value as AgentProfile;
+  fail(json, "invalid-option", `Unknown --agent-profile '${value}'. Expected: ${AGENT_PROFILES.join(" | ")}.`);
+  return null;
+}
 
 /**
  * Resolve --tools to registry ids, or null after reporting the refusal. The

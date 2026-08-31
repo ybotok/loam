@@ -10,6 +10,7 @@
  * instead of re-deriving it against a file it would open a second time.
  */
 import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { loadFile, type Elem, type Rel } from "../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
@@ -94,8 +95,13 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // and nothing pathable ever comes back out of a comparison.
   const me: string = service;
   const findings: Finding[] = [];
-  const report: TargetReport = { kind: "service", id: service, findings };
   const paths = await locateServicePaths(docsDir, service, fleet);
+  const report: TargetReport = {
+    kind: "service",
+    id: service,
+    path: relative(docsDir, paths.dir).replaceAll("\\", "/"),
+    findings,
+  };
 
   // A directory that does not exist is a different fact from a directory with
   // everything missing: validating a typo must say "typo", not "unadopted".

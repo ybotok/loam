@@ -81,8 +81,8 @@ not.
 are running rather than the one that scaffolded this repo. \`loam explain <code>\`
 gives one code's meaning, its severity in each scope that grades it, and its fix;
 \`loam explain --codes\` lists the whole vocabulary and \`loam explain --codes --json\`
-is the machine-readable form. Reach for it rather than for any written file,
-including this one, which is written once at \`loam init\` and never refreshed.
+is the machine-readable form. Reach for it rather than for a generated pointer:
+this page is printed by the binary that defines the codes.
 
 **Which codes an INVOCATION can raise** is the other half, and it is the one
 thing nothing else carries. It is a reference page rather than a section here:
@@ -263,12 +263,11 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`doctor.likec4-config-missing\`, and the two about this repo's own generated
   command and skill files: \`doctor.agent-files-missing\` and
   \`doctor.agent-files-stale\`.
-  EXPECT the second one on the first \`loam doctor\` after an upgrade, on a repo
-  nobody has touched: stamping is newer than the files, so nothing written by an
-  earlier loam carries a stamp at all and every one of them reads as unstamped.
-  That is the intended reading — an unstamped file is one nobody has confirmed
-  still describes this binary — but it means the finding is not evidence that
-  anything was edited or broken, and neither file is ever regenerated in place.
+  EXPECT the second one on the first \`loam doctor\` after an upgrade. It is not
+  evidence that anything was edited or broken: staleness reads the version
+  stamp only. Re-running \`loam init\` refreshes an unchanged pointer only when
+  its current bytes still match the digest recorded in \`loam.json\`; an
+  unrecorded or customized file stays in place for a human to review.
 - \`loam rebase <FEAT>\` writes the baseline pins: \`Based-On:\` under every
   MODIFIED/REMOVED requirement in the feature's spec deltas, and
   \`x-loam-based-on\` on every operation in its openapi.yaml, from the living text

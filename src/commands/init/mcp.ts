@@ -3,10 +3,11 @@
  *
  * Every other thing init writes is prose an agent reads — command files and
  * Agent Skills, twenty tools' worth of dialects, all of them pointers at
- * `loam instructions`. The MCP facade is the opposite: fourteen typed tools,
- * each declaring `readOnlyHint`, each result carrying the `--json` envelope as
- * `structuredContent`. It was also the only delivery that required a human to
- * hand-edit a JSON file before anything could reach it — the generated
+ * `loam instructions`. The MCP facade is the opposite: a typed read surface,
+ * four bounded authoring entries under `--author`, version-matched resources,
+ * and every result carrying the `--json` envelope as `structuredContent`. It
+ * was also the only delivery that required a human to hand-edit a JSON file
+ * before anything could reach it — the generated
  * AGENTS.md said no more than "configure the host to launch `loam mcp` in the
  * repository the tools should answer for", so a scaffolded repository reliably
  * got the prose deliveries and never the typed one.
@@ -78,16 +79,17 @@ export interface McpLaunch {
  * the first of them for the POSIX shells that run there, so its presence is the
  * portable question "is loam installed into this project".
  */
-export function mcpLaunch(cwd: string): McpLaunch {
+export function mcpLaunch(cwd: string, author = false): McpLaunch {
   const localBin = join(cwd, "node_modules", ".bin", "loam");
+  const args = ["mcp", ...(author ? ["--author"] : [])];
   return existsSync(localBin)
-    ? { command: "npx", args: ["--no", "loam", "mcp"] }
-    : { command: "loam", args: ["mcp"] };
+    ? { command: "npx", args: ["--no", "loam", ...args] }
+    : { command: "loam", args };
 }
 
 /** The whole file, exactly as it lands. */
-export function mcpConfigContent(cwd: string): string {
-  return `${JSON.stringify({ mcpServers: { loam: mcpLaunch(cwd) } }, null, 2)}\n`;
+export function mcpConfigContent(cwd: string, author = false): string {
+  return `${JSON.stringify({ mcpServers: { loam: mcpLaunch(cwd, author) } }, null, 2)}\n`;
 }
 
 /**
@@ -99,8 +101,8 @@ export function mcpConfigContent(cwd: string): string {
  * second time: a snippet that drifts from the bytes is worse than no snippet,
  * because the reader has no way to tell which of the two is current.
  */
-export function mcpServerSnippet(cwd: string): string[] {
-  return JSON.stringify({ loam: mcpLaunch(cwd) }, null, 2)
+export function mcpServerSnippet(cwd: string, author = false): string[] {
+  return JSON.stringify({ loam: mcpLaunch(cwd, author) }, null, 2)
     .split("\n")
     .slice(1, -1)
     .map((line) => line.slice(2));
@@ -128,13 +130,18 @@ export type McpWrite =
  * scaffolded, which is where a killed run's `.loam-commit` belongs — the same
  * place `gherkin` journals its own writes into a service repo.
  */
-export async function writeMcpConfig(cwd: string): Promise<McpWrite> {
+export async function writeMcpConfig(cwd: string, author = false): Promise<McpWrite> {
   const path = mcpConfigPath(cwd);
   if (existsSync(path)) return { kind: "skipped" };
 
-  const staged = await stageWrites([planWrite(path, mcpConfigContent(cwd))]);
+  const staged = await stageWrites([planWrite(path, mcpConfigContent(cwd, author))]);
   const committed = await commitStaged(
-    { root: cwd, command: "init", rerun: "loam init --mcp", target: MCP_CONFIG_FILENAME },
+    {
+      root: cwd,
+      command: "init",
+      rerun: author ? "loam init --mcp-author" : "loam init --mcp",
+      target: MCP_CONFIG_FILENAME,
+    },
     staged,
     "written",
   );

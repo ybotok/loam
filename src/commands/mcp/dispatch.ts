@@ -1,6 +1,6 @@
 /**
  * In-process dispatch for one MCP tool call: build a fresh commander program
- * holding ONLY the read commands the tool table exposes, run the argv through
+ * holding only the commands the selected tool table exposes, run the argv through
  * it, and hand back what the CLI would have printed.
  *
  * This is the proven harness pattern (test/helpers/harness.ts runLoamNow)
@@ -40,6 +40,10 @@ import { registerGate } from "../gate/gate.js";
 import { registerExplain } from "../explain/explain.js";
 import { registerInstructions } from "../instructions.js";
 import { registerSteps } from "../steps/steps.js";
+import { registerNew } from "../new/new.js";
+import { registerRebase } from "../rebase/rebase.js";
+import { registerGherkin } from "../gherkin/gherkin.js";
+import { registerArchive } from "../archive/archive.js";
 
 export interface DispatchResult {
   readonly stdout: string;
@@ -103,13 +107,13 @@ export function captureConsole(sinks: Sinks): () => void {
 const PASS_THROUGH = new Set(["commander.help", "commander.helpDisplayed", "commander.version"]);
 
 /**
- * The read-only program, output routed into `sinks`. configureOutput and
+ * The scoped program, output routed into `sinks`. configureOutput and
  * exitOverride are set BEFORE the register calls on purpose: commander copies
  * inherited settings onto a subcommand when it is created, so settings applied
  * after registration would leave every subcommand writing to the real stdout —
  * which for an MCP server is the protocol stream.
  */
-function readProgram(sinks: Sinks): Command {
+function readProgram(sinks: Sinks, authoring = false): Command {
   const program = new Command();
   program.name("loam");
   program.exitOverride();
@@ -139,6 +143,12 @@ function readProgram(sinks: Sinks): Command {
   // mistake. `test/mcp-serve.test.ts` now calls every advertised tool.
   registerInstructions(program);
   registerSteps(program);
+  if (authoring) {
+    registerNew(program);
+    registerRebase(program);
+    registerGherkin(program);
+    registerArchive(program);
+  }
   return program;
 }
 
@@ -148,13 +158,16 @@ function readProgram(sinks: Sinks): Command {
  * thing affected — one bad call must never take the server down, and a
  * memoised rejection cannot exist because nothing here outlives the call.
  */
-export async function runToolArgv(argv: readonly string[]): Promise<DispatchResult> {
+export async function runToolArgv(
+  argv: readonly string[],
+  authoring = false,
+): Promise<DispatchResult> {
   const sinks: Sinks = { stdout: [], stderr: [] };
   const previousExitCode = process.exitCode;
   const restoreConsole = captureConsole(sinks);
   process.exitCode = undefined;
   try {
-    await readProgram(sinks).parseAsync(["node", "loam", ...argv]);
+    await readProgram(sinks, authoring).parseAsync(["node", "loam", ...argv]);
   } catch (err) {
     if (err instanceof CommanderError) {
       if (PASS_THROUGH.has(err.code)) {

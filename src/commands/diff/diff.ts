@@ -112,7 +112,9 @@ export function registerDiff(program: Command): void {
           services: diff.services.map((s) => ({
             id: s.id,
             change: s.change,
-            findings: s.findings.map(findingJson),
+            findings: s.findings.map((finding) =>
+              findingJson(finding, { path: `services/${s.id}`, role: "scope" }),
+            ),
             unreadable: s.unreadable,
             ...(s.ambiguous === undefined ? {} : { ambiguous: s.ambiguous }),
           })),

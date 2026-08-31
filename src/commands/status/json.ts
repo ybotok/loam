@@ -6,6 +6,7 @@
  * commands must arrive in one shape or a consumer needs two parsers.
  */
 import { findingJson } from "../../core/vocabulary/report.js";
+import { executableNext } from "../../core/status/actions/execution.js";
 import type { FeatureStatusReport, FleetStatusReport } from "../../core/status/report.js";
 
 export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
@@ -14,7 +15,12 @@ export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
     feature: r.feature,
     service: r.service,
     artifacts: r.artifacts,
-    checks: { ...r.checks, issues: r.checks.issues.map(findingJson) },
+    checks: {
+      ...r.checks,
+      issues: r.checks.issues.map((finding) =>
+        findingJson(finding, { path: r.feature.path, role: "scope" }),
+      ),
+    },
     verification: r.verification,
     // Additive (core/envelope/json.ts). Spread key by key rather than passed
     // through whole, so an optional `error` that is absent stays absent instead
@@ -24,7 +30,7 @@ export function featureJson(r: FeatureStatusReport): Record<string, unknown> {
       ...(r.useCases.error === undefined ? {} : { error: r.useCases.error }),
       flows: r.useCases.flows,
     },
-    next: r.next,
+    next: r.next.map(executableNext),
   };
 }
 
@@ -35,7 +41,7 @@ export function fleetJson(r: FleetStatusReport): Record<string, unknown> {
     services: r.services,
     features: r.features,
     order: r.order,
-    next: r.next,
+    next: r.next.map(executableNext),
   };
 }
 

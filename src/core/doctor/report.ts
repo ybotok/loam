@@ -74,6 +74,8 @@ export interface DoctorReport {
 export interface AgentSurface {
   /** Tool ids this repo has an agent surface for. Empty is legal (`init --no-commands`). */
   tools: string[];
+  /** Workflow subset managed for those tools. */
+  profile: "full" | "service" | "docs";
   /** Whether `tools` came from loam.json's own record or from what is on disk. */
   toolsSource: "config" | "disk";
   /** How many files the running binary would lay down for `tools`. */

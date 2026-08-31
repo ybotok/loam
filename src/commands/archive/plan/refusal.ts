@@ -10,7 +10,11 @@
  */
 import { existsSync } from "node:fs";
 import { emitJsonError, repoPath, type ErrorCode } from "../../../core/envelope/json.js";
-import { approveOverrides, gatesArchive, type Issue } from "../../../core/vocabulary/issue.js";
+import {
+  approveOverrides,
+  issueFinding,
+  type Issue,
+} from "../../../core/vocabulary/issue.js";
 import { type CommitRecovery } from "../../../core/staging/interrupted.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { findingJson, type Finding } from "../../../core/vocabulary/report.js";
@@ -43,20 +47,19 @@ export class ArchiveFailure extends Error {
  * must not have to re-implement the severity default to know what blocks
  * archive, nor keep a code list to know what `--approve` can move.
  */
-export function issueJson(i: Issue): Record<string, unknown> {
+export function issueJson(i: Issue, scope?: string): Record<string, unknown> {
   return {
-    severity: i.severity,
-    code: i.code,
-    gates: gatesArchive(i),
+    ...findingJson(
+      issueFinding(i),
+      scope === undefined ? undefined : { path: scope, role: "scope" },
+    ),
     overridable: approveOverrides(i),
-    ...(i.subject === undefined ? {} : { subject: i.subject }),
-    message: i.message,
   };
 }
 
 /** The failure envelope plus the issues that caused it, so a caller need not re-run validate. */
-export function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void {
-  emitJsonError(code, msg, { issues: issues.map(issueJson) });
+export function refuseJson(code: ErrorCode, msg: string, issues: Issue[], scope?: string): void {
+  emitJsonError(code, msg, { issues: issues.map((issue) => issueJson(issue, scope)) });
 }
 
 /**
@@ -68,8 +71,21 @@ export function refuseJson(code: ErrorCode, msg: string, issues: Issue[]): void 
  * refusal is a reason archive stopped, which is what the field means. Nothing
  * advisory reaches here.
  */
-export function refuseFindings(code: ErrorCode, msg: string, findings: Finding[]): void {
-  emitJsonError(code, msg, { issues: findings.map((f) => ({ ...findingJson(f), gates: true })) });
+export function refuseFindings(
+  code: ErrorCode,
+  msg: string,
+  findings: Finding[],
+  scope?: string,
+): void {
+  emitJsonError(code, msg, {
+    issues: findings.map((finding) => ({
+      ...findingJson(
+        finding,
+        scope === undefined ? undefined : { path: scope, role: "scope" },
+      ),
+      gates: true,
+    })),
+  });
 }
 
 /**

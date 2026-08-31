@@ -53,6 +53,14 @@ interface NextStep {
   artifact?: string;
   service?: string;
   path?: string;
+  execution: {
+    kind: "command" | "edit" | "external-repo" | "human-review";
+    runnable: boolean;
+    cwd: "configured-repo" | "docs-repo" | "service-repo";
+    command?: string;
+    after?: string;
+    needs?: string[];
+  };
 }
 
 interface Artifact {
@@ -209,7 +217,7 @@ describe("the feature payload", () => {
     await p.destroy();
   });
 
-  it("every next step carries a stable code, a sentence and a literal command", async () => {
+  it("every next step carries the legacy hint and an explicit execution contract", async () => {
     const p = await makeProject(coherentFixture());
     const payload = await statusJson(p, "FEAT-1");
     expect(payload.next.length).toBeGreaterThan(0);
@@ -217,6 +225,15 @@ describe("the feature payload", () => {
       expect(step.code).toMatch(/^next\.[a-z-]+$/);
       expect(step.statement.length).toBeGreaterThan(10);
       expect(step.command.startsWith("loam ")).toBe(true);
+      expect(["command", "edit", "external-repo", "human-review"]).toContain(step.execution.kind);
+      expect(["configured-repo", "docs-repo", "service-repo"]).toContain(step.execution.cwd);
+      if (step.execution.runnable) {
+        expect(step.execution.command?.startsWith("loam ")).toBe(true);
+        expect(step.execution.command).not.toContain("<");
+      } else {
+        expect(step.execution.command).toBeUndefined();
+        expect((step.execution.needs ?? []).length).toBeGreaterThan(0);
+      }
     }
     await p.destroy();
   });
@@ -229,6 +246,12 @@ describe("the feature payload", () => {
     expect(payload.feature.stage).toBe("done");
     expect(codes(payload.next)).toEqual(["next.archive"]);
     expect(payload.next[0].command).toBe("loam archive FEAT-1 --dry-run --json");
+    expect(payload.next[0].execution).toEqual({
+      kind: "command",
+      runnable: true,
+      cwd: "configured-repo",
+      command: "loam archive FEAT-1 --dry-run --json",
+    });
     expect(payload.next[0].statement).toContain("ship it");
     await p.destroy();
   });
@@ -247,6 +270,13 @@ describe("the status vocabulary answers a different question per value", () => {
     expect(step.code).toBe("next.author-intent");
     expect(step.path).toBe(`${FEAT_DIR}/intent.md`);
     expect(step.artifact).toBe("intent");
+    expect(step.execution).toEqual({
+      kind: "edit",
+      runnable: false,
+      cwd: "docs-repo",
+      after: step.command,
+      needs: [`${FEAT_DIR}/intent.md`],
+    });
     await p.destroy();
   });
 
@@ -906,6 +936,18 @@ describe("the first-hour ladder over an empty docs repo", () => {
     expect(steps[0]!.command).toBe("loam seed --from fleet.yaml");
     expect(steps[1]!.command).toBe("loam init --docs <path-to-this-docs-repo> --service <service-id>");
     expect(steps[2]!.command).toBe("loam adopt --service <service-id> --json");
+    expect(steps[0]!.execution).toEqual({
+      kind: "command",
+      runnable: true,
+      cwd: "configured-repo",
+      command: "loam seed --from fleet.yaml",
+    });
+    expect(steps[1]!.execution).toMatchObject({
+      kind: "external-repo",
+      runnable: false,
+      cwd: "service-repo",
+      needs: ["path-to-this-docs-repo", "service-id"],
+    });
     expect(codes(payload.next)).not.toContain("next.fleet-clean");
     await p.destroy();
   });

@@ -75,7 +75,7 @@ function printDoctor(report: DoctorReport): void {
   // silent when there is nothing to say.
   const agents = report.agents;
   console.log(
-    `  agents        ${agents.tools.length === 0 ? "(none)" : agents.tools.join(", ")}`
+    `  agents        ${agents.tools.length === 0 ? "(none)" : agents.tools.join(", ")} · ${agents.profile}`
     + ` (${agents.toolsSource}) · ${agents.plannedFiles} files · ${agents.missingFiles.length} missing`
     + ` · ${agents.staleFiles.length} stale · AGENTS.md ${stampLabel(agents.stamp)}`,
   );

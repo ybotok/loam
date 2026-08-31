@@ -32,6 +32,17 @@ export interface TextHint {
   detailPrefix?: string;
 }
 
+export interface FindingLocation {
+  /** Portable path relative to the docs repo whenever the finding is about one. */
+  path: string;
+  /** `primary` is exact; `scope` is the smallest directory the check can prove. */
+  role: "primary" | "related" | "scope";
+  line?: number;
+  column?: number;
+  /** A stable structural address when a line is not available. */
+  pointer?: string;
+}
+
 export interface Finding {
   severity: Severity;
   /** Stable machine identifier — prose may change, this may not. */
@@ -44,6 +55,7 @@ export interface Finding {
    */
   subject?: string;
   details?: string[];
+  locations?: FindingLocation[];
   /**
    * Coherence findings only: whether `loam archive` refuses on this issue
    * without `--approve` (issue.ts explains why severity alone cannot say).
@@ -61,6 +73,8 @@ export interface TargetReport {
    */
   kind: "service" | "feature" | "landscape";
   id: string;
+  /** The exact repo-relative scope this target was read from. */
+  path?: string;
   findings: Finding[];
 }
 
@@ -95,7 +109,7 @@ export function subjectsWith(targets: TargetReport[], code: string): number {
   ).size;
 }
 
-export function findingJson(f: Finding): Record<string, unknown> {
+export function findingJson(f: Finding, fallback?: FindingLocation): Record<string, unknown> {
   return {
     severity: f.severity,
     code: f.code,
@@ -103,6 +117,22 @@ export function findingJson(f: Finding): Record<string, unknown> {
     ...(f.gates === undefined ? {} : { gates: f.gates }),
     message: f.message,
     details: f.details ?? [],
+    locations: f.locations ?? (fallback === undefined ? [] : [fallback]),
+  };
+}
+
+function targetScope(t: TargetReport): FindingLocation {
+  const path =
+    t.path ??
+    (t.kind === "service"
+      ? `services/${t.id}`
+      : t.kind === "feature"
+        ? "features"
+        : "architecture/landscape.likec4");
+  return {
+    path,
+    role: t.kind === "landscape" ? "primary" : "scope",
+    ...(t.kind === "feature" && t.path === undefined ? { pointer: t.id } : {}),
   };
 }
 
@@ -110,7 +140,8 @@ export function targetJson(t: TargetReport): Record<string, unknown> {
   return {
     kind: t.kind,
     id: t.id,
+    ...(t.path === undefined ? {} : { path: t.path }),
     valid: targetValid(t),
-    findings: t.findings.map(findingJson),
+    findings: t.findings.map((finding) => findingJson(finding, targetScope(t))),
   };
 }

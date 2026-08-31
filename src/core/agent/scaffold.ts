@@ -6,8 +6,9 @@
  * The command and skill files go into the repo `init` runs in, because that is
  * where the agent is invoked — for whichever tools the repo shows signs of, via
  * the AGENT_TOOLS registry (tools/registry.ts): one shared body, a per-tool
- * path and wrapper. Neither delivery is ever overwritten: the files are
- * starting points, and a team's edits to them outrank ours.
+ * path and wrapper. A delivery is refreshed only while its bytes still match
+ * the digest loam recorded when it wrote them; a team's edits revoke that
+ * authority and outrank ours.
  *
  * Two deliveries, one body. A slash command has to be TYPED, so it only ever
  * reaches an agent whose operator already knows loam exists. A skill is loaded
@@ -17,14 +18,16 @@
  *
  * The per-tool command and skill files carry the same version stamp AGENTS.md
  * does (agents-md.ts), for the same reason and with the same answer:
- * `loam doctor` reports `doctor.agent-files-stale` and never rewrites. Without
- * it, absence was the only drift loam could see — a command file mangled to one
- * line left doctor saying `healthy: true`, which across a hundred repositories
- * is invisible rot with no repair path.
+ * `loam doctor` reports `doctor.agent-files-stale` without writing. A later
+ * `loam init` can refresh only a digest-matched pointer. Without the stamp,
+ * absence was the only drift doctor could see — a command file mangled to one
+ * line left it saying `healthy: true`, which across a hundred repositories is
+ * invisible rot with no repair path.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import type { AgentFileEmitter, CommandContent } from "./contract.js";
@@ -38,9 +41,10 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  * The protocol itself stays in `body` and ships inside the binary, reachable as
  * `loam instructions <name>`. The file on disk gets a pointer to it, because
  * these two things go stale in opposite directions and only one of them can be
- * fixed. A generated file is written once, never regenerated (that is the
- * never-overwrite contract, and it is deliberate — your edits outrank the
- * template), so a repo scaffolded a year ago holds a year-old protocol: exact
+ * fixed. A generated file is refreshed only while its bytes still match the
+ * digest loam recorded; any edit revokes that authority because your edits
+ * outrank the template. Without that distinction a repo scaffolded a year ago
+ * holds a year-old protocol: exact
  * flags, exact finding codes, exact step order, all of it asserted with total
  * confidence by a file whose reader has no way to know it is describing a
  * different release. That is not a hypothetical failure mode. It is the one
@@ -86,13 +90,14 @@ ${steps}
 Every step above is a \`loam\` invocation, and each command's own \`--json\` output
 carries what to do next: findings have stable codes, and \`loam status --json\` puts
 the ordered \`next[]\` — each entry a code and the literal command — in one place.
-Branch on the codes, never on the prose — which is also how to read the protocol
-itself: add \`--no-fix-tables\` to the command above for the page without its per-code
-tables, then \`loam explain <code>\` for each code the run actually reports.
+Branch on the codes, never on the prose. The check workflow starts with
+\`--no-fix-tables\`; use \`loam explain <code>\` for each code the run actually
+reports, and remove that flag only when you deliberately need the complete table.
 
-This file is a pointer, not the protocol. loam wrote it once and will never
-rewrite it, so your edits here outrank the template and nothing will quietly
-undo them. Where this file and \`loam instructions\` disagree, the command is right.
+This file is a pointer, not the protocol. loam may refresh it while its bytes still
+match the digest recorded in loam.json. Editing it revokes that authority: your
+changes outrank the template and stay untouched. Where this file and
+\`loam instructions\` disagree, the command is right.
 `;
 }
 
@@ -124,9 +129,9 @@ const stubbed = (c: CommandContent): CommandContent => ({
  * Read that scope literally. It used to be described as the on-disk contract of
  * every repo initialized before `--tools` existed, and that is no longer true
  * of anything but a fresh scaffold: a file holds the STUB now, every repo
- * scaffolded before that holds the full protocol, and because loam never
- * regenerates a generated file the two disagree permanently and on purpose. An
- * export cannot describe files this binary did not write.
+ * scaffolded before that holds the full protocol. A recorded, byte-identical
+ * pointer can refresh; an older unrecorded file or any customized file cannot,
+ * so an export cannot describe files this binary did not write.
  *
  * The protocol those older files carry is `PROTOCOLS`. Anything asserting on
  * protocol content wants that one — this answers "what would loam write here",
@@ -139,6 +144,15 @@ export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
 /** The two ways a command body reaches an agent. Both are on by default. */
 export const DELIVERIES = ["commands", "skills"] as const;
 export type Delivery = (typeof DELIVERIES)[number];
+
+export const AGENT_PROFILES = ["full", "service", "docs"] as const;
+export type AgentProfile = (typeof AGENT_PROFILES)[number];
+
+const PROFILE_WORKFLOWS: Record<AgentProfile, ReadonlySet<string>> = {
+  full: new Set(COMMANDS.map((command) => command.name)),
+  service: new Set(["loam-adopt", "loam-implement", "loam-check", "loam-verify"]),
+  docs: new Set(["loam-feature", "loam-check", "loam-ship"]),
+};
 
 /**
  * Every file the selected tools would lay down, in creation order — the same
@@ -156,6 +170,7 @@ export function plannedCommandFiles(
   cwd: string,
   toolIds: string[],
   delivery: readonly Delivery[] = DELIVERIES,
+  profile: AgentProfile = "full",
 ): Array<{ path: string; content: string }> {
   return toolIds.flatMap((id) => {
     const tool = AGENT_TOOLS[id];
@@ -170,29 +185,88 @@ export function plannedCommandFiles(
     }
     if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
     return emitters.flatMap((e) =>
-      COMMANDS.map((c) => ({ path: join(cwd, ...e.path(c.name)), content: e.format(stubbed(c)) })),
+      COMMANDS.filter((command) => PROFILE_WORKFLOWS[profile].has(command.name)).map((c) => ({
+        path: join(cwd, ...e.path(c.name)),
+        content: e.format(stubbed(c)),
+      })),
     );
   });
 }
 
+function contentDigest(content: string | Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function manifestPath(cwd: string, path: string): string {
+  return relative(cwd, path).replaceAll("\\", "/");
+}
+
+export function updatedAgentFileManifest(
+  cwd: string,
+  planned: Array<{ path: string }>,
+  existing: Readonly<Record<string, string>> | undefined,
+  managed: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const out = { ...existing };
+  for (const file of planned) delete out[manifestPath(cwd, file.path)];
+  return Object.assign(out, managed);
+}
+
+export interface AgentFileSync {
+  created: string[];
+  refreshed: string[];
+  /** Repo-relative path -> digest of the bytes loam is allowed to refresh. */
+  managed: Record<string, string>;
+}
+
 /**
- * Write the command and skill files for the selected tools into `cwd`. Existing
- * files are left alone — the never-overwrite contract covers every tool and
- * every delivery, not just the default one. Returns the paths created.
+ * Create missing files and refresh only files still byte-identical to the
+ * digest recorded when loam last wrote them. A human edit breaks that equality
+ * and therefore revokes loam's authority over the file without a marker block
+ * or a prompt.
+ */
+export async function syncAgentCommands(req: {
+  cwd: string;
+  toolIds?: string[];
+  delivery?: readonly Delivery[];
+  profile?: AgentProfile;
+  known?: Readonly<Record<string, string>>;
+}): Promise<AgentFileSync> {
+  const { cwd, toolIds = ["claude"], delivery = DELIVERIES, profile = "full", known = {} } = req;
+  const out: AgentFileSync = { created: [], refreshed: [], managed: {} };
+  for (const { path, content } of plannedCommandFiles(cwd, toolIds, delivery, profile)) {
+    const key = manifestPath(cwd, path);
+    const desired = contentDigest(content);
+    if (!existsSync(path)) {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, content, "utf8");
+      out.created.push(path);
+      out.managed[key] = desired;
+      continue;
+    }
+    const current = contentDigest(await readFile(path));
+    if (current === desired) {
+      out.managed[key] = desired;
+      continue;
+    }
+    if (known[key] !== current) continue;
+    await writeFile(path, content, "utf8");
+    out.refreshed.push(path);
+    out.managed[key] = desired;
+  }
+  return out;
+}
+
+/**
+ * Backward-compatible create-only wrapper. Callers that own no digest manifest
+ * leave every existing file alone and receive only the paths created.
  */
 export async function scaffoldAgentCommands(
   cwd: string,
   toolIds: string[] = ["claude"],
   delivery: readonly Delivery[] = DELIVERIES,
 ): Promise<string[]> {
-  const created: string[] = [];
-  for (const { path, content } of plannedCommandFiles(cwd, toolIds, delivery)) {
-    if (existsSync(path)) continue;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, content, "utf8");
-    created.push(path);
-  }
-  return created;
+  return (await syncAgentCommands({ cwd, toolIds, delivery })).created;
 }
 
 /**

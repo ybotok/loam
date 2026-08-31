@@ -34,7 +34,7 @@ import {
   deltaServiceUnknownFinding,
   invalidSpecServiceFindings,
 } from "../../core/coherence/living.js";
-import { gatesArchive } from "../../core/vocabulary/issue.js";
+import { issueFinding } from "../../core/vocabulary/issue.js";
 import { featureProvenance } from "../../core/provenance/findings.js";
 import { documentConflictFinding } from "../../core/conflict-markers.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
@@ -230,16 +230,9 @@ export async function validateFeature(
     });
   } else {
     for (const i of issues) {
-      findings.push({
-        severity: i.severity,
-        code: i.code,
-        gates: gatesArchive(i),
-        ...(i.subject === undefined ? {} : { subject: i.subject }),
-        message: i.message,
-        text: { indent: 4, header: "coherence:" },
-      });
+      findings.push({ ...issueFinding(i), text: { indent: 4, header: "coherence:" } });
     }
   }
 
-  return { kind: "feature", id: featureId, findings };
+  return { kind: "feature", id: featureId, path: `features/${feature.dirName}`, findings };
 }

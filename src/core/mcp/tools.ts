@@ -2,11 +2,11 @@
  * The curated MCP tool table: which loam commands an MCP client can reach,
  * and how a JSON argument object becomes an argv the CLI already trusts.
  *
- * Read-only commands only. The writers — vouch above all — are deliberately
- * absent: an MCP caller is definitionally an agent, `loam vouch` is a HUMAN
- * act (the CLI refuses unattended runs with vouch-unattended), and exposing
- * it here would rebuild the hole the generated skill files' allowlist was
- * narrowed to close. verify is excluded with them: its read form and its
+ * This base table is read-only. Opt-in writers live in `./author-tools.ts`;
+ * vouch and a committing archive remain absent: an MCP caller is definitionally
+ * an agent, `loam vouch` is a HUMAN act (the CLI refuses unattended runs with
+ * vouch-unattended), and exposing it here would rebuild the hole the generated
+ * skill files' allowlist was narrowed to close. verify is excluded with them: its read form and its
  * attesting `--record`/`--results`/`--contract-results` form are one command,
  * and a facade that exposes "only the read half" of a writer is one
  * flag-mapping bug away from exposing the writer.
@@ -64,6 +64,9 @@ export interface McpTool {
   readonly description: string;
   readonly positionals: readonly ToolPositional[];
   readonly flags: readonly ToolFlag[];
+  /** Arguments enforced by the server rather than exposed to the caller. */
+  readonly fixed?: readonly string[];
+  readonly annotations?: Readonly<Record<string, boolean>>;
 }
 
 const SERVICE_FLAG = {
@@ -92,14 +95,9 @@ const SERVICE_FLAG = {
  * `readOnlyHint` is false, so shipping them would be noise a reviewer has to
  * justify before deciding they mean nothing here.
  *
- * `outputSchema` was considered with these and DEFERRED, which is worth
- * recording so the next reader does not re-open it as an oversight. It cannot
- * land as an additive change: MCP 2025-06-18 makes `structuredContent` a MUST
- * once a tool declares an `outputSchema`, and `toolReply` in `./protocol.ts`
- * deliberately omits that field for stdout it could not parse as an envelope —
- * pinned by test/mcp-protocol.test.ts. Declaring the schema would therefore
- * require changing what `toolReply` emits, which is a behaviour change to the
- * result contract and a separate decision from advertising a hint.
+ * `outputSchema` lives in `./protocol.ts`, beside `toolReply`: the declaration
+ * and the fallback structured envelope have to change together or a client is
+ * promised structured content one branch can omit.
  */
 export const READ_ONLY_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false } as const;
 
@@ -335,8 +333,11 @@ export const MCP_TOOLS: readonly McpTool[] = [
   },
 ];
 
-export function toolByName(name: string): McpTool | undefined {
-  return MCP_TOOLS.find((tool) => tool.name === name);
+export function toolByName(
+  name: string,
+  tools: readonly McpTool[] = MCP_TOOLS,
+): McpTool | undefined {
+  return tools.find((tool) => tool.name === name);
 }
 
 /** The MCP inputSchema for one tool: a closed object, so a typo'd argument refuses instead of vanishing. */

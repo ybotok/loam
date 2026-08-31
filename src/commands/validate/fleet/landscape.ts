@@ -96,7 +96,12 @@ export async function validateLandscape(
 ): Promise<TargetReport> {
   const path = landscapeFile(docsDir);
   const findings: Finding[] = [];
-  const report: TargetReport = { kind: "landscape", id: "landscape", findings };
+  const report: TargetReport = {
+    kind: "landscape",
+    id: "landscape",
+    path: "architecture/landscape.likec4",
+    findings,
+  };
 
   // The SET of service directories is this target's other subject, so it is
   // graded before the map is even opened: `service.id-invalid` is a fact about

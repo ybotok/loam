@@ -105,6 +105,17 @@ describe("init --mcp: the file", () => {
     });
   });
 
+  it("--mcp-author opts the generated server into the bounded authoring surface", async () => {
+    const dir = await throwawayDir();
+    await installLocalBin(dir);
+    const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--mcp-author", "--json");
+    expect(res.code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, ".mcp.json"), "utf8"))).toEqual({
+      mcpServers: { loam: { command: "npx", args: ["--no", "loam", "mcp", "--author"] } },
+    });
+    expect(JSON.parse(res.stdout).created).toContain(join(dir, ".mcp.json"));
+  });
+
   it("leaves no transaction journal behind — the write is a committed transaction", async () => {
     // It goes through the same journaled writer every other loam write does,
     // so a killed run leaves `.loam-commit` naming the file. A COMPLETED one

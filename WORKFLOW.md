@@ -293,15 +293,17 @@ Each is a protocol that ships inside the binary. `loam instructions <name>` prin
 loam instructions loam-feature FEAT-101 "Refund on partial capture"
 ```
 
-`loam init` writes a slash command and an Agent Skill per workflow into whichever AI tools it finds
-in the repo. Those files are **pointers** at `loam instructions`, not copies of it — they carry the
+`loam init` writes a slash command and an Agent Skill per selected workflow into whichever AI tools
+it finds in the repo (`--agent-profile full|service|docs`). Those files are **pointers** at
+`loam instructions`, not copies of it — they carry the
 purpose and the spine, and defer the flags, the finding codes and the fix tables to the binary you
-are actually about to run. A generated file is written once and never regenerated, so a copy of the
-protocol in it would be as old as the repository; the pointer cannot go out of date the same way.
+are actually about to run. Init records each pointer's digest and refreshes it only while the bytes
+still match; editing one revokes that authority. A protocol copy would still be as old as the
+repository, while the runtime page cannot go out of date the same way.
 
 `AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
 agent reads — now works the same way, which changes the reading order. It is orientation only (the
-layout, the cycle, what gates and what only advises, at 29,720 bytes rather than 109,399), and the
+layout, the cycle, what gates and what only advises, at 7,458 bytes rather than 109,399), and the
 four **reference pages** it used to carry inline come out of the binary at the moment the question
 arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
 taking no arguments and printing whole, listed beside the six workflows by a bare
@@ -387,8 +389,12 @@ Every command takes `--json`, and the contract is built so an agent never has to
   holding: no `loam explain` round trip per code, and no fix table loaded into context to read one.
   Only codes a run actually raised appear, and a run with nothing to fix carries `{}` rather than
   nothing, so no consumer has to test for the key before looking one up.
-- **`next[]` is ordered, and each entry carries the literal command** to run, beside a stable code
-  and a one-sentence statement that is actionable without reading any other field.
+- **`next[]` is ordered and executable without parsing prose.** The legacy `command` hint remains,
+  while `execution` says `kind`, `cwd`, whether it is `runnable`, the concrete `command` only when
+  it is safe to run, and otherwise the `needs`/`after` facts required to finish the step.
+- **Findings point back to files.** Every serialized finding has `locations[]`: exact primary
+  line/pointer data where its producer knows it, otherwise the narrowest service, feature or
+  landscape scope loam can prove.
 - **Three questions are kept apart**, each on the command that can answer it: `ok` (the command ran)
   on every envelope, `valid` (the docs pass) on `validate`, and `verified` on `verify` — beside
   `verdict`, which carries the third state, `attested`.
@@ -399,9 +405,13 @@ Every command takes `--json`, and the contract is built so an agent never has to
   hop out, the permission and capability joins, and every feature in flight over the service — one
   deterministic payload, so two runs over the same state are byte-diffable. `--feature <FEAT>`
   narrows the in-flight section to the feature being implemented.
+- **`loam show <FEAT> --json` is the review hand-off.** Its `review` object joins the intent summary,
+  exact C4 objects, API/event slices, dependencies, artifact states, verification, blockers,
+  advisories, use cases and executable next actions without making the reviewer reopen each file.
 
-The loop is the same every time: `loam status --json`, read `next[0]`, run the command it names,
-repeat. When a command refuses, it refuses with a code and a sentence naming the fix —
+The loop is the same every time: `loam status --json`, read `next[0].execution`, run its command only
+when `runnable` is true, otherwise satisfy its named edit/external input, then repeat. When a command
+refuses, it refuses with a code and a sentence naming the fix —
 `loam doctor`'s findings carry the exact command in a `fix` field.
 
 ## Presence is not trust
@@ -498,7 +508,7 @@ in a wired repo keeps the pointer its committed `loam.json` already spells, `--c
 
 **`loam status`** — the question an agent has when it joins a repo halfway or loses its session.
 Artifacts come back `missing`/`blocked`/`draft`/`ready`/`done`, and `next[]` is ordered, each entry
-a stable code plus the literal command. When this repository's `loam.json` binds a boundary the
+a stable code plus its explicit `execution` plan. When this repository's `loam.json` binds a boundary the
 fleet already has, that boundary's own steps are partitioned to the front of the fleet worklist
 before its ten-entry cap applies — a stable partition, not a sort, so every other boundary keeps the
 order an unbound reader sees and the work you are standing in can no longer be the entry elided. It
@@ -630,7 +640,10 @@ revisions negotiated down; JSON-RPC batch arrays refused). Every tool is adverti
 `readOnlyHint: true` and `openWorldHint: false`, which is what a host needs to run one without
 stopping to ask its user: the first says the call cannot change the repository, the second that it
 cannot reach anything outside the directory the server was launched in — and both are true of the
-whole table only because the writing commands are kept out of it. A typical host entry:
+whole base table only because the writing commands are kept out of it. It also publishes
+`loam://orientation` and every `loam://instructions/<name>` page as Markdown resources, so the host
+can load version-matched guidance progressively; `loam://instructions/loam-check/compact` omits the
+large fix table and pairs with `loam explain <code>`. A typical host entry:
 
 ```json
 {
@@ -644,10 +657,13 @@ whole table only because the writing commands are kept out of it. A typical host
 the bare binary shown above when `node_modules/.bin/loam` is there — the per-repo devDependency
 install, whose binary is on no PATH a host inherits. It is opt-in, and it never merges: an
 `.mcp.json` that already exists is reported skipped, byte for byte, with the `loam` key printed for
-you to paste.
+you to paste. `loam init --mcp-author` writes the same entry with `mcp --author`: that explicit mode
+adds `new`, `rebase`, `gherkin`, and archive planning with `--dry-run` enforced by the server.
 
-There is one machine contract, not two: every tool result carries the command's `--json` envelope
-**verbatim** in its text content (and parsed again as structured content), with the MCP error flag
+There is one machine contract, not two: every tool declares the common envelope `outputSchema` and
+every result carries the command's `--json` envelope **verbatim** in text plus structured content.
+Even malformed command stdout gets a structured `internal` envelope, so the schema has no missing
+branch. The MCP error flag
 following the envelope's `ok` — so `ok` and the stable `error.code` strings mean exactly what they
 mean at the CLI, and everything above about branching on codes applies unchanged. (Not the exit
 code, deliberately: `doctor`, `validate` and `gate` grade — they can exit 1 while answering
@@ -656,6 +672,5 @@ server serves the repository it is launched in (each call resolves `loam.json` f
 exactly as the CLI would) and never changes directory — a host that launches it in the wrong place
 gets coherent `no-config` envelopes, not silence. Calls run strictly one at a time, so a fleet-wide
 `loam_validate` blocks the queue for its duration; MCP requests carry ids and hosts tolerate the
-latency. The writing commands — `vouch` above all, and `archive`, `verify`, `new`, `rebase`, the
-rest — are deliberately not exposed: an MCP caller is an agent, `vouch` is a human act, and writes
-stay under your own CLI permission flow.
+latency. Even author mode excludes `vouch`, verification recording and a committing archive:
+human trust and irreversible lifecycle transitions stay under the CLI permission flow.

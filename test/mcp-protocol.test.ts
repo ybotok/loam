@@ -22,6 +22,7 @@ import {
 } from "../src/core/mcp/protocol.js";
 import { toArgv } from "../src/core/mcp/argv.js";
 import { MCP_TOOLS, toInputSchema, toolByName } from "../src/core/mcp/tools.js";
+import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 import { MCP_COMMAND } from "../src/core/agent/agents-md/map/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { buildProgram } from "../src/cli.js";
@@ -85,7 +86,7 @@ describe("initialize", () => {
 
   it("carries capabilities.tools, serverInfo with the real version, and the envelope instructions", () => {
     const result = resultOf(replyOf(request(1, "initialize", { protocolVersion: "2025-06-18" })));
-    expect(result["capabilities"]).toEqual({ tools: {} });
+    expect(result["capabilities"]).toEqual({ tools: {}, resources: {} });
     expect(result["serverInfo"]).toEqual({ name: "loam", version: LOAM_VERSION });
     expect(String(result["instructions"])).toContain("error.code");
   });
@@ -115,12 +116,28 @@ describe("routing", () => {
   });
 
   it("an unknown request method is -32601 — including LSP's 'shutdown'", () => {
-    for (const method of ["resources/list", "shutdown", "frobnicate"]) {
+    for (const method of ["shutdown", "frobnicate"]) {
       const response = replyOf(request(3, method));
       expect(response.id).toBe(3);
       expect(errorOf(response).code).toBe(METHOD_NOT_FOUND);
       expect(errorOf(response).message).toContain(method);
     }
+  });
+
+  it("lists and reads version-matched orientation and workflow resources", () => {
+    const listed = resultOf(replyOf(request(4, "resources/list")))["resources"] as Array<Record<string, unknown>>;
+    expect(listed.some(({ uri }) => uri === "loam://orientation")).toBe(true);
+    expect(listed.some(({ uri }) => uri === "loam://instructions/loam-check")).toBe(true);
+    expect(listed.some(({ uri }) => uri === "loam://instructions/loam-check/compact")).toBe(true);
+
+    const read = resultOf(replyOf(request(5, "resources/read", { uri: "loam://orientation" })));
+    const contents = read["contents"] as Array<Record<string, unknown>>;
+    expect(String(contents[0]!["text"])).toContain("loam instructions");
+    const compact = resultOf(replyOf(request(6, "resources/read", {
+      uri: "loam://instructions/loam-check/compact",
+    })))["contents"] as Array<Record<string, unknown>>;
+    expect(String(compact[0]!["text"]).length).toBeLessThan(5_000);
+    expect(errorOf(replyOf(request(7, "resources/read", { uri: "loam://missing" }))).code).toBe(INVALID_PARAMS);
   });
 
   it("notifications get no response, whatever their method", () => {
@@ -202,7 +219,7 @@ describe("tools/list", () => {
     }
   });
 
-  it("every tool is advertised read-only — the hint a host needs to approve a call without prompting", () => {
+  it("every base tool is read-only and declares the common envelope output schema", () => {
     // Without this a host has no machine signal that loam_validate or
     // loam_context is safe, so a call that only reads files falls into the same
     // approval path as a mutating tool — which is what excluding the writers
@@ -214,13 +231,34 @@ describe("tools/list", () => {
     for (const tool of tools) {
       const name = String(tool["name"]);
       expect(tool["annotations"], name).toEqual({ readOnlyHint: true, openWorldHint: false });
-      // The coupling that keeps `toolReply` honest: MCP 2025-06-18 makes
-      // `structuredContent` a MUST once a tool declares an `outputSchema`, and
-      // toolReply deliberately omits that field for stdout it could not parse
-      // as an envelope (pinned below). Declaring one here without changing
-      // toolReply would ship a spec violation, so the absence is the assertion.
-      expect("outputSchema" in tool, `${name} declares an outputSchema; toolReply may omit structuredContent`).toBe(false);
+      const output = tool["outputSchema"] as Record<string, unknown>;
+      expect(output["type"], name).toBe("object");
+      expect(output["required"], name).toEqual(["contractVersion", "version", "ok"]);
     }
+  });
+
+  it("opt-in author tools advertise mutations while archive remains an enforced dry-run", () => {
+    const tools = [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS];
+    const listed = resultOf((() => {
+      const routed = routeLine(JSON.stringify(request(1, "tools/list")), tools);
+      if (routed.kind !== "reply") throw new Error("expected a reply");
+      return routed.response;
+    })())["tools"] as Array<Record<string, unknown>>;
+    expect(listed.find(({ name }) => name === "loam_new")?.["annotations"]).toMatchObject({ readOnlyHint: false });
+    expect(listed.find(({ name }) => name === "loam_archive_plan")?.["annotations"]).toMatchObject({ readOnlyHint: true });
+
+    const routed = routeLine(JSON.stringify(request(2, "tools/call", {
+      name: "loam_archive_plan",
+      arguments: { featureId: "FEAT-1" },
+    })), tools);
+    expect(routed).toEqual({
+      kind: "call",
+      id: 2,
+      toolName: "loam_archive_plan",
+      argv: ["archive", "FEAT-1", "--dry-run", "--json"],
+    });
+    expect(errorOf(replyOf(request(3, "tools/call", { name: "loam_new", arguments: { featureId: "FEAT-1" } }))).code)
+      .toBe(INVALID_PARAMS);
   });
 
   it("the AGENTS.md mcp section's hand-listed roster names every served command", () => {
@@ -391,21 +429,25 @@ describe("wrapping a tool run", () => {
     }
   });
 
-  it("unparseable stdout still reaches the caller verbatim, without a pretend structuredContent", () => {
+  it("unparseable stdout stays verbatim and gains a schema-valid failure envelope", () => {
     const reply = toolReply({ stdout: "not json at all", stderr: "", code: 0 });
     if (reply.kind !== "result") throw new Error("expected a result");
     expect((reply.result["content"] as Array<{ text: string }>)[0]!.text).toBe("not json at all");
-    expect("structuredContent" in reply.result).toBe(false);
+    expect(reply.result["structuredContent"]).toMatchObject({
+      contractVersion: "1.0",
+      version: LOAM_VERSION,
+      ok: false,
+      error: { code: "internal" },
+      raw: "not json at all",
+    });
+    expect(reply.result["isError"]).toBe(true);
   });
 
-  it("only with no envelope to consult does the exit code decide isError", () => {
-    const broken = (code: number) => {
-      const reply = toolReply({ stdout: "not json at all", stderr: "", code });
-      if (reply.kind !== "result") throw new Error("expected a result");
-      return reply.result["isError"];
-    };
-    expect(broken(1)).toBe(true);
-    expect(broken(0)).toBe(false);
+  it("valid non-object JSON takes the same structured failure path", () => {
+    const reply = toolReply({ stdout: "[]", stderr: "", code: 0 });
+    if (reply.kind !== "result") throw new Error("expected a result");
+    expect(reply.result["structuredContent"]).toMatchObject({ ok: false, raw: "[]" });
+    expect(reply.result["isError"]).toBe(true);
   });
 });
 
@@ -510,14 +552,16 @@ describe("the read-only claim is derived, not attested", () => {
 
 describe("the tool table mirrors the CLI registrations", () => {
   it("is internally consistent: derived names, at most one variadic positional, last", () => {
-    for (const tool of MCP_TOOLS) {
-      expect(tool.name).toBe(`loam_${tool.command}`);
+    const tools = [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS];
+    for (const tool of tools) {
+      expect(tool.name.startsWith("loam_")).toBe(true);
+      if (tool.name !== "loam_archive_plan") expect(tool.name).toBe(`loam_${tool.command}`);
       expect(tool.positionals.filter((p) => p.variadic).length).toBeLessThanOrEqual(1);
       if (tool.positionals.some((p) => p.variadic)) {
         expect(tool.positionals.at(-1)!.variadic).toBe(true);
       }
     }
-    expect(new Set(MCP_TOOLS.map((tool) => tool.name)).size).toBe(MCP_TOOLS.length);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
   });
 
   it("every advertised flag and positional exists on the registered command, shape for shape", () => {
@@ -529,7 +573,7 @@ describe("the tool table mirrors the CLI registrations", () => {
     // registrations are the one source of truth for what parses; this walks
     // the whole table against them.
     const program = buildProgram();
-    for (const tool of MCP_TOOLS) {
+    for (const tool of [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]) {
       const command = program.commands.find((candidate) => candidate.name() === tool.command);
       expect(command, `${tool.name} names unregistered command '${tool.command}'`).toBeDefined();
       const longs = command!.options.map((option) => option.long);
@@ -550,6 +594,9 @@ describe("the tool table mirrors the CLI registrations", () => {
           option.mandatory,
           `${tool.name}.${flag.property} required vs ${flag.flag}'s mandatory`,
         ).toBe(flag.required === true);
+      }
+      for (const fixed of tool.fixed ?? []) {
+        expect(longs, `${tool.name} enforces ${fixed}, which ${tool.command} does not declare`).toContain(fixed);
       }
       const registered = command!.registeredArguments;
       expect(

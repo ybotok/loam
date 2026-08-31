@@ -34,6 +34,7 @@ import {
 } from "../../core/mcp/protocol.js";
 import type { RouteOutcome } from "../../core/mcp/protocol.js";
 import type { DispatchResult } from "./dispatch.js";
+import { MCP_TOOLS, type McpTool } from "../../core/mcp/tools.js";
 
 export interface ServeIo {
   readonly input: Readable;
@@ -44,7 +45,11 @@ export interface ServeIo {
 /** The dispatcher, as a parameter: serve() stays testable with a stub and owns no registration. */
 export type ToolRunner = (argv: readonly string[]) => Promise<DispatchResult>;
 
-export async function serve(io: ServeIo, runTool: ToolRunner): Promise<void> {
+export async function serve(
+  io: ServeIo,
+  runTool: ToolRunner,
+  tools: readonly McpTool[] = MCP_TOOLS,
+): Promise<void> {
   // One startup line, to stderr only — a client is entitled to a stdout that
   // has never carried anything but frames, from the very first byte.
   io.log.write(`loam mcp: serving ${process.cwd()} over stdio\n`);
@@ -55,15 +60,20 @@ export async function serve(io: ServeIo, runTool: ToolRunner): Promise<void> {
   for await (const chunk of io.input) {
     const split = splitFrames(rest + String(chunk));
     rest = split.rest;
-    for (const line of split.lines) await handleLine(line, io, runTool);
+    for (const line of split.lines) await handleLine(line, io, runTool, tools);
   }
   // A final frame the client sent without a trailing newline is still a frame:
   // EOF terminates it exactly as the delimiter would have.
-  if (rest.trim() !== "") await handleLine(rest, io, runTool);
+  if (rest.trim() !== "") await handleLine(rest, io, runTool, tools);
 }
 
-async function handleLine(line: string, io: ServeIo, runTool: ToolRunner): Promise<void> {
-  const outcome: RouteOutcome = routeLine(line);
+async function handleLine(
+  line: string,
+  io: ServeIo,
+  runTool: ToolRunner,
+  tools: readonly McpTool[],
+): Promise<void> {
+  const outcome: RouteOutcome = routeLine(line, tools);
   if (outcome.kind === "ignore") return;
   if (outcome.kind === "reply") {
     io.output.write(frame(outcome.response));

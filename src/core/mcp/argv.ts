@@ -113,5 +113,8 @@ export function toArgv(tool: McpTool, args: Record<string, unknown>): ArgvOutcom
   if (!positionals.ok) return { ok: false, problem: positionals.problem };
   const flags = flagTokens(tool, args);
   if (!flags.ok) return { ok: false, problem: flags.problem };
-  return { ok: true, argv: [tool.command, ...positionals.tokens, ...flags.tokens, "--json"] };
+  return {
+    ok: true,
+    argv: [tool.command, ...positionals.tokens, ...flags.tokens, ...(tool.fixed ?? []), "--json"],
+  };
 }
