@@ -18,14 +18,15 @@ import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.j
 import {
   detectAgentTools,
   plannedCommandFiles,
-  scaffoldAgentCommands,
+  syncAgentCommands,
+  updatedAgentFileManifest,
   type Delivery,
 } from "../../core/agent/scaffold.js";
 import { AGENT_TOOLS } from "../../core/agent/tools/registry.js";
 import { initExample } from "./example.js";
 import { firstHour } from "./first-hour.js";
 import { MCP_CONFIG_FILENAME, mcpConfigPath, mcpServerSnippet, writeMcpConfig } from "./mcp.js";
-import { isDocsRepo, resolveTools, storedDocsDir } from "./options.js";
+import { isDocsRepo, resolveAgentProfile, resolveTools, storedDocsDir } from "./options.js";
 
 interface InitOptions {
   docs: string;
@@ -45,8 +46,11 @@ interface InitOptions {
    * either. See ./mcp.ts for why the file is opt-in at all.
    */
   mcp?: boolean;
+  mcpAuthor?: boolean;
   /** --tools: comma-separated AGENT_TOOLS ids, or "all". Absent = autodetect. */
   tools?: string;
+  /** Workflow subset to scaffold. */
+  agentProfile?: string;
   /** --example: copy the packaged example fleet to this directory and do nothing else. */
   example?: string;
   json?: boolean;
@@ -65,6 +69,7 @@ export function registerInit(program: Command): void {
       "agent tools to generate for, overriding the scan of this directory: " +
         `comma-separated (${Object.keys(AGENT_TOOLS).join(", ")}) or "all"`,
     )
+    .option("--agent-profile <profile>", "workflow set: full | service | docs")
     .option(
       "--example <dir>",
       "copy the packaged example fleet to <dir> and stop: no repository is bound, nothing is scaffolded",
@@ -75,6 +80,7 @@ export function registerInit(program: Command): void {
       "--mcp",
       `also write ${MCP_CONFIG_FILENAME} here, so an MCP host launches \`loam mcp\` for this repo`,
     )
+    .option("--mcp-author", `write ${MCP_CONFIG_FILENAME} with the opt-in authoring profile`)
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: InitOptions, command: Command) => {
       const json = opts.json === true;
@@ -99,6 +105,8 @@ export function registerInit(program: Command): void {
             ...(opts.service !== undefined ? ["--service"] : []),
             ...(opts.create === true ? ["--create"] : []),
             ...(opts.tools !== undefined ? ["--tools"] : []),
+            ...(opts.agentProfile !== undefined ? ["--agent-profile"] : []),
+            ...(opts.mcpAuthor === true ? ["--mcp-author"] : []),
           ],
           json,
         });
@@ -221,31 +229,41 @@ export function registerInit(program: Command): void {
       const scanned = detected.length > 0 ? detected : ["claude"];
       const tools = opts.tools === undefined ? scanned : resolveTools(opts.tools, json);
       if (tools === null) return;
+      const profile = resolveAgentProfile(opts.agentProfile, existing?.agentProfile, json);
+      if (profile === null) return;
 
-      // `skipped` is the other half of the never-overwrite contract: the
-      // scaffolds return only what they created, so what they left alone is
-      // probed here, before they run — in the order they would create it, so
-      // created + skipped is the same list on every repo. Both halves come from
-      // the scaffolds' own planned-file lists, so the probe cannot drift from
-      // what is actually written.
-      const agentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery) : [];
+      // Probe the pre-existing paths in planned order. Managed files refreshed
+      // below are removed from `skipped`; custom and already-current files stay.
+      const plannedAgentFiles = delivery.length > 0 ? plannedCommandFiles(cwd, tools, delivery, profile) : [];
       // `.mcp.json` joins the same list rather than being reported on the side:
       // it is a scaffolded path like any other, so it must appear in `created`
       // or in `skipped` by the one rule that governs both. Last, because it is
       // written last.
       const candidates = [
         ...plannedDocsFiles(docsDir),
-        ...agentFiles.map((f) => f.path),
-        ...(opts.mcp === true ? [mcpConfigPath(cwd)] : []),
+        ...plannedAgentFiles.map((f) => f.path),
+        ...(opts.mcp === true || opts.mcpAuthor === true ? [mcpConfigPath(cwd)] : []),
       ];
-      const skipped = candidates.filter((p) => existsSync(p));
+      let skipped = candidates.filter((p) => existsSync(p));
 
       // Joining touches the docs repo not at all: it is somebody's committed
       // repository, and "point at it" must never mean "write to it".
       const created = joining && opts.create !== true ? [] : (await scaffoldDocs(docsDir)).created;
       const generatedFor = delivery.length > 0 ? tools : [];
+      let refreshed: string[] = [];
+      let managedFiles: Record<string, string> = {};
       if (delivery.length > 0) {
-        created.push(...(await scaffoldAgentCommands(cwd, tools, delivery)));
+        const synced = await syncAgentCommands({
+          cwd,
+          toolIds: tools,
+          delivery,
+          profile,
+          known: existing?.agentFiles,
+        });
+        created.push(...synced.created);
+        refreshed = synced.refreshed;
+        managedFiles = synced.managed;
+        skipped = skipped.filter((path) => !refreshed.includes(path));
       }
 
       // The third delivery, and the only machine-readable one. It refuses out
@@ -254,8 +272,8 @@ export function registerInit(program: Command): void {
       // name. Before saveConfig, so a run that cannot write this file has not
       // yet moved the committed pointer either.
       let mcpWritten = false;
-      if (opts.mcp === true) {
-        const write = await writeMcpConfig(cwd);
+      if (opts.mcp === true || opts.mcpAuthor === true) {
+        const write = await writeMcpConfig(cwd, opts.mcpAuthor === true);
         if (write.kind === "failed") {
           fail(json, write.code, write.message);
           return;
@@ -269,12 +287,15 @@ export function registerInit(program: Command): void {
       // on disk, and `agentTools` is a record of what the repo HOLDS. A run that
       // generated nothing adds nothing and erases nothing.
       const recordedTools = [...new Set([...(existing?.agentTools ?? []), ...generatedFor])];
+      const agentFileManifest = updatedAgentFileManifest(cwd, plannedAgentFiles, existing?.agentFiles, managedFiles);
       const config: StoredConfig = {
         ...existing,
         docsDir: stored,
         ...(opts.service ? { service: opts.service } : {}),
         ...(recordedTools.length > 0 ? { agentTools: recordedTools } : {}),
+        agentProfile: profile,
       };
+      if (Object.keys(agentFileManifest).length > 0) config.agentFiles = agentFileManifest;
       const configFile = await saveConfig(config, cwd);
 
       const serviceCount = (await listServices(docsDir)).length;
@@ -299,8 +320,10 @@ export function registerInit(program: Command): void {
           docsRepo: joining ? "existing" : "created",
           services: serviceCount,
           created,
+          refreshed,
           skipped,
           tools: generatedFor,
+          agentProfile: profile,
           detected,
         });
         return;
@@ -325,9 +348,14 @@ export function registerInit(program: Command): void {
       }
       if (opts.commands) console.log(`  commands:  ${tools.join(", ")}`);
       if (opts.skills) console.log(`  skills:    ${tools.join(", ")}`);
+      console.log(`  profile:   ${profile}`);
       if (created.length > 0) {
         console.log("  scaffolded:");
         for (const c of created) console.log(`    + ${c}`);
+      }
+      if (refreshed.length > 0) {
+        console.log("  refreshed (unchanged since loam last wrote them):");
+        for (const path of refreshed) console.log(`    ↻ ${path}`);
       }
 
       // The one skipped path that earns more than its line in `skipped`: loam
@@ -337,10 +365,10 @@ export function registerInit(program: Command): void {
       // to produce it; the snippet is the same bytes a fresh write would have
       // used, which is also why it names the launch form this install shape
       // actually needs.
-      if (opts.mcp === true && !mcpWritten) {
+      if ((opts.mcp === true || opts.mcpAuthor === true) && !mcpWritten) {
         console.log(`  mcp:       ${MCP_CONFIG_FILENAME} is already here — left exactly as it is.`);
         console.log(`             paste this into its "mcpServers" object:`);
-        for (const line of mcpServerSnippet(cwd)) console.log(`               ${line}`);
+        for (const line of mcpServerSnippet(cwd, opts.mcpAuthor === true)) console.log(`               ${line}`);
       }
 
       // Printed ONLY for the single-repo trial composition: one run that both

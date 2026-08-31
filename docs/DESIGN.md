@@ -139,7 +139,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
-| `core/mcp/` | the MCP facade's pure half: stdio `framing`, JSON-RPC routing (`protocol`), the read-only `tools` table and its `argv` boundary | envelope, explain, kernel |
+| `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
 | `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
 | `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |

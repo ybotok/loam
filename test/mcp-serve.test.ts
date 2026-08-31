@@ -15,6 +15,7 @@ import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, runToolArgv, type Sinks } from "../src/commands/mcp/dispatch.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { MCP_TOOLS } from "../src/core/mcp/tools.js";
+import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 
 interface SessionResult {
   /** Every stdout frame, parsed — parsing IS the purity assertion, so it throws on a stray byte. */
@@ -114,7 +115,7 @@ describe("a full session over the coherent fixture", () => {
   it("initialize: echoed version, tools capability, serverInfo, instructions", () => {
     const result = resultOf(main.frames, 1);
     expect(result["protocolVersion"]).toBe("2025-06-18");
-    expect(result["capabilities"]).toEqual({ tools: {} });
+    expect(result["capabilities"]).toEqual({ tools: {}, resources: {} });
     expect(result["serverInfo"]).toEqual({ name: "loam", version: LOAM_VERSION });
     expect(String(result["instructions"])).toContain("--json envelope");
   });
@@ -248,6 +249,15 @@ describe("every advertised tool is a command the dispatcher can actually run", (
       const envelope = JSON.parse(res.stdout) as { ok: boolean; error?: { message?: string } };
       const message = envelope.error?.message ?? "";
       expect(message, `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+    }
+  });
+
+  it("the opt-in author roster reaches registered commands too", async () => {
+    for (const tool of MCP_AUTHOR_TOOLS) {
+      const res = await runToolArgv([tool.command, "--json"], true);
+      expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
+      const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
+      expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
     }
   });
 });

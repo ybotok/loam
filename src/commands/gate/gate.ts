@@ -115,7 +115,7 @@ export function registerGate(program: Command): void {
             features: report.features,
             checks: report.checks.map((c) => ({
               check: c.check,
-              findings: c.findings.map(findingJson),
+              findings: c.findings.map((finding) => findingJson(finding)),
             })),
             summary,
           });

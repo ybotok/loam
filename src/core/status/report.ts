@@ -147,6 +147,28 @@ export interface NextStep {
   path?: string;
 }
 
+export type NextActionKind = "command" | "edit" | "external-repo" | "human-review";
+export type NextActionCwd = "configured-repo" | "docs-repo" | "service-repo";
+
+/**
+ * The machine contract beside the legacy `NextStep.command` string.
+ *
+ * `command` exists only when every argument is concrete. An edit names the
+ * file and puts the old command in `after`, because that command grades the
+ * authored work rather than performing it. `needs` is data the caller must
+ * obtain; it is never smuggled into a shell-looking placeholder.
+ */
+export interface NextExecution {
+  kind: NextActionKind;
+  runnable: boolean;
+  cwd: NextActionCwd;
+  command?: string;
+  after?: string;
+  needs?: string[];
+}
+
+export type ExecutableNextStep = NextStep & { execution: NextExecution };
+
 /**
  * What the record beside the feature says, without asking whether anyone should
  * believe the code. `stale` is its own state and not merely "recorded": the

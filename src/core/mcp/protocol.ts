@@ -17,7 +17,16 @@
 import { isRecord } from "../kernel/records.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { toArgv } from "./argv.js";
-import { MCP_TOOLS, READ_ONLY_ANNOTATIONS, toInputSchema, toolByName } from "./tools.js";
+import {
+  MCP_TOOLS,
+  READ_ONLY_ANNOTATIONS,
+  toInputSchema,
+  toolByName,
+  type McpTool,
+} from "./tools.js";
+import { AGENTS_MD } from "../agent/agents-md.js";
+import { PROTOCOLS } from "../agent/protocol.js";
+import { withoutFixTables } from "../explain/fix-tables.js";
 
 /** JSON-RPC 2.0 error codes this server emits. */
 export const PARSE_ERROR = -32700;
@@ -35,6 +44,31 @@ export const INTERNAL_ERROR = -32603;
  */
 export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 export const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
+
+const TOOL_OUTPUT_SCHEMA = {
+  type: "object",
+  required: ["contractVersion", "version", "ok"],
+  properties: {
+    contractVersion: { const: "1.0" },
+    version: { type: "string" },
+    ok: { type: "boolean" },
+    error: {
+      type: "object",
+      properties: { code: { type: "string" }, message: { type: "string" } },
+      required: ["code", "message"],
+      additionalProperties: true,
+    },
+  },
+  additionalProperties: true,
+} as const;
+
+const RESOURCE_TEXT: Readonly<Record<string, string>> = {
+  "loam://orientation": AGENTS_MD,
+  ...Object.fromEntries(
+    Object.entries(PROTOCOLS).map(([name, body]) => [`loam://instructions/${name}`, body]),
+  ),
+  "loam://instructions/loam-check/compact": withoutFixTables(PROTOCOLS["loam-check"]!),
+};
 
 /** A response id: echoed from the request, or null when no id could be read (parse errors). */
 export type JsonRpcId = string | number;
@@ -76,7 +110,7 @@ export type RouteOutcome =
 const reply = (response: JsonRpcResponse): RouteOutcome => ({ kind: "reply", response });
 
 /** One line off the wire → what to do about it. Total: every input maps to an outcome, nothing throws. */
-export function routeLine(line: string): RouteOutcome {
+export function routeLine(line: string, tools: readonly McpTool[] = MCP_TOOLS): RouteOutcome {
   if (line.trim() === "") return { kind: "ignore" };
   let message: unknown;
   try {
@@ -114,10 +148,15 @@ export function routeLine(line: string): RouteOutcome {
     // exactly the id JSON-RPC reserves for that answer.
     return reply(errorResponse(null, INVALID_REQUEST, "Invalid Request: id must be a string or a finite number"));
   }
-  return routeRequest(validId, method, message["params"]);
+  return routeRequest(validId, method, message["params"], tools);
 }
 
-function routeRequest(id: JsonRpcId, method: string, params: unknown): RouteOutcome {
+function routeRequest(
+  id: JsonRpcId,
+  method: string,
+  params: unknown,
+  tools: readonly McpTool[],
+): RouteOutcome {
   switch (method) {
     case "initialize":
       return reply(resultResponse(id, initializeResult(params)));
@@ -128,19 +167,32 @@ function routeRequest(id: JsonRpcId, method: string, params: unknown): RouteOutc
       // is omitted rather than emitted empty — the spec reads an absent
       // cursor as "done".
       return reply(resultResponse(id, {
-        tools: MCP_TOOLS.map((tool) => ({
+        tools: tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
           inputSchema: toInputSchema(tool),
-          // The same literal on every tool, because the table is read-only by
-          // construction. `./tools.ts` holds why these two hints and not the
-          // other two, and why `outputSchema` was deferred rather than shipped
-          // beside them — that decision is about `toolReply` below.
-          annotations: READ_ONLY_ANNOTATIONS,
+          outputSchema: TOOL_OUTPUT_SCHEMA,
+          // Base tools share the read-only default; opt-in authoring tools
+          // carry their own mutation annotations in author-tools.ts.
+          annotations: tool.annotations ?? READ_ONLY_ANNOTATIONS,
         })),
       }));
+    case "resources/list":
+      return reply(resultResponse(id, {
+        resources: Object.keys(RESOURCE_TEXT).map((uri) => ({
+          uri,
+          name: uri === "loam://orientation" ? "loam orientation" : uri.slice("loam://instructions/".length),
+          description:
+            uri === "loam://orientation"
+              ? "Small always-loaded map of a loam repository"
+              : "Version-matched loam workflow or reference page",
+          mimeType: "text/markdown",
+        })),
+      }));
+    case "resources/read":
+      return routeResourceRead(id, params);
     case "tools/call":
-      return routeToolCall(id, params);
+      return routeToolCall(id, params, tools);
     default:
       // Everything else — including a literal `shutdown`, which is LSP's
       // lifecycle and not MCP's (the MCP stdio lifecycle ends at stdin EOF).
@@ -148,13 +200,29 @@ function routeRequest(id: JsonRpcId, method: string, params: unknown): RouteOutc
   }
 }
 
-function routeToolCall(id: JsonRpcId, params: unknown): RouteOutcome {
+function routeResourceRead(id: JsonRpcId, params: unknown): RouteOutcome {
+  if (!isRecord(params) || typeof params["uri"] !== "string") {
+    return reply(errorResponse(id, INVALID_PARAMS, "resources/read requires params.uri"));
+  }
+  const uri = params["uri"];
+  const text = RESOURCE_TEXT[uri];
+  if (text === undefined) {
+    return reply(errorResponse(id, INVALID_PARAMS, `Unknown resource '${uri}'`));
+  }
+  return reply(resultResponse(id, { contents: [{ uri, mimeType: "text/markdown", text }] }));
+}
+
+function routeToolCall(
+  id: JsonRpcId,
+  params: unknown,
+  tools: readonly McpTool[],
+): RouteOutcome {
   if (!isRecord(params) || typeof params["name"] !== "string") {
     return reply(errorResponse(id, INVALID_PARAMS, "tools/call requires params.name naming a tool"));
   }
-  const tool = toolByName(params["name"]);
+  const tool = toolByName(params["name"], tools);
   if (tool === undefined) {
-    const names = MCP_TOOLS.map((t) => t.name).join(", ");
+    const names = tools.map((t) => t.name).join(", ");
     return reply(errorResponse(id, INVALID_PARAMS, `Unknown tool '${params["name"]}' — this server offers: ${names}`));
   }
   const rawArgs = params["arguments"] ?? {};
@@ -181,10 +249,11 @@ export function initializeResult(params: unknown): Record<string, unknown> {
   return {
     protocolVersion: negotiated,
     capabilities: {
-      // Tools only, and the set never changes while the server lives, so no
+      // The sets never change while the server lives, so no
       // listChanged notification is declared — announcing one and never
       // sending it would be a promise, not a capability.
       tools: {},
+      resources: {},
     },
     serverInfo: { name: "loam", version: LOAM_VERSION },
     instructions:
@@ -238,20 +307,32 @@ export function toolReply(run: ToolRunOutcome): ToolReply {
   let structured: Record<string, unknown> | undefined;
   try {
     const parsed: unknown = JSON.parse(run.stdout);
-    // structuredContent must be an object; the envelope always is, so a
-    // non-object parse means this was not an envelope — ship text only.
+    // structuredContent must be an object; the envelope always is.
     structured = isRecord(parsed) ? parsed : undefined;
   } catch {
-    // Unparseable stdout still reaches the caller verbatim in the text block —
-    // nothing is hidden — but pretending it parsed would be a second contract.
-    structured = undefined;
+    // The fallback below handles both invalid JSON and valid non-object JSON.
+  }
+  if (structured === undefined) {
+    // Preserve the bytes in content, but keep the declared output contract:
+    // an MCP client should never have to branch on the absence of
+    // structuredContent after tools/list promised a schema.
+    structured = {
+      contractVersion: "1.0",
+      version: LOAM_VERSION,
+      ok: false,
+      error: {
+        code: "internal",
+        message: "the command did not print a JSON object envelope",
+      },
+      raw: run.stdout,
+    };
   }
   const envelopeOk = structured?.["ok"];
   return {
     kind: "result",
     result: {
       content: [{ type: "text", text: run.stdout }],
-      ...(structured === undefined ? {} : { structuredContent: structured }),
+      structuredContent: structured,
       isError: typeof envelopeOk === "boolean" ? !envelopeOk : run.code !== 0,
     },
   };

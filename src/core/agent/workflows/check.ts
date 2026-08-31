@@ -23,7 +23,7 @@ export const LOAM_CHECK: CommandContent = {
   // argument (see `allowUnknownOption` in commands/instructions.ts); this is
   // the half of the fix that stops loam printing the broken line in the first
   // place.
-  invocation: "loam instructions loam-check",
+  invocation: "loam instructions loam-check --no-fix-tables",
   // The one protocol whose body names no placeholder: its target (`--all`, a
   // feature id, a service id) is spelled inside the `loam validate` line the
   // agent chooses, not substituted into the page.

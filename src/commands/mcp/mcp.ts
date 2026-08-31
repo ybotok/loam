@@ -1,5 +1,5 @@
 /**
- * `loam mcp` — serve the read-only commands as MCP tools over stdio.
+ * `loam mcp` — serve the read surface, plus bounded writers under `--author`.
  *
  * The action wires the real stdio triple into the serve loop and waits for
  * stdin EOF; everything with a decision in it lives in `./serve.ts`,
@@ -10,11 +10,18 @@
 import type { Command } from "commander";
 import { runToolArgv } from "./dispatch.js";
 import { serve } from "./serve.js";
+import { MCP_TOOLS } from "../../core/mcp/tools.js";
+import { MCP_AUTHOR_TOOLS } from "../../core/mcp/author-tools.js";
+
+interface McpOptions {
+  author?: boolean;
+}
 
 export function registerMcp(program: Command): void {
   program
     .command("mcp")
-    .description("Serve the read-only commands as MCP tools over stdio (JSON-RPC 2.0)")
+    .description("Serve loam commands as MCP tools over stdio (JSON-RPC 2.0)")
+    .option("--author", "opt in to safe authoring tools; vouch and committing archive stay excluded")
     // Declared for the uniform surface every command owes (`--json` is
     // mandatory, test/agents.test.ts), and it is not inert: it governs the one
     // pre-loop surface this command has — a usage error like `loam mcp --bogus`
@@ -22,7 +29,7 @@ export function registerMcp(program: Command): void {
     // decide whether that refusal is an envelope. Once the loop runs, stdout
     // is JSON-RPC frames either way; there is no human rendering to switch off.
     .option("--json", "emit the machine contract instead of the human view")
-    .action(async () => {
+    .action(async (opts: McpOptions) => {
       // No docs-repo gate at startup, deliberately (the add-command preamble
       // decision): a launch-time refusal would print a non-JSON-RPC line into
       // the client's protocol stream and kill the handshake with nothing a
@@ -32,6 +39,10 @@ export function registerMcp(program: Command): void {
       // actionable, by the agent on the other end. The server serves the
       // repository it was started in (each call resolves loam.json through
       // process.cwd()) and never changes directory.
-      await serve({ input: process.stdin, output: process.stdout, log: process.stderr }, runToolArgv);
+      const tools = opts.author ? [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS] : MCP_TOOLS;
+      const run = opts.author
+        ? (argv: readonly string[]) => runToolArgv(argv, true)
+        : runToolArgv;
+      await serve({ input: process.stdin, output: process.stdout, log: process.stderr }, run, tools);
     });
 }

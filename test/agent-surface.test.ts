@@ -3,12 +3,9 @@
  * which files the running binary would write that are not there, and whether
  * AGENTS.md still claims the binary that wrote it.
  *
- * The property every test here defends is the one that makes the feature worth
- * having: DETECTION, NEVER REWRITE. OpenSpec answers this drift with
- * `openspec update`, which regenerates its command and skill files in place and
- * thereby teaches every team that the tool owns files they edited. loam says
- * what is missing and stops — so a run of `doctor` must leave both repos byte
- * for byte as it found them, and no finding may offer to refresh anything.
+ * The property every test here defends is ownership-aware refresh. Doctor is
+ * read-only and explains the state; init may refresh only bytes whose recorded
+ * digest still matches, while a human edit revokes that authority.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -86,6 +83,27 @@ describe("doctor reports the agent surface", () => {
     ]);
   });
 
+  it("grades only the workflow subset recorded by the selected profile", async () => {
+    const pair = await repoPair();
+    const res = await runLoam(
+      pair.svc,
+      "init",
+      "--docs",
+      "../docs",
+      "--service",
+      "payment-service",
+      "--agent-profile",
+      "service",
+    );
+    expect(res.code, res.out).toBe(0);
+
+    const report = await diagnose(pair.svc);
+    expect(report.agents.profile).toBe("service");
+    expect(report.agents.missingFiles).toEqual([]);
+    expect(codes(report.findings)).not.toContain("doctor.agent-files-missing");
+    expect(existsSync(join(pair.svc, ".claude", "commands", "loam-feature.md"))).toBe(false);
+  });
+
   it("names the files the binary would write that are not here, and stays a warning", async () => {
     // The failure this exists for: a seventh slash command ships, and an
     // already-initialized repo simply does not have it. Nothing else in loam
@@ -124,10 +142,12 @@ describe("doctor reports the agent surface", () => {
     expect(fix).toContain("loam init --docs ../docs --tools claude");
     expect(fix).not.toContain("--service");
     expect(fix).toContain("keeps this repo's service binding");
-    // and it promises only detection: nothing is offered up for rewriting
-    expect(fix).toContain("leaves every existing one untouched");
-    expect(fix).toContain("Nothing is regenerated");
-    expect(fix).not.toMatch(/overwrit|replac|refresh|\bupdate\b|--force/i);
+    // Existing custom bytes remain sovereign; only manifest-matched generated
+    // files may refresh on the re-run.
+    expect(fix).toContain("creates files that are absent");
+    expect(fix).toContain("unchanged since loam wrote them refresh safely");
+    expect(fix).toContain("customized files stay untouched");
+    expect(fix).not.toMatch(/overwrit|replac|--force/i);
   });
 
   it("believes loam.json's own record of the tools over what is on disk", async () => {
@@ -311,7 +331,7 @@ describe("doctor reports the agent surface", () => {
     const lines = res.out.split("\n");
     const agentsLine = lines.find((l) => l.startsWith("  agents "));
     expect(agentsLine).toMatch(
-      /^ {2}agents {8}claude \(config\) · \d+ files · 1 missing · \d+ stale · AGENTS\.md v/,
+      /^ {2}agents {8}claude · full \(config\) · \d+ files · 1 missing · \d+ stale · AGENTS\.md v/,
     );
     // The write path is state too, and a clean repo says so.
     expect(lines.find((l) => l.startsWith("  write path"))).toMatch(/^ {2}write path {4}clean$/);
@@ -330,6 +350,7 @@ describe("doctor reports the agent surface", () => {
     expect(res.code).toBe(0);
     expect(report.agents).toMatchObject({
       tools: ["claude"],
+      profile: "full",
       toolsSource: "config",
       missingFiles: [],
       stamp: { present: true, version: LOAM_VERSION, stale: false },

@@ -46,10 +46,18 @@ interface Finding {
   code: string;
   message: string;
   details: string[];
+  locations: Array<{
+    path: string;
+    role: "primary" | "related" | "scope";
+    line?: number;
+    column?: number;
+    pointer?: string;
+  }>;
 }
 interface Target {
   kind: "service" | "feature" | "landscape";
   id: string;
+  path?: string;
   valid: boolean;
   findings: Finding[];
 }
@@ -229,6 +237,7 @@ describe("--json findings", () => {
       const t: Target = json.targets[0];
       expect(t.kind).toBe("service");
       expect(t.id).toBe(SVC);
+      expect(t.path).toBe(`services/${SVC}`);
       expect(t.valid).toBe(true);
       expect(codes(t)).toEqual([
         "c4.valid",
@@ -243,6 +252,7 @@ describe("--json findings", () => {
         expect(["ok", "warn"]).toContain(f.severity);
         expect(typeof f.message).toBe("string");
         expect(Array.isArray(f.details)).toBe(true);
+        expect(f.locations).toEqual([{ path: `services/${SVC}`, role: "scope" }]);
       }
     });
   });
@@ -330,9 +340,11 @@ describe("--json findings", () => {
       const t: Target = json.targets[0];
       expect(t.kind).toBe("feature");
       expect(t.id).toBe("FEAT-1");
+      expect(t.path).toBe("features/FEAT-1-split");
       expect(t.valid).toBe(true);
       expect(codes(t)).toContain("delta.valid");
       expect(codes(t)).toContain("coherence.ok");
+      expect(t.findings.every((f) => f.locations.length > 0)).toBe(true);
     });
   });
 

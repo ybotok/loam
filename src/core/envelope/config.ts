@@ -72,6 +72,14 @@ export interface LoamConfig {
    */
   agentTools?: string[];
   /**
+   * Digests of generated agent files loam may safely refresh. Keys are
+   * repo-relative portable paths; a file whose bytes differ from its recorded
+   * digest is human-owned and is never overwritten.
+   */
+  agentFiles?: Record<string, string>;
+  /** Which workflow subset `loam init` manages; absent means the compatible full set. */
+  agentProfile?: "full" | "service" | "docs";
+  /**
    * The directory the config was actually FOUND in — the repo root, which is
    * not necessarily the cwd now that discovery walks upward. Everything a
    * command resolves against "this repo" (gherkinDir, relative `sources:`)
@@ -224,6 +232,27 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
       `${file}: "agentTools" must be an array of non-empty strings when present.`,
     );
   }
+  if (record.agentFiles !== undefined) {
+    if (record.agentFiles === null || typeof record.agentFiles !== "object" || Array.isArray(record.agentFiles)) {
+      throw new ConfigError("agentFiles", `${file}: "agentFiles" must be a path-to-digest mapping when present.`);
+    }
+    const entries = Object.entries(record.agentFiles as Record<string, unknown>);
+    if (entries.some(([path, digest]) => path === "" || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest))) {
+      throw new ConfigError(
+        "agentFiles",
+        `${file}: "agentFiles" must map non-empty paths to lowercase sha256 digests.`,
+      );
+    }
+  }
+  if (record.agentProfile !== undefined
+    && record.agentProfile !== "full"
+    && record.agentProfile !== "service"
+    && record.agentProfile !== "docs") {
+    throw new ConfigError(
+      "agentProfile",
+      `${file}: "agentProfile" must be one of: full, service, docs.`,
+    );
+  }
   if (typeof record.gherkinDir === "string") {
     // Validate the owned output directory, not merely its spelling. This also
     // catches an otherwise-contained path whose existing parent is a symlink
@@ -244,6 +273,12 @@ export function parseConfig(raw: string, configDir: string): LoamConfig {
     ...(record.gherkinDir === undefined ? {} : { gherkinDir: record.gherkinDir as string }),
     ...(contracts === undefined ? {} : { contracts }),
     ...(record.agentTools === undefined ? {} : { agentTools: record.agentTools as string[] }),
+    ...(record.agentFiles === undefined
+      ? {}
+      : { agentFiles: record.agentFiles as Record<string, string> }),
+    ...(record.agentProfile === undefined
+      ? {}
+      : { agentProfile: record.agentProfile as "full" | "service" | "docs" }),
     root: resolve(configDir),
     docsDirAsWritten: record.docsDir,
   };

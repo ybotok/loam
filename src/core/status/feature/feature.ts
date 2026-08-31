@@ -19,7 +19,7 @@ import type { FeatureEntry } from "../../repo/entries.js";
 import { featureSpecServices } from "../../repo/repo.js";
 import { enumeratedServices } from "../../repo/service-target.js";
 import { useCaseBlastRadius } from "../../usecases/touch.js";
-import { gatesArchive, type Issue } from "../../vocabulary/issue.js";
+import { issueFinding, type Issue } from "../../vocabulary/issue.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { contractOwners, contractsHeldElsewhere } from "../contracts.js";
 import { readInterruptedCommit } from "../interrupted.js";
@@ -161,13 +161,7 @@ async function featureFindings(
   context: FleetContext,
 ): Promise<Finding[]> {
   const issues: Issue[] = await featureCoherence({ docsDir, featureDir: feature.dir, featureId: feature.id, context });
-  const out: Finding[] = issues.map((i) => ({
-    severity: i.severity,
-    code: i.code,
-    gates: gatesArchive(i),
-    ...(i.subject === undefined ? {} : { subject: i.subject }),
-    message: i.message,
-  }));
+  const out: Finding[] = issues.map(issueFinding);
   out.push(...(await featureProvenance(feature.dir, feature.id)).filter((f) => f.severity !== "ok"));
   // The three refusals `archive` makes before its merge plan runs, from the
   // same functions it calls: a per-service delta addressed to a service that

@@ -3,6 +3,8 @@
  * living docs. Shared by every check the archive gate runs.
  */
 
+import type { Finding, FindingLocation } from "./report.js";
+
 export interface Issue {
   severity: "error" | "warn";
   /** Stable machine identifier for the breach — see the labels below. */
@@ -10,6 +12,7 @@ export interface Issue {
   /** What the breach is about when that is narrower than the feature — usually a service. */
   subject?: string;
   message: string;
+  locations?: FindingLocation[];
   /**
    * Does this issue stop `loam archive`? Severity and gating answer two
    * different questions: severity says whether the DOCUMENT is valid (`loam
@@ -24,6 +27,18 @@ export interface Issue {
 /** Whether `loam archive` refuses on this issue without `--approve`. */
 export function gatesArchive(i: Issue): boolean {
   return i.gates ?? i.severity === "error";
+}
+
+/** One issue in the shared validation/status finding shape. */
+export function issueFinding(i: Issue): Finding {
+  return {
+    severity: i.severity,
+    code: i.code,
+    gates: gatesArchive(i),
+    ...(i.subject === undefined ? {} : { subject: i.subject }),
+    ...(i.locations === undefined ? {} : { locations: i.locations }),
+    message: i.message,
+  };
 }
 
 /**

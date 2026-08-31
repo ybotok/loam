@@ -286,12 +286,43 @@ describe("--json contract", () => {
           modified: 0,
           removed: 0,
           operations: ["createSplit"],
+          api: {
+            changes: [{
+              path: "/splits",
+              method: "POST",
+              operationId: "createSplit",
+              summary: "Create a split",
+              remove: false,
+            }],
+            unreadable: false,
+          },
+          events: { changes: [], unreadable: false },
         },
       ]);
       // An EMPTY array, never an absent key: a consumer must not have to tell
       // "this feature changes no capability" from "this loam does not report
       // them", and the two would be the same absence.
       expect(json.capabilities).toEqual([]);
+      expect(json.review.readyToArchive).toBe(false);
+      expect(json.review.intent).toEqual({
+        path: "features/FEAT-1-split/intent.md",
+        summary: "Let a payment be split across payees.",
+      });
+      expect(json.review.architecture.elements).toEqual([
+        { id: "paymentSplitService", kind: "softwareSystem", title: "payment-split-service" },
+      ]);
+      expect(json.review.architecture.relationships).toEqual([
+        {
+          source: "paymentService",
+          target: "paymentSplitService",
+          title: "Calls createSplit",
+          operation: "createSplit",
+        },
+      ]);
+      expect(json.review.dependencies).toEqual({ blockedBy: [] });
+      expect(Array.isArray(json.review.artifacts)).toBe(true);
+      expect(json.review.verification.state).toBe("absent");
+      expect(json.review.next[0].execution).toBeDefined();
     });
   });
 

@@ -319,6 +319,7 @@ model {
   loam.commands.list -> loam.core.vocabulary
 
   loam.commands.mcp -> loam.commands.context
+  loam.commands.mcp -> loam.commands.archive
   loam.commands.mcp -> loam.commands.delta
   loam.commands.mcp -> loam.commands.dependencies
   loam.commands.mcp -> loam.commands.diff
@@ -328,6 +329,9 @@ model {
   loam.commands.mcp -> loam.commands.gate
   loam.commands.mcp -> loam.commands.instructions
   loam.commands.mcp -> loam.commands.list
+  loam.commands.mcp -> loam.commands.new
+  loam.commands.mcp -> loam.commands.rebase
+  loam.commands.mcp -> loam.commands.gherkin
   loam.commands.mcp -> loam.commands.show
   loam.commands.mcp -> loam.commands.status
   loam.commands.mcp -> loam.commands.steps
@@ -387,8 +391,11 @@ model {
   loam.commands.show -> loam.core.envelope
   loam.commands.show -> loam.core.fleet_context
   loam.commands.show -> loam.core.openapi
+  loam.commands.show -> loam.core.projection
   loam.commands.show -> loam.core.provenance
   loam.commands.show -> loam.core.repo
+  loam.commands.show -> loam.core.status
+  loam.commands.show -> loam.core.vocabulary
 
   loam.commands.status -> loam.commands.policy
   loam.commands.status -> loam.core.envelope
@@ -574,6 +581,7 @@ model {
   loam.core.links -> loam.core.kernel
   loam.core.links -> loam.core.repo
 
+  loam.core.mcp -> loam.core.agent
   loam.core.mcp -> loam.core.envelope
   loam.core.mcp -> loam.core.explain
   loam.core.mcp -> loam.core.kernel

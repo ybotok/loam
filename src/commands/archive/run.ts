@@ -100,7 +100,12 @@ export async function archiveLocked(
   if (planGates.length > 0 && !opts.approve) {
     const msg = `archive ${id} — BLOCKED: ${planGates.length} issue(s) in the contract merge`;
     if (json) {
-      refuseJson("not-coherent", msg, [...issues, ...planWarns, ...planGates]);
+      refuseJson(
+        "not-coherent",
+        msg,
+        [...issues, ...planWarns, ...planGates],
+        `features/${dirName}`,
+      );
       return;
     }
     console.error(`${msg}:`);
@@ -131,8 +136,8 @@ export async function archiveLocked(
     archived,
     path: repoPath(config.docsDir, archiveDest),
     plan,
-    warnings: warnings.map(issueJson),
-    overridden: overridden.map(issueJson),
+    warnings: warnings.map((issue) => issueJson(issue, repoPath(config.docsDir, archiveDest))),
+    overridden: overridden.map((issue) => issueJson(issue, repoPath(config.docsDir, archiveDest))),
     openapiRemovals,
     asyncapiRemovals,
     // Present only when this run found an interrupted commit and dealt with it:

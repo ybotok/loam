@@ -15,7 +15,12 @@ import { relative } from "node:path";
 import { type LoamConfig } from "../envelope/config.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import { agentsPath } from "../repo/paths.js";
-import { DELIVERIES, plannedCommandFiles, type Delivery } from "../agent/scaffold.js";
+import {
+  DELIVERIES,
+  plannedCommandFiles,
+  type AgentProfile,
+  type Delivery,
+} from "../agent/scaffold.js";
 import { AGENT_TOOLS } from "../agent/tools/registry.js";
 import {
   agentsStaleFinding,
@@ -65,9 +70,13 @@ export function detectedTools(repoRoot: string): string[] {
  * the caller falls back to the full plan there, which is what the finding's
  * "or they were deleted" already says.
  */
-export function heldDeliveries(repoRoot: string, tool: string): readonly Delivery[] {
+export function heldDeliveries(
+  repoRoot: string,
+  tool: string,
+  profile: AgentProfile = "full",
+): readonly Delivery[] {
   const held = DELIVERIES.filter((d) =>
-    plannedCommandFiles(repoRoot, [tool], [d]).some((f) => existsSync(f.path)));
+    plannedCommandFiles(repoRoot, [tool], [d], profile).some((f) => existsSync(f.path)));
   return held.length > 0 ? held : DELIVERIES;
 }
 
@@ -75,14 +84,14 @@ export function heldDeliveries(repoRoot: string, tool: string): readonly Deliver
  * Of the planned files that ARE here, the ones whose stamp is missing or older
  * than this binary.
  *
- * The stamp is the ONLY thing read out of a generated file — never the body.
- * Comparing bodies would yield "your file differs from the template", one step
- * from offering to rewrite it, which is the thing loam refuses: a team's edits
- * to a generated file outrank ours. A stamp is a different claim — it says
- * which loam wrote these instructions — and it can be false while every edit
- * around it is legitimate. Same doctrine as AGENTS.md (agents-stamp.ts), same
- * repair: a human looks, and bumps the stamp or deletes the file so a re-run of
- * `loam init` lays down the current one.
+ * The STALENESS check reads only the stamp, never the body. Safe refresh is a
+ * separate decision made by `init`: the current bytes must match the digest
+ * recorded when loam wrote them. That proof lets an unchanged pointer refresh
+ * without turning a differing body into an offer to overwrite it. A stamp is a
+ * different claim — it says which loam wrote these instructions — and it can
+ * be false while every edit around it is legitimate. Same doctrine as
+ * AGENTS.md (agents-stamp.ts); a customized file is repaired only when a human
+ * reviews it and bumps the stamp or deletes it for `loam init` to recreate.
  *
  * Absence of a stamp counts, because that is what every file written before
  * stamping existed looks like — precisely the "initialized by an older loam"
@@ -130,8 +139,9 @@ export async function inspectAgentSurface(
 ): Promise<AgentSurface> {
   const recorded = recordedTools(config);
   const tools = recorded ?? detectedTools(repoRoot);
+  const profile = config?.agentProfile ?? "full";
   const planned = tools.flatMap((id) =>
-    plannedCommandFiles(repoRoot, [id], heldDeliveries(repoRoot, id)));
+    plannedCommandFiles(repoRoot, [id], heldDeliveries(repoRoot, id, profile), profile));
   const present = planned.filter((f) => existsSync(f.path));
   const missingFiles = planned
     .filter((f) => !existsSync(f.path))
@@ -158,9 +168,8 @@ export async function inspectAgentSurface(
         + `or they were deleted: ${missingFiles.join(", ")}`,
       fix:
         `Re-run \`loam init --docs ${config?.docsDirAsWritten ?? "<dir>"} --tools ${tools.join(",")}\` `
-        + "here — it writes only the files that are absent and leaves every existing one untouched, and "
-        + "it keeps this repo's service binding. Nothing is regenerated, so leaving this standing costs "
-        + "entry points and nothing else.",
+        + "here — it creates files that are absent and keeps this repo's service binding. Files unchanged "
+        + "since loam wrote them refresh safely; customized files stay untouched.",
     });
   }
 
@@ -178,9 +187,8 @@ export async function inspectAgentSurface(
         + `${staleFiles.join(", ")}`,
       fix:
         "Read each against the body this loam writes, then set its stamp line to "
-        + `\`${agentsStampLine(LOAM_VERSION)}\`; or delete the file and re-run \`loam init\` to lay `
-        + "down the current one. loam never rewrites a file that exists — your edits outrank the "
-        + "template, which is why the stamp is a human's claim and not a refresh.",
+        + `\`${agentsStampLine(LOAM_VERSION)}\`; or re-run \`loam init\`. A file whose recorded digest `
+        + "still matches is refreshed; a customized file is preserved and remains yours to review.",
     });
   }
 
@@ -224,6 +232,7 @@ export async function inspectAgentSurface(
 
   return {
     tools,
+    profile,
     toolsSource: recorded === null ? "disk" : "config",
     plannedFiles: planned.length,
     missingFiles,

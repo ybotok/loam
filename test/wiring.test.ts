@@ -207,6 +207,21 @@ describe("doctor and loadConfig cannot disagree about a config", () => {
       valid: true,
     },
     {
+      name: "valid agent ownership metadata",
+      raw: JSON.stringify({ docsDir: "../docs", agentProfile: "service", agentFiles: { ".claude/a.md": "a".repeat(64) } }),
+      valid: true,
+    },
+    {
+      name: "unknown agent profile",
+      raw: JSON.stringify({ docsDir: "../docs", agentProfile: "backend" }),
+      valid: false,
+    },
+    {
+      name: "malformed agent file digest",
+      raw: JSON.stringify({ docsDir: "../docs", agentFiles: { ".claude/a.md": "not-sha256" } }),
+      valid: false,
+    },
+    {
       name: "gherkinDir escaping the service repo",
       raw: JSON.stringify({ docsDir: "../docs", gherkinDir: "../shared" }),
       valid: false,

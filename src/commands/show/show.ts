@@ -56,7 +56,7 @@ export function registerShow(program: Command): void {
         const feature =
           forced === "service" ? null : await resolveFeature(docsDir, target, "include", context);
         if (feature) {
-          await showFeature(docsDir, feature, json);
+          await showFeature(docsDir, feature, json, context);
           return;
         }
         // The enumeration's own id travels on — `entry.id` rather than the raw
