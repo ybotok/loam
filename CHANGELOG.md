@@ -12,7 +12,12 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 
 ### Added — the agent interface is progressive, executable and ownership-aware
 
-- **The always-loaded generated `AGENTS.md` is now 7,458 bytes.** Detailed workflow, authoring and
+- **The documented chat contract is explicitly dual-entry.** The generated command is the
+  recommended predictable path (`loam-feature` → `loam-implement` → `loam-check` → `loam-verify`
+  → `loam-ship`), while natural language may load the matching Agent Skill. Both deliveries retain
+  one shared body and defer to the same binary-owned `loam instructions` page; no command or skill
+  name changed.
+- **The always-loaded generated `AGENTS.md` is now 8,239 bytes.** Detailed workflow, authoring and
   code material stays behind `loam instructions`; `loam-check` pointers start with
   `--no-fix-tables` and fetch individual fixes through `loam explain <code>`.
 - **`loam status --json` adds `next[].execution`.** It distinguishes runnable commands from edits,

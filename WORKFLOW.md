@@ -293,6 +293,14 @@ Each is a protocol that ships inside the binary. `loam instructions <name>` prin
 loam instructions loam-feature FEAT-101 "Refund on partial capture"
 ```
 
+The reliable chat path is explicit: `/loam-feature FEAT-101 "Refund on partial capture"`, then
+`/loam-implement FEAT-101 payment-service`, `/loam-check`, `/loam-verify FEAT-101` and
+`/loam-ship FEAT-101`. That spelling is flat on most hosts; Gemini renders the same entry as
+`/loam:feature`, Amazon Q as `@loam-feature`, and a skills-only host uses its explicit skill syntax.
+A natural-language request may load the matching Agent Skill instead. This is dual delivery, not
+two workflows: both point at the same `loam instructions` page and the agent owns the internal
+status/edit/validate loop after either entry.
+
 `loam init` writes a slash command and an Agent Skill per selected workflow into whichever AI tools
 it finds in the repo (`--agent-profile full|service|docs`). Those files are **pointers** at
 `loam instructions`, not copies of it — they carry the
@@ -303,7 +311,7 @@ repository, while the runtime page cannot go out of date the same way.
 
 `AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
 agent reads — now works the same way, which changes the reading order. It is orientation only (the
-layout, the cycle, what gates and what only advises, at 7,458 bytes rather than 109,399), and the
+layout, the cycle, what gates and what only advises, at 8,239 bytes rather than 109,399), and the
 four **reference pages** it used to carry inline come out of the binary at the moment the question
 arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
 taking no arguments and printing whole, listed beside the six workflows by a bare

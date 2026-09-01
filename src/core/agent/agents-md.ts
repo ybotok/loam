@@ -57,6 +57,19 @@ rather than guessing.
 \`loam init --docs <dir>\` **joins** an existing docs repo. Add \`--create\` only
 when creating a new one; a typo must not scaffold a second source of truth.
 
+## Starting from chat
+
+There are two equivalent entry points into the same version-matched protocol.
+Prefer the explicit one when a user wants a predictable lifecycle: invoke
+\`/loam-feature <FEAT> "<title>"\` to propose, \`/loam-implement <FEAT> [service]\`
+to build, \`/loam-check\` and \`/loam-verify <FEAT>\` to grade it, and
+\`/loam-ship <FEAT>\` to finish. Most hosts use that flat slash
+spelling; Gemini uses \`/loam:feature\`, Amazon Q uses \`@loam-feature\`, and a
+skills-only host can invoke \`$loam-feature\`. Natural-language requests may load
+the matching Agent Skill instead. Once either entry point is selected, the agent
+drives the internal status/edit/validate loop and asks the user only for a real
+decision or human-only act; the user does not have to type every loam command.
+
 ## The cycle
 
 0. **Wire the repo** — in each service checkout run
