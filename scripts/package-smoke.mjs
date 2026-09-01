@@ -62,12 +62,34 @@ if (process.argv.includes("--tarball") && suppliedTarball === null) {
   throw new Error("--tarball requires a path");
 }
 
-function run(command, args, cwd, capture = false) {
+/**
+ * Every spawned command is bounded, and the bound is deliberately not one
+ * number.
+ *
+ * A `loam` invocation that has not answered in three minutes is hung, and the
+ * short bound is what says so. Installing the tarball is a different kind of
+ * work: `npm_config_cache` points at a fresh `mkdtemp`, so that install fetches
+ * every dependency over the network into a COLD cache, and on a Windows runner
+ * it legitimately takes minutes. One shared 180 s bound therefore made it the
+ * only command in this script that could exceed its own limit while working
+ * perfectly — and it did, intermittently: commit 93d1497 passed the
+ * windows-latest package job on its push run and failed the same tarball on a
+ * scheduled one, with `spawnSync … ETIMEDOUT` raised from that install. The
+ * same SHA cannot be both correct and broken, so the bound was what was wrong.
+ *
+ * 600 s, not "no timeout": a hung install still fails with this script's own
+ * message, and well inside the job's own 25-minute cap, which is what keeps
+ * the diagnosis ours rather than the runner's.
+ */
+const QUICK_TIMEOUT_MS = 180_000;
+const INSTALL_TIMEOUT_MS = 600_000;
+
+function run(command, args, cwd, { capture = false, timeout = QUICK_TIMEOUT_MS } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     env: isolatedEnv,
-    timeout: 180_000,
+    timeout,
     maxBuffer: 64 * 1024 * 1024,
     stdio: capture ? "pipe" : "inherit",
   });
@@ -86,7 +108,7 @@ function run(command, args, cwd, capture = false) {
 // node_modules/.bin shim is a .cmd on Windows, which Node >= 20.12 will not
 // spawn without a shell. The shim's existence is asserted separately.
 function jsonCommand(cli, args, cwd) {
-  const output = run(process.execPath, [cli, ...args, "--json"], cwd, true);
+  const output = run(process.execPath, [cli, ...args, "--json"], cwd, { capture: true });
   const envelope = JSON.parse(output);
   if (envelope.ok !== true || envelope.contractVersion !== "1.0") {
     throw new Error(`loam ${args.join(" ")} did not return a successful v1.0 JSON envelope`);
@@ -106,7 +128,7 @@ try {
       npmCommand,
       [...npmPrefix, "pack", "--json", "--pack-destination", packDir],
       projectRoot,
-      true,
+      { capture: true },
     );
     const [packed] = JSON.parse(packedJson);
     if (!packed?.filename || !Array.isArray(packed.files)) {
@@ -119,7 +141,7 @@ try {
     tarball = resolve(suppliedTarball);
     await readFile(tarball);
     packedFilename = basename(tarball);
-    const listing = run("tar", ["-tzf", tarball], projectRoot, true);
+    const listing = run("tar", ["-tzf", tarball], projectRoot, { capture: true });
     paths = listing
       .split(/\r?\n/)
       .filter(Boolean)
@@ -159,6 +181,7 @@ try {
     npmCommand,
     [...npmPrefix, "install", "--engine-strict", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
     installDir,
+    { timeout: INSTALL_TIMEOUT_MS },
   );
 
   const shim = join(
@@ -221,8 +244,8 @@ try {
   }
 
   const cli = resolve(installedPackageRoot, manifest.bin.loam);
-  run(process.execPath, [cli, "--help"], installDir, true);
-  const version = run(process.execPath, [cli, "--version"], installDir, true).trim();
+  run(process.execPath, [cli, "--help"], installDir, { capture: true });
+  const version = run(process.execPath, [cli, "--version"], installDir, { capture: true }).trim();
   if (version !== manifest.version) {
     throw new Error(`installed loam --version is ${version}, expected ${manifest.version}`);
   }
