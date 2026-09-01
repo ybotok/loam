@@ -97,15 +97,85 @@ The strongest foundations to preserve are:
 
 ## Now
 
-Nothing is queued behind code. Every integrity, enforcement and lifecycle item that preceded this
-has landed (see [Recently landed](#recently-landed)) — the authored business axis and, with the three
-entries at the top of that section, the use-case axis too. The axis is now writable through the
-change lifecycle, and the gate and the report agree about what it contains.
+Every integrity, enforcement and lifecycle item that preceded this section has landed (see
+[Recently landed](#recently-landed)) — the authored business axis and, with the three entries at the
+top of that section, the use-case axis too. One item is queued behind code, and it is the first that
+did not walk up from [Later](#later--promote-only-from-evidence): it was written directly here, and
+the paragraph on its evidence is where that shortcut is accounted for rather than hidden.
 
-What is left is the one thing this file cannot close by writing code, and it stays where it is
-rather than being promoted here for the shape of it: the CI `stability` job and the installed-package
-smoke have still to be OBSERVED green from a pushed commit. That is release evidence to collect, not
-an improvement to make.
+### The deployment axis — topology joined to requirements
+
+**Promoted 2026-09-02, and authored as a feature in loam's own docs repo** rather than as an item
+text here: `meta/docs/features/FEAT-1-the-deployment-axis/`, whose `intent.md` carries the four
+measurements and whose `specs/loam/arch.spec.md` carries the five rules the change establishes, each
+with scenarios. This entry is the decision and the gate; that feature is the specification, and the
+two must not be allowed to become two accounts of the same change. **It is deliberately NOT
+archived.** Its `delta.likec4` claims edges `src/` does not have yet, `npm run meta:check` compares
+the model to the tree, and archiving before the code lands would make the self-model false in
+exactly the way this axis exists to catch.
+
+**What is wrong today.** A LikeC4 `deployment { }` block is legal in a docs repo and completely
+unread. The parser resolves every `instanceOf` in it — a container renamed out from under a
+deployment node fails the gate as `landscape.invalid` — and after that nothing: no requirement can
+name a node, no report counts one, and the context pack an agent implements from does not mention
+topology at all. Two of the four measurements taken on a copy of `examples/docs` are the reason this
+is an item rather than a wish. A `#obl-` tag on a `deploymentNode` is invisible to
+`validate/fleet/obligations.ts`, which walks the logical model only — the same undeclared tag raises
+`obligation.unknown` on a container and nothing on a datacenter, which is fail-open and a defect on
+its own terms. And `parsedModel().deployment` already returns nodes with their tags, instances
+carrying the id of the logical element each one instances, and relationships carrying metadata, so
+the read costs no second parse, no new file format and no change to the frozen CLI surface.
+
+**Required changes**, in the order the dependency graph forces:
+
+1. Walk the deployment model in every `#obl-` grade. Fail-open becomes fail-closed; no new code.
+2. A fourth `Covers:` entry form, `node:<id>`, with the same prefix accepted on either side of the
+   edge form. No new code.
+3. The parse adapter in `src/core/c4/deploy/`, and the deployment records added to
+   `test/likec4-model-parity.test.ts` — a two-stage substitution nothing measures is an assumption.
+   `src/core/c4/` holds exactly five files, so this is a sub-package and not a sixth module.
+4. Two findings and no more: `deployment.uncovered` (a tagged node or edge no living arch
+   requirement covers) and `deployment.instance-absent`. Both warn, neither gates, and the family is
+   silent until the repo declares a `deployment { }` block — the opt-in shape `obligations.yaml`
+   already has.
+5. `features/<FEAT>/deployment/<name>.likec4`, create-only, graded against the merge preview and
+   copied whole — `core/usecases/delta/` one axis over. It works because `extend` was measured to
+   resolve across documents of one project, so no text splice is needed; `delta-blocks.ts` goes on
+   refusing a `deployment { }` block inside `delta.likec4` and its message names the new slot.
+6. The surfaces: a scorecard row, the topology in the context pack, `loam explain`, the code table
+   `test/codes-drift.test.ts` requires, and one more statement in `src/core/brief/unchecked.ts`.
+
+**Exit criteria.** Every step above green under the full gate; `covers.unknown` demonstrated firing
+on a covered node that a topology change renamed, which is the acceptance criterion the trigger
+names; the parity suite extended and shown to fail against an un-extended adapter; and
+`test/self-model.test.ts` re-pinned once FEAT-1 archives.
+
+**Out of scope, and each refusal is load-bearing.** No reading of Terraform, Helm or cluster state —
+that is the extractor the non-goals forbid. No check that a service is deployed in at least two
+datacenters: it would need `criticality` promoted from prose to a read field, and it would turn
+`architecture/obligations.yaml` into the policy engine that file says in its own words it is not. A
+multi-datacenter rule is an authored requirement whose `Covers:` line names the nodes; loam grades
+the join and never the architecture. And no `environment` concept above LikeC4, because
+`deploymentNode` is that mechanism and the fleet names its own kinds.
+
+**The evidence, and its one gap stated plainly.** Operator: a team standing up a standby cluster in
+a second datacenter. Repeated task: keeping RTO/RPO requirements attached to a topology that keeps
+changing. Failure mode: a requirement about replication staying green after the node it described
+was renamed or removed. Frequency: every topology change, which is the cadence a migration runs at.
+Current workaround: a `Covers:` line that resolves to nothing, or no written requirement at all.
+Acceptance criterion: a topology change that orphans a covered requirement is convicted without a
+human noticing it first. **That is one operator, not two.** The maintainer judged the trigger
+sufficient on the same basis recorded for landscape scaling and the authored business axis, and the
+[Later](#later--promote-only-from-evidence) exit criteria are amended below to say so rather than
+leaving the two paragraphs to contradict each other. Steps 1 and 2 do not rest on that judgement at
+all: the first is a fail-open defect and the second is a grammar entry, and neither is a new axis.
+
+### Release evidence, unchanged
+
+What is left besides that item is the one thing this file cannot close by writing code, and it stays
+where it is rather than being promoted for the shape of it: the CI `stability` job and the
+installed-package smoke have still to be OBSERVED green from a pushed commit. That is release
+evidence to collect, not an improvement to make.
 
 An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
 names its operator, repeated task, failure mode, frequency, current workaround and measurable
@@ -264,8 +334,11 @@ item gets promoted — it went from here to `## Now` and from there to
 
 Exit criteria for promoting a Later item:
 
-- Evidence comes from at least two independent operators or fleets, except landscape scaling and the
-  authored business axis, whose recorded triggers are sufficient.
+- Evidence comes from at least two independent operators or fleets, except landscape scaling, the
+  authored business axis and — added 2026-09-02 — the deployment axis in [Now](#now), whose recorded
+  triggers are sufficient. Three exceptions is where this criterion starts describing the rule
+  rather than the exception: the next single-operator promotion has to say why the criterion should
+  survive, or retire it.
 - An ADR compares the existing workflow, external tooling, and the smallest loam-owned change.
 - A prototype is measured against a predeclared acceptance criterion and preserves every non-goal
   below.
@@ -276,7 +349,7 @@ Exit criteria for promoting a Later item:
 
 Placed in a section of its own, and the placement is the argument. This is not a `## Now` item, and
 nothing here may be mistaken for one. It is not a "Later" candidate either: promotion
-from that section requires evidence from at least two independent operators or fleets (bar the two
+from that section requires evidence from at least two independent operators or fleets (bar the three
 whose recorded triggers were judged sufficient when they were written), and loam's own repository is
 one operator by construction, so a Later entry could only ever be a permanent exception to the rule
 it sits under. Nor is its value speculative — the trigger below is a defect this repository has
