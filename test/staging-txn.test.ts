@@ -514,6 +514,11 @@ describe("every writer's stored rerun is a command loam has", () => {
       // fixed path in the repository it is run from, so the flag IS the whole
       // command and there is nothing to interpolate.
       "loam init --mcp",
+      // The authoring launch mode writes the SAME file with a different server
+      // argv, so its rerun must carry the flag that decides which — recovering
+      // `--mcp-author` as `--mcp` would silently drop the author tools the
+      // interrupted run was asked for.
+      "loam init --mcp-author",
       "loam new ${featureId}",
       "loam rebase ${id}",
       // The living-corpus mode stores the bare flag: it takes no feature and no

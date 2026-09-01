@@ -152,8 +152,12 @@ describe("slash commands in the working repo", () => {
       [".claude", "commands", "loam-check.md"],
       [".claude", "skills", "loam-check", "SKILL.md"],
     ]) {
-      const file = await readFile(join(dir, ...segs), "utf8");
-      for (const clause of clauses) expect(file, `${segs.join("/")}: ${clause}`).toContain(clause);
+      // Collapse whitespace runs on both sides: a pinned clause must survive a
+      // reflow of the generated pointer, which wraps at ~80 columns and moves
+      // every time the surrounding sentence grows a word.
+      const flat = (t: string): string => t.replace(/\s+/g, " ");
+      const file = flat(await readFile(join(dir, ...segs), "utf8"));
+      for (const clause of clauses) expect(file, `${segs.join("/")}: ${clause}`).toContain(flat(clause));
     }
   });
 
@@ -879,7 +883,9 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
     // WITH --json yields {ok:false, error.code:"invalid-option"} on stdout.
     // The contract file must describe the binary that ships it.
     expect(AGENTS_MD).not.toMatch(/as plain text — so unparseable/);
-    expect(AGENTS_MD).toMatch(/unknown flag[\s\S]{0,200}invalid-option/);
+    // Case-insensitive: the sentence teaching this starts with "Unknown flags",
+    // and which word opens a sentence is typography, not the contract.
+    expect(AGENTS_MD).toMatch(/unknown flag[\s\S]{0,200}invalid-option/i);
     expect(AGENTS_MD).toMatch(/--help.*--version.*pass through/s);
   });
 

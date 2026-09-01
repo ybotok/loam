@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
 import { AGENTS_MD } from "../src/core/agent/agents-md.js";
-import { PROTOCOLS, REFERENCE_PAGES } from "../src/core/agent/protocol.js";
+import { PROTOCOLS } from "../src/core/agent/protocol.js";
 import { VALIDATE_CHECKS } from "../src/core/brief/checks.js";
 import { UNCHECKED } from "../src/core/brief/unchecked.js";
 import { loadFile } from "../src/core/c4/likec4.js";
@@ -199,7 +199,7 @@ describe("the agent contract teaches the multi-repo forms", () => {
     // The one fact that makes the file committable: it is resolved against
     // itself, so a relative path survives every clone.
     expect(agents).toMatch(/stored exactly as it was passed/i);
-    expect(agents).toMatch(/resolved against the directory holding the/i);
+    expect(agents).toMatch(/resolved against the directory\s+holding the/i);
     expect(agents).toContain("`doctor.docs-absolute`");
   });
 
@@ -436,9 +436,20 @@ const EXPLAIN_DOES_NOT_ANSWER: ReadonlyArray<readonly [RegExp, string]> = [
  * `explainSubject` reads its answers FROM, so including them would make the
  * assertion partly self-referential. This corpus is the teaching material,
  * which is the thing that can point at an explanation that does not exist.
+ *
+ * Every OTHER page is in, and the four reference pages are no longer the whole
+ * of it. The workflow pages are teaching an agent fetches by name the same way
+ * — the adoption done-test lives on `loam-adopt`, not on a reference page —
+ * and excluding them made this corpus narrower than the thing it claims to
+ * grade. `loam-check` stays out for the reason above, which is about that page
+ * and no other.
  */
 const SCAFFOLDED_DOCS =
-  AGENTS_MD + REFERENCE_PAGES.map((page) => PROTOCOLS[page.name] ?? "").join("\n");
+  AGENTS_MD +
+  Object.entries(PROTOCOLS)
+    .filter(([name]) => name !== "loam-check")
+    .map(([, body]) => body)
+    .join("\n");
 
 describe("AGENTS.md points at `loam explain`, and the pointer lands", () => {
   /**

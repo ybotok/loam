@@ -182,9 +182,11 @@ a single-service feature that has never been recorded federated. A
 never overwritten and never reported as "no record".
 
 Reading is not writing: \`loam verify <FEAT> --service <id>\` **without**
-\`--record\` is a pure lens on the checklist and works from anywhere, docs repo
-included. Every run lists all subjects in \`services\`, and a recorded run reports
-in \`discarded\` every previous answer the new record does not carry.
+\`--record\` is a pure lens on the checklist. A read-only verify checklist needs no
+binding and works from the docs repo, or from anywhere else — the refusals above
+are about WRITING an attestation, and only about that. Every run lists all
+subjects in \`services\`, and a recorded run reports in \`discarded\` every previous
+answer the new record does not carry.
 
 It refuses an answer set that does not answer the current checklist: an id that
 is not on it (\`answers-mismatch\`), a claim with no answer (same), or a

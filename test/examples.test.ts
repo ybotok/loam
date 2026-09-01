@@ -190,6 +190,11 @@ describe("examples/docs vs loam archive FEAT-101 --dry-run", () => {
         overridable: true,
         subject: "payment-split-service",
         message: expect.stringContaining("model.likec4"),
+        // The two keys the shared finding serializer adds to every finding.
+        // This producer proves no exact file or line, so `locations` carries
+        // the narrowest scope the run proved — the feature being archived.
+        details: [],
+        locations: [{ path: "features/archive/FEAT-101-payment-splitting", role: "scope" }],
       },
     ]);
     expect(payload.overridden).toEqual([]);

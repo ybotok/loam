@@ -22,6 +22,13 @@ export const LOAM_ADOPT: CommandContent = {
 \`docsDir\` in ./loam.json). You read the code; loam states the work and checks the
 result. It never reads the service — so anything you cannot show, do not write.
 
+**The bar this artifact set aims at is reproducibility**: a reader should be able
+to answer, from these files alone — what this boundary exposes, what it reaches,
+what shapes it exchanges, how it is run, and what pages whom — without opening
+the code. \`loam validate\` grades form and joins, never depth: green means the
+files agree with each other, and the bar is what "done" is measured against — a
+thin baseline that validates is thin, not done.
+
 0. If there is no ./loam.json here, wire the repo first:
    \`loam init --docs <path-to-docs-repo> --service $1\` (add \`--create\` ONLY if the
    docs repo does not exist yet), then \`loam doctor\` — it resolves \`docsDir\`,
@@ -81,6 +88,11 @@ result. It never reads the service — so anything you cannot show, do not write
    \`landscape.binding-unknown\` / \`landscape.binding-duplicate\` mean it landed wrong,
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
+   Done, stated once: step 4 clean when run from inside the service's own repo, and
+   this run reporting no \`landscape.*\` finding. The fleet run is never SILENT —
+   \`sources.unverifiable-from-here\` (severity ok) appears per service as a
+   confirmation, not work — so "keep going until validation is quiet" is the wrong
+   loop; the two runs are the test.
 6. Hand back, and say seven things:
    - what you could not determine from the code;
    - what the existing artifacts disagreed with;
