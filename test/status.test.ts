@@ -631,6 +631,113 @@ describe("the honestly-small change — WORKFLOW.md's walkthrough, pinned", () =
   });
 });
 
+describe("an architecture-only feature owes no business spec", () => {
+  /**
+   * The mirror of the walkthrough above, and the case `arch.spec.md` exists
+   * for: an outbox, a retry policy, an alert — obligations no business
+   * scenario was ever going to carry, so the feature that adds one has no
+   * business requirement to write.
+   *
+   * Both assertions below were false before the fix, and each was a
+   * DISAGREEMENT with a command rather than a matter of taste — which is why
+   * both controls are here rather than a golden payload:
+   *
+   *  - `spec` was `required` unconditionally, so the row read `missing` and
+   *    `next.author-spec` told the author to write requirements the change
+   *    does not have. The control is `validate --feature` at exit 0 on the
+   *    same tree.
+   *  - `arch-spec` was excluded from the verification feeders, so the record
+   *    read `blocked … nothing to derive a checklist from`. The control is
+   *    `featureChecklist` over the same tree returning a claim.
+   */
+  const ARCH_ONLY_DELTA =
+    "# payment-service — architecture delta for FEAT-9\n\n## ADDED Requirements\n\n" +
+    "### Requirement: Authorization results leave through the outbox\n" +
+    "The service SHALL write the authorization and its event in one transaction and publish from\n" +
+    "the outbox relay, never by writing to the database and then to the broker.\n\n" +
+    "#### Scenario: The broker is unavailable when a card is authorized\n" +
+    "- **Given** an accepted authorization whose event row is still in the outbox table\n" +
+    "- **When** the broker is unreachable\n" +
+    "- **Then** the authorization stays committed and the relay publishes once the broker returns\n";
+
+  const archOnlyProject = async (): Promise<Project> => {
+    const files = coherentFixture();
+    for (const key of Object.keys(files)) if (key.startsWith("features/")) delete files[key];
+    files["features/FEAT-9/intent.md"] =
+      "---\nfeature: FEAT-9\nstatus: proposed\n---\n\n# Outbox for authorization\n\n## Why\n\n" +
+      "The authorization path dual-writes today, and a crash between the two writes has no reading\nin which both sides agree.\n\n## Scope\n\npayment-service only; the change is entirely architectural.\n";
+    files["features/FEAT-9/specs/payment-service/arch.spec.md"] = ARCH_ONLY_DELTA;
+    return makeProject(files);
+  };
+
+  it("reports the business spec as not owed, and the gate agrees", async () => {
+    const p = await archOnlyProject();
+    try {
+      const payload = await statusJson(p, "FEAT-9");
+      expect(payload.__code).toBe(0);
+      expect(artifact(payload, "spec", "payment-service")).toMatchObject({
+        exists: false,
+        required: false,
+        status: "done",
+      });
+      expect(artifact(payload, "arch-spec", "payment-service")).toMatchObject({
+        exists: true,
+        status: "done",
+      });
+      expect(codes(payload.next)).not.toContain("next.author-spec");
+
+      // The control: status may be redder than the gates on a question they
+      // also ask, never on an obligation they do not have. Without this line,
+      // deleting the arch delta would pass every assertion above.
+      const gate = await runLoam(p.workDir, "validate", "--feature", "FEAT-9");
+      expect(gate.code, gate.out).toBe(0);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("does not call the record blocked when the arch delta alone feeds a checklist", async () => {
+    const p = await archOnlyProject();
+    try {
+      const payload = await statusJson(p, "FEAT-9");
+      expect(artifact(payload, "verification")).toMatchObject({ status: "missing", blockedBy: [] });
+      expect(codes(payload.next)).toContain("next.verify");
+
+      // The control, and the reason `blocked` was wrong rather than merely
+      // pessimistic: the checklist this feature would be blocked from deriving
+      // derives. `featureChecklist` reads arch.spec.md, so the row was
+      // contradicting the command it was pointing the reader away from.
+      const checklist = await featureChecklist(p.docsDir, join(p.docsDir, "features/FEAT-9"), "FEAT-9");
+      expect(checklist.claims.length).toBeGreaterThan(0);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the fleet form agrees with the feature form about it", async () => {
+    // The two forms answer from different code (`fleet/fleet.ts` refuses the
+    // coherence run the feature form pays for), and the contract question
+    // beside this one already carries a comment saying they must never
+    // disagree. They did: the fleet row read `missing <svc>/spec` over a
+    // feature the feature form called `ready`. Asserted as a RELATION rather
+    // than a golden string, so it cannot be satisfied by making both wrong in
+    // the same direction.
+    const p = await archOnlyProject();
+    try {
+      const fleet = await statusJson(p);
+      const row = (fleet.features as { id: string; stage: string; missing: string[] }[]).find(
+        (f) => f.id === "FEAT-9",
+      )!;
+      expect(row.missing).toEqual([]);
+      expect(row.stage).not.toBe("missing");
+      const one = await statusJson(p, "FEAT-9");
+      expect(row.stage).toBe(one.feature.stage);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("--service narrows the view without moving the verdict", () => {
   it("narrows the artifact table and the per-service steps", async () => {
     const files = coherentFixture();

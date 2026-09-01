@@ -180,7 +180,17 @@ async function fleetFeature(
   const governs = governedServices(await scanDeltas(docsDir, feature, feature.services, context));
   for (const svc of feature.services) {
     const p = featureSpecPaths(feature.dir, svc);
-    if (!existsSync(p.spec)) missing.push(`${svc}/spec`);
+    // EITHER corpus satisfies it. What a service delta owes is a requirement
+    // delta, and `arch.spec.md` is the other one — same grammar, same delta
+    // algebra, read by `featureChecklist` — so an architecture-only feature is
+    // complete and every gate already says so. This form asked for `spec.md`
+    // specifically, which broke the rule the comment two lines down states
+    // about the contract question: the two forms disagreed, `loam status`
+    // reporting `missing <svc>/spec` over a feature `loam status <FEAT>` and
+    // `loam validate --feature` both called complete. The name stays
+    // `<svc>/spec` when NEITHER exists, because the business delta is the one
+    // an author writes by default.
+    if (!existsSync(p.spec) && !existsSync(p.archSpec)) missing.push(`${svc}/spec`);
     // The same question featureArtifacts asks, through the same function: the
     // two forms must never disagree about whether a feature owes a contract.
     if (owesContract(living.get(svc), contracted.has(svc), governs.has(svc)) && !existsSync(p.openapi)) {

@@ -10,6 +10,35 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — `loam status` no longer invents work for an architecture-only feature
+
+A feature whose only requirement delta is `specs/<svc>/arch.spec.md` reported two things that were
+not true, and both are corrected. The `spec` row read `missing` and `next.author-spec` told the
+author to write business requirements the change does not have — while `loam validate --feature`
+accepted the same tree at exit 0 and `coherence`'s `service.no-requirement-delta` stayed silent,
+because every other reader counts the service DIRECTORY and not which corpus is in it. And the
+`verification` row read `blocked` with `blockedBy: ["delta", "spec", "openapi", "asyncapi"]`,
+telling the reader there was nothing to derive a checklist from — while `featureChecklist` reads
+`arch.spec.md` and `loam verify` on that feature returns a real checklist.
+
+The fleet form carried the same defect independently, and it broke the rule stated one line below
+it in its own source: `loam status` with no feature reported `missing <svc>/spec` and staged the
+feature `missing`, over a feature `loam status <FEAT>` called `ready`. Both forms now accept either
+corpus as the service's requirement delta, and `<svc>/spec` is named only when neither exists.
+
+Three payload-visible consequences, all in `loam status --json`: `artifacts[]`'s `spec` row is
+`required: false` when the service's `arch.spec.md` delta exists (it was unconditionally `true`),
+`arch-spec` now counts as a verification feeder, so `blockedBy` gained `"arch-spec"` in the
+one case that is still genuinely blocked — a feature with no requirement delta of either kind —
+and `features[]`'s `missing` and `stage` no longer report an architecture-only feature as
+incomplete. No finding code, flag or exit code changes. This is the change to read if a script
+branched on `artifacts[].required` or on `features[].missing`.
+
+The case is the one `arch.spec.md` exists for: an outbox, a retry policy, an alert — obligations no
+business scenario was ever going to carry, so the feature that adds one has no business requirement
+to write. Found by authoring loam's own architecture change through loam's own lifecycle, which is
+the trigger ROADMAP's self-hosting section records for that axis.
+
 ## [0.2.0-alpha.1] - 2026-09-01
 
 The first release of the 0.2 line, and the whole accumulated body since `0.1.0-beta.3` — 116
