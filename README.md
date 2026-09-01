@@ -9,8 +9,9 @@
 
 > **Pre-release: `0.2.0-alpha.1`**, the first release of the 0.2 line and the newest published
 > version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). It publishes under the
-> `alpha` npm dist-tag, so `npm i @ybotok/loam` still installs `0.1.0-beta.3`; ask for
-> `@ybotok/loam@alpha` to get this one. See [Status](#status).
+> `alpha` npm dist-tag: `npm i @ybotok/loam@alpha`, or the exact version, always installs this
+> line. `latest` is moved onto a release by hand once it has published, so a plain
+> `npm i @ybotok/loam` may still resolve to `0.1.0-beta.3` until it is. See [Status](#status).
 
 `loam` keeps an authored C4 model, requirements, API and event contracts, permissions, domain
 vocabulary and verification evidence in explicit agreement as a system changes. The same lifecycle
