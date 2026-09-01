@@ -21,8 +21,9 @@ Still a prerelease, and the 5–10 service pilot still has not run. The entries 
 implementation behavior and repository-owned synthetic fixtures; they claim no production-fleet or
 external execution evidence.
 
-**It publishes under the `alpha` npm dist-tag, so `npm i @ybotok/loam` still resolves to
-`0.1.0-beta.3`.** Ask for `@ybotok/loam@alpha` — or the exact version — to install this one. No
+**It publishes under the `alpha` npm dist-tag**, so `npm i @ybotok/loam@alpha` — or the exact
+version — installs this one. `latest` is moved onto a release by hand once it has published, and
+until it is, a plain `npm i @ybotok/loam` still resolves to `0.1.0-beta.3`. No
 entry below is marked breaking, but a repository upgrading from beta.3 should read the `Changed`
 sections first: the view doctrine narrowed, a use case became a consumer (`loam diff` refuses where
 it warned), and the scaffolded `AGENTS.md` became a pointer. Every generated file stamped by an
