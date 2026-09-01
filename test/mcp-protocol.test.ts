@@ -128,6 +128,7 @@ describe("routing", () => {
     const listed = resultOf(replyOf(request(4, "resources/list")))["resources"] as Array<Record<string, unknown>>;
     expect(listed.some(({ uri }) => uri === "loam://orientation")).toBe(true);
     expect(listed.some(({ uri }) => uri === "loam://instructions/loam-check")).toBe(true);
+    expect(listed.some(({ uri }) => uri === "loam://instructions/loam-report")).toBe(true);
     expect(listed.some(({ uri }) => uri === "loam://instructions/loam-check/compact")).toBe(true);
 
     const read = resultOf(replyOf(request(5, "resources/read", { uri: "loam://orientation" })));
@@ -137,6 +138,10 @@ describe("routing", () => {
       uri: "loam://instructions/loam-check/compact",
     })))["contents"] as Array<Record<string, unknown>>;
     expect(String(compact[0]!["text"]).length).toBeLessThan(5_000);
+    const report = resultOf(replyOf(request(7, "resources/read", {
+      uri: "loam://instructions/loam-report",
+    })))["contents"] as Array<Record<string, unknown>>;
+    expect(String(report[0]!["text"])).toContain("loam-reports/");
     expect(errorOf(replyOf(request(7, "resources/read", { uri: "loam://missing" }))).code).toBe(INVALID_PARAMS);
   });
 

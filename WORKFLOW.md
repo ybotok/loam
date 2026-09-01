@@ -13,8 +13,8 @@ that order.
 - [The two flows](#the-two-flows) · [Topology and the governed boundary](#topology-and-the-governed-boundary) ·
   [The artifact graph](#the-artifact-graph) · [Derived, never stored](#derived-never-stored)
 - [Actions, not phases](#actions-not-phases) · [What actually gates](#what-actually-gates)
-- [The six workflows](#the-six-workflows) · [The honestly-small change](#the-honestly-small-change)
-  · [Driving it from an agent](#driving-it-from-an-agent)
+- [The six workflows](#the-six-workflows) · [Support reports](#support-reports) ·
+  [The honestly-small change](#the-honestly-small-change) · [Driving it from an agent](#driving-it-from-an-agent)
 - [Presence is not trust](#presence-is-not-trust) ·
   [Why there is no task list](#why-there-is-no-task-list)
 - [Picking the work back up](#picking-the-work-back-up)
@@ -81,8 +81,8 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    That scaffolds `services/`, `features/`, `architecture/landscape.likec4`, `AGENTS.md`, and the
    docs repo's own `loam.json` (`docsDir: "."`, plus the `agentTools` it wrote for) — so every later
    command run *inside* the docs repo finds the fleet. An empty directory holds no tool
-   dot-directory to detect, so the Claude Code fallback always fires here too: six slash commands
-   and six Agent Skills under `.claude/` ([Working with AI
+   dot-directory to detect, so the Claude Code fallback always fires here too: seven slash commands
+   and seven Agent Skills under `.claude/` — six lifecycle entries plus `loam-report` ([Working with AI
    agents](README.md#working-with-ai-agents)). Commit all of it.
 
 2. **Template the fleet map** from a tiny file you write by hand, rather than drawing it:
@@ -301,8 +301,9 @@ A natural-language request may load the matching Agent Skill instead. This is du
 two workflows: both point at the same `loam instructions` page and the agent owns the internal
 status/edit/validate loop after either entry.
 
-`loam init` writes a slash command and an Agent Skill per selected workflow into whichever AI tools
-it finds in the repo (`--agent-profile full|service|docs`). Those files are **pointers** at
+`loam init` writes a slash command and an Agent Skill per selected workflow, plus `loam-report` in
+every profile, into whichever AI tools it finds in the repo (`--agent-profile full|service|docs`).
+Those files are **pointers** at
 `loam instructions`, not copies of it — they carry the
 purpose and the spine, and defer the flags, the finding codes and the fix tables to the binary you
 are actually about to run. Init records each pointer's digest and refreshes it only while the bytes
@@ -311,7 +312,7 @@ repository, while the runtime page cannot go out of date the same way.
 
 `AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
 agent reads — now works the same way, which changes the reading order. It is orientation only (the
-layout, the cycle, what gates and what only advises, at 8,239 bytes rather than 109,399), and the
+layout, the cycle, what gates and what only advises, at 8,762 bytes rather than 109,399), and the
 four **reference pages** it used to carry inline come out of the binary at the moment the question
 arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
 taking no arguments and printing whole, listed beside the six workflows by a bare
@@ -325,6 +326,22 @@ taking no arguments and printing whole, listed beside the six workflows by a bar
 | `loam-check` | Any time; always before shipping | `loam validate`, and fixing what it reports by code |
 | `loam-verify` | When the code is built | `loam verify` derives the checklist; the test runner answers what it can; you answer the rest with evidence |
 | `loam-ship` | When it is really finished | `loam validate --feature`, `loam archive --dry-run`, then the merge |
+
+### Support reports
+
+`loam-report` is generated beside the workflows but is deliberately not a seventh step. Invoke
+`/loam-report` (or the host's skill syntax) when loam, its generated integration, or the agent
+following it behaves unexpectedly. Its version-matched body comes from
+`loam instructions loam-report`.
+
+The agent preserves the original symptom before investigating, collects the binary version,
+`doctor --json`, relevant `status --json` and the smallest safe reproduction, then writes
+`loam-reports/YYYY-MM-DD-<slug>.md`. It classifies the evidence as a loam defect, project-data
+problem, agent-workflow problem, host/infrastructure problem or inconclusive. A report contains
+stable envelope/finding codes and short relevant excerpts, not a full environment or document
+dump. Secrets and home paths are redacted. A writer is never repeated just to reproduce a failure,
+and the protocol does not repair, upload, submit or send the report. The Markdown file is the handoff
+artifact; a person decides whether to commit or share it.
 
 ### Deciding what a feature touches
 

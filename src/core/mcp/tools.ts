@@ -296,7 +296,7 @@ export const MCP_TOOLS: readonly McpTool[] = [
     name: "loam_instructions",
     command: "instructions",
     description:
-      "Print a workflow protocol, version-matched to this binary; reads no config and no docs repo, so it answers " +
+      "Print a workflow, support protocol or reference page, version-matched to this binary; reads no config and no docs repo, so it answers " +
       "before the repository is wired. Ask for loam-check DELIBERATELY: it is by far the largest protocol " +
       "(its per-code fix tables are ~83 KB of the ~84 KB it prints), and noFixTables true returns the narrowed page " +
       "— every paragraph that introduces a table, none of the rows — after which loam_explain answers any one code " +
@@ -307,7 +307,7 @@ export const MCP_TOOLS: readonly McpTool[] = [
         property: "workflow",
         required: false,
         variadic: false,
-        description: "workflow name (loam-adopt, loam-feature, …); omit to list them",
+        description: "workflow, support or reference name (loam-adopt, loam-report, loam-codes, …); omit to list them",
       },
       {
         property: "args",

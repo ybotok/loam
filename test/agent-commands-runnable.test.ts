@@ -1,7 +1,7 @@
 /**
  * Every `loam …` loam PRINTS has to parse against the loam that receives it.
  *
- * loam ships instructions: AGENTS.md, six command bodies delivered twice per
+ * loam ships instructions: AGENTS.md, six lifecycle bodies plus support delivered twice per
  * tool, a `fix` on every `doctor` finding, a literal `command` on every
  * `status` next[] step. All of it is text an agent reads and types back, and
  * none of it was ever executed by a test — so `Run \`loam adopt <id>\``, the

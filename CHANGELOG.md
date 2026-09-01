@@ -12,12 +12,23 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
 
 ### Added — the agent interface is progressive, executable and ownership-aware
 
+- **`QUICKSTART.md` now ships in the npm package.** It gives the shortest complete path from
+  install through adoption and the first explicit agent-driven feature, with the host-specific
+  command spellings and the human-only vouch/archive boundaries in one place.
+- **`loam-report` is a generated command and Agent Skill in every profile.** It collects an
+  unexpected binary or agent-integration run into
+  `loam-reports/YYYY-MM-DD-<short-slug>.md`: version, expected/actual behavior, stable codes and
+  locations, doctor/status and write-state evidence, minimal safe reproduction, classification and
+  missing evidence. The protocol redacts secrets and home paths, never retries a writer merely to
+  reproduce it, and never repairs, uploads or submits anything automatically. Bare
+  `loam instructions --json` adds the support entry under the additive `support` key; the six-item
+  `workflows` array remains the lifecycle contract.
 - **The documented chat contract is explicitly dual-entry.** The generated command is the
   recommended predictable path (`loam-feature` → `loam-implement` → `loam-check` → `loam-verify`
   → `loam-ship`), while natural language may load the matching Agent Skill. Both deliveries retain
   one shared body and defer to the same binary-owned `loam instructions` page; no command or skill
   name changed.
-- **The always-loaded generated `AGENTS.md` is now 8,239 bytes.** Detailed workflow, authoring and
+- **The always-loaded generated `AGENTS.md` is now 8,762 bytes.** Detailed workflow, authoring and
   code material stays behind `loam instructions`; `loam-check` pointers start with
   `--no-fix-tables` and fetch individual fixes through `loam explain <code>`.
 - **`loam status --json` adds `next[].execution`.** It distinguishes runnable commands from edits,
@@ -33,7 +44,7 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   additive `agentProfile` and `agentFiles` fields. An unchanged generated command/skill pointer is
   refreshed when its recorded sha256 still matches; a customized file is never overwritten.
 - **`loam mcp` adds resources, a common output schema and opt-in `--author`.** Orientation and every
-  workflow/reference page are readable at `loam://orientation` and
+  workflow/support/reference page are readable at `loam://orientation` and
   `loam://instructions/<name>`. `--author` adds `loam_new`, `loam_rebase`, `loam_gherkin` and
   `loam_archive_plan` (server-enforced `--dry-run`); `vouch`, verification recording and a committing
   archive remain excluded. `loam init --mcp-author` writes this launch mode.

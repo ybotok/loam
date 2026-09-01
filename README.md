@@ -27,8 +27,9 @@ Gherkin, and checks that behavior, architecture, contracts and evidence still jo
   [Quick start](#quick-start) · [Commands](#commands) · [Working with AI agents](#working-with-ai-agents)
 - [Docs](#docs) · [Development](#development) · [Status](#status) · [Contributing](#contributing) ·
   [Security](#security) · [License](#license)
-- Companion pages: [WORKFLOW.md](WORKFLOW.md) — the protocol · [SCHEMA.md](SCHEMA.md) — the
-  reference · [ROADMAP.md](ROADMAP.md) · [COMPARISON.md](COMPARISON.md)
+- Companion pages: [QUICKSTART.md](QUICKSTART.md) — install-to-first-change ·
+  [WORKFLOW.md](WORKFLOW.md) — the protocol · [SCHEMA.md](SCHEMA.md) — the reference ·
+  [ROADMAP.md](ROADMAP.md) · [COMPARISON.md](COMPARISON.md)
 
 ## Why
 
@@ -164,6 +165,10 @@ git clone https://github.com/ybotok/loam.git && cd loam
 Drop `--link` to build without a global `loam`; on Windows run `npm ci && npm run build` by hand.
 
 ## Quick start
+
+For the shortest install-to-first-feature path, including the exact chat commands and local problem
+report flow, use [QUICKSTART.md](QUICKSTART.md). The routes below explain the alternative starting
+positions in more depth.
 
 `loam --help` ends by naming where to start and the way out, and this section is the same two
 commands in the same order: **`loam init --create`** first — every other command needs the docs repo
@@ -334,7 +339,7 @@ cannot hold.
 
 | Command | Flags | What it does |
 |---|---|---|
-| `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow those six workflows to a repo's role. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry, while `--mcp-author` opts into the bounded authoring tools. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
+| `loam init` | `--docs <dir>` `--service <id>` `--create` `--force` `--tools <ids>` `--agent-profile <full\|service\|docs>` `--example <dir>` `--no-commands` `--no-skills` `--mcp` `--mcp-author` | Bind this repository to the single shared docs repo: a committed local `loam.json`, plus command and Agent Skill pointers for detected AI tools. Profiles narrow the six lifecycle workflows to a repo's role; the support-only `loam-report` stays in every profile. Re-running init refreshes only unchanged loam-owned pointers; edited files are preserved. `--mcp` writes the read-only host entry, while `--mcp-author` opts into the bounded authoring tools. `--create` scaffolds the docs repo; `--example` copies the packaged example and stops |
 | `loam seed` | `--from <file>` | Template the fleet map and one `services/<id>/` directory per service from a tiny human-authored `fleet.yaml`. Mechanical, never a guess: a human stated every fact. Refuses once the landscape has been hand-edited |
 | `loam list [services\|features\|capabilities\|glossary]` | `--archived` `--needs-work` `--review-order` `--subsystem <name>` `--owners <path>` | What is in the docs repo, and what is missing from it. `capabilities` rolls up who realizes each promise; `glossary` rolls up each term with the documents that cite it |
 | `loam status [<FEAT>]` | `--service <id>` | Where the work stands and what to do next, as a projection over the two gates. Each `next[]` row has an `execution` object that says whether it is runnable, where, and what input or edit is still needed. Derived every run; writes nothing |
@@ -344,7 +349,7 @@ cannot hold.
 | `loam explore [<service>...]` | `--op <operationId>` `--capability <id>` `--as <FEAT>` | Read the fleet around a change nobody has written down yet: the ring one hop out, each service's maturity and living operations, the features already in flight over the same ground, and the `loam new` line the seeds imply |
 | `loam context <service>` | `--feature <FEAT>` | Assemble one service's docs slice — living requirements verbatim, both contracts, the fleet edges around it, permissions, capabilities, provenance, and every active feature's delta over it — as one deterministic briefing |
 | `loam steps` | `--service <id>` `--duplicates` `--json` | Inventory the step phrases of one service's scenarios: how many distinct steps its suite is written in, how few definitions cover most of them, and which phrases differ only by an article or a trailing clause. Reads the living specs, writes nothing — the work-list a team writes its step definitions from, diffed against the optional `services/<svc>/steps.yaml` catalogue when one exists |
-| `loam instructions [<workflow>] [args...]` | `--no-fix-tables` | Print one of the six workflow protocols, `$1`/`$2` filled in — version-matched to this binary, which is what the generated command and skill files point at — or one of the four reference pages `loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, which take no arguments, print whole, and are what `AGENTS.md` defers to rather than carrying. Reads no config. `--no-fix-tables` collapses the per-code fix tables to a line each, keeping the paragraph that says which scope graded them: `loam-check`'s page goes 84,151 bytes to 3,541, while a reference page holds no such table and comes back byte-identical |
+| `loam instructions [<workflow>] [args...]` | `--no-fix-tables` | Print one of the six workflow protocols, the separate `loam-report` support protocol, or one of the four reference pages `loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, version-matched to this binary. Workflow `$1`/`$2` placeholders are filled; support/reference pages take no arguments. Reads no config. `--no-fix-tables` collapses the per-code fix tables to a line each, keeping the paragraph that says which scope graded them: `loam-check`'s page goes 84,151 bytes to 3,541, while a support/reference page holds no such table and comes back byte-identical |
 | `loam explain [<subject>]` | `--codes` | Explain a finding code, a refusal code, or a concept term. Most finding prose is parsed at runtime from the shipped fix tables, so it cannot drift from the binary; the `doctor.*`, `next.*`, `diff.*` and `gate.*` families, which no fix table grades, are answered from a registry written beside them. Every text-mode refusal prints `<code>  ·  loam explain <code>` on stderr and every non-`ok` finding line carries its code in parentheses, so the lookup is reachable without re-running under `--json`. Omit the subject to list the terms; `--codes` lists the whole vocabulary — 293 finding codes and 46 refusal codes, each row the same answer `explain <code> --json` gives for that one |
 | `loam open` | `--root <dir>` `--out <file>` `--force` | Write a `.code-workspace` joining the docs repo and every service checkout whose committed `loam.json` binds to it. Never overwrites without `--force` |
 | `loam mcp` | `--author` | Serve fourteen read tools, version-matched instruction resources and a declared envelope output schema over MCP. `--author` adds `new`, `rebase`, `gherkin` and an archive dry-run; it never exposes `vouch`, verification recording or a committing archive — [the MCP server](WORKFLOW.md#the-mcp-server) |
@@ -378,8 +383,9 @@ branches on one field instead of guessing from the presence of `valid` or `servi
 
 `loam init --create` writes `AGENTS.md` into the docs repo — the process contract, travelling with
 the thing it describes; a join finds it there and refuses a `--docs` target without one. Into the
-repo it runs in, every `init` writes the six workflow bodies (`loam-adopt`, `loam-feature`,
-`loam-implement`, `loam-check`, `loam-verify`, `loam-ship`), **twice each for nineteen of the
+repo it runs in, every `init` writes pointers for the six workflow bodies (`loam-adopt`,
+`loam-feature`, `loam-implement`, `loam-check`, `loam-verify`, `loam-ship`) plus the separate
+`loam-report` support protocol, **twice each for nineteen of the
 twenty-one targets**: as a command file you type — `/loam-check` for most, `/loam:check` where the
 tool namespaces by directory, `@loam-check` in Amazon Q's prompt library — and as an Agent Skill
 at `<tool-dir>/skills/loam-<x>/SKILL.md`, which the model loads by itself when the task matches. Two
@@ -397,6 +403,12 @@ Gemini namespaces it as `/loam:feature`, Amazon Q exposes `@loam-feature`, and a
 uses its explicit skill syntax such as `$loam-feature`. Saying “implement FEAT-101” may load that
 same skill automatically. Both routes reach the same binary-owned protocol; after entry, the agent
 runs the status/edit/validate loop rather than asking the user to type every internal command.
+
+When the binary or agent integration behaves unexpectedly, `/loam-report` (or `$loam-report` on a
+skills-only host) collects a sanitized, reproducible local report under `loam-reports/`. It records
+the version, doctor/status evidence, stable codes, write state and the smallest safe reproduction;
+it does not repair the repo, retry a writer, include secrets, or upload anything. The support
+protocol ships in every agent profile but remains outside the six-step lifecycle.
 
 Which tools is detected from the repo: `init` scans each of the 21 targets it knows for its own
 marker paths — usually just its dot-directory, but Copilot's are the files *inside* `.github/` and
@@ -426,7 +438,7 @@ between the artifacts, and the `Based-On:` pins), `loam-authoring` (`arch.spec.m
 Gherkin suite, frontmatter) and `loam-done-check` (how `loam verify` derives its claims, and
 verified versus attested). What stayed is what a reader needs to form a question at all: the layout,
 the cycle, which element is which service, the validator's rules and the archive gate. The current
-orientation is **8,239 bytes**, below both the 32,768-byte Codex chain limit and the smaller 12,000
+orientation is **8,762 bytes**, below both the 32,768-byte Codex chain limit and the smaller 12,000
 workspace-rule ceiling. Detailed pages are fetched only when the task reaches them. `loam init`
 writes **no file** for a reference page: a page printed on demand describes the loam you are
 running, not the one that scaffolded the repository.
@@ -449,7 +461,7 @@ Missing pointers are created. This gives unchanged repositories current entry po
 
 For hosts that reach tools through MCP rather than a shell, see [the MCP server](WORKFLOW.md#the-mcp-server).
 Read tools declare `readOnlyHint`; every tool declares the shared envelope output schema; the compact
-orientation and all workflow/reference pages are MCP resources, including a compact loam-check
+orientation and all workflow/support/reference pages are MCP resources, including a compact loam-check
 resource without the 223-row fix table. `loam init --mcp` writes the
 read-only host entry. `--mcp-author` is a separate explicit choice that adds bounded writers while
 still excluding vouch, evidence recording and a committing archive. An existing `.mcp.json` is
@@ -457,6 +469,8 @@ always preserved byte for byte, with the entry printed for manual merge.
 
 ## Docs
 
+- [QUICKSTART.md](QUICKSTART.md) — the shortest complete path from install to adoption, the first
+  agent-driven feature, and a local problem report when something behaves unexpectedly.
 - [WORKFLOW.md](WORKFLOW.md) — the working protocol: day zero, the artifact graph and its derived
   states, what gates and what only advises, the six workflows, the per-command notes, and how an
   agent drives the cycle from `--json`.
