@@ -161,8 +161,25 @@ export function featureArtifacts(
   for (const svc of services) {
     const p = featureSpecPaths(feature.dir, svc);
     const specFault = faulted("spec", svc);
-    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, true, specFault));
-    out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: existsSync(p.archSpec) }, false, specFault));
+    // What a service delta owes is a REQUIREMENT DELTA, not specifically the
+    // business one. `arch.spec.md` is the other corpus, with the same grammar
+    // and the same delta algebra, and `featureChecklist` derives claims from
+    // it — so a directory holding only the architectural document is a
+    // complete delta, and every gate already reads it as one: `coherence`'s
+    // `service.no-requirement-delta` counts the DIRECTORY, and
+    // `validate --feature` grades an arch-only delta clean at exit 0.
+    //
+    // Requiring `spec.md` unconditionally made this module the one document
+    // that disagreed. An architecture-only feature — an outbox added, a retry
+    // policy, an alert; the changes `arch.spec.md` exists for because no
+    // business scenario was ever going to carry them — reported `missing` and
+    // emitted `next.author-spec`, sending the author to write business
+    // requirements the change does not have, about a feature the gate accepts.
+    // status may be redder than the gates on a question they also ask; it may
+    // not invent an obligation they do not.
+    const archExists = existsSync(p.archSpec);
+    out.push(fileState("spec", { service: svc, path: rel(p.spec), exists: existsSync(p.spec) }, !archExists, specFault));
+    out.push(fileState("arch-spec", { service: svc, path: rel(p.archSpec), exists: archExists }, false, specFault));
     out.push(
       fileState(
         "openapi",
@@ -194,9 +211,15 @@ export function featureArtifacts(
   // promise is realized by service requirements, and those are what the record
   // answers — so counting one as a feeder would report a capability-only
   // feature as ready to verify against a checklist with nothing in it.
-  const feeders = out.filter(
-    (a) => a.id !== "intent" && a.id !== "arch-spec" && a.id !== "capabilities" && a.exists,
-  );
+  //
+  // `arch-spec` used to be excluded beside it, and that failed the same test
+  // the comment above states: `featureChecklist` DOES read `arch.spec.md`
+  // (`core/verify/checklist.ts`), and `loam verify` on an architecture-only
+  // feature returns a real checklist. The row said `blocked … needs delta,
+  // spec, openapi, asyncapi` and `next.verify` said there was nothing to derive
+  // a checklist from, about a command that derives one — which is the failure
+  // `blocked` is supposed to prevent, pointed the wrong way.
+  const feeders = out.filter((a) => a.id !== "intent" && a.id !== "capabilities" && a.exists);
   out.push({
     id: "verification",
     service: null,
@@ -204,7 +227,7 @@ export function featureArtifacts(
     exists: verification.state !== "absent",
     required: true,
     status: feeders.length === 0 ? "blocked" : verificationStatus(verification),
-    blockedBy: feeders.length === 0 ? ["delta", "spec", "openapi", "asyncapi"] : [],
+    blockedBy: feeders.length === 0 ? ["delta", "spec", "arch-spec", "openapi", "asyncapi"] : [],
   });
   return out;
 }
