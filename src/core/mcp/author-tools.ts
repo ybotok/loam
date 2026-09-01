@@ -36,9 +36,14 @@ export const MCP_AUTHOR_TOOLS: readonly McpTool[] = [
     command: "rebase",
     description:
       "Pin a feature delta to the living baselines after the agent has reconciled them. Opt-in journaled writer. " +
-      "CLI equivalent: loam rebase <featureId> [--service <id>] --json",
+      "CLI equivalent: loam rebase [featureId] [--service <id>] --json",
+    // Optional because the REGISTERED argument is — `loam rebase` relaxed it
+    // for `--living`, which names no feature — and the schema mirrors the
+    // command it wraps rather than the subset this tool exposes. `--living` is
+    // not offered here, so an omitted id reaches the CLI's own refusal, which
+    // names the flag that makes the omission legal.
     positionals: [
-      { property: "featureId", required: true, variadic: false, description: "feature id whose baselines were reviewed" },
+      { property: "featureId", required: false, variadic: false, description: "feature id whose baselines were reviewed" },
     ],
     flags: [
       { property: "service", flag: "--service", kind: "string", description: "restrict to one touched service" },

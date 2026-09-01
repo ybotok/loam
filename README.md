@@ -7,9 +7,10 @@
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.1.0-beta.3`**, the latest published npm version of
-> [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). `main` is ahead under
-> `[Unreleased]`; do not treat a tarball built from it as beta.3. See [Status](#status).
+> **Pre-release: `0.2.0-alpha.1`**, the first release of the 0.2 line and the newest published
+> version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). It publishes under the
+> `alpha` npm dist-tag, so `npm i @ybotok/loam` still installs `0.1.0-beta.3`; ask for
+> `@ybotok/loam@alpha` to get this one. See [Status](#status).
 
 `loam` keeps an authored C4 model, requirements, API and event contracts, permissions, domain
 vocabulary and verification evidence in explicit agreement as a system changes. The same lifecycle
@@ -360,7 +361,7 @@ cannot hold.
 | `loam delta <FEAT>` | `--service <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
 | `loam rebase [<FEAT>]` | `--service <id>` `--dry-run` `--living` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--living` takes no feature: it pins the living corpus's `Realizes:` entries to the capability requirements they name, which is what makes `capability.realizes-stale` able to fire later |
-| `loam validate [<id>]` | `--service <id>` `--feature <id>` `--all` `--base <ref>` `--strict` `--errors-only` | Validate one service or feature, or the whole fleet in one run. JSON findings carry `locations[]`: an exact primary location when the check knows one, otherwise the narrowest proved scope. `--base` is the adoption ratchet, not a substitute for `loam diff`; `--strict` exits 1 on warnings; `--errors-only` affects text only |
+| `loam validate [<id>]` | `--service <id>` `--feature <id>` `--all` `--base <ref>` `--strict` `--errors-only` | Validate one service or feature, or the whole fleet in one run. JSON findings carry `locations[]`: an exact primary location when the check knows one, otherwise the narrowest proved scope. `--base` is the adoption ratchet, not a substitute for `loam diff`; `--strict` exits 1 on warnings; `--errors-only` drops the `ok` confirmations from the text view, keeping every warning |
 | `loam verify <FEAT>` | `--record <file>` `--results <file>` `--contract-results <file>` `--diff-answers <files...>` `--service <id>` | The done-check: derive a checklist of the feature's own promises, and record the answers with their evidence. `--results`/`--contract-results` answer claims from a test report; `--diff-answers` cross-examines two blind answer sets |
 | `loam vouch` | `--service <id>` `--yes` `--pack` `--sample <n>` | The human promotion `draft` → `verified`: stamp a living spec against the code it was written from. `--pack` prints the re-vouch reading pack; `--sample <n>` records a partial read as one. Run in the service's own repo |
 | `loam gate` | `--service <id>` `--strict` | Can this service deploy? A pure query over recorded evidence for deploy pipelines outside loam's lifecycle. Executes nothing, writes nothing; errors exit 1, warnings stay advisory |
@@ -484,7 +485,7 @@ always preserved byte for byte, with the entry printed for manual merge.
   maps, what is lost, what must be added.
 - [ROADMAP.md](ROADMAP.md) — the evidence-backed improvement plan, priorities, non-goals and exit
   criteria.
-- [CHANGELOG.md](CHANGELOG.md) — released beta.1–beta.3 plus the changes on `main` under
+- [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.1 plus the changes on `main` under
   `[Unreleased]`.
 - [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md) — what a
   fleet-sized run costs, with the method, the machine and the committed runs behind every number.
@@ -520,12 +521,12 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the complete gate still
 needs repeatable CI and installed-package evidence observed from an actual push. Speculative
-`render`, health composition and UI generation come later. Behind that status stand **155 test files** (counted 2026-08-31): the count is graded
+`render`, health composition and UI generation come later. Behind that status stand **156 test files** (counted 2026-09-01): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
 The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently
-`0.1.0-beta.3`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships
+`0.2.0-alpha.1`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships
 under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only
 ([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a
 drift test, so it cannot silently trail a release.
@@ -537,9 +538,10 @@ gate and what a reviewable change looks like here.
 
 ## Security
 
-Do not put vulnerability details in a public issue. GitHub Private Vulnerability Reporting is
-intended but is not currently confirmed as enabled; [SECURITY.md](SECURITY.md) documents the
-temporary detail-free contact request and the release blocker for a durable private route.
+Do not put vulnerability details in a public issue. Report privately through
+[GitHub Private Vulnerability Reporting](https://github.com/ybotok/loam/security/advisories/new),
+which is enabled for this repository; [SECURITY.md](SECURITY.md) says what to include and what to
+leave out.
 
 ## License
 

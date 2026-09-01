@@ -83,7 +83,8 @@ away.
 
 ## What is frozen
 
-loam is published (`@ybotok/loam`, currently a `beta` prerelease). These are a contract, not
+loam is published (`@ybotok/loam`, currently an `alpha` prerelease of the 0.2 line). These are a
+contract, not
 implementation details:
 
 - **Command names and flags.** An agent somewhere has `loam validate --all` in a script.

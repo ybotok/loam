@@ -10,6 +10,39 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.1] - 2026-09-01
+
+The first release of the 0.2 line, and the whole accumulated body since `0.1.0-beta.3` — 116
+entries, 53 of them additions. It opens a new line at `alpha` rather than continuing `0.1.0-beta.4`
+because the surface moved that far: the use-case, business, glossary and obligations axes all
+landed, and the agent interface became a dual-entry contract of generated commands and skills.
+
+Still a prerelease, and the 5–10 service pilot still has not run. The entries below describe
+implementation behavior and repository-owned synthetic fixtures; they claim no production-fleet or
+external execution evidence.
+
+**It publishes under the `alpha` npm dist-tag, so `npm i @ybotok/loam` still resolves to
+`0.1.0-beta.3`.** Ask for `@ybotok/loam@alpha` — or the exact version — to install this one. No
+entry below is marked breaking, but a repository upgrading from beta.3 should read the `Changed`
+sections first: the view doctrine narrowed, a use case became a consumer (`loam diff` refuses where
+it warned), and the scaffolded `AGENTS.md` became a pointer. Every generated file stamped by an
+earlier loam now reports against this binary — `doctor.agent-files-stale` for the command and skill
+files, `agents.stale` for a docs repo's `AGENTS.md`. Both are detection, not damage: a file whose
+recorded digest still matches is refreshed by re-running `loam init`, and a customized one stays
+yours to review and re-stamp by hand.
+
+### Security — the private reporting route is live, and every document says so
+
+GitHub Private Vulnerability Reporting is enabled on `ybotok/loam`, verified from the repository's
+PUBLIC advisories page — the same view an outside researcher gets — rather than taken on trust.
+`SECURITY.md` now names [the advisory form](https://github.com/ybotok/loam/security/advisories/new),
+says what to include and what to leave out, and keeps the one warning the old text was right about:
+a GitHub issue, pull request or discussion is public the moment it is opened. The
+`private-security-route` release blocker and the detail-free-issue fallback are gone — the fallback
+existed only while the private form did not, and leaving it standing would offer a public route
+beside a private one. `test/docs-drift.test.ts` inverts and keeps the blocker constant, so absence
+is now the invariant.
+
 ### Added — the agent interface is progressive, executable and ownership-aware
 
 - **`QUICKSTART.md` now ships in the npm package.** It gives the shortest complete path from
@@ -28,7 +61,8 @@ generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rul
   → `loam-ship`), while natural language may load the matching Agent Skill. Both deliveries retain
   one shared body and defer to the same binary-owned `loam instructions` page; no command or skill
   name changed.
-- **The always-loaded generated `AGENTS.md` is now 8,762 bytes.** Detailed workflow, authoring and
+- **The always-loaded generated `AGENTS.md` is now 8,793 bytes**, measured on the file `loam init
+  --create` actually writes. Detailed workflow, authoring and
   code material stays behind `loam instructions`; `loam-check` pointers start with
   `--no-fix-tables` and fetch individual fixes through `loam explain <code>`.
 - **`loam status --json` adds `next[].execution`.** It distinguishes runnable commands from edits,

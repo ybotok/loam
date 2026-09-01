@@ -13,9 +13,6 @@ is created:
 - verify that `https://github.com/ybotok/loam` is the canonical public repository and that
   `package.repository`, the release workflow, and GitHub's case-sensitive repository identity all
   refer to it;
-- enable and test GitHub Private Vulnerability Reporting (or document and test another durable
-  private route), replace the temporary fallback in `SECURITY.md`, and remove its
-  `private-security-route` blocker only after a private report can actually be submitted;
 - confirm continued maintainer control of the `@ybotok` npm scope and `@ybotok/loam` package;
 - create/protect the GitHub `npm-production` environment and require appropriate reviewers;
 - configure npm trusted publishing for the exact owner/repository, workflow filename `release.yml`,

@@ -68,7 +68,7 @@ describe("the generated AGENTS.md states the link convention", () => {
     // form is a convention rather than a taste. A version of this section that
     // kept only the first would be an aesthetic argument, and an aesthetic
     // argument is one somebody reasonably overrules.
-    expect(AGENTS_MD).toMatch(/pull-request review/);
+    expect(AGENTS_MD).toMatch(/pull-request\s+review/);
     expect(AGENTS_MD).toMatch(/literal\s+brackets/);
     expect(AGENTS_MD).toMatch(/does this\s+link resolve/);
     expect(AGENTS_MD).toMatch(/shortest-unique-path/);
@@ -92,8 +92,8 @@ describe("the generated AGENTS.md states the link convention", () => {
     expect(AGENTS_MD).toMatch(/`link\.unresolved`/);
     expect(AGENTS_MD).toMatch(/outside\s+this repository/);
     expect(AGENTS_MD).toMatch(/#section/);
-    expect(AGENTS_MD).toMatch(/fenced code block or an inline code span/);
-    expect(AGENTS_MD).toMatch(/CASE \*\*is\*\* graded/);
+    expect(AGENTS_MD).toMatch(/fenced code\s+block or an inline code span/);
+    expect(AGENTS_MD).toMatch(/CASE\s+\*\*is\*\* graded/);
     // And the old sentence is gone. It said, in bold, that nothing validated
     // this — which is now false, and a stale absence reads as a live promise.
     expect(AGENTS_MD).not.toMatch(/Nothing validates this today/);

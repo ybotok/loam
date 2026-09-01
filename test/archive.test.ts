@@ -3634,6 +3634,13 @@ describe("the machine contract (--json)", () => {
           overridable: true,
           subject: "payment-split-service",
           message: expect.stringContaining("services/payment-split-service/model.likec4"),
+          // `details` and `locations` are the two keys the shared finding
+          // serializer now adds to every finding. This producer proves no exact
+          // file or line, so `locations` carries the narrowest scope the run
+          // did prove — the feature being archived — with `role: "scope"`
+          // saying that is what it is, rather than a location it measured.
+          details: [],
+          locations: [{ path: "features/archive/FEAT-1-split", role: "scope" }],
         },
       ]);
       expect(json.overridden).toEqual([]);
