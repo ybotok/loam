@@ -57,9 +57,21 @@ async function refuses(p: Project, args: string[], code: string): Promise<string
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" });
 
-/** `git init` + one commit of everything — the fixture the uncommitted refusal needs. */
+/**
+ * `git init` + one commit of everything — the fixture the uncommitted refusal
+ * needs.
+ *
+ * `-b main` is not decoration: the concurrent-move cases below check the base
+ * branch out BY NAME, and an unset `init.defaultBranch` makes git call it
+ * `master`. This host names it `main` and every developer machine that hit
+ * this file did too, so the tests passed here and failed on the GitHub runner
+ * with `pathspec 'main' did not match any file(s) known to git` — a message
+ * that reads like a broken fixture rather than a naming default. Every other
+ * git fixture in the suite already spells it (diff, validate-base, vouch-pack);
+ * this one had not.
+ */
 function gitInit(dir: string): void {
-  git(dir, "init", "-q");
+  git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.test");
   git(dir, "config", "user.name", "t");
   git(dir, "add", "-A");
