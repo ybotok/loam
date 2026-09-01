@@ -2363,6 +2363,14 @@ repairing anything:
   every edit around it is legitimate. Which deliveries a repo holds is asked of the files rather
   than of a record: `loam.json` stores tools and profile, not deliveries, and a repo initialized
   `--no-skills` is not reported as missing six skills.
+
+  Commands and skills are two entry points into one protocol. The explicit command is the
+  recommended deterministic chat path (`/loam-feature` → `/loam-implement` → `/loam-check` →
+  `/loam-verify` → `/loam-ship`, with host-specific punctuation); a natural-language request may
+  load the matching skill. Both generated files point to the same binary-owned
+  `loam instructions` page, so choosing convenience cannot select different lifecycle rules. Once
+  loaded, the agent drives `status.next[].execution` itself and returns to the user only for a
+  decision or human-only action.
 - **`loam dependencies [<FEAT>] [--json]`** derives a deterministic graph from parsed active
   artifacts, never from validator message prose. A MODIFIED/REMOVED requirement depends on the
   active feature that ADDS the same stable `Requirement-ID` (or legacy exact name); an operation

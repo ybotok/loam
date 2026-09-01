@@ -157,6 +157,18 @@ describe("slash commands in the working repo", () => {
     }
   });
 
+  it("makes explicit commands and natural-language skills equivalent entry points", () => {
+    const file = COMMAND_FILES["loam-feature"]!;
+    expect(file).toContain("two equivalent chat entry points");
+    expect(file).toContain("Agent Skill a natural-language request may load");
+    expect(file).toContain("user type the internal loam commands one by one");
+    for (const name of ["loam-feature", "loam-implement", "loam-check", "loam-verify", "loam-ship"]) {
+      expect(AGENTS_MD).toContain(`/${name}`);
+    }
+    expect(AGENTS_MD).toContain("$loam-feature");
+    expect(AGENTS_MD).toContain("Natural-language requests may load");
+  });
+
   it("--no-commands leaves the command directory alone", async () => {
     const dir = await throwawayDir();
     const res = await runLoam(dir, "init", "--docs", "./d", "--create", "--no-commands");

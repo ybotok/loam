@@ -389,6 +389,15 @@ Copilot, Codex, Gemini CLI, Zed and Roo Code each document reading — one copy 
 instead of six copies of the same bytes. `--no-commands` and `--no-skills` each suppress one
 delivery.
 
+**The explicit command is the recommended, predictable entry point; natural language remains a
+shortcut.** A normal chat lifecycle is `/loam-feature FEAT-101 "Split payments"` to propose,
+`/loam-implement FEAT-101 payment-service` in each affected checkout, `/loam-check`,
+`/loam-verify FEAT-101`, then `/loam-ship FEAT-101`. Most hosts use the flat slash spelling;
+Gemini namespaces it as `/loam:feature`, Amazon Q exposes `@loam-feature`, and a skills-only host
+uses its explicit skill syntax such as `$loam-feature`. Saying “implement FEAT-101” may load that
+same skill automatically. Both routes reach the same binary-owned protocol; after entry, the agent
+runs the status/edit/validate loop rather than asking the user to type every internal command.
+
 Which tools is detected from the repo: `init` scans each of the 21 targets it knows for its own
 marker paths — usually just its dot-directory, but Copilot's are the files *inside* `.github/` and
 the vendor-neutral one's is `.agents/skills/` rather than `.agents/`, because almost every repo has
@@ -417,7 +426,7 @@ between the artifacts, and the `Based-On:` pins), `loam-authoring` (`arch.spec.m
 Gherkin suite, frontmatter) and `loam-done-check` (how `loam verify` derives its claims, and
 verified versus attested). What stayed is what a reader needs to form a question at all: the layout,
 the cycle, which element is which service, the validator's rules and the archive gate. The current
-orientation is **7,458 bytes**, below both the 32,768-byte Codex chain limit and the smaller 12,000
+orientation is **8,239 bytes**, below both the 32,768-byte Codex chain limit and the smaller 12,000
 workspace-rule ceiling. Detailed pages are fetched only when the task reaches them. `loam init`
 writes **no file** for a reference page: a page printed on demand describes the loam you are
 running, not the one that scaffolded the repository.

@@ -77,6 +77,11 @@ function stubBody(c: CommandContent): string {
   const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
   return `${c.purpose}
 
+This workflow has two equivalent chat entry points: the explicit command a user
+chooses, and the Agent Skill a natural-language request may load. Both reach this
+same body and must produce the same status/edit/validate loop; do not make the
+user type the internal loam commands one by one.
+
 **Run this first.** It is the protocol, and it ships with the binary you are about
 to call — so it names this loam's flags, its finding codes and its fix tables,
 not the ones that were current when this repository was scaffolded:
