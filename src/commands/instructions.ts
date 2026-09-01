@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import {
   PROTOCOLS,
   REFERENCE_PAGES,
+  SUPPORT_PAGES,
   WORKFLOWS,
   placeholderProblems,
   protocolFor,
@@ -47,12 +48,12 @@ export function registerInstructions(program: Command): void {
     // generated command file loam has ever written (`loam instructions
     // loam-adopt $1`) and in `--help` output people have copied. Renaming it
     // buys a more accurate word in one usage line and costs nothing anywhere
-    // the rename would be visible, so the accuracy goes in the text instead.
+    // the rename would be visible, so the accuracy goes in the menu text instead.
     .argument("[workflow]", "workflow or reference page (loam-adopt, loam-codes, …); omit to list them")
     .argument("[args...]", "values substituted for the protocol's $1, $2, … placeholders")
     .description("Print a workflow protocol or reference page, version-matched to this binary")
     .option("--json", "emit the machine contract instead of the human view")
-    // Opt-in, and off by default, so the default page of all six protocols
+    // Opt-in, and off by default, so the default page of every lifecycle protocol
     // stays byte-identical: this narrows what an agent CAN ask for, it does not
     // change what it gets when it asks for nothing. The one protocol this is
     // about is /loam-check, whose fix tables are 83 KB of the 84 it prints —
@@ -77,24 +78,32 @@ export function registerInstructions(program: Command): void {
 
       if (workflow === undefined) {
         if (json) {
-          // `references` is ADDITIVE beside the `workflows` key a consumer
-          // already reads. Appending the pages to `workflows` would have been
-          // the smaller diff and the wrong one: a caller iterating that array
-          // to drive the cycle would start running documentation as steps.
+          // `support` and `references` are ADDITIVE beside the `workflows` key
+          // a consumer already reads. Appending either kind to `workflows`
+          // would have been the smaller diff and the wrong one: a caller
+          // iterating that array to drive the cycle would start running
+          // diagnostics or documentation as steps.
           emitJson({
             command: "instructions",
             version: LOAM_VERSION,
             workflows: WORKFLOWS,
+            support: SUPPORT_PAGES,
             references: REFERENCE_PAGES,
           });
           return;
         }
-        // One column width across both lists, so the two blocks line up as one
+        // One column width across all three lists, so the blocks line up as one
         // menu — they are separate KINDS, not separate tables.
-        const width = Math.max(...[...WORKFLOWS, ...REFERENCE_PAGES].map((w) => w.name.length));
+        const width = Math.max(
+          ...[...WORKFLOWS, ...SUPPORT_PAGES, ...REFERENCE_PAGES].map((w) => w.name.length),
+        );
         console.log(`loam ${LOAM_VERSION} — workflows\n`);
         for (const w of WORKFLOWS) {
           console.log(`  ${w.name.padEnd(width)}  ${w.description}`);
+        }
+        console.log(`\nsupport — use when a run or agent integration behaves unexpectedly\n`);
+        for (const s of SUPPORT_PAGES) {
+          console.log(`  ${s.name.padEnd(width)}  ${s.description}`);
         }
         // Under their own heading, and never merged into the six above. A page
         // has no steps and is not part of the cycle; a flat list of ten would
@@ -107,6 +116,7 @@ export function registerInstructions(program: Command): void {
         }
         console.log(
           `\nloam instructions <workflow> [args...] prints one, placeholders filled in.` +
+            `\nloam instructions loam-report prints the local incident-reporting protocol.` +
             `\nloam instructions <page> prints a reference page. The pages carry what AGENTS.md` +
             `\nleaves out; \`loam explain <code>\` answers a single code without opening one.`,
         );
@@ -132,8 +142,8 @@ export function registerInstructions(program: Command): void {
       if (body === null) {
         // `unknown-target`, the same code `show` uses for a name that resolves
         // to nothing. The known set is small and closed, so it is listed rather
-        // than described: a caller that mistyped one of six names should not
-        // have to run a second command to see them.
+        // than described: a caller that mistyped a known name should not have
+        // to run a second command to see the choices.
         fail(
           json,
           "unknown-target",

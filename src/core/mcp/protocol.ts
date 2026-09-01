@@ -185,7 +185,7 @@ function routeRequest(
           description:
             uri === "loam://orientation"
               ? "Small always-loaded map of a loam repository"
-              : "Version-matched loam workflow or reference page",
+              : "Version-matched loam workflow, support protocol or reference page",
           mimeType: "text/markdown",
         })),
       }));

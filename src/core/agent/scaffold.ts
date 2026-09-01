@@ -31,7 +31,7 @@ import { dirname, join, relative } from "node:path";
 import { agentsStampLine } from "./agents-stamp.js";
 import { LOAM_VERSION } from "../envelope/version.js";
 import type { AgentFileEmitter, CommandContent } from "./contract.js";
-import { COMMANDS } from "./protocol.js";
+import { AGENT_COMMANDS } from "./protocol.js";
 import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
 
 /**
@@ -59,10 +59,10 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  * about — which is the point.
  *
  * The trade is real and worth stating: an agent that cannot execute `loam` now
- * has a spine instead of a protocol. That is the correct failure. Every step
- * below the spine is a loam invocation, so an agent that cannot run loam was
- * never going to complete this workflow from the file either — it was going to
- * try, using a year-old flag.
+ * has a spine instead of a protocol. That is the correct failure. The exact
+ * diagnostic and lifecycle invocations belong to the binary-owned page; an
+ * agent that cannot run loam cannot finish either kind from an embedded copy —
+ * it can only try using a year-old flag.
  *
  * The last clause of the pointer is the one sentence here that changes what an
  * agent DOES rather than what it knows. `loam instructions loam-check` prints
@@ -75,12 +75,27 @@ import { AGENT_TOOLS, CLAUDE } from "./tools/registry.js";
  */
 function stubBody(c: CommandContent): string {
   const steps = c.spine.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
-  return `${c.purpose}
-
-This workflow has two equivalent chat entry points: the explicit command a user
+  const entry = c.name === "loam-report"
+    ? `This support protocol has two equivalent chat entry points: the explicit command a
+user chooses, and the Agent Skill an unexpected-run request may load. Both reach
+the same local, sanitized report; the agent owns the diagnostic steps.`
+    : `This workflow has two equivalent chat entry points: the explicit command a user
 chooses, and the Agent Skill a natural-language request may load. Both reach this
 same body and must produce the same status/edit/validate loop; do not make the
-user type the internal loam commands one by one.
+user type the internal loam commands one by one.`;
+  const output = c.name === "loam-report"
+    ? `The runtime protocol decides which diagnostics are safe to run and what may enter the
+report. Do not infer permission to retry a writer, repair files or send the result
+from the broader lifecycle commands another generated skill may allow.`
+    : `Every step above is a \`loam\` invocation, and each command's own \`--json\` output
+carries what to do next: findings have stable codes, and \`loam status --json\` puts
+the ordered \`next[]\` — each entry a code and the literal command — in one place.
+Branch on the codes, never on the prose. The check workflow starts with
+\`--no-fix-tables\`; use \`loam explain <code>\` for each code the run actually
+reports, and remove that flag only when you deliberately need the complete table.`;
+  return `${c.purpose}
+
+${entry}
 
 **Run this first.** It is the protocol, and it ships with the binary you are about
 to call — so it names this loam's flags, its finding codes and its fix tables,
@@ -92,12 +107,7 @@ The spine it fills in, so you can tell a run that went sideways from one that di
 
 ${steps}
 
-Every step above is a \`loam\` invocation, and each command's own \`--json\` output
-carries what to do next: findings have stable codes, and \`loam status --json\` puts
-the ordered \`next[]\` — each entry a code and the literal command — in one place.
-Branch on the codes, never on the prose. The check workflow starts with
-\`--no-fix-tables\`; use \`loam explain <code>\` for each code the run actually
-reports, and remove that flag only when you deliberately need the complete table.
+${output}
 
 This file is a pointer, not the protocol. loam may refresh it while its bytes still
 match the digest recorded in loam.json. Editing it revokes that authority: your
@@ -143,7 +153,7 @@ const stubbed = (c: CommandContent): CommandContent => ({
  * not "what does loam instruct".
  */
 export const SLASH_COMMANDS: Record<string, string> = Object.fromEntries(
-  COMMANDS.map((c) => [c.name, CLAUDE.format(stubbed(c))]),
+  AGENT_COMMANDS.map((c) => [c.name, CLAUDE.format(stubbed(c))]),
 );
 
 /** The two ways a command body reaches an agent. Both are on by default. */
@@ -153,10 +163,10 @@ export type Delivery = (typeof DELIVERIES)[number];
 export const AGENT_PROFILES = ["full", "service", "docs"] as const;
 export type AgentProfile = (typeof AGENT_PROFILES)[number];
 
-const PROFILE_WORKFLOWS: Record<AgentProfile, ReadonlySet<string>> = {
-  full: new Set(COMMANDS.map((command) => command.name)),
-  service: new Set(["loam-adopt", "loam-implement", "loam-check", "loam-verify"]),
-  docs: new Set(["loam-feature", "loam-check", "loam-ship"]),
+const PROFILE_COMMANDS: Record<AgentProfile, ReadonlySet<string>> = {
+  full: new Set(AGENT_COMMANDS.map((command) => command.name)),
+  service: new Set(["loam-adopt", "loam-implement", "loam-check", "loam-verify", "loam-report"]),
+  docs: new Set(["loam-feature", "loam-check", "loam-ship", "loam-report"]),
 };
 
 /**
@@ -190,7 +200,7 @@ export function plannedCommandFiles(
     }
     if (delivery.includes("skills") && skill !== undefined) emitters.push(skill);
     return emitters.flatMap((e) =>
-      COMMANDS.filter((command) => PROFILE_WORKFLOWS[profile].has(command.name)).map((c) => ({
+      AGENT_COMMANDS.filter((command) => PROFILE_COMMANDS[profile].has(command.name)).map((c) => ({
         path: join(cwd, ...e.path(c.name)),
         content: e.format(stubbed(c)),
       })),

@@ -261,7 +261,8 @@ so running loam from a subdirectory works; `loam init` writes the file where it 
   generate that file and copy it across by hand, so the assumption decays quietly — the spine checks
   go on grading last quarter's endpoints, and every one of them stays green.
 - **`agentTools` / `agentProfile` / `agentFiles`** (optional, written by `loam init`) — the selected
-  tool adapters, the `full|service|docs` workflow subset, and a repo-relative path → lowercase
+  tool adapters, the `full|service|docs` lifecycle-workflow subset (the support-only `loam-report`
+  is present in all three), and a repo-relative path → lowercase
   sha256 manifest for generated command/skill pointers. A digest grants narrowly scoped refresh
   authority: init may update that file only while its current bytes still match. A human edit breaks
   the match and is preserved. These fields never affect validation or lifecycle semantics.
@@ -1597,7 +1598,8 @@ ready. Several useful product shapes remain outside that boundary on purpose:
   <id>` derives a model-scoped work view without owning folders, windows or editor state.
 - **Configurable lifecycle profiles** — project behavior does not change with the agent or user.
   `init --agent-profile` narrows only which shared workflow entry points are installed; it does not
-  fork the artifact graph, gates or command semantics.
+  fork the artifact graph, gates or command semantics. The incident-reporting support entry stays
+  installed in every profile because it is not part of that graph.
 - **TUI** — agents and CI get `--json`; humans get the files and the forge. A third surface would be
   a third thing to keep truthful.
 - **Authored `tasks.md` as authoritative state** — loam derives its actionable checklist (`loam
@@ -2362,7 +2364,7 @@ repairing anything:
   treated as human-owned and never overwritten. A stamp is a separate claim and can be stale while
   every edit around it is legitimate. Which deliveries a repo holds is asked of the files rather
   than of a record: `loam.json` stores tools and profile, not deliveries, and a repo initialized
-  `--no-skills` is not reported as missing six skills.
+  `--no-skills` is not reported as missing the selected skills.
 
   Commands and skills are two entry points into one protocol. The explicit command is the
   recommended deterministic chat path (`/loam-feature` → `/loam-implement` → `/loam-check` →
@@ -2371,6 +2373,15 @@ repairing anything:
   `loam instructions` page, so choosing convenience cannot select different lifecycle rules. Once
   loaded, the agent drives `status.next[].execution` itself and returns to the user only for a
   decision or human-only action.
+
+  `loam-report` is a separate support protocol, generated as a command and skill in every profile
+  but never appended to the lifecycle. It writes
+  `loam-reports/YYYY-MM-DD-<short-slug>.md` in the current repository with expected/actual behavior,
+  version, stable envelope and finding codes, relevant locations, write state, a minimal safe
+  reproduction, classification and missing evidence. Before writing, the agent redacts secrets and
+  home paths and reduces command output to the excerpt that proves the symptom. It never retries a
+  writer merely to reproduce it, repairs files, uploads telemetry or submits the report. The output
+  is an ordinary Markdown artifact a person may review, commit or share deliberately.
 - **`loam dependencies [<FEAT>] [--json]`** derives a deterministic graph from parsed active
   artifacts, never from validator message prose. A MODIFIED/REMOVED requirement depends on the
   active feature that ADDS the same stable `Requirement-ID` (or legacy exact name); an operation

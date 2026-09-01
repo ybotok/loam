@@ -1,6 +1,6 @@
 /**
- * The protocol surface: the six workflow bodies as one list, and everything
- * derived from it — what `loam instructions` prints (commands/instructions.ts)
+ * The protocol surface: six lifecycle workflows, the support protocol and the
+ * reference pages — what `loam instructions` prints (commands/instructions.ts)
  * and the corpus every check over loam's agent-facing prose reads
  * (test/codes-drift.test.ts, test/agent-contract.test.ts,
  * test/agent-commands-runnable.test.ts).
@@ -14,6 +14,7 @@ import { LOAM_VERIFY, LOAM_SHIP } from "./workflows/closing.js";
 import { LOAM_FEATURE } from "./workflows/feature.js";
 import { LOAM_IMPLEMENT } from "./workflows/implement.js";
 import { REFERENCES } from "./workflows/reference/reference.js";
+import { LOAM_REPORT } from "./support/report.js";
 
 /**
  * The six protocols, in cycle order. One assembly, exported: scaffold.ts
@@ -31,19 +32,32 @@ export const COMMANDS: CommandContent[] = [
 ];
 
 /**
- * Everything `loam instructions <name>` can print: the six workflows and the
- * four reference pages, in that order.
- *
- * The pages join the workflows HERE and nowhere else — not in {@link COMMANDS},
- * which is what scaffold.ts derives `SLASH_COMMANDS` and `plannedCommandFiles`
- * from. That is the whole mechanism, and the asymmetry is the point: a page is
- * printable by name but `loam init` writes no file for it, so moving 44 KB out
- * of AGENTS.md did not put 44 KB back as four new artifacts in every repository
- * loam touches. workflows/reference/reference.ts records why the pages exist;
- * test/agents.test.ts asserts both halves of this separately, because a future
- * edit can break either alone.
+ * Support entry points generated beside the lifecycle, but not counted as
+ * lifecycle steps. Reporting a bad run must be discoverable in every profile;
+ * placing it in COMMANDS would make a consumer iterating that list try to run
+ * incident collection after every feature.
  */
-const PRINTABLE: CommandContent[] = [...COMMANDS, ...REFERENCES];
+export const SUPPORT: CommandContent[] = [LOAM_REPORT];
+
+/** Every command/skill file init generates, regardless of category. */
+export const AGENT_COMMANDS: CommandContent[] = [...COMMANDS, ...SUPPORT];
+
+/**
+ * Everything `loam instructions <name>` can print: the six workflows, support
+ * protocol and four reference pages, in that order.
+ *
+ * The pages join the generated protocols HERE and nowhere else — not in
+ * {@link AGENT_COMMANDS}, which is what scaffold.ts derives `SLASH_COMMANDS`
+ * and `plannedCommandFiles` from. That is the whole mechanism, and the
+ * asymmetry is the point: a page is printable by name but `loam init` writes no
+ * file for it, so moving 44 KB out of AGENTS.md did not put 44 KB back as four
+ * new artifacts in every repository loam touches. The support protocol does
+ * belong in AGENT_COMMANDS because discovery is its purpose, while its separate
+ * menu category keeps it out of the lifecycle. test/agents.test.ts asserts the
+ * reference-page halves separately, because a future edit can break either
+ * alone.
+ */
+const PRINTABLE: CommandContent[] = [...AGENT_COMMANDS, ...REFERENCES];
 
 /**
  * The printable bodies, keyed by name — what `loam instructions <name>` prints,
@@ -141,6 +155,9 @@ const row = ({ name, description, argumentHint }: CommandContent): MenuRow =>
 
 /** The workflow names, in cycle order — `loam instructions` with no argument lists these. */
 export const WORKFLOWS: readonly MenuRow[] = COMMANDS.map(row);
+
+/** Support protocols, listed separately so no caller mistakes one for a lifecycle step. */
+export const SUPPORT_PAGES: readonly MenuRow[] = SUPPORT.map(row);
 
 /**
  * The reference-page names, listed by the same bare `loam instructions` and

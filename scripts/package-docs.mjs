@@ -34,6 +34,7 @@ export const REVIEWED_PACKAGE_FILES = [
   "COMPARISON.md",
   "CONTRIBUTING.md",
   "MIGRATING-from-OpenSpec.md",
+  "QUICKSTART.md",
   "ROADMAP.md",
   "SCHEMA.md",
   "SECURITY.md",

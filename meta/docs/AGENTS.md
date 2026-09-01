@@ -60,6 +60,11 @@ the matching Agent Skill instead. Once either entry point is selected, the agent
 drives the internal status/edit/validate loop and asks the user only for a real
 decision or human-only act; the user does not have to type every loam command.
 
+If loam or an agent integration behaves unexpectedly, invoke `/loam-report` (or
+load `$loam-report` on a skills-only host). It collects a sanitized, reproducible
+Markdown report under `loam-reports/` without repairing the repository, retrying a
+writer or uploading anything. This is support, not a seventh lifecycle step.
+
 ## The cycle
 
 0. **Wire the repo** — in each service checkout run
@@ -131,10 +136,11 @@ a join.
   and frontmatter/vouch grammar.
 - `loam instructions loam-done-check` — verification evidence and verdicts.
 
-Bare `loam instructions` lists the six workflows and these references. Generated
-agent command/skill files are small pointers to them, so the runtime page wins if
-an old pointer disagrees with the installed binary. MCP clients can read the same
-pages as `loam://orientation` and `loam://instructions/<name>` resources.
+Bare `loam instructions` lists the six workflows, the separate `loam-report`
+support protocol and these references. Generated agent command/skill files are
+small pointers to them, so the runtime page wins if an old pointer disagrees with
+the installed binary. MCP clients can read the same pages as
+`loam://orientation` and `loam://instructions/<name>` resources.
 
 ## Safety and hand-back
 

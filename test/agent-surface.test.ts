@@ -60,7 +60,7 @@ describe("doctor reports the agent surface", () => {
   });
 
   it("a repo that never asked for skills is not missing them", async () => {
-    // §3.7's false positive: `--no-skills` left doctor reporting all six skill
+    // §3.7's false positive: `--no-skills` left doctor reporting every skill
     // files as missing on a repo that was correct the moment it was created.
     // Which deliveries a repo holds is written down nowhere and must not be, so
     // the question is asked of the files.

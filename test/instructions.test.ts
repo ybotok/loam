@@ -47,6 +47,8 @@ const WORKFLOW_NAMES = [
   "loam-ship",
 ];
 
+const SUPPORT_NAMES = ["loam-report"];
+
 /**
  * The four reference pages, in the order AGENTS.md's own index names them.
  * They are on the menu but they are not workflows — see the separation test
@@ -88,6 +90,20 @@ describe("the menu", () => {
     }
   });
 
+  it("lists support separately from both the lifecycle and reference pages", async () => {
+    const dir = await unwiredDir();
+    const res = await runLoam(dir, "instructions");
+    const support = res.out.indexOf("support —");
+    const references = res.out.indexOf("reference pages");
+    expect(support).toBeGreaterThan(-1);
+    expect(references).toBeGreaterThan(support);
+    for (const name of WORKFLOW_NAMES) expect(res.out.indexOf(name)).toBeLessThan(support);
+    for (const name of SUPPORT_NAMES) {
+      expect(res.out.indexOf(name)).toBeGreaterThan(support);
+      expect(res.out.indexOf(name)).toBeLessThan(references);
+    }
+  });
+
   it("gives the machine the same menu, each entry named, described and hinted", async () => {
     const dir = await unwiredDir();
     const res = await runLoam(dir, "instructions", "--json");
@@ -98,6 +114,8 @@ describe("the menu", () => {
     // In cycle order — adopt, feature, implement, check, verify, ship — because
     // the list is also the order the work happens in.
     expect(json.workflows.map((w: { name: string }) => w.name)).toEqual(WORKFLOW_NAMES);
+    // Support is discoverable without becoming a seventh lifecycle step.
+    expect(json.support.map((w: { name: string }) => w.name)).toEqual(SUPPORT_NAMES);
     // A SECOND key, not six more entries in the first. A caller iterating
     // `workflows` to drive the cycle must not pick up documentation as steps,
     // and one that never learned about pages is unaffected by their arrival.
@@ -105,7 +123,7 @@ describe("the menu", () => {
     // The three fields a caller needs to build its own menu: what to run, what
     // it is for, and what to pass. `argumentHint` is the one that maps onto the
     // positional arguments this same command substitutes.
-    for (const w of [...json.workflows, ...json.references]) {
+    for (const w of [...json.workflows, ...json.support, ...json.references]) {
       expect(Object.keys(w).sort()).toEqual(["argumentHint", "description", "name"]);
       expect(typeof w.description).toBe("string");
       expect(w.description.length).toBeGreaterThan(0);
@@ -116,27 +134,28 @@ describe("the menu", () => {
     // A page takes nothing. The empty hint is what says so; an invented
     // "<none>" would read as an argument somebody could pass.
     for (const r of json.references) expect(r.argumentHint).toBe("");
+    for (const s of json.support) expect(s.argumentHint).toBe("");
   });
 
   it("every name it lists is one it will print — a menu of unreachable items is worse than none", async () => {
     const dir = await unwiredDir();
-    for (const name of [...WORKFLOW_NAMES, ...REFERENCE_NAMES]) {
+    for (const name of [...WORKFLOW_NAMES, ...SUPPORT_NAMES, ...REFERENCE_NAMES]) {
       const res = await runLoam(dir, "instructions", name);
       expect(res.code, `${name}: ${res.out}`).toBe(0);
       expect(res.out.length).toBeGreaterThan(0);
     }
   });
 
-  it("a reference page prints whole, and `--no-fix-tables` is honest about having nothing to drop", async () => {
+  it("support and reference pages print whole when there are no fix tables to drop", async () => {
     // The flag exists for /loam-check, whose fix tables are 83 KB of the 84 it
-    // prints. The pages carry no fix table — they are prose and bullets — so
-    // the narrowed page is the page. Asserted rather than assumed because the
+    // prints. These pages carry no fix table — they are prose and bullets — so
+    // each narrowed page is the page. Asserted rather than assumed because the
     // stripper and the parser share one block detection (core/explain/
     // fix-tables.ts): a grammar change that started matching a bullet list
-    // would silently delete a reference page's body, and nothing else would
+    // would silently delete a support/reference body, and nothing else would
     // notice.
     const dir = await unwiredDir();
-    for (const name of REFERENCE_NAMES) {
+    for (const name of [...SUPPORT_NAMES, ...REFERENCE_NAMES]) {
       const whole = await runLoam(dir, "instructions", name);
       const narrowed = await runLoam(dir, "instructions", name, "--no-fix-tables");
       expect(narrowed.code, `${name}: ${narrowed.out}`).toBe(0);
@@ -381,12 +400,12 @@ describe("the arguments it substitutes have to be the things they stand for", ()
  * answers one of those in 473 bytes, which is the lazy path this flag makes
  * payable.
  *
- * The flag is opt-in and off by default because the six protocol pages are the
+ * The flag is opt-in and off by default because the lifecycle protocol pages are the
  * text agents are wired against; the first test is what makes "byte-identical
  * by default" a fact rather than an intention.
  */
 describe("narrowing the protocol", () => {
-  it("changes nothing by default — all six print the shipped body, byte for byte", async () => {
+  it("changes nothing by default — all six workflows print the shipped body byte for byte", async () => {
     const dir = await unwiredDir();
     for (const name of WORKFLOW_NAMES) {
       const res = await runLoam(dir, "instructions", name);
@@ -466,7 +485,7 @@ describe("narrowing the protocol", () => {
       const narrowed = withoutFixTables(body);
 
       if (rows.length === 0) {
-        // Four of the six carry no fix table at all, so there is nothing to
+        // Most printable pages carry no fix table at all, so there is nothing to
         // narrow and the flag must be a no-op on them rather than a reformat.
         expect(narrowed, `${name} has no tables and must come back untouched`).toBe(body);
         continue;

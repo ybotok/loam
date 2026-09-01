@@ -102,6 +102,23 @@ export const UNAPPROVED: Record<string, string> = {
 const LOAM_ALLOWED_TOOLS = LOAM_ALLOWED_VERBS.map((v) => `Bash(loam ${v}:*)`).join(", ");
 
 /**
+ * Incident collection is intentionally narrower than a lifecycle workflow.
+ * The body names writers so an agent can recognize and avoid retrying them;
+ * inheriting the lifecycle allowlist would nevertheless pre-authorize those
+ * same writers while diagnosing a bad run. Version, doctor and status are the
+ * complete command set the reporting protocol asks to execute.
+ */
+const REPORT_ALLOWED_TOOLS = [
+  "Bash(loam --version)",
+  "Bash(loam doctor:*)",
+  "Bash(loam instructions:*)",
+  "Bash(loam status:*)",
+].join(", ");
+
+const skillAllowedTools = (c: CommandContent): string =>
+  c.name === "loam-report" ? REPORT_ALLOWED_TOOLS : LOAM_ALLOWED_TOOLS;
+
+/**
  * The Agent Skills convention loam EMITS: `<root>/skills/<name>/SKILL.md`, YAML
  * frontmatter, then the shared body verbatim — where `<root>` is whatever the
  * calling registry entry passes.
@@ -123,7 +140,7 @@ export const skillsIn = (dir: string): AgentFileEmitter => ({
   path: (name) => [dir, "skills", name, "SKILL.md"],
   format: (c) =>
     `---\nname: ${c.name}\ndescription: ${c.description}\n` +
-    `allowed-tools: ${LOAM_ALLOWED_TOOLS}\n---\n\n${c.body}`,
+    `allowed-tools: ${skillAllowedTools(c)}\n---\n\n${c.body}`,
 });
 
 /**
