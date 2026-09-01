@@ -11,7 +11,7 @@ meta:check` or a named test can be held to; the step order that turns them into 
 
 Requirement-ID: ARCH-LOAM-DEPLOY-READ
 loam SHALL read a LikeC4 deployment model only through `parsedModel().deployment`, flatten it
-into loam-neutral node, instance and relationship records inside `src/core/c4/deploy/`, and
+into loam-neutral node, instance and relationship records inside `src/core/c4/parsed/`, and
 SHALL NOT expose LikeC4's own shapes to any consumer — the containment `ARCH-LOAM-PARSED-ONLY`
 already requires of the view reader, applied to the model reader beside it. The two-stage
 parity that makes the cheap stage a safe substitute for the expensive one SHALL cover the

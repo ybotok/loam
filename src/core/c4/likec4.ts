@@ -4,6 +4,7 @@ import { declaredService, type DeclaredService } from "../kernel/ids/service.js"
 import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
 import { readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
+import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
 import { descText, metaKey } from "./parsed/values.js";
 
 /** A parse/validation issue reported by LikeC4. */
@@ -88,6 +89,14 @@ export interface LoadedDoc {
    * nothing else loam may look at.
    */
   viewIds?: ViewIdClaim[];
+  /**
+   * The `deployment { }` model the document declares — nodes, instances and the
+   * edges between them (`./parsed/deployment.ts`). Optional for the reason
+   * `views` is, and read the same way by every consumer: absent and empty mean
+   * "no topology", and neither is a finding. A fleet that draws no deployment
+   * owes loam none, which is also the whole opt-in the axis has.
+   */
+  deployment?: DeploymentModel;
 }
 
 /**
@@ -209,6 +218,7 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
       specification: readSpecification(model.specification),
       views: readDynamicViews(model),
       viewIds: readViewIds(model),
+      deployment: readDeployment(model),
       ...flattenModel(model),
     };
   } finally {

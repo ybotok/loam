@@ -18,7 +18,7 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **419 TypeScript modules in 128 source packages**, with an acyclic package graph
+The tree contains **420 TypeScript modules in 128 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
@@ -131,7 +131,7 @@ the read costs no second parse, no new file format and no change to the frozen C
 1. Walk the deployment model in every `#obl-` grade. Fail-open becomes fail-closed; no new code.
 2. A fourth `Covers:` entry form, `node:<id>`, with the same prefix accepted on either side of the
    edge form. No new code.
-3. The parse adapter in `src/core/c4/deploy/`, and the deployment records added to
+3. The parse adapter in `src/core/c4/parsed/`, and the deployment records added to
    `test/likec4-model-parity.test.ts` — a two-stage substitution nothing measures is an assumption.
    `src/core/c4/` holds exactly five files, so this is a sub-package and not a sixth module.
 4. Two findings and no more: `deployment.uncovered` (a tagged node or edge no living arch

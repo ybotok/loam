@@ -20,6 +20,7 @@ import { flattenModel, type Elem, type LikeC4Error, type LoadedDoc, type Readabl
 import { readDynamicViews, type ParsedView } from "../parsed/dynamic-views.js";
 import { readSpecification, type DocSpecification } from "../parsed/specification.js";
 import { readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
+import { readDeployment, NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
 
 /** A directory of `.likec4` documents loaded as one LikeC4 project. */
 export interface ProjectDoc {
@@ -34,6 +35,8 @@ export interface ProjectDoc {
   views: ParsedView[];
   /** Every authored view id the project claims, each with its file. */
   viewIds: ViewIdClaim[];
+  /** The project's deployment model — empty when it declares none, and when it did not parse. */
+  deployment: DeploymentModel;
 }
 
 /**
@@ -108,6 +111,7 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
     relationships: [],
     views: [],
     viewIds: [],
+    deployment: NO_DEPLOYMENT,
   });
   const targets = [...new Set(paths.map((path) => resolve(path)))];
   if (targets.length === 0) return empty(new Map(), true);
@@ -126,6 +130,7 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
         specification: readSpecification(model.specification),
         views: readDynamicViews(model),
         viewIds: readViewIds(model),
+        deployment: readDeployment(model),
         ...flattenModel(model),
       };
     } finally {
@@ -188,6 +193,7 @@ export function asLoadedDoc(doc: ProjectDoc): LoadedDoc {
     ...(doc.specification === undefined ? {} : { specification: doc.specification }),
     views: doc.views,
     viewIds: doc.viewIds,
+    deployment: doc.deployment,
     elements: doc.elements,
     relationships: doc.relationships,
   };

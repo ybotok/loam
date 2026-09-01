@@ -9,7 +9,7 @@
 // landscape's own identifiers and titles so the merge joins by id instead of
 // splicing a second copy of `src/core/`.
 //
-// One new box only. `src/core/c4/deploy/` — the parse adapter — is NOT one:
+// One new box only. `src/core/c4/parsed/deployment.ts` — the parse adapter — is NOT one:
 // the collapse rule maps `src/core/c4/**` onto `loam.core.c4`, so the adapter
 // appears here as the edge into that box and nowhere else.
 
