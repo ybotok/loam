@@ -61,6 +61,6 @@ Deliberately **not** in scope, and each for a reason already written down in thi
 - **An `environment` concept above LikeC4.** `deploymentNode` is that mechanism already, and
   the fleet names its own kinds.
 
-`src/core/c4/deploy/` is where the parse adapter lands, and it draws no box: the collapse
+`src/core/c4/parsed/deployment.ts` is where the parse adapter lands, and it draws no box: the collapse
 rule maps `src/core/c4/**` onto `loam.core.c4`, so the reader shows up in this model only as
 the edge into it. That is the model working as designed, not an omission.

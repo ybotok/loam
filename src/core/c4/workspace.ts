@@ -45,6 +45,7 @@ import { flattenModel, type LikeC4Error, type LoadedDoc, type ReadableModel } fr
 import { readDynamicViews } from "./parsed/dynamic-views.js";
 import { readViewIds } from "./parsed/view-ids.js";
 import { readSpecification } from "./parsed/specification.js";
+import { readDeployment } from "./parsed/deployment.js";
 
 /** A staged document: the real path it came from, and its workspace project. */
 interface StagedDoc {
@@ -157,6 +158,7 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
             specification: readSpecification(model.specification),
             views: readDynamicViews(model),
             viewIds: readViewIds(model),
+            deployment: readDeployment(model),
             ...flattenModel(model),
           });
         }

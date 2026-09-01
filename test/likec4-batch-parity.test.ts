@@ -44,6 +44,8 @@ const RICH = `specification {
   }
   element container
   element database
+  deploymentNode region
+  deploymentNode cluster
   tag owned
   tag external
   tag critical
@@ -105,6 +107,19 @@ model {
   ledger -> kafka
   kafka -> ledger.api 'PaymentAuthorized' {
     metadata { consumes 'payment.PaymentAuthorized' }
+  }
+}
+
+deployment {
+  eu = region 'EU-West' {
+    a = cluster 'cluster-a' {
+      instanceOf paymentService.api
+      dbA = instanceOf paymentService.db
+    }
+    b = cluster 'cluster-b' {
+      dbB = instanceOf paymentService.db
+    }
+    a.dbA -> b.dbB 'Streams WAL'
   }
 }
 `;
@@ -205,7 +220,7 @@ describe("loadBatch parses every corpus document exactly as loadFile does", () =
     return { root, batch, singles };
   }
 
-  it("agrees with loadFile on elements, relationships, and every error's {message, line}", async () => {
+  it("agrees with loadFile on elements, relationships, deployment, and every error's {message, line}", async () => {
     const { root, batch, singles } = await corpus();
     try {
       for (const [path, single] of singles) {
@@ -213,11 +228,26 @@ describe("loadBatch parses every corpus document exactly as loadFile does", () =
         expect(batched, path).toBeDefined();
         expect(batched!.elements, path).toEqual(single.elements);
         expect(batched!.relationships, path).toEqual(single.relationships);
+        // The deployment model travels through a THIRD loader, and it is the
+        // one a missing call would hide in: `loadBatch` builds its own
+        // `LoadedDoc` literal rather than sharing `loadSource`'s, so an adapter
+        // wired into one and not the other reads as "this fleet declares no
+        // topology" — silence, in the loader `validate --all` actually uses.
+        expect(batched!.deployment, path).toEqual(single.deployment);
         expect(errKeys(batched!), path).toEqual(errKeys(single));
       }
       // The corpus exercises both verdicts, or the loop above proves nothing.
       expect(errKeys(singles.get(join(root, "rich.likec4"))!)).toEqual([]);
       expect(errKeys(singles.get(join(root, "invalid.likec4"))!).length).toBeGreaterThan(0);
+      // And it exercises a document that HAS a deployment model, or the
+      // equality above is two empties agreeing.
+      const richDeployment = singles.get(join(root, "rich.likec4"))!.deployment;
+      expect(richDeployment?.nodes.map((n) => n.id)).toEqual(["eu", "eu.a", "eu.b"]);
+      expect(richDeployment?.instances.map((i) => i.element)).toEqual([
+        "paymentService.api",
+        "paymentService.db",
+        "paymentService.db",
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
