@@ -27,7 +27,7 @@ model {
       // that owns the sentence about what this axis cannot know.
       brief = container 'src/core/brief/'
       c4 = container 'src/core/c4/'
-      kernel = container 'src/core/kernel/'
+      coherence = container 'src/core/coherence/'
       pack = container 'src/core/pack/'
       repo = container 'src/core/repo/'
 
@@ -48,13 +48,17 @@ model {
     }
   }
 
-  // The four edges the new package owns. They are exactly `usecases`' four with
-  // `capabilities` dropped and `brief` absent: a flow claims a capability and a
-  // topology claims nothing, so that dependency has no counterpart here.
+  // The edges the new package owns. Two, not the three this delta first
+  // predicted: the `kernel` dependency is TYPE-ONLY — `DocsDir` and
+  // `FeatureDir` are branded types, and a brand costs an annotation rather than
+  // an import the model counts. The prediction was corrected against the tree
+  // before the archive, which is what an unarchived delta is for.
   loam.core.deployment -> loam.core.c4 {
     #FEAT-1
   }
-  loam.core.deployment -> loam.core.kernel {
+  // `coherence` raises the create-only refusal, so the axis reaches the
+  // gate through it as well as through `validate`.
+  loam.core.coherence -> loam.core.deployment {
     #FEAT-1
   }
   loam.core.deployment -> loam.core.repo {

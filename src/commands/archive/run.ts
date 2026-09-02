@@ -35,7 +35,7 @@ import { type ArchiveOptions } from "./plan/refusal.js";
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
-import { planFlows, planLandscape } from "./plan/landscape.js";
+import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { issueJson, refuseJson } from "./plan/refusal.js";
 import { ArchiveFailure } from "./plan/refusal.js";
@@ -89,6 +89,7 @@ export async function archiveLocked(
   // merge so a reader of the plan sees the map change before the sequence drawn
   // on it.
   await planFlows(config, gated, planned, say);
+  await planDeployments(config, gated, planned, say);
   const { writes, planWarns, planGates, openapiRemovals, asyncapiRemovals } = planned;
 
   // Gate on what only the plan could see: a merged operation pointing at a

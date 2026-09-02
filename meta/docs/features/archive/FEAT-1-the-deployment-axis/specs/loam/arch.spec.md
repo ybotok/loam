@@ -105,9 +105,10 @@ and the shape `core/usecases/delta/` already implements. A document naming a fil
 tree already holds SHALL be refused rather than merged, because the merge is a whole-file copy
 and rewriting a living topology belongs in a pull request where git produces the conflict. The
 path SHALL be constructed through the branded feature-directory types, never assembled from
-raw strings.
+raw strings — a compile-time obligation, which is why it draws no edge in the model: a brand
+costs an annotation and not an import.
 
-Covers: loam.core.deployment -> loam.core.repo, loam.core.deployment -> loam.core.kernel, loam.commands.archive -> loam.core.deployment
+Covers: loam.core.deployment -> loam.core.repo, loam.core.coherence -> loam.core.deployment, loam.commands.archive -> loam.core.deployment
 
 #### Scenario: A feature adds a standby cluster
 - **Given** a feature whose `deployment/` document extends a living region with a new datacenter

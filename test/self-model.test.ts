@@ -97,7 +97,7 @@ describe("meta/docs vs loam validate --all", () => {
     const payload = await validateAll();
     expect(payload.ok).toBe(true);
     expect(payload.valid).toBe(true);
-    expect(payload.summary).toEqual({ services: 1, features: 1, errors: 0, warnings: 2 });
+    expect(payload.summary).toEqual({ services: 1, features: 0, errors: 0, warnings: 2 });
     expect(codes(payload, "error")).toEqual([]);
     // Both axes name no sources, for the reason in this file's banner. If a
     // third warning ever joins them, a check that was silent has started
@@ -115,8 +115,7 @@ describe("meta/docs vs loam validate --all", () => {
     expect(all).not.toContain("covers.unknown");
     // The positive control: the arch axis was READ, and had requirements in it
     // to grade. Without this, deleting arch.spec.md would pass the line above.
-    // Three, not two: the living spec's own two plus the feature's arch delta.
-    expect(all.filter((c) => c === "requirements.covered")).toHaveLength(3);
+    expect(all.filter((c) => c === "requirements.covered")).toHaveLength(2);
     expect(payload.scorecard.adoption.arch).toBe(1);
   });
 
@@ -130,25 +129,25 @@ describe("meta/docs vs loam validate --all", () => {
     expect(payload.scorecard.c4).toEqual({ elements: 1, covered: 0 });
   });
 
-  it("the feature in flight is covered, and the coverage check is not vacuous", async () => {
+  it("has no feature in flight, so the whole delta axis is silent — and it has SHIPPED one", async () => {
     // `c4.uncovered` — the mechanical "every element and edge a delta
-    // INTRODUCES wants a covering requirement" — is the one delta-scope grade
-    // this axis gets, and until FEAT-1 it had never fired here at all, because
-    // there was no feature for it to grade. The pin therefore has to carry its
-    // own positive control: silence with zero tagged objects and silence with
-    // seven of them covered are the same assertion and opposite facts, and the
-    // first is what the vacuous version of this test asserted for its whole
-    // life.
+    // INTRODUCES wants a covering requirement" — is graded only on what a
+    // feature delta carries. With zero features in flight it cannot fire, which
+    // is why the containers and edges no arch requirement names raise nothing.
+    //
+    // This assertion has now been through the round trip it was written to
+    // survive, and the trail is worth keeping. FEAT-1 — the deployment axis —
+    // was authored here, graded here with six tagged edges each reported
+    // `archedge.covered`, and archived here; between those two moments this
+    // case read `features: 1` and carried that count as its control. So the
+    // silence below is the silence of a fleet with nothing in flight, PROVEN
+    // distinguishable from the silence of a fleet where the axis is dead: the
+    // archived feature under `features/archive/` is the evidence, and the
+    // landscape's six new relationships are what it left behind.
     const payload = await validateAll();
-    expect(payload.summary.features).toBe(1);
-    expect(payload.targets.filter((t) => t.kind === "feature").map((t) => t.id)).toEqual(["FEAT-1"]);
-    const all = payload.targets.flatMap((t) => t.findings).map((f) => f.code);
-    expect(all).not.toContain("c4.uncovered");
-    // The control. Six tagged EDGES, each reported covered by name; the tagged
-    // element is graded by the same pass and carries no finding of its own. If
-    // the delta stops being read, this drops to zero and the line above goes on
-    // passing.
-    expect(all.filter((c) => c === "archedge.covered")).toHaveLength(6);
+    expect(payload.summary.features).toBe(0);
+    expect(payload.targets.filter((t) => t.kind === "feature")).toEqual([]);
+    expect(payload.targets.flatMap((t) => t.findings).map((f) => f.code)).not.toContain("c4.uncovered");
   });
 
   it("writes nothing — the self-model tree is byte-identical after a full validate", async () => {
