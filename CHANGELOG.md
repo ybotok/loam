@@ -34,9 +34,13 @@ the axis opts in on the block's existence, the way the obligation vocabulary opt
   document `loam archive` copies into `architecture/` and `loam unarchive` takes back — the third
   whole-file slot, beside `usecases/` and `glossary/`. Say `extend` in it to add to a region the
   living map already declares; two features may extend one region from documents of their own and
-  both archive. One new code, **`deployment.doc-exists`** (error, never overridable): the feature's
-  document names a file the living tree already holds. `delta.likec4` still refuses a
-  `deployment { }` block and now names this slot instead of the living landscape.
+  both archive. Two new codes, both errors and neither overridable: **`deployment.doc-exists`** when
+  the feature's document names a file the living tree already holds, and **`deployment.doc-invalid`**
+  when it cannot be read against the map the feature's own merge would leave behind. The second is
+  what makes the ordinary case legal — a document instancing a service only this feature's
+  `delta.likec4` adds resolves, because the corpus inside a feature window is feature ∪ living — and
+  refuses the case where the merge does not land what the document names. `delta.likec4` still
+  refuses a `deployment { }` block and now names this slot instead of the living landscape.
 - **`loam context` carries the topology.** `--json` gains `living.deployment` — the service's
   instances, and the deployment edges touching them from either end.
 - **One more statement in the adoption brief's unchecked list**, now sixteen: nothing here knows
