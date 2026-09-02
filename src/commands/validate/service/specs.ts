@@ -29,6 +29,9 @@ import {
 } from "../../../core/document/scenarios.js";
 import { type Requirement } from "../../../core/document/spec.js";
 import { type CoverageScope } from "../../../core/c4/arch.js";
+import { hasDeployment, type DeploymentModel } from "../../../core/c4/parsed/deployment.js";
+import { loadArchitecture } from "../../../core/c4/project/architecture.js";
+import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { readHealth } from "../../../core/vocabulary/health.js";
 import { documentConflictFinding } from "../../../core/conflict-markers.js";
 import { FleetContext } from "../../../core/fleet-context.js";
@@ -162,6 +165,8 @@ export interface ArchAxis {
   relationships: Rel[];
   /** The living landscape, or null when the repo has none. */
   land: LoadedDoc | null;
+  /** The docs root, for the one lazy load below — see `deployment` in the scope. */
+  docsDir: DocsDir;
   /**
    * The enumerated fleet, for the Covers matcher's endpoint resolution — the
    * same set the caller's own spine resolution uses, so a `Covers:` line
@@ -170,8 +175,38 @@ export interface ArchAxis {
   known?: ReadonlySet<string>;
 }
 
+/**
+ * The topology a `node:` Covers entry resolves against, loaded at most once and
+ * only when something asks for it.
+ *
+ * Under `--all` the caller hands in the doc it already loaded — the whole
+ * `architecture/` project — so the deployment model is already here and this
+ * returns it. A SINGLE-service run loads only `landscape.likec4`, and a fleet
+ * that keeps its `deployment { }` block in a file beside it, which is the
+ * ordinary layout once one landscape file is the fleet's convention, would then
+ * resolve one `Covers:` line two different ways depending on which command
+ * asked. `loam status`'s two forms had exactly that disagreement and it was a
+ * defect both times; this is the same class, prevented rather than found.
+ *
+ * The cost is paid only by a service whose `arch.spec.md` actually writes a
+ * `node:` entry. A fleet with no topology at all pays one project load per such
+ * service — a state in which the entry is a typo anyway, and one load is what
+ * buys it a message that names the real ids.
+ */
+async function topology(
+  land: LoadedDoc | null,
+  archReqs: Requirement[],
+  docsDir: DocsDir,
+): Promise<DeploymentModel | undefined> {
+  if (land?.deployment !== undefined && hasDeployment(land.deployment)) return land.deployment;
+  const wanted = coversEntries(archReqs).some((e) => e.form === "node" || e.form === "node-edge");
+  if (!wanted) return undefined;
+  const project = await loadArchitecture(docsDir);
+  return project.errors.length === 0 ? project.deployment : undefined;
+}
+
 export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
-  const { service, paths, archText, archReqs, elements, relationships, land, known } = axis;
+  const { service, paths, archText, archReqs, elements, relationships, land, known, docsDir } = axis;
   const findings: Finding[] = [];
 
   // The architecture spec axis — the obligations a business spec never carries
@@ -244,9 +279,11 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     });
   }
   const landParses = land !== null && land.errors.length === 0 ? land : null;
+  const deployment = await topology(landParses, archReqs, docsDir);
   const scope: CoverageScope = {
     elements: [...elements, ...(landParses?.elements ?? [])],
     relationships: [...relationships, ...(landParses?.relationships ?? [])],
+    ...(deployment === undefined ? {} : { deployment }),
     health: health.ids,
     known,
   };

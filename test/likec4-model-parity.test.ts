@@ -30,6 +30,7 @@ import { LikeC4 } from "likec4";
 import { flattenModel, loadSource, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { serviceOf } from "../src/core/c4/resolve/service.js";
 import { readSpecification } from "../src/core/c4/parsed/specification.js";
+import { readDeployment, hasDeployment, NO_DEPLOYMENT } from "../src/core/c4/parsed/deployment.js";
 
 /**
  * Everything loam's adapter reads, in one document: nested/dotted container
@@ -47,6 +48,8 @@ const RICH = `specification {
   }
   element container
   element database
+  deploymentNode region
+  deploymentNode cluster
   tag owned
   tag external
   tag critical
@@ -115,6 +118,23 @@ model {
     metadata { consumes 'payment.PaymentAuthorized' }
   }
 }
+
+deployment {
+  eu = region 'EU-West' {
+    #critical
+    a = cluster 'cluster-a' {
+      instanceOf paymentService.api
+      dbA = instanceOf paymentService.db
+    }
+    b = cluster 'cluster-b' {
+      dbB = instanceOf paymentService.db
+    }
+    a.dbA -> b.dbB 'Streams WAL' {
+      #critical
+    }
+    a -> b
+  }
+}
 `;
 
 /** The flattened Elem/Rel shapes loam builds, from each stage of the same document. */
@@ -132,11 +152,19 @@ async function bothStages(src: string): Promise<{ parsed: LoadedDoc; computed: L
       parsed: {
         errors: [],
         specification: readSpecification(parsedModel.specification),
+        // The deployment model rides along for the same reason the
+        // specification does: `loadSource` reads it off the parsed stage, so
+        // the cheap stage is a safe substitute only if it carries that too.
+        // Measured identical at the 1.59.2 pin, and pinned here rather than
+        // assumed — this is the substitution FEAT-1's ARCH-LOAM-DEPLOY-READ
+        // requires the parity suite to cover.
+        deployment: readDeployment(parsedModel),
         ...flattenModel(parsedModel),
       },
       computed: {
         errors: [],
         specification: readSpecification(computedModel.specification),
+        deployment: readDeployment(computedModel),
         ...flattenModel(computedModel),
       },
     };
@@ -161,9 +189,79 @@ const rich = () => (richStages ??= bothStages(RICH));
 /* ------------------------------------------------------------------ */
 
 describe("parsedModel and computedModel agree on everything loam reads", () => {
-  it("produces byte-identical Elem[] and Rel[]", async () => {
+  it("produces byte-identical Elem[], Rel[] and deployment records", async () => {
     const { parsed, computed } = await rich();
     expect(JSON.stringify(parsed, null, 2)).toEqual(JSON.stringify(computed, null, 2));
+  });
+
+  it("agrees about the deployment model, node by node and instance by instance", async () => {
+    const { parsed, computed } = await rich();
+    expect(parsed.deployment).toEqual(computed.deployment);
+    // The values themselves, so parity between two identically WRONG readings
+    // still fails here — the same guard every assertion in this block carries.
+    const d = parsed.deployment ?? NO_DEPLOYMENT;
+    expect(hasDeployment(d)).toBe(true);
+    expect(d.nodes).toEqual([
+      { id: "eu", kind: "region", title: "EU-West", tags: ["critical"] },
+      { id: "eu.a", kind: "cluster", title: "cluster-a", tags: [] },
+      { id: "eu.b", kind: "cluster", title: "cluster-b", tags: [] },
+    ]);
+    // `nodes()` returns deployment nodes ONLY — an instance is not among them,
+    // which is why the two are separate lists rather than one filtered twice.
+    expect(d.nodes.map((n) => n.id)).not.toContain("eu.a.dbA");
+    // The join back to the logical model, and the only reason an instance is
+    // worth a record: two instances of ONE element in two clusters, which is
+    // the whole shape a geo-redundancy requirement is written about.
+    expect(d.instances).toEqual([
+      { id: "eu.a.api", element: "paymentService.api", title: "payment-api", tags: [] },
+      { id: "eu.a.dbA", element: "paymentService.db", title: "payment-db", tags: ["critical"] },
+      { id: "eu.b.dbB", element: "paymentService.db", title: "payment-db", tags: ["critical"] },
+    ]);
+    expect(d.relationships).toEqual([
+      { source: "eu.a.dbA", target: "eu.b.dbB", title: "Streams WAL", tags: ["critical"] },
+      // An untitled edge: `title` is absent, never the `null` LikeC4 reports.
+      { source: "eu.a", target: "eu.b", tags: [] },
+    ]);
+  });
+
+  it("reads no topology from a document that declares none, and from a surface it does not recognise", async () => {
+    // Absent and empty are the same answer on purpose: a fleet that draws no
+    // deployment owes loam nothing, and the defensive returns below produce the
+    // same value, so no consumer can accidentally tell "declares none" from
+    // "could not be read" and report the second as the first.
+    const { parsed } = await bothStages("specification { element system }\nmodel { a = system 'a' }\n");
+    expect(parsed.deployment).toEqual(NO_DEPLOYMENT);
+    expect(hasDeployment(parsed.deployment ?? NO_DEPLOYMENT)).toBe(false);
+
+    expect(readDeployment(undefined)).toEqual(NO_DEPLOYMENT);
+    expect(readDeployment({})).toEqual(NO_DEPLOYMENT);
+    expect(readDeployment({ deployment: { nodes: "not a function" } })).toEqual(NO_DEPLOYMENT);
+    expect(
+      readDeployment({
+        deployment: {
+          nodes: () => {
+            throw new Error("upstream shape moved");
+          },
+        },
+      }),
+    ).toEqual(NO_DEPLOYMENT);
+    // An entry missing the field that identifies it is DROPPED, not reported
+    // with a hole: an instance whose element cannot be read joins to nothing,
+    // so keeping it would put a deployed thing on the map that no requirement
+    // could ever cover.
+    expect(
+      readDeployment({
+        deployment: {
+          nodes: () => [{ id: "", kind: "cluster" }, { id: "ok", kind: "cluster", title: "t", tags: ["x"] }],
+          instances: () => [{ id: "i" }, { id: "j", element: { id: "e" }, title: "t", tags: [] }],
+          relationships: () => [{ source: { id: "a" } }, { source: { id: "a" }, target: { id: "b" }, title: null }],
+        },
+      }),
+    ).toEqual({
+      nodes: [{ id: "ok", kind: "cluster", title: "t", tags: ["x"] }],
+      instances: [{ id: "j", element: "e", title: "t", tags: [] }],
+      relationships: [{ source: "a", target: "b", tags: [] }],
+    });
   });
 
   it("agrees element by element: id, kind, title, description, service binding, tags", async () => {

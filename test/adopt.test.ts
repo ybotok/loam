@@ -634,7 +634,7 @@ describe("--targets: only what varies by service", () => {
 
   it("says how many statements of what nothing checks it left out, counted from the list itself", async () => {
     // The count is the load-bearing half of the pointer: "there is more" is a
-    // sentence a reader can skip, "there are fifteen statements of what nothing
+    // sentence a reader can skip, "there are sixteen statements of what nothing
     // checks" is one they cannot. Compared against the FULL payload rather than
     // a literal, so adding a check or an unchecked statement can never leave
     // this sentence quietly stale.
@@ -703,7 +703,7 @@ describe("--targets: only what varies by service", () => {
 
   it("prints no orientation block — bullet three describes sections this view omits", async () => {
     // The block says what the rest of the page is: a nine-stop walk, 37 checks,
-    // fifteen statements of what nothing checks. Under `--targets` none of the
+    // sixteen statements of what nothing checks. Under `--targets` none of the
     // three is printed, so the sentence would be describing a page that is not
     // there — and `--targets` already has its own pointer for exactly that job.
     const p = await project(coherentFixture(), { service: SVC });

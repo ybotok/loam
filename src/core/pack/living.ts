@@ -25,6 +25,9 @@ import {
 import { type ServiceEntry } from "../repo/entries.js";
 import { landscapePath, servicePathsAt } from "../repo/paths.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import { hasDeployment, NO_DEPLOYMENT } from "../c4/parsed/deployment.js";
+import { loadArchitecture } from "../c4/project/architecture.js";
+import { serviceTopology, type ServiceTopology } from "../deployment/objects.js";
 
 /**
  * A requirement as the pack carries it: the delta brief's `reqJson` shape plus
@@ -109,6 +112,22 @@ export interface LivingSlice {
     inbound: LandscapeEdge[];
     outbound: LandscapeEdge[];
   };
+  /**
+   * Where this service runs, off the landscape's `deployment { }` model, and
+   * the deployment edges touching it — replication, failover, a network hop.
+   *
+   * Both ends, not only the outbound one: a replication edge is as often read
+   * from the standby's side as from the primary's. Empty for a fleet that draws
+   * no topology, and empty is not a finding here any more than it is anywhere
+   * else on this axis.
+   *
+   * WHAT IT IS NOT. A green deployment axis means the documents agree with each
+   * other — never that the second cluster exists, is reachable, or holds the
+   * data a requirement claims. `core/brief/unchecked.ts` says so beside the
+   * sixteen statements that say the same about the rest of the map, and an
+   * agent reading this slice is exactly the reader that sentence is for.
+   */
+  deployment: ServiceTopology;
   requirements: PackRequirement[];
   archRequirements: PackRequirement[];
   /** Whether the living contract could be read at all — the vacuously-green guard every sibling carries. */
@@ -167,6 +186,27 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
     elementIds: elements.map((e) => e.id),
     svcOf,
   });
+  // Where this service RUNS, from the landscape's own deployment model. The
+  // pack's reader is an agent about to write the implementation, and until this
+  // slice existed it described a service's calls and contracts while saying
+  // nothing whatever about its topology — so a failover got written against a
+  // map nobody had read. Empty for every fleet that draws none, which is the
+  // axis's opt-in and not a finding.
+  //
+  // Read through the PROJECT when the landscape file itself declares none, for
+  // the reason `validate/service/specs.ts` pays the same load: `architecture/`
+  // is one LikeC4 project and a fleet's `deployment { }` block is ordinarily a
+  // file beside the landscape, not inside it. A single-file read would report
+  // "this service runs nowhere" over a repo that draws it, which is the one
+  // answer a briefing must never give.
+  const topology = parses ? (land.deployment ?? NO_DEPLOYMENT) : NO_DEPLOYMENT;
+  const deployment = serviceTopology(
+    hasDeployment(topology) || !parses ? topology : ((await loadArchitecture(docsDir)).deployment ?? NO_DEPLOYMENT),
+    elements,
+    known,
+    entry.id,
+  );
+
   const input = { entry, archSpec: existsSync(paths.archSpec), apiExpected };
 
   const header = (text: string | null): Frontmatter =>
@@ -193,6 +233,7 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
     },
     archSpec: { vouch_scope: scopeText(header(archText)) },
     landscape: { present, parses, modelled, inbound, outbound },
+    deployment,
     requirements: reqs.map(packRequirement),
     archRequirements: archReqs.map(packRequirement),
     openapi: { unreadable: api.unreadable, ...(api.error === undefined ? {} : { error: api.error }) },

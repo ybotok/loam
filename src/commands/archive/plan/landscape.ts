@@ -27,6 +27,7 @@ import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";
 import { featurePaths } from "../../../core/repo/paths.js";
 import { featureFlows, livingFlowPath, USECASE_SUBDIR } from "../../../core/usecases/delta/flows.js";
+import { featureDeployments, livingDeploymentPath } from "../../../core/deployment/delta.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 export async function planLandscape(
@@ -173,5 +174,28 @@ export async function planFlows(
   for (const flow of flows) {
     plan.writes.push(planWrite(livingFlowPath(config.docsDir, flow.rel), await readUtf8(flow.path)));
     say(`  use case: ${flow.rel} — created architecture/${USECASE_SUBDIR}/${flow.rel}`);
+  }
+}
+
+/**
+ * The same copy for the third whole-file axis: the topology a feature brings.
+ *
+ * Beside `planFlows` rather than folded into it, because the two write to
+ * different places — a flow into `architecture/usecases/`, a topology straight
+ * into `architecture/` — and one function taking a subdirectory argument would
+ * make that difference a parameter instead of a decision each axis states.
+ * `unarchive` needs nothing here either: a create is undone by deleting.
+ */
+export async function planDeployments(
+  config: { docsDir: DocsDir },
+  gated: Gated,
+  plan: Plan,
+  say: (line?: string) => void,
+): Promise<void> {
+  const docs = await featureDeployments(gated.featureDir);
+  if (docs.length === 0) return;
+  for (const doc of docs) {
+    plan.writes.push(planWrite(livingDeploymentPath(config.docsDir, doc.rel), await readUtf8(doc.path)));
+    say(`  deployment: ${doc.rel} — created architecture/${doc.rel}`);
   }
 }

@@ -102,6 +102,16 @@ system. The self-model is 70 nested containers inside one bound system, so:
 - **`loam new` scaffolds `specs/<svc>/spec.md`, the business axis.** This service has only the
   architectural one. Delete the scaffolded file and write `specs/loam/arch.spec.md` instead; there is
   no flag for it.
+
+  Deleting it used to make `loam status` report the feature as `missing — missing loam/spec` and
+  emit `next.author-spec`, and it was tempting to write that down here as a fifth friction. It was
+  not one. `loam validate --feature` accepted the same tree at exit 0, so two commands disagreed
+  about whether the feature was complete — a **product defect**, reproduced on `examples/docs` with
+  an ordinary architecture-only feature and fixed in `core/status/feature/artifacts.ts` (the
+  `spec` row is required only when the arch delta is absent, and `arch-spec` counts as a
+  verification feeder). **This is what the axis is for**: the friction a one-service, arch-only
+  repository hits first is often a defect every fleet has and nobody has walked into yet. Before
+  recording the next one as a permanent quirk, check whether the gate agrees with the report.
 - **Every arch-edge coverage line reads `loam → loam`,** because every edge is between two containers
   inside one bound system. Correct by its own definition and useless here — the same shape as the
   fleet scorecard reporting `c4: {elements: 1}` over a 70-box model.

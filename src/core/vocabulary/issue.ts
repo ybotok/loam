@@ -71,6 +71,9 @@ const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "c4.service-binding-invalid",
   "glossary.term-exists",
   "usecase.flow-exists",
+  "deployment.doc-exists",
+  "deployment.doc-invalid",
+  "deployment.doc-reserved",
   "usecase.flow-invalid",
 ]);
 
@@ -271,6 +274,13 @@ export type IssueCode =
   | "usecase.flow-invalid"
   /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
   | "usecase.flow-exists"
+  /* --- the deployment axis: the topology a feature introduces --- */
+  /** a `features/<FEAT>/deployment/<name>.likec4` whose file the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored topology wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local deployment document INTRODUCES topology, and rewriting one belongs in a pull request where git produces the conflict. The same act, and the same severity, as `usecase.flow-exists` one axis over */
+  | "deployment.doc-exists"
+  /** a `features/<FEAT>/deployment/*.likec4` that could not be read against the map this feature's own merge would leave behind — a parse error, an unresolved element, or a landscape merge that itself refuses. The topology was not graded, and archiving would copy it into `architecture/` for the next reader's `loam validate --all` to fail on. Mechanical rather than a judgement, which is why `--approve` does not move it; the twin of `usecase.flow-invalid` one axis over */
+  | "deployment.doc-invalid"
+  /** a `features/<FEAT>/deployment/<name>.likec4` whose name is one loam owns inside `architecture/` — `subsystems.likec4` (generated, overwritten wholesale by `loam subsystem sync`, and parsed by nothing, so anything landing there is invisible from the moment it archives), `landscape.likec4` (spliced into, never replaced), or a path under `usecases/` (the flow tree). Refused whether or not the target exists, which is the point: two of the three fail silently when it does not. An error with no legal reading, so `--approve` changes nothing about it */
+  | "deployment.doc-reserved"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

@@ -4,20 +4,20 @@
 // there is not another one — loam is a single binary, and ROADMAP.md's
 // "Self-hosting: loam on loam" is the standing statement of what that costs.
 //
-// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 407
-// modules in 124 package directories (`npm run arch:graph` prints both). Drawing
-// 124 boxes would model the tree's INDENTATION; drawing three would model
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 424
+// modules in 129 package directories (`npm run arch:graph` prints both). Drawing
+// 129 boxes would model the tree's INDENTATION; drawing three would model
 // nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
 // `docs/DESIGN.md`'s package-layout table has one row for:
 //
 //     src/cli.ts               -> loam.cli
-//     src/core/<name>/**       -> loam.core.<name>         (36 packages)
+//     src/core/<name>/**       -> loam.core.<name>         (37 packages)
 //     src/core/<name>.ts       -> loam.core.<name>         (the 4 loose modules)
 //     src/commands/<name>/**   -> loam.commands.<name>     (24, policy included)
 //     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
 //
-// 70 containers, and one edge for every VALUE import that crosses two of them:
-// 407 of them — 161 inside core, 186 from a command into core, 31 command to
+// 71 containers, and one edge for every VALUE import that crosses two of them:
+// 427 of them — 165 inside core, 196 from a command into core, 37 command to
 // command, 29 out of cli.ts and the loose modules. A `-` in a directory name
 // becomes `_` in the element name, because a LikeC4 element name is an
 // identifier and `conflict-markers` would parse as a subtraction. The real path
@@ -123,6 +123,7 @@ model {
       verify = container 'src/core/verify/'
       vocabulary = container 'src/core/vocabulary/'
       workspace = container 'src/core/workspace/'
+      deployment = container 'src/core/deployment/'
     }
 
     commands = container 'src/commands/' {
@@ -647,7 +648,6 @@ model {
 
   loam.core.usecases -> loam.core.c4
   loam.core.usecases -> loam.core.capabilities
-  loam.core.usecases -> loam.core.kernel
   loam.core.usecases -> loam.core.repo
 
   loam.core.verify -> loam.core.asyncapi
@@ -667,6 +667,12 @@ model {
   loam.core.workspace -> loam.core.envelope
   loam.core.workspace -> loam.core.kernel
   loam.core.workspace -> loam.core.repo
+  loam.core.deployment -> loam.core.c4
+  loam.core.coherence -> loam.core.deployment
+  loam.core.deployment -> loam.core.repo
+  loam.commands.validate -> loam.core.deployment
+  loam.commands.archive -> loam.core.deployment
+  loam.core.pack -> loam.core.deployment
 }
 
 // Views are LikeC4's renderer's; loam reads the model and never a view

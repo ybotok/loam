@@ -1,6 +1,6 @@
 # Roadmap
 
-_Assessed 2026-08-28._
+_Assessed 2026-09-02._
 
 This is loam's canonical improvement sequence. It records priorities and exit criteria, not delivery
 dates. An item is complete only when its exit criteria are supported by repeatable evidence; moving
@@ -18,20 +18,21 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **419 TypeScript modules in 128 source packages**, with an acyclic package graph
+The tree contains **424 TypeScript modules in 129 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **156 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **157 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-08-31 on `ab4c856` plus the changes on top of it, and dated because neither number
-has a cheap derivation:_ lint, typecheck, `npm run arch:check` and `npm run meta:check` green;
-`npm test` passing **3,358/3,358 tests**, with two `skipIf(asRoot)` cases the root gate container
-cannot run; and the coverage gate passing with **92.20% statements, 83.97% branches, 96.75%
-functions, and 94.13% lines** against its thresholds of 91 / 82 / 95 / 93.
+_Measured 2026-09-02 at `0.2.0-alpha.2`, and dated because neither number has a cheap derivation:_
+lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
+**3,399/3,399 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.25% statements, 84.04% branches, 96.62% functions, and 94.18%
+lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
+`npm run test:package` green against the real tarball.
 
 One qualification remains, and it is observation rather than code: nothing has been pushed since the
 CI `stability` job and the tarball-reading package smoke landed, so repeatable CI executions — the
@@ -98,14 +99,16 @@ The strongest foundations to preserve are:
 ## Now
 
 Nothing is queued behind code. Every integrity, enforcement and lifecycle item that preceded this
-has landed (see [Recently landed](#recently-landed)) — the authored business axis and, with the three
-entries at the top of that section, the use-case axis too. The axis is now writable through the
-change lifecycle, and the gate and the report agree about what it contains.
+has landed (see [Recently landed](#recently-landed)) — the authored business axis, the use-case
+axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
+directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
 
-What is left is the one thing this file cannot close by writing code, and it stays where it is
-rather than being promoted here for the shape of it: the CI `stability` job and the installed-package
-smoke have still to be OBSERVED green from a pushed commit. That is release evidence to collect, not
-an improvement to make.
+### Release evidence, unchanged
+
+What is left is the one thing this file cannot close by writing code, and it stays
+where it is rather than being promoted for the shape of it: the CI `stability` job and the
+installed-package smoke have still to be OBSERVED green from a pushed commit. That is release
+evidence to collect, not an improvement to make.
 
 An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
 names its operator, repeated task, failure mode, frequency, current workaround and measurable
@@ -121,6 +124,105 @@ changes, exit criteria, and what each review surfaced — are in this file's his
 5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
 working tree and not committed, and the range goes in with the commit rather than being guessed at
 here.
+
+#### The deployment axis — topology joined to requirements
+
+**Promoted 2026-09-02, and authored as a feature in loam's own docs repo** rather than as an item
+text here: `meta/docs/features/archive/FEAT-1-the-deployment-axis/`, whose `intent.md` carries the
+four measurements and whose `specs/loam/arch.spec.md` carries the five rules the change establishes,
+each with scenarios. This entry is the decision and the gate; that feature is the specification, and
+the two must not be allowed to become two accounts of the same change.
+
+**Landed 2026-09-02, complete.** Every step is in, and step 4 was corrected rather than built
+(below) — the item specified two finding codes that the implementation showed it should not mint.
+FEAT-1 archived once every edge it claimed existed —
+and it archived having been CORRECTED against the tree twice, which is the argument for the route
+rather than a footnote to it: the delta predicted a `core/kernel/` dependency that turned out to be
+type-only (a brand costs an annotation, not an import) and missed `core/coherence/` entirely.
+`npm run meta:check` was red for the whole of the build and went green with the archive, which is
+the axis working rather than a gap in it.
+
+The whole change is reviewable as five commits on `feat/deployment-axis`, and the one thing to read
+first is what the implementation taught the plan: two of the codes this item specified were not
+minted, and the reasons are in step 4.
+
+**What is wrong today.** A LikeC4 `deployment { }` block is legal in a docs repo and completely
+unread. The parser resolves every `instanceOf` in it — a container renamed out from under a
+deployment node fails the gate as `landscape.invalid` — and after that nothing: no requirement can
+name a node, no report counts one, and the context pack an agent implements from does not mention
+topology at all. Two of the four measurements taken on a copy of `examples/docs` are the reason this
+is an item rather than a wish. A `#obl-` tag on a `deploymentNode` is invisible to
+`validate/fleet/obligations.ts`, which walks the logical model only — the same undeclared tag raises
+`obligation.unknown` on a container and nothing on a datacenter, which is fail-open and a defect on
+its own terms. And `parsedModel().deployment` already returns nodes with their tags, instances
+carrying the id of the logical element each one instances, and relationships carrying metadata, so
+the read costs no second parse, no new file format and no change to the frozen CLI surface.
+
+**Required changes**, in the order the dependency graph forces:
+
+1. Walk the deployment model in every `#obl-` grade. Fail-open becomes fail-closed; no new code.
+2. A fourth `Covers:` entry form, `node:<id>`, with the same prefix accepted on either side of the
+   edge form. No new code.
+3. The parse adapter in `src/core/c4/parsed/`, and the deployment records added to
+   `test/likec4-model-parity.test.ts` — a two-stage substitution nothing measures is an assumption.
+   `src/core/c4/` holds exactly five files, so this is a sub-package and not a sixth module.
+4. **No new finding code, and this is a correction the implementation earned.** The item planned
+   two. The first, for a tagged node or edge no living arch requirement covers, turned out to be
+   `obligation.uncovered` asked of a second model: once step 1 walks the topology, the existing code
+   answers it, and a caller acts identically either way — write a `Covers:` line. A second code for
+   one question is exactly what the add-a-code checklist refuses. The second, for a container no
+   deployment instances, is declined outright: it asserts that everything modelled ought to be
+   deployed somewhere, which is a COMPLETENESS claim, and completeness is the one thing
+   `src/core/brief/unchecked.ts` says loam never checks. It is the same category error as the
+   at-least-two-datacenters rule below, one axis over.
+5. `features/<FEAT>/deployment/<name>.likec4`, create-only and copied whole — `core/usecases/delta/`
+   one axis over. It works because `extend` was measured to resolve across documents of one project,
+   so no text splice is needed; `delta-blocks.ts` goes on refusing a `deployment { }` block inside
+   `delta.likec4` and its message names the new slot. The collision is on the FILE, never on what is
+   inside it: two features may both extend one living region from documents of their own and both
+   archive, which is the shape the fleet-wide change actually takes.
+
+   **Graded against the merge preview**, which shipped one commit behind the slot and is the
+   second code, `deployment.doc-invalid` (error, never overridable). This axis needs the post-merge
+   corpus more literally than the use-case one: a feature that stands a NEW service up in a cluster
+   declares it in `delta.likec4` and instances it in the topology, so the element the document names
+   exists only after the merge. The staging that makes that readable moved OUT of
+   `core/usecases/delta/overlay.ts` into `core/c4/project/staged.ts` rather than being copied — the
+   two axes would have disagreed first about the merge preview, which is the one thing both
+   refusals rest on. The extraction dropped `core/usecases/` → `core/kernel/`, which is a one-line
+   edge and was edited into the model directly.
+6. The surfaces: the topology in the context pack (`context --json`'s `living.deployment`), the code
+   table `test/codes-drift.test.ts` requires, and one more statement in
+   `src/core/brief/unchecked.ts`. `loam explain` needed nothing — it parses the /loam-check fix
+   tables at runtime, so the rows added there ARE the entries. The scorecard row the item listed was
+   dropped: the fleet scorecard aggregates at the bound `service`, and a topology row there would
+   count deployment nodes against a denominator no service owns.
+
+**Exit criteria.** Every step above green under the full gate; `covers.unknown` demonstrated firing
+on a covered node that a topology change renamed, which is the acceptance criterion the trigger
+names; the parity suite extended and shown to fail against an un-extended adapter; and
+`test/self-model.test.ts` re-pinned once FEAT-1 archives.
+
+**Out of scope, and each refusal is load-bearing.** No reading of Terraform, Helm or cluster state —
+that is the extractor the non-goals forbid. No check that a service is deployed in at least two
+datacenters: it would need `criticality` promoted from prose to a read field, and it would turn
+`architecture/obligations.yaml` into the policy engine that file says in its own words it is not. A
+multi-datacenter rule is an authored requirement whose `Covers:` line names the nodes; loam grades
+the join and never the architecture. And no `environment` concept above LikeC4, because
+`deploymentNode` is that mechanism and the fleet names its own kinds.
+
+**The evidence, and its one gap stated plainly.** Operator: a team standing up a standby cluster in
+a second datacenter. Repeated task: keeping RTO/RPO requirements attached to a topology that keeps
+changing. Failure mode: a requirement about replication staying green after the node it described
+was renamed or removed. Frequency: every topology change, which is the cadence a migration runs at.
+Current workaround: a `Covers:` line that resolves to nothing, or no written requirement at all.
+Acceptance criterion: a topology change that orphans a covered requirement is convicted without a
+human noticing it first. **That is one operator, not two.** The maintainer judged the trigger
+sufficient on the same basis recorded for landscape scaling and the authored business axis, and the
+[Later](#later--promote-only-from-evidence) exit criteria are amended below to say so rather than
+leaving the two paragraphs to contradict each other. Steps 1 and 2 do not rest on that judgement at
+all: the first is a fail-open defect and the second is a grammar entry, and neither is a new axis.
+
 
 - **A feature can bring a use case.** `features/<FEAT>/usecases/<name>.likec4` — a views-only
   document `loam archive` copies into `architecture/usecases/` and `loam unarchive` takes back,
@@ -264,8 +366,11 @@ item gets promoted — it went from here to `## Now` and from there to
 
 Exit criteria for promoting a Later item:
 
-- Evidence comes from at least two independent operators or fleets, except landscape scaling and the
-  authored business axis, whose recorded triggers are sufficient.
+- Evidence comes from at least two independent operators or fleets, except landscape scaling, the
+  authored business axis and — added 2026-09-02 — the deployment axis in [Now](#now), whose recorded
+  triggers are sufficient. Three exceptions is where this criterion starts describing the rule
+  rather than the exception: the next single-operator promotion has to say why the criterion should
+  survive, or retire it.
 - An ADR compares the existing workflow, external tooling, and the smallest loam-owned change.
 - A prototype is measured against a predeclared acceptance criterion and preserves every non-goal
   below.
@@ -276,7 +381,7 @@ Exit criteria for promoting a Later item:
 
 Placed in a section of its own, and the placement is the argument. This is not a `## Now` item, and
 nothing here may be mistaken for one. It is not a "Later" candidate either: promotion
-from that section requires evidence from at least two independent operators or fleets (bar the two
+from that section requires evidence from at least two independent operators or fleets (bar the three
 whose recorded triggers were judged sufficient when they were written), and loam's own repository is
 one operator by construction, so a Later entry could only ever be a permanent exception to the rule
 it sits under. Nor is its value speculative — the trigger below is a defect this repository has

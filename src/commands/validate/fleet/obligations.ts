@@ -28,7 +28,16 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type Elem, type LoadedDoc, type Rel } from "../../../core/c4/likec4.js";
-import { closeIds, coversEdge, coversElement, type CoversEntry } from "../../../core/c4/arch.js";
+import {
+  closeIds,
+  coversDeployEdge,
+  coversDeployNode,
+  coversEdge,
+  coversElement,
+  type CoversEntry,
+} from "../../../core/c4/arch.js";
+import { NO_DEPLOYMENT } from "../../../core/c4/parsed/deployment.js";
+import { taggedDeployment, type TaggedDeployment } from "../../../core/deployment/objects.js";
 import { elementService } from "../../../core/c4/resolve/service.js";
 import { OBLIGATION_TAG_PREFIX, type ObligationVocabulary } from "../../../core/obligations/obligations.js";
 import { servicePathsAt } from "../../../core/repo/paths.js";
@@ -99,7 +108,13 @@ export async function obligationFindings(check: ObligationCheck): Promise<Findin
   // together because every question below treats them alike: an obligation
   // applies to a thing on the map, and whether that thing is a box or an arrow
   // changes only how the message spells it and how `Covers:` matches it.
-  const tagged = taggedObjects(check.land);
+  // The enumerated fleet rides in for the deployment half of the walk: an
+  // instance deploys a CONTAINER more often than a whole system, and resolving
+  // which service owns one needs the ancestor walk `serviceResolver` performs.
+  // It is the same set `uncoveredFindings` resolves edge endpoints with, or the
+  // message would name one service and the coverage check count another.
+  const known = new Set(check.services.map((s) => s.id));
+  const tagged = taggedObjects(check.land, known);
   const applied = new Set(tagged.map((t) => t.obligation));
 
   for (const id of [...applied].sort()) {
@@ -144,13 +159,22 @@ export async function obligationFindings(check: ObligationCheck): Promise<Findin
 /** One place an obligation is applied: which obligation, on what, and how a message names it. */
 interface TaggedObject {
   obligation: string;
-  /** The element, or the edge — exactly one is set. */
+  /** The element, the edge, or the deployment object — exactly one is set. */
   element?: Elem;
   edge?: Rel;
-  /** How the finding spells this object: an element id, or `source -> target`. */
+  deployed?: TaggedDeployment;
+  /**
+   * How the finding spells this object, and how a `Covers:` line has to: an
+   * element id, `source -> target`, or the `node:` forms.
+   */
   where: string;
-  /** What the finding is filed under — the service that owns it, where one does. */
-  subject: string;
+  /**
+   * What the finding is filed under — the service that owns it, where one
+   * does. ABSENT for a region, a datacenter or a cluster: nobody-s service
+   * runs one, and naming a team that did not ask for the work is worse than
+   * leaving the sentence general.
+   */
+  subject?: string;
 }
 
 /**
@@ -163,7 +187,7 @@ interface TaggedObject {
  * resolves to `obligation.unknown` in every fleet that did not declare an empty
  * id, which is the honest answer.
  */
-function taggedObjects(land: LoadedDoc): TaggedObject[] {
+function taggedObjects(land: LoadedDoc, known: ReadonlySet<string>): TaggedObject[] {
   const out: TaggedObject[] = [];
   for (const element of land.elements) {
     for (const tag of element.tags.filter((t) => t.startsWith(OBLIGATION_TAG_PREFIX))) {
@@ -184,6 +208,20 @@ function taggedObjects(land: LoadedDoc): TaggedObject[] {
         subject: edge.target,
       });
     }
+  }
+  // The topology, walked by the same rule and for the reason the rule exists: a
+  // tag is a claim about the object it sits on, and which MODEL that object
+  // lives in is not something a reader of the tag can see. Until this walk the
+  // same undeclared tag was an error on a container and silence on a
+  // datacenter — fail-open, and the case FEAT-1's ARCH-LOAM-DEPLOY-TAGGED was
+  // written about. A fleet that draws no topology contributes nothing here.
+  for (const d of taggedDeployment(land.deployment ?? NO_DEPLOYMENT, land.elements, known, OBLIGATION_TAG_PREFIX)) {
+    out.push({
+      obligation: d.obligation,
+      deployed: d,
+      where: d.where,
+      ...(d.service === undefined ? {} : { subject: d.service }),
+    });
   }
   return out;
 }
@@ -207,20 +245,28 @@ async function uncoveredFindings(check: ObligationCheck, tagged: TaggedObject[])
   const covers = await livingCovers(check);
   const elements = check.land.elements;
   const known = new Set(check.services.map((s) => s.id));
+  const covered = (t: TaggedObject): boolean => {
+    if (t.element !== undefined) return covers.some((c) => coversElement(c, t.element!));
+    if (t.edge !== undefined) return covers.some((c) => coversEdge(c, t.edge!, elements, known));
+    const d = t.deployed!;
+    return d.edge === undefined
+      ? covers.some((c) => coversDeployNode(c, d.id!))
+      : covers.some((c) => coversDeployEdge(c, d.edge!.source, d.edge!.target));
+  };
   return tagged
-    .filter((t) =>
-      t.element !== undefined
-        ? !covers.some((c) => coversElement(c, t.element!))
-        : !covers.some((c) => coversEdge(c, t.edge!, elements, known)),
-    )
+    .filter((t) => !covered(t))
     .map((t) => ({
       severity: "warn" as const,
       code: "obligation.uncovered",
-      subject: t.subject,
+      ...(t.subject === undefined ? {} : { subject: t.subject }),
       message:
         `${t.where} carries #${OBLIGATION_TAG_PREFIX}${t.obligation} and no living arch requirement covers it — ` +
-        `the obligation is placed and nothing says it is met. Write the requirement in ${t.subject}'s arch.spec.md with ` +
-        `\`Covers: ${t.where}\` and a scenario that proves it, or drop the tag if the decision no longer applies here.`,
+        `the obligation is placed and nothing says it is met. Write the requirement in ` +
+        // A region, a datacenter or a cluster is owned by no service, so the
+        // sentence stays general rather than naming a team at random. Every
+        // other object here has a real owner and keeps the actionable form.
+        `${t.subject === undefined ? "the arch.spec.md of whichever service answers for this topology" : `${t.subject}'s arch.spec.md`}` +
+        ` with \`Covers: ${t.where}\` and a scenario that proves it, or drop the tag if the decision no longer applies here.`,
     }));
 }
 

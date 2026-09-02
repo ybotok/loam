@@ -129,12 +129,21 @@ describe("meta/docs vs loam validate --all", () => {
     expect(payload.scorecard.c4).toEqual({ elements: 1, covered: 0 });
   });
 
-  it("has no feature in flight, so the whole delta axis is silent", async () => {
-    // `c4.uncovered` — the mechanical "every element and edge wants a covering
-    // requirement" — is graded only on what a feature delta INTRODUCES. With
-    // zero features it cannot fire, which is exactly why the containers and
-    // edges no arch requirement names raise nothing. Pinned so that a future
-    // living-scope pass shows up here as a change rather than as a surprise.
+  it("has no feature in flight, so the whole delta axis is silent — and it has SHIPPED one", async () => {
+    // `c4.uncovered` — the mechanical "every element and edge a delta
+    // INTRODUCES wants a covering requirement" — is graded only on what a
+    // feature delta carries. With zero features in flight it cannot fire, which
+    // is why the containers and edges no arch requirement names raise nothing.
+    //
+    // This assertion has now been through the round trip it was written to
+    // survive, and the trail is worth keeping. FEAT-1 — the deployment axis —
+    // was authored here, graded here with six tagged edges each reported
+    // `archedge.covered`, and archived here; between those two moments this
+    // case read `features: 1` and carried that count as its control. So the
+    // silence below is the silence of a fleet with nothing in flight, PROVEN
+    // distinguishable from the silence of a fleet where the axis is dead: the
+    // archived feature under `features/archive/` is the evidence, and the
+    // landscape's six new relationships are what it left behind.
     const payload = await validateAll();
     expect(payload.summary.features).toBe(0);
     expect(payload.targets.filter((t) => t.kind === "feature")).toEqual([]);

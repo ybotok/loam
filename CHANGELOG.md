@@ -10,6 +10,93 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.2] - 2026-09-02
+
+The deployment axis, and the two defects the axis surfaced on its way in. Still a prerelease on the
+`alpha` line: `npm i @ybotok/loam@alpha` installs it. Nothing below is breaking, but two entries are
+changes a repo can NOTICE — a fleet that had already placed a `#obl-` tag on a `deploymentNode`
+starts seeing findings it was never shown, and `loam status` stops asking an architecture-only
+feature for a business spec.
+
+### Added — the deployment axis: topology joined to requirements
+
+A LikeC4 `deployment { }` block has always been legal in a docs repo and was completely unread. The
+parser resolved every `instanceOf`, and after that no requirement could name a node, no `#obl-` tag
+on a datacenter was graded, and the context pack an agent implements from did not mention topology
+at all. Five things change, and a fleet that draws no topology is unaffected by every one of them —
+the axis opts in on the block's existence, the way the obligation vocabulary opts in on its file.
+
+- **`Covers:` gains a fourth entry form.** `node:<id>` names a deployment node or an instance, and
+  `node:a -> node:b` names an edge between them; both match literally. This is the form that lets an
+  architecture requirement about replication name the two clusters it is written about, and a
+  topology change that renames one now reports `covers.unknown` with the real ids offered — spelled
+  with the prefix, because that is the line the author has to type. Both sides of an edge carry the
+  prefix or neither; a bare id stays an element entry.
+- **An obligation on a deployment object is graded.** `obligation.unknown`, `obligation.unapplied`
+  and `obligation.uncovered` now walk the topology as well as the logical model. This is a
+  behaviour change a repo can notice: a `#obl-` tag on a `deploymentNode` used to be invisible to
+  every check, so a fleet that had placed one starts seeing findings it was never shown. A
+  datacenter is owned by no service, so `obligation.uncovered` drops `subject` there and names the
+  requirement's home in general terms rather than picking a team.
+- **A feature can bring topology.** `features/<FEAT>/deployment/<name>.likec4` is a create-only
+  document `loam archive` copies into `architecture/` and `loam unarchive` takes back — the third
+  whole-file slot, beside `usecases/` and `glossary/`. Say `extend` in it to add to a region the
+  living map already declares; two features may extend one region from documents of their own and
+  both archive. Two new codes, both errors and neither overridable: **`deployment.doc-exists`** when
+  the feature's document names a file the living tree already holds, and **`deployment.doc-invalid`**
+  when it cannot be read against the map the feature's own merge would leave behind. The second is
+  what makes the ordinary case legal — a document instancing a service only this feature's
+  `delta.likec4` adds resolves, because the corpus inside a feature window is feature ∪ living — and
+  refuses the case where the merge does not land what the document names. `delta.likec4` still
+  refuses a `deployment { }` block and now names this slot instead of the living landscape.
+  A third, **`deployment.doc-reserved`**, refuses a name loam owns inside `architecture/` —
+  `subsystems.likec4`, `landscape.likec4`, or a path under `usecases/` — whether or not the target
+  exists, because two of the three fail silently when it does not: nothing parses the generated
+  subsystem views and `loam subsystem sync` overwrites them wholesale.
+- **`loam context` carries the topology.** `--json` gains `living.deployment` — the service's
+  instances, and the deployment edges touching them from either end.
+- **One more statement in the adoption brief's unchecked list**, now sixteen: nothing here knows
+  whether the second cluster exists, is reachable, or holds the data a requirement claims, and no
+  check counts datacenters — how many a service needs is a decision the fleet writes down as a
+  requirement, never one loam evaluates.
+
+### Fixed — the never-overridable archive refusal names what actually refused
+
+It said `N element binding(s) name an illegal service id` for every code in that register, and had
+done since the use-case slot put a second one there — about features that bind nothing. The headline
+now counts the refusals and the closing line names their codes; each issue keeps its own sentence.
+The `--json` envelope is unchanged: consumers branch on `issues[].code` and `overridable`, which is
+what that split exists for.
+
+### Fixed — `loam status` no longer invents work for an architecture-only feature
+
+A feature whose only requirement delta is `specs/<svc>/arch.spec.md` reported two things that were
+not true, and both are corrected. The `spec` row read `missing` and `next.author-spec` told the
+author to write business requirements the change does not have — while `loam validate --feature`
+accepted the same tree at exit 0 and `coherence`'s `service.no-requirement-delta` stayed silent,
+because every other reader counts the service DIRECTORY and not which corpus is in it. And the
+`verification` row read `blocked` with `blockedBy: ["delta", "spec", "openapi", "asyncapi"]`,
+telling the reader there was nothing to derive a checklist from — while `featureChecklist` reads
+`arch.spec.md` and `loam verify` on that feature returns a real checklist.
+
+The fleet form carried the same defect independently, and it broke the rule stated one line below
+it in its own source: `loam status` with no feature reported `missing <svc>/spec` and staged the
+feature `missing`, over a feature `loam status <FEAT>` called `ready`. Both forms now accept either
+corpus as the service's requirement delta, and `<svc>/spec` is named only when neither exists.
+
+Three payload-visible consequences, all in `loam status --json`: `artifacts[]`'s `spec` row is
+`required: false` when the service's `arch.spec.md` delta exists (it was unconditionally `true`),
+`arch-spec` now counts as a verification feeder, so `blockedBy` gained `"arch-spec"` in the
+one case that is still genuinely blocked — a feature with no requirement delta of either kind —
+and `features[]`'s `missing` and `stage` no longer report an architecture-only feature as
+incomplete. No finding code, flag or exit code changes. This is the change to read if a script
+branched on `artifacts[].required` or on `features[].missing`.
+
+The case is the one `arch.spec.md` exists for: an outbox, a retry policy, an alert — obligations no
+business scenario was ever going to carry, so the feature that adds one has no business requirement
+to write. Found by authoring loam's own architecture change through loam's own lifecycle, which is
+the trigger ROADMAP's self-hosting section records for that axis.
+
 ## [0.2.0-alpha.1] - 2026-09-01
 
 The first release of the 0.2 line, and the whole accumulated body since `0.1.0-beta.3` — 116
