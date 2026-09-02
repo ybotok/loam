@@ -36,7 +36,7 @@
  * the check stays silent rather than half-answering.
  */
 import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
-import { SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/views.js";
+import { SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
@@ -65,6 +65,11 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
       severity: "error",
       code: "subsystem.view-id-collision",
       subject: id,
+      // The CLAIMANT file — the one the message tells the reader to edit, and
+      // the one the report's target fallback gets wrong: it files this under
+      // the landscape, which is exactly the file a reader must NOT rename the
+      // view in when the claim came from a document of their own.
+      locations: [{ path: `architecture/${file}`, role: "primary" as const }],
       message:
         `subsystems: architecture/${file} declares \`view ${id}\`, which is the id loam generates ` +
         `into architecture/subsystems.likec4 for services/${owner}/ — LikeC4 merges both files into one project, ` +

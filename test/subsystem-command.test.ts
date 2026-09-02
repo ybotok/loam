@@ -43,8 +43,10 @@ describe("subsystem new", () => {
       expect(payload).toMatchObject({ ok: true, created: "payments", path: "services/payments", views: "created" });
       expect(await p.read("services/payments/subsystem.yaml")).toBe("title: Payments\n");
       // The generated file landed in the SAME commit: an empty subsystem is
-      // legal and its view body is empty.
-      expect(await p.read("architecture/subsystems.likec4")).toContain("view subsystem_payments {\n  }");
+      // legal, and its body carries the label a human reads and nothing else.
+      expect(await p.read("architecture/subsystems.likec4")).toContain(
+        "view subsystem_payments {\n    title 'Payments'\n  }",
+      );
       const all = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(all.code).toBe(0);
     });

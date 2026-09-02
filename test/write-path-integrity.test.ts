@@ -908,6 +908,41 @@ describe("the closing completeness claim", () => {
     }
   });
 
+  it("is withheld when the generated subsystem views no longer match the tree and the merged map", async () => {
+    // The generated file is a function of the tree AND the map, and an archive
+    // moves the map: an element landing inside a group that exactly covered a
+    // subsystem takes that subsystem's boundary away. Archive does not rewrite
+    // the file — `loam subsystem sync` owns it — but the closing line claims
+    // the whole repo is current, and it may not be printed over a state the
+    // next `validate --all` fails on. Here the file is simply absent while the
+    // tree has a subsystem, which is the same staleness by a cheaper route.
+    const files: Record<string, string> = {};
+    for (const [path, content] of Object.entries(coherentFixture())) {
+      files[path.replace(/^services\/payment-service\//, "services/payments/payment-service/")] = content;
+    }
+    files["services/payments/subsystem.yaml"] = "title: Payments\n";
+    const p = await makeProject(files);
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-1");
+      expect(res.code).toBe(0);
+      expect(res.out).not.toContain("living spec + landscape are now complete + current.");
+      expect(res.out).toContain("architecture/subsystems.likec4 no longer matches");
+      expect(res.out).toContain("loam subsystem sync");
+      // …because the same archive handed back a fleet the gate fails on, and
+      // the one command the warning names is the one that clears it.
+      const codes = async (): Promise<string[]> => {
+        const out = await runLoam(p.workDir, "validate", "--all", "--json");
+        const payload = json(out.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> };
+        return payload.targets.flatMap((t) => t.findings).map((f) => f.code).filter((c) => c.startsWith("subsystem."));
+      };
+      expect(await codes()).toEqual(["subsystem.views-stale"]);
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      expect(await codes()).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("is withheld when --approve merged past a gate", async () => {
     const files = coherentFixture();
     files["features/FEAT-1-split/specs/payment-split-service/openapi.yaml"] = files[

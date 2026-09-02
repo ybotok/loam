@@ -22,7 +22,7 @@ import {
   unfiledServicePaths,
 } from "../../core/repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
-import { renderSubsystemViews, viewsAgree } from "../../core/repo/tree/views.js";
+import { renderSubsystemViews, viewsAgree } from "../../core/repo/tree/render/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";

@@ -5,7 +5,7 @@
  *
  * A content compare, deliberately — never a parse. A views-only document does
  * not parse standalone (its `include` lines reference elements the landscape
- * defines; the spike in `core/repo/tree/views.ts` records it), and no check
+ * defines; the spike in `core/repo/tree/render/views.ts` records it), and no check
  * anywhere reads the file's MEANING: the file is a scoping convenience for
  * the LikeC4 renderer, so the only question loam owes it is "is this what the
  * tree renders to". Rule 26 leaves this untouched: what loam may
@@ -17,7 +17,7 @@
  * not exist, or a group deleted months ago keeps a view forever.
  *
  * The compare is over CONTENT, not BYTES, and `viewsAgree` in
- * `core/repo/tree/views.ts` both performs it and records why: an ordinary
+ * `core/repo/tree/render/views.ts` both performs it and records why: an ordinary
  * Windows clone hands this file back with CRLF and not one fact in it changed,
  * and under a byte compare the advertised repair is a loop rather than a
  * diagnosis. The rule lives beside the generator because the module that mints
@@ -30,12 +30,10 @@
  * pointing at a file whose repair command would only re-derive the same
  * incomplete answer.
  */
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import type { Elem } from "../../../../core/c4/likec4.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { subsystemViewsPath } from "../../../../core/repo/paths.js";
-import { renderSubsystemViews, viewsAgree } from "../../../../core/repo/tree/views.js";
+import { viewsState } from "../../../../core/repo/tree/render/stale.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
@@ -44,10 +42,8 @@ export async function viewsStaleFindings(
   tree: FleetTree,
   elements: Elem[],
 ): Promise<Finding[]> {
-  const path = subsystemViewsPath(docsDir);
-  const expected = renderSubsystemViews(tree, elements);
-  const actual = existsSync(path) ? await readFile(path, "utf8") : null;
-  if (viewsAgree(actual, expected)) return [];
+  const { actual, expected, agrees } = await viewsState(subsystemViewsPath(docsDir), tree, elements);
+  if (agrees) return [];
   const state =
     actual === null
       ? "does not exist, but the tree has subsystems to mirror"
@@ -59,6 +55,18 @@ export async function viewsStaleFindings(
       severity: "error",
       code: "subsystem.views-stale",
       subject: "architecture/subsystems.likec4",
+      // The file the message names, so an editor jumping to the finding lands
+      // on it. Without a location the report's fallback files this under the
+      // TARGET, which is the landscape — a reader was sent to
+      // architecture/landscape.likec4 to fix a file the sentence beside it
+      // named as architecture/subsystems.likec4. A file that does not exist
+      // yet cannot be `primary`: the actionable place is then the directory
+      // the regenerator will write into.
+      locations: [
+        actual === null
+          ? { path: "architecture", role: "scope" as const }
+          : { path: "architecture/subsystems.likec4", role: "primary" as const },
+      ],
       message:
         `subsystems: architecture/subsystems.likec4 ${state} — ` +
         `it is generated, one view per subsystem, and every derived scope drawn from it is wrong until it agrees. ` +

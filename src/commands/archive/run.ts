@@ -29,6 +29,10 @@ import {
   type ServiceKey,
 } from "../../core/staging/snapshot.js";
 import { enumeratedServices } from "../../core/repo/service-target.js";
+import { listFleetTree } from "../../core/repo/repo.js";
+import { subsystemViewsPath } from "../../core/repo/paths.js";
+import { viewsState } from "../../core/repo/tree/render/stale.js";
+import { loadArchitecture } from "../../core/c4/project/architecture.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { gate } from "./plan/gate.js";
 import { type ArchiveOptions } from "./plan/refusal.js";
@@ -256,8 +260,20 @@ export async function archiveLocked(
     throw new ArchiveFailure(failures.length > 0 ? "rollback-incomplete" : "merge-failed", wrapped.message + kept);
   }
 
+  // This merge just changed the map, and the generated views file is a
+  // function of the tree AND the map: a delta whose element lands inside a
+  // group that exactly covered a subsystem takes that subsystem's boundary
+  // line away, and a delta binding an element to a filed service adds an
+  // include. Archive does not rewrite the file — `loam subsystem sync` owns it
+  // outright, and folding a second generated artifact into this transaction
+  // would mean archive computing the post-merge tree AND the post-merge map,
+  // which is how the two writers disagree — but it must not report a repo as
+  // current when the next `validate --all` will call it stale. Graded through
+  // validate's own function, so the two cannot answer differently.
+  const staleViews = await subsystemViewsStale(config.docsDir);
+
   if (json) {
-    emitJson(payload(true));
+    emitJson({ ...payload(true), ...(staleViews ? { subsystemViewsStale: true } : {}) });
     return;
   }
   console.log(`\n  archived: features/${dirName} → features/archive/${dirName}`);
@@ -268,14 +284,44 @@ export async function archiveLocked(
   // caller told it to merge past. Printing it over either is how a red fleet
   // gets reported as a finished one.
   const incomplete = planWarns.filter((w) => w.code === "service.no-model");
-  if (incomplete.length === 0 && overridden.length === 0) {
+  if (incomplete.length === 0 && overridden.length === 0 && !staleViews) {
     console.log("  living spec + landscape are now complete + current.");
     return;
+  }
+  if (staleViews) {
+    console.log(
+      "  ⚠ architecture/subsystems.likec4 no longer matches the tree and this map — run `loam subsystem sync`.",
+    );
   }
   for (const w of incomplete) console.log(`  ⚠ ${w.message}`);
   if (overridden.length > 0) {
     console.log(
       `  ⚠ merged past ${overridden.length} gating issue(s) with --approve — the living docs carry them now; \`loam validate --all\` says what they cost.`,
     );
+  }
+}
+
+/**
+ * Would the next `validate --all` report `subsystem.views-stale`?
+ *
+ * Asked through validate's OWN function rather than a second compare, so the
+ * warning archive prints and the error validate raises can never disagree —
+ * including about the gate validate holds: a map that does not parse is
+ * `landscape.invalid`'s business, and grading a generated file against a map
+ * nobody can read would cascade a second complaint behind the first. An
+ * unreadable map therefore answers "no claim", exactly as validate does.
+ */
+async function subsystemViewsStale(docsDir: DocsDir): Promise<boolean> {
+  try {
+    const doc = await loadArchitecture(docsDir);
+    if (doc.errors.length > 0) return false;
+    const state = await viewsState(subsystemViewsPath(docsDir), await listFleetTree(docsDir), doc.elements);
+    return !state.agrees;
+  } catch {
+    // Tolerant for the reason the snapshot resolver above is: a docs repo with
+    // no `services/` at all still archives a landscape-only feature, and this
+    // question is an ADVISORY printed after a commit that already succeeded.
+    // Nothing here may turn a landed archive into a non-zero exit.
+    return false;
   }
 }
