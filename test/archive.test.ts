@@ -3862,6 +3862,9 @@ The service SHALL hold the payment.
       const res = await runLoam(p.workDir, "archive", "FEAT-9");
       expect(res.code).toBe(1);
       expect(res.out).toContain("BLOCKED");
+      // This is the OTHER never-overridable refusal — the specs/ directory
+      // name, gated before coherence even runs — and its headline is accurate
+      // and unchanged: it names one breach and only that one ever reaches it.
       expect(res.out).toContain("illegal service id");
       expect(p.exists("services/Payment Service")).toBe(false);
       expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
@@ -3908,7 +3911,7 @@ The service SHALL hold the payment.
       // The no-override verdict must reach a --json consumer too, and for the
       // Finding path it travels in error.message — the human view was the only
       // place that said it.
-      expect(json.error.message).toContain("--approve does not override this");
+      expect(json.error.message).toContain("--approve does not override");
       const codes = (json.issues as Array<{ code: string; gates: boolean }>).map((i) => i.code);
       expect(codes).toContain("delta.service-id-invalid");
       for (const i of json.issues as Array<{ gates: boolean }>) expect(i.gates).toBe(true);
@@ -3953,7 +3956,11 @@ model {
       const res = await runLoam(p.workDir, "archive", "FEAT-8");
       expect(res.code).toBe(1);
       expect(res.out).toContain("BLOCKED");
-      expect(res.out).toContain("illegal service id");
+      // The headline counts the refusals and lets each issue say its own
+      // sentence; it used to claim they were all element bindings, which was
+      // false for every other code in the never-overridable register. What
+      // identifies the breach here is the CODE, which the closing line prints.
+      expect(res.out).toContain("c4.service-binding-invalid");
       expect(await p.read(LANDSCAPE_REL)).toBe(LANDSCAPE);
       expect(await p.read(LANDSCAPE_REL)).not.toContain("outside-svc");
       expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
@@ -4044,7 +4051,11 @@ model {
       const res = await runLoam(p.workDir, "archive", "FEAT-10");
       expect(res.code).toBe(1);
       expect(res.out).toContain("BLOCKED");
-      expect(res.out).toContain("illegal service id");
+      // The headline counts the refusals and lets each issue say its own
+      // sentence; it used to claim they were all element bindings, which was
+      // false for every other code in the never-overridable register. What
+      // identifies the breach here is the CODE, which the closing line prints.
+      expect(res.out).toContain("c4.service-binding-invalid");
       expect(res.out).toContain("--approve does not override");
       expect(await p.read(LANDSCAPE_REL)).toBe(NESTED_LANDSCAPE);
       expect(await treeHashes(p.docsDir), "a refused archive must write nothing").toEqual(before);
@@ -4061,7 +4072,7 @@ model {
       const json = JSON.parse(res.stdout);
       expect(json.ok).toBe(false);
       expect(json.error.code).toBe("not-coherent");
-      expect(json.error.message).toContain("--approve does not override this");
+      expect(json.error.message).toContain("--approve does not override");
       const issues = json.issues as Array<{ code: string; gates: boolean; overridable: boolean }>;
       const binding = issues.filter((i) => i.code === "c4.service-binding-invalid");
       expect(binding).toHaveLength(1);

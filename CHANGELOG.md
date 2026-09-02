@@ -41,12 +41,24 @@ the axis opts in on the block's existence, the way the obligation vocabulary opt
   `delta.likec4` adds resolves, because the corpus inside a feature window is feature ∪ living — and
   refuses the case where the merge does not land what the document names. `delta.likec4` still
   refuses a `deployment { }` block and now names this slot instead of the living landscape.
+  A third, **`deployment.doc-reserved`**, refuses a name loam owns inside `architecture/` —
+  `subsystems.likec4`, `landscape.likec4`, or a path under `usecases/` — whether or not the target
+  exists, because two of the three fail silently when it does not: nothing parses the generated
+  subsystem views and `loam subsystem sync` overwrites them wholesale.
 - **`loam context` carries the topology.** `--json` gains `living.deployment` — the service's
   instances, and the deployment edges touching them from either end.
 - **One more statement in the adoption brief's unchecked list**, now sixteen: nothing here knows
   whether the second cluster exists, is reachable, or holds the data a requirement claims, and no
   check counts datacenters — how many a service needs is a decision the fleet writes down as a
   requirement, never one loam evaluates.
+
+### Fixed — the never-overridable archive refusal names what actually refused
+
+It said `N element binding(s) name an illegal service id` for every code in that register, and had
+done since the use-case slot put a second one there — about features that bind nothing. The headline
+now counts the refusals and the closing line names their codes; each issue keeps its own sentence.
+The `--json` envelope is unchanged: consumers branch on `issues[].code` and `overridable`, which is
+what that split exists for.
 
 ### Fixed — `loam status` no longer invents work for an architecture-only feature
 
