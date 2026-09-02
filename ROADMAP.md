@@ -18,7 +18,7 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **424 TypeScript modules in 129 source packages**, with an acyclic package graph
+The tree contains **427 TypeScript modules in 130 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
@@ -349,6 +349,18 @@ item gets promoted — it went from here to `## Now` and from there to
 - **UI generation:** begin with a disposable projection over the stable JSON contract only after CLI
   consumers demonstrate a repeated navigation problem. It must not introduce a second mutable state,
   hidden workflow state, or a required service.
+- **A graded subsystem/model correspondence:** a fleet that draws its landscape as grouped C4 states
+  its grouping twice — once as directories under `services/`, once as the nesting of the elements —
+  and `loam subsystem move` changes the first while the second stays put. Since 2026-09-02 the
+  generated views file DISCLOSES that (the `// model: no boundary — …` line; see
+  [SCHEMA.md](SCHEMA.md)), and nothing grades it, because grading placement against the map is the
+  policy the tree is defined not to carry. The shape a graded version would take is known and
+  measured: an author's opt-in `metadata { subsystem '<name>' }` on the grouping element, read
+  through the existing metadata reader, the NAME rather than the path (names are unique in one flat
+  namespace and survive a move, which a path binding would not), with the check structurally silent
+  for every fleet that never writes one. Promote only on evidence from a second fleet, after living
+  with the disclosure — the first report classified itself `inconclusive`, and one fleet is not
+  enough to qualify an invariant that says placement is never part of any identity.
 - **Landscape scaling:** retain one landscape while conflicts are exceptional. If same-service
   conflicts become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than
   monthly — evaluate service-owned model files plus a thin global cross-service map. Migration must

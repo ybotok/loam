@@ -25,7 +25,7 @@ import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/
 import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
-import { viewsAgree } from "../../core/repo/tree/views.js";
+import { viewsAgree } from "../../core/repo/tree/render/views.js";
 import { expectedViews } from "./txn/views.js";
 
 /** What one sync did to the file. */

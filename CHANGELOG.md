@@ -10,6 +10,49 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Fixed — a `subsystem.views-stale` no command could clear
+
+`loam validate --all` grades `architecture/subsystems.likec4` against the whole `architecture/`
+project — the landscape merged with every `architecture/usecases/*.likec4` — while `loam subsystem
+sync` and the write verbs rendered it from `landscape.likec4` alone. One use-case document declaring
+an element bound to a filed service was therefore enough to make `sync` answer `current` while
+`validate --all` exited 1 with `subsystem.views-stale`, whose message names `sync` as the repair.
+Reproduced on `examples/docs`; the two now read the same documents. No code, flag or payload key
+changes.
+
+### Changed — the generated subsystem views carry a label and a boundary
+
+`architecture/subsystems.likec4` exists only to be rendered, and in the renderer its views were the
+least readable objects in a docs repo: no title, so LikeC4 showed the hex-escaped id
+(`subsystem_api__rest_2dapi_2dv2_2dservices`), and leaf includes only, so a fleet drawn as ordinary
+grouped C4 rendered flat. Every view now carries `title` (the marker's, or the directory name) and
+`description` when the marker authors one, and draws a boundary: the model's own containing element
+when one holds exactly the subsystem's members, a `group '<title>'` mirroring the directory subtree
+when the landscape nests nothing, and — when the members are nested but no element owns exactly them
+— no box plus one comment line, `// model: no boundary — …`, which is loam's whole answer to a tree
+and a map that disagree. Nothing grades that comment: placement still carries no policy.
+
+Marker text is normalized to one line and escaped before it is written (measured: a raw `'` in a
+title is two parse errors and blanks the fleet's whole map in the renderer; `Ops' } view evil {` is
+zero errors and injects a view). [SCHEMA.md](SCHEMA.md) states the rules.
+
+What a repo notices, and what it costs:
+
+- the first `loam validate --all` after upgrading reports exactly one `subsystem.views-stale` error
+  (exit 1) until one `loam subsystem sync` runs. `sync` does not `git add`, so the repair leaves one
+  unstaged one-file diff to commit;
+- the boundary depends on which OTHER services sit under an element, so an unrelated adoption or
+  archive can flip a view from boxed to flat and restale the file. `loam archive` now withholds its
+  "living spec + landscape are now complete + current" line, prints one warning naming
+  `loam subsystem sync`, and adds `subsystemViewsStale: true` to its `--json` payload when it left
+  the file behind;
+- `subsystem.views-stale` and `subsystem.view-id-collision` now carry `locations`: the generated
+  file (or `architecture/` when it does not exist yet) and the claimant document respectively. Both
+  used to fall back to the landscape, sending an editor to a file with nothing to fix in it.
+
+No command, flag, exit code, envelope key or stable code string changes; `subsystem.views-stale` is
+not in the `IssueCode` union and carries no `gates` key, so `loam archive` remains unaffected by it.
+
 ## [0.2.0-alpha.2] - 2026-09-02
 
 The deployment axis, and the two defects the axis surfaced on its way in. Still a prerelease on the

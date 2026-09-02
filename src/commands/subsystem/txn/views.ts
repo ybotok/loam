@@ -7,25 +7,37 @@
  */
 import { existsSync } from "node:fs";
 import { relative, sep } from "node:path";
-import { loadFile, type Elem } from "../../../core/c4/likec4.js";
+import { type Elem } from "../../../core/c4/likec4.js";
+import { loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { landscapePath } from "../../../core/repo/paths.js";
-import { renderSubsystemViews } from "../../../core/repo/tree/views.js";
+import { renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 
 /**
- * The landscape's elements for the member join, or the empty list when the
- * map is absent or does not parse. Tolerant on purpose: sync must stay
- * runnable in a repo whose landscape is broken — it renders what the
- * committed bytes resolve (no includes), deterministically, and the next sync
- * after the landscape is repaired catches the file up. `validate` skips the
- * staleness question in exactly those states, so the two never contradict.
+ * The elements of the whole `architecture/` PROJECT for the member join, or
+ * the empty list when the map is absent or does not parse. Tolerant on
+ * purpose: sync must stay runnable in a repo whose landscape is broken — it
+ * renders what the committed bytes resolve (no includes), deterministically,
+ * and the next sync after the landscape is repaired catches the file up.
+ * `validate` skips the staleness question in exactly those states.
+ *
+ * The PROJECT, not the landscape file alone, and that is a correctness rule
+ * rather than a preference: `validate` grades this file against
+ * `loadArchitecture` — the landscape merged with every
+ * `architecture/usecases/*.likec4`, which may `extend` the model and bind
+ * elements of its own. While this side read the landscape alone, a use-case
+ * document declaring one element bound to a filed service was enough to make
+ * `sync` answer `current` while `validate --all` reported
+ * `subsystem.views-stale` and named `sync` as the repair — a loop no command
+ * could clear, reproduced on `examples/docs` before this call changed. Two
+ * readers of "what should the views say" must read the same documents, or the
+ * shared render in `core/repo/tree/render/views.ts` is shared in name only.
  */
 export async function landscapeElements(docsDir: DocsDir): Promise<Elem[]> {
-  const path = landscapePath(docsDir);
-  if (!existsSync(path)) return [];
+  if (!existsSync(landscapePath(docsDir))) return [];
   try {
-    const doc = await loadFile(path);
+    const doc = await loadArchitecture(docsDir);
     return doc.errors.length > 0 ? [] : doc.elements;
   } catch {
     return [];

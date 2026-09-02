@@ -164,9 +164,36 @@ check uses; a member nothing models is omitted, which `landscape.service-unmodel
 reports). The output is deterministic and line-oriented — subsystems sorted by path, members by id,
 one `include` per line, no timestamps, no absolute paths — so it is byte-reproducible on any machine
 and two concurrent moves into different groups merge in git without intervention.
+
+Each view carries the **label a human reads**: `title` from `subsystem.yaml`, falling back to the
+directory name (an unlabelled view is shown by its id, which is hex-escaped for injectivity and
+reads as `subsystem_api__rest_2dapi_2dv2_2dservices`), and `description` when the marker authors
+one. Both are somebody's prose written into syntax, so both are normalized to one line and escaped;
+titles are not unique — only ids are — and a `/` in an authored title is LikeC4's own view-folder
+separator, which loam passes through rather than rewriting a human's words.
+
+The **boundary** each view draws is a fact about the landscape, never a setting:
+
+1. an element that holds *exactly* the subsystem's members and nothing else is included beside the
+   leaves, so the renderer nests them in the box the author drew, under the author's title;
+2. a landscape that nests nothing puts the services in a `group '<title>'` of loam's own, mirroring
+   the directory subtree, so a parent subsystem shows its children as boxes rather than one pile;
+3. members that ARE nested with no element owning exactly them get no box and one comment line —
+   `// model: no boundary — <id> also holds services outside this subsystem.` — because a synthetic
+   box would look identical whether or not the tree and the map agree. That comment is the whole of
+   what loam says about the two disagreeing: nothing grades it, nothing fails on it, and it lands in
+   the diff of the commit that caused it. **The tree and any `group` nesting in the landscape stay
+   independent**; `loam subsystem move` never rewrites the map, and no finding compares them.
+
+Because the boundary depends on which *other* services sit under an element, an unrelated adoption
+or archive can flip a view from boxed to flat — a new reason to see `subsystem.views-stale`, and why
+`loam archive` withholds its "complete + current" line and names `loam subsystem sync` when it left
+the file behind.
+
 `loam subsystem sync` is the one regenerator (it also *removes* the file when the tree has no
 subsystems), every `loam subsystem` write verb regenerates it inside the same transaction, and
-`validate --all` grades staleness by **byte comparison** — exactly one error,
+`validate --all` grades staleness by **content comparison** (line endings normalized; a CRLF
+checkout changes no fact) — exactly one error,
 `subsystem.views-stale`, on exactly that file; nothing in loam ever parses it: a views-only document
 does not parse standalone (its `include` lines reference elements the landscape defines), and it
 holds **static** views, whose contents loam never reads in any document. Only the LikeC4 renderer,
