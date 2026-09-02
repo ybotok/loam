@@ -203,6 +203,7 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
   const deployment = serviceTopology(
     hasDeployment(topology) || !parses ? topology : ((await loadArchitecture(docsDir)).deployment ?? NO_DEPLOYMENT),
     elements,
+    known,
     entry.id,
   );
 

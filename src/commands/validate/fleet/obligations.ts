@@ -108,7 +108,13 @@ export async function obligationFindings(check: ObligationCheck): Promise<Findin
   // together because every question below treats them alike: an obligation
   // applies to a thing on the map, and whether that thing is a box or an arrow
   // changes only how the message spells it and how `Covers:` matches it.
-  const tagged = taggedObjects(check.land);
+  // The enumerated fleet rides in for the deployment half of the walk: an
+  // instance deploys a CONTAINER more often than a whole system, and resolving
+  // which service owns one needs the ancestor walk `serviceResolver` performs.
+  // It is the same set `uncoveredFindings` resolves edge endpoints with, or the
+  // message would name one service and the coverage check count another.
+  const known = new Set(check.services.map((s) => s.id));
+  const tagged = taggedObjects(check.land, known);
   const applied = new Set(tagged.map((t) => t.obligation));
 
   for (const id of [...applied].sort()) {
@@ -181,7 +187,7 @@ interface TaggedObject {
  * resolves to `obligation.unknown` in every fleet that did not declare an empty
  * id, which is the honest answer.
  */
-function taggedObjects(land: LoadedDoc): TaggedObject[] {
+function taggedObjects(land: LoadedDoc, known: ReadonlySet<string>): TaggedObject[] {
   const out: TaggedObject[] = [];
   for (const element of land.elements) {
     for (const tag of element.tags.filter((t) => t.startsWith(OBLIGATION_TAG_PREFIX))) {
@@ -209,7 +215,7 @@ function taggedObjects(land: LoadedDoc): TaggedObject[] {
   // same undeclared tag was an error on a container and silence on a
   // datacenter — fail-open, and the case FEAT-1's ARCH-LOAM-DEPLOY-TAGGED was
   // written about. A fleet that draws no topology contributes nothing here.
-  for (const d of taggedDeployment(land.deployment ?? NO_DEPLOYMENT, land.elements, OBLIGATION_TAG_PREFIX)) {
+  for (const d of taggedDeployment(land.deployment ?? NO_DEPLOYMENT, land.elements, known, OBLIGATION_TAG_PREFIX)) {
     out.push({
       obligation: d.obligation,
       deployed: d,

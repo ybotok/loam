@@ -35,7 +35,7 @@
  */
 import { type Elem } from "../c4/likec4.js";
 import { type DeploymentModel, type DeployRel } from "../c4/parsed/deployment.js";
-import { elementService } from "../c4/resolve/service.js";
+import { serviceResolver } from "../c4/resolve/service.js";
 
 /** One deployment object carrying one obligation tag. */
 export interface TaggedDeployment {
@@ -64,9 +64,10 @@ export interface TaggedDeployment {
 export function taggedDeployment(
   deployment: DeploymentModel,
   elements: readonly Elem[],
+  known: ReadonlySet<string>,
   prefix: string,
 ): TaggedDeployment[] {
-  const owner = instanceOwners(deployment, elements);
+  const owner = instanceOwners(deployment, elements, known);
   const out: TaggedDeployment[] = [];
   const push = (tags: readonly string[], rest: Omit<TaggedDeployment, "obligation">): void => {
     for (const tag of tags.filter((t) => t.startsWith(prefix))) {
@@ -128,9 +129,10 @@ export interface ServiceTopology {
 export function serviceTopology(
   deployment: DeploymentModel,
   elements: readonly Elem[],
+  known: ReadonlySet<string>,
   service: string,
 ): ServiceTopology {
-  const owner = instanceOwners(deployment, elements);
+  const owner = instanceOwners(deployment, elements, known);
   const mine = deployment.instances.filter((i) => owner.get(i.id) === service);
   const ids = new Set(mine.map((i) => i.id));
   return {
@@ -144,20 +146,40 @@ export function serviceTopology(
 /**
  * instance id → the service its logical element belongs to.
  *
- * Through `elementService`, which is the same binding-then-title join every
- * other check uses to decide which `services/<id>/` owns an element. An
- * instance of an element the landscape does not declare resolves to nothing and
- * is left unowned rather than filed under a fabricated name — LikeC4 refuses an
- * unresolved `instanceOf` outright, so that state is reachable only when the
- * caller hands in elements from a narrower document than the one the topology
- * was parsed with.
+ * Through `serviceResolver` and NOT `elementService`, and the difference is a
+ * defect this axis shipped once. A deployment instances a CONTAINER far more
+ * often than a whole system — `instanceOf orders.cache` is the ordinary way to
+ * say where the Redis a service owns actually runs — and `elementService` reads
+ * the binding or the TITLE of the element handed to it. A nested container
+ * carries no `metadata { service }` of its own, so that read answered "order
+ * cache", and `obligation.uncovered` told an author to write the requirement in
+ * "order cache's arch.spec.md" — a service that has never existed. The
+ * resolver's whole job is the ancestor walk that finds the bound system above
+ * it, which is the same join every other check makes about a container.
+ *
+ * `known` rides in for the reason `coversEdge` takes it: without the enumerated
+ * fleet the resolver's second tier — the nearest ancestor whose title names a
+ * real `services/<id>/` — cannot run, and a fleet that binds by title rather
+ * than by `metadata { service }` resolves to the title alone. It must be the
+ * SAME set the caller's own findings resolve with, or the message names one
+ * service and the check counts another.
+ *
+ * An instance of an element the landscape does not declare is left UNOWNED
+ * rather than filed under a fabricated name. LikeC4 refuses an unresolved
+ * `instanceOf` outright, so that state is reachable only when the caller hands
+ * in elements from a narrower document than the one the topology was parsed
+ * with.
  */
-function instanceOwners(deployment: DeploymentModel, elements: readonly Elem[]): Map<string, string> {
-  const byId = new Map(elements.map((e) => [e.id, e]));
+function instanceOwners(
+  deployment: DeploymentModel,
+  elements: readonly Elem[],
+  known: ReadonlySet<string>,
+): Map<string, string> {
+  const ids = new Set(elements.map((e) => e.id));
+  const resolve = serviceResolver([...elements], known);
   const out = new Map<string, string>();
   for (const instance of deployment.instances) {
-    const element = byId.get(instance.element);
-    if (element !== undefined) out.set(instance.id, elementService(element));
+    if (ids.has(instance.element)) out.set(instance.id, resolve(instance.element));
   }
   return out;
 }
