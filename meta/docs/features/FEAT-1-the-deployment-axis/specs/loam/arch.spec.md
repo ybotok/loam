@@ -58,7 +58,8 @@ Covers: loam.core.deployment, loam.commands.validate -> loam.core.deployment
 #### Scenario: A placed obligation has no requirement behind it
 - **Given** `#obl-geo-redundant` on a datacenter that no living arch requirement covers
 - **When** the fleet gate runs
-- **Then** `deployment.uncovered` warns and names the `Covers:` entry that would answer it
+- **Then** `obligation.uncovered` warns and names the `Covers:` entry that would answer it —
+  the SAME code the logical model earns, because the reader acts identically either way
 
 #### Scenario: The fleet has no deployment model at all
 - **Given** a docs repo with no `deployment { }` block anywhere

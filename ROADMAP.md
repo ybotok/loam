@@ -18,7 +18,7 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **421 TypeScript modules in 128 source packages**, with an acyclic package graph
+The tree contains **422 TypeScript modules in 129 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
@@ -134,10 +134,15 @@ the read costs no second parse, no new file format and no change to the frozen C
 3. The parse adapter in `src/core/c4/parsed/`, and the deployment records added to
    `test/likec4-model-parity.test.ts` — a two-stage substitution nothing measures is an assumption.
    `src/core/c4/` holds exactly five files, so this is a sub-package and not a sixth module.
-4. Two findings and no more: `deployment.uncovered` (a tagged node or edge no living arch
-   requirement covers) and `deployment.instance-absent`. Both warn, neither gates, and the family is
-   silent until the repo declares a `deployment { }` block — the opt-in shape `obligations.yaml`
-   already has.
+4. **No new finding code, and this is a correction the implementation earned.** The item planned
+   two. The first, for a tagged node or edge no living arch requirement covers, turned out to be
+   `obligation.uncovered` asked of a second model: once step 1 walks the topology, the existing code
+   answers it, and a caller acts identically either way — write a `Covers:` line. A second code for
+   one question is exactly what the add-a-code checklist refuses. The second, for a container no
+   deployment instances, is declined outright: it asserts that everything modelled ought to be
+   deployed somewhere, which is a COMPLETENESS claim, and completeness is the one thing
+   `src/core/brief/unchecked.ts` says loam never checks. It is the same category error as the
+   at-least-two-datacenters rule below, one axis over.
 5. `features/<FEAT>/deployment/<name>.likec4`, create-only, graded against the merge preview and
    copied whole — `core/usecases/delta/` one axis over. It works because `extend` was measured to
    resolve across documents of one project, so no text splice is needed; `delta-blocks.ts` goes on

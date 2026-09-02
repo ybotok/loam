@@ -322,14 +322,6 @@ describe("public docs name only emitted codes", () => {
     "loam.json.service": "config key path — the service binding inside loam.json",
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
     "contracts.openapi": "config key path — where loam.json names the build's OpenAPI output",
-    // The only two entries here that ARE codes: ROADMAP's deployment-axis item
-    // names the findings it will add, and a roadmap has to be able to say what
-    // it is going to emit before it emits it. They cannot rot — the sibling
-    // `it` below fails on any entry the tree has started emitting, so landing
-    // either code forces its removal from this list in the same change, which
-    // is the coupling the known-gap registry already runs on.
-    "deployment.uncovered": "planned code, ROADMAP's deployment axis — prune when it lands",
-    "deployment.instance-absent": "planned code, ROADMAP's deployment axis — prune when it lands",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */

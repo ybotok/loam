@@ -154,6 +154,16 @@ export function coversEdge(entry: CoversEntry, r: Rel, elements: Elem[], known?:
   );
 }
 
+/** Does a Covers entry name this deployment node or instance? Matched literally — see `entryResolves`. */
+export function coversDeployNode(entry: CoversEntry, id: string): boolean {
+  return entry.form === "node" && entry.id === id;
+}
+
+/** Does a Covers entry name this deployment edge? Both endpoints, literally. */
+export function coversDeployEdge(entry: CoversEntry, source: string, target: string): boolean {
+  return entry.form === "node-edge" && entry.source === source && entry.target === target;
+}
+
 /** Does the entry resolve to ANYTHING in scope? False is `covers.unknown`. */
 export function entryResolves(entry: CoversEntry, scope: CoverageScope): boolean {
   switch (entry.form) {
