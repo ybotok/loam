@@ -10,6 +10,14 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.2] - 2026-09-02
+
+The deployment axis, and the two defects the axis surfaced on its way in. Still a prerelease on the
+`alpha` line: `npm i @ybotok/loam@alpha` installs it. Nothing below is breaking, but two entries are
+changes a repo can NOTICE — a fleet that had already placed a `#obl-` tag on a `deploymentNode`
+starts seeing findings it was never shown, and `loam status` stops asking an architecture-only
+feature for a business spec.
+
 ### Added — the deployment axis: topology joined to requirements
 
 A LikeC4 `deployment { }` block has always been legal in a docs repo and was completely unread. The
