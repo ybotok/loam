@@ -10,6 +10,13 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.3] - 2026-09-03
+
+The generated subsystem views, made readable — and the defect that hunt found underneath them.
+Still a prerelease on the `alpha` line: `npm i @ybotok/loam@alpha` installs it. Nothing below is
+breaking, and one entry is a change every repo NOTICES: the generated file's bytes move, so the
+first `loam validate --all` after upgrading asks for one `loam subsystem sync`.
+
 ### Fixed — a `subsystem.views-stale` no command could clear
 
 `loam validate --all` grades `architecture/subsystems.likec4` against the whole `architecture/`

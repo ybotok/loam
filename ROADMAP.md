@@ -1,6 +1,6 @@
 # Roadmap
 
-_Assessed 2026-09-02._
+_Assessed 2026-09-03._
 
 This is loam's canonical improvement sequence. It records priorities and exit criteria, not delivery
 dates. An item is complete only when its exit criteria are supported by repeatable evidence; moving
@@ -27,10 +27,10 @@ dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-09-02 at `0.2.0-alpha.2`, and dated because neither number has a cheap derivation:_
+_Measured 2026-09-03 at `0.2.0-alpha.3`, and dated because neither number has a cheap derivation:_
 lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
-**3,399/3,399 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
-coverage gate passing with **92.25% statements, 84.04% branches, 96.62% functions, and 94.18%
+**3,408/3,408 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.26% statements, 84.05% branches, 96.62% functions, and 94.20%
 lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
 `npm run test:package` green against the real tarball.
 
@@ -124,6 +124,26 @@ changes, exit criteria, and what each review surfaced — are in this file's his
 5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
 working tree and not committed, and the range goes in with the commit rather than being guessed at
 here.
+
+#### The generated subsystem views — a label, a boundary, and one reader of the map
+
+**Landed 2026-09-03.** Three problem reports from a 56-service fleet, one axis. The generated
+`architecture/subsystems.likec4` exists only to be rendered and was the least readable object in a
+docs repo: no `title`, so the renderer showed the hex-escaped view id, and leaf includes only, so a
+fleet drawn as grouped C4 rendered flat. Each view now carries the marker's title (the directory
+name when it has none) and description, and draws a boundary the LANDSCAPE decides: the model's own
+containing element when one holds exactly the members, a `group` mirroring the directory subtree
+when the map nests nothing, and one `// model: no boundary — …` comment when the two disagree.
+That comment is the whole answer to the drift the third report asked about — disclosure in a
+generated artifact, never a finding, because grading placement against the map is the policy the
+tree is defined not to carry. The graded alternative is written down under
+[Later](#later--promote-only-from-evidence) with the evidence bar it has to clear.
+
+The hunt found what neither report did: `validate --all` graded that file against the whole
+`architecture/` project while every writer rendered it from `landscape.likec4` alone, so a
+use-case document binding one element could produce a `subsystem.views-stale` that
+`loam subsystem sync` reported as `current` — reproduced on `examples/docs`, and fixed by pointing
+both sides at the same read.
 
 #### The deployment axis — topology joined to requirements
 
