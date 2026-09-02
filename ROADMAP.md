@@ -18,7 +18,7 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **423 TypeScript modules in 129 source packages**, with an acyclic package graph
+The tree contains **424 TypeScript modules in 129 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
@@ -97,13 +97,34 @@ The strongest foundations to preserve are:
 
 ## Now
 
-Every integrity, enforcement and lifecycle item that preceded this section has landed (see
-[Recently landed](#recently-landed)) — the authored business axis and, with the three entries at the
-top of that section, the use-case axis too. One item is queued behind code, and it is the first that
-did not walk up from [Later](#later--promote-only-from-evidence): it was written directly here, and
-the paragraph on its evidence is where that shortcut is accounted for rather than hidden.
+Nothing is queued behind code. Every integrity, enforcement and lifecycle item that preceded this
+has landed (see [Recently landed](#recently-landed)) — the authored business axis, the use-case
+axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
+directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
 
-### The deployment axis — topology joined to requirements
+### Release evidence, unchanged
+
+What is left is the one thing this file cannot close by writing code, and it stays
+where it is rather than being promoted for the shape of it: the CI `stability` job and the
+installed-package smoke have still to be OBSERVED green from a pushed commit. That is release
+evidence to collect, not an improvement to make.
+
+An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
+names its operator, repeated task, failure mode, frequency, current workaround and measurable
+acceptance criterion — never because this section is empty. An empty `## Now` is a true statement
+about the backlog, and filling it from the candidate list to avoid the appearance of one would be
+exactly the invented need the non-goals forbid.
+
+## Recently landed
+
+Closed since the 2026-08-18 assessment, each with the commit or commit range that landed it on
+`main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
+changes, exit criteria, and what each review surfaced — are in this file's history (`git show
+5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
+working tree and not committed, and the range goes in with the commit rather than being guessed at
+here.
+
+#### The deployment axis — topology joined to requirements
 
 **Promoted 2026-09-02, and authored as a feature in loam's own docs repo** rather than as an item
 text here: `meta/docs/features/archive/FEAT-1-the-deployment-axis/`, whose `intent.md` carries the
@@ -111,9 +132,9 @@ four measurements and whose `specs/loam/arch.spec.md` carries the five rules the
 each with scenarios. This entry is the decision and the gate; that feature is the specification, and
 the two must not be allowed to become two accounts of the same change.
 
-**Status: BUILT except one piece, and the item stays here until that piece lands.** Steps 1, 2, 3
-and 6 are in, step 4 was corrected rather than built (below), and step 5's slot works while its
-merge-preview grading does not. FEAT-1 archived on 2026-09-02 once every edge it claimed existed —
+**Landed 2026-09-02, complete.** Every step is in, and step 4 was corrected rather than built
+(below) — the item specified two finding codes that the implementation showed it should not mint.
+FEAT-1 archived once every edge it claimed existed —
 and it archived having been CORRECTED against the tree twice, which is the argument for the route
 rather than a footnote to it: the delta predicted a `core/kernel/` dependency that turned out to be
 type-only (a brand costs an annotation, not an import) and missed `core/coherence/` entirely.
@@ -160,16 +181,21 @@ the read costs no second parse, no new file format and no change to the frozen C
    inside it: two features may both extend one living region from documents of their own and both
    archive, which is the shape the fleet-wide change actually takes.
 
-   **The merge-preview grading is the one part NOT built, and it is a gap rather than a decision.**
-   A flow is refused before the copy when it names an element the merge does not land
-   (`usecase.flow-invalid`); a topology document naming an element only the feature's own
-   `delta.likec4` introduces is copied in unchecked, and the next reader's `loam validate --all`
-   carries `landscape.invalid` against a file they did not write. It is undoable — `loam unarchive`
-   deletes what the plan created — and the work it needs is specific: the merge preview lives inside
-   `core/usecases/delta/overlay.ts`, whose staging assumes one document kind, so sharing it is a
-   change to that module's contract and deserves its own commit rather than a rider on this one.
-6. The surfaces: a scorecard row, the topology in the context pack, `loam explain`, the code table
-   `test/codes-drift.test.ts` requires, and one more statement in `src/core/brief/unchecked.ts`.
+   **Graded against the merge preview**, which shipped one commit behind the slot and is the
+   second code, `deployment.doc-invalid` (error, never overridable). This axis needs the post-merge
+   corpus more literally than the use-case one: a feature that stands a NEW service up in a cluster
+   declares it in `delta.likec4` and instances it in the topology, so the element the document names
+   exists only after the merge. The staging that makes that readable moved OUT of
+   `core/usecases/delta/overlay.ts` into `core/c4/project/staged.ts` rather than being copied — the
+   two axes would have disagreed first about the merge preview, which is the one thing both
+   refusals rest on. The extraction dropped `core/usecases/` → `core/kernel/`, which is a one-line
+   edge and was edited into the model directly.
+6. The surfaces: the topology in the context pack (`context --json`'s `living.deployment`), the code
+   table `test/codes-drift.test.ts` requires, and one more statement in
+   `src/core/brief/unchecked.ts`. `loam explain` needed nothing — it parses the /loam-check fix
+   tables at runtime, so the rows added there ARE the entries. The scorecard row the item listed was
+   dropped: the fleet scorecard aggregates at the bound `service`, and a topology row there would
+   count deployment nodes against a denominator no service owns.
 
 **Exit criteria.** Every step above green under the full gate; `covers.unknown` demonstrated firing
 on a covered node that a topology change renamed, which is the acceptance criterion the trigger
@@ -196,27 +222,6 @@ sufficient on the same basis recorded for landscape scaling and the authored bus
 leaving the two paragraphs to contradict each other. Steps 1 and 2 do not rest on that judgement at
 all: the first is a fail-open defect and the second is a grammar entry, and neither is a new axis.
 
-### Release evidence, unchanged
-
-What is left besides that item is the one thing this file cannot close by writing code, and it stays
-where it is rather than being promoted for the shape of it: the CI `stability` job and the
-installed-package smoke have still to be OBSERVED green from a pushed commit. That is release
-evidence to collect, not an improvement to make.
-
-An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
-names its operator, repeated task, failure mode, frequency, current workaround and measurable
-acceptance criterion — never because this section is empty. An empty `## Now` is a true statement
-about the backlog, and filling it from the candidate list to avoid the appearance of one would be
-exactly the invented need the non-goals forbid.
-
-## Recently landed
-
-Closed since the 2026-08-18 assessment, each with the commit or commit range that landed it on
-`main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
-changes, exit criteria, and what each review surfaced — are in this file's history (`git show
-5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
-working tree and not committed, and the range goes in with the commit rather than being guessed at
-here.
 
 - **A feature can bring a use case.** `features/<FEAT>/usecases/<name>.likec4` — a views-only
   document `loam archive` copies into `architecture/usecases/` and `loam unarchive` takes back,

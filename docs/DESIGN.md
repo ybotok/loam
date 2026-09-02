@@ -135,7 +135,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, kernel, repo |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, repo |
 | `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |

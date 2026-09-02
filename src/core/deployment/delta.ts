@@ -34,23 +34,25 @@
  * collide on, where editing `architecture/<name>.likec4` directly in the same
  * pull request produces an ordinary git conflict a human resolves.
  *
- * ## What this does NOT yet check, and it is a gap rather than a decision
+ * ## Graded against the map its own merge would leave behind
  *
- * A flow is graded against the map its own merge would leave behind
- * (`ARCH-LOAM-FEATURE-CORPUS`), so a hop into an element the feature adds
- * resolves and a hop into one the merge does not land is refused BEFORE the
- * copy. This axis has no such pass: a deployment document naming an element only
- * the feature's `delta.likec4` introduces is copied in unchecked, and the next
- * reader's `loam validate --all` carries `landscape.invalid` against a file they
- * did not write. It is undoable — `loam unarchive` deletes what the plan
- * created — and it is recorded in ROADMAP with the work it needs: the merge
- * preview lives inside `core/usecases/delta/overlay.ts`, and sharing it means
- * changing that module's contract, which is worth its own change rather than a
- * rider on this one.
+ * `ARCH-LOAM-FEATURE-CORPUS`, and this axis needs it more literally than the
+ * use-case one does: a feature that stands a service up in a new cluster
+ * declares that service in its `delta.likec4` and instances it here, so the
+ * element the topology names exists ONLY post-merge. Read against the living
+ * landscape it is unresolved, LikeC4 refuses the whole project, and loam would
+ * report a hole against a file whose only fault is arriving with the change
+ * that makes it true.
+ *
+ * The staging is `core/c4/project/staged.ts`, shared with the use-case slot
+ * rather than copied — the two would have disagreed first about the merge
+ * preview, which is the one thing both refusals rest on.
  */
 import { existsSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { architectureDir } from "../c4/project/architecture.js";
+import { stageMergedProject } from "../c4/project/staged.js";
+import { type LoadedDoc } from "../c4/likec4.js";
 import { architectureDocuments } from "../c4/project/documents.js";
 import { featureDeploymentDir } from "../repo/authored/paths.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
@@ -134,6 +136,52 @@ export async function deploymentDeltaIssues(docsDir: DocsDir, featureDir: Featur
         `To ADD to what that file declares, write a document of another name that says \`extend\` — ` +
         `\`${suggest(doc.rel)}\` — which is what lets two features grow one region without touching each other.`,
     }));
+}
+
+/** What the caller needs to grade this feature's topology against the merge preview. */
+export interface DeploymentOverlayRequest {
+  docsDir: DocsDir;
+  featureDir: FeatureDir;
+  /** The feature's id — the tag that selects the delta's own additions. */
+  featureId: string;
+  /**
+   * The caller's memoised LikeC4 read, when it has one. A FUNCTION rather than
+   * the `FleetContext` itself, for the reason the use-case overlay states: one
+   * memoised read does not justify an edge from this package to
+   * `core/fleet-context.ts`, and the edge would push it up a DAG level for
+   * nothing.
+   */
+  load?: (path: string) => Promise<LoadedDoc>;
+}
+
+/** Whether this feature's topology could be read at all, against the map its merge would leave. */
+export type DeploymentOverlay = { kind: "read" } | { kind: "unreadable"; errors: string[] };
+
+/**
+ * Parse this feature's topology documents over the post-merge map.
+ *
+ * A feature with no `deployment/` directory is `read` at the cost of one walk
+ * over a directory that is not there — the axis's per-feature opt-in, and the
+ * whole price a fleet that has not adopted it pays. Nothing is staged, nothing
+ * is parsed, and no temp tree is made.
+ *
+ * The verdict is deliberately BINARY. The use-case overlay hands its caller the
+ * views it read because the axis has questions about their content; this one
+ * has none — a topology document is checked by being parseable against the map
+ * the merge will write, and everything else about it is graded by
+ * `loam validate --all` once it is living, exactly as the landscape is.
+ */
+export async function readFeatureDeployments(req: DeploymentOverlayRequest): Promise<DeploymentOverlay> {
+  const docs = await featureDeployments(req.featureDir);
+  if (docs.length === 0) return { kind: "read" };
+  const staged = await stageMergedProject({
+    docsDir: req.docsDir,
+    featureDir: req.featureDir,
+    featureId: req.featureId,
+    documents: docs.map((doc) => ({ rel: doc.rel, path: doc.path })),
+    ...(req.load === undefined ? {} : { load: req.load }),
+  });
+  return staged.kind === "unreadable" ? { kind: "unreadable", errors: staged.errors } : { kind: "read" };
 }
 
 /** A free name near the colliding one, so the fix is a rename the author can copy. */

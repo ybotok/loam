@@ -203,6 +203,56 @@ describe("a feature brings topology", () => {
     expect(await treeHashes(p.docsDir)).toEqual(before);
   });
 
+  it("instances an element only this feature's delta adds — the post-merge map is the corpus", async () => {
+    // The case this axis needs the merge preview for, and it is the ordinary
+    // one: a feature that stands a NEW service up in a cluster declares the
+    // service in `delta.likec4` and instances it here, so the element the
+    // topology names exists only after the merge. Read against the LIVING
+    // landscape it is unresolved, LikeC4 refuses the whole project, and the
+    // archive would refuse a document whose only fault is arriving with the
+    // change that makes it true.
+    const p = await project({
+      [`${FEAT_DIR}/delta.likec4`]: `specification {\n  element softwareSystem\n  tag FEAT-1\n}\n\nmodel {\n  splitService = softwareSystem 'payment-split-service' {\n    #FEAT-1\n    metadata { service 'payment-split-service' }\n  }\n}\n`,
+      [`${FEAT_DIR}/specs/payment-split-service/spec.md`]: `# payment-split-service — delta for ${FEAT}\n\n## ADDED Requirements\n\n### Requirement: Split a payment\nThe service SHALL split a payment.\n\n#### Scenario: Two payees\n- **Given** a payment\n- **When** it is split\n- **Then** two shares are recorded\n`,
+      [`${FEAT_DIR}/deployment/standby.likec4`]: `deployment {\n  extend eu {\n    dcB = datacenter 'DC-B' {\n      k8sB = cluster 'cluster-b' {\n        instanceOf splitService\n      }\n    }\n  }\n}\n`,
+    });
+    const archived = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(archived.code, archived.out).toBe(0);
+    expect(p.exists("architecture/standby.likec4")).toBe(true);
+    // And the merged tree really does hold together — the proof the preview was
+    // the same map the merge wrote, rather than a second opinion beside it.
+    // Asserted on the PROJECT's own verdict rather than the exit code: the
+    // feature introduces a service, so the merged fleet legitimately carries
+    // `service.no-model` until somebody runs `loam adopt` for it, and that is a
+    // different axis saying a true thing.
+    const validated = await runLoam(p.workDir, "validate", "--all", "--json");
+    const payload = JSON.parse(validated.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> };
+    expect(payload.targets.flatMap((t) => t.findings.map((f) => f.code))).not.toContain("landscape.invalid");
+  });
+
+  it("refuses a document naming an element the merge does not land, and --approve does not move it", async () => {
+    const p = await project({
+      [`${FEAT_DIR}/deployment/standby.likec4`]: `deployment {\n  extend eu {\n    dcB = datacenter 'DC-B' {\n      k8sB = cluster 'cluster-b' {\n        instanceOf ghostService\n      }\n    }\n  }\n}\n`,
+    });
+    const before = await treeHashes(p.docsDir);
+
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const found = issuesOf(refused.stdout, "deployment.doc-invalid");
+    expect(found.length, refused.stdout).toBe(1);
+    expect(found[0]!.overridable).toBe(false);
+    // The message names the AUTHORED file, never the temp tree the staging
+    // parsed in — a finding naming a directory that no longer exists is one
+    // nobody can act on.
+    expect(found[0]!.message).toContain("standby.likec4");
+    expect(found[0]!.message).not.toContain("loam-staged-");
+    expect(await treeHashes(p.docsDir), "a refusal must write nothing").toEqual(before);
+
+    const approved = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(approved.code, approved.out).toBe(1);
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+  });
+
   it("two features extending one region both archive — the file is the collision, not the region", async () => {
     const OTHER = "features/FEAT-2-third/";
     const p = await project({

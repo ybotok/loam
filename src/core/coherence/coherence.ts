@@ -15,7 +15,7 @@ import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { flowDeltaIssues } from "../usecases/delta/flows.js";
-import { deploymentDeltaIssues } from "../deployment/delta.js";
+import { deploymentDeltaIssues, readFeatureDeployments } from "../deployment/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 
@@ -63,6 +63,42 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // authored hop sequence.
   issues.push(...(await flowDeltaIssues(docsDir, featureDir)));
   issues.push(...(await deploymentDeltaIssues(docsDir, featureDir)));
+
+  // And the topology's second question, which the collision check above cannot
+  // ask: does the document READ against the map this feature's own merge would
+  // leave behind. It matters more literally here than one axis over — a feature
+  // that stands a service up in a new cluster declares that service in its
+  // `delta.likec4` and instances it in the topology, so the element the document
+  // names exists only post-merge — and without it the archive copies an
+  // unreadable document into `architecture/` for the next reader's
+  // `loam validate --all` to fail on, against a file they did not write.
+  const topology = await readFeatureDeployments({
+    docsDir,
+    featureDir,
+    featureId,
+    // A function rather than the context itself, for the reason the use-case
+    // overlay states: one memoised read does not justify an edge from
+    // `core/deployment/` to `fleet-context`.
+    ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+  });
+  if (topology.kind === "unreadable") {
+    issues.push({
+      severity: "error",
+      code: "deployment.doc-invalid",
+      subject: featureId,
+      // The opening sentence does not say whose file is at fault, on the
+      // `usecase.flow-invalid` message's reasoning: the corpus is the feature's
+      // `deployment/` PLUS the living `architecture/` documents it extends, so
+      // the failing path can be a living one — a landscape that no longer
+      // parses, a topology somebody else wrote. Every message carries its own
+      // path, so a reader can place it.
+      message:
+        `this feature's deployment document(s) could not be read against the map its own merge would leave behind, ` +
+        `so the archive would land an architecture/ nothing has checked. The corpus is the feature's deployment/ AND ` +
+        `the living architecture/ documents it extends, so the fault may be in either — each message names its file. ` +
+        `${topology.errors.length} problem(s): ${topology.errors.join("; ")}`,
+    });
+  }
 
   // --- C4 delta ---
   let elements: Elem[] = [];
