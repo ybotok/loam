@@ -302,9 +302,25 @@ describe("the topology carries obligations too", () => {
    */
   const KINDS = ["  deploymentNode region", "  deploymentNode datacenter"].join("\n");
 
-  /** The landscape helper's output with the deployment kinds declared in it. */
+  /**
+   * The landscape helper's output with the deployment kinds declared in it, and
+   * a CONTAINER inside the bound system.
+   *
+   * The container is what makes the owner test discriminate. A deployment
+   * instances a container far more often than a whole system — `instanceOf
+   * paymentService.cache` is the ordinary way to say where a service's Redis
+   * runs — and a nested container carries no `metadata { service }` of its own,
+   * so resolving its owner by the element's own binding-or-title answers with
+   * the CONTAINER's title. A fixture that only ever instanced the bound system
+   * passes against both the right join and the wrong one.
+   */
   function landWithKinds(declare: string[]): string {
-    return landscape({ declare }).replace("  element person\n", `  element person\n${KINDS}\n`);
+    return landscape({ declare })
+      .replace("  element person\n", `  element person\n  element container\n${KINDS}\n`)
+      .replace(
+        "    description 'Owns payment authorization/capture'\n",
+        "    description 'Owns payment authorization/capture'\n    cache = container 'payment cache'\n",
+      );
   }
 
   /**
@@ -318,12 +334,12 @@ describe("the topology carries obligations too", () => {
   eu = region 'EU' {
 ${tag(opts.onNode, "    ")}
     dcA = datacenter 'DC-A' {
-      a = instanceOf paymentService {
+      a = instanceOf paymentService.cache {
 ${tag(opts.onInstance, "        ")}
       }
     }
     dcB = datacenter 'DC-B' {
-      b = instanceOf paymentService
+      b = instanceOf paymentService.cache
     }
     dcA.a -> dcB.b 'Replicates' {
 ${tag(opts.onEdge, "      ")}
@@ -366,11 +382,17 @@ ${tag(opts.onEdge, "      ")}
     expect(f!.message).toContain("whichever service answers for this topology");
   });
 
-  it("a tagged INSTANCE is owned by the service its element belongs to", async () => {
+  it("a tagged INSTANCE is owned through the ancestor walk, not the element's own title", async () => {
+    // The instance deploys `paymentService.cache`, a nested container with no
+    // binding of its own. Resolving the owner by that element's own
+    // binding-or-title answers "payment cache" — a service that has never
+    // existed, and exactly what this axis told an author to write a requirement
+    // in before `serviceResolver` replaced that read.
     const p = await project(geo(["obl-outbox"], { onInstance: ["obl-outbox"] }));
     const [f] = await findings(p, "obligation.uncovered");
     expect(f!.subject).toBe("payment-service");
     expect(f!.message).toContain("payment-service's arch.spec.md");
+    expect(f!.message).not.toContain("payment cache");
     expect(f!.message).toContain("`Covers: node:eu.dcA.a`");
   });
 
