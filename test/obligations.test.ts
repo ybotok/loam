@@ -293,6 +293,112 @@ describe("obligation.uncovered — the living map asks what only a feature delta
   });
 });
 
+describe("the topology carries obligations too", () => {
+  /**
+   * The fail-open case this walk was written for: before it, the SAME
+   * undeclared tag was `obligation.unknown` on a container and silence on a
+   * datacenter. A rule an architect placed did not exist for any check, and no
+   * reviewer could tell that from a rule that passed.
+   */
+  const KINDS = ["  deploymentNode region", "  deploymentNode datacenter"].join("\n");
+
+  /** The landscape helper's output with the deployment kinds declared in it. */
+  function landWithKinds(declare: string[]): string {
+    return landscape({ declare }).replace("  element person\n", `  element person\n${KINDS}\n`);
+  }
+
+  /**
+   * A second document in the same project — which is also the ordinary layout,
+   * and the reason the `--all` load is what sees it.
+   */
+  function deployment(opts: { onNode?: string[]; onInstance?: string[]; onEdge?: string[] }): string {
+    const tag = (ts: string[] | undefined, indent: string): string =>
+      (ts ?? []).map((t) => `${indent}#${t}`).join("\n");
+    return `deployment {
+  eu = region 'EU' {
+${tag(opts.onNode, "    ")}
+    dcA = datacenter 'DC-A' {
+      a = instanceOf paymentService {
+${tag(opts.onInstance, "        ")}
+      }
+    }
+    dcB = datacenter 'DC-B' {
+      b = instanceOf paymentService
+    }
+    dcA.a -> dcB.b 'Replicates' {
+${tag(opts.onEdge, "      ")}
+    }
+  }
+}
+`;
+  }
+
+  const geo = (
+    declare: string[],
+    tags: { onNode?: string[]; onInstance?: string[]; onEdge?: string[] },
+    extra: Record<string, string> = {},
+  ): Record<string, string> =>
+    fleet(landWithKinds(declare), {
+      "architecture/deployment.likec4": deployment(tags),
+      "architecture/obligations.yaml": OUTBOX_YAML,
+      ...extra,
+    });
+
+  it("an undeclared tag on a datacenter is an error, and the finding names the node", async () => {
+    // The control that makes the whole walk mean something: this run produced
+    // NOTHING before, over a map carrying a tag that resolves to no rule.
+    const p = await project(geo(["obl-typo"], { onNode: ["obl-typo"] }));
+    const [f] = await findings(p, "obligation.unknown");
+    expect(f).toBeDefined();
+    expect(f!.subject).toBe("typo");
+    expect(f!.details).toEqual(["node:eu"]);
+  });
+
+  it("a declared tag on a datacenter is applied, and uncovered until a requirement names it", async () => {
+    const p = await project(geo(["obl-outbox"], { onNode: ["obl-outbox"] }));
+    expect(await codes(p)).toEqual(["obligation.uncovered"]);
+    const [f] = await findings(p, "obligation.uncovered");
+    // No service owns a region, so the sentence stays general rather than
+    // naming a team that did not ask for the work — and it still spells the
+    // exact line that answers it.
+    expect(f!.subject).toBeUndefined();
+    expect(f!.message).toContain("`Covers: node:eu`");
+    expect(f!.message).toContain("whichever service answers for this topology");
+  });
+
+  it("a tagged INSTANCE is owned by the service its element belongs to", async () => {
+    const p = await project(geo(["obl-outbox"], { onInstance: ["obl-outbox"] }));
+    const [f] = await findings(p, "obligation.uncovered");
+    expect(f!.subject).toBe("payment-service");
+    expect(f!.message).toContain("payment-service's arch.spec.md");
+    expect(f!.message).toContain("`Covers: node:eu.dcA.a`");
+  });
+
+  it("a Covers: node: entry answers it, on a node and on an edge alike", async () => {
+    for (const [tags, covers] of [
+      [{ onNode: ["obl-outbox"] }, "node:eu"],
+      [{ onEdge: ["obl-outbox"] }, "node:eu.dcA.a -> node:eu.dcB.b"],
+    ] as const) {
+      const p = await project(
+        geo(["obl-outbox"], tags, { "services/payment-service/arch.spec.md": archSpec(covers) }),
+      );
+      expect(await codes(p), covers).toEqual([]);
+    }
+  });
+
+  it("a fleet that draws no topology hears nothing new", async () => {
+    // The axis opts in on the block's existence, exactly as the vocabulary opts
+    // in on its file. Every fleet without one must be byte-for-byte unaffected.
+    const p = await project(
+      fleet(landscape({ declare: ["obl-outbox"], onElement: ["obl-outbox"] }), {
+        "architecture/obligations.yaml": OUTBOX_YAML,
+        "services/payment-service/arch.spec.md": archSpec("paymentService"),
+      }),
+    );
+    expect(await codes(p)).toEqual([]);
+  });
+});
+
 describe("the ADR the obligation comes from", () => {
   it("an `adr:` naming no file is an error — a pointer at a decision nobody can read", async () => {
     const p = await project(
