@@ -79,7 +79,7 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
 | L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
-| L5 | `asyncapi/` `brief/` `capabilities/` `doctor/` | One artifact family that needs another one first |
+| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` | One artifact family that needs another one first |
 | L6 | `explain/` `links/` `projection/` `usecases/` | One link, one flow, projected onto the model |
 | L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
 | L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
@@ -129,12 +129,13 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/asyncapi/` | the event contract axis; `asyncapi/merge/` is the delta path | kernel, openapi, repo |
 | `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked | c4, repo |
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
+| `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, kernel, repo |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, repo |
 | `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |

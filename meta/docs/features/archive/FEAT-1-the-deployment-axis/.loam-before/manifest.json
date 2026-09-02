@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "feature": "FEAT-1",
+  "dirName": "FEAT-1-the-deployment-axis",
+  "archivedAt": "2026-09-02T06:14:26.840Z",
+  "files": [
+    {
+      "path": "services/loam/arch.spec.md",
+      "service": "loam",
+      "artifact": "arch.spec.md",
+      "existed": true,
+      "after": "31f2c06e78767cc9bb8f7339b2c72d15ff57897bc25a0be456668fff5eb41084",
+      "before": "f3d3999da947c63bcc0c2a928a291365715cd1f58247901c66be5da75ee538d3"
+    },
+    {
+      "path": "architecture/landscape.likec4",
+      "existed": true,
+      "after": "c97a0818e0410c18d1e93c1376e75cea8c37a37b3cd2ee5fc82cc82cae6b2080",
+      "before": "dcc9f32e67044dc2689ce1e93fda3715d35fd6d010da66a4c69bb0b058ea173a"
+    }
+  ]
+}

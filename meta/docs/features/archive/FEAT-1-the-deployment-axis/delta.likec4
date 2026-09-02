@@ -1,0 +1,87 @@
+// FEAT-1 — architecture delta.
+//
+// Everything tagged #FEAT-1 is exactly what `loam archive` folds into
+// architecture/landscape.likec4. Everything else here is context for the diagram.
+//
+// The scaffold's own template is deleted rather than adapted: it offers two
+// top-level `softwareSystem`s and an edge between them, and this model is 70
+// containers nested inside ONE bound system. The context below re-declares the
+// landscape's own identifiers and titles so the merge joins by id instead of
+// splicing a second copy of `src/core/`.
+//
+// One new box only. `src/core/c4/parsed/deployment.ts` — the parse adapter — is NOT one:
+// the collapse rule maps `src/core/c4/**` onto `loam.core.c4`, so the adapter
+// appears here as the edge into that box and nowhere else.
+
+specification {
+  element softwareSystem
+  element container
+  tag FEAT-1
+}
+
+model {
+  loam = softwareSystem 'loam' {
+
+    core = container 'src/core/' {
+      // Context: the four subjects the new package depends on, and the one
+      // that owns the sentence about what this axis cannot know.
+      brief = container 'src/core/brief/'
+      c4 = container 'src/core/c4/'
+      coherence = container 'src/core/coherence/'
+      pack = container 'src/core/pack/'
+      repo = container 'src/core/repo/'
+
+      // THE CHANGE. A top-level subject of its own rather than more files under
+      // `c4/`, for the reason `usecases/` is one: the READER of a LikeC4
+      // construct belongs beside the parser, and the AXIS built on it — the
+      // feature-local slot, the merge, the findings — is a different subject
+      // with different callers. `c4/` would otherwise acquire the archive's
+      // vocabulary, which is the import direction the layering forbids.
+      deployment = container 'src/core/deployment/' {
+        #FEAT-1
+      }
+    }
+
+    commands = container 'src/commands/' {
+      archive = container 'src/commands/archive/'
+      validate = container 'src/commands/validate/'
+    }
+  }
+
+  // The edges the new package owns. Two, not the three this delta first
+  // predicted: the `kernel` dependency is TYPE-ONLY — `DocsDir` and
+  // `FeatureDir` are branded types, and a brand costs an annotation rather than
+  // an import the model counts. The prediction was corrected against the tree
+  // before the archive, which is what an unarchived delta is for.
+  loam.core.deployment -> loam.core.c4 {
+    #FEAT-1
+  }
+  // `coherence` raises the create-only refusal, so the axis reaches the
+  // gate through it as well as through `validate`.
+  loam.core.coherence -> loam.core.deployment {
+    #FEAT-1
+  }
+  loam.core.deployment -> loam.core.repo {
+    #FEAT-1
+  }
+
+  // The three consumers. `validate` grades, `archive` merges the feature-local
+  // document, and `pack` is what puts the topology in front of the agent that
+  // writes the implementation — the surface whose absence is the reason a
+  // failover gets built against a map nobody read.
+  loam.commands.validate -> loam.core.deployment {
+    #FEAT-1
+  }
+  loam.commands.archive -> loam.core.deployment {
+    #FEAT-1
+  }
+  loam.core.pack -> loam.core.deployment {
+    #FEAT-1
+  }
+}
+
+views {
+  view feat_1 {
+    include *
+  }
+}

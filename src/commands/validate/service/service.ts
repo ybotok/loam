@@ -233,6 +233,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       relationships,
       land,
       known,
+      docsDir,
     })),
   );
 

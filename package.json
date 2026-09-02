@@ -1,6 +1,6 @@
 {
   "name": "@ybotok/loam",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.2",
   "description": "Architecture-first semantic integrity and change governance for evolving software systems: connect C4, requirements, contracts, and verification evidence.",
   "author": "spentsov",
   "repository": {

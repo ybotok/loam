@@ -1,0 +1,701 @@
+// loam's own architecture, drawn in loam. This is the SELF-MODEL: `services/loam/`
+// is loam itself, and the boxes below are the directories of `src/` in this very
+// repository. Nothing else in this docs tree describes another system, because
+// there is not another one — loam is a single binary, and ROADMAP.md's
+// "Self-hosting: loam on loam" is the standing statement of what that costs.
+//
+// THE COLLAPSE RULE, and it is the whole design of this file. `src/` holds 407
+// modules in 124 package directories (`npm run arch:graph` prints both). Drawing
+// 124 boxes would model the tree's INDENTATION; drawing three would model
+// nothing. The unit here is the TOP-LEVEL SUBJECT — exactly what
+// `docs/DESIGN.md`'s package-layout table has one row for:
+//
+//     src/cli.ts               -> loam.cli
+//     src/core/<name>/**       -> loam.core.<name>         (36 packages)
+//     src/core/<name>.ts       -> loam.core.<name>         (the 4 loose modules)
+//     src/commands/<name>/**   -> loam.commands.<name>     (24, policy included)
+//     src/commands/<name>.ts   -> loam.commands.<name>     (the 5 loose modules)
+//
+// 70 containers, and one edge for every VALUE import that crosses two of them:
+// 407 of them — 161 inside core, 186 from a command into core, 31 command to
+// command, 29 out of cli.ts and the loose modules. A `-` in a directory name
+// becomes `_` in the element name, because a LikeC4 element name is an
+// identifier and `conflict-markers` would parse as a subtraction. The real path
+// is the TITLE, and `scripts/self-model.mjs` checks the title as strictly as it
+// checks the id — so the rename is recorded, not hidden.
+//
+// `loam.core` and `loam.commands` are GROUPINGS. They stand for no package and
+// hold no module of their own — `src/core/*.ts` and `src/commands/*.ts` are each
+// their own unit above — so the self-model check reads only the LEAVES as units.
+// An element with children is scenery; an element without is a claim.
+//
+// WHY ONE softwareSystem WITH EVERYTHING NESTED INSIDE IT, rather than one
+// service per subsystem. Two reasons, both mechanical rather than aesthetic:
+//   - SCHEMA.md puts every subsystem name and every service id in ONE FLAT
+//     namespace, and `core/` and `commands/` collide on eleven leaf names
+//     (delta, dependencies, diff, doctor, explain, explore, gate, gherkin, mcp,
+//     status, verify). A services/core/ + services/commands/ tree cannot be
+//     spelled at all — it is not a preference that was weighed and lost.
+//   - An element is graded at service level only when NO ancestor already stands
+//     for a service (`validate/fleet/census.ts`), so one `metadata { service }`
+//     on the root puts all 70 boxes on the map while
+//     `landscape.service-undocumented` stays correctly silent: none of them is a
+//     service, and none of them owes a directory under `services/`.
+//
+// NO `description` ON A PACKAGE, deliberately. Nothing checks a description, and
+// `docs/DESIGN.md`'s package-layout table is already the reviewed English for
+// these subjects; a second copy here would be a second thing to drift, with no
+// gate between them and no way to tell which one had rotted. What this file
+// states is what a machine can hold it to: the id, the title, and the edge.
+//
+// WHAT KEEPS IT TRUE — and it is not `loam validate`. loam reads no source tree,
+// by standing non-goal, so "a package with no box" and "a box with no package"
+// are questions it will never answer about anybody's repository, this one
+// included. `npm run meta:check` (`scripts/self-model.mjs`) answers them, in
+// both directions, over the same import graph `npm run arch:check` walks. It
+// prints the fix and never applies it; if it ever grows a `--write`, the
+// non-goal has been broken.
+
+
+specification {
+  // Two kinds, and the scaffold's other two are deleted rather than left
+  // unused. `person` has no subject here — nobody is drawn using loam, because
+  // what would be drawn is a terminal. `database` is refused on purpose: the
+  // nearest candidates are `core/staging/` (the write path) and `core/repo/`
+  // (the read model over the docs tree), and drawing either as a datastore
+  // fires `landscape.datastore-private` / `landscape.datastore-shared`, which
+  // are advisories about a fleet-level store two services share. Neither is
+  // one, and a warning with no correct fix is a warning somebody silences.
+  element softwareSystem
+  element container
+}
+
+model {
+  loam = softwareSystem 'loam' {
+    // The binding that makes services/loam/ this element's directory, and the
+    // one line that keeps 70 containers off the service census: an element is
+    // graded at service level only when no ancestor already stands for a
+    // service, and this is that ancestor.
+    metadata {
+      service 'loam'
+    }
+
+    cli = container 'src/cli.ts'
+
+    core = container 'src/core/' {
+      agent = container 'src/core/agent/'
+      asyncapi = container 'src/core/asyncapi/'
+      brief = container 'src/core/brief/'
+      c4 = container 'src/core/c4/'
+      capabilities = container 'src/core/capabilities/'
+      coherence = container 'src/core/coherence/'
+      conflict_markers = container 'src/core/conflict-markers.ts'
+      delta = container 'src/core/delta/'
+      dependencies = container 'src/core/dependencies/'
+      diff = container 'src/core/diff/'
+      docs = container 'src/core/docs.ts'
+      doctor = container 'src/core/doctor/'
+      document = container 'src/core/document/'
+      envelope = container 'src/core/envelope/'
+      explain = container 'src/core/explain/'
+      explore = container 'src/core/explore/'
+      fleet_context = container 'src/core/fleet-context.ts'
+      gate = container 'src/core/gate/'
+      gherkin = container 'src/core/gherkin/'
+      glossary = container 'src/core/glossary/'
+      kernel = container 'src/core/kernel/'
+      links = container 'src/core/links/'
+      mcp = container 'src/core/mcp/'
+      obligations = container 'src/core/obligations/'
+      openapi = container 'src/core/openapi/'
+      openspec = container 'src/core/openspec/'
+      owners = container 'src/core/owners/'
+      pack = container 'src/core/pack/'
+      permissions = container 'src/core/permissions/'
+      projection = container 'src/core/projection/'
+      provenance = container 'src/core/provenance/'
+      repo = container 'src/core/repo/'
+      results = container 'src/core/results.ts'
+      scaffold = container 'src/core/scaffold/'
+      staging = container 'src/core/staging/'
+      status = container 'src/core/status/'
+      usecases = container 'src/core/usecases/'
+      verify = container 'src/core/verify/'
+      vocabulary = container 'src/core/vocabulary/'
+      workspace = container 'src/core/workspace/'
+    }
+
+    commands = container 'src/commands/' {
+      adopt = container 'src/commands/adopt/'
+      archive = container 'src/commands/archive/'
+      context = container 'src/commands/context/'
+      delta = container 'src/commands/delta/'
+      dependencies = container 'src/commands/dependencies.ts'
+      diff = container 'src/commands/diff/'
+      doctor = container 'src/commands/doctor.ts'
+      explain = container 'src/commands/explain/'
+      explore = container 'src/commands/explore.ts'
+      gate = container 'src/commands/gate/'
+      gherkin = container 'src/commands/gherkin/'
+      init = container 'src/commands/init/'
+      instructions = container 'src/commands/instructions.ts'
+      list = container 'src/commands/list/'
+      mcp = container 'src/commands/mcp/'
+      migrate_openspec = container 'src/commands/migrate-openspec/'
+      new = container 'src/commands/new/'
+      open = container 'src/commands/open.ts'
+      policy = container 'src/commands/policy/'
+      rebase = container 'src/commands/rebase/'
+      seed = container 'src/commands/seed/'
+      show = container 'src/commands/show/'
+      status = container 'src/commands/status/'
+      steps = container 'src/commands/steps/'
+      subsystem = container 'src/commands/subsystem/'
+      unarchive = container 'src/commands/unarchive/'
+      validate = container 'src/commands/validate/'
+      verify = container 'src/commands/verify/'
+      vouch = container 'src/commands/vouch/'
+    }
+  }
+
+  // ONE EDGE PER VALUE IMPORT THAT CROSSES TWO UNITS, and nothing else. The
+  // list is derived from `scripts/source-graph.mjs` — the same walk
+  // `npm run arch:check` runs — and `npm run meta:check` fails on an edge here
+  // the tree does not have, and on one the tree has and this file does not.
+  //
+  // `import type` is NOT an edge, on both sides of that check, because
+  // `verbatimModuleSyntax` erases it: a type-only edge cannot make
+  // module-evaluation order decide behaviour, which is the whole reason the
+  // acyclicity rules exist. The exemption has to be the same exemption on both
+  // sides or this file would be told to draw an edge arch:check has already
+  // decided is not one — which is why both readers share one module.
+  //
+  // TWO MUTUAL DEPENDENCIES ARE DRAWN HERE AND ARE REAL:
+  // `core/c4` <-> `core/repo` and `core/repo` <-> `core/provenance`. They are
+  // invisible to `npm run arch:graph`, which keys on the FULL relative
+  // directory — `core/c4/project` and `core/c4` are different nodes there, so
+  // the graph it proves acyclic is a finer one than the subjects
+  // `docs/DESIGN.md`'s package-layout table names. The table's claim is
+  // qualified accordingly, and `scripts/self-model.mjs` holds the qualified
+  // version: its baseline lists exactly these two, and a third fails the build.
+
+
+  loam.cli -> loam.commands.adopt
+  loam.cli -> loam.commands.archive
+  loam.cli -> loam.commands.context
+  loam.cli -> loam.commands.delta
+  loam.cli -> loam.commands.dependencies
+  loam.cli -> loam.commands.diff
+  loam.cli -> loam.commands.doctor
+  loam.cli -> loam.commands.explain
+  loam.cli -> loam.commands.explore
+  loam.cli -> loam.commands.gate
+  loam.cli -> loam.commands.gherkin
+  loam.cli -> loam.commands.init
+  loam.cli -> loam.commands.instructions
+  loam.cli -> loam.commands.list
+  loam.cli -> loam.commands.mcp
+  loam.cli -> loam.commands.migrate_openspec
+  loam.cli -> loam.commands.new
+  loam.cli -> loam.commands.open
+  loam.cli -> loam.commands.rebase
+  loam.cli -> loam.commands.seed
+  loam.cli -> loam.commands.show
+  loam.cli -> loam.commands.status
+  loam.cli -> loam.commands.steps
+  loam.cli -> loam.commands.subsystem
+  loam.cli -> loam.commands.unarchive
+  loam.cli -> loam.commands.validate
+  loam.cli -> loam.commands.verify
+  loam.cli -> loam.commands.vouch
+  loam.cli -> loam.core.envelope
+
+  loam.commands.adopt -> loam.commands.policy
+  loam.commands.adopt -> loam.core.brief
+  loam.commands.adopt -> loam.core.c4
+  loam.commands.adopt -> loam.core.envelope
+  loam.commands.adopt -> loam.core.kernel
+  loam.commands.adopt -> loam.core.repo
+  loam.commands.adopt -> loam.core.vocabulary
+
+  loam.commands.archive -> loam.core.asyncapi
+  loam.commands.archive -> loam.core.c4
+  loam.commands.archive -> loam.core.capabilities
+  loam.commands.archive -> loam.core.coherence
+  loam.commands.archive -> loam.core.document
+  loam.commands.archive -> loam.core.envelope
+  loam.commands.archive -> loam.core.fleet_context
+  loam.commands.archive -> loam.core.glossary
+  loam.commands.archive -> loam.core.kernel
+  loam.commands.archive -> loam.core.links
+  loam.commands.archive -> loam.core.openapi
+  loam.commands.archive -> loam.core.repo
+  loam.commands.archive -> loam.core.staging
+  loam.commands.archive -> loam.core.usecases
+  loam.commands.archive -> loam.core.vocabulary
+
+  loam.commands.context -> loam.commands.policy
+  loam.commands.context -> loam.core.envelope
+  loam.commands.context -> loam.core.fleet_context
+  loam.commands.context -> loam.core.kernel
+  loam.commands.context -> loam.core.pack
+  loam.commands.context -> loam.core.repo
+
+  loam.commands.delta -> loam.core.c4
+  loam.commands.delta -> loam.core.capabilities
+  loam.commands.delta -> loam.core.document
+  loam.commands.delta -> loam.core.envelope
+  loam.commands.delta -> loam.core.kernel
+  loam.commands.delta -> loam.core.projection
+  loam.commands.delta -> loam.core.repo
+  loam.commands.delta -> loam.core.usecases
+
+  loam.commands.dependencies -> loam.core.dependencies
+  loam.commands.dependencies -> loam.core.envelope
+  loam.commands.dependencies -> loam.core.fleet_context
+  loam.commands.dependencies -> loam.core.repo
+
+  loam.commands.diff -> loam.commands.policy
+  loam.commands.diff -> loam.core.diff
+  loam.commands.diff -> loam.core.envelope
+  loam.commands.diff -> loam.core.fleet_context
+  loam.commands.diff -> loam.core.repo
+  loam.commands.diff -> loam.core.vocabulary
+
+  loam.commands.doctor -> loam.core.doctor
+  loam.commands.doctor -> loam.core.envelope
+
+  loam.commands.explain -> loam.core.envelope
+  loam.commands.explain -> loam.core.explain
+  loam.commands.explain -> loam.core.repo
+
+  loam.commands.explore -> loam.commands.policy
+  loam.commands.explore -> loam.core.envelope
+  loam.commands.explore -> loam.core.explore
+  loam.commands.explore -> loam.core.fleet_context
+  loam.commands.explore -> loam.core.kernel
+  loam.commands.explore -> loam.core.repo
+
+  loam.commands.gate -> loam.commands.policy
+  loam.commands.gate -> loam.core.envelope
+  loam.commands.gate -> loam.core.fleet_context
+  loam.commands.gate -> loam.core.gate
+  loam.commands.gate -> loam.core.repo
+  loam.commands.gate -> loam.core.vocabulary
+
+  loam.commands.gherkin -> loam.commands.policy
+  loam.commands.gherkin -> loam.core.document
+  loam.commands.gherkin -> loam.core.envelope
+  loam.commands.gherkin -> loam.core.gherkin
+  loam.commands.gherkin -> loam.core.kernel
+  loam.commands.gherkin -> loam.core.repo
+  loam.commands.gherkin -> loam.core.staging
+
+  loam.commands.init -> loam.core.agent
+  loam.commands.init -> loam.core.docs
+  loam.commands.init -> loam.core.envelope
+  loam.commands.init -> loam.core.kernel
+  loam.commands.init -> loam.core.repo
+  loam.commands.init -> loam.core.staging
+
+  loam.commands.instructions -> loam.core.agent
+  loam.commands.instructions -> loam.core.envelope
+  loam.commands.instructions -> loam.core.explain
+
+  loam.commands.list -> loam.commands.policy
+  loam.commands.list -> loam.core.asyncapi
+  loam.commands.list -> loam.core.c4
+  loam.commands.list -> loam.core.capabilities
+  loam.commands.list -> loam.core.dependencies
+  loam.commands.list -> loam.core.envelope
+  loam.commands.list -> loam.core.fleet_context
+  loam.commands.list -> loam.core.glossary
+  loam.commands.list -> loam.core.kernel
+  loam.commands.list -> loam.core.links
+  loam.commands.list -> loam.core.owners
+  loam.commands.list -> loam.core.repo
+  loam.commands.list -> loam.core.usecases
+  loam.commands.list -> loam.core.verify
+  loam.commands.list -> loam.core.vocabulary
+
+  loam.commands.mcp -> loam.commands.context
+  loam.commands.mcp -> loam.commands.archive
+  loam.commands.mcp -> loam.commands.delta
+  loam.commands.mcp -> loam.commands.dependencies
+  loam.commands.mcp -> loam.commands.diff
+  loam.commands.mcp -> loam.commands.doctor
+  loam.commands.mcp -> loam.commands.explain
+  loam.commands.mcp -> loam.commands.explore
+  loam.commands.mcp -> loam.commands.gate
+  loam.commands.mcp -> loam.commands.instructions
+  loam.commands.mcp -> loam.commands.list
+  loam.commands.mcp -> loam.commands.new
+  loam.commands.mcp -> loam.commands.rebase
+  loam.commands.mcp -> loam.commands.gherkin
+  loam.commands.mcp -> loam.commands.show
+  loam.commands.mcp -> loam.commands.status
+  loam.commands.mcp -> loam.commands.steps
+  loam.commands.mcp -> loam.commands.validate
+  loam.commands.mcp -> loam.core.envelope
+  loam.commands.mcp -> loam.core.mcp
+
+  loam.commands.migrate_openspec -> loam.core.docs
+  loam.commands.migrate_openspec -> loam.core.document
+  loam.commands.migrate_openspec -> loam.core.envelope
+  loam.commands.migrate_openspec -> loam.core.kernel
+  loam.commands.migrate_openspec -> loam.core.openspec
+  loam.commands.migrate_openspec -> loam.core.repo
+  loam.commands.migrate_openspec -> loam.core.staging
+
+  loam.commands.new -> loam.commands.policy
+  loam.commands.new -> loam.core.capabilities
+  loam.commands.new -> loam.core.coherence
+  loam.commands.new -> loam.core.document
+  loam.commands.new -> loam.core.envelope
+  loam.commands.new -> loam.core.kernel
+  loam.commands.new -> loam.core.repo
+  loam.commands.new -> loam.core.staging
+
+  loam.commands.open -> loam.commands.policy
+  loam.commands.open -> loam.core.envelope
+  loam.commands.open -> loam.core.repo
+  loam.commands.open -> loam.core.workspace
+
+  loam.commands.policy -> loam.core.envelope
+  loam.commands.policy -> loam.core.explain
+  loam.commands.policy -> loam.core.repo
+
+  loam.commands.rebase -> loam.commands.policy
+  loam.commands.rebase -> loam.core.asyncapi
+  loam.commands.rebase -> loam.core.capabilities
+  loam.commands.rebase -> loam.core.document
+  loam.commands.rebase -> loam.core.envelope
+  loam.commands.rebase -> loam.core.fleet_context
+  loam.commands.rebase -> loam.core.kernel
+  loam.commands.rebase -> loam.core.openapi
+  loam.commands.rebase -> loam.core.repo
+  loam.commands.rebase -> loam.core.staging
+
+  loam.commands.seed -> loam.commands.policy
+  loam.commands.seed -> loam.core.c4
+  loam.commands.seed -> loam.core.envelope
+  loam.commands.seed -> loam.core.kernel
+  loam.commands.seed -> loam.core.repo
+  loam.commands.seed -> loam.core.scaffold
+  loam.commands.seed -> loam.core.staging
+
+  loam.commands.show -> loam.commands.policy
+  loam.commands.show -> loam.core.c4
+  loam.commands.show -> loam.core.capabilities
+  loam.commands.show -> loam.core.document
+  loam.commands.show -> loam.core.envelope
+  loam.commands.show -> loam.core.fleet_context
+  loam.commands.show -> loam.core.openapi
+  loam.commands.show -> loam.core.projection
+  loam.commands.show -> loam.core.provenance
+  loam.commands.show -> loam.core.repo
+  loam.commands.show -> loam.core.status
+  loam.commands.show -> loam.core.vocabulary
+
+  loam.commands.status -> loam.commands.policy
+  loam.commands.status -> loam.core.envelope
+  loam.commands.status -> loam.core.fleet_context
+  loam.commands.status -> loam.core.repo
+  loam.commands.status -> loam.core.status
+  loam.commands.status -> loam.core.vocabulary
+
+  loam.commands.steps -> loam.core.document
+  loam.commands.steps -> loam.core.envelope
+  loam.commands.steps -> loam.core.gherkin
+  loam.commands.steps -> loam.core.kernel
+  loam.commands.steps -> loam.core.repo
+
+  loam.commands.subsystem -> loam.commands.policy
+  loam.commands.subsystem -> loam.core.c4
+  loam.commands.subsystem -> loam.core.envelope
+  loam.commands.subsystem -> loam.core.kernel
+  loam.commands.subsystem -> loam.core.provenance
+  loam.commands.subsystem -> loam.core.repo
+  loam.commands.subsystem -> loam.core.staging
+
+  loam.commands.unarchive -> loam.commands.archive
+  loam.commands.unarchive -> loam.core.envelope
+  loam.commands.unarchive -> loam.core.kernel
+  loam.commands.unarchive -> loam.core.repo
+  loam.commands.unarchive -> loam.core.staging
+
+  loam.commands.validate -> loam.commands.list
+  loam.commands.validate -> loam.commands.policy
+  loam.commands.validate -> loam.core.agent
+  loam.commands.validate -> loam.core.asyncapi
+  loam.commands.validate -> loam.core.c4
+  loam.commands.validate -> loam.core.capabilities
+  loam.commands.validate -> loam.core.coherence
+  loam.commands.validate -> loam.core.conflict_markers
+  loam.commands.validate -> loam.core.diff
+  loam.commands.validate -> loam.core.document
+  loam.commands.validate -> loam.core.envelope
+  loam.commands.validate -> loam.core.explain
+  loam.commands.validate -> loam.core.fleet_context
+  loam.commands.validate -> loam.core.gherkin
+  loam.commands.validate -> loam.core.glossary
+  loam.commands.validate -> loam.core.kernel
+  loam.commands.validate -> loam.core.links
+  loam.commands.validate -> loam.core.obligations
+  loam.commands.validate -> loam.core.openapi
+  loam.commands.validate -> loam.core.permissions
+  loam.commands.validate -> loam.core.provenance
+  loam.commands.validate -> loam.core.repo
+  loam.commands.validate -> loam.core.staging
+  loam.commands.validate -> loam.core.status
+  loam.commands.validate -> loam.core.usecases
+  loam.commands.validate -> loam.core.verify
+  loam.commands.validate -> loam.core.vocabulary
+
+  loam.commands.verify -> loam.commands.policy
+  loam.commands.verify -> loam.core.envelope
+  loam.commands.verify -> loam.core.kernel
+  loam.commands.verify -> loam.core.provenance
+  loam.commands.verify -> loam.core.repo
+  loam.commands.verify -> loam.core.results
+  loam.commands.verify -> loam.core.staging
+  loam.commands.verify -> loam.core.verify
+
+  loam.commands.vouch -> loam.commands.policy
+  loam.commands.vouch -> loam.core.c4
+  loam.commands.vouch -> loam.core.document
+  loam.commands.vouch -> loam.core.envelope
+  loam.commands.vouch -> loam.core.provenance
+  loam.commands.vouch -> loam.core.repo
+  loam.commands.vouch -> loam.core.staging
+  loam.commands.vouch -> loam.core.vocabulary
+
+  loam.core.agent -> loam.core.envelope
+  loam.core.agent -> loam.core.kernel
+
+  loam.core.asyncapi -> loam.core.kernel
+  loam.core.asyncapi -> loam.core.openapi
+  loam.core.asyncapi -> loam.core.repo
+
+  loam.core.brief -> loam.core.c4
+  loam.core.brief -> loam.core.repo
+
+  loam.core.c4 -> loam.core.kernel
+  loam.core.c4 -> loam.core.repo
+
+  loam.core.capabilities -> loam.core.c4
+  loam.core.capabilities -> loam.core.document
+  loam.core.capabilities -> loam.core.kernel
+  loam.core.capabilities -> loam.core.repo
+
+  loam.core.coherence -> loam.core.asyncapi
+  loam.core.coherence -> loam.core.c4
+  loam.core.coherence -> loam.core.capabilities
+  loam.core.coherence -> loam.core.conflict_markers
+  loam.core.coherence -> loam.core.delta
+  loam.core.coherence -> loam.core.document
+  loam.core.coherence -> loam.core.envelope
+  loam.core.coherence -> loam.core.glossary
+  loam.core.coherence -> loam.core.kernel
+  loam.core.coherence -> loam.core.openapi
+  loam.core.coherence -> loam.core.repo
+  loam.core.coherence -> loam.core.usecases
+
+  loam.core.delta -> loam.core.capabilities
+  loam.core.delta -> loam.core.document
+  loam.core.delta -> loam.core.repo
+  loam.core.delta -> loam.core.usecases
+
+  loam.core.dependencies -> loam.core.c4
+  loam.core.dependencies -> loam.core.fleet_context
+  loam.core.dependencies -> loam.core.kernel
+  loam.core.dependencies -> loam.core.openapi
+  loam.core.dependencies -> loam.core.repo
+
+  loam.core.diff -> loam.core.asyncapi
+  loam.core.diff -> loam.core.c4
+  loam.core.diff -> loam.core.document
+  loam.core.diff -> loam.core.envelope
+  loam.core.diff -> loam.core.kernel
+  loam.core.diff -> loam.core.openapi
+  loam.core.diff -> loam.core.provenance
+  loam.core.diff -> loam.core.repo
+  loam.core.diff -> loam.core.usecases
+
+  loam.core.docs -> loam.core.agent
+  loam.core.docs -> loam.core.repo
+  loam.core.docs -> loam.core.scaffold
+
+  loam.core.doctor -> loam.core.agent
+  loam.core.doctor -> loam.core.c4
+  loam.core.doctor -> loam.core.conflict_markers
+  loam.core.doctor -> loam.core.docs
+  loam.core.doctor -> loam.core.envelope
+  loam.core.doctor -> loam.core.gherkin
+  loam.core.doctor -> loam.core.kernel
+  loam.core.doctor -> loam.core.repo
+  loam.core.doctor -> loam.core.staging
+
+  loam.core.document -> loam.core.kernel
+  loam.core.document -> loam.core.vocabulary
+
+  loam.core.envelope -> loam.core.kernel
+
+  loam.core.explain -> loam.core.agent
+  loam.core.explain -> loam.core.brief
+
+  loam.core.explore -> loam.core.c4
+  loam.core.explore -> loam.core.capabilities
+  loam.core.explore -> loam.core.fleet_context
+  loam.core.explore -> loam.core.repo
+  loam.core.explore -> loam.core.usecases
+  loam.core.explore -> loam.core.vocabulary
+
+  loam.core.fleet_context -> loam.core.asyncapi
+  loam.core.fleet_context -> loam.core.c4
+  loam.core.fleet_context -> loam.core.capabilities
+  loam.core.fleet_context -> loam.core.conflict_markers
+  loam.core.fleet_context -> loam.core.document
+  loam.core.fleet_context -> loam.core.kernel
+  loam.core.fleet_context -> loam.core.openapi
+  loam.core.fleet_context -> loam.core.repo
+
+  loam.core.gate -> loam.core.c4
+  loam.core.gate -> loam.core.kernel
+  loam.core.gate -> loam.core.provenance
+  loam.core.gate -> loam.core.repo
+  loam.core.gate -> loam.core.staging
+  loam.core.gate -> loam.core.status
+  loam.core.gate -> loam.core.vocabulary
+
+  loam.core.gherkin -> loam.core.document
+  loam.core.gherkin -> loam.core.kernel
+  loam.core.gherkin -> loam.core.repo
+  loam.core.gherkin -> loam.core.vocabulary
+
+  loam.core.glossary -> loam.core.repo
+
+  loam.core.links -> loam.core.capabilities
+  loam.core.links -> loam.core.envelope
+  loam.core.links -> loam.core.glossary
+  loam.core.links -> loam.core.kernel
+  loam.core.links -> loam.core.repo
+
+  loam.core.mcp -> loam.core.agent
+  loam.core.mcp -> loam.core.envelope
+  loam.core.mcp -> loam.core.explain
+  loam.core.mcp -> loam.core.kernel
+
+  loam.core.obligations -> loam.core.kernel
+
+  loam.core.openapi -> loam.core.kernel
+  loam.core.openapi -> loam.core.repo
+
+  loam.core.openspec -> loam.core.document
+  loam.core.openspec -> loam.core.kernel
+  loam.core.openspec -> loam.core.repo
+
+  loam.core.pack -> loam.core.c4
+  loam.core.pack -> loam.core.capabilities
+  loam.core.pack -> loam.core.document
+  loam.core.pack -> loam.core.envelope
+  loam.core.pack -> loam.core.fleet_context
+  loam.core.pack -> loam.core.kernel
+  loam.core.pack -> loam.core.permissions
+  loam.core.pack -> loam.core.projection
+  loam.core.pack -> loam.core.provenance
+  loam.core.pack -> loam.core.repo
+  loam.core.pack -> loam.core.usecases
+  loam.core.pack -> loam.core.vocabulary
+
+  loam.core.permissions -> loam.core.kernel
+
+  loam.core.projection -> loam.core.asyncapi
+  loam.core.projection -> loam.core.c4
+  loam.core.projection -> loam.core.kernel
+  loam.core.projection -> loam.core.openapi
+  loam.core.projection -> loam.core.repo
+
+  loam.core.provenance -> loam.core.document
+  loam.core.provenance -> loam.core.kernel
+  loam.core.provenance -> loam.core.repo
+
+  loam.core.repo -> loam.core.c4
+  loam.core.repo -> loam.core.document
+  loam.core.repo -> loam.core.kernel
+  loam.core.repo -> loam.core.provenance
+
+  loam.core.results -> loam.core.gherkin
+  loam.core.results -> loam.core.kernel
+
+  loam.core.staging -> loam.core.envelope
+  loam.core.staging -> loam.core.kernel
+
+  loam.core.status -> loam.core.coherence
+  loam.core.status -> loam.core.dependencies
+  loam.core.status -> loam.core.document
+  loam.core.status -> loam.core.envelope
+  loam.core.status -> loam.core.fleet_context
+  loam.core.status -> loam.core.kernel
+  loam.core.status -> loam.core.provenance
+  loam.core.status -> loam.core.repo
+  loam.core.status -> loam.core.scaffold
+  loam.core.status -> loam.core.staging
+  loam.core.status -> loam.core.usecases
+  loam.core.status -> loam.core.verify
+  loam.core.status -> loam.core.vocabulary
+
+  loam.core.usecases -> loam.core.c4
+  loam.core.usecases -> loam.core.capabilities
+  loam.core.usecases -> loam.core.kernel
+  loam.core.usecases -> loam.core.repo
+
+  loam.core.verify -> loam.core.asyncapi
+  loam.core.verify -> loam.core.c4
+  loam.core.verify -> loam.core.document
+  loam.core.verify -> loam.core.envelope
+  loam.core.verify -> loam.core.fleet_context
+  loam.core.verify -> loam.core.gherkin
+  loam.core.verify -> loam.core.kernel
+  loam.core.verify -> loam.core.openapi
+  loam.core.verify -> loam.core.repo
+  loam.core.verify -> loam.core.staging
+  loam.core.verify -> loam.core.vocabulary
+
+  loam.core.vocabulary -> loam.core.kernel
+
+  loam.core.workspace -> loam.core.envelope
+  loam.core.workspace -> loam.core.kernel
+  loam.core.workspace -> loam.core.repo
+}
+
+// Views are LikeC4's renderer's; loam reads the model and never a view
+// (docs/DESIGN.md rule 26). Three scoped views rather than one `include *`,
+// and the scoping is not taste: computing a view is superlinear in the number
+// of edges, and one view over 70 boxes and 403 edges is both the slow one to
+// draw and the one nobody can read. `core` alone is 271 of those edges.
+//
+// No `dynamic view` is declared, and that absence is a finding about the
+// PRODUCT rather than an omission here: a use case is a call sequence between
+// services, and loam is one process. The nearest true statement — "the user
+// types `loam validate`, cli calls commands/validate, which calls fourteen
+// core packages" — is a call STACK, and a stack drawn as a sequence diagram
+// would be an artifact that exists only to make the use-case checks fire.
+// ROADMAP's exit criterion 2 forbids exactly that, so the whole `usecase.*`
+// family is silent here, and silent because nothing asked.
+views {
+  view layers {
+    title 'loam — entry, commands, core'
+    include loam, loam.cli, loam.core, loam.commands, loam.cli -> loam.commands
+  }
+
+  view commands {
+    title 'loam — what each command reaches into'
+    include loam.commands, loam.commands.*, loam.cli, loam.cli -> loam.commands.*
+  }
+
+  view core {
+    title 'loam — the core DAG'
+    include loam.core, loam.core.*
+  }
+}
