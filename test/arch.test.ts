@@ -15,7 +15,15 @@ import { join } from "node:path";
 import { parseCoversEntry, closeIds } from "../src/core/c4/arch.js";
 import { readHealth, type HealthFile } from "../src/core/vocabulary/health.js";
 import { parseRequirements } from "../src/core/document/parse.js";
-import { coherentFixture, makeProject, makeTmpDir, pinFor, runLoam, type Project } from "./helpers/harness.js";
+import {
+  coherentFixture,
+  LANDSCAPE,
+  makeProject,
+  makeTmpDir,
+  pinFor,
+  runLoam,
+  type Project,
+} from "./helpers/harness.js";
 
 async function withProject(
   files: Record<string, string>,
@@ -92,7 +100,7 @@ describe("Covers: parsing (spec.ts)", () => {
     expect(r!.covers).toEqual(["paymentService"]);
   });
 
-  it("classifies the three entry forms", () => {
+  it("classifies the four entry forms", () => {
     expect(parseCoversEntry("paymentService.db")).toEqual({
       form: "element",
       id: "paymentService.db",
@@ -104,6 +112,39 @@ describe("Covers: parsing (spec.ts)", () => {
       form: "sli",
       id: "availability",
       raw: "sli: availability",
+    });
+    expect(parseCoversEntry("node:eu.dcA")).toEqual({ form: "node", id: "eu.dcA", raw: "node:eu.dcA" });
+    expect(parseCoversEntry("node: eu.a.db -> node:eu.b.db")).toEqual({
+      form: "node-edge",
+      source: "eu.a.db",
+      target: "eu.b.db",
+      raw: "node: eu.a.db -> node:eu.b.db",
+    });
+  });
+
+  it("takes both sides of a deployment edge or neither, and never reads `->` as part of an id", () => {
+    // A mixed entry stays an ordinary edge, whose prefixed side then resolves to
+    // nothing. There is no edge in any model with one endpoint in the logical
+    // map and one in the deployment map, so the alternative is inventing a join.
+    expect(parseCoversEntry("node:eu.dcA -> paymentService")).toEqual({
+      form: "edge",
+      source: "node:eu.dcA",
+      target: "paymentService",
+      raw: "node:eu.dcA -> paymentService",
+    });
+    expect(parseCoversEntry("paymentService -> node:eu.dcA").form).toBe("edge");
+    // And the `->` split runs before the prefix test, or the whole line would
+    // be read as one id that can never resolve.
+    expect(parseCoversEntry("node:a -> node:b").form).toBe("node-edge");
+  });
+
+  it("a bare deployment id is an element entry — one object, one spelling", () => {
+    // The grammar has to be learnable: a silent second spelling for the same
+    // object would resolve for some ids and not others with nothing to say why.
+    expect(parseCoversEntry("eu.dcA.k8sA")).toEqual({
+      form: "element",
+      id: "eu.dcA.k8sA",
+      raw: "eu.dcA.k8sA",
     });
   });
 
@@ -321,6 +362,111 @@ describe("covers.unknown on the living arch.spec.md", () => {
 /* ------------------------------------------------------------------ */
 /* health.uncovered — service scope                                    */
 /* ------------------------------------------------------------------ */
+
+describe("Covers: node: — the deployment forms", () => {
+  /**
+   * The landscape's own specification has to declare the kinds, because
+   * `architecture/` is ONE LikeC4 project and a second `specification` block in
+   * the deployment document would be a duplicate error blamed on both files.
+   */
+  const LANDSCAPE_WITH_KINDS = LANDSCAPE.replace(
+    "  element person\n}",
+    "  element person\n  deploymentNode region\n  deploymentNode cluster\n}",
+  );
+
+  /**
+   * A file of its OWN, beside the landscape — which is the point of the fixture
+   * rather than an arbitrary layout. `validate --service` loads only
+   * `landscape.likec4`; `validate --all` loads the whole project. A topology
+   * written here is invisible to the first unless the lazy load in
+   * `validate/service/specs.ts` is wired, so this file is what makes the
+   * agreement test below able to fail.
+   */
+  const DEPLOYMENT = `deployment {
+  eu = region 'EU' {
+    a = cluster 'cluster-a' {
+      instanceOf paymentService
+    }
+    b = cluster 'cluster-b' {
+      instanceOf paymentService
+    }
+    a.paymentService -> b.paymentService 'Replicates authorization state'
+  }
+}
+`;
+
+  const geoFixture = (covers: string): Record<string, string> => {
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = LANDSCAPE_WITH_KINDS;
+    files["architecture/deployment.likec4"] = DEPLOYMENT;
+    files["services/payment-service/arch.spec.md"] = ARCH_REQ(covers);
+    return files;
+  };
+
+  it("resolves a node and a deployment edge, and BOTH validate forms agree", async () => {
+    await withProject(
+      geoFixture("Covers: node:eu.a, node:eu.a.paymentService -> node:eu.b.paymentService"),
+      async (p) => {
+        // Asserted as a relation over the two commands, not as one golden
+        // payload: they answer from different loads — a single-file landscape
+        // read and a whole-project one — and `loam status`'s two forms have
+        // twice been caught disagreeing about a question exactly this shape.
+        for (const args of [
+          ["validate", "--service", "payment-service", "--json"],
+          ["validate", "--all", "--json"],
+        ]) {
+          const res = await runLoam(p.workDir, ...args);
+          expect(res.code, args.join(" ")).toBe(0);
+          expect(ofCode(findings(res.stdout), "covers.unknown"), args.join(" ")).toEqual([]);
+        }
+      },
+    );
+  });
+
+  it("names the real deployment ids WITH the prefix when one is mistyped", async () => {
+    await withProject(geoFixture("Covers: node:eu.dcZ"), async (p) => {
+      for (const args of [
+        ["validate", "--service", "payment-service", "--json"],
+        ["validate", "--all", "--json"],
+      ]) {
+        const res = await runLoam(p.workDir, ...args);
+        const [f] = ofCode(findings(res.stdout), "covers.unknown");
+        expect(f, args.join(" ")).toBeDefined();
+        expect(f!.severity).toBe("warn");
+        // Spelled the way the author has to type it. A hint offering a bare id
+        // would send the reader round the loop a second time, because the
+        // grammar then reads that id as an element entry.
+        expect(f!.message).toContain("node:eu.a");
+        expect(f!.message).not.toContain("Did you mean: eu.a");
+      }
+    });
+  });
+
+  it("does not resolve a bare id, nor an entry with only one side prefixed", async () => {
+    // Both are `covers.unknown` on purpose, and neither is an error: the axis
+    // is a typo guard end to end, and the cost of a wrong line is exactly the
+    // coverage it was written for.
+    await withProject(geoFixture("Covers: eu.a, node:eu.a -> paymentService"), async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      expect(ofCode(findings(res.stdout), "covers.unknown")).toHaveLength(2);
+    });
+  });
+
+  it("a fleet with no deployment model reports the entry rather than crashing on an absent scope", async () => {
+    const files = coherentFixture();
+    files["services/payment-service/arch.spec.md"] = ARCH_REQ("Covers: node:eu.a");
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      const [f] = ofCode(findings(res.stdout), "covers.unknown");
+      expect(f).toBeDefined();
+      // No hints, because there are no real ids to offer — and the message must
+      // not invent one.
+      expect(f!.message).not.toContain("Did you mean");
+    });
+  });
+});
 
 describe("health.uncovered", () => {
   it("fires per declared alert and SLI no arch requirement covers — arch.spec.md absent included", async () => {

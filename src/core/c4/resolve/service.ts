@@ -117,3 +117,48 @@ export function serviceOf(elements: Elem[], id: string, known?: ReadonlySet<stri
   return serviceResolver(elements, known)(id);
 }
 
+/**
+ * One `id -> service` resolver per document, not one per lookup.
+ *
+ * `serviceOf` builds a fresh id map on every call, and this axis calls it twice
+ * for every relationship in scope — inside loops that already run over every
+ * relationship a service can see. `serviceResolver`'s own doc says it is "built
+ * once per document and shared"; this is where both axes that need it keep
+ * that promise — `../arch.ts`'s `coversEdge` and `./steps.ts`'s `resolvedTier`,
+ * each exported and each handed only the element array.
+ *
+ * A module-level cache is normally the wrong shape here, because a command runs
+ * against whatever directory it was invoked in. This one is safe: the key is the
+ * per-invocation `Elem[]` a parse produced, its value is a pure function of that
+ * key alone, and nothing in it is derived from the working directory — so two
+ * runs can never see each other's answer, and the entry dies with the document.
+ * Nothing mutates an `Elem[]` after parse.
+ *
+ * Two tiers because the fleet set is part of the answer: the same document
+ * resolves differently with and without `known`, so a cache keyed on the
+ * elements alone handed a with-fleet caller the without-fleet resolver.
+ * Callers build ONE set per run and pass the same instance through, which is
+ * what lets the inner WeakMap key on the set's identity.
+ */
+const RESOLVERS = new WeakMap<Elem[], (id: string) => string>();
+const FLEET_RESOLVERS = new WeakMap<Elem[], WeakMap<ReadonlySet<string>, (id: string) => string>>();
+
+export function resolverFor(elements: Elem[], known?: ReadonlySet<string>): (id: string) => string {
+  if (known === undefined) {
+    const cached = RESOLVERS.get(elements);
+    if (cached !== undefined) return cached;
+    const resolver = serviceResolver(elements);
+    RESOLVERS.set(elements, resolver);
+    return resolver;
+  }
+  let perSet = FLEET_RESOLVERS.get(elements);
+  if (perSet === undefined) {
+    perSet = new WeakMap();
+    FLEET_RESOLVERS.set(elements, perSet);
+  }
+  const cached = perSet.get(known);
+  if (cached !== undefined) return cached;
+  const resolver = serviceResolver(elements, known);
+  perSet.set(known, resolver);
+  return resolver;
+}

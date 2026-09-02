@@ -13,7 +13,7 @@
  * ## Attributed is a victim; contested is a suspension
  *
  * The distinction is the whole reason this module is careful rather than a
- * filter. `attributeStep` (core/c4/arch.ts) grades a hop by the DISTINCT-op
+ * filter. `attributeStep` (core/c4/resolve/steps.ts) grades a hop by the DISTINCT-op
  * count across the relationships backing it:
  *
  *  - `attributed` with `op === X` means every relationship behind the hop agrees
@@ -38,7 +38,7 @@
  * that convicts it, and repeating that here would file a modelling defect
  * against whoever happened to remove an endpoint.
  */
-import { attributeStep } from "../c4/arch.js";
+import { attributeStep } from "../c4/resolve/steps.js";
 import type { ParsedStep, ParsedView } from "../c4/parsed/dynamic-views.js";
 import { hopPlace } from "./place.js";
 import type { UseCaseScan } from "./fleet.js";
