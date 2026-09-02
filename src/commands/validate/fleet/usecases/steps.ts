@@ -2,7 +2,7 @@
  * The three grades one hop of a use case can earn: `usecase.step-unbacked`,
  * `usecase.step-contested` and `usecase.step-unlinked`.
  *
- * The attribution itself is `core/c4/arch.ts`'s `attributeStep` — which declared
+ * The attribution itself is `core/c4/resolve/steps.ts`'s `attributeStep` — which declared
  * relationship backs a hop, oriented on `isBackward` and decided by the
  * DISTINCT-op count — and none of that reasoning is repeated here. This module
  * owns three things: which verdict earns which code, the three guards that keep
@@ -24,7 +24,7 @@
  * once for the disagreement, and once for whichever candidate happened to carry
  * no operation at all.
  */
-import { attributeStep, type StepAttribution, type StepScope } from "../../../../core/c4/arch.js";
+import { attributeStep, type StepAttribution, type StepScope } from "../../../../core/c4/resolve/steps.js";
 import type { Elem, Rel } from "../../../../core/c4/likec4.js";
 import type { ParsedStep, ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import { ACTOR_KINDS } from "../../../../core/vocabulary/maturity.js";
@@ -76,7 +76,7 @@ function placeOf(hop: GradedStep): string {
  * spelling they used would be a hint that restates the defect — and the sentence
  * says which pair that spelling looks the hop up under, because `<-` attributes
  * a reply to the CALL it answers rather than to the direction the message
- * travels (`callPair` in core/c4/arch.ts holds the measurement).
+ * travels (`callPair` in core/c4/resolve/steps.ts holds the measurement).
  */
 function unbackedFinding(hop: GradedStep, attribution: Unbacked): Finding {
   const other = hop.step.isBackward

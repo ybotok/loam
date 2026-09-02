@@ -197,12 +197,22 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     const landParses = land !== null && land.errors.length === 0 ? land : null;
     const baseElements = [...elements, ...(landParses?.elements ?? [])];
     const baseRels = [...relationships, ...(landParses?.relationships ?? [])];
+    // A feature never brings topology through `delta.likec4` — a `deployment { }`
+    // block in one is refused by the merge — so the living map is the whole
+    // scope for a `node:` entry in a delta, exactly as it is in service scope.
+    const baseDeployment = landParses?.deployment;
     for (const { service: svc, reqs } of archDeltas) {
       // An unreadable living health.yaml mutes the alert:/sli: entries here
       // exactly as in service scope — the health.invalid finding itself
       // belongs to the service target, which owns the file's diagnosis.
       const health = await readHealth((await locateServicePaths(docsDir, svc, fleet)).health);
-      let scope: CoverageScope = { elements: baseElements, relationships: baseRels, health: health.ids, known };
+      let scope: CoverageScope = {
+        elements: baseElements,
+        relationships: baseRels,
+        ...(baseDeployment === undefined ? {} : { deployment: baseDeployment }),
+        health: health.ids,
+        known,
+      };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
         const modelPath = (await locateServicePaths(docsDir, svc, fleet)).model;

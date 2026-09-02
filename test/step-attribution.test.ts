@@ -29,7 +29,7 @@ import {
   type StepAttribution,
   type StepEndpoints,
   type StepScope,
-} from "../src/core/c4/arch.js";
+} from "../src/core/c4/resolve/steps.js";
 import { loadSource, type Elem, type Rel } from "../src/core/c4/likec4.js";
 
 /* ------------------------------------------------------------------ */

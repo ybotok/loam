@@ -37,7 +37,7 @@
  * optimisation.
  */
 import { readFile } from "node:fs/promises";
-import type { StepScope } from "../c4/arch.js";
+import type { StepScope } from "../c4/resolve/steps.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../capabilities/usecase-join.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import { architectureDir, loadArchitecture } from "../c4/project/architecture.js";
