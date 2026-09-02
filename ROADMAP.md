@@ -1,6 +1,6 @@
 # Roadmap
 
-_Assessed 2026-08-28._
+_Assessed 2026-09-02._
 
 This is loam's canonical improvement sequence. It records priorities and exit criteria, not delivery
 dates. An item is complete only when its exit criteria are supported by repeatable evidence; moving
@@ -27,11 +27,12 @@ dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-08-31 on `ab4c856` plus the changes on top of it, and dated because neither number
-has a cheap derivation:_ lint, typecheck, `npm run arch:check` and `npm run meta:check` green;
-`npm test` passing **3,358/3,358 tests**, with two `skipIf(asRoot)` cases the root gate container
-cannot run; and the coverage gate passing with **92.20% statements, 83.97% branches, 96.75%
-functions, and 94.13% lines** against its thresholds of 91 / 82 / 95 / 93.
+_Measured 2026-09-02 at `0.2.0-alpha.2`, and dated because neither number has a cheap derivation:_
+lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
+**3,399/3,399 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.25% statements, 84.04% branches, 96.62% functions, and 94.18%
+lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
+`npm run test:package` green against the real tarball.
 
 One qualification remains, and it is observation rather than code: nothing has been pushed since the
 CI `stability` job and the tarball-reading package smoke landed, so repeatable CI executions — the
