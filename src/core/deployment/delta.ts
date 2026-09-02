@@ -55,6 +55,7 @@ import { stageMergedProject } from "../c4/project/staged.js";
 import { type LoadedDoc } from "../c4/likec4.js";
 import { architectureDocuments } from "../c4/project/documents.js";
 import { featureDeploymentDir } from "../repo/authored/paths.js";
+import { reservedArchitectureName } from "../repo/paths.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 import { type Issue } from "../vocabulary/issue.js";
 
@@ -104,6 +105,16 @@ export function livingDeploymentPath(docsDir: DocsDir, rel: string): string {
 }
 
 /**
+ * The two things that can go wrong about a topology document's NAME, before
+ * anything about its contents is asked.
+ *
+ * `deployment.doc-reserved` — the name is one loam owns inside `architecture/`.
+ * The merge writes straight into that directory, unlike a flow, which lands
+ * under `usecases/`, so `<name>` is free to collide with the living map, the
+ * generated subsystem views, or the flow tree. `reservedArchitectureName`
+ * carries which and why. It is asked FIRST and WITHOUT an existence test,
+ * because two of the three fail silently when the target does not exist yet.
+ *
  * `deployment.doc-exists` — a topology document this feature introduces that
  * the living `architecture/` already holds.
  *
@@ -122,20 +133,43 @@ export function livingDeploymentPath(docsDir: DocsDir, rel: string): string {
  */
 export async function deploymentDeltaIssues(docsDir: DocsDir, featureDir: FeatureDir): Promise<Issue[]> {
   const docs = await featureDeployments(featureDir);
-  return docs
-    .filter((doc) => existsSync(livingDeploymentPath(docsDir, doc.rel)))
-    .map((doc) => ({
-      severity: "error" as const,
-      code: "deployment.doc-exists" as const,
+  const issues: Issue[] = [];
+  // The reservation runs FIRST and independently of existence, because two of
+  // the three names it refuses need not exist for the merge to be wrong. A
+  // topology copied over `subsystems.likec4` is destroyed by the next
+  // `loam subsystem sync` and is invisible to every project load until then —
+  // the merge would report `created architecture/subsystems.likec4` and nothing
+  // downstream would ever say another word about it.
+  for (const doc of docs) {
+    const reason = reservedArchitectureName(doc.rel);
+    if (reason === null) continue;
+    issues.push({
+      severity: "error",
+      code: "deployment.doc-reserved",
       subject: doc.rel,
       message:
-        `architecture/${doc.rel} already exists, so this feature's topology would replace an authored one wholesale — ` +
-        "a feature-local deployment document INTRODUCES topology, it does not rewrite it. " +
-        `Delete features/<FEAT>/deployment/${doc.rel} and edit architecture/${doc.rel} directly in this same change, ` +
-        "where git produces an ordinary conflict if somebody else is editing it too. " +
-        `To ADD to what that file declares, write a document of another name that says \`extend\` — ` +
-        `\`${suggest(doc.rel)}\` — which is what lets two features grow one region without touching each other.`,
-    }));
+        `features/<FEAT>/deployment/${doc.rel} would merge to architecture/${doc.rel}, and that name is loam's: ` +
+        `${reason}. Rename the feature's document — its name is yours to choose, and \`extend\` is how it adds to ` +
+        "what a living document already declares.",
+    });
+  }
+  return issues.concat(
+    docs
+      .filter((doc) => reservedArchitectureName(doc.rel) === null)
+      .filter((doc) => existsSync(livingDeploymentPath(docsDir, doc.rel)))
+      .map((doc) => ({
+        severity: "error" as const,
+        code: "deployment.doc-exists" as const,
+        subject: doc.rel,
+        message:
+          `architecture/${doc.rel} already exists, so this feature's topology would replace an authored one wholesale — ` +
+          "a feature-local deployment document INTRODUCES topology, it does not rewrite it. " +
+          `Delete features/<FEAT>/deployment/${doc.rel} and edit architecture/${doc.rel} directly in this same change, ` +
+          "where git produces an ordinary conflict if somebody else is editing it too. " +
+          `To ADD to what that file declares, write a document of another name that says \`extend\` — ` +
+          `\`${suggest(doc.rel)}\` — which is what lets two features grow one region without touching each other.`,
+      })),
+  );
 }
 
 /** What the caller needs to grade this feature's topology against the merge preview. */

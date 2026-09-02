@@ -159,19 +159,23 @@ export async function gate(
   // the rest. The register is issue.ts's `approveOverrides` — the same data
   // the `overridable` key in the envelope is resolved from — never a code
   // string spelled here, because two spellings of "what the flag moves" would
-  // drift. Today the register holds one code: a `metadata { service }` binding
-  // the id grammar refuses, anywhere in a tagged element's spliced block. The
-  // landscape merge would splice that name into the living map verbatim, and
-  // the new-service scan would probe `services/<binding>/` with it — a '../'
-  // collapses the probe out of services/ altogether — so the refusal is a
-  // mechanical fact about the path the name becomes, not a judgment about the
-  // feature. Same doctrine as the illegal-specs-name refusal above; the dry
-  // run is gated the same way, and the --json envelope stays not-coherent
-  // with every issue attached, exactly like the overridable branch below, so
-  // a consumer branches on the code and not on which refusal path fired.
+  // drift. What the register HOLDS has grown: it began as one code (a
+  // `metadata { service }` binding the id grammar refuses, where the merge
+  // would splice the name into the living map verbatim and probe
+  // `services/<binding>/` with it) and now holds the create-only collisions of
+  // every whole-file axis besides. They share the doctrine and nothing else —
+  // each is a mechanical fact about what the merge would write, never a
+  // judgment about the feature — which is why the message below counts them
+  // and lets each issue say its own sentence.
+  //
+  // IT USED TO NAME BINDINGS, and had been wrong for every other code in the
+  // register since the use-case slot landed: a feature whose flow collided
+  // with a living one was refused with "1 element binding(s) name an illegal
+  // service id", about a feature that binds nothing. A refusal headline that
+  // describes the wrong breach sends its reader to the wrong file first.
   const nonOverridable = issues.filter((i) => !approveOverrides(i));
   if (nonOverridable.length > 0) {
-    const msg = `archive ${id} — BLOCKED: ${nonOverridable.length} element binding(s) name an illegal service id; --approve does not override this`;
+    const msg = `archive ${id} — BLOCKED: ${nonOverridable.length} issue(s) --approve does not override; each names what the merge would write`;
     if (json) {
       refuseJson("not-coherent", msg, issues, `features/${dirName}`);
       return null;
@@ -183,7 +187,9 @@ export async function gate(
     // line says which of the marks the flag cannot move.
     for (const i of issues) console.error(`  ${SEVERITY_MARK[i.severity]} ${i.message}`);
     console.error(
-      `\nOf these, --approve does not override the ${nonOverridable.length} illegal binding(s) — the merge would write a name loam can never resolve into services/, mechanically. Fix the binding(s); the other issues gate as usual.`,
+      `\nOf these, --approve does not override ${nonOverridable.length}: ${[...new Set(nonOverridable.map((i) => i.code))].sort().join(", ")}. ` +
+        "Each is a mechanical fact about what the merge would write — a name loam cannot resolve, or a file it would replace wholesale — not a judgement the flag can move. " +
+        "Fix those; the other issues gate as usual.",
     );
     sayExplain("not-coherent");
     process.exitCode = 1;

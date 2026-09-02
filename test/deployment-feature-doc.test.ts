@@ -253,6 +253,46 @@ describe("a feature brings topology", () => {
     expect(await treeHashes(p.docsDir)).toEqual(before);
   });
 
+  it("refuses a name loam owns inside architecture/, whether or not the target exists", async () => {
+    // The merge writes STRAIGHT into `architecture/` — unlike a flow, which
+    // lands under `usecases/` — so the document's name is free to collide with
+    // what loam owns there, and two of the three fail silently: nothing parses
+    // `subsystems.likec4` and `loam subsystem sync` overwrites it wholesale, so
+    // topology copied there is gone and invisible in the same breath. Neither
+    // target exists in this fixture, which is the case `deployment.doc-exists`
+    // cannot see.
+    const p = await project({
+      [`${FEAT_DIR}/deployment/subsystems.likec4`]: STANDBY,
+      [`${FEAT_DIR}/deployment/usecases/nested.likec4`]: STANDBY,
+    });
+    expect(p.exists("architecture/subsystems.likec4")).toBe(false);
+    const before = await treeHashes(p.docsDir);
+
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const found = issuesOf(refused.stdout, "deployment.doc-reserved");
+    expect(found.map((i) => i.message.includes("subsystems.likec4"))).toContain(true);
+    expect(found).toHaveLength(2);
+    expect(found.every((i) => i.overridable === false)).toBe(true);
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+
+    const approved = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(approved.code, approved.out).toBe(1);
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+  });
+
+  it("the refusal headline names what actually refused, not element bindings", async () => {
+    // It said "N element binding(s) name an illegal service id" for every code
+    // in the never-overridable register, and had done since the use-case slot
+    // put a second one there — about features that bind nothing. A headline
+    // describing the wrong breach sends its reader to the wrong file first.
+    const p = await project({ [`${FEAT_DIR}/deployment/subsystems.likec4`]: STANDBY });
+    const refused = await runLoam(p.workDir, "archive", FEAT);
+    expect(refused.code).toBe(1);
+    expect(refused.out).not.toContain("element binding(s) name an illegal service id");
+    expect(refused.out).toContain("deployment.doc-reserved");
+  });
+
   it("two features extending one region both archive — the file is the collision, not the region", async () => {
     const OTHER = "features/FEAT-2-third/";
     const p = await project({
