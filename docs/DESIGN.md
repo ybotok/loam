@@ -79,7 +79,7 @@ parsed. If a second reader of the same claims appears, that is the seam to move.
 | L2 | `agent/` `document/` `staging/` | Parse one document kind into a record; the write path |
 | L3 | `repo/` | The read model over the docs tree, and the fan-in hub of the whole layer stack |
 | L4 | `c4/` `gherkin/` `glossary/` `openapi/` `openspec/` `provenance/` `workspace/` | Read and write one artifact family. Not "cheap": `c4/likec4.ts` is the most expensive module in the repo and sits here |
-| L5 | `asyncapi/` `brief/` `capabilities/` `doctor/` | One artifact family that needs another one first |
+| L5 | `asyncapi/` `brief/` `capabilities/` `deployment/` `doctor/` | One artifact family that needs another one first |
 | L6 | `explain/` `links/` `projection/` `usecases/` | One link, one flow, projected onto the model |
 | L7 | `delta/` `dependencies/` `diff/` `explore/` `mcp/` `pack/` `verify/` | One feature, and the whole-fleet reads |
 | L8 | `coherence/` | Cross-artifact rules producing `Issue[]` / `Finding[]` |
@@ -129,6 +129,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/asyncapi/` | the event contract axis; `asyncapi/merge/` is the delta path | kernel, openapi, repo |
 | `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked | c4, repo |
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
+| `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
 | `core/delta/` | does the diff apply | capabilities, document, repo, usecases |
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |

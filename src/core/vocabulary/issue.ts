@@ -71,6 +71,7 @@ const NEVER_OVERRIDABLE: ReadonlySet<IssueCode> = new Set<IssueCode>([
   "c4.service-binding-invalid",
   "glossary.term-exists",
   "usecase.flow-exists",
+  "deployment.doc-exists",
   "usecase.flow-invalid",
 ]);
 
@@ -271,6 +272,9 @@ export type IssueCode =
   | "usecase.flow-invalid"
   /** a `features/<FEAT>/usecases/<name>.likec4` whose flow the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored hop sequence wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local flow INTRODUCES a use case, and rewriting one belongs in a pull request where git produces the conflict */
   | "usecase.flow-exists"
+  /* --- the deployment axis: the topology a feature introduces --- */
+  /** a `features/<FEAT>/deployment/<name>.likec4` whose file the living `architecture/` already holds — the merge is a whole-file copy, so it would replace an authored topology wholesale. An error with no legal reading, which is why `--approve` changes nothing about it: a feature-local deployment document INTRODUCES topology, and rewriting one belongs in a pull request where git produces the conflict. The same act, and the same severity, as `usecase.flow-exists` one axis over */
+  | "deployment.doc-exists"
   /* --- authoring: did a person actually write this? --- */
   /** a document `loam new` scaffolded still carries its exact placeholder text — the merge would publish a requirement, scenario or description nobody authored */
   | "scaffold.placeholder"

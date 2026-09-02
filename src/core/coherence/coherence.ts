@@ -15,6 +15,7 @@ import { eventCoherence } from "./events/events.js";
 import { authoringIssues } from "./authoring/scaffold.js";
 import { glossaryDeltaIssues } from "../glossary/delta.js";
 import { flowDeltaIssues } from "../usecases/delta/flows.js";
+import { deploymentDeltaIssues } from "../deployment/delta.js";
 import type { DocsDir, FeatureDir } from "../kernel/ids/dirs.js";
 
 
@@ -61,6 +62,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   // already holds must be caught before the copy, not after it has replaced an
   // authored hop sequence.
   issues.push(...(await flowDeltaIssues(docsDir, featureDir)));
+  issues.push(...(await deploymentDeltaIssues(docsDir, featureDir)));
 
   // --- C4 delta ---
   let elements: Elem[] = [];

@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **422 TypeScript modules in 129 source packages**, with an acyclic package graph
+The tree contains **423 TypeScript modules in 129 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **156 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **157 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -106,13 +106,23 @@ the paragraph on its evidence is where that shortcut is accounted for rather tha
 ### The deployment axis — topology joined to requirements
 
 **Promoted 2026-09-02, and authored as a feature in loam's own docs repo** rather than as an item
-text here: `meta/docs/features/FEAT-1-the-deployment-axis/`, whose `intent.md` carries the four
-measurements and whose `specs/loam/arch.spec.md` carries the five rules the change establishes, each
-with scenarios. This entry is the decision and the gate; that feature is the specification, and the
-two must not be allowed to become two accounts of the same change. **It is deliberately NOT
-archived.** Its `delta.likec4` claims edges `src/` does not have yet, `npm run meta:check` compares
-the model to the tree, and archiving before the code lands would make the self-model false in
-exactly the way this axis exists to catch.
+text here: `meta/docs/features/archive/FEAT-1-the-deployment-axis/`, whose `intent.md` carries the
+four measurements and whose `specs/loam/arch.spec.md` carries the five rules the change establishes,
+each with scenarios. This entry is the decision and the gate; that feature is the specification, and
+the two must not be allowed to become two accounts of the same change.
+
+**Status: BUILT except one piece, and the item stays here until that piece lands.** Steps 1, 2, 3
+and 6 are in, step 4 was corrected rather than built (below), and step 5's slot works while its
+merge-preview grading does not. FEAT-1 archived on 2026-09-02 once every edge it claimed existed —
+and it archived having been CORRECTED against the tree twice, which is the argument for the route
+rather than a footnote to it: the delta predicted a `core/kernel/` dependency that turned out to be
+type-only (a brand costs an annotation, not an import) and missed `core/coherence/` entirely.
+`npm run meta:check` was red for the whole of the build and went green with the archive, which is
+the axis working rather than a gap in it.
+
+The whole change is reviewable as five commits on `feat/deployment-axis`, and the one thing to read
+first is what the implementation taught the plan: two of the codes this item specified were not
+minted, and the reasons are in step 4.
 
 **What is wrong today.** A LikeC4 `deployment { }` block is legal in a docs repo and completely
 unread. The parser resolves every `instanceOf` in it — a container renamed out from under a
@@ -143,10 +153,21 @@ the read costs no second parse, no new file format and no change to the frozen C
    deployed somewhere, which is a COMPLETENESS claim, and completeness is the one thing
    `src/core/brief/unchecked.ts` says loam never checks. It is the same category error as the
    at-least-two-datacenters rule below, one axis over.
-5. `features/<FEAT>/deployment/<name>.likec4`, create-only, graded against the merge preview and
-   copied whole — `core/usecases/delta/` one axis over. It works because `extend` was measured to
-   resolve across documents of one project, so no text splice is needed; `delta-blocks.ts` goes on
-   refusing a `deployment { }` block inside `delta.likec4` and its message names the new slot.
+5. `features/<FEAT>/deployment/<name>.likec4`, create-only and copied whole — `core/usecases/delta/`
+   one axis over. It works because `extend` was measured to resolve across documents of one project,
+   so no text splice is needed; `delta-blocks.ts` goes on refusing a `deployment { }` block inside
+   `delta.likec4` and its message names the new slot. The collision is on the FILE, never on what is
+   inside it: two features may both extend one living region from documents of their own and both
+   archive, which is the shape the fleet-wide change actually takes.
+
+   **The merge-preview grading is the one part NOT built, and it is a gap rather than a decision.**
+   A flow is refused before the copy when it names an element the merge does not land
+   (`usecase.flow-invalid`); a topology document naming an element only the feature's own
+   `delta.likec4` introduces is copied in unchecked, and the next reader's `loam validate --all`
+   carries `landscape.invalid` against a file they did not write. It is undoable — `loam unarchive`
+   deletes what the plan created — and the work it needs is specific: the merge preview lives inside
+   `core/usecases/delta/overlay.ts`, whose staging assumes one document kind, so sharing it is a
+   change to that module's contract and deserves its own commit rather than a rider on this one.
 6. The surfaces: a scorecard row, the topology in the context pack, `loam explain`, the code table
    `test/codes-drift.test.ts` requires, and one more statement in `src/core/brief/unchecked.ts`.
 

@@ -208,3 +208,22 @@ export function featureGlossaryDir(featureDir: FeatureDir): string {
 export function featureUseCasesDir(featureDir: FeatureDir): string {
   return join(featureDir, "usecases");
 }
+
+/**
+ * `features/<FEAT>/deployment/` — the TOPOLOGY a feature brings.
+ *
+ * The third document a feature carries whole rather than as a delta, and for
+ * the same reason as the two above: a `deployment { }` block is a topology, the
+ * merge is a whole-file copy, and there is nothing to merge partially. What
+ * makes the slot work at all is that LikeC4 `extend` resolves ACROSS documents
+ * of one project — measured before the axis was written — so a feature adds a
+ * standby datacenter inside a living region without touching the living file.
+ *
+ * `delta.likec4` still refuses a `deployment { }` block, and the refusal now
+ * names this directory: the C4 delta re-declares the landscape's identifiers
+ * and carries its own `specification`, so it cannot be staged beside the map in
+ * one project, and a document that declares neither can.
+ */
+export function featureDeploymentDir(featureDir: FeatureDir): string {
+  return join(featureDir, "deployment");
+}

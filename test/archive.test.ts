@@ -1445,7 +1445,13 @@ deployment {
 }
 `,
       ),
-      ["deployment", "model { }", "architecture/landscape.likec4"],
+      // The refusal is unchanged and permanent — this document cannot be staged
+      // beside the map in one project — but it now names the feature's OWN slot
+      // rather than the living landscape. Sending an author introducing
+      // topology WITH the change that makes it true to `architecture/` was the
+      // advice that made the axis's headline case a two-pull-request job, and
+      // `features/<FEAT>/deployment/` is where it goes instead.
+      ["deployment", "model { }", "features/<FEAT>/deployment/<name>.likec4", "extend"],
     );
   });
 

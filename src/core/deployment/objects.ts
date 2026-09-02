@@ -103,6 +103,44 @@ export function taggedDeployment(
   return out;
 }
 
+/** Where one service runs, and what its instances talk to across the topology. */
+export interface ServiceTopology {
+  /** This service's instances: the deployment id, and the element each one deploys. */
+  instances: Array<{ id: string; element: string }>;
+  /** Deployment edges with at least one end among them — replication, failover, a network hop. */
+  edges: Array<{ source: string; target: string; title?: string }>;
+}
+
+/**
+ * The topology one service is part of.
+ *
+ * Built for the CONTEXT PACK, which is the surface whose reader is an agent
+ * about to write the implementation. Before this, that pack described a
+ * service's calls and contracts and said nothing whatever about where it runs —
+ * so a failover was implemented against a map nobody had read, which is the
+ * gap FEAT-1's ARCH-LOAM-DEPLOY-UNCHECKED names alongside the sentence about
+ * what a green axis does not mean.
+ *
+ * BOTH ENDS, not only the outbound one. A replication edge is as often read
+ * from the standby's side as from the primary's, and a pack that showed only
+ * what this service points at would hide the stream it receives.
+ */
+export function serviceTopology(
+  deployment: DeploymentModel,
+  elements: readonly Elem[],
+  service: string,
+): ServiceTopology {
+  const owner = instanceOwners(deployment, elements);
+  const mine = deployment.instances.filter((i) => owner.get(i.id) === service);
+  const ids = new Set(mine.map((i) => i.id));
+  return {
+    instances: mine.map((i) => ({ id: i.id, element: i.element })),
+    edges: deployment.relationships
+      .filter((r) => ids.has(r.source) || ids.has(r.target))
+      .map((r) => ({ source: r.source, target: r.target, ...(r.title === undefined ? {} : { title: r.title }) })),
+  };
+}
+
 /**
  * instance id → the service its logical element belongs to.
  *

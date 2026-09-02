@@ -108,7 +108,7 @@ both halves are written down: the question in the brief or the checklist, the an
 
 Most of this category will tell you what it checks. loam ships the other list too, in the binary:
 **[`src/core/brief/unchecked.ts`](https://github.com/ybotok/loam/blob/main/src/core/brief/unchecked.ts)
-is fifteen statements of what no check will ever tell you**, printed into the adoption brief beside
+is sixteen statements of what no check will ever tell you**, printed into the adoption brief beside
 the checks that do run. It says, in loam's own words, that nothing here knows whether the model is
 the architecture the code actually has, whether a requirement is *true*, whether an `operationId` is
 the one the code serves, or whether `sources` names the files anybody read. And it says the one that
@@ -358,7 +358,7 @@ cannot hold.
 | `loam new <FEAT>` | `--title <text>` `--touches <id>` `--new-service <id>` `--capability <id>` | Scaffold a feature: intent, C4 delta, a requirement delta per service named by `--touches`/`--new-service`, and a capability delta per promise named by `--capability` (all repeatable) |
 | `loam show <service\|FEAT>` | `--type <kind>` | Everything loam knows about one service or feature. A feature's JSON includes a semantic `review` pack: intent, exact architecture objects, API/event slices, dependencies, artifacts, verification, blockers and next actions. `--type` forces an ambiguous reading |
 | `loam subsystem <verb> [names...]` | `--into <name>` `--under <name>` `--title <text>` `--description <text>` `--owner <name>` | Manage the grouping tree under `services/` — a navigable tree no identity depends on. `new`/`rm`, `move … --into`, `rename`, `list`, `history`, `sync` |
-| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 37 checks and the fifteen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them: 42,873 bytes to 17,805 |
+| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says, and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 37 checks and the sixteen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them: 42,873 bytes to 17,805 |
 | `loam delta <FEAT>` | `--service <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
 | `loam rebase [<FEAT>]` | `--service <id>` `--dry-run` `--living` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--living` takes no feature: it pins the living corpus's `Realizes:` entries to the capability requirements they name, which is what makes `capability.realizes-stale` able to fire later |
@@ -522,7 +522,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the complete gate still
 needs repeatable CI and installed-package evidence observed from an actual push. Speculative
-`render`, health composition and UI generation come later. Behind that status stand **156 test files** (counted 2026-09-01): the count is graded
+`render`, health composition and UI generation come later. Behind that status stand **157 test files** (counted 2026-09-02): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

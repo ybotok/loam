@@ -81,6 +81,12 @@ function refuse(block: string, detail: string, home: string): never {
 /** Where the living documents keep what this delta cannot carry. */
 const LANDSCAPE_HOME = "architecture/landscape.likec4, where the living documents keep it,";
 
+/** Where a FEATURE keeps TOPOLOGY — the third whole-file slot, added with the deployment axis. */
+const DEPLOYMENT_HOME =
+  "features/<FEAT>/deployment/<name>.likec4 — a document of its own, which `loam archive` copies into " +
+  "architecture/ and `loam unarchive` takes back; say `extend` in it to add to a region the living map " +
+  "already declares —";
+
 /** Where a FEATURE keeps a flow — a slot of its own, not the living tree. See the header. */
 const FLOW_HOME =
   "features/<FEAT>/usecases/<name>.likec4 — a views-only document of its own, which `loam archive` copies into " +
@@ -110,7 +116,19 @@ export function assertMergeableDelta(deltaText: string): void {
     if (depth !== 0) continue;
     const block = m[1]!;
     if (block !== "views") {
-      refuse(`\`${block} { }\` block`, `a top-level \`${block} { }\` block`, LANDSCAPE_HOME);
+      refuse(
+        `\`${block} { }\` block`,
+        `a top-level \`${block} { }\` block`,
+        // The refusal is unchanged and always will be — this document
+        // re-declares the landscape's identifiers and carries its own
+        // `specification`, so it cannot be staged beside the map in one project.
+        // What changed is where it sends the author: a feature introducing
+        // topology WITH the change that makes it true now has a slot of its
+        // own, and pointing at the living landscape was the advice that made
+        // the axis's headline case a two-pull-request job. `global { }` has no
+        // such slot and keeps the living home.
+        block === "deployment" ? DEPLOYMENT_HOME : LANDSCAPE_HOME,
+      );
     }
     const open = m.index + m[0].length - 1;
     const close = matchBrace(code, open);
@@ -127,7 +145,7 @@ export function assertMergeableDelta(deltaText: string): void {
         // an author to the living landscape for one they are introducing WITH
         // this change was the advice that made the axis's headline case a
         // two-pull-request job.
-        kind === "dynamic" ? FLOW_HOME : LANDSCAPE_HOME,
+        kind === "dynamic" ? FLOW_HOME : DEPLOYMENT_HOME,
       );
     }
   }

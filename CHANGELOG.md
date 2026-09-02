@@ -10,6 +10,40 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — the deployment axis: topology joined to requirements
+
+A LikeC4 `deployment { }` block has always been legal in a docs repo and was completely unread. The
+parser resolved every `instanceOf`, and after that no requirement could name a node, no `#obl-` tag
+on a datacenter was graded, and the context pack an agent implements from did not mention topology
+at all. Five things change, and a fleet that draws no topology is unaffected by every one of them —
+the axis opts in on the block's existence, the way the obligation vocabulary opts in on its file.
+
+- **`Covers:` gains a fourth entry form.** `node:<id>` names a deployment node or an instance, and
+  `node:a -> node:b` names an edge between them; both match literally. This is the form that lets an
+  architecture requirement about replication name the two clusters it is written about, and a
+  topology change that renames one now reports `covers.unknown` with the real ids offered — spelled
+  with the prefix, because that is the line the author has to type. Both sides of an edge carry the
+  prefix or neither; a bare id stays an element entry.
+- **An obligation on a deployment object is graded.** `obligation.unknown`, `obligation.unapplied`
+  and `obligation.uncovered` now walk the topology as well as the logical model. This is a
+  behaviour change a repo can notice: a `#obl-` tag on a `deploymentNode` used to be invisible to
+  every check, so a fleet that had placed one starts seeing findings it was never shown. A
+  datacenter is owned by no service, so `obligation.uncovered` drops `subject` there and names the
+  requirement's home in general terms rather than picking a team.
+- **A feature can bring topology.** `features/<FEAT>/deployment/<name>.likec4` is a create-only
+  document `loam archive` copies into `architecture/` and `loam unarchive` takes back — the third
+  whole-file slot, beside `usecases/` and `glossary/`. Say `extend` in it to add to a region the
+  living map already declares; two features may extend one region from documents of their own and
+  both archive. One new code, **`deployment.doc-exists`** (error, never overridable): the feature's
+  document names a file the living tree already holds. `delta.likec4` still refuses a
+  `deployment { }` block and now names this slot instead of the living landscape.
+- **`loam context` carries the topology.** `--json` gains `living.deployment` — the service's
+  instances, and the deployment edges touching them from either end.
+- **One more statement in the adoption brief's unchecked list**, now sixteen: nothing here knows
+  whether the second cluster exists, is reachable, or holds the data a requirement claims, and no
+  check counts datacenters — how many a service needs is a decision the fleet writes down as a
+  requirement, never one loam evaluates.
+
 ### Fixed — `loam status` no longer invents work for an architecture-only feature
 
 A feature whose only requirement delta is `specs/<svc>/arch.spec.md` reported two things that were

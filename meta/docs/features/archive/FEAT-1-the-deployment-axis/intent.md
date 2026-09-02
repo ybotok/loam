@@ -44,10 +44,16 @@ a human noticing it first.
 ## Scope
 
 One service, because there is only one: `services/loam/`, this repository. The change adds
-`src/core/deployment/` as a top-level subject and gives it the same four edges
-`src/core/usecases/` has, because it is the same shape of axis one model over — a reader in
-`src/core/c4/`, an axis package that owns the feature-local slot and the findings, and two
-commands that consume it.
+`src/core/deployment/` as a top-level subject — the same shape of axis `src/core/usecases/` is
+one model over: a reader in `src/core/c4/`, an axis package that owns the feature-local slot and
+the derivations, and the commands that consume it.
+
+This paragraph first predicted the package's edges and got one of them wrong, which is worth
+leaving in rather than tidying away: it claimed a dependency on `src/core/kernel/`, and the
+kernel names it uses — `DocsDir`, `FeatureDir` — are BRANDED TYPES, so they cost an annotation
+and not an import the model counts. The edge the prediction missed was `src/core/coherence/`,
+which is where the create-only refusal is raised. Both were corrected against the tree before
+the archive, which is the whole reason a delta sits unarchived while the code lands.
 
 Deliberately **not** in scope, and each for a reason already written down in this repository:
 
