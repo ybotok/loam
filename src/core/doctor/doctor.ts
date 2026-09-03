@@ -12,10 +12,10 @@ import { constants, existsSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { CONFIG_FILENAME, configPath } from "../envelope/config.js";
 import { LOAM_VERSION } from "../envelope/version.js";
-import { landscapePath } from "../repo/paths.js";
+import { landscapePath, LIKEC4_PROJECT_FILENAME } from "../repo/paths.js";
 import { docsRepoState } from "../repo/state.js";
 import { listFeatures, listServices } from "../repo/repo.js";
-import { LIKEC4_PROJECT_CONFIG, LIKEC4_PROJECT_FILENAME } from "../docs.js";
+import { LIKEC4_PROJECT_CONFIG } from "../docs.js";
 import { gherkinRoot } from "../gherkin/stamp.js";
 import { UnsafePathError } from "../kernel/path-safety.js";
 import { scanWritePathResidue } from "../staging/recovery/residue.js";
@@ -130,8 +130,16 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   // start` — the command loam's own brief recommends — refused to load at all.
   // `loam init --create` writes the project file that scopes the root project to
   // the landscape; a docs repo created before it exists has to be told, because
-  // nothing else will ever mention it. A warning, not a blocker: no loam check
-  // reads this file, and a repo without it is only unrenderable.
+  // nothing else will ever mention it. The root file is also the gate on the
+  // per-service ones: `loam subsystem sync` writes a create-only
+  // likec4.config.json beside every service model — the LikeC4 project that
+  // makes each model render from the same root, beside the fleet map — and it
+  // writes none of them until this file exists, so a tree missing it renders
+  // nothing from the docs root, not only the map. (Only a feature delta still renders from
+  // its own directory; an archived feature would otherwise keep a dead project
+  // forever.) The fix below says both, because this finding is the one place a
+  // repo that predates either file is ever told. A warning, not a blocker: no
+  // loam check reads this file, and a repo without it is only unrenderable.
   if (docsDir !== null && exists && readable && !existsSync(join(docsDir, LIKEC4_PROJECT_FILENAME))) {
     findings.push({
       severity: "warning",
@@ -143,8 +151,11 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
       fix:
         `Write ${docsDir}/${LIKEC4_PROJECT_FILENAME} with:\n${LIKEC4_PROJECT_CONFIG.trimEnd()}\n`
         + "That scopes the root project to architecture/, so `npx likec4 start` in the docs repo renders "
-        + "the fleet map. A service model or feature delta is rendered by pointing the renderer at its own "
-        + "directory (`npx likec4 start services/<id>`) — being readable alone is what those files are for.",
+        + "the fleet map. Then run `loam subsystem sync`: it writes one create-only likec4.config.json "
+        + "beside every service model, so each model renders from that same root as a project of its own "
+        + "(the root project excludes services/**, and a model with no project file renders nowhere from the docs root). "
+        + "Only a feature delta still renders from its own directory (`npx likec4 start features/<FEAT>`) — "
+        + "being readable alone is what these files are for.",
     });
   }
 

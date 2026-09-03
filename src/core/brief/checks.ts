@@ -261,4 +261,13 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_ALL,
     what: "two landscape elements resolve to the same services/<id>/ — every element→service join picks one of them arbitrarily, so the other's edges are filed under a service that does not own them",
   },
+  // Fires on a fresh baseline by construction: the adopt protocol's step 3
+  // writes the model and `subsystem sync` writes the project file, so a
+  // service is owed the second command from the moment the first file lands.
+  {
+    code: "service.likec4-config-missing",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "model.likec4 exists and services/<id>/likec4.config.json does not — the renderer's per-service project file, which `loam subsystem sync` writes; without it the model is a box on the fleet map with nothing inside it",
+  },
 ];

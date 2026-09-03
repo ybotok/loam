@@ -205,6 +205,11 @@ async function migrate(): Promise<Project> {
   await p.write("services/payment-service/model.likec4", MODEL);
   await p.write("services/payment-service/openapi.yaml", OPENAPI);
   await p.write("architecture/landscape.likec4", LANDSCAPE);
+  // The adopt protocol's step 3 ends with `loam subsystem sync`: the staged
+  // docs repo carries the root `likec4.config.json`, so a model without the
+  // per-service project file beside it is `service.likec4-config-missing` —
+  // loam's file, which the agent never writes by hand.
+  expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
 
   // Rows: changes/<id>/ in flight, converted. "Feature ids": assign a
   // sequential id and keep the old change name as the slug via --title.

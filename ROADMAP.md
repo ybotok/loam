@@ -18,19 +18,19 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **427 TypeScript modules in 130 source packages**, with an acyclic package graph
+The tree contains **429 TypeScript modules in 130 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **157 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **159 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
 _Measured 2026-09-03 at `0.2.0-alpha.4`, and dated because neither number has a cheap derivation:_
 lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
-**3,410/3,410 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
-coverage gate passing with **92.26% statements, 84.06% branches, 96.62% functions, and 94.20%
+**3,434/3,434 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.30% statements, 84.11% branches, 96.64% functions, and 94.24%
 lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
 `npm run test:package` green against the real tarball.
 
@@ -130,6 +130,52 @@ changes, exit criteria, and what each review surfaced — are in this file's his
 5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
 working tree and not committed, and the range goes in with the commit rather than being guessed at
 here.
+
+#### The service model, renderable from the fleet root
+
+**Landed 2026-09-03**, from one problem report. The root `likec4.config.json` that
+`loam init --create` writes excludes `services/**` on purpose — every `model.likec4` declares its
+own `specification` block, and a renderer merging the tree calls each one a duplicate — and the
+cost of that exclusion had gone unstated for a release: the model `loam adopt` spends the most
+effort on was a box with nothing inside it in the renderer opened at the docs root, and the only
+documented path to its containers was one renderer invocation per service directory. The report's
+hand-written workaround, one project file per service, is what this entry makes loam's.
+
+**Measured** at the pinned likec4 before a line was written. A `services/<svc>/likec4.config.json`
+is registered as a project of its own even though the root excludes the directory: the workspace
+loads `fleet` plus one project per service with zero errors, the root project sees exactly the
+files it saw before, and each service project carries an auto `index` view of the containers beside
+the authored view. A nested project named `fleet` is silently registered as `fleet-1`. With more
+than one project, `likec4 validate` at the root refuses with `Specify exact project` until given
+`--project`. A nested project holding no `.likec4` file is silently absent from the project list. A
+service model that does not parse breaks only its own project; siblings and `fleet` still compute.
+And the project picker shows `title ?? id`, so the title is what a human reads.
+
+**What landed.** `loam subsystem sync` writes the file — create-only, two keys, bytes a function of
+the id alone — beside every service model that has none, once the root project file exists, and
+reports them under an additive `projects` key. `loam validate --all` grades presence with one
+warning per service, `service.likec4-config-missing`, whose fix is `sync`. No new command: the
+[Later](#later--promote-only-from-evidence) Rendering row's evidence bar was met for the SCOPING
+half of its trigger and answered by wiring — one file that tells the renderer where a project is —
+not by a drawing verb; drawing stays LikeC4's, and the row says so now.
+
+**Rejected.** A new command, because the report's problem was a missing file, not a missing verb,
+and a verb would have put loam between a team and its renderer for good. The agent writing the file
+from the adopt brief, because a file written by hand per service is the state the report found —
+one of four adopted services had one — and loam already writes the root file and knows every
+service directory. A generated-and-compared file with a `-stale` grade, because the bytes cannot go
+stale and a compare would fight the `title` and styles LikeC4 lets a team add. Grading in `doctor`
+alone, because the gap is per service and `doctor` reports on the repository, not on its services;
+the docs repo's CI runs `validate --all`.
+
+**Costs**, each where a user meets it. A repo with adopted services reports one warning per service
+on its first `validate --all` after upgrading, until one `sync`; that `sync` leaves N untracked
+files it does not `git add`; from the first service project on, `likec4 validate` at the docs root
+needs `--project <name>` (`build` and `export` take every project without one — measured); the
+renderer's project list grows by one per adopted service, and a fleet-map box is not a link into
+that project (LikeC4 projects are separate models); and the project name is not injective (an id spelled billing.core beside one spelled
+billing-core, `service-fleet` beside `fleet`), disclosed in SCHEMA rather than escaped away,
+because the picker shows the id.
 
 #### The generated subsystem views — a label, a boundary, and one reader of the map
 
@@ -371,7 +417,9 @@ item gets promoted — it went from here to `## Now` and from there to
   invocation, scoping, or artifact reproducibility is the recurring problem, and it must stay
   outside validation so view computation cannot slow or change the gate. This item is about
   **drawing**, and LikeC4 keeps that job. Reading a `dynamic view`'s declared steps is not rendering
-  and is not this item — see docs/DESIGN.md rule 26.
+  and is not this item — see docs/DESIGN.md rule 26. The scoping half of that bar was met and
+  answered on 2026-09-03 by the per-service project file `loam subsystem sync` writes (see
+  [Recently landed](#recently-landed)) — wiring rather than a verb; drawing stays LikeC4's.
 - **UI generation:** begin with a disposable projection over the stable JSON contract only after CLI
   consumers demonstrate a repeated navigation problem. It must not introduce a second mutable state,
   hidden workflow state, or a required service.

@@ -10,6 +10,44 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — an adopted service's model renders from the docs root
+
+The root `likec4.config.json` excludes `services/**`, and has to; what that cost was never stated:
+an adopted service's `model.likec4` — the artifact `loam adopt` spends the most effort on — was a
+box on the fleet map with nothing renderable inside it in the renderer opened at the docs root, and
+the only documented way to see its containers was one `npx likec4 start services/<id>` per service.
+One problem report; one file per service closes it.
+
+- `loam subsystem sync` now writes `services/<…>/<svc>/likec4.config.json` beside every service
+  `model.likec4` that has none, whenever the root `likec4.config.json` exists — **create-only**: a
+  file that exists is yours and is never compared, rewritten or removed. Measured at the pinned
+  likec4, a project file inside a service directory registers the model as a project of its own
+  regardless of the root's exclusion, so `npx likec4 start` at the docs root shows `fleet` plus one
+  project per service. Without the root file nothing is written and the text says `loam doctor`
+  prints it. `subsystem sync --json` carries an additive `projects` key, `{ root, created, current }`
+  — whether the root file exists, the repo-relative paths written this run (sorted by id), and how
+  many model-bearing services already had one. `action` still describes
+  `architecture/subsystems.likec4` alone.
+- `loam validate --all` gains one warning per service, `service.likec4-config-missing`, on the
+  `landscape` target with the service's tree path as its `scope`: `model.likec4` exists and the
+  project file does not. Never an error, never gating, never in `--service`, `status` or `doctor`;
+  the fix is `loam subsystem sync`, never a hand-written file. `doctor.likec4-config-missing`'s fix
+  text now hands over to `sync` once the root file is written.
+- The project name: the id with every `.` folded to `-` (LikeC4's name grammar refuses the byte),
+  prefixed `service-` when that would equal the root project's `fleet` or LikeC4's reserved
+  `default`; `title` is the id verbatim, and the title is what the renderer's picker shows. Not
+  injective — an id spelled billing.core beside one spelled billing-core, or `service-fleet` beside
+  `fleet` — and LikeC4 suffixes the later one `-1`; disclosed, never graded.
+
+What a repo NOTICES on upgrade: one warning per adopted service on the first `validate --all` until
+one `loam subsystem sync` — under `--strict`, CI is red until then; after that `sync`, N untracked
+files (`sync` does not `git add` them) and `move-uncommitted` on the next `loam subsystem move` of
+such a service until they are committed; from the first `sync` on, `likec4 validate` at the docs
+root needs `--project <name>` (measured: with more than one project it refuses bare, while
+`likec4 build` and `likec4 export` take every project and need no flag); and the renderer's project
+list grows by one per adopted service, beside `fleet`. No command, flag, exit code or envelope key
+changes; `projects` is additive.
+
 ## [0.2.0-alpha.4] - 2026-09-03
 
 The view title becomes the subsystem's path. `0.2.0-alpha.3` was tagged and **never published** — it

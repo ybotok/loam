@@ -14,7 +14,7 @@ export const LOAM_ADOPT: CommandContent = {
     "wire this repo (`loam init`, then `loam doctor`) if it has no ./loam.json yet",
     "`loam adopt` — the brief: the order to read the service in, every file to write, the grammar of each, and what the fleet map already says",
     "walk the service in the brief's order — shape first, then one surface at a time — keeping the list of every path you open, because that list becomes `sources`",
-    "write the artifacts, everything `status: draft`",
+    "write the artifacts, everything `status: draft`, then `loam subsystem sync` for the per-service LikeC4 project file — loam's, never yours",
     "validate the service, then validate the whole fleet — a baseline that passes one and fails the other is documented and invisible",
     "hand back with what you could not determine from the code, which directories you never opened, the branch-to-scenario count per operation, and three behaviours your documents do not describe — then let a human vouch",
   ],
@@ -74,7 +74,14 @@ thin baseline that validates is thin, not done.
    tying the document to the repository. Never pad it with paths you did not read:
    it is a record, and \`loam vouch\` hashes exactly what it names.
 3. Write the artifacts under \`services/$1/\`, in the order the brief lists them, and
-   make the landscape edit the brief asks for.
+   make the landscape edit the brief asks for. Then run \`loam subsystem sync\` (from
+   this repo or the docs repo — it resolves \`docsDir\`): once the docs root carries
+   the \`likec4.config.json\` step 0's doctor asks for, it writes
+   \`services/$1/likec4.config.json\` — and the same file beside any other service
+   model in the docs repo still missing one — the LikeC4 project that makes a
+   model.likec4 renderable beside the fleet map from the docs root. Those files are
+   loam's — never write one yourself, never list it in \`sources\`, never diff it —
+   and \`sync\` leaves them untracked for you to commit.
    Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\`,
    \`content_digest\` or \`sources_files\`.
 4. \`loam validate --service $1 --json\`. Fix every error. \`sources.unvouched\` is
@@ -88,8 +95,11 @@ thin baseline that validates is thin, not done.
    \`landscape.binding-unknown\` / \`landscape.binding-duplicate\` mean it landed wrong,
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
+   \`service.likec4-config-missing\` (a warning) means step 3's sync did not run; the
+   fix is that command.
    Done, stated once: step 4 clean when run from inside the service's own repo, and
-   this run reporting no \`landscape.*\` finding. The fleet run is never SILENT —
+   this run reporting no \`landscape.*\` finding and no \`service.likec4-config-missing\`.
+   The fleet run is never SILENT —
    \`sources.unverifiable-from-here\` (severity ok) appears per service as a
    confirmation, not work — so "keep going until validation is quiet" is the wrong
    loop; the two runs are the test.

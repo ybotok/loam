@@ -93,10 +93,13 @@ model {
 // and it never reads a STATIC view's contents in any document, so nothing below
 // is read by any check (docs/DESIGN.md rule 26 — the one thing loam does read is
 // a dynamic view's declared steps, and only in the fleet landscape).
-// Keep it for the renderer, which does draw it — 'npx likec4 start services/<id>' from the docs repo, pointed at THIS
-// directory. Not the repo root: every service model declares its own
-// 'specification' block, so the root is scoped to architecture/ (likec4.config.json)
-// and one model at a time is how these files are meant to be read.
+// Keep it for the renderer, which does draw it — 'npx likec4 start' from the docs
+// repo ROOT, once 'loam subsystem sync' has written services/<id>/likec4.config.json:
+// that file is loam's, never yours, and it is what registers this model as a
+// LikeC4 project of its own beside the fleet map. The root project stays scoped
+// to architecture/ (the root likec4.config.json) because every model declares
+// its own 'specification' block, and a root that merged them would read each
+// declaration as a duplicate.
 // Scoped to one service 'include *' is cheap; the same line in
 // architecture/landscape.likec4 walks every call in the fleet and takes minutes.
 views {
