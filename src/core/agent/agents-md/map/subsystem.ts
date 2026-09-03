@@ -25,7 +25,16 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   \`unfiledServices\`); \`history <name>\` asks git how a service or subsystem
   moved and answers nothing — exit 0, no finding — when git will not say;
   \`sync\` regenerates \`architecture/subsystems.likec4\`, the one repair for
-  \`subsystem.views-stale\`; a landscape view claiming a generated id is
+  \`subsystem.views-stale\`, and also writes one create-only
+  \`services/<…>/<id>/likec4.config.json\` per service model (never rewritten, never
+  removed; the team may edit it; commit the new files before a \`move\`, which
+  refuses over untracked paths) — the one thing that makes a model renderable
+  from the docs root beside the fleet map, and the repair for
+  \`service.likec4-config-missing\`. A flat fleet with no subsystems still owes
+  this run: the verb is the tree's, the file is the renderer's. With more than
+  one project \`likec4 validate\` at the docs root needs \`--project <name>\`
+  (\`build\` and \`export\` take every project); a
+  landscape view claiming a generated id is
   \`subsystem.view-id-collision\`. Each generated view is titled by its PATH —
   every marked ancestor's label and its own, which the renderer reads as
   folders — where a label is the marker's \`title\` or the directory name; the

@@ -72,6 +72,7 @@ docs/
   glossary/<term>.md                 the system's domain vocabulary, one file per term; nesting allowed [authored, opt-in]
   services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
     model.likec4                        boundary C4 (containers/components) [adopt]
+    likec4.config.json                  one LikeC4 project per service model, create-only  [GENERATED: loam subsystem sync]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
     arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
     openapi.yaml                     API contract                        [adopt / authored]
@@ -203,6 +204,44 @@ checkout changes no fact) — exactly one error,
 does not parse standalone (its `include` lines reference elements the landscape defines), and it
 holds **static** views, whose contents loam never reads in any document. Only the LikeC4 renderer,
 which merges the whole `architecture/` project, resolves its includes.
+
+The tree's **second renderer file** is per service — `services/<…>/<svc>/likec4.config.json`,
+which `loam subsystem sync` also writes, beside every `model.likec4` that has none. The root
+project is scoped to `architecture/` and excludes `services/**`, and must be, since each model
+declares its own `specification` block; what that exclusion cost went unstated for a release: an
+adopted service was a box on the fleet map with nothing renderable inside it. Measured at the
+pinned likec4, a project file INSIDE a service directory is registered as a project of its own
+regardless of that exclusion, so one `npx likec4 start` at the docs root loads `fleet` plus one
+project per service, each carrying LikeC4's own `index` view of the containers beside the authored
+one, and a model that does not parse breaks only its own project. The file is **create-only** —
+never compared, never rewritten, never removed — under the root config's ownership rule, not the
+views file's: there is no `-stale` grade because nothing can make it stale. Its bytes are a
+function of the id alone (two keys, `name` and `title`), so placement never changes them and a
+`subsystem move` carries the file with no write of its own — it rides inside the rename the move's
+transaction already journals (in a git-backed repo, commit the files `sync` wrote first: `move`
+refuses over untracked paths, `move-uncommitted`); a compare would only fight the keys LikeC4 lets a
+team add (`title`, styles). `name` is the id with every
+`.` folded to `-` (LikeC4's name grammar refuses the byte; loam's id grammar admits it), prefixed
+`service-` when the result would equal the root project's `fleet` (a nested project of that name
+is silently registered as `fleet-1`) or LikeC4's reserved `default`; `title` is the id verbatim,
+and the title is what the renderer's project picker shows. The name is **not injective**, and
+that is disclosed rather than escaped away: an id spelled billing.core beside a service literally
+named billing-core, or `service-fleet` beside `fleet`, share a name and LikeC4 suffixes the later
+one `-1`; no loam
+finding grades it, because the picker still reads the id. Order is a gate — the root file first
+(`loam init --create` writes it, `loam doctor` prints it), then `sync`: without the root file
+nothing is written and the text output says so. No model, no file: a spec-only service is owed
+nothing and gets its file on the first `sync` after its model lands. No legal id, no file either: a
+directory whose name breaks the service-id grammar (`service.id-invalid`) would get a `name` the
+renderer silently drops, and a create-only file the renderer ignores would silence the grade for
+good, so `sync` skips it and the rename that clears `service.id-invalid` earns the file. A file left behind by a
+deleted model is the team's and harmless (measured: a nested project holding no `.likec4` file is
+absent from the project list). `validate --all` grades presence only — one warning per service,
+`service.likec4-config-missing`, on the fleet `landscape` target, never an error, never in
+`--service`, `status` or `doctor`; the fix is `loam subsystem sync`, never a hand-written file. A
+feature's `delta.likec4` is deliberately out of scope: the directory is transient and
+`loam archive` moves it where a project file would still be registered, so every shipped feature
+would keep a dead project in the list forever.
 
 A move is **one journaled transaction over N directory renames plus the regenerated views file**
 (`loam subsystem move <name>... --into <sub|.>`; `rename` is a one-rename move; whole subtrees move
@@ -2295,9 +2334,17 @@ through the forge, not through loam features:
   **parsed** model and never computes a view — it reads what a view **declares** (a `dynamic view`'s
   tags and ordered steps, already materialized by the parse loam pays for) and never what a view
   **shows**. It renders nothing, and view *computation* is what is superlinear in edges. (If you
-  want diagrams, add a `views` block and render it with LikeC4's own tooling — `npx likec4 start` in
-  the docs repo for the fleet map, `npx likec4 start services/<id>` for one service model — and
-  scope the views, because an `include *` over a fleet-sized landscape takes minutes. `loam init`
+  want diagrams, add a `views` block and render it with LikeC4's own tooling — `npx likec4 start`
+  at the docs root, which renders the fleet map AND every adopted service's model, each as the
+  project its own `services/<svc>/likec4.config.json` declares (written by `loam subsystem sync`;
+  the Layout section has the rule), and `npx likec4 start features/<FEAT>` for a delta, which is
+  transient and gets no project — and scope the views, because an `include *` over a fleet-sized
+  landscape takes minutes. Two costs arrive with the first service project. Measured at the
+  pinned likec4: with more than one project, `likec4 validate` at the docs root refuses without
+  `--project <name>`, so a CI step that ran it bare changes (`likec4 build` and `likec4 export` take
+  every project and need no flag). And the renderer's project list grows by one per adopted service
+  beside `fleet` — LikeC4 projects are separate models, so a box on the fleet map is not a link into
+  that service's project. `loam init`
   scaffolds the landscape with no `views` block for that reason: loam should not plant a diagram it
   never draws **— and never asks for one: a fleet that draws nothing owes no views block.** It also
   scaffolds a `likec4.config.json` that scopes the root LikeC4 project to `architecture/`: loam

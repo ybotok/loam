@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { AGENTS_MD } from "./agent/agents-md.js";
 import { LANDSCAPE_STUB } from "./scaffold/landscape.js";
 import { README_FILENAME, README_MD } from "./scaffold/readme.js";
-import { AGENTS_FILENAME } from "./repo/paths.js";
+import { AGENTS_FILENAME, LIKEC4_PROJECT_FILENAME, LIKEC4_ROOT_PROJECT } from "./repo/paths.js";
 
 /**
  * Top-level layout of the shared docs repo, and part of its identity rather
@@ -53,20 +53,23 @@ const EMPTY_SUBDIRS = [
  * So the root is declared as one LikeC4 project holding the landscape, and the
  * two directories whose files are meant to be read alone are excluded from it.
  * That makes `npx likec4 start` in the docs repo — the command loam's own docs
- * have always recommended — render the fleet map instead of failing. A service
- * model or a feature delta is still rendered by pointing the renderer at its own
- * directory, which is what parsing them in isolation meant all along.
+ * have always recommended — render the fleet map instead of failing. What the
+ * exclusion cost went unstated for a release: every adopted service was then a
+ * box on that map with nothing renderable inside it. A service model renders
+ * from the SAME root once `loam subsystem sync` has written a project file of
+ * its own beside it — `repo/tree/render/projects.ts` records the measurement
+ * and the rule — and only a feature's `delta.likec4`, which is transient, is
+ * still rendered by pointing the renderer at its own directory.
  *
  * `**\/node_modules/**` is repeated because naming `exclude` replaces LikeC4's
  * default rather than adding to it. loam reads none of this file: it is written
  * once, never re-read, and a team that wants a different project layout owns it
- * like every other scaffolded file.
+ * like every other scaffolded file. The filename and the root project's name
+ * are spelled in `repo/paths.ts`, beside every other file loam writes.
  */
-export const LIKEC4_PROJECT_FILENAME = "likec4.config.json";
-
 export const LIKEC4_PROJECT_CONFIG = `${JSON.stringify(
   {
-    name: "fleet",
+    name: LIKEC4_ROOT_PROJECT,
     title: "Fleet landscape",
     exclude: ["**/node_modules/**", "services/**", "features/**"],
   },

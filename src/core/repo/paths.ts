@@ -344,3 +344,45 @@ export function agentsPath(docsDir: DocsDir): string {
 export function archiveDir(docsDir: DocsDir): string {
   return join(featuresDir(docsDir), ARCHIVE_DIR);
 }
+
+/**
+ * The LikeC4 project file — the one thing in a docs repo loam writes for a
+ * tool other than itself — and it lives at two altitudes.
+ *
+ * At the ROOT, `loam init --create` writes the project `fleet`, scoped to
+ * `architecture/` (`core/docs.ts` composes those bytes). Beside each
+ * `services/<…>/<id>/model.likec4`, `loam subsystem sync` writes a project of
+ * the service's own: loam parses every `.likec4` file ALONE, so each model
+ * declares its own `specification` block and the root project must exclude
+ * `services/**` — which left every adopted service a box on the fleet map with
+ * nothing renderable inside it, in the renderer opened at the docs root.
+ * `core/repo/tree/render/projects.ts` composes the per-service bytes and
+ * records what was measured.
+ *
+ * Spelled here and NOT in `ARTIFACT_FILES`, and the distinction is
+ * load-bearing: a filename in that table classifies a directory as a service,
+ * and this file is the renderer's — a stray one must mint nothing. The root's
+ * NAME sits beside the filename because the per-service rule needs it too (a
+ * service id equal to the root project's name would be silently renamed by
+ * the renderer), and two spellings of the word are how the scaffold and the
+ * rule drift apart.
+ */
+export const LIKEC4_PROJECT_FILENAME = "likec4.config.json";
+
+/** The root project's name, exactly as `loam init --create` scaffolds it. */
+export const LIKEC4_ROOT_PROJECT = "fleet";
+
+export function rootProjectPath(docsDir: DocsDir): string {
+  return join(docsDir, LIKEC4_PROJECT_FILENAME);
+}
+
+/**
+ * The two files the per-service project question is asked of — the model that
+ * needs rendering and the project file that renders it — in one spelling for
+ * the writer (`subsystem sync`) and the grader (`validate --all`) alike. Handed
+ * INTO `render/projects.ts` rather than imported there, because that package
+ * cannot import this module: `render/stale.ts` records the cycle.
+ */
+export function serviceRenderPaths(dir: ServiceDir): { model: string; project: string } {
+  return { model: join(dir, ARTIFACT_FILES.model), project: join(dir, LIKEC4_PROJECT_FILENAME) };
+}

@@ -12,8 +12,10 @@
 //
 // loam parses every `.likec4` file ALONE, so this document declares its own
 // `specification` block; a renderer handed the whole tree at once would merge
-// them and call every declaration a duplicate, which is why
-// `likec4.config.json` scopes the root project to `architecture/`.
+// them and call every declaration a duplicate, which is why the root
+// `likec4.config.json` scopes the fleet project to `architecture/` and stays
+// that way. What renders THIS model beside the map from the docs root is this
+// directory's own `likec4.config.json`, written by `loam subsystem sync`.
 specification {
   element softwareSystem
   element container

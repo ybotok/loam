@@ -535,6 +535,9 @@ describe("a scaffolded docs repo survives being cloned and rendered", () => {
     // the fix is the file itself, not a description of it
     expect(finding!.fix).toContain('"name": "fleet"');
     expect(finding!.fix).toContain('"services/**"');
+    // and the second half of the repair: the root file alone renders only the
+    // map, so a fix that stopped there would leave every service model unrenderable
+    expect(finding!.fix).toContain("loam subsystem sync");
 
     // and it is quiet once the file is back
     await scaffoldDocs(docs);

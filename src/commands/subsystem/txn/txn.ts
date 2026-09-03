@@ -7,6 +7,25 @@
  * the same commit as whatever changed the tree — a marker without its view,
  * or renames without theirs, is exactly the `subsystem.views-stale` state
  * the generated file's contract refuses to leave between two commits.
+ *
+ * This window does NOT write the per-service project files
+ * (`services/<…>/<id>/likec4.config.json`); only `../sync.ts` does, and the
+ * asymmetry is deliberate rather than an omission. The views file must ride
+ * in the verb's commit because its bytes depend on the PLACEMENT the verb is
+ * changing. A project file's bytes depend on the service id alone, which no
+ * verb here changes — and the file lives INSIDE the service directory, so a
+ * `move` carries it to the new location as part of the rename it already
+ * journals (in a git-backed repo that move REFUSES first, `move-uncommitted`,
+ * until the files `sync` created are committed — the refusal names them, and
+ * `sync`'s own output says to commit them), and `rm` never reaches one,
+ * because it refuses any subsystem that still holds a member
+ * (`subsystem-not-empty`, `../edit.ts`). No verb can
+ * therefore leave a project file stale or orphaned, and a verb that filled
+ * gaps in passing would silently write files a `--json` reader of `new` or
+ * `rename` was never told to expect. The one state a verb can leave is a
+ * model with no file beside it, and that is the state `validate --all` names
+ * as `service.likec4-config-missing`, with `loam subsystem sync` as the
+ * repair — one writer, so the create-only rule has one place to hold.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";

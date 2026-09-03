@@ -312,7 +312,10 @@ services, loam frontmatter, Operations/Covers links and feature identity still r
   specs intentionally remain `status: draft`.
 - `Operations:` links to provider OpenAPI `operationId`s, and `Covers:` links where architecture
   requirements are created.
-- `architecture/landscape.likec4`, service `model.likec4`, and explicit fleet relationships.
+- `architecture/landscape.likec4`, service `model.likec4`, and explicit fleet relationships — then
+  `loam subsystem sync`, which writes each model's `likec4.config.json` (the staged repo already
+  carries the root one) so the models render beside the map; `validate --all` warns
+  `service.likec4-config-missing` for any model still without one.
 - Service OpenAPI contracts and provider-before-consumer sequencing where inbound edges already name
   operations.
 - LikeC4 and OpenAPI deltas for the already mapped active feature ids (`FEAT-12`, `BUG-42`, and so

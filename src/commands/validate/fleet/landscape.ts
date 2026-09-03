@@ -34,6 +34,7 @@ import { kindTagFindings } from "./kind-tags.js";
 import { useCaseFindings } from "./usecases/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
+import { projectFindings } from "./views/projects.js";
 import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../core/capabilities/findings.js";
 import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
@@ -118,6 +119,11 @@ export async function validateLandscape(
   // the fleet gate refuse while still naming every service it found.
   const tree = await listFleetTree(docsDir, fleet);
   findings.push(...tree.findings);
+  // A model with no renderer project beside it is a fact about `services/`
+  // too, graded here for `service.id-invalid`'s reason: it holds whether or
+  // not the map parses. One warning per service — views/projects.ts says why
+  // a warning, why this run and not `doctor`, and why the root-file gate.
+  findings.push(...projectFindings(docsDir, entries));
   // Before the landscape's own early returns: the authorization and capability
   // vocabularies are fleet facts that do not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));
