@@ -128,8 +128,8 @@ Closed since the 2026-08-18 assessment, each with the commit or commit range tha
 `main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
 5cd3942:ROADMAP.md`). The three 2026-09-03 problem-report entries — the two that open the list and
-the styling paragraph under the generated views — carry no range yet: they are green in the working
-tree and not committed, and the range goes in with the commit rather than being guessed at here.
+the styling paragraph under the generated views — landed together in `0eaa101`, one change built as
+three disjoint workstreams and gated as one.
 
 #### The adopt brief on an edgeless landscape element
 
