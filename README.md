@@ -5,13 +5,14 @@
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![node: >=22.22.3](https://img.shields.io/badge/node-%3E%3D22.22.3-brightgreen.svg)
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@ybotok/loam.svg)](https://www.npmjs.com/package/@ybotok/loam)
+[![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
 > **Pre-release: `0.2.0-alpha.4`**, the third published release of the 0.2 line and the newest published
 > version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). It publishes under the
-> `alpha` npm dist-tag: `npm i @ybotok/loam@alpha`, or the exact version, always installs this
-> line. `latest` is moved onto a release by hand once it has published, so a plain
-> `npm i @ybotok/loam` may still resolve to `0.1.0-beta.3` until it is. See [Status](#status).
+> `alpha` npm dist-tag — which is what the badge above reads: `npm i @ybotok/loam@alpha`, or the
+> exact version, always installs this line. `latest` is moved onto a release by hand once it has
+> published, so a plain `npm i @ybotok/loam` resolves to an earlier release until it is moved. See
+> [Status](#status).
 
 `loam` keeps an authored C4 model, requirements, API and event contracts, permissions, domain
 vocabulary and verification evidence in explicit agreement as a system changes. The same lifecycle
@@ -520,9 +521,9 @@ component baselines, the `architecture/permissions.yaml` authorization vocabular
 authored-capability axes with the `Realizes:` join, use cases graded as `dynamic view`s, the
 `glossary/<term>.md` domain vocabulary checked through the links that cite it, and the
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
-`Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the complete gate still
-needs repeatable CI and installed-package evidence observed from an actual push. Speculative
-`render`, health composition and UI generation come later. Behind that status stand **157 test files** (counted 2026-09-02): the count is graded
+`Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
+`stability` job has still to be observed green. Speculative `render`, health composition and UI
+generation come later. Behind that status stand **157 test files** (counted 2026-09-02): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 

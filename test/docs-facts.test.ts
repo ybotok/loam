@@ -414,12 +414,12 @@ describe("known gaps carry owners", () => {
   const KNOWN_GAPS: { doc: string; gap: string; owner: string }[] = [
     {
       doc: "README.md",
-      gap: "the complete gate still needs repeatable CI and installed-package evidence observed from an actual push",
+      gap: "the scheduled CI `stability` job has still to be observed green",
       owner: "still release evidence to collect",
     },
     {
       doc: "SCHEMA.md",
-      gap: "the complete gate still needs repeatable CI and installed-package evidence observed from an actual push",
+      gap: "the scheduled CI `stability` job has still to be observed green",
       owner: "still release evidence to collect",
     },
     {
