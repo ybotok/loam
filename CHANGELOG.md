@@ -10,6 +10,14 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.4] - 2026-09-03
+
+The view title becomes the subsystem's path. `0.2.0-alpha.3` was tagged and **never published** — it
+was withdrawn before its publish step for a reason unrelated to the code — so this is the release
+that carries both it and the entry below, and `npm i @ybotok/loam@alpha` moves from `0.2.0-alpha.2`
+straight to this one. A repo upgrading from either reports one `subsystem.views-stale` until one
+`loam subsystem sync`.
+
 ### Changed — a generated subsystem view is titled by its path
 
 `0.2.0-alpha.3` gave each view the subsystem's own label. It now carries the whole path — every
