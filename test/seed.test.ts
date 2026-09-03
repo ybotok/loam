@@ -615,6 +615,76 @@ describe("the generated views file, including its absence", () => {
     }
   });
 
+  it("renders the views from the whole architecture/ project — a palette in a sibling document is referenced, and validate and sync agree", async () => {
+    // `validate --all` and `subsystem sync` recompute the expected bytes from
+    // the PROJECT (the landscape merged with every other architecture/
+    // document), and a repository's `global { styleGroup subsystems }` lives
+    // in a sibling precisely because seed regenerates the landscape wholesale.
+    // Rendered from the sealed landscape alone, seed wrote a file its own
+    // first `next` command graded `subsystem.views-stale`, and re-seeding wrote
+    // the same bytes again — the one loop no `next` could leave.
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "architecture/landscape.likec4": scaffoldLandscape(),
+      // `#external` is a tag the seed template declares (core/c4/seed/template.ts),
+      // so the group resolves in the project the seeded landscape makes.
+      "architecture/usecases/palette.likec4":
+        "global {\n  styleGroup subsystems {\n    style element.tag = #external { color gray }\n  }\n}\n",
+    });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      expect(await p.read("architecture/subsystems.likec4")).toContain(
+        "    title 'payments'\n    global style subsystems\n",
+      );
+
+      const validate = await runLoam(p.workDir, "validate", "--all", "--json");
+      const report = JSON.parse(validate.stdout) as { targets: Target[] };
+      const landscape = report.targets.find((t) => t.kind === "landscape")!;
+      expect(landscape.findings.map((f) => f.code)).toEqual(["landscape.matched"]);
+      expect(report.targets.flatMap((t) => t.findings).map((f) => f.code)).not.toContain(
+        "subsystem.views-stale",
+      );
+      // The other writer reads the same documents: nothing left to sync.
+      const sync = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout);
+      expect(sync.action).toBe("current");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("still lands when a sibling breaks the architecture/ project — the views fall back to the landscape's own facts", async () => {
+    // The fail-closed arm of the project read: a sibling document that does
+    // not parse beside the seeded landscape declares nothing loam can rely on,
+    // so the render carries exactly what it carried before the project was
+    // asked, and seed exits 0. The sibling is `landscape.invalid`'s to name on
+    // the next `validate --all` — and that run never grades the views file
+    // against a map it could not read, so no `subsystem.views-stale` cascades
+    // behind the one finding that names the real fault.
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "architecture/landscape.likec4": scaffoldLandscape(),
+      "architecture/usecases/broken.likec4": "views {\n  view broken {\n    include nosuch\n  }\n}\n",
+    });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      const views = await p.read("architecture/subsystems.likec4");
+      expect(views).toContain("    title 'payments'\n");
+      expect(views).not.toContain("global style");
+
+      const validate = await runLoam(p.workDir, "validate", "--all", "--json");
+      const report = JSON.parse(validate.stdout) as { targets: Target[] };
+      const codes = report.targets.flatMap((t) => t.findings).map((f) => f.code);
+      expect(codes).toContain("landscape.invalid");
+      expect(codes).not.toContain("subsystem.views-stale");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("gives a git-invisible service directory the .gitkeep that keeps it across a clone", async () => {
     // An empty services/<id>/ is a service to the walk and nothing at all to
     // git — the tree seed's own pre-journal crash window leaves behind. Without

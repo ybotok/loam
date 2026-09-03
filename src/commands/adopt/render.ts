@@ -60,7 +60,20 @@ export function render(b: Brief, warnings: string[], full?: string): void {
   for (const t of b.targets) {
     // `edit` is the shared fleet map: the file exists, but "present" would read
     // as "nothing to do here", which is the opposite of why it is on the list.
-    const flag = t.action === "edit" ? "UNDRAWN" : t.exists ? "present" : t.required ? "MISSING" : "missing";
+    // Two words for it, because the two states want different work: `UNDRAWN`
+    // when nothing resolves to the service, `EDGELESS` when an element does
+    // and no edge touches it — a reader acting on `UNDRAWN` there would look
+    // for a box that is already on the map.
+    const flag =
+      t.action === "edit"
+        ? b.landscape.modelled === true
+          ? "EDGELESS"
+          : "UNDRAWN"
+        : t.exists
+          ? "present"
+          : t.required
+            ? "MISSING"
+            : "missing";
     console.log(`    ${t.artifact.padEnd(width)}  ${t.action.padEnd(6)}  ${flag.padEnd(7)}  ${t.purpose}`);
   }
 
@@ -94,8 +107,9 @@ export function render(b: Brief, warnings: string[], full?: string): void {
   );
 }
 
-/** The table's four flags, compressed to one terminal line for the scroll-back reader. */
-const LEGEND_LINE = "MISSING required · missing optional · present diff it · UNDRAWN add to the map";
+/** The table's five flags, compressed to one terminal line for the scroll-back reader. */
+const LEGEND_LINE =
+  "MISSING required · missing optional · present diff it · UNDRAWN add to the map · EDGELESS an element exists, no edge does";
 
 /**
  * A required target whose work is still outstanding.
@@ -105,7 +119,8 @@ const LEGEND_LINE = "MISSING required · missing optional · present diff it · 
  * exists, so `exists` is true while nothing in it resolves to this boundary —
  * which `loam validate --all` grades `landscape.service-unmodelled`, an ERROR.
  * `action` carries that distinction and nothing else does: `edit` is only ever
- * the undrawn fleet map (see `BriefTarget.action`, core/brief/targets.ts).
+ * the fleet map still owed — undrawn, or drawn with no edge touching it (see
+ * `BriefTarget.action`, core/brief/targets.ts).
  */
 function outstanding(t: BriefTarget): boolean {
   return t.required && (!t.exists || t.action === "edit");
@@ -145,7 +160,7 @@ function printOrientation(b: Brief): void {
   // one row that is not this boundary's file at all.
   console.log(
     bullet(
-      "The flags in that table: `MISSING` in capitals is required and not there, lowercase `missing` is optional and not there, `present` means the file exists — diff it, never replace it. `UNDRAWN` marks the one row that is not this boundary's own file: `architecture/landscape.likec4` is the whole system's map and already holds every other boundary, so ADD to it rather than rewriting it. Until an element in it resolves to this directory, `loam validate --all` reports `landscape.service-unmodelled` (error).",
+      "The flags in that table: `MISSING` in capitals is required and not there, lowercase `missing` is optional and not there, `present` means the file exists — diff it, never replace it. `UNDRAWN` and `EDGELESS` mark the one row that is not this boundary's own file: `architecture/landscape.likec4` is the whole system's map and already holds every other boundary, so ADD to it rather than rewriting it. Until an element in it resolves to this directory, `loam validate --all` reports `landscape.service-unmodelled` (error); `EDGELESS` means an element already does and no edge touches it, so what the map lacks is the calls in and out of it, never a second element.",
       "    ",
     ),
   );
@@ -267,6 +282,13 @@ function printLandscape(b: Brief): void {
   }
   for (const e of l.inbound) console.log(`    ← ${e.from}  ${e.op ?? `"${e.title ?? ""}"`}`);
   for (const e of l.outbound) console.log(`    → ${e.to}  ${e.op ?? `"${e.title ?? ""}"`}`);
+  // The edgeless state: an element and no edge lines above it. The modelled
+  // branch used to return here without ever printing an instruction, which
+  // is how the text view briefed "the map owes nothing" over two empty lists.
+  if (l.instruction !== null) {
+    console.log("");
+    console.log(wrap(l.instruction, "    "));
+  }
   if (l.expects.length > 0) {
     console.log("");
     console.log(

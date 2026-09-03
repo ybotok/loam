@@ -167,6 +167,22 @@ function verdictOn(pair: CallPair, tier: 1 | 2, rels: readonly Rel[]): StepAttri
  * the fallback tier, and the reason a step drawn between two services matches an
  * edge drawn between two containers.
  *
+ * EMPTY when both endpoints resolve to ONE service, and that is a correction
+ * rather than an optimisation. The service tier exists for a step drawn between
+ * two SERVICES, where "which edge backs it" is answered by collapsing each
+ * side's containers to the service that owns them. Inside one service there is
+ * no service-tier reading: collapsing both sides yields the pair
+ * (svc, svc), which EVERY internal relationship of that service matches —
+ * measured at the 1.59.2 pin on a bound service drawn as three containers:
+ * a hop `api -> db` with no declared edge and two unrelated internal edges
+ * (`api -> workflow`, `workflow -> db`) came back `attributed` on tier 2 with
+ * both edges as candidates, all agreeing on no `op`. So an unbacked hop between
+ * two containers of one service could never earn `usecase.step-unbacked` — the
+ * one grade this join exists to produce — until the moment a fleet drew a
+ * service's flow over its own containers (`core/usecases/service/flows.ts`),
+ * and a landscape that draws a service as containers had the same wrong answer
+ * for the same hop all along.
+ *
  * Through the module's cached `resolverFor`, not a fresh `serviceResolver`: this
  * runs once per step of every use case in the fleet, and building the id map per
  * step is the cost that comment above `RESOLVERS` exists to prevent.
@@ -175,6 +191,7 @@ function resolvedTier(pair: CallPair, scope: StepScope): Rel[] {
   const resolve = resolverFor(scope.elements, scope.known);
   const from = resolve(pair.from);
   const to = resolve(pair.to);
+  if (from === to) return [];
   return scope.relationships.filter((r) => resolve(r.source) === from && resolve(r.target) === to);
 }
 

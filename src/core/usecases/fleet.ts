@@ -112,8 +112,15 @@ export interface UseCaseRequest {
  * `req-` is the looser of the two substrings and that is accepted knowingly: a
  * document mentioning it in prose costs one project load loam would otherwise
  * have skipped, which is a slower right answer. Dropping it costs a wrong one.
+ *
+ * Exported for the service-scope reader (`./service/flows.ts`), which asks the
+ * same question of the `.likec4` files beside one `model.likec4`: a sibling set
+ * that mentions neither prefix declares no use case, so a hand-drawn
+ * `views.likec4` costs that service no LikeC4 workspace. One gate, two callers,
+ * because a second byte scan spelled in the service package would be free to
+ * disagree with this one about which prefixes opt a view in.
  */
-async function mentionsTagPrefix(paths: readonly string[]): Promise<boolean> {
+export async function mentionsTagPrefix(paths: readonly string[]): Promise<boolean> {
   for (const path of paths) {
     try {
       const bytes = await readFile(path);

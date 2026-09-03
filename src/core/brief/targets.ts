@@ -5,7 +5,7 @@
  * one a later check depends on, and test/agent-contract.test.ts pins the
  * mapping. This module is the list alone — `serviceBrief` (brief.ts) resolves
  * it against a docs repo, and the fleet map's own target, whose block names
- * the service, is assembled per service in landscape.ts.
+ * the service, is assembled per service in map/owed.ts.
  */
 
 /* ------------------------------------------------------------------ */
@@ -92,7 +92,8 @@ model {
 // Views are LikeC4's, not loam's: loam parses this file and computes no view,
 // and it never reads a STATIC view's contents in any document, so nothing below
 // is read by any check (docs/DESIGN.md rule 26 — the one thing loam does read is
-// a dynamic view's declared steps, and only in the fleet landscape).
+// a dynamic view's declared steps, in the fleet map and, once a view opts in
+// with #req-, in this service's own project).
 // Keep it for the renderer, which does draw it — 'npx likec4 start' from the docs
 // repo ROOT, once 'loam subsystem sync' has written services/<id>/likec4.config.json:
 // that file is loam's, never yours, and it is what registers this model as a
@@ -176,6 +177,7 @@ Operations: refundPayment
     shape: [
       "Same grammar and frontmatter as spec.md: `## Requirements`, `### Requirement:` + `#### Scenario:` with Given/When/Then. The same checks read it.",
       "A `Covers:` line per requirement names what its scenarios exercise: a C4 element id (`paymentService.db`), an edge (`paymentService -> kafka`), or a health signal from health.yaml (`alert:<id>` / `sli:<id>`). Every entry must resolve, or `covers.unknown` (warn) flags the typo.",
+      "A requirement whose `Covers:` names containers may have its hop sequence drawn as a `dynamic view` in a `.likec4` beside model.likec4 (`usecases/<name>.likec4` by convention; the renderer's per-service project reads every `.likec4` under the directory, and loam reads the same set), tagged `#req-<Requirement-ID>` with the tag declared in model.likec4's `specification` — graded by `loam validate --service <id>` (`usecase.step-unbacked` when a hop names a call the model does not declare, `usecase.requirement-unresolved` when the tag names no `Requirement-ID` here or in spec.md). Optional; nothing grades its absence. Never `architecture/usecases/`, which cannot resolve a container.",
       "Optional, but expected for a service with real architecture: every alert/SLI health.yaml declares wants a covering requirement here (`health.uncovered`, warn) — a signal nothing tests is dashboard decoration.",
       "Write the obligations no business requirement states — the transactional outbox, what a caller's retry may assume, what pages whom. An arch scenario becomes an integration/ops test, not an acceptance test.",
     ],

@@ -127,7 +127,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/provenance/` | the `sources` list — vetting, digesting, walking — plus the bounded `git` child, `gitq/` and `sample/` | document, kernel, repo |
 | `core/workspace/` | `loam open`'s editor workspace: sibling-repo `discover`y through committed bindings, deterministic `.code-workspace` `render`ing | envelope, kernel, repo |
 | `core/asyncapi/` | the event contract axis; `asyncapi/merge/` is the delta path | kernel, openapi, repo |
-| `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked | c4, repo |
+| `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked; `map/` beneath is the write the fleet map is still owed | c4, obligations, repo, vocabulary |
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
 | `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
@@ -135,7 +135,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/explain/` | `loam explain`'s lookup — a finding code, a refusal code or a concept term in, one discriminated explanation out | agent, brief |
 | `core/links/` | the corpus of authored documents loam reads links out of, and whether each link resolves | capabilities, envelope, glossary, kernel, repo |
 | `core/projection/` | one feature projected onto one service — the API, event and C4 slices `loam delta` and `loam context` share | asyncapi, c4, kernel, openapi, repo |
-| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings | c4, capabilities, repo |
+| `core/usecases/` | the fleet's declared use cases and the join from a flow's steps onto the model, with `delta/` beneath for the flows one FEATURE brings and `service/` beneath for the flows one SERVICE keeps beside its model | c4, capabilities, repo |
 | `core/coherence/` | do the three axes agree | asyncapi, c4, capabilities, conflict-markers, delta, document, envelope, glossary, kernel, openapi, repo, usecases |
 | `core/dependencies/` | who calls whom, and the fan-in over it | c4, fleet-context, kernel, openapi, repo |
 | `core/diff/` | the base-ref read of the docs repo (git show/ls-tree) and the semantic branch diff `loam diff` reports | asyncapi, c4, document, envelope, kernel, openapi, provenance, repo, usecases |
@@ -371,7 +371,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 61 of the 142
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 61 of the 145
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 24 and 28 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.
@@ -429,6 +429,14 @@ the workspace layout differs, and that part is already isolated.
       rule landed, **no whitelist needed** — the one mention, `core/c4/likec4.ts:270`, is inside a
       comment, which `codeOnly` already blanks.
     - `$data` may appear only under `src/core/c4/parsed/`. Zero occurrences when the rule landed.
+    - A second census rides the same record since 2026-09-03: the KEYS of `$data.globals.styles`,
+      read in `parsed/view-ids.ts` beside the view-id census, so the generated subsystem views can
+      reference `global style subsystems` exactly when the project declares that id. A DECLARATION
+      read, like `specification` — never a read of a rule inside a group; what a style says is a
+      rendering instruction and stays unread. The reference loam writes is a parse error in the
+      renderer when the id is not declared, which is why the read and the write are joined to one
+      project load (`loadArchitecture`), and why an unreadable shape answers no ids rather than a
+      guessed one.
 
     **The upstream risk, and what carries it.** `$data` is a public, typed, readonly property
     (`@likec4/core`'s `LikeC4Model.d.mts:1018`), so this is not reaching into a private — it is the

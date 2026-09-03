@@ -493,6 +493,128 @@ describe("loam subsystem sync — the renderer", () => {
   });
 });
 
+describe("the repository's styling: `global style subsystems` when the map declares that id", () => {
+  // The harness landscape declares no `global` block and no tags, so the
+  // exact-bytes case above is the proof that nothing is written by default.
+  // These fixtures declare the tag the palette targets and one group.
+  const styledLandscape = (globalBlock: string): string =>
+    LANDSCAPE.replace("specification {", "specification {\n  tag external").replace("views {", `${globalBlock}\nviews {`);
+  const SUBSYSTEMS_GROUP =
+    "global {\n  styleGroup subsystems {\n    style element.tag = #external { color gray }\n  }\n}\n";
+  const OTHER_GROUP =
+    "global {\n  styleGroup fleetPalette {\n    style element.tag = #external { color gray }\n  }\n}\n";
+
+  /** The renderer's own read of `architecture/` — the one reader the generated file has, stood in for once. */
+  async function rendererErrors(docsDir: string): Promise<unknown[]> {
+    const loaded = await LikeC4.fromWorkspace(join(docsDir, "architecture"), { logger: false });
+    try {
+      return loaded.getErrors();
+    } finally {
+      await loaded.dispose();
+    }
+  }
+
+  it("declared: every view carries the line immediately after its label, the renderer parses it, and validate agrees", async () => {
+    // Position is a string assertion on the bytes, deliberately: measured,
+    // `global style` before `title` is a parse error and after it is not, so
+    // the exact sequence title → description → global style → body is the
+    // contract, and a mutation moving the line below the `group` would still
+    // pass the renderer's round-trip while breaking this pin.
+    const files = nestedFixture();
+    files["architecture/landscape.likec4"] = styledLandscape(SUBSYSTEMS_GROUP);
+    files["services/payments/subsystem.yaml"] = "title: Payments\ndescription: Money movement\n";
+    files["services/web/subsystem.yaml"] = "";
+    files["services/web/checkout-web/spec.md"] = "---\nservice: checkout-web\n---\n\n# checkout-web\n";
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).toContain(
+        "  view subsystem_payments {\n" +
+          "    title 'Payments'\n" +
+          "    description 'Money movement'\n" +
+          "    global style subsystems\n" +
+          "    group 'Payments' {\n" +
+          "      include paymentService\n" +
+          "    }\n" +
+          "  }\n",
+      );
+      expect(bytes).toContain("    title 'web'\n    global style subsystems\n    group 'web' {\n");
+      // One line per view, and no disclosure: the conventional id is declared.
+      expect(bytes.match(/^ {4}global style subsystems$/gm)).toHaveLength(2);
+      expect(bytes).not.toContain("// styles:");
+      // The reference resolves in the project the file renders into.
+      expect(await rendererErrors(p.docsDir)).toEqual([]);
+      // And the grader reads the same declaration the writer did.
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("another name only: no view references anything, and the file's sixth line says which groups exist", async () => {
+    // A reference to `subsystems` here would be the parse error the emission
+    // gate exists to prevent — the round-trip below reproduces it if the gate
+    // is ever loosened. The disclosure is outside every view body: graded by
+    // nothing, and read in the diff of the sync that regenerated the file.
+    const files = nestedFixture();
+    files["architecture/landscape.likec4"] = styledLandscape(OTHER_GROUP);
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      // No VIEW references anything — the disclosure line below names the
+      // words "global style group(s)" itself, so the pin is on a body line.
+      expect(bytes).not.toMatch(/^ {4}global style/m);
+      expect(bytes.split("\n")[5]).toBe(
+        "// styles: the project declares global style group(s) fleetPalette, and none named `subsystems` — " +
+          "these views carry the renderer's defaults until one is.",
+      );
+      expect(bytes.split("\n")[6]).toBe("views {");
+      expect(await rendererErrors(p.docsDir)).toEqual([]);
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("declared in a sibling architecture/usecases/*.likec4: emitted, because the census is the project's — and sync and validate agree", async () => {
+    // The renderer resolves the id against every document in `architecture/`,
+    // and so must loam, or a palette kept in its own file would leave the line
+    // unwritten while the renderer could have shown it.
+    const files = nestedFixture();
+    files["architecture/landscape.likec4"] = styledLandscape("");
+    files["architecture/usecases/style.likec4"] = SUBSYSTEMS_GROUP;
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      expect(await p.read(VIEWS)).toContain("    title 'Payments'\n    global style subsystems\n");
+      expect(await rendererErrors(p.docsDir)).toEqual([]);
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("declaring the group AFTER a sync is the one `subsystem.views-stale` the change costs, and one sync clears it", async () => {
+    const files = nestedFixture();
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      await p.write("architecture/landscape.likec4", styledLandscape(SUBSYSTEMS_GROUP));
+      const stale = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(stale.stdout).map((f) => f.code)).toEqual(["subsystem.views-stale"]);
+      expect(JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout).action).toBe("updated");
+      expect(subsystemFindings((await runLoam(p.workDir, "validate", "--all", "--json")).stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+});
+
 describe("validate --all — subsystem.views-stale", () => {
   it("subsystems with no views file: exactly one error, naming the file and `loam subsystem sync`", async () => {
     const p = await makeProject(nestedFixture());

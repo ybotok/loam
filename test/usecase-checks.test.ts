@@ -557,3 +557,79 @@ describe("the capability vocabulary's ladder reaches the tag grade, and stops th
     }
   }, 90_000);
 });
+
+describe("a hop between two containers of ONE service, at fleet altitude", () => {
+  /**
+   * The landscape above plus one INTERNAL edge of order-service, drawn from its
+   * worker back to its api. Both corrections the intra-service axis made to the
+   * shared graders are pinned here, at the altitude they were wrong at first:
+   *
+   *  - the service tier of `attributeStep` must not back a hop whose two
+   *    endpoints resolve to one service. Without the skip, `orders.api ->
+   *    orders.worker` — declared nowhere — was backed by the internal
+   *    `orders.worker -> orders.api` edge (both endpoints resolve to
+   *    order-service on either side), so the hop graded `attributed` and
+   *    `usecase.step-unbacked` could never fire on a real model;
+   *  - `usecase.step-unlinked` must not fire when the caller resolves to the
+   *    provider. The edge above carries no `op`, order-service is a real
+   *    directory, and the caller is not a person — every ingredient — but a
+   *    service owes no operationId to itself, and the old message ("names no
+   *    operation of order-service's contract") was about order-service calling
+   *    order-service.
+   */
+  const INTERNAL = LANDSCAPE.replace(
+    "  web -> orders.worker 'Enqueues the order'\n",
+    "  web -> orders.worker 'Enqueues the order'\n  orders.worker -> orders.api 'reports back'\n",
+  );
+
+  it("convicts the undeclared hop as unbacked rather than letting an internal edge back it", async () => {
+    const p = await makeProject({
+      ...fleet({
+        "architecture/usecases/internal.likec4": usecase(
+          "uc_internal",
+          "cap-checkout",
+          "    orders.api -> orders.worker 'hands the order over'\n",
+        ),
+      }),
+      "architecture/landscape.likec4": INTERNAL,
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const [unbacked, ...rest] = codeFor(res.stdout, "usecase.step-unbacked");
+      expect(rest).toEqual([]);
+      expect(unbacked?.message).toContain("nothing in the model declares orders.api -> orders.worker");
+      // Not the other wrong answer either: the hop is unbacked, so it never
+      // reaches the provider guard at all.
+      expect(codeFor(res.stdout, "usecase.step-unlinked")).toEqual([]);
+      expect(useCaseFindings(res.stdout)).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("never warns step-unlinked on the declared internal hop, while a service calling ANOTHER service still warns", async () => {
+    const p = await makeProject({
+      ...fleet({
+        "architecture/usecases/internal.likec4": usecase(
+          "uc_internal",
+          "cap-checkout",
+          "    orders.worker -> orders.api 'reports back'\n    payments -> orders 'notifies the order'\n",
+        ),
+      }),
+      "architecture/landscape.likec4": INTERNAL,
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const unlinked = codeFor(res.stdout, "usecase.step-unlinked");
+      // The control: same view, same missing `op`, a call ACROSS a boundary —
+      // that one must still warn, or the guard has silenced the check rather
+      // than corrected it.
+      expect(unlinked).toHaveLength(1);
+      expect(unlinked[0]!.message).toContain("step 2 'notifies the order'");
+      expect(unlinked[0]!.message).not.toContain("orders.worker");
+      expect(useCaseFindings(res.stdout)).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+});

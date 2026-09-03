@@ -40,7 +40,16 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   folders — where a label is the marker's \`title\` or the directory name; the
   marker's \`description\` rides along. So editing \`subsystem.yaml\` changes
   what the renderer LABELS the group, a parent's title changes every view
-  beneath it, and either makes the file stale until the next \`sync\`. It is generated wholesale:
+  beneath it, and either makes the file stale until the next \`sync\`. Each view
+  carries \`global style subsystems\` — written after its title, the one line
+  LikeC4 gives a view for borrowing a palette — exactly when the \`architecture/\`
+  project declares a global style with that id (\`global { styleGroup subsystems
+  { style element.tag = #external { color gray } } }\`, in the landscape or in
+  any \`architecture/usecases/*.likec4\`); nothing otherwise, and loam never reads
+  what the group says. Declaring it is the whole opt-in and makes the file stale
+  once, until the next \`sync\`. When the project declares style groups under other
+  names only, the file opens with one comment line naming them and saying none is
+  \`subsystems\`, and the views carry the renderer's defaults. It is generated wholesale:
   an authored diagram of the same services belongs in the landscape or in a
   file of your own name, never here. \`loam adopt --subsystem <name>\` briefs a new
   service's baseline directly into a group, so adoption need not land unfiled.

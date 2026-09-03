@@ -29,20 +29,26 @@
  * cascade a second error behind `landscape.missing`/`landscape.invalid`,
  * pointing at a file whose repair command would only re-derive the same
  * incomplete answer.
+ *
+ * The map arrives as the parsed document's facts — its elements AND the
+ * global style ids it declares — because the expected bytes now depend on
+ * both: a view references `global style subsystems` exactly when the project
+ * declares that id, so a fleet that declares it sees this finding once, until
+ * the next `sync` writes the line.
  */
-import type { Elem } from "../../../../core/c4/likec4.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { subsystemViewsPath } from "../../../../core/repo/paths.js";
 import { viewsState } from "../../../../core/repo/tree/render/stale.js";
+import type { MapFacts } from "../../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
 export async function viewsStaleFindings(
   docsDir: DocsDir,
   tree: FleetTree,
-  elements: Elem[],
+  map: MapFacts,
 ): Promise<Finding[]> {
-  const { actual, expected, agrees } = await viewsState(subsystemViewsPath(docsDir), tree, elements);
+  const { actual, expected, agrees } = await viewsState(subsystemViewsPath(docsDir), tree, map);
   if (agrees) return [];
   const state =
     actual === null

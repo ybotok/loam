@@ -231,6 +231,55 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
   // The gherkin.* staleness chain is absent the same way: it fires only once
   // `loam gherkin` has generated a suite under <gherkinDir>/loam/ in the
   // service's own repo, and a fresh baseline has not generated one.
+  //
+  // The service's OWN use cases: a `dynamic view` in any `.likec4` beside
+  // model.likec4 (or inside it) that opts in with `#req-`. The same codes the
+  // fleet target grades over architecture/usecases/, reused on the service
+  // target because the flow's hops name this service's containers, which only
+  // its own project can resolve. `usecase.step-unlinked` was at first left
+  // out, on the reasoning that a hop between two containers of one service
+  // owes no operationId — true, and exactly the scope of the guard that keeps
+  // it quiet there (a service owes none to itself); but a service's model
+  // routinely declares a stand-in for a sibling service it calls, and a hop
+  // from a service-local flow into that stand-in with no `metadata { op }`
+  // warns exactly as it does on the fleet map. The row is listed so the
+  // agent's own baseline run never reports a code the brief left unexplained.
+  {
+    code: "usecase.step-unbacked",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "a hop of a `#req-`-tagged dynamic view in this service's project that no relationship in model.likec4 backs — LikeC4 reports nothing for it, so only this does",
+  },
+  {
+    code: "usecase.step-contested",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "two or more relationships back one hop of a service-local flow and name different operations — loam names the candidates rather than picking one",
+  },
+  {
+    code: "usecase.step-unlinked",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a hop of a service-local flow into ANOTHER service's element — a stand-in this model.likec4 declares for a sibling, bound or titled as that service — backed by an edge carrying no `metadata { op }` and no `publishes`/`consumes`; never on a hop whose caller and provider resolve to the same service, because a service owes no operationId to itself",
+  },
+  {
+    code: "usecase.requirement-unresolved",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "a `#req-` tag on a service-local flow naming no `Requirement-ID` of this service's spec.md or arch.spec.md — the id is scoped by the directory, never by a capability",
+  },
+  {
+    code: "usecase.capability-unresolved",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "a `#cap-` tag on a flow inside this service's own project — a capability is claimed on the fleet map, never inside one service; drop the tag and keep the `#req-` one",
+  },
+  {
+    code: "usecase.flow-invalid",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "a `.likec4` beside model.likec4 that does not parse as part of the service's LikeC4 project — no flow in it was graded; model.likec4 itself is still graded alone",
+  },
   {
     code: "landscape.service-unmodelled",
     severity: "error",
@@ -261,6 +310,11 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     via: VIA_ALL,
     what: "two landscape elements resolve to the same services/<id>/ — every element→service join picks one of them arbitrarily, so the other's edges are filed under a service that does not own them",
   },
+  // Evidence-gated: the model's own cross-boundary calls are the proof that
+  // the map owes an edge, so a service whose model declares none stays silent
+  // — that state is the adopt brief's to name (`landscape.touched`), never a
+  // fleet finding that cannot tell a hermit from a batch job.
+  { code: "landscape.service-isolated", severity: "warn", via: VIA_ALL, what: "an element resolves to services/<id>/ and no edge in the map touches it, while model.likec4 declares a call across its boundary — the service is drawn and invisible to every cross-service check; silent when the model declares no such call" },
   // Fires on a fresh baseline by construction: the adopt protocol's step 3
   // writes the model and `subsystem sync` writes the project file, so a
   // service is owed the second command from the moment the first file lands.

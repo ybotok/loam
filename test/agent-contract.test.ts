@@ -147,16 +147,72 @@ describe("the adopt brief asks for the write the fleet map is owed", () => {
     expect(b.landscape.instruction).toContain("landscape.service-unmodelled");
   });
 
-  it("says nothing at all once an element resolves to the service — no target, no instruction", async () => {
-    // A service the map already draws owes it nothing, and briefing an edit
-    // there is how a second box for one service gets drawn.
+  it("says nothing at all once an element resolves to the service AND an edge touches it — no target, no instruction", async () => {
+    // A service the map already draws AND reaches owes it nothing, and
+    // briefing an edit there is how a second box for one service gets drawn.
+    // payment-service has an inbound edge (`authorizePayment`), which is what
+    // makes this the silent state rather than the edgeless one below.
     const p = await project(coherentFixture(), { service: SVC });
     const b = await brief(p);
     expect(b.landscape.modelled).toBe(true);
+    expect(b.landscape.touched).toBe(true);
+    expect(b.landscape.attested).toEqual([]);
     expect(b.landscape.instruction).toBe(null);
     expect(b.targets.map((t: { path: string }) => t.path)).not.toContain(
       "architecture/landscape.likec4",
     );
+  });
+
+  /**
+   * The coherent fixture with a bound element for billing-service that no
+   * edge touches — what `loam seed --from fleet.yaml` writes for every service
+   * nobody listed under `calls:`. Element existence used to read as "the map
+   * owes nothing" here, so the protocol's "make the landscape edit the brief
+   * asks for" was followed to the letter by drawing no edge at all.
+   */
+  function edgelessFixture(): Record<string, string> {
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = files["architecture/landscape.likec4"]!.replace(
+      "  customer -> checkoutWeb 'Uses'",
+      "  billingService = softwareSystem 'billing-service' {\n    metadata { service 'billing-service' }\n  }\n\n  customer -> checkoutWeb 'Uses'",
+    );
+    files["services/billing-service/spec.md"] = "---\nservice: billing-service\nstatus: draft\n---\n";
+    return files;
+  }
+
+  it("asks again while an element resolves to the service and no edge touches it", async () => {
+    const p = await project(edgelessFixture(), { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.modelled).toBe(true);
+    expect(b.landscape.touched).toBe(false);
+    expect(typeof b.landscape.instruction).toBe("string");
+    expect(b.landscape.instruction).toContain("billingService");
+    const target = b.targets.find((t: { path: string }) => t.path === "architecture/landscape.likec4");
+    expect(target, "no landscape target for an edgeless element").toBeDefined();
+    expect(target.action).toBe("edit");
+    expect(target.required).toBe(true);
+    // The instruction refuses the failure the old silence invited: a second
+    // element. What the map lacks is edges, and the shape says only that.
+    expect(target.shape.join("\n")).toMatch(/Do NOT add a second one/);
+    expect(target.example).not.toContain("metadata { service 'billing-service' }");
+  });
+
+  it("prints the edgeless instruction in the text view too, and flags the row EDGELESS rather than UNDRAWN", async () => {
+    const p = await project(edgelessFixture(), { service: "billing-service" });
+    const res = await runLoam(p.workDir, "adopt");
+    expect(res.code, res.out).toBe(0);
+    // The table flag: `UNDRAWN` is a lie for a drawn element, and a reader
+    // acting on the word would look for a box that is already there.
+    expect(res.out).toMatch(/landscape\.likec4\s+edit\s+EDGELESS/);
+    expect(res.out).toContain("EDGELESS an element exists, no edge does");
+    // The instruction lands under the landscape section, after the element
+    // line, so the two views brief one write.
+    const section = res.out.indexOf("what the fleet already says about this service");
+    expect(section).toBeGreaterThan(-1);
+    const element = res.out.indexOf("billingService = softwareSystem", section);
+    expect(element).toBeGreaterThan(section);
+    expect(res.out.replace(/\s+/g, " ").indexOf("draw NOTHING")).toBeGreaterThan(-1);
+    expect(res.out.indexOf("draw NOTHING", element)).toBeGreaterThan(element);
   });
 
   it("a landscape that does not parse gets its own instruction: fix the parse errors first", async () => {

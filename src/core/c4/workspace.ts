@@ -43,7 +43,7 @@ import { basename, join, resolve } from "node:path";
 import { LikeC4 } from "likec4";
 import { flattenModel, type LikeC4Error, type LoadedDoc, type ReadableModel } from "./likec4.js";
 import { readDynamicViews } from "./parsed/dynamic-views.js";
-import { readViewIds } from "./parsed/view-ids.js";
+import { readGlobalStyleIds, readViewIds } from "./parsed/view-ids.js";
 import { readSpecification } from "./parsed/specification.js";
 import { readDeployment } from "./parsed/deployment.js";
 
@@ -158,6 +158,7 @@ export async function loadBatch(paths: string[]): Promise<Map<string, LoadedDoc>
             specification: readSpecification(model.specification),
             views: readDynamicViews(model),
             viewIds: readViewIds(model),
+            globalStyles: readGlobalStyleIds(model),
             deployment: readDeployment(model),
             ...flattenModel(model),
           });

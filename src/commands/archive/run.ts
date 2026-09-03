@@ -315,7 +315,7 @@ async function subsystemViewsStale(docsDir: DocsDir): Promise<boolean> {
   try {
     const doc = await loadArchitecture(docsDir);
     if (doc.errors.length > 0) return false;
-    const state = await viewsState(subsystemViewsPath(docsDir), await listFleetTree(docsDir), doc.elements);
+    const state = await viewsState(subsystemViewsPath(docsDir), await listFleetTree(docsDir), doc);
     return !state.agrees;
   } catch {
     // Tolerant for the reason the snapshot resolver above is: a docs repo with

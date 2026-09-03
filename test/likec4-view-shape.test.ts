@@ -34,7 +34,7 @@
  *    "errors mean no model" rule already covers it, twice over.
  */
 import { describe, it, expect } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LikeC4 } from "likec4";
@@ -341,4 +341,192 @@ views {
       await likec4.dispose();
     }
   });
+});
+
+/**
+ * The parsed record's GLOBAL STYLE shape — the second corner of `$data` loam
+ * reads, and like the first it is pinned here BEFORE the reader exists.
+ *
+ * Why loam reads it at all: the generated `architecture/subsystems.likec4`
+ * can carry a repository's palette only by referencing a global style by id
+ * (`global style <id>` inside a view), and referencing an id nothing declares
+ * is a parse error that blanks the whole `architecture/` project in the
+ * renderer. So the one question loam asks of this corner is "which ids are
+ * DECLARED" — a census of keys, never a read of what a style says (docs/
+ * DESIGN.md rule 26: a style is a rendering instruction). Every assertion
+ * below is a measured fact the reader and the writer rest on, and a likec4
+ * bump that moves one fails here before it reaches a generated file.
+ */
+async function parsedGlobals(source: string): Promise<{
+  errors: string[];
+  styles: Record<string, unknown>;
+  views: Record<string, Record<string, unknown>>;
+}> {
+  const likec4 = await LikeC4.fromSource(source, { logger: false });
+  try {
+    const errors = likec4.getErrors().map((e) => e.message);
+    const model = (await likec4.parsedModel()) as unknown as {
+      $data?: {
+        globals?: { styles?: Record<string, unknown> };
+        views?: Record<string, Record<string, unknown>>;
+      };
+    };
+    return { errors, styles: model.$data?.globals?.styles ?? {}, views: model.$data?.views ?? {} };
+  } finally {
+    await likec4.dispose();
+  }
+}
+
+/** A specification declaring the tag the palette below targets, and two services to view. */
+const STYLED_SPEC = `specification {
+  element service
+  tag provisional
+  tag external
+}
+model {
+  web = service 'checkout-web'
+  orders = service 'order-service' {
+    #provisional
+  }
+  web -> orders 'calls'
+}
+`;
+
+const PALETTE = `global {
+  styleGroup fleetPalette {
+    style element.tag = #provisional { color muted }
+  }
+}
+`;
+
+describe("the parsed record's global style shape at likec4@1.59.2", () => {
+  it("files a `styleGroup` under $data.globals.styles keyed by its id, with its rules inside", async () => {
+    const { errors, styles } = await parsedGlobals(`${STYLED_SPEC}${PALETTE}`);
+    expect(errors).toEqual([]);
+    expect(Object.keys(styles)).toEqual(["fleetPalette"]);
+    // What a group SAYS is recorded here too — and loam never reads it. The
+    // two fields are asserted once so the next reader knows the contents ARE
+    // reachable and that leaving them unread is a decision, not an oversight.
+    const rules = styles["fleetPalette"] as Array<{ targets: Array<Record<string, unknown>>; style: Record<string, unknown> }>;
+    expect(Array.isArray(rules)).toBe(true);
+    expect(rules[0]!.targets[0]).toMatchObject({ elementTag: "provisional" });
+    expect(rules[0]!.style["color"]).toBe("muted");
+  });
+
+  it("files the single-rule `global { style <id> … }` form under the SAME table, by the same key", async () => {
+    // Both declaration forms land in one id table, which is why the reader
+    // reports `globalStyles` rather than `styleGroups`: an author who wrote
+    // the short form declared an id a view can reference exactly as a group is.
+    const { errors, styles } = await parsedGlobals(
+      `${STYLED_SPEC}global {\n  style fleetWide element.tag = #external { color gray }\n}\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(Object.keys(styles)).toEqual(["fleetWide"]);
+  });
+
+  it("records a view's `global style <id>` rule as `{ styleId }` — a reference, which loam writes and never reads", async () => {
+    const { errors, views } = await parsedGlobals(`${STYLED_SPEC}${PALETTE}views {
+  view fleet {
+    title 'Fleet'
+    global style fleetPalette
+    include *
+  }
+}
+`);
+    expect(errors).toEqual([]);
+    const rules = views["fleet"]!["rules"] as Array<Record<string, unknown>>;
+    expect(rules.some((rule) => rule["styleId"] === "fleetPalette")).toBe(true);
+  });
+
+  it("refuses a reference to an id nothing declares — the parse error the emission gate exists to prevent", async () => {
+    // The whole reason the generated file writes the line only when the id is
+    // declared: one such error in one document blanks the model for every
+    // document in the project, and the generated file is IN the renderer's
+    // project. The message names the grammar rule, so the assertion can be
+    // specific without pinning prose.
+    const { errors } = await parsedGlobals(`${STYLED_SPEC}views {
+  view fleet {
+    title 'Fleet'
+    global style nosuch
+    include *
+  }
+}
+`);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((message) => message.includes("GlobalStyleId"))).toBe(true);
+  });
+
+  it("takes `global style` AFTER `title` and refuses it BEFORE — the position rule the renderer writes to", async () => {
+    const before = await parsedGlobals(`${STYLED_SPEC}${PALETTE}views {
+  view fleet {
+    global style fleetPalette
+    title 'Fleet'
+    include *
+  }
+}
+`);
+    expect(before.errors.length).toBeGreaterThan(0);
+
+    const after = await parsedGlobals(`${STYLED_SPEC}${PALETTE}views {
+  view fleet {
+    title 'Fleet'
+    description 'the whole map'
+    global style fleetPalette
+    include *
+  }
+}
+`);
+    expect(after.errors).toEqual([]);
+  });
+
+  it("reads NO styles from a document that declares no `global` block — absent and empty are one answer", async () => {
+    const { errors, styles } = await parsedGlobals(STYLED_SPEC);
+    expect(errors).toEqual([]);
+    expect(styles).toEqual({});
+  });
+
+  it("in one project, a group declared in a SIBLING document reaches the project's table; a duplicate id errors", async () => {
+    // Parity with the renderer: `loadArchitecture` merges the landscape with
+    // every `architecture/usecases/*.likec4` exactly as `likec4.config.json`
+    // does, so a palette an author keeps in a file of its own must be visible
+    // to the census — or the generated views would reference nothing while
+    // the renderer could resolve the id. And the converse: the same id in two
+    // documents is an error, so a fleet cannot declare `subsystems` twice and
+    // leave loam guessing which one a view would get.
+    const project = async (files: Record<string, string>): Promise<{ errors: string[]; styles: Record<string, unknown> }> => {
+      const dir = await mkdtemp(join(tmpdir(), "loam-global-shape-"));
+      try {
+        await writeFile(join(dir, "likec4.config.json"), JSON.stringify({ name: "fleet" }), "utf8");
+        for (const [rel, body] of Object.entries(files)) {
+          await mkdir(join(dir, rel, ".."), { recursive: true });
+          await writeFile(join(dir, rel), body, "utf8");
+        }
+        const workspace = await LikeC4.fromWorkspace(dir, { logger: false });
+        try {
+          const errors = workspace.getErrors().map((e) => e.message);
+          const model = (await workspace.parsedModel()) as unknown as {
+            $data?: { globals?: { styles?: Record<string, unknown> } };
+          };
+          return { errors, styles: model.$data?.globals?.styles ?? {} };
+        } finally {
+          await workspace.dispose();
+        }
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    };
+
+    const sibling = await project({
+      "landscape.likec4": `${STYLED_SPEC}${PALETTE}`,
+      "usecases/style.likec4": "global {\n  styleGroup subsystems {\n    style element.tag = #external { color gray }\n  }\n}\n",
+    });
+    expect(sibling.errors).toEqual([]);
+    expect(Object.keys(sibling.styles).sort()).toEqual(["fleetPalette", "subsystems"]);
+
+    const duplicate = await project({
+      "landscape.likec4": `${STYLED_SPEC}${PALETTE}`,
+      "usecases/style.likec4": PALETTE,
+    });
+    expect(duplicate.errors.length).toBeGreaterThan(0);
+  }, 30_000);
 });

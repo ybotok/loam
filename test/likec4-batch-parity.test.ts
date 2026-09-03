@@ -122,6 +122,12 @@ deployment {
     a.dbA -> b.dbB 'Streams WAL'
   }
 }
+
+global {
+  styleGroup fleetPalette {
+    style element.tag = #external { color gray }
+  }
+}
 `;
 
 /** An unresolved reference: two Langium errors with real line numbers. */
@@ -234,6 +240,12 @@ describe("loadBatch parses every corpus document exactly as loadFile does", () =
         // wired into one and not the other reads as "this fleet declares no
         // topology" — silence, in the loader `validate --all` actually uses.
         expect(batched!.deployment, path).toEqual(single.deployment);
+        // The global style census travels the same third road, and a loader
+        // that forgot it would read as "this fleet declares no palette" — in
+        // which case the generated subsystem views reference nothing while
+        // `sync`, through the project loader, writes the line: a stale file
+        // no command could clear.
+        expect(batched!.globalStyles, path).toEqual(single.globalStyles);
         expect(errKeys(batched!), path).toEqual(errKeys(single));
       }
       // The corpus exercises both verdicts, or the loop above proves nothing.
@@ -248,6 +260,9 @@ describe("loadBatch parses every corpus document exactly as loadFile does", () =
         "paymentService.db",
         "paymentService.db",
       ]);
+      // And a document that DECLARES a global style group, or the equality
+      // above is `[]` agreeing with `[]`.
+      expect(singles.get(join(root, "rich.likec4"))!.globalStyles).toEqual(["fleetPalette"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -262,6 +277,11 @@ describe("loadBatch parses every corpus document exactly as loadFile does", () =
           expect(doc.errors.length, name).toBeGreaterThan(0);
           expect(doc.elements, name).toEqual([]);
           expect(doc.relationships, name).toEqual([]);
+          // Errors mean no model, and the census is part of the model: an
+          // errored document declares NO style ids in either mode, so the
+          // generated views can never reference a group out of a map that
+          // did not parse.
+          expect(doc.globalStyles, name).toBeUndefined();
         }
       }
     } finally {

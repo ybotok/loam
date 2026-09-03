@@ -27,7 +27,8 @@ import { landscapePath, type ServicePaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
 import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
-import { landscapeArtifact, landscapeContext, type LandscapeContext } from "./landscape.js";
+import { landscapeContext, type LandscapeContext } from "./landscape.js";
+import { landscapeArtifact } from "./map/owed.js";
 import { ARTIFACTS, type BriefTarget } from "./targets.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -197,8 +198,11 @@ export async function serviceBrief(
   const rel = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
 
   // Read before the artifact loop, not after it: what the fleet already says
-  // about this service decides whether it owes an API contract at all.
-  const landscape = await landscapeContext(docsDir, service);
+  // about this service decides whether it owes an API contract at all. The
+  // model path travels with it — located through the enumeration above, never
+  // joined at `services/<id>/` — so the edgeless state can name the calls the
+  // service's own model attests.
+  const landscape = await landscapeContext(docsDir, service, paths.model);
   const owesApi = apiExpected(landscape);
 
   const targets: BriefTarget[] = [];
@@ -216,15 +220,31 @@ export async function serviceBrief(
     });
   }
 
-  // The eighth target is the fleet map, and it is conditional: a service the
-  // landscape ALREADY resolves an element to owes it nothing, and briefing an
-  // edit there would invite an agent to draw a second box for a service that
-  // has one. Everything else about the target is unconditional — the file is
+  // The eighth target is the fleet map, and it is conditional on TWO facts: an
+  // element resolving to the service, and an edge touching it. A service the
+  // landscape already draws AND reaches owes it nothing, and briefing an edit
+  // there would invite an agent to draw a second box for a service that has
+  // one. A service with a box and no edge — what `loam seed` leaves for every
+  // service nobody listed under `calls:` — owes it the edges, and until
+  // 2026-09-03 element existence alone read as "the map is complete" here, so
+  // the brief declared the map finished for exactly the services it had not
+  // reached. Everything else about the target is unconditional — the file is
   // shared, so `action` is `edit` whenever it exists and `create` only for the
   // very first service of a brand-new docs repo.
-  if (landscape.modelled !== true) {
+  if (landscape.modelled !== true || landscape.touched === false) {
     targets.push({
-      ...landscapeArtifact(service, landscape.expects, landscape.present, rel(paths.dir)),
+      ...landscapeArtifact({
+        service,
+        expects: landscape.expects,
+        present: landscape.present,
+        servicePath: rel(paths.dir),
+        // The existing element's id, in the edgeless state only: it switches
+        // the example from a block to edges on that element.
+        ...(landscape.touched === false && landscape.elements[0] !== undefined
+          ? { elementId: landscape.elements[0].id }
+          : {}),
+        attested: landscape.attested,
+      }),
       path: rel(landscapePath(docsDir)),
       exists: landscape.present,
       action: landscape.present ? "edit" : "create",

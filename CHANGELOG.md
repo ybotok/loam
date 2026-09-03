@@ -10,6 +10,116 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — the adopt brief on an edgeless landscape element
+
+- `loam adopt --service <id> --json` gains two additive keys under `landscape`: `landscape.touched`
+  — `true` when at least one edge in `architecture/landscape.likec4` has an endpoint resolving to
+  the service (an intra-service edge counts: the predicate `loam context` prints as "(modelled, no
+  edges touch it)"), `null` whenever `landscape.modelled` is `null` or `false` — and
+  `landscape.attested`, the calls the service's own `model.likec4` declares across its boundary
+  (`direction`, `counterpartId`, `counterpart`, and `title` / `op` / `publishes` / `consumes` where
+  the edge carries them), sorted and de-duplicated, `[]` when the model is absent, does not parse,
+  or declares none, and read only in the edgeless state. `landscape.modelled` and
+  `landscape.elements` are now decided by the same element→service resolver `validate --all` grades
+  `landscape.service-unmodelled` on: a container titled like a sibling service, nested inside an
+  element bound to another service, resolves to its ancestor — so `loam adopt` reports such a
+  service `modelled: false` where it reported `true`, which is the answer the fleet run was already
+  giving.
+  `landscape.instruction` is no longer `null` on element existence alone: while an element resolves
+  to the service and no edge touches it, the brief names each attested call and asks for it as ONE
+  edge on the existing element, collapsed to the service and naming the other party as the map
+  already spells it — or, with nothing attested, points at the walk's outbound and message stops and
+  says draw NOTHING rather than invent an edge — and names the element's tags loam does not read (a
+  placeholder such as `#provisional`, and the view written `exclude element.tag = #<that>` that
+  keeps an adopted service hidden). The `architecture/landscape.likec4` target is back in that state
+  with `action: "edit"`, `required: true`, a shape refusing a second element and an edge-only
+  example. The text view prints the instruction under "what the fleet already says about this
+  service" and flags the row `EDGELESS` ("an element exists, no edge does") instead of `UNDRAWN`.
+  Until now `loam seed --from fleet.yaml` left every service absent from `calls:` as a bound,
+  edgeless element the brief then declared finished.
+- New `landscape.service-isolated` (warn, never gating, `--all` only, on the landscape target,
+  `subject` the service id): an element resolves to `services/<…>/<svc>/`, no edge in the map
+  touches it, and that service's `model.likec4` parses and declares at least one call across its
+  boundary — the message names the first three. Evidence-gated on purpose: silent for a service with
+  no model (a seeded fleet), an unparseable model (`c4.invalid` owns it), a model reaching nothing,
+  and an unmodelled service (`landscape.service-unmodelled` owns it); `#external` elements are never
+  subjects. It suppresses `landscape.matched` like every finding. The brief's `checks[]`, the
+  `/loam-check` `--all` table and AGENTS.md's adoption section carry it; `/loam-adopt` step 5 states
+  the one silent case and points at `landscape.touched` in step 1.
+- One more statement in the adoption brief's unchecked list, now seventeen: whether an adopted
+  service is VISIBLE on the fleet map — a placeholder tag that survives adoption, a curated view
+  that lists its members by id, and `include *` collapsing to a boundary element
+  (`include <boundary>.**`). `/loam-adopt` step 3 names that housekeeping as part of the landscape
+  edit.
+- What a repo notices: a drawn-but-edgeless service whose model reaches other systems gains one
+  `landscape.service-isolated` warning per service on its next `loam validate --all` — under
+  `--strict`, CI is red until an edge lands or the element is genuinely edgeless and stays so (a
+  model attesting no cross-boundary call is silent); a seeded service nobody listed under `calls:`
+  is briefed the edges instead of nothing.
+
+### Added — a home for an intra-service use case
+
+- A `dynamic view` over one service's own containers now has a slot loam reads and grades: any
+  `.likec4` beside `services/<…>/<svc>/model.likec4` (`usecases/<name>.likec4` by convention,
+  `views.likec4` read the same) or a tagged view inside model.likec4 itself — exactly the document
+  set the per-service renderer project registers, read whether or not `likec4.config.json` exists.
+  `loam validate --service <id>`, and `--all` per service, grade every view tagged
+  `#req-<Requirement-ID>` with the codes the fleet target already uses: `usecase.step-unbacked`
+  (error), `usecase.step-contested` (warn), `usecase.requirement-unresolved` (error — resolved
+  against THIS service's spec.md and arch.spec.md ids, four arms), `usecase.capability-unresolved`
+  (error — a `#cap-` tag beside a model is refused by placement, vocabulary or not) and
+  `usecase.flow-invalid` (error — a sibling that breaks the service project; model.likec4 keeps
+  grading alone, never `c4.invalid`). Untagged views are never graded, and an untagged sibling is
+  not even loaded while no view in the project opts in and no sibling mentions either reserved
+  prefix anywhere in its bytes; once loaded — a tagged view inside model.likec4 itself, or `req-` /
+  `cap-` in a sibling's comment or title — a project that does not read is one
+  `usecase.flow-invalid` whether or not any view in it opted in. A resolved service-local `#req-`
+  feeds nothing else yet. The feature slot for such a flow is deferred (ROADMAP).
+- Two corrections to the shared step graders, at fleet altitude too: a hop whose two endpoints
+  resolve to ONE service is no longer backed by that service's internal edges on the service tier
+  (measured: every internal relationship was a candidate, so an unbacked hop between two containers
+  of one service graded attributed and could never earn `usecase.step-unbacked`); and
+  `usecase.step-unlinked` no longer fires when the caller resolves to the provider — a service owes
+  no operationId to itself, and that is the guard's whole scope: a hop from a service-local flow
+  into another service's element still warns, exactly as it does on the fleet map. What a repo
+  notices: a landscape that draws a service as containers with a tagged hop between two of them
+  loses a wrong `usecase.step-unlinked` warning and may gain a right `usecase.step-unbacked` error;
+  a service directory holding a tagged `dynamic view` beside its model starts being graded. What a
+  repo notices on the OTHER surface: `loam diff --base` reads the same attribution, so a use-case
+  hop drawn between two containers of ONE service, with no edge declared for that exact pair, no
+  longer counts as a victim of that service's own removed operation — a removal that reported
+  `diff.op-removed-consumed` (error, `breaking: true`, exit 1) now reports `diff.op-removed` (warn)
+  and the run exits 0. The hop was never backed by anything; the finding it earned was the wrong
+  one.
+- The adopt brief's `checks[]` gains six `--service` rows: the five above and
+  `usecase.step-unlinked`, which the service target reports for a hop into a sibling's stand-in;
+  the arch.spec.md shape names the hop-sequence slot; AGENTS.md's layout table and use-case
+  section name it too.
+
+### Changed — the generated subsystem views join the repository's styling
+
+Every view in the generated `architecture/subsystems.likec4` now carries `global style subsystems`
+— written after its `title` and `description`, before its `include`/`group` — exactly when the
+`architecture/` project (the landscape merged with every `architecture/usecases/*.likec4`, the one
+load `loam subsystem sync`, `validate --all` and `archive` share) declares a global style with the
+id `subsystems`, in either form: `global { styleGroup subsystems { … } }` or
+`global { style subsystems … }`. loam reads only that the id is declared — a census of the keys of
+`$data.globals.styles` beside the view-id census in `core/c4/parsed/view-ids.ts` — and never what
+the group says (docs/DESIGN.md rule 26). Nothing is written otherwise, and the file is
+byte-identical to before. When the project declares style groups under other names only, one
+comment line between the header and `views {` names them and says none is `subsystems`; there is
+no single-group fallback, because a second group declared for a hand-drawn view would otherwise
+switch the generated views' styling off on a change that touched no subsystem. What a repo notices:
+a fleet that already declares a group named `subsystems` (or any group, for the disclosure line)
+sees one `subsystem.views-stale` on its next `validate --all`, cleared by one `loam subsystem sync`.
+`loam seed` renders the file from that same project — the landscape it is about to write, staged
+beside every other `architecture/` document — so a palette kept in a sibling such as
+`architecture/usecases/palette.likec4` is referenced by the seeded views and never a stale file
+straight after a seed. No new code, flag or `--json` key. `LoadedDoc` gains the additive field
+`globalStyles` (the sorted declared ids), produced alike by every loader and pinned by the three
+parity suites; seven tripwire assertions in `test/likec4-view-shape.test.ts` pin the parsed shape
+at likec4@1.59.2.
+
 ## [0.2.0-alpha.5] - 2026-09-03
 
 An adopted service's model renders from the docs root. Still a prerelease on the `alpha` line:

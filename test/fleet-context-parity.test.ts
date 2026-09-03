@@ -48,7 +48,7 @@ import { decodeDocument } from "../src/core/kernel/document-bytes.js";
 import { operationIds, operations, readOpenapi } from "../src/core/openapi/doc.js";
 import { type FeatureEntry } from "../src/core/repo/entries.js";
 import { featureSpecServices, listFeatures, listFleetTree, listServices } from "../src/core/repo/repo.js";
-import { coherentFixture, makeProject, type Project } from "./helpers/harness.js";
+import { coherentFixture, LANDSCAPE, makeProject, type Project } from "./helpers/harness.js";
 
 /** payment-service's async contract: one message, produced. */
 const ASYNCAPI = `asyncapi: 3.0.0
@@ -165,9 +165,22 @@ The fleet SHALL reverse a payment within five days.
 - **Then** the money is returned within five days
 `;
 
+/**
+ * The harness landscape, declaring one global style group. The shared
+ * constant declares none, so the `loadLikeC4` row would otherwise compare an
+ * empty census with an empty census — the vacuous pass the floor exists to
+ * refuse. Written locally for the banner's reason: the shared fixture's exact
+ * shape is pinned by dozens of other suites.
+ */
+const STYLED_LANDSCAPE = LANDSCAPE.replace("specification {", "specification {\n  tag external").replace(
+  "views {",
+  "global {\n  styleGroup fleetPalette {\n    style element.tag = #external { color gray }\n  }\n}\n\nviews {",
+);
+
 /** `coherentFixture()` plus what the readers below need and it does not carry. */
 function parityFixture(): Record<string, string> {
   const files = coherentFixture();
+  files["architecture/landscape.likec4"] = STYLED_LANDSCAPE;
   files["services/payment-service/asyncapi.yaml"] = ASYNCAPI;
   files["architecture/capabilities.yaml"] = CAPABILITIES_YAML;
   files["capabilities/chargebacks/spec.md"] = CAPABILITY_DOC;
@@ -346,6 +359,10 @@ const READERS: Reader[] = [
       expect(doc.errors).toEqual([]);
       expect(doc.elements.length).toBeGreaterThanOrEqual(3);
       expect(doc.relationships.length).toBeGreaterThanOrEqual(2);
+      // The global style census rides the memo too: the generated subsystem
+      // views are graded off this document under `validate --all`, so a memo
+      // that dropped the field would grade a styled fleet stale forever.
+      expect(doc.globalStyles).toEqual(["fleetPalette"]);
     },
   },
   {

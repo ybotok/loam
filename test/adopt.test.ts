@@ -206,6 +206,281 @@ describe("what already exists around the service", () => {
     // "nothing models it" would be a lie about a document nobody could read
     expect(b.landscape.modelled).toBe(null);
   });
+
+  it("decides `modelled` the way validate does — a nearest-ancestor binding wins over a descendant's title", async () => {
+    // orderService is bound to order-service and holds a container TITLED
+    // 'payment-service'. Every element→service join in loam resolves that
+    // container to order-service (the binding is nearer than the title), so
+    // `validate --all` reports payment-service unmodelled. The brief used to
+    // read each element's OWN binding-or-title instead, call payment-service
+    // modelled and edgeless, and tell the agent "do not add a second element"
+    // — for a service whose one gating error is that no element resolves to it.
+    const files: Record<string, string> = {
+      "architecture/landscape.likec4": [
+        "specification {",
+        "  element softwareSystem",
+        "  element container",
+        "  tag external",
+        "}",
+        "",
+        "model {",
+        "  orderService = softwareSystem 'Orders' {",
+        "    metadata { service 'order-service' }",
+        "    paymentService = container 'payment-service'",
+        "  }",
+        "  billing = softwareSystem 'billing' {",
+        "    #external",
+        "  }",
+        "  orderService -> billing 'Invoices'",
+        "}",
+        "",
+        "views {",
+        "  view landscape {",
+        "    include *",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "services/order-service/spec.md": "---\nservice: order-service\nstatus: draft\n---\n",
+      "services/payment-service/spec.md": "---\nservice: payment-service\nstatus: draft\n---\n",
+    };
+    const p = await project(files, { service: SVC });
+    const b = await brief(p);
+    expect(b.landscape.modelled).toBe(false);
+    expect(b.landscape.touched).toBe(null);
+    expect(b.landscape.elements).toEqual([]);
+    expect(b.landscape.instruction).toContain("Nothing in architecture/landscape.likec4 resolves to");
+    expect(b.landscape.instruction).toContain("landscape.service-unmodelled");
+    // …and the fleet run says the same thing about the same tree.
+    const res = await runLoam(p.workDir, "validate", "--all", "--json");
+    const json = JSON.parse(res.stdout) as {
+      targets: Array<{ kind: string; findings: Array<{ code: string; subject?: string }> }>;
+    };
+    const land = json.targets.find((t) => t.kind === "landscape");
+    expect(land, "the fleet cross-check did not run").toBeDefined();
+    expect(land!.findings).toContainEqual(
+      expect.objectContaining({ code: "landscape.service-unmodelled", subject: SVC }),
+    );
+    // Seen from order-service the container is ITS box, not a second element:
+    // the brief lists the service-level element alone.
+    const o = await brief(p, "--service", "order-service");
+    expect(o.landscape.modelled).toBe(true);
+    expect(o.landscape.elements.map((e: { id: string }) => e.id)).toEqual(["orderService"]);
+    expect(o.landscape.touched).toBe(true);
+  });
+});
+
+/**
+ * The fourth landscape state: an element resolves to the service and no edge
+ * in the map touches it. That is what `loam seed --from fleet.yaml` leaves for
+ * every service nobody listed under `calls:`, and until 2026-09-03 the brief
+ * read element existence as "the map owes nothing" — `instruction: null`, no
+ * target, `inbound: []`, `outbound: []` in one payload. An agent following the
+ * protocol to the letter then wrote a validating baseline and never drew one
+ * edge, and `loam validate --all` stayed green over it.
+ */
+describe("an element the map draws and nothing touches", () => {
+  /**
+   * The coherent fixture plus a bound, edgeless element for billing-service.
+   * LikeC4 orders an element body — tags, then properties, then nested
+   * elements — so `tags` opens the element, the binding follows, and `body`
+   * (containers, edges) closes it; `spec` lands inside the specification
+   * block, because LikeC4 refuses a tag or kind nothing declared.
+   */
+  function edgelessFixture(at: { tags?: string; body?: string; spec?: string } = {}): Record<string, string> {
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = files["architecture/landscape.likec4"]!
+      .replace("  element person\n", `  element person\n${at.spec ?? ""}`)
+      .replace(
+        "  customer -> checkoutWeb 'Uses'",
+        `  billingService = softwareSystem 'billing-service' {\n${at.tags ?? ""}    metadata { service 'billing-service' }\n${at.body ?? ""}  }\n\n  customer -> checkoutWeb 'Uses'`,
+      );
+    files["services/billing-service/spec.md"] = "---\nservice: billing-service\nstatus: draft\n---\n";
+    return files;
+  }
+
+  /** A service model attesting ONE call across its boundary, from a container. */
+  const BILLING_MODEL = `specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  billingService = softwareSystem 'billing-service' {
+    metadata { service 'billing-service' }
+    api = container 'api'
+  }
+  stripe = softwareSystem 'Stripe acquirer'
+  billingService.api -> stripe 'Authorizes' {
+    metadata { op 'authorize' }
+  }
+}
+`;
+
+  it("asks for the edges, and names the calls the service's own model already attests", async () => {
+    const files = edgelessFixture();
+    files["services/billing-service/model.likec4"] = BILLING_MODEL;
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    // `modelled` keeps its meaning — an element resolves — and the new key
+    // says the thing the two empty edge arrays only implied.
+    expect(b.landscape.modelled).toBe(true);
+    expect(b.landscape.touched).toBe(false);
+    expect(b.landscape.attested).toEqual([
+      { direction: "out", counterpartId: "stripe", counterpart: "Stripe acquirer", title: "Authorizes", op: "authorize" },
+    ]);
+    const instruction: string = b.landscape.instruction;
+    expect(instruction).toContain("billingService");
+    expect(instruction).toContain("Stripe acquirer");
+    expect(instruction).toContain("op 'authorize'");
+    // …and the counterpart is handed over as the model spells it, never
+    // matched to a landscape element: one word can name two things in two
+    // documents, and that join is the agent's.
+    expect(instruction).toMatch(/names a different thing in the map/);
+    expect(instruction).toContain("landscape.service-isolated");
+    // The target is back, as an edit, and its shape refuses the second box.
+    const t = target(b, "landscape.likec4");
+    expect(t.action).toBe("edit");
+    expect(t.required).toBe(true);
+    expect(t.shape.join("\n")).toContain("Do NOT add a second one");
+    expect(t.shape.join("\n")).toContain("landscape.binding-duplicate");
+    // The example is edges only, on the element that already exists.
+    expect(t.example).toContain("billingService ->");
+    expect(t.example).not.toContain("softwareSystem 'billing-service'");
+  });
+
+  it("spells the edge in the direction the model attests — an inbound call is `<caller> -> <element>`", async () => {
+    // The attested arm used to hand out the outbound form alone, so an agent
+    // carrying up an inbound call drew the dependency backwards — and because
+    // `op` must be an operationId the TARGET's openapi.yaml defines, the
+    // reversed edge then earned `spine.op-undefined` against the wrong service.
+    const inbound = edgelessFixture();
+    inbound["services/billing-service/model.likec4"] = BILLING_MODEL.replace(
+      "billingService.api -> stripe 'Authorizes'",
+      "stripe -> billingService.api 'Authorizes'",
+    );
+    let b = await brief(await project(inbound, { service: "billing-service" }));
+    expect(b.landscape.attested).toEqual([
+      { direction: "in", counterpartId: "stripe", counterpart: "Stripe acquirer", title: "Authorizes", op: "authorize" },
+    ]);
+    expect(b.landscape.instruction).toContain("<- Stripe acquirer (op 'authorize')");
+    expect(b.landscape.instruction).toContain("<caller> -> billingService 'Calls <op>'");
+    expect(b.landscape.instruction).not.toContain("billingService -> <callee>");
+
+    // Calls both ways: both forms, so neither direction is guessed.
+    const mixed = edgelessFixture();
+    // The model's tail — the outbound edge's closing brace, then `model`'s —
+    // is the one place a second relationship can be spliced.
+    mixed["services/billing-service/model.likec4"] = BILLING_MODEL.replace(
+      "  }\n}\n",
+      "  }\n  stripe -> billingService.api 'Notifies' {\n    metadata { op 'settle' }\n  }\n}\n",
+    );
+    b = await brief(await project(mixed, { service: "billing-service" }));
+    expect(b.landscape.attested.map((c: { direction: string }) => c.direction)).toEqual(["in", "out"]);
+    expect(b.landscape.instruction).toContain("billingService -> <callee> 'Calls <op>'");
+    expect(b.landscape.instruction).toContain("<caller> -> billingService 'Calls <op>'");
+  });
+
+  it("says draw NOTHING when the service attests no call — an invented edge is a dependency", async () => {
+    const p = await project(edgelessFixture(), { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.touched).toBe(false);
+    expect(b.landscape.attested).toEqual([]);
+    expect(b.landscape.instruction).toContain("draw NOTHING");
+    expect(b.landscape.instruction).not.toContain("op 'authorize'");
+    // It points at the walk stops that produce the evidence instead.
+    expect(b.landscape.instruction).toMatch(/stops 4 and 7/);
+    expect(target(b, "landscape.likec4").action).toBe("edit");
+  });
+
+  it("attests nothing off a model that does not parse — half a document is not evidence", async () => {
+    const files = edgelessFixture();
+    files["services/billing-service/model.likec4"] = "model {\n  broken !!! not likec4\n";
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.touched).toBe(false);
+    expect(b.landscape.attested).toEqual([]);
+    expect(b.landscape.instruction).toContain("draw NOTHING");
+  });
+
+  it("names the element's tags loam does not read, and none of the ones it does", async () => {
+    const files = edgelessFixture({ tags: "    #provisional #platform\n", spec: "  tag provisional\n  tag platform\n" });
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.elements[0].tags).toEqual(["provisional", "platform"]);
+    // A placeholder convention is the fleet's own; loam names the tag and
+    // never interprets it. `#platform` is loam's, so it is not "unread".
+    expect(b.landscape.instruction).toContain("#provisional");
+    expect(b.landscape.instruction).not.toContain("#platform");
+    expect(b.landscape.instruction).toContain("exclude element.tag = #<that>");
+  });
+
+  it("counts an intra-service edge as touching — the predicate `loam context` prints", async () => {
+    // A service modelled as containers, with an edge between two of them: the
+    // map draws an edge on this service, which is what `touched` is about.
+    const files = edgelessFixture({
+      body: "    api = container 'api'\n    db = container 'db'\n    api -> db 'reads'\n",
+      spec: "  element container\n",
+    });
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.modelled).toBe(true);
+    expect(b.landscape.touched).toBe(true);
+    expect(b.landscape.instruction).toBe(null);
+    expect(b.targets.map((t: { artifact: string }) => t.artifact)).not.toContain("landscape.likec4");
+  });
+
+  it("opens the service model only in the edgeless state", async () => {
+    // payment-service has an inbound edge, so its model is never read here —
+    // asserted through a model that would not parse if it were.
+    const files = coherentFixture();
+    files[`services/${SVC}/model.likec4`] = "model {\n  broken !!! not likec4\n";
+    const p = await project(files, { service: SVC });
+    const b = await brief(p);
+    expect(b.landscape.touched).toBe(true);
+    expect(b.landscape.attested).toEqual([]);
+    expect(b.landscape.instruction).toBe(null);
+  });
+
+  it("is null, like `modelled`, when nothing could be read or nothing resolves", async () => {
+    const unparseable = coherentFixture();
+    unparseable["architecture/landscape.likec4"] = "model {\n  broken !!! not likec4\n";
+    let b = await brief(await project(unparseable, { service: SVC }));
+    expect(b.landscape.modelled).toBe(null);
+    expect(b.landscape.touched).toBe(null);
+    b = await brief(await project(coherentFixture(), { service: "billing-service" }));
+    expect(b.landscape.modelled).toBe(false);
+    expect(b.landscape.touched).toBe(null);
+    expect(b.landscape.attested).toEqual([]);
+  });
+
+  it("the reproduction: a seeded service nobody listed under calls: is briefed the edges", async () => {
+    // loam's own documented bootstrap. `calls:` is a human-authored list that
+    // is incomplete by construction on day zero, so every service it omits
+    // reaches `adopt` as a bound, edgeless element.
+    const p = await project({ "services/.gitkeep": "", "features/.gitkeep": "" });
+    await writeFile(
+      join(p.workDir, "fleet.yaml"),
+      "services:\n  - alpha-service\n  - beta-service\nexternals:\n  - kafka\ncalls:\n  - alpha-service -> kafka\n",
+      "utf8",
+    );
+    const seeded = await runLoam(p.workDir, "seed", "--from", "fleet.yaml", "--json");
+    expect(seeded.code, seeded.out).toBe(0);
+
+    const beta = await brief(p, "--service", "beta-service");
+    expect(beta.landscape.modelled).toBe(true);
+    expect(beta.landscape.touched).toBe(false);
+    expect(typeof beta.landscape.instruction).toBe("string");
+    // seed writes no model, so nothing is attested and nothing is invented.
+    expect(beta.landscape.attested).toEqual([]);
+    expect(beta.landscape.instruction).toContain("draw NOTHING");
+    expect(target(beta, "landscape.likec4").action).toBe("edit");
+
+    const alpha = await brief(p, "--service", "alpha-service");
+    expect(alpha.landscape.touched).toBe(true);
+    expect(alpha.landscape.instruction).toBe(null);
+    expect(alpha.targets.map((t: { artifact: string }) => t.artifact)).not.toContain("landscape.likec4");
+  });
 });
 
 describe("the frontmatter it must write", () => {
@@ -702,8 +977,8 @@ describe("--targets: only what varies by service", () => {
   });
 
   it("prints no orientation block — bullet three describes sections this view omits", async () => {
-    // The block says what the rest of the page is: a nine-stop walk, 37 checks,
-    // sixteen statements of what nothing checks. Under `--targets` none of the
+    // The block says what the rest of the page is: a nine-stop walk, 45 checks,
+    // seventeen statements of what nothing checks. Under `--targets` none of the
     // three is printed, so the sentence would be describing a page that is not
     // there — and `--targets` already has its own pointer for exactly that job.
     const p = await project(coherentFixture(), { service: SVC });

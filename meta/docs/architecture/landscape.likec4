@@ -479,7 +479,9 @@ model {
   loam.core.asyncapi -> loam.core.repo
 
   loam.core.brief -> loam.core.c4
+  loam.core.brief -> loam.core.obligations
   loam.core.brief -> loam.core.repo
+  loam.core.brief -> loam.core.vocabulary
 
   loam.core.c4 -> loam.core.kernel
   loam.core.c4 -> loam.core.repo

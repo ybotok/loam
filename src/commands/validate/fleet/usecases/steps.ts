@@ -5,8 +5,17 @@
  * The attribution itself is `core/c4/resolve/steps.ts`'s `attributeStep` — which declared
  * relationship backs a hop, oriented on `isBackward` and decided by the
  * DISTINCT-op count — and none of that reasoning is repeated here. This module
- * owns three things: which verdict earns which code, the three guards that keep
+ * owns three things: which verdict earns which code, the four guards that keep
  * the warn honest, and the sentences.
+ *
+ * TWO SCOPES, ONE GRADER. The fleet target grades the `architecture/` project's
+ * views and the service target grades a service's own project — every `.likec4`
+ * beside `model.likec4`, read the way the renderer reads it
+ * (`commands/validate/service/usecases/`). Both call `stepFindings` below with
+ * their own `StepGrading`; what differs is only where a finding says the view
+ * is (`place`). A second copy of the verdict→code mapping per scope is the
+ * drift this package's banner forbids, which is why the intra-service case is
+ * a fourth guard here rather than a grader of its own.
  *
  * WHY `step-unbacked` IS THE CHECK THAT EARNS THE FEATURE. A hop between two
  * elements that both exist, with no relationship between them anywhere in the
@@ -51,19 +60,43 @@ export interface GradedStep {
  */
 export interface StepGrading {
   model: StepScope;
-  /** The `services/<id>/` directories that exist. */
+  /**
+   * The `services/<id>/` directories that exist. The SAME enumerated set in
+   * both scopes — the service target hands over the whole fleet too, never an
+   * empty set — so the documented invariant above (`services` and `model.known`
+   * are one value) holds wherever this grader runs, and the intra-service
+   * exemption is the fourth guard in `unlinkedProvider` rather than a scope
+   * that quietly disables the provider test.
+   */
   services: ReadonlySet<string>;
   /** The shared element→service resolver every other edge join uses. */
   resolve: (id: string) => string;
+  /**
+   * Where a finding says the view is — the opening of every message in this
+   * family. Defaults to `viewPlace`, the fleet target's
+   * `landscape: architecture/<file> — dynamic view '<id>'`. The service target
+   * injects its own, because a view read out of a service's project carries a
+   * `sourcePath` relative to the SERVICE directory, and the `landscape:`
+   * opening is the fleet target's name — a finding filed on a service must not
+   * claim it (`../place.ts` records why the prefix stayed command vocabulary).
+   */
+  place?: (view: ParsedView) => string;
 }
 
 type Unbacked = Extract<StepAttribution, { verdict: "unbacked" }>;
 type Contested = Extract<StepAttribution, { verdict: "contested" }>;
 type Attributed = Extract<StepAttribution, { verdict: "attributed" }>;
 
-/** `…checkout.likec4 — dynamic view 'uc_checkout' step 2 'authorizes the payment'`. */
-function placeOf(hop: GradedStep): string {
-  return `${viewPlace(hop.view)} ${stepPlace(hop.step)}`;
+/**
+ * `…checkout.likec4 — dynamic view 'uc_checkout' step 2 'authorizes the payment'`.
+ *
+ * Spelled once per hop in `stepFindings` and handed to each sentence builder as
+ * a string, rather than recomputed from the grading inside each of them: three
+ * builders reaching for `grading.place ?? viewPlace` on their own would be three
+ * places for one scope to forget the injection.
+ */
+function placeOf(hop: GradedStep, grading: StepGrading): string {
+  return `${(grading.place ?? viewPlace)(hop.view)} ${stepPlace(hop.step)}`;
 }
 
 /**
@@ -78,7 +111,7 @@ function placeOf(hop: GradedStep): string {
  * a reply to the CALL it answers rather than to the direction the message
  * travels (`callPair` in core/c4/resolve/steps.ts holds the measurement).
  */
-function unbackedFinding(hop: GradedStep, attribution: Unbacked): Finding {
+function unbackedFinding(hop: GradedStep, attribution: Unbacked, place: string): Finding {
   const other = hop.step.isBackward
     ? { spelling: `${hop.step.source} -> ${hop.step.target}`, when: "is not a return step" }
     : { spelling: `${hop.step.target} <- ${hop.step.source}`, when: "is a return step" };
@@ -87,7 +120,7 @@ function unbackedFinding(hop: GradedStep, attribution: Unbacked): Finding {
     code: "usecase.step-unbacked",
     subject: hop.view.id,
     message:
-      `${placeOf(hop)}: nothing in the model declares ${attribution.from} -> ${attribution.to}, so this hop is ` +
+      `${place}: nothing in the model declares ${attribution.from} -> ${attribution.to}, so this hop is ` +
       "backed by no relationship — and LikeC4 reports no error for it, so the view still renders and the " +
       "project still parses. Draw the edge in `model { }` (with `metadata { op '<operationId>' }` where it is " +
       `a call), or, if this hop ${other.when}, write it as \`${other.spelling}\` — a reply is attributed to the ` +
@@ -116,13 +149,13 @@ function candidateLine(rel: Rel): string {
  * that is. An absent `metadata { op }` prints as `no op` and is a candidate like
  * any other — it is exactly as much of a disagreement as a second name.
  */
-function contestedFinding(hop: GradedStep, attribution: Contested): Finding {
+function contestedFinding(hop: GradedStep, attribution: Contested, place: string): Finding {
   return {
     severity: "warn",
     code: "usecase.step-contested",
     subject: hop.view.id,
     message:
-      `${placeOf(hop)}: ${attribution.rels.length} relationships back ${attribution.from} -> ` +
+      `${place}: ${attribution.rels.length} relationships back ${attribution.from} -> ` +
       `${attribution.to} and they name ${attribution.ops.length} different operations, so nothing can say ` +
       "which one this hop exercises. loam names the candidates instead of picking one — a guessed operation " +
       "reads exactly like a right one in every rollup built over this flow. Give the candidates one operation, " +
@@ -133,12 +166,13 @@ function contestedFinding(hop: GradedStep, attribution: Contested): Finding {
 
 /**
  * The service this hop calls, when the hop is a `step-unlinked` candidate at
- * all — `null` when any of the three guards refuses. ALL THREE are mechanical,
+ * all — `null` when any of the four guards refuses. ALL FOUR are mechanical,
  * and each closes a whole class of warnings that would otherwise be simply
  * wrong. The count is stated because a reader auditing this function is meant to
- * find three bullets and three `return null`s below and conclude that none of
- * them is surplus: the one a miscount invites deleting is the last, and deleting
- * it puts the warning back on the first hop of almost every flow.
+ * find four bullets and four `return null`s below and conclude that none of
+ * them is surplus: the one a miscount invites deleting is the actor guard, and
+ * deleting it puts the warning back on the first hop of almost every flow;
+ * deleting the last puts it on EVERY hop of every flow drawn inside a service.
  *
  *  - A `publishes` or `consumes` on ANY candidate means the hop does reach a
  *    declared API — an AsyncAPI one. The event spine already grades it
@@ -162,6 +196,18 @@ function contestedFinding(hop: GradedStep, attribution: Contested): Finding {
  *    `arch-coverage.ts`, `core/gate/partners.ts` and `core/verify/checklist.ts`
  *    each already apply, through the same `ACTOR_KINDS` — a person was never a
  *    participant in any of loam's other censuses either.
+ *  - The CALLER must not resolve to the provider itself. A hop between two
+ *    containers of one service — `api -> db` inside a service's own project,
+ *    or the same pair on a landscape that draws the service as containers —
+ *    names no operation of that service's contract: an operationId is what a
+ *    caller OUTSIDE the boundary uses, and a service owes none to itself. The
+ *    three guards above all pass such a hop (the edge carries no message, the
+ *    target IS a real `services/<id>/`, the caller is a container), so without
+ *    this one the warning fired on every hop of every intra-service flow the
+ *    moment loam started reading them — and the message ("names no operation
+ *    of X's contract") was about X calling X. Through the same shared
+ *    resolver as the provider, so the two sides of the comparison cannot
+ *    disagree about which directory an element stands for.
  *
  * The op test reads the ATTRIBUTION rather than the relationships: an
  * `attributed` verdict with no `op` means every candidate agreed the hop names
@@ -174,6 +220,7 @@ function unlinkedProvider(attribution: Attributed, grading: StepGrading): string
   if (attribution.rels.some((rel) => rel.publishes !== undefined || rel.consumes !== undefined)) return null;
   if (isActor(attribution.from, grading.model.elements)) return null;
   const provider = grading.resolve(attribution.to);
+  if (grading.resolve(attribution.from) === provider) return null;
   return grading.services.has(provider) ? provider : null;
 }
 
@@ -199,7 +246,7 @@ function isActor(id: string, elements: Elem[]): boolean {
  * provider's contract the step exercises — and the whole point of grading a use
  * case is that the flow joins through to the API it drives.
  */
-function unlinkedFinding(hop: GradedStep, attribution: Attributed, provider: string): Finding {
+function unlinkedFinding(hop: GradedStep, attribution: Attributed, provider: string, place: string): Finding {
   const backing =
     attribution.rels.length === 1 ? "one relationship" : `${attribution.rels.length} relationships`;
   return {
@@ -207,7 +254,7 @@ function unlinkedFinding(hop: GradedStep, attribution: Attributed, provider: str
     code: "usecase.step-unlinked",
     subject: hop.view.id,
     message:
-      `${placeOf(hop)}: ${attribution.from} -> ${attribution.to} is backed by ${backing} carrying no ` +
+      `${place}: ${attribution.from} -> ${attribution.to} is backed by ${backing} carrying no ` +
       "`metadata { op }` and no `publishes`/`consumes`, so this hop names no operation of " +
       `${provider}'s contract — the use case reaches the fleet map and stops there. Add ` +
       "`metadata { op '<operationId>' }` to the edge in `model { }`, or `metadata { publishes '<message>' }` / " +
@@ -224,14 +271,15 @@ function unlinkedFinding(hop: GradedStep, attribution: Attributed, provider: str
  */
 export function stepFindings(hop: GradedStep, grading: StepGrading): Finding[] {
   const attribution = attributeStep(hop.step, grading.model);
+  const place = placeOf(hop, grading);
   switch (attribution.verdict) {
     case "unbacked":
-      return [unbackedFinding(hop, attribution)];
+      return [unbackedFinding(hop, attribution, place)];
     case "contested":
-      return [contestedFinding(hop, attribution)];
+      return [contestedFinding(hop, attribution, place)];
     case "attributed": {
       const provider = unlinkedProvider(attribution, grading);
-      return provider === null ? [] : [unlinkedFinding(hop, attribution, provider)];
+      return provider === null ? [] : [unlinkedFinding(hop, attribution, provider, place)];
     }
   }
 }

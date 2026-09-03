@@ -91,7 +91,12 @@ export function registerSeed(program: Command): void {
 
       // The self-check: the emitted DSL is parsed in memory BEFORE anything
       // is written, so a templater bug can never land as a broken landscape.
-      // Its parsed elements are reused for the generated views join.
+      // Its parsed document travels to the plan as the landscape's OWN facts —
+      // the render's input when no other `architecture/` document exists, and
+      // the fallback otherwise. It is not the render's whole input: the global
+      // style ids the render asks for are the PROJECT's (the template declares
+      // no `global`, but a sibling document may), which `plan.ts`'s
+      // `projectFacts` reads the way `validate --all` will.
       const sealed = sealLandscape(renderLandscape(seed));
       const doc = await loadSource(sealed);
       const firstError = doc.errors[0];
@@ -108,7 +113,7 @@ export function registerSeed(program: Command): void {
         docsDir,
         seed,
         landscape: sealed,
-        elements: doc.elements,
+        map: doc,
         rerun: `loam seed --from ${fromArg}`,
       });
       if (!committed.ok) return refuseCommit(json, committed);

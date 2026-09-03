@@ -91,12 +91,20 @@ wrong quietly, and \`loam validate\` passing means nothing about any of it.
 
 One of the targets is not under \`services/<id>/\`: \`architecture/landscape.likec4\`,
 the fleet map, carried with \`action: "edit"\` and a \`landscape.instruction\`
-spelling out the block this service owes it. That target appears only while
-nothing in the map resolves to the service. **Add to that file; never rewrite
-it** — every other service's elements and edges are in there. A service that is
+spelling out the write this service owes it. That target appears while nothing
+in the map resolves to the service, and again while the element that does has
+no edge touching it — \`landscape.touched\` says which, and \`landscape.attested\`
+lists the calls the service's own model.likec4 declares across its boundary,
+which are the edges the map owes. **Add to that file; never rewrite it** —
+every other service's elements and edges are in there. A service that is
 fully documented and undrawn is \`landscape.service-unmodelled\` (error) and is
 invisible to every cross-service check: no edge into it can be graded against
-its openapi.yaml, and no feature can draw a call to it.
+its openapi.yaml, and no feature can draw a call to it. A drawn, bound,
+edgeless service whose model reaches other systems is
+\`landscape.service-isolated\` (warn): drawn, and invisible to every
+cross-service check all the same. One whose model attests no such call is
+silent there — the brief's \`landscape.touched: false\` is the only place that
+state is named, so read it before the fleet run rather than hoping for it in it.
 
 An adoption ends with two runs, not one: \`loam validate --service <id> --json\`
 for the baseline, then \`loam validate --all --json\` in the docs repo — the
