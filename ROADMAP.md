@@ -127,7 +127,7 @@ here.
 
 #### The generated subsystem views — a label, a boundary, and one reader of the map
 
-**Landed 2026-09-03.** Three problem reports from a 56-service fleet, one axis. The generated
+**Landed 2026-09-03.** Three problem reports from a fleet running loam, one axis. The generated
 `architecture/subsystems.likec4` exists only to be rendered and was the least readable object in a
 docs repo: no `title`, so the renderer showed the hex-escaped view id, and leaf includes only, so a
 fleet drawn as grouped C4 rendered flat. Each view now carries the marker's title (the directory

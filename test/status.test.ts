@@ -1090,7 +1090,7 @@ describe("the first-hour ladder over an empty docs repo", () => {
     // bind-service/adopt-first below it would be the same instruction twice.
     const p = await makeProject(
       { ...EMPTY_REPO, "architecture/landscape.likec4": scaffoldLandscape() },
-      { service: "obm-message-rest-api" },
+      { service: "billing-service" },
     );
     const payload = await statusJson(p);
     expect(codes(payload.next)).toEqual(["next.adopt-bound", "next.author-landscape", "next.fleet-gate"]);

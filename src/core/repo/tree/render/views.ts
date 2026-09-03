@@ -15,7 +15,7 @@
  * Each view opens with the LABEL a human reads — `title`, and `description`
  * when the marker carries one — because this file exists only to be rendered
  * and an unlabelled view is shown by its id, which is hex-escaped for
- * injectivity and reads as `subsystem_api__rest_2dapi_2dv2_2dservices`. Both
+ * injectivity and reads as `subsystem_platform__order_2dflow`. Both
  * strings are somebody else's words and go through `likec4String`, which
  * records what a raw one does.
  *
@@ -84,7 +84,7 @@ export function renderSubsystemViews(tree: FleetTree, elements: Elem[]): string 
     // `title` is a parse error ("Expecting token of type '}' but found
     // `title`"), and one parse error in this file blanks the whole
     // `architecture/` project in the renderer.
-    lines.push(`    title '${viewTitle(sub)}'`);
+    lines.push(`    title '${viewTitle(titleChain(tree, sub))}'`);
     const description = likec4String(sub.meta.description ?? "");
     if (description !== "") lines.push(`    description '${description}'`);
     lines.push(...body.lines);
@@ -92,6 +92,22 @@ export function renderSubsystemViews(tree: FleetTree, elements: Elem[]): string 
   }
   lines.push("}");
   return lines.join("\n") + "\n";
+}
+
+/**
+ * This subsystem and every MARKED ancestor above it, outermost first — the
+ * chain `viewTitle` composes a path out of.
+ *
+ * Marked, because an intermediate directory holding no `subsystem.yaml` is
+ * `subsystem.unmarked`, an error the walk already names: it is not a group,
+ * so it contributes no folder level here either. Read off the walked tree
+ * rather than off the path segments, so what the title says and what the
+ * finding says about the same directory cannot disagree.
+ */
+function titleChain(tree: FleetTree, sub: SubsystemEntry): SubsystemEntry[] {
+  return tree.subsystems
+    .filter((s) => s.path.length <= sub.path.length && s.path.every((name, i) => sub.path[i] === name))
+    .sort((a, b) => a.path.length - b.path.length);
 }
 
 /** The sort key and the comment spelling: the subsystem's path from services/, joined. */

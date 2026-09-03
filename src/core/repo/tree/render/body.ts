@@ -13,7 +13,7 @@ import { type Elem } from "../../../c4/likec4.js";
 import { serviceResolver } from "../../../c4/resolve/service.js";
 import { servicesUnder, withinSubsystem } from "../find.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../walk.js";
-import { viewTitle } from "./text.js";
+import { subsystemLabel } from "./text.js";
 
 /**
  * Everything a view's body needs from the landscape, resolved ONCE: the
@@ -100,7 +100,7 @@ export function viewBody(ctx: RenderContext, sub: SubsystemEntry): ViewBody {
  */
 function groupedBody(ctx: RenderContext, sub: SubsystemEntry, indent: string): string[] {
   const inner = `${indent}  `;
-  const out = [`${indent}group '${viewTitle(sub)}' {`];
+  const out = [`${indent}group '${subsystemLabel(sub)}' {`];
   for (const child of childSubsystems(ctx, sub)) out.push(...groupedBody(ctx, child, inner));
   for (const id of directMemberElements(ctx, sub)) out.push(`${inner}include ${id}`);
   out.push(`${indent}}`);

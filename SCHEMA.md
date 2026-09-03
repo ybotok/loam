@@ -165,12 +165,17 @@ reports). The output is deterministic and line-oriented — subsystems sorted by
 one `include` per line, no timestamps, no absolute paths — so it is byte-reproducible on any machine
 and two concurrent moves into different groups merge in git without intervention.
 
-Each view carries the **label a human reads**: `title` from `subsystem.yaml`, falling back to the
-directory name (an unlabelled view is shown by its id, which is hex-escaped for injectivity and
-reads as `subsystem_api__rest_2dapi_2dv2_2dservices`), and `description` when the marker authors
-one. Both are somebody's prose written into syntax, so both are normalized to one line and escaped;
-titles are not unique — only ids are — and a `/` in an authored title is LikeC4's own view-folder
-separator, which loam passes through rather than rewriting a human's words.
+Each view carries the **label a human reads**: `title`, and `description` when the marker authors
+one. The title is the subsystem's **path** — every marked ancestor's label and its own, joined with
+` / `, so `services/platform/order-flow` reads `Platform / Order flow` — and each label is the
+marker's `title`, falling back to the directory name (an unlabelled view is shown by its id, which
+is hex-escaped for injectivity and reads as `subsystem_platform__order_2dflow`). LikeC4
+reads that path as folders: the view list mirrors the directory tree, showing one folder per
+ancestor and the leaf's own label as the title. A `/` **inside** a label becomes `∕` (U+2215), so an
+authored slash can neither hide half of what somebody wrote nor invent a folder level the tree does
+not have. Both strings are somebody's prose written into syntax, so both are normalized to one line
+and escaped. Titles are not unique — only ids are — and renaming a parent's title rewrites every
+view beneath it.
 
 The **boundary** each view draws is a fact about the landscape, never a setting:
 

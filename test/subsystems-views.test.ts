@@ -268,36 +268,96 @@ describe("loam subsystem sync — the renderer", () => {
   });
 
   it("boxes the DIRECTORY tree when the map draws no boundary at all — a parent shows its children as boxes", async () => {
-    // The fleet the reports describe: every service top-level in the map, the
-    // subsystem split living only in the directories. There is no authored
-    // box to agree with, so the view draws the tree's own — nested, so a
-    // parent subsystem is not one undifferentiated pile.
+    // The common shape: every service top-level in the map, the subsystem
+    // split living only in the directories. There is no authored box to agree
+    // with, so the view draws the tree's own — nested, so a parent subsystem
+    // is not one undifferentiated pile.
     const p = await makeProject({
       "architecture/landscape.likec4": LANDSCAPE,
-      "services/api/subsystem.yaml": "title: API\n",
-      "services/api/rest/subsystem.yaml": "title: REST v2\n",
-      "services/api/rest/payment-service/spec.md": SPEC("payment-service"),
-      "services/api/checkout-web/spec.md": SPEC("checkout-web"),
+      "services/platform/subsystem.yaml": "title: Platform\n",
+      "services/platform/order-flow/subsystem.yaml": "title: Order flow\n",
+      "services/platform/order-flow/payment-service/spec.md": SPEC("payment-service"),
+      "services/platform/checkout-web/spec.md": SPEC("checkout-web"),
     });
     try {
       expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const bytes = await p.read(VIEWS);
       expect(bytes).toContain(
-        "  view subsystem_api {\n" +
-          "    title 'API'\n" +
-          "    group 'API' {\n" +
-          "      group 'REST v2' {\n" +
+        "  view subsystem_platform {\n" +
+          "    title 'Platform'\n" +
+          "    group 'Platform' {\n" +
+          "      group 'Order flow' {\n" +
           "        include paymentService\n" +
           "      }\n" +
           "      include checkoutWeb\n" +
           "    }\n" +
           "  }\n",
       );
-      // The child's own view is the same box without the parent around it.
+      // The child's own view is the same box without the parent around it —
+      // and its TITLE carries the path, so the browser lists it under
+      // `Platform` while the box keeps the subsystem's own label.
       expect(bytes).toContain(
-        "  view subsystem_api__rest {\n    title 'REST v2'\n    group 'REST v2' {\n      include paymentService\n    }\n  }\n",
+        "  view subsystem_platform__order_2dflow {\n    title 'Platform / Order flow'\n" +
+          "    group 'Order flow' {\n      include paymentService\n    }\n  }\n",
       );
       expect(bytes).not.toContain("// model:");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("titles the view by its PATH, and never lets an authored slash invent a folder level", async () => {
+    // The title is a path LikeC4 splits into browser folders, so one `/` in a
+    // marker's own words would both hide half the label (measured: a title of
+    // `Payments / refunds` renders as `refunds`) and add a level the tree does
+    // not have. loam composes the path, so loam owns the substitution.
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/platform/subsystem.yaml": "title: Payments / refunds\n",
+      "services/platform/edge/subsystem.yaml": "title: Edge\n",
+      "services/platform/edge/payment-service/spec.md": SPEC("payment-service"),
+    });
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).toContain("    title 'Payments ∕ refunds'\n");
+      expect(bytes).toContain("    title 'Payments ∕ refunds / Edge'\n");
+      // Exactly one separator: one folder level per subsystem directory.
+      expect([...bytes.matchAll(/^ {4}title '(.*)'$/gm)].map((m) => m[1]!.split(" / ").length)).toEqual([1, 2]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("the renderer reads that path as a folder tree: the parent becomes a folder, the leaf keeps its own label", async () => {
+    // The whole point of titling by path, measured rather than assumed — and
+    // measured at the COMPUTED stage because that is where LikeC4 splits a
+    // title, which is a thing loam itself may never do (docs/DESIGN.md rule
+    // 26 bans computing a view in `src/`; a test standing in for the renderer
+    // once is not loam reading a view).
+    const p = await makeProject({
+      "architecture/landscape.likec4": LANDSCAPE,
+      "services/platform/subsystem.yaml": "title: Payments / refunds\n",
+      "services/platform/edge/subsystem.yaml": "title: Edge\n",
+      "services/platform/edge/payment-service/spec.md": SPEC("payment-service"),
+    });
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const loaded = await LikeC4.fromWorkspace(join(p.docsDir, "architecture"), { logger: false });
+      try {
+        expect(loaded.getErrors()).toEqual([]);
+        const views = new Map(
+          [...(await loaded.computedModel()).views()].map((v) => [v.id as string, v]),
+        );
+        const child = views.get("subsystem_platform__edge")!;
+        // The authored slash survives as ONE folder name — it did not add a
+        // level — and the child is listed under its parent by its own label.
+        expect(child.title).toBe("Edge");
+        expect(child.folder?.path).toBe("Payments ∕ refunds");
+        expect(views.get("subsystem_platform")!.folder?.path).toBe("");
+      } finally {
+        await loaded.dispose();
+      }
     } finally {
       await p.destroy();
     }
@@ -613,14 +673,14 @@ describe("validate --all — subsystem.view-id-collision", () => {
     // their own document, while the target fallback used to send an editor to
     // architecture/landscape.likec4 — a file that has nothing to rename.
     const files = nestedFixture();
-    files["architecture/obm-subsystems.likec4"] = "views {\n  view subsystem_payments {\n    include *\n  }\n}\n";
+    files["architecture/fleet-map.likec4"] = "views {\n  view subsystem_payments {\n    include *\n  }\n}\n";
     const p = await makeProject(files);
     try {
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       const hits = subsystemFindings(res.stdout).filter((f) => f.code === "subsystem.view-id-collision");
       expect(hits).toHaveLength(1);
       expect(hits[0]!.locations).toEqual([
-        { path: "architecture/obm-subsystems.likec4", role: "primary" },
+        { path: "architecture/fleet-map.likec4", role: "primary" },
       ]);
     } finally {
       await p.destroy();

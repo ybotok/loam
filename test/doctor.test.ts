@@ -126,16 +126,16 @@ describe("doctor", () => {
  */
 describe("status and doctor agree about the repo they are standing in", () => {
   it("surfaces an unadopted binding as next[0], the same state doctor blocks on", async () => {
-    // The fleet is empty and this repo says it is 'obm-message-rest-api'.
-    const project = await makeProject({}, { service: "obm-message-rest-api" });
+    // The fleet is empty and this repo says it is 'billing-service'.
+    const project = await makeProject({}, { service: "billing-service" });
     cleanups.push(() => project.destroy());
     await mkdir(join(project.docsDir, "services"), { recursive: true });
     await mkdir(join(project.docsDir, "features"), { recursive: true });
 
     const status = JSON.parse((await runLoam(project.workDir, "status", "--json")).stdout);
     expect(status.next[0].code).toBe("next.adopt-bound");
-    expect(status.next[0].service).toBe("obm-message-rest-api");
-    expect(status.next[0].command).toBe("loam adopt --service obm-message-rest-api --json");
+    expect(status.next[0].service).toBe("billing-service");
+    expect(status.next[0].command).toBe("loam adopt --service billing-service --json");
     // and the claim that made the old answer wrong is gone
     expect(status.next.map((s: { code: string }) => s.code)).not.toContain("next.fleet-clean");
 
