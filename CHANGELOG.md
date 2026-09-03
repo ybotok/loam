@@ -10,6 +10,14 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.5] - 2026-09-03
+
+An adopted service's model renders from the docs root. Still a prerelease on the `alpha` line:
+`npm i @ybotok/loam@alpha` installs it. Nothing below is breaking. What a repo with adopted services
+NOTICES: one `service.likec4-config-missing` warning per service on its first `validate --all`
+until one `loam subsystem sync`, and from that sync on `--project` for `likec4 validate` at the
+docs root.
+
 ### Added — an adopted service's model renders from the docs root
 
 The root `likec4.config.json` excludes `services/**`, and has to; what that cost was never stated:

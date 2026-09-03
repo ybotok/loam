@@ -7,7 +7,7 @@
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.2.0-alpha.4`**, the third published release of the 0.2 line and the newest published
+> **Pre-release: `0.2.0-alpha.5`**, the fourth published release of the 0.2 line and the newest published
 > version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). It publishes under the
 > `alpha` npm dist-tag — which is what the badge above reads: `npm i @ybotok/loam@alpha`, or the
 > exact version, always installs this line. `latest` is moved onto a release by hand once it has
@@ -487,7 +487,7 @@ always preserved byte for byte, with the entry printed for manual merge.
   maps, what is lost, what must be added.
 - [ROADMAP.md](ROADMAP.md) — the evidence-backed improvement plan, priorities, non-goals and exit
   criteria.
-- [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.4 plus the changes on `main` under
+- [CHANGELOG.md](CHANGELOG.md) — released beta.1–alpha.5 plus the changes on `main` under
   `[Unreleased]`.
 - [docs/BENCHMARKS.md](https://github.com/ybotok/loam/blob/main/docs/BENCHMARKS.md) — what a
   fleet-sized run costs, with the method, the machine and the committed runs behind every number.
@@ -528,7 +528,7 @@ against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the 
 trails the tree.
 
 The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently
-`0.2.0-alpha.4`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships
+`0.2.0-alpha.5`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships
 under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only
 ([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a
 drift test, so it cannot silently trail a release.
