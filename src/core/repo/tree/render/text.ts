@@ -47,20 +47,53 @@ export function likec4String(text: string): string {
 }
 
 /**
- * The label a human reads in the renderer: the marker's `title`, or the
- * DIRECTORY NAME when the marker carries none.
+ * ONE subsystem's label: the marker's `title`, or the DIRECTORY NAME when the
+ * marker carries none.
  *
  * The fallback is not a nicety. Without a title LikeC4 shows the view id, and
  * the id is hex-escaped for injectivity (`subsystemViewId` says why), so every
  * subsystem whose directory name holds a hyphen — the common case — rendered
- * as `subsystem_api__rest_2dapi_2dv2_2dservices`. A directory name is
- * something a human chose; the escaped id never is.
+ * as `subsystem_platform__order_2dflow`. A directory name is something a human
+ * chose; the escaped id never is.
  *
  * A blank or whitespace-only title counts as absent: measured, `title ''`
  * collapses to null at the model layer, so emitting one would put back exactly
  * the unlabelled view this exists to remove.
+ *
+ * A `/` inside the label becomes `∕` (U+2215), and that substitution is the
+ * price of `viewTitle` below composing a path out of these. LikeC4 splits a
+ * view title on `/` into browser folders and displays only the last segment —
+ * measured: `Payments / refunds` renders as `refunds` with `Payments` demoted
+ * to a folder — so an authored slash left alone would silently hide
+ * half of what somebody wrote AND invent a folder level the tree does not
+ * have. Since loam is the one choosing to compose with `/`, loam owns that
+ * consequence rather than passing it on. The whole title stays visible and the
+ * folder path stays exactly the subsystem tree. A directory name cannot
+ * contain `/`, so the fallback never needs it.
  */
-export function viewTitle(sub: SubsystemEntry): string {
-  const authored = likec4String(sub.meta.title ?? "");
-  return authored === "" ? likec4String(sub.name) : authored;
+export function subsystemLabel(sub: SubsystemEntry): string {
+  const segment = (text: string): string => likec4String(text).split("/").join("∕");
+  const authored = segment(sub.meta.title ?? "");
+  return authored === "" ? segment(sub.name) : authored;
+}
+
+/**
+ * The title a view carries: every marked ancestor's label and its own, joined
+ * with ` / ` — `Platform / Order flow` for `services/platform/order-flow`.
+ *
+ * LikeC4 reads that as a path: the browser shows one folder per ancestor and
+ * the leaf's own label as the title, so the view list mirrors the directory
+ * tree a human already navigates, and two subsystems whose leaf labels are
+ * equal are told apart by their parents instead of appearing twice under one
+ * name. Nothing is invented — the chain is the tree — and a subsystem directly
+ * under `services/` has a chain of one and reads exactly as its own label.
+ *
+ * The cost, stated because it is real: renaming a PARENT's title rewrites the
+ * bytes of every view beneath it, so one marker edit restales more of the file
+ * than it used to. The alternative — a fixed `loam subsystems /` prefix —
+ * buys the same folder without the churn and puts loam's own name in a
+ * reader's UI; the tree's own words won.
+ */
+export function viewTitle(chain: readonly SubsystemEntry[]): string {
+  return chain.map(subsystemLabel).join(" / ");
 }

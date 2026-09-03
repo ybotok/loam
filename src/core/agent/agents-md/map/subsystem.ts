@@ -26,10 +26,12 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   moved and answers nothing — exit 0, no finding — when git will not say;
   \`sync\` regenerates \`architecture/subsystems.likec4\`, the one repair for
   \`subsystem.views-stale\`; a landscape view claiming a generated id is
-  \`subsystem.view-id-collision\`. Each generated view carries the marker's
-  \`title\` (the directory name when it has none) and its \`description\`, so
-  editing \`subsystem.yaml\` changes what the renderer LABELS the group and
-  makes the file stale until the next \`sync\`. It is generated wholesale:
+  \`subsystem.view-id-collision\`. Each generated view is titled by its PATH —
+  every marked ancestor's label and its own, which the renderer reads as
+  folders — where a label is the marker's \`title\` or the directory name; the
+  marker's \`description\` rides along. So editing \`subsystem.yaml\` changes
+  what the renderer LABELS the group, a parent's title changes every view
+  beneath it, and either makes the file stale until the next \`sync\`. It is generated wholesale:
   an authored diagram of the same services belongs in the landscape or in a
   file of your own name, never here. \`loam adopt --subsystem <name>\` briefs a new
   service's baseline directly into a group, so adoption need not land unfiled.
