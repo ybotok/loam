@@ -34,11 +34,14 @@ coverage gate passing with **92.26% statements, 84.06% branches, 96.62% function
 lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
 `npm run test:package` green against the real tarball.
 
-One qualification remains, and it is observation rather than code: nothing has been pushed since the
-CI `stability` job and the tarball-reading package smoke landed, so repeatable CI executions — the
-stability job seen green, and the installed-package smoke run from a pushed commit — are still
-release evidence to collect, even though the gate-stress proof passed locally on its landing tree
-and the smoke passes locally against the real tarball. The runner class recorded on 2026-08-18 is
+Most of that qualification is now closed by observation rather than by code. Measured 2026-09-03 on
+pushed commits: `ci` at `1de7c97` green — `test` on Node 22.22.3 and 24, and the installed-package
+`package` job on ubuntu (both Node lines) and windows — and the `release` workflow on tag
+`v0.2.0-alpha.4` green end to end, `release-gate` (lint, typecheck, coverage, the packed candidate,
+the smoke of that exact candidate, `release:check`) followed by `publish`, which put the tarball on
+npm under the `alpha` dist-tag. What is left is one job: `stability` is SKIPPED on a push — it runs
+on the weekly schedule and on dispatch — so it is still release evidence to collect, even though the
+gate-stress proof passes locally. The runner class recorded on 2026-08-18 is
 still the reading to apply to a red of that shape: a restricted filesystem sandbox that denies `tsx`
 its local IPC socket fails only the
 [test/cli-entry.test.ts](https://github.com/ybotok/loam/blob/main/test/cli-entry.test.ts) cases with
@@ -103,12 +106,15 @@ has landed (see [Recently landed](#recently-landed)) — the authored business a
 axis, and as of 2026-09-02 the deployment axis, which is the first item this file ever wrote
 directly into this section rather than promoting from [Later](#later--promote-only-from-evidence).
 
-### Release evidence, unchanged
+### Release evidence — one job left
 
-What is left is the one thing this file cannot close by writing code, and it stays
-where it is rather than being promoted for the shape of it: the CI `stability` job and the
-installed-package smoke have still to be OBSERVED green from a pushed commit. That is release
-evidence to collect, not an improvement to make.
+What is left is the one thing this file cannot close by writing code, and it stays where it is
+rather than being promoted for the shape of it. The installed-package half closed on 2026-09-03:
+the `package` job ran green on a pushed commit across three runner/Node combinations, and the whole
+publication path ran green on tag `v0.2.0-alpha.4`. The CI `stability` job has still to be OBSERVED
+green — it is skipped on a push and runs on the weekly schedule — so it is still release evidence to
+collect, not an improvement to make. `workflow_dispatch` is the way to collect it deliberately
+rather than waiting for Monday.
 
 An item returns to this section from [Later](#later--promote-only-from-evidence) when fleet evidence
 names its operator, repeated task, failure mode, frequency, current workaround and measurable
