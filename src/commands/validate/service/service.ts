@@ -40,7 +40,11 @@ import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events/events.js";
 import { archAxisFindings, readServiceSpecs } from "./specs.js";
+import { serviceUseCaseFindings } from "./usecases/usecases.js";
+import { readServiceFlows } from "../../../core/usecases/service/flows.js";
 import { unknownDirectiveFindings } from "../../../core/document/grammar/directives.js";
+import { type Requirement } from "../../../core/document/spec.js";
+import { type ServicePaths } from "../../../core/repo/paths.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
@@ -96,10 +100,13 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const me: string = service;
   const findings: Finding[] = [];
   const paths = await locateServicePaths(docsDir, service, fleet);
+  // Repo-relative, `/`-separated: the report's own scope, and the spelling
+  // every service-local use-case finding opens with.
+  const treePath = relative(docsDir, paths.dir).replaceAll("\\", "/");
   const report: TargetReport = {
     kind: "service",
     id: service,
-    path: relative(docsDir, paths.dir).replaceAll("\\", "/"),
+    path: treePath,
     findings,
   };
 
@@ -131,6 +138,10 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const hasModel = existsSync(paths.model);
   let elements: Elem[] = [];
   let relationships: Rel[] = [];
+  // The single-file doc itself, kept for the service's own use cases below:
+  // with no `.likec4` beside the model, its tagged views ARE the project, and
+  // grading them off this load is what keeps that case free.
+  let model: LoadedDoc | null = null;
   if (!hasModel) {
     findings.push({
       severity: "error",
@@ -139,7 +150,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       text: { marker: false },
     });
   } else {
-    const model = fleet === undefined ? await loadFile(paths.model) : await fleet.loadLikeC4(paths.model);
+    model = fleet === undefined ? await loadFile(paths.model) : await fleet.loadLikeC4(paths.model);
     elements = model.elements;
     relationships = model.relationships;
     if (model.errors.length > 0) {
@@ -237,6 +248,29 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     })),
   );
 
+  // The service's OWN use cases — every `dynamic view` in its LikeC4 project
+  // (model.likec4 and any `.likec4` beside it, as the renderer reads them) that
+  // opts in with a reserved tag. Graded here rather than on the fleet target
+  // because the flow's steps name this service's containers, which only this
+  // service's project can resolve. After the arch axis, because a `#req-` tag
+  // resolves against the ids both spec documents declare, and those are in
+  // hand by now. Skipped when the model does not parse: a project with a
+  // broken model is `c4.invalid`'s business already, and a second load of it
+  // would only repeat that cascade under a second code.
+  if (model !== null && model.errors.length === 0) {
+    const scan = await readServiceFlows({ paths, model, known });
+    findings.push(
+      ...serviceUseCaseFindings({
+        service,
+        treePath,
+        docsDir,
+        scan,
+        services: known,
+        requirementIds: requirementIdsOf(paths, livingReqs, archReqs),
+      }),
+    );
+  }
+
   // The authorization axis. Both requirement documents are graded against one
   // fleet vocabulary — a permission is a fleet fact, and an arch requirement
   // gates on one exactly as a business requirement does. The capability axis
@@ -312,4 +346,30 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   }
 
   return report;
+}
+
+/**
+ * The `Requirement-ID`s a service-local `#req-` tag may name: every identified
+ * requirement of spec.md (living — a REMOVED one is on its way out and keeps
+ * no promise) and of arch.spec.md, as ONE set. `undefined` when NEITHER
+ * document exists, which the tag grade reads as "no requirement to satisfy"
+ * rather than "none flattening to this slug" — the same two answers the fleet's
+ * `requirementsOf` gives for a capability with no document at all.
+ *
+ * An id both documents declare resolves once (a set dedupes it); two ids that
+ * merely flatten alike — `PAY.AUTH` in one file, `PAY-AUTH` in the other — are
+ * the `many` arm, because a Requirement-ID is unique inside one document and a
+ * flow beside the model has two.
+ */
+function requirementIdsOf(
+  paths: ServicePaths,
+  livingReqs: readonly Requirement[],
+  archReqs: readonly Requirement[],
+): ReadonlySet<string> | undefined {
+  if (!existsSync(paths.spec) && !existsSync(paths.archSpec)) return undefined;
+  const ids = new Set<string>();
+  for (const req of [...livingReqs, ...archReqs.filter((r) => r.kind !== "REMOVED")]) {
+    if (req.id !== undefined) ids.add(req.id);
+  }
+  return ids;
 }

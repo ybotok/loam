@@ -46,6 +46,7 @@ services/<svc>/
   arch.spec.md                    its living ARCHITECTURE requirements (outbox, retries, alerts)
   openapi.yaml                    its API contract
   asyncapi.yaml                   its AsyncAPI 3 event contract
+  usecases/<name>.likec4          optional flows INSIDE this boundary — dynamic views over its containers, graded when tagged #req- (any .likec4 beside model.likec4 is read the same way)
   adrs/  runbook.md  health.yaml  why it is like this, how to run it
 features/<FEAT>/                  a change in flight
   intent.md                       why, in business terms

@@ -23,9 +23,11 @@
  * pretending to be a subject (docs/DESIGN.md), and the delta was corrected
  * rather than the code bent to it — which is what an unarchived feature is for.
  *
- * **`parsed/` is now AT its five-file limit.** The next reader here needs a
- * split first, and the seam to split on is the one this file does not share:
- * `dynamic-views.ts` and `view-ids.ts` read `$data`, this one and
+ * **`parsed/` is still AT its five-file limit.** The global style-id census
+ * rode into `view-ids.ts` because it IS that module's subject — one more
+ * table asked the same question — and the next reader that is not a census
+ * still needs the split first. The seam to split on is the one this file does
+ * not share: `dynamic-views.ts` and `view-ids.ts` read `$data`, this one and
  * `specification.ts` read the model surface.
  *
  * ## What is read, and what is deliberately left

@@ -8,9 +8,12 @@
  * back a plan the transaction executes or rolls back whole.
  */
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { Elem } from "../../core/c4/likec4.js";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
+import { architectureDir } from "../../core/c4/project/architecture.js";
+import { architectureDocuments } from "../../core/c4/project/documents.js";
+import { loadProject } from "../../core/c4/project/load.js";
 import type { FleetSeed } from "../../core/c4/seed/fleet-file.js";
 import { serviceDirOf, type DocsDir } from "../../core/kernel/ids/dirs.js";
 import {
@@ -22,7 +25,7 @@ import {
   unfiledServicePaths,
 } from "../../core/repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
-import { renderSubsystemViews, viewsAgree } from "../../core/repo/tree/render/views.js";
+import { type MapFacts, renderSubsystemViews, viewsAgree } from "../../core/repo/tree/render/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
@@ -34,11 +37,95 @@ export interface SeedPlanInput {
   /** The sealed landscape text (stamp on line 1), already proven to parse. */
   landscape: string;
   /**
-   * That same text's parsed elements — the loadSource self-check's output,
-   * reused for the views join so the generated views file agrees byte for byte
-   * with what `validate --all` will recompute from the committed landscape.
+   * That same text's parsed facts — the loadSource self-check's output. They
+   * were first reused for the views join on their own, on the reasoning that
+   * the seed template declares no `global` block (`core/c4/seed/template.ts`)
+   * and so the render's style question had the answer "none"; true of the
+   * template and beside the point, because `validate --all` recomputes the
+   * expected bytes from the whole `architecture/` PROJECT, and a palette in a
+   * sibling document is in that census (`projectFacts` below carries the
+   * defect). They are now the render's input only when the landscape IS the
+   * whole project — no sibling document exists — and the fallback when the
+   * project does not parse.
    */
-  elements: Elem[];
+  map: MapFacts;
+}
+
+/**
+ * The facts the generated views are rendered from: the `architecture/` PROJECT
+ * as this commit leaves it — the sealed landscape standing in for the file it is
+ * about to become, beside every other `.likec4` the directory already holds —
+ * and never the sealed landscape alone.
+ *
+ * WHY THE PROJECT. `subsystem.views-stale` (`validate --all`) and `loam
+ * subsystem sync` both recompute the expected bytes from `loadArchitecture` —
+ * the landscape merged with every other `architecture/**` document, the
+ * generated file excluded — and the render asks that document set which global
+ * style ids it declares. A repository's `global { styleGroup subsystems { … } }`
+ * naturally lives in a sibling such as `architecture/usecases/palette.likec4`,
+ * since seed regenerates the landscape wholesale, so it was in the grader's
+ * census and not in seed's: a seed into such a repo wrote a views file the very
+ * next `validate --all` — seed's own first `next` command — graded stale, and
+ * re-seeding wrote the same bytes again, the one loop no `next` could leave.
+ * Reading the same documents the grader reads is what makes the shared render
+ * shared in fact rather than in name (commands/subsystem/txn/views.ts's banner).
+ *
+ * NO SIBLING, NO WORKSPACE: the landscape's own facts, already in hand from the
+ * self-check, ARE the project's, and the common case pays one readdir.
+ *
+ * STAGED, for `core/c4/project/staged.ts`'s reason: `loadProject` copies
+ * documents from disk keyed on their path relative to a base, and the landscape
+ * here exists only in memory. That module's staging is bound to a feature's
+ * merge preview, so the same handful of copies is made here once more — the
+ * temp tree is gone before this returns, and nothing under the docs repo is
+ * touched.
+ *
+ * FAIL CLOSED to the landscape's own facts. A project that does not parse (a
+ * sibling carrying an error of its own, or a copy the temp directory refused)
+ * declares nothing loam can rely on, so the render carries exactly what it
+ * carried before the project was asked, and the seed still lands: that sibling
+ * is `landscape.invalid`'s to name on the next `validate --all`, and a seed
+ * refusing over it would make seed the first command to grade a file it does
+ * not own. Nothing is hidden by the fallback: the grader compares the views
+ * file only once the project has parsed (`validate/fleet/landscape.ts`), so
+ * the repo sees the one finding that names the sibling, never a stale-views
+ * finding over a file no command could have rendered differently.
+ */
+async function projectFacts(req: SeedPlanInput): Promise<MapFacts> {
+  const arch = architectureDir(req.docsDir);
+  const landscape = resolve(landscapePath(req.docsDir));
+  const siblings = await architectureDocuments(arch, [landscape, subsystemViewsPath(req.docsDir)]);
+  if (siblings.length === 0) return req.map;
+  // The temp directory is made INSIDE the try, not one line above it: a full
+  // disk, a read-only temp root, or a TMPDIR naming a directory that no longer
+  // exists rejects `mkdtemp`, and outside the try that rejection left `seed` as
+  // the generic `internal` refusal on a repository where nothing is wrong — the
+  // defect docs/CODE-STYLE.md's "read inside the try that handles the read" rule
+  // was written from.
+  let root: string | null = null;
+  try {
+    root = await mkdtemp(join(tmpdir(), "loam-seed-"));
+    const staged: string[] = [];
+    for (const path of [landscape, ...siblings]) {
+      const dest = join(root, relative(arch, path));
+      await mkdir(dirname(dest), { recursive: true });
+      // The landscape is staged from the bytes this commit writes, never from
+      // the file on disk — which may be the scaffold's stub, a stamped
+      // predecessor, or absent — so the project parsed is the one the grader
+      // will read after the commit.
+      if (path === landscape) await writeFile(dest, req.landscape, "utf8");
+      else await copyFile(path, dest);
+      staged.push(dest);
+    }
+    const project = await loadProject(root, staged);
+    return project.clean ? { elements: project.elements, globalStyles: project.globalStyles } : req.map;
+  } catch {
+    // `loadProject` throws on an error it cannot attribute to a document, and
+    // a full disk fails the staging above; both are the fail-closed arm.
+    return req.map;
+  } finally {
+    if (root !== null) await rm(root, { recursive: true, force: true });
+  }
 }
 
 export interface SeedPlan {
@@ -158,7 +245,7 @@ export async function planSeedWrites(req: SeedPlanInput, tree: FleetTree): Promi
   // therefore fails the compare and is regenerated, which is the right answer
   // for it anyway.
   const viewsPath = subsystemViewsPath(docsDir);
-  const views = renderSubsystemViews(plannedTree, req.elements);
+  const views = renderSubsystemViews(plannedTree, await projectFacts(req));
   const wanted = views === null ? null : Buffer.from(views, "utf8");
   const onDisk = existsSync(viewsPath) ? await readFile(viewsPath, "utf8") : null;
   if (!viewsAgree(onDisk, views)) writes.push({ path: viewsPath, content: wanted });

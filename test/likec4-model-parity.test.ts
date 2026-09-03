@@ -31,6 +31,7 @@ import { flattenModel, loadSource, type LoadedDoc } from "../src/core/c4/likec4.
 import { serviceOf } from "../src/core/c4/resolve/service.js";
 import { readSpecification } from "../src/core/c4/parsed/specification.js";
 import { readDeployment, hasDeployment, NO_DEPLOYMENT } from "../src/core/c4/parsed/deployment.js";
+import { readGlobalStyleIds } from "../src/core/c4/parsed/view-ids.js";
 
 /**
  * Everything loam's adapter reads, in one document: nested/dotted container
@@ -135,6 +136,15 @@ deployment {
     a -> b
   }
 }
+
+// Both declaration forms, so the census below is a two-entry list and a
+// reader that saw only one of the forms could not pass by coincidence.
+global {
+  styleGroup fleetPalette {
+    style element.tag = #external { color gray }
+  }
+  style critical element.tag = #critical { color red }
+}
 `;
 
 /** The flattened Elem/Rel shapes loam builds, from each stage of the same document. */
@@ -159,12 +169,18 @@ async function bothStages(src: string): Promise<{ parsed: LoadedDoc; computed: L
         // assumed — this is the substitution FEAT-1's ARCH-LOAM-DEPLOY-READ
         // requires the parity suite to cover.
         deployment: readDeployment(parsedModel),
+        // The global style census too — `loadSource` reads it off the parsed
+        // stage, so the substitution must carry it, and a census is a read of
+        // DECLARED ids (never of what a style says), which is why it can be
+        // asked of both stages at all.
+        globalStyles: readGlobalStyleIds(parsedModel),
         ...flattenModel(parsedModel),
       },
       computed: {
         errors: [],
         specification: readSpecification(computedModel.specification),
         deployment: readDeployment(computedModel),
+        globalStyles: readGlobalStyleIds(computedModel),
         ...flattenModel(computedModel),
       },
     };
@@ -222,6 +238,21 @@ describe("parsedModel and computedModel agree on everything loam reads", () => {
       // An untitled edge: `title` is absent, never the `null` LikeC4 reports.
       { source: "eu.a", target: "eu.b", tags: [] },
     ]);
+  });
+
+  it("agrees about the global style census, and the census is the two declared ids — never a rule", async () => {
+    const { parsed, computed } = await rich();
+    expect(parsed.globalStyles).toEqual(computed.globalStyles);
+    // Sorted, both forms, ids only: a floor so parity between two identically
+    // empty readings cannot pass here.
+    expect(parsed.globalStyles).toEqual(["critical", "fleetPalette"]);
+    // A shape the reader cannot recognise is zero ids — the safe direction,
+    // since a missed declaration costs a palette while an invented reference
+    // is a parse error in the renderer.
+    expect(readGlobalStyleIds(undefined)).toEqual([]);
+    expect(readGlobalStyleIds({})).toEqual([]);
+    expect(readGlobalStyleIds({ $data: { globals: { styles: "not a table" } } })).toEqual([]);
+    expect(readGlobalStyleIds({ $data: { globals: { styles: { b: [], a: [], "": [] } } } })).toEqual(["a", "b"]);
   });
 
   it("reads no topology from a document that declares none, and from a surface it does not recognise", async () => {

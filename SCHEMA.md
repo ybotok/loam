@@ -77,6 +77,7 @@ docs/
     arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
     openapi.yaml                     API contract                        [adopt / authored]
     asyncapi.yaml                    async contract (AsyncAPI 3)         [adopt / authored]
+    usecases/<name>.likec4           optional flows INSIDE this boundary — dynamic views over its containers, graded when tagged #req- (any .likec4 beside model.likec4 is read the same way)  [authored, opt-in]
     adrs/NNNN-*.md                   MADR decisions                      [adopt-seed / authored]
     runbook.md                       operational runbook                 [adopt-draft / authored]
     health.yaml                      SLI/SLO, checks, critical deps       [authored]
@@ -105,6 +106,23 @@ There is no `flows/` tree, and there will not be one. A cross-service **interact
 tagged with the capability it realizes. A flow that spans services does not belong under one
 service's directory, and the view's steps join to the landscape's own relationships, which is what
 makes the flow checkable rather than merely drawn.
+
+A flow that stays INSIDE one service — the hop sequence behind an arch.spec.md requirement whose
+`Covers:` names containers — cannot live under `architecture/`: the root project excludes
+`services/**`, so a step naming a container does not resolve, and one such file takes the whole
+fleet map down (`landscape.invalid` plus one `spine.landscape-invalid` per service). It lives beside
+the model instead: every `.likec4` under `services/<…>/<svc>/` other than model.likec4, plus any
+tagged `dynamic view` inside model.likec4 itself, is that service's own LikeC4 project — the set
+`services/<svc>/likec4.config.json` registers for the renderer — and `loam validate --service <id>`
+(and `--all`, per service) reads exactly that set, whether or not the project file exists.
+`usecases/<name>.likec4` is the convention; `views.likec4` reads the same. Tag the view
+`#req-<Requirement-ID>` of a requirement in that service's spec.md or arch.spec.md, the tag declared
+in model.likec4's `specification` — the one block the project has. model.likec4 stays THE model:
+`c4.valid`, `Covers:` and every other model check read it alone, and a sibling that does not parse
+is one `usecase.flow-invalid` while the model keeps grading. Files loam does not read: a `.likec4`
+in a subsystem directory, in a feature directory outside `delta.likec4`/`usecases/`/`deployment/`,
+the generated `subsystems.likec4`, and every UNTAGGED `dynamic view` anywhere — a diagram, never a
+use case.
 
 A feature **brings** one the way it brings every other axis: `features/<FEAT>/usecases/<name>.likec4`
 is a views-only document that `loam archive` copies into `architecture/usecases/` and
@@ -165,6 +183,21 @@ check uses; a member nothing models is omitted, which `landscape.service-unmodel
 reports). The output is deterministic and line-oriented — subsystems sorted by path, members by id,
 one `include` per line, no timestamps, no absolute paths — so it is byte-reproducible on any machine
 and two concurrent moves into different groups merge in git without intervention.
+
+**Styling.** Each generated view carries `global style subsystems` — after its `title` and
+`description`, before its `include`/`group` — exactly when the `architecture/` project declares a
+global style with that id: `global { styleGroup subsystems { style element.tag = #external { color gray } } }`
+(or the single-rule `global { style subsystems … }`), in the landscape or in any
+`architecture/usecases/*.likec4`, with the targeted tag declared in the `specification` block.
+Declaring it is the whole opt-in. loam reads only that the id is declared, never what the group
+says, and writes nothing when it is not — a reference to an undeclared style is a parse error that
+blanks the whole `architecture/` project in the renderer. When the project declares style groups
+under other names only, the file opens with one comment line naming them and saying none is
+`subsystems`, and the views carry the renderer's defaults; there is no single-group fallback.
+Declaring or removing the group makes the file stale once (`subsystem.views-stale`) until the next
+`loam subsystem sync`. A service's own project is a separate LikeC4 project: a group declared under
+`architecture/` does not reach the views beside its `model.likec4`, which need a declaration of
+their own.
 
 Each view carries the **label a human reads**: `title`, and `description` when the marker authors
 one. The title is the subsystem's **path** — every marked ancestor's label and its own, joined with
@@ -264,6 +297,7 @@ lives *today*.
 | Capability | requirement `Capability:` (list; also `Capabilities:`) | `architecture/capabilities.yaml` OR `capabilities/<cap>/spec.md` | declared capability id, `/` allowed for nesting |
 | Capability requirement | requirement `Realizes:` (list) | a requirement in `capabilities/<cap>/spec.md` | `<capability-id>#<Requirement-ID>`, split at the LAST `#`, with an optional `@<digest>` pin |
 | Capability requirement (flow) | a `dynamic view` tag `#req-<slug>` | a requirement of the capability the view's `#cap-` tag names | the `Requirement-ID` with every character outside `[A-Za-z0-9_-]` flattened to `-` |
+| Service requirement (flow) | a `dynamic view` tag `#req-<slug>` in a `.likec4` beside model.likec4, or inside it | a requirement of the service whose directory holds the file, from either spec axis | the `Requirement-ID` flattened as above |
 
 These keys are independent: an operation id is not a permission and a service id is not inferred
 from a feature directory. A file can therefore be structurally valid while a join is broken; the
@@ -686,7 +720,15 @@ There is no manifest of services: the directories under `services/` **are** the 
   why the two are graded differently;
 - two elements resolving to the **same** `services/<svc>/` → `landscape.binding-duplicate`
   (**warning**): every element→service join picks one of them arbitrarily, so the other's edges are
-  quietly filed under a service that does not own them.
+  quietly filed under a service that does not own them;
+- an element resolving to a `services/<svc>/` that no edge in the map touches, while that service's
+  `model.likec4` parses and declares at least one call across its own boundary →
+  `landscape.service-isolated` (**warning**, never gating): the service is drawn and invisible to
+  every cross-service check, and the finding names the attested calls to draw as edges on the
+  existing element, collapsed to the service. Evidence-gated on purpose — a service with no model,
+  an unparseable one (`c4.invalid`), or a model reaching nothing is silent here, because an edgeless
+  element that is TRUE is a fact and an invented edge is a dependency the fleet then plans against;
+  the adopt brief's `landscape.touched` is the only place that silent state is named.
 
 **`architecture/landscape.likec4` is required, not optional.** Its absence is a finding, never a
 skipped check: an **error** as soon as `services/` holds at least one service directory, and a
@@ -697,7 +739,7 @@ it cannot be silence: with no map, the whole cross-service layer — the C4↔AP
 `landscape.service-unmodelled`, every derived view — computes nothing and *reports* nothing, which
 reads exactly like a clean fleet. `loam init` scaffolds the file (empty, commented, parsing clean)
 so a fresh docs repo starts from a real one rather than from that ambiguity, and `loam adopt` briefs
-the block each service still owes it.
+the write each service still owes it — the block, or the edges on an element no edge touches.
 
 Absences inside a service directory are graded too. A directory with no `spec.md` is a **warning**
 (`service.no-spec`) — partial adoption is a supported state, but the checks that file feeds are
@@ -1535,6 +1577,21 @@ against the map the same merge would leave behind, so a hop may name a service t
 turn a mistake into a green fleet. And a run that could not READ the flows (a single-target run, or
 an `architecture/` that did not parse) suspends `capability.requirement-unrealized` entirely: loam
 did not look, which is never the same answer as "there is nothing there".
+
+**A `#req-` tag inside a service's own project is scoped by the SERVICE, not by a capability.** A
+`dynamic view` beside model.likec4 carrying `#req-<slug>` resolves against the `Requirement-ID`s of
+that service's spec.md and arch.spec.md together — flattened by the same rule, an id both declare
+resolving once, and `many` when the two documents declare ids that flatten alike, because a
+Requirement-ID is unique inside ONE document and a flow beside the model has two.
+`usecase.requirement-unresolved` there has four arms: no document at all, no identified requirement,
+none flattening to the slug (close ids offered), or two that do. No `#cap-` tag belongs there
+(`usecase.capability-unresolved` says so, vocabulary or not); `usecase.step-unlinked` never fires
+on a hop whose caller and provider resolve to the same service — a service owes no operationId to
+itself — and still fires on a hop from such a flow into another service's element (a stand-in the
+model declares for a sibling, with no `metadata { op }`), exactly as on the fleet map; and a
+resolved service-local claim is the join being checked and nothing more today: it
+enters no capability `keptBy`, counts toward no `Covers:` or `c4.uncovered`, appears in no pack,
+`loam list capabilities`, `loam diff` or `loam delta`, and no feature carries one yet.
 
 **Both corpora are reported together, and neither is derived from the other.**
 `loam list capabilities --json` carries `keptBy` (the flows keeping a promise) beside `realizedBy`
@@ -2576,8 +2633,11 @@ map one diffable document.
   artifact, what the living landscape already says about the service, the frontmatter to write, the
   checks `loam validate --service <id>` will then run, and the ones that do not exist. One target is
   not under `services/<id>/`: `architecture/landscape.likec4`, carried with `action: "edit"` and a
-  `landscape.instruction` naming the block this service owes the fleet map, and present only while
-  nothing in the map resolves to the service. An agent reads the code and writes draft
+  `landscape.instruction` naming the write this service owes the fleet map — the element while
+  nothing in the map resolves to the service, the EDGES while an element does and no edge touches it
+  (`landscape.touched: false`, with `landscape.attested` listing the calls the service's own
+  model.likec4 declares across its boundary); absent, and the instruction `null`, only once an
+  element resolves and an edge touches it. An agent reads the code and writes draft
   `model.likec4` + `spec.md` + `openapi.yaml` + `adrs/`, `runbook.md`, `health.yaml`, and makes that
   one addition to the shared map. A human promotes `draft` -> `verified` with `loam vouch`.
 - **Forward (generative):** author `features/<FEAT>/delta.likec4` -> `loam delta <FEAT>` projects it

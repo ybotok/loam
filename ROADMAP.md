@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **429 TypeScript modules in 130 source packages**, with an acyclic package graph
+The tree contains **435 TypeScript modules in 134 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **159 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **161 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -127,9 +127,49 @@ exactly the invented need the non-goals forbid.
 Closed since the 2026-08-18 assessment, each with the commit or commit range that landed it on
 `main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
-5cd3942:ROADMAP.md`). The three use-case entries below carry no range yet: they are green in the
-working tree and not committed, and the range goes in with the commit rather than being guessed at
-here.
+5cd3942:ROADMAP.md`). The three 2026-09-03 problem-report entries — the two that open the list and
+the styling paragraph under the generated views — carry no range yet: they are green in the working
+tree and not committed, and the range goes in with the commit rather than being guessed at here.
+
+#### The adopt brief on an edgeless landscape element
+
+**Landed 2026-09-03**, from one problem report. `loam adopt` decided whether the fleet map still
+owed a service from element EXISTENCE: a bound element with no edge — what
+`loam seed --from fleet.yaml` leaves for every service absent from `calls:` — read as
+`landscape.instruction: null`, no target, `inbound: []`, `outbound: []` in one payload, so an agent
+following the protocol to the letter wrote a validating baseline and never drew one edge, and
+`loam validate --all` stayed green over it. Landed: a fourth landscape state carried by two
+additive keys (`landscape.touched`, and `landscape.attested` — the calls the service's own
+model.likec4 declares across its boundary, derived once in `core/c4/resolve/attested.ts` for the
+brief and the fleet check alike, so the two can never name different edges); a non-null instruction
+in two arms (carry each attested call up as one edge on the existing element, naming the other
+party as the map spells it; or, with nothing attested, draw NOTHING rather than invent — an edgeless
+element that is true is a fact); the landscape target back as an edge-only `edit` whose shape
+refuses a second element; the `EDGELESS` flag in the text view; the evidence-gated
+`landscape.service-isolated` warning under `--all`; and a seventeenth unchecked statement about
+visibility (placeholder tags, curated views, `include *` over a boundary). Rejected: folding the
+state into `landscape.modelled` (an agent told `false` draws a second box); an unconditional "no
+edge touches it" warning (no correct fix for a worker that calls nothing, and every seeded fleet
+red-ish until adoption); a check on placeholder tags or on what a view shows (rule 26 — loam never
+computes what a view shows). Cost: one LikeC4 load of `model.likec4`, only in the edgeless state, a
+memo hit under `--all`.
+
+#### A home for an intra-service use case
+
+**Landed 2026-09-03.** Measured: `architecture/usecases/` cannot resolve a container (one such file
+is `landscape.invalid` plus a `spine.landscape-invalid` per service), and a view beside the model
+rendered while nothing graded it. Landed: the service's own LikeC4 project as the slot — every
+`.likec4` beside model.likec4 and any tagged view inside it — graded by `validate --service`/`--all`
+with the five existing `usecase.*` codes, `#req-` scoped by the service's own Requirement-IDs,
+`#cap-` refused by placement, a broken sibling one `usecase.flow-invalid` while the model keeps
+grading; plus the tier-2 skip and the fourth `step-unlinked` guard in the shared graders. Rejected:
+a fixed `usecases/` directory alone (the reporter's `views.likec4` would render ungraded),
+`views.likec4` alone (a second file would be invisible), a new code for the broken sibling (nothing
+branches differently), gating the read on `likec4.config.json` (create-only, deletable). Cost: one
+recursive readdir per service; a workspace only where a view in model.likec4 opts in or a sibling
+mentions a reserved prefix anywhere in its bytes — an untagged sibling is never graded, and once
+the workspace is loaded a project that does not read is one `usecase.flow-invalid` whether or not a
+view opted in.
 
 #### The service model, renderable from the fleet root
 
@@ -196,6 +236,20 @@ The hunt found what neither report did: `validate --all` graded that file agains
 use-case document binding one element could produce a `subsystem.views-stale` that
 `loam subsystem sync` reported as `current` — reproduced on `examples/docs`, and fixed by pointing
 both sides at the same read.
+
+**And the repository's palette (2026-09-03).** A generated view can carry no inline `style` rule —
+the file is regenerated wholesale — and the one mechanism LikeC4 gives a view for borrowing a
+repository's styling is a reference to a global style by id, which is a parse error that blanks the
+whole `architecture/` project when nothing declares it. So the convention is one reserved name:
+declare `global { styleGroup subsystems { … } }` anywhere in the `architecture/` project and every
+generated view references it; declare nothing and the file is what it was. Rejected: reading the id
+off a key in `likec4.config.json` (create-only, never re-read, and not a LikeC4 document whose
+contents a parse can check), and "reference the single declared group" (a second group declared for
+a hand-drawn view would silently switch the generated views' styling off and restale the file on a
+change that touched no subsystem). The presence read is a census of the keys of
+`$data.globals.styles`, a declaration read like `specification`; seven tripwire assertions in
+`test/likec4-view-shape.test.ts` pin the shape so a likec4 bump fails there before it reaches a
+generated file.
 
 #### The deployment axis — topology joined to requirements
 
@@ -435,6 +489,17 @@ item gets promoted — it went from here to `## Now` and from there to
   for every fleet that never writes one. Promote only on evidence from a second fleet, after living
   with the disclosure — the first report classified itself `inconclusive`, and one fleet is not
   enough to qualify an invariant that says placement is never part of any identity.
+- **A feature brings an intra-service flow.** `features/<FEAT>/specs/<svc>/usecases/<name>.likec4`,
+  copied create-only by `loam archive` into `services/<…>/<svc>/usecases/` and taken back by
+  `loam unarchive`, graded before the copy against the service's own LikeC4 project with the
+  feature's `specs/<svc>/` requirement deltas in `#req-` scope — `usecase.flow-exists` and
+  `usecase.flow-invalid` reused, never `--approve`-overridable. Deliberately NOT built with the
+  living slot (2026-09-03): the version-3 snapshot manifest already carries an artifact path with a
+  directory in it, so nothing about the undo changes when it lands, and no model delta exists to
+  preview — what it waits for is one fleet asking for a container-level flow to ship in the same
+  change as the `arch.spec.md` requirement it answers. Until then a service-local flow is written
+  directly into the service directory in the same pull request, where git produces the conflict;
+  building the feature route ahead of that evidence is the invented need the non-goals forbid.
 - **Landscape scaling:** retain one landscape while conflicts are exceptional. If same-service
   conflicts become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than
   monthly — evaluate service-owned model files plus a thin global cross-service map. Migration must

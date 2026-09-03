@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { LikeC4 } from "likec4";
 import { declaredService, type DeclaredService } from "../kernel/ids/service.js";
 import { readDynamicViews, type ParsedView } from "./parsed/dynamic-views.js";
-import { readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
+import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "./parsed/view-ids.js";
 import { readSpecification, type DocSpecification } from "./parsed/specification.js";
 import { readDeployment, type DeploymentModel } from "./parsed/deployment.js";
 import { descText, metaKey } from "./parsed/values.js";
@@ -89,6 +89,21 @@ export interface LoadedDoc {
    * nothing else loam may look at.
    */
   viewIds?: ViewIdClaim[];
+  /**
+   * The ids of every GLOBAL STYLE the document declares — `global { styleGroup
+   * <id> { … } }` and the single-rule `global { style <id> … }` alike, since
+   * LikeC4 files both under one id table (hence not `styleGroups`). A
+   * declaration census exactly as `viewIds` is: the ids, sorted, and never a
+   * rule inside one (docs/DESIGN.md rule 26 says why a style is a rendering
+   * instruction loam may not read). One consumer — the generated subsystem
+   * views, which reference the group named `subsystems` when it is declared
+   * and nothing otherwise, because a reference to an undeclared id is a parse
+   * error that blanks the whole `architecture/` project in the renderer.
+   * Optional for the reason `views` is: a document that did not parse has
+   * none, and the `LoadedDoc` literals standing in for an absent file have
+   * nothing to put here; absent and empty mean the same thing to every reader.
+   */
+  globalStyles?: string[];
   /**
    * The `deployment { }` model the document declares — nodes, instances and the
    * edges between them (`./parsed/deployment.ts`). Optional for the reason
@@ -218,6 +233,7 @@ export async function loadSource(src: string): Promise<LoadedDoc> {
       specification: readSpecification(model.specification),
       views: readDynamicViews(model),
       viewIds: readViewIds(model),
+      globalStyles: readGlobalStyleIds(model),
       deployment: readDeployment(model),
       ...flattenModel(model),
     };

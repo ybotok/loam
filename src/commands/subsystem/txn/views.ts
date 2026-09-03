@@ -7,20 +7,21 @@
  */
 import { existsSync } from "node:fs";
 import { relative, sep } from "node:path";
-import { type Elem } from "../../../core/c4/likec4.js";
 import { loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { landscapePath } from "../../../core/repo/paths.js";
-import { renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
+import { type MapFacts, renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 
 /**
- * The elements of the whole `architecture/` PROJECT for the member join, or
- * the empty list when the map is absent or does not parse. Tolerant on
- * purpose: sync must stay runnable in a repo whose landscape is broken — it
- * renders what the committed bytes resolve (no includes), deterministically,
- * and the next sync after the landscape is repaired catches the file up.
- * `validate` skips the staleness question in exactly those states.
+ * The elements and declared global style ids of the whole `architecture/`
+ * PROJECT — the member join, and the one line a view may borrow a palette
+ * with — or no elements and no ids when the map is absent or does not parse.
+ * Tolerant on purpose: sync must stay runnable in a repo whose landscape is
+ * broken — it renders what the committed bytes resolve (no includes, no style
+ * reference), deterministically, and the next sync after the landscape is
+ * repaired catches the file up. `validate` skips the staleness question in
+ * exactly those states.
  *
  * The PROJECT, not the landscape file alone, and that is a correctness rule
  * rather than a preference: `validate` grades this file against
@@ -34,19 +35,22 @@ import type { FleetTree } from "../../../core/repo/tree/walk.js";
  * readers of "what should the views say" must read the same documents, or the
  * shared render in `core/repo/tree/render/views.ts` is shared in name only.
  */
-export async function landscapeElements(docsDir: DocsDir): Promise<Elem[]> {
-  if (!existsSync(landscapePath(docsDir))) return [];
+export async function landscapeFacts(docsDir: DocsDir): Promise<MapFacts> {
+  if (!existsSync(landscapePath(docsDir))) return { elements: [] };
   try {
     const doc = await loadArchitecture(docsDir);
-    return doc.errors.length > 0 ? [] : doc.elements;
+    // The whole document on success, so the render reads the same record
+    // `validate --all` grades against; `globalStyles` rides along without
+    // being named here, and a field the loaders add later does too.
+    return doc.errors.length > 0 ? { elements: [] } : doc;
   } catch {
-    return [];
+    return { elements: [] };
   }
 }
 
 /** The bytes the views file must hold for this tree, or null for "must be absent". */
 export async function expectedViews(docsDir: DocsDir, tree: FleetTree): Promise<string | null> {
-  return renderSubsystemViews(tree, await landscapeElements(docsDir));
+  return renderSubsystemViews(tree, await landscapeFacts(docsDir));
 }
 
 /**

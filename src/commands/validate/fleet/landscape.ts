@@ -31,6 +31,7 @@ import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js"
 import { drawnSystems, serviceLevelElements } from "./census.js";
 import { unreadableLandscape } from "./load.js";
 import { kindTagFindings } from "./kind-tags.js";
+import { isolationFindings } from "./map/isolation.js";
 import { useCaseFindings } from "./usecases/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
@@ -217,9 +218,11 @@ export async function validateLandscape(
   }
 
   // The generated subsystem views, graded only now that the landscape has
-  // parsed: the expected bytes are a function of (tree, landscape elements) —
-  // `views/stale.ts` says why a byte compare and why exactly one finding.
-  findings.push(...(await viewsStaleFindings(docsDir, tree, land.elements)));
+  // parsed: the expected bytes are a function of (tree, landscape elements,
+  // the global style ids the map declares) — the whole doc goes across so the
+  // grader and `sync` read one record; `views/stale.ts` says why a byte
+  // compare and why exactly one finding.
+  findings.push(...(await viewsStaleFindings(docsDir, tree, land)));
   // Beside staleness, and for the same file: an authored view id that collides
   // with one loam mints into it takes the whole architecture/ project down in
   // the renderer while every check here stays green — see views/ids.ts.
@@ -322,6 +325,9 @@ export async function validateLandscape(
   findings.push(
     ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf, pathOf }),
   );
+  // A drawn service nothing reaches, graded only where its own model attests
+  // a call across its boundary — map/isolation.ts says why the evidence gate.
+  findings.push(...(await isolationFindings({ entries, land, services, modelled, resolve: landSvcOf, pathOf, fleet })));
 
   // The use cases the SAME `architecture/` project declares — every
   // `dynamic view` in the landscape and in every `architecture/usecases/*.likec4`

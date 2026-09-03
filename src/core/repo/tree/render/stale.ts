@@ -16,9 +16,8 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { type Elem } from "../../../c4/likec4.js";
 import type { FleetTree } from "../walk.js";
-import { renderSubsystemViews, viewsAgree } from "./views.js";
+import { type MapFacts, renderSubsystemViews, viewsAgree } from "./views.js";
 
 /**
  * The three states, kept apart: absent, must-be-absent, and
@@ -34,8 +33,8 @@ export interface ViewsState {
   agrees: boolean;
 }
 
-export async function viewsState(path: string, tree: FleetTree, elements: Elem[]): Promise<ViewsState> {
-  const expected = renderSubsystemViews(tree, elements);
+export async function viewsState(path: string, tree: FleetTree, map: MapFacts): Promise<ViewsState> {
+  const expected = renderSubsystemViews(tree, map);
   const actual = existsSync(path) ? await readFile(path, "utf8") : null;
   return { actual, expected, agrees: viewsAgree(actual, expected) };
 }

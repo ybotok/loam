@@ -19,7 +19,7 @@ import { inOrder } from "../../kernel/concurrency.js";
 import { flattenModel, type Elem, type LikeC4Error, type LoadedDoc, type ReadableModel, type Rel } from "../likec4.js";
 import { readDynamicViews, type ParsedView } from "../parsed/dynamic-views.js";
 import { readSpecification, type DocSpecification } from "../parsed/specification.js";
-import { readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
+import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
 import { readDeployment, NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
 
 /** A directory of `.likec4` documents loaded as one LikeC4 project. */
@@ -35,6 +35,13 @@ export interface ProjectDoc {
   views: ParsedView[];
   /** Every authored view id the project claims, each with its file. */
   viewIds: ViewIdClaim[];
+  /**
+   * Every global style id declared anywhere in the project, sorted — the
+   * renderer's table, so a palette kept in `usecases/style.likec4` counts
+   * exactly as one in the landscape does. Empty when none, and when it did
+   * not parse.
+   */
+  globalStyles: string[];
   /** The project's deployment model — empty when it declares none, and when it did not parse. */
   deployment: DeploymentModel;
 }
@@ -111,6 +118,7 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
     relationships: [],
     views: [],
     viewIds: [],
+    globalStyles: [],
     deployment: NO_DEPLOYMENT,
   });
   const targets = [...new Set(paths.map((path) => resolve(path)))];
@@ -130,6 +138,7 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
         specification: readSpecification(model.specification),
         views: readDynamicViews(model),
         viewIds: readViewIds(model),
+        globalStyles: readGlobalStyleIds(model),
         deployment: readDeployment(model),
         ...flattenModel(model),
       };
@@ -193,6 +202,7 @@ export function asLoadedDoc(doc: ProjectDoc): LoadedDoc {
     ...(doc.specification === undefined ? {} : { specification: doc.specification }),
     views: doc.views,
     viewIds: doc.viewIds,
+    globalStyles: doc.globalStyles,
     deployment: doc.deployment,
     elements: doc.elements,
     relationships: doc.relationships,

@@ -47,6 +47,8 @@ thin baseline that validates is thin, not done.
      read it, diff your findings against it, report what disagrees. Do not replace it.
      \`action: "edit"\` appears on exactly one target — \`architecture/landscape.likec4\`,
      the WHOLE FLEET's map: add this service's element and edges to it, never rewrite it.
+     It appears while nothing resolves to the service AND while the element that does
+     has no edge touching it; \`targets[].shape\` says which of the two you are in.
    - \`targets[].shape\` — the grammar of each artifact, and \`example\` where one is
      shorter than a description. Every rule there is one a later check depends on;
      rules nothing checks are in \`unchecked[]\` instead, and are still worth following.
@@ -54,7 +56,11 @@ thin baseline that validates is thin, not done.
      Bind to them; do not draw a second version of the same box. \`landscape.expects\`
      lists operations other services already call — your openapi.yaml owes them.
      \`landscape.instruction\` is the write the fleet map still owes this service; it
-     is \`null\` once an element resolves to it, and only then.
+     is \`null\` once an element resolves to it AND at least one edge touches that
+     element (\`landscape.touched\`), and only then. \`landscape.attested\` lists the
+     calls \`services/$1/model.likec4\` already declares across its boundary — those
+     are the edges the map owes, collapsed to the service; an empty list on a
+     service with no model is not licence to invent one, and the instruction says so.
    - \`frontmatter\` — what to put in the header of every markdown artifact.
    - \`checks[]\` — what \`loam validate\` will run. \`unchecked[]\` — what it will not.
 2. Read \`AGENTS.md\` at the docs repo root, then walk the service — \`walk[]\` in the
@@ -74,7 +80,19 @@ thin baseline that validates is thin, not done.
    tying the document to the repository. Never pad it with paths you did not read:
    it is a record, and \`loam vouch\` hashes exactly what it names.
 3. Write the artifacts under \`services/$1/\`, in the order the brief lists them, and
-   make the landscape edit the brief asks for. Then run \`loam subsystem sync\` (from
+   make the landscape edit the brief asks for — the element where none resolves, the
+   edges where the element stands alone, and the map's own housekeeping
+   \`unchecked[]\` names: a placeholder tag to clear, a curated view to add the
+   element to. A flow behind one of your arch.spec.md requirements — a \`dynamic view\`
+   over this service's own containers — goes in a \`.likec4\` beside model.likec4
+   (\`services/$1/usecases/<name>.likec4\` by convention; \`views.likec4\` reads the
+   same, because the renderer's per-service project reads every \`.likec4\` under the
+   directory and so does loam), tagged \`#req-<Requirement-ID>\` of a requirement in
+   this service's spec.md or arch.spec.md, with the tag declared in model.likec4's
+   \`specification\` block; step 4 grades it. It never goes in \`architecture/usecases/\`,
+   which cannot see your containers and turns the whole fleet \`landscape.invalid\`; a
+   flow that crosses services goes there and is tagged \`#cap-\`. Never a \`#cap-\` tag
+   beside a model. Then run \`loam subsystem sync\` (from
    this repo or the docs repo — it resolves \`docsDir\`): once the docs root carries
    the \`likec4.config.json\` step 0's doctor asks for, it writes
    \`services/$1/likec4.config.json\` — and the same file beside any other service
@@ -90,15 +108,36 @@ thin baseline that validates is thin, not done.
    the top-level paths git tracks and \`sources\` never reached into. Treat each one
    as a place to go back to, not as a line to silence — the fix is reading it, or
    one sentence in step 6 saying why this document does not owe it.
+   \`usecase.*\` findings on this run are about the flows beside model.likec4:
+   \`usecase.step-unbacked\` is a hop no relationship in model.likec4 backs,
+   \`usecase.step-contested\` two edges backing one hop and naming different
+   operations, \`usecase.requirement-unresolved\` a \`#req-\` tag naming no
+   \`Requirement-ID:\` of this service's spec.md or arch.spec.md,
+   \`usecase.capability-unresolved\` a \`#cap-\` tag beside a model (drop it — a
+   capability is claimed on the fleet map, never inside one service), and
+   \`usecase.flow-invalid\` a file beside the model that does not read — the flows
+   were not graded, the model still was. \`usecase.step-unlinked\` never fires on a hop
+   whose caller and provider resolve to the same service — a service owes no
+   operationId to itself — but a hop from such a flow into another service's element
+   (a stand-in model.likec4 declares for a sibling, with no \`metadata { op }\`) still
+   warns here, exactly as it does on the fleet map.
 5. \`loam validate --all --json\` in the docs repo. This is the run that grades the
    fleet map: \`landscape.service-unmodelled\` means the element never landed,
    \`landscape.binding-unknown\` / \`landscape.binding-duplicate\` mean it landed wrong,
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
+   \`landscape.service-isolated\` (a warning) means the element landed with no edge
+   while \`services/$1/model.likec4\` declares calls across its boundary — the map
+   owes those edges. A service whose model declares no such call and whose element
+   has no edge is SILENT here: \`landscape.touched: false\` in step 1's brief is the
+   only place that state is named, so read it before this run rather than hoping
+   for it in it.
    \`service.likec4-config-missing\` (a warning) means step 3's sync did not run; the
    fix is that command.
-   Done, stated once: step 4 clean when run from inside the service's own repo, and
-   this run reporting no \`landscape.*\` finding and no \`service.likec4-config-missing\`.
+   Done, stated once: step 4 clean when run from inside the service's own repo, this
+   run reporting no \`landscape.*\` finding and no \`service.likec4-config-missing\`, and
+   step 1's brief re-run reporting \`landscape.touched: true\` — or, for a service that
+   truly makes and receives no call, a stated reason its element is edgeless.
    The fleet run is never SILENT —
    \`sources.unverifiable-from-here\` (severity ok) appears per service as a
    confirmation, not work — so "keep going until validation is quiet" is the wrong

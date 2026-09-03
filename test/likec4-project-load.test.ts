@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadProject } from "../src/core/c4/project/load.js";
+import { asLoadedDoc, loadProject } from "../src/core/c4/project/load.js";
 import { loadFile } from "../src/core/c4/likec4.js";
 import { makeProject, runLoam } from "./helpers/harness.js";
 
@@ -251,10 +251,58 @@ describe("the two rules that invert inside one project", () => {
   }, 30_000);
 });
 
+describe("the global style census is the PROJECT's, as the renderer's is", () => {
+  /** A palette kept in a file of its own, targeting a tag the landscape's specification declares. */
+  const PALETTE = "global {\n  styleGroup subsystems {\n    style element.tag = #cap-checkout { color gray }\n  }\n}\n";
+
+  it("answers a group declared in a sibling document, through asLoadedDoc, sorted beside the landscape's own", async () => {
+    // The generated subsystem views reference `global style subsystems` when
+    // the project declares that id, and the renderer resolves the reference
+    // against every document in `architecture/` — so a census that read the
+    // landscape alone would leave the line unwritten for a fleet whose palette
+    // lives in `usecases/style.likec4`, while the renderer could have shown it.
+    const fx = await architecture({
+      "landscape.likec4": `${LANDSCAPE}global {\n  style fleetWide element.tag = #cap-login { color muted }\n}\n`,
+      "usecases/style.likec4": PALETTE,
+      "usecases/checkout.likec4": CHECKOUT,
+    });
+    try {
+      const project = await fx.load();
+      expect(project.clean).toBe(true);
+      expect(project.globalStyles).toEqual(["fleetWide", "subsystems"]);
+      const doc = asLoadedDoc(project);
+      expect(doc.globalStyles).toEqual(["fleetWide", "subsystems"]);
+      // The rest of the record is untouched by a global block: the palette
+      // file declares no model and no view.
+      expect(doc.views?.map((v) => v.id)).toEqual(["uc_checkout"]);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it("answers NO census for a project that did not parse — errors mean no model, and the census is part of it", async () => {
+    // Fail closed: a generated view referencing a group out of a map nobody
+    // can read would be a second parse error behind the first.
+    const fx = await architecture({
+      "landscape.likec4": LANDSCAPE,
+      "usecases/style.likec4": PALETTE,
+      "usecases/checkout.likec4": `views {\n  dynamic view uc_bad {\n    web -> nosuch 'typo'\n  }\n}\n`,
+    });
+    try {
+      const project = await fx.load();
+      expect(project.clean).toBe(false);
+      expect(project.globalStyles).toEqual([]);
+      expect(asLoadedDoc(project).globalStyles).toBeUndefined();
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+});
+
 describe("loadProject degrades rather than inventing an answer", () => {
   it("an empty set is clean and empty — a fleet with no architecture documents owes nothing", async () => {
     const doc = await loadProject(tmpdir(), []);
-    expect(doc).toMatchObject({ clean: true, elements: [], relationships: [], views: [], viewIds: [] });
+    expect(doc).toMatchObject({ clean: true, elements: [], relationships: [], views: [], viewIds: [], globalStyles: [] });
     expect(doc.errors.size).toBe(0);
   });
 

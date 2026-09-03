@@ -16,8 +16,17 @@
  * safer when each one owns its shape assumptions outright — the same reason
  * `./specification.ts` states.
  *
+ * Two censuses over one record now: view ids off `$data.views`, and since
+ * 2026-09-03 the global style ids off `$data.globals.styles` — the same
+ * question (which authored ids exist, for a collision or a reference) asked of
+ * a second corner, so the generated subsystem views can reference a style
+ * group only when the project actually declares it. The second rode into this
+ * module rather than a file of its own because `parsed/` sits AT its five-file
+ * cap and the census IS this module's subject; `./deployment.ts`'s banner
+ * records the seam the next non-census reader still needs.
+ *
  * Ids only, each with the file that claims it. What the view SHOWS stays
- * unread, in any document, forever.
+ * unread, in any document, forever — and so does what a style group SAYS.
  */
 
 /** One authored view id, and the document that claims it. */
@@ -78,4 +87,33 @@ export function readViewIds(model: unknown): ViewIdClaim[] {
     if (typeof id === "string" && id.length > 0 && !MINTED_ID.test(id)) out.push({ id, sourcePath });
   }
   return out;
+}
+
+/**
+ * Every global style id the document declares, sorted.
+ *
+ * `$data.globals.styles` is keyed by id and holds one entry per `styleGroup`
+ * OR single-rule `style` declared under `global { }` — both forms land in the
+ * one table, measured at the 1.59.2 pin and pinned in
+ * test/likec4-view-shape.test.ts. Keys only: what a group SAYS — its targets
+ * and colours — is a rendering instruction, and docs/DESIGN.md rule 26 keeps
+ * loam out of those on purpose; the one consumer (the generated subsystem
+ * views) asks whether an id is declared, nothing more. Sorted so a document
+ * declaring two groups yields one order under every loader — the parity rule
+ * `readViewIds` states for the minted-id case, applied here to `Object.keys`
+ * order, which is the record's and not the author's.
+ *
+ * Defensive like everything here: a shape this cannot read is ZERO ids, so the
+ * generated views then reference nothing — the same file they rendered before
+ * the read existed, never a reference to a name loam guessed. That direction
+ * is the safe one: a missed declaration costs a palette, while an invented
+ * reference is a parse error that blanks the whole `architecture/` project in
+ * the renderer.
+ */
+export function readGlobalStyleIds(model: unknown): string[] {
+  const styles = record(record(record(record(model)?.["$data"])?.["globals"])?.["styles"]);
+  if (!styles) return [];
+  return Object.keys(styles)
+    .filter((id) => id.length > 0)
+    .sort();
 }

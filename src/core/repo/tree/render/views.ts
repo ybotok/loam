@@ -47,10 +47,42 @@
  * the committed landscape resolves keeps the output a function of committed
  * bytes alone.
  */
-import { type Elem } from "../../../c4/likec4.js";
+import { type LoadedDoc } from "../../../c4/likec4.js";
 import { renderContext, viewBody } from "./body.js";
 import { likec4String, viewTitle } from "./text.js";
 import type { FleetTree, SubsystemEntry } from "../walk.js";
+
+/**
+ * The global style group a generated view references when the map declares
+ * one: `global { styleGroup subsystems { … } }` (or the single-rule form
+ * `global { style subsystems … }` — LikeC4 files both under one id table).
+ * Presence is the opt-in and it is read off a DECLARATION, never a view: a
+ * generated view cannot carry an inline `style` rule of its own (the file is
+ * regenerated wholesale), and the one mechanism LikeC4 offers a view for
+ * borrowing a repository's palette is a reference to a global style by id.
+ * Referencing one that is not declared is a parse error that blanks the whole
+ * `architecture/` project in the renderer, which is why the line is written
+ * only when the id is declared and why its absence leaves the file exactly
+ * what it was before this constant existed.
+ *
+ * One conventional name rather than "the single declared group": a second
+ * group somebody declares for a hand-drawn view would otherwise silently
+ * switch the generated views' styling OFF and restale the file on a change
+ * that touched no subsystem — behaviour flipping on an unrelated declaration
+ * is the shape `body.ts` calls "a picture that looks the same whether or not
+ * the two agree". The name mirrors the file it styles.
+ */
+export const SUBSYSTEM_STYLE_GROUP = "subsystems";
+
+/**
+ * What the render reads off the parsed map: the elements the member join
+ * resolves, and the global style ids a view may reference. A record rather
+ * than a third parameter because the two come out of ONE parsed document, and
+ * passing them apart would make an inconsistent pair representable. Every
+ * `LoadedDoc` is structurally a `MapFacts`, so a caller holding the document
+ * passes the document.
+ */
+export type MapFacts = Pick<LoadedDoc, "elements" | "globalStyles">;
 
 /**
  * The header every generated file opens with — stable bytes, part of the
@@ -64,14 +96,35 @@ const HEADER =
   "// A scoping aid, not the fleet's architecture: author your own diagrams elsewhere.\n";
 
 /**
+ * The one file-level comment the render may write: the map declares global
+ * style groups, and none is the conventional one. Written between `HEADER`
+ * and `views {` — outside every view body, graded by nothing — so a team
+ * that already declared a palette under another name reads the fix in the
+ * diff of the sync that regenerated the file, instead of wondering why the
+ * generated views ignore it. Silent when the map declares no group at all: a
+ * fleet with no palette is owed no sentence about one. Ids go unescaped
+ * because LikeC4's grammar admits only identifier bytes in a style id.
+ */
+function stylesDisclosure(declared: readonly string[]): string | null {
+  if (declared.length === 0 || declared.includes(SUBSYSTEM_STYLE_GROUP)) return null;
+  return (
+    `// styles: the project declares global style group(s) ${[...declared].sort().join(", ")}, ` +
+    `and none named \`${SUBSYSTEM_STYLE_GROUP}\` — these views carry the renderer's defaults until one is.`
+  );
+}
+
+/**
  * Render the views file for a walked tree, or null when the tree has no
  * subsystems — the file must then be ABSENT, so a flat fleet never carries a
  * generated artifact that says nothing.
  */
-export function renderSubsystemViews(tree: FleetTree, elements: Elem[]): string | null {
+export function renderSubsystemViews(tree: FleetTree, map: MapFacts): string | null {
   if (tree.subsystems.length === 0) return null;
-  const ctx = renderContext(tree, elements);
-  const lines: string[] = [HEADER, "views {"];
+  const ctx = renderContext(tree, map.elements);
+  const declared = map.globalStyles ?? [];
+  const styled = declared.includes(SUBSYSTEM_STYLE_GROUP);
+  const disclosure = stylesDisclosure(declared);
+  const lines: string[] = [HEADER, ...(disclosure === null ? [] : [disclosure]), "views {"];
   const subsystems = [...tree.subsystems].sort((a, b) => (pathKey(a) < pathKey(b) ? -1 : 1));
   for (const [i, sub] of subsystems.entries()) {
     if (i > 0) lines.push("");
@@ -87,6 +140,13 @@ export function renderSubsystemViews(tree: FleetTree, elements: Elem[]): string 
     lines.push(`    title '${viewTitle(titleChain(tree, sub))}'`);
     const description = likec4String(sub.meta.description ?? "");
     if (description !== "") lines.push(`    description '${description}'`);
+    // After the label, before anything that includes: measured at the pin
+    // (test/likec4-view-shape.test.ts), a `global style <id>` line here
+    // parses with zero errors, while the same line before `title` is the
+    // parse error the comment above records. The palette is the map's own —
+    // the group is declared in the same project this file renders into — so
+    // the reference resolves exactly when the presence test says it does.
+    if (styled) lines.push(`    global style ${SUBSYSTEM_STYLE_GROUP}`);
     lines.push(...body.lines);
     lines.push("  }");
   }

@@ -38,6 +38,27 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   hop written \`a <- b\` is attributed to the call it answers, so spell replies
   that way rather than as fresh hops. Every message names the file the view was
   written in, never the landscape.
+- A flow behind ONE service's own requirement — the hop sequence over its
+  containers that an arch.spec.md \`Covers:\` names — lives in that service's own
+  LikeC4 project: any \`.likec4\` beside \`services/<…>/<svc>/model.likec4\`
+  (\`usecases/<name>.likec4\` by convention, or \`views.likec4\`), or a \`dynamic view\`
+  inside model.likec4 itself; loam reads exactly what the renderer's per-service
+  project reads. Never \`architecture/usecases/\`, which cannot resolve a container
+  and turns the whole fleet \`landscape.invalid\`. Tag it \`#req-<Requirement-ID>\`
+  (the id flattened as above, the tag declared in model.likec4's one
+  \`specification\` block) and \`loam validate --service <svc>\` grades it — under
+  \`--all\`, per service: \`usecase.step-unbacked\` and \`usecase.step-contested\`
+  against model.likec4, \`usecase.requirement-unresolved\` against THIS service's
+  spec.md and arch.spec.md ids, and \`usecase.flow-invalid\` when a sibling file
+  breaks the project (model.likec4 is still graded alone). \`usecase.step-unlinked\`
+  never fires on a hop whose caller and provider resolve to the same service — a
+  service owes no operationId to itself — while a hop from such a flow into another
+  service's element (a stand-in the model declares for a sibling, with no
+  \`metadata { op }\`) still warns, exactly as on the fleet map. A \`#cap-\` tag on
+  such a flow is \`usecase.capability-unresolved\`: a capability is claimed on the
+  fleet map, never inside one service. A resolved service-local \`#req-\` keeps its
+  own grade and nothing else — it is not \`keptBy\`, not \`Covers:\`, and no feature
+  carries one yet.
 - A FEATURE brings a flow the way it brings every other axis: write it at
   \`features/<FEAT>/usecases/<name>.likec4\` — the same views-only document, in the
   feature's own directory — and \`loam archive\` copies it into
