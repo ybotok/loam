@@ -27,10 +27,10 @@ dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-09-03 at `0.2.0-alpha.5`, and dated because neither number has a cheap derivation:_
+_Measured 2026-09-04 at `0.2.0-alpha.6`, and dated because neither number has a cheap derivation:_
 lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
-**3,434/3,434 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
-coverage gate passing with **92.30% statements, 84.11% branches, 96.64% functions, and 94.24%
+**3,772/3,772 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.78% statements, 84.65% branches, 97.08% functions, and 94.63%
 lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
 `npm run test:package` green against the real tarball.
 
@@ -128,14 +128,14 @@ Closed since the 2026-08-18 assessment, each with the commit or commit range tha
 `main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
 5cd3942:ROADMAP.md`). The four 2026-09-03 problem-report entries that follow — the extending model
-and the report ordinal, which open the list — landed together in `<commit>`, one change built as
+and the report ordinal, which open the list — landed together in `f751909`, one change built as
 four disjoint workstreams and gated as one; the three before them — the edgeless brief, the
 intra-service use case, and the styling paragraph under the generated views — landed together in
 `0eaa101` the same way.
 
 #### One model, many documents — a service model may extend the fleet map
 
-**Landed 2026-09-04** in `<commit>`, from three problem reports that turned out to be one cause,
+**Landed 2026-09-04** in `f751909`, from three problem reports that turned out to be one cause,
 with a fourth landing beside it in the same change. #010 measured the cause: a service model must
 parse alone, so it re-declares its own `specification` and every partner it names — 78 double
 declarations in a 56-service fleet with four services adopted, projected to ~448 at full adoption —

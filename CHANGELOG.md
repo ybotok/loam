@@ -10,6 +10,21 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.6] - 2026-09-04
+
+A service model may extend the fleet map, and the nine problem reports one fleet filed against the
+previous release are closed. Still a prerelease on the `alpha` line: `npm i @ybotok/loam@alpha`
+installs it. Nothing below removes a code, a flag or a payload key; two things a script may have
+read do move: every LikeC4 line number loam prints is 1-based now, and seven feature-delta codes
+plus the feature arm of `usecase.flow-invalid` answer `--feature <FEAT-id>` in
+`loam explain --json` where they answered `--service <id>`. What a repo NOTICES on its first
+`validate --all` after upgrading: a model written in the extending shape earns the renderer-wiring
+warnings until one `loam subsystem sync` — which now also deletes a stray per-service
+`likec4.config.json` beside such a model — a root `exclude` that hides the map is
+`landscape.excluded`, and a standalone model whose copies of the map's elements disagree with it
+is `c4.declaration-diverged`; a repository whose models all stand alone is asked to migrate
+nothing, and its root `exclude` is not touched.
+
 ### Fixed — one rule for a service's own edge, and the document that actually failed, on every surface
 
 - `loam context` and `loam explore` name the `architecture/` document that ACTUALLY failed in their
