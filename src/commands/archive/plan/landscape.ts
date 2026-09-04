@@ -9,6 +9,12 @@
  * — `validate` would report it next, and reporting it here is what stops that
  * being a surprise.
  *
+ * The map is not the only document the C4 axis writes. What a delta nests
+ * INSIDE a service belongs to that service's `model.likec4` when the model
+ * extends the map — the splicer routes it there, this stages the write, and
+ * `./model/extending.ts` proves the result parses beside the merged map before
+ * anything lands.
+ *
  * `planFlows` at the bottom is the other half of the same axis and shares this
  * module for that reason rather than for the file cap: both write into
  * `architecture/`, and the two merges are read together — the map gains the
@@ -17,21 +23,26 @@
  * there is nothing to merge partially.
  */
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { planWrite, readUtf8 } from "../../../core/staging/writes.js";
 import { planLandscapeMerge } from "../../../core/c4/splice/landscape-merge.js";
+import { spliceModel } from "../../../core/c4/splice/model/merge.js";
 import { titleOf } from "../../../core/c4/splice/identity/edges.js";
 import { parseServiceId } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
 import { enumeratedServiceIds } from "../../../core/repo/service-target.js";
+import { extendingModels } from "../../../core/c4/service-model/fleet/extending.js";
+import { modelMergeErrors } from "./model/extending.js";
 import { type Gated, type Plan } from "./state.js";
 import { ArchiveFailure } from "./refusal.js";
 import { featurePaths } from "../../../core/repo/paths.js";
 import { featureFlows, livingFlowPath, USECASE_SUBDIR } from "../../../core/usecases/delta/flows.js";
 import { featureDeployments, livingDeploymentPath } from "../../../core/deployment/delta.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function planLandscape(
-  config: { docsDir: DocsDir },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -76,13 +87,18 @@ export async function planLandscape(
     const newEls = delta.elements.filter((e) => e.tags.includes(id));
     const newRels = delta.relationships.filter((r) => r.tags.includes(id));
     if (existsSync(landscapePath)) {
+      const deltaText = await readUtf8(deltaLikec4);
       const plan = await planLandscapeMerge({
         landscapeText: await readUtf8(landscapePath),
-        deltaText: await readUtf8(deltaLikec4),
+        deltaText,
         deltaElements: delta.elements,
         newEls,
         newRels,
         featureId: id,
+        // A service whose model EXTENDS the map owns its own interior, so the
+        // merge routes what is nested under it into that model instead of the
+        // map (verification 2026-09-04, E1).
+        models: await extendingModels(config.docsDir, config.fleet),
       });
       // A service can arrive on the ARCHITECTURE axis alone: an element this
       // merge ADDS, carrying a `metadata { service }` binding, with no
@@ -107,6 +123,39 @@ export async function planLandscape(
       for (const e of plan.addedEls) say(`      + ${e.title} (${e.kind})`);
       for (const r of plan.addedRels) {
         say(`      + ${titleOf(delta.elements, r.source)} -> ${titleOf(delta.elements, r.target)}  "${r.title ?? ""}"`);
+      }
+      for (const additions of plan.models) {
+        const content = spliceModel({ additions, deltaText, featureId: id });
+        // The model's own parse net, and it has to be a PROJECT one: an
+        // extending model resolves against the map, and against the map this
+        // very archive would leave — so the merged landscape goes into the set
+        // beside it. Refused here, at plan time, nothing written, exactly as an
+        // unparseable merged landscape is.
+        const errors = await modelMergeErrors({
+          docsDir: config.docsDir,
+          landscape: plan.content,
+          model: { path: additions.model.path, content },
+        });
+        if (errors.length > 0) {
+          throw new ArchiveFailure(
+            "merge-failed",
+            `the merged ${additions.model.path} would not parse (${errors.length} error(s): ${errors.slice(0, 3).join("; ")}) — ` +
+              `nothing was written. This model is read beside architecture/landscape.likec4 and nothing else, so an addition ` +
+              `fits only if the map declares its kind and every element it names. Most often it is a kind or tag missing from ` +
+              `the map's specification block, or a reference to ANOTHER service's interior, which lives in that service's own ` +
+              `model and is not in this project — draw that call service to service on the map instead. Fix the map's ` +
+              `specification or the delta, then re-run`,
+          );
+        }
+        writes.push(planWrite(join(config.docsDir, ...additions.model.path.split("/")), content));
+        say(
+          `  architecture: merged into ${additions.model.path} — ` +
+            `+${additions.els.length} element(s), +${additions.rels.length} relationship(s)`,
+        );
+        for (const e of additions.els) say(`      + ${e.title} (${e.kind})`);
+        for (const r of additions.rels) {
+          say(`      + ${titleOf(delta.elements, r.source)} -> ${titleOf(delta.elements, r.target)}  "${r.title ?? ""}"`);
+        }
       }
     } else {
       say(`\n  architecture: no landscape.likec4 — ${newEls.length} element(s) not merged`);

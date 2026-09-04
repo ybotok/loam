@@ -41,7 +41,7 @@ import { recoverInterruptedCommit } from "../../../core/staging/recovery/recover
 import { commitStaged } from "../../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { viewsAgree } from "../../../core/repo/tree/render/views.js";
-import { expectedViews } from "./views.js";
+import { expectedViews, LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
 
 export type ViewsAction = "created" | "updated" | "removed" | "current";
 
@@ -101,14 +101,14 @@ export async function commitWindow(
 
     const path = subsystemViewsPath(docsDir);
     const expected = await expectedViews(docsDir, txn.tree);
-    const bytes = expected === null ? null : Buffer.from(expected, "utf8");
+    const bytes = expected.content === null ? null : Buffer.from(expected.content, "utf8");
     // Content, not bytes — `viewsAgree` carries the reason. Without it every
     // subsystem move on a Windows clone folded a rewrite of this file into its
     // transaction that changed not one fact, and journalled it.
     const current = existsSync(path) ? await readFile(path, "utf8") : null;
     let views: ViewsAction = "current";
     const writes = [...txn.writes];
-    if (!viewsAgree(current, expected)) {
+    if (!viewsAgree(current, expected.content)) {
       views = current === null ? "created" : bytes === null ? "removed" : "updated";
       writes.push({ path, content: bytes });
     }
@@ -135,6 +135,12 @@ export async function commitWindow(
       return;
     }
     await txn.report(views, recovered);
+    // A verb CANNOT leave this file behind the tree — its bytes depend on the
+    // placement the verb just changed, so the tolerant render lands even when the
+    // map is unreadable and the file loses its includes. `sync` may decline that
+    // rewrite (`action: "blocked"`); a verb may not, so the person is told
+    // instead, and the same note names the run that puts the includes back.
+    if (!json && !expected.known) console.log(LANDSCAPE_UNREADABLE_NOTE);
   } finally {
     await releaseLock();
   }

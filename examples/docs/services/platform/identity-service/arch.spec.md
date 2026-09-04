@@ -23,8 +23,11 @@ element id, an edge `source -> target`, or a health signal `sli:<id>` / `alert:<
 is `covers.unknown` (a mistyped id silently costs exactly the coverage it was written
 for), and an SLI or alert in `health.yaml` that no requirement here covers is
 `health.uncovered`. Every id below comes from `model.likec4` or `health.yaml` in this
-directory; nothing here reaches for the landscape, because everything this service
-touches is inside its own boundary.
+directory; no entry names another service, because everything this service touches is
+inside its own boundary. The element ids carry the full `marketplace.identityService.`
+path because that is what the ids ARE: `model.likec4` extends the element the fleet map
+declares inside the `marketplace` group, so a container it adds has no shorter spelling.
+SCHEMA.md, "Two shapes of a service model", has the rule.
 
 ## Requirements
 
@@ -41,7 +44,7 @@ one a single-instance test never catches: the signer and the verifier are differ
 processes reading the same store, and a key promoted before it lands there makes
 one instance mint tokens the others report inactive.
 
-Covers: identityService.keyStore, identityService.tokens -> identityService.keyStore
+Covers: marketplace.identityService.keyStore, marketplace.identityService.tokens -> marketplace.identityService.keyStore
 
 #### Scenario: A rotation keeps tokens minted a minute earlier verifiable
 - **Given** the active key K1 and tokens issued under it with thirty minutes of life left
@@ -71,7 +74,7 @@ cache holds derived state only: losing it costs latency, never correctness, and 
 design where a cache miss can produce a *different verdict* is the bug this
 requirement exists to prevent.
 
-Covers: identityService.introspectionCache, identityService.tokens -> identityService.introspectionCache
+Covers: marketplace.identityService.introspectionCache, marketplace.identityService.tokens -> marketplace.identityService.introspectionCache
 
 #### Scenario: A revocation invalidates the cached verdict immediately
 - **Given** a token whose active verdict is cached

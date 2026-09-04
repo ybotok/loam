@@ -28,6 +28,7 @@ import { compareIds, type ServiceEntry } from "../repo/entries.js";
 import { landscapePath, servicePathsAt } from "../repo/paths.js";
 import { enumeratedServices } from "../repo/service-target.js";
 import type { FleetContext } from "../fleet-context.js";
+import { ancestorIds } from "../kernel/ids/fqn/ancestors.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import type { RawServiceId } from "../kernel/ids/service.js";
 import type { GatePartner, LandscapeRead, PartnerRole } from "./report.js";
@@ -89,15 +90,6 @@ export function atLeastDocumented(m: Maturity): boolean {
   return MATURITY_LADDER.indexOf(m) >= MATURITY_LADDER.indexOf("documented");
 }
 
-/** The id itself, then each dotted ancestor — the same walk `serviceResolver` resolves through. */
-function selfAndAncestors(id: string): string[] {
-  const out = [id];
-  for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) {
-    out.push(id.slice(0, dot));
-  }
-  return out;
-}
-
 /**
  * What the map says about one edge END: does it stand for a person, and is it
  * tagged `#external`? Walked up the ancestor chain because both facts are
@@ -117,7 +109,10 @@ function endFacts(
 ): { actor: boolean; external: boolean } {
   let actor = false;
   let external = false;
-  for (const candidate of selfAndAncestors(id)) {
+  // The id itself, then each dotted ancestor — the same walk `serviceResolver`
+  // resolves through, out of the one module that spells it
+  // (`core/kernel/ids/fqn/ancestors.ts`).
+  for (const candidate of ancestorIds(id)) {
     const e = byId.get(candidate);
     if (e === undefined) continue;
     if (ACTOR_KINDS.has(e.kind.toLowerCase())) actor = true;

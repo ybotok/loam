@@ -615,6 +615,191 @@ describe("the repository's styling: `global style subsystems` when the map decla
   }, 60_000);
 });
 
+describe("a map that does not parse never guts the generated file", () => {
+  const STYLE_GROUP = "global {\n  styleGroup subsystems {\n    style * { color gray }\n  }\n}\n";
+  const styled = LANDSCAPE.replace("views {", `${STYLE_GROUP}\nviews {`);
+
+  /** A styled fleet with the generated file already written and current. */
+  async function synced(extra: Record<string, string> = {}) {
+    const files = { ...nestedFixture(), "architecture/landscape.likec4": styled, ...extra };
+    const p = await makeProject(files);
+    expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+    return p;
+  }
+
+  // Catches: the gutting itself. `{ elements: [] }` for every failure meant the
+  // render lost the member join AND the style census, so a file holding a
+  // `global style subsystems` line, four includes and the boundary comment was
+  // rewritten to a title and a description — reported as `updated … 1 subsystem
+  // view(s)`, answered `current` on the next run, and never reported stale
+  // (verification 2026-09-04, W5).
+  it("leaves an existing views file byte-identical, answers `blocked`, and says why", async () => {
+    const p = await synced();
+    try {
+      const before = await p.read(VIEWS);
+      expect(before).toContain("global style subsystems");
+      await p.write("architecture/landscape.likec4", "specification { element softwareSystem\nmodel {\n");
+
+      const json = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout) as {
+        action: string;
+        blocked?: { reason: string };
+      };
+      expect(json.action).toBe("blocked");
+      expect(json.blocked).toEqual({ reason: "landscape-invalid" });
+      expect(await p.read(VIEWS)).toBe(before);
+
+      const text = await runLoam(p.workDir, "subsystem", "sync");
+      expect(text.code, text.out).toBe(0);
+      expect(text.stdout).toContain("architecture/subsystems.likec4 left as it is");
+      expect(text.stdout).toContain("`loam validate --all` names the file");
+      expect(await p.read(VIEWS)).toBe(before);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches: `blocked` narrowed to "the map file itself is broken". A sibling
+  // that breaks the PROJECT — here, a second document declaring the same
+  // `subsystems` group, a duplicate-id error for the project and nothing at all
+  // for the landscape file — leaves the element join readable and the STYLE
+  // CENSUS not: a palette may live in any `.likec4` under `architecture/`, so
+  // facts from the landscape file alone are silent about `global style`. While
+  // `known` meant "some reading succeeded", this run answered `updated` and
+  // deleted the palette line from a good generated file (verification
+  // 2026-09-04, review C). `known` now means the PROJECT parsed, so the file is
+  // protected whichever half of it the render would have got wrong.
+  it("blocks when a sibling breaks the project, and leaves the file byte-identical", async () => {
+    const p = await synced();
+    try {
+      const before = await p.read(VIEWS);
+      expect(before).toContain("global style subsystems");
+      await p.write("architecture/palette.likec4", STYLE_GROUP);
+      const json = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout) as {
+        action: string;
+        blocked?: { reason: string };
+      };
+      expect(json.action).toBe("blocked");
+      expect(json.blocked).toEqual({ reason: "landscape-invalid" });
+      expect(await p.read(VIEWS)).toBe(before);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches the defect verbatim (re-verification 2026-09-04, area C item 8). A
+  // tree-changing VERB has no `blocked` arm — its contract is that the views
+  // file lands in the commit that changes the tree — so it renders from the
+  // fallback, and the fallback read the style census off the landscape file
+  // alone. With the palette in a SIBLING and an unrelated sibling broken, the
+  // landscape parsed, the member join survived, and `global style subsystems`
+  // was silently deleted from a good generated file: nothing graded the loss
+  // (`subsystem.views-stale` cannot fire while `sync` answers `blocked`), so the
+  // fleet rendered unstyled with no finding anywhere. The census is now taken
+  // over every document that parses ON ITS OWN.
+  it("a tree-changing verb keeps a palette declared in a SIBLING when another sibling is broken", async () => {
+    const p = await synced({ "architecture/landscape.likec4": LANDSCAPE, "architecture/palette.likec4": STYLE_GROUP });
+    try {
+      const before = await p.read(VIEWS);
+      expect(before).toContain("global style subsystems");
+      await p.write("architecture/broken.likec4", "this is not likec4 {{{\n");
+
+      const res = await runLoam(p.workDir, "subsystem", "new", "billing", "--title", "Billing");
+      expect(res.code, res.out).toBe(0);
+      // The note is still owed — the project did not parse, so the element join
+      // is the landscape's alone — but the palette line is not the census's to
+      // lose over a document it has nothing to do with.
+      expect(res.stdout).toContain("does not parse as one project");
+      const after = await p.read(VIEWS);
+      expect(after).toContain("global style subsystems");
+      expect(after).toContain("view subsystem_billing");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches: `blocked` widened into "writes nothing, ever". A fleet with no
+  // generated file yet has nothing to lose, so the tolerant render still lands —
+  // today's behaviour, and what a repo being scaffolded against a half-written
+  // map needs.
+  it("still writes the tolerant shape when there is no views file to protect", async () => {
+    const files = { ...nestedFixture(), "architecture/landscape.likec4": "specification { element softwareSystem\n" };
+    const p = await makeProject(files);
+    try {
+      const json = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout) as { action: string };
+      expect(json.action).toBe("created");
+      expect(await p.read(VIEWS)).toContain("view subsystem_payments");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches: the architecture loader ignoring the root `likec4.config.json`. A
+  // `.likec4` the renderer never loads must not reach loam either — otherwise
+  // the style census emits a reference to a group the fleet project cannot
+  // resolve (`likec4 validate` Invalid on every run, `loam validate --all` at 0
+  // errors) and a broken excluded document blanks the map for nothing.
+  it("a document under an EXCLUDED path is neither censused nor graded", async () => {
+    const files = nestedFixture();
+    files["likec4.config.json"] = JSON.stringify(
+      { name: "fleet", exclude: ["**/node_modules/**", "features/**", "architecture/drafts/**"] },
+      null,
+      2,
+    );
+    // Declares the conventional style id AND re-declares an element kind: read,
+    // it would both style the views and blank the whole project.
+    files["architecture/drafts/palette.likec4"] = `specification {\n  element softwareSystem\n}\n\n${STYLE_GROUP}`;
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      const bytes = await p.read(VIEWS);
+      expect(bytes).not.toContain("global style subsystems");
+      expect(bytes).not.toContain("// styles:");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = (JSON.parse(res.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> }).targets
+        .flatMap((t) => t.findings)
+        .map((f) => f.code);
+      expect(codes).not.toContain("landscape.invalid");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches: the exclude filter with no floor under it. `architecture/*.likec4`
+  // is the spelling a team reaches for to hide a palette, and it covers
+  // `architecture/landscape.likec4` too — which left the architecture project
+  // holding ZERO documents. Zero documents parse with zero errors, so every
+  // reader took the empty project for "the map declares nothing": sync answered
+  // `updated` and rewrote a good file down to a title, and `validate --all`
+  // reported `landscape.service-unmodelled` against the very file that models
+  // the service, plus `c4.invalid` on the extending model
+  // (verification 2026-09-04, review C). The map is now kept whatever the list
+  // says: loam grades one document the renderer may skip rather than asserting a
+  // fleet's whole architecture says nothing.
+  it("an exclude entry covering the MAP itself never empties it", async () => {
+    const files = nestedFixture();
+    files["likec4.config.json"] = JSON.stringify(
+      { name: "fleet", exclude: ["**/node_modules/**", "features/**", "architecture/*.likec4"] },
+      null,
+      2,
+    );
+    const p = await makeProject(files);
+    try {
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      // The member join survived: the views file still names its services.
+      expect(await p.read(VIEWS)).toContain("include ");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const codes = (JSON.parse(res.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> }).targets
+        .flatMap((t) => t.findings)
+        .map((f) => f.code);
+      expect(codes).not.toContain("landscape.service-unmodelled");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+});
+
 describe("validate --all — subsystem.views-stale", () => {
   it("subsystems with no views file: exactly one error, naming the file and `loam subsystem sync`", async () => {
     const p = await makeProject(nestedFixture());

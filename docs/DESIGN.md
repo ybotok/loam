@@ -127,7 +127,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/provenance/` | the `sources` list — vetting, digesting, walking — plus the bounded `git` child, `gitq/` and `sample/` | document, kernel, repo |
 | `core/workspace/` | `loam open`'s editor workspace: sibling-repo `discover`y through committed bindings, deterministic `.code-workspace` `render`ing | envelope, kernel, repo |
 | `core/asyncapi/` | the event contract axis; `asyncapi/merge/` is the delta path | kernel, openapi, repo |
-| `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked; `map/` beneath is the write the fleet map is still owed | c4, obligations, repo, vocabulary |
+| `core/brief/` | the `loam adopt` brief: the deterministic half of adoption — which files, in which grammar, bound to which existing elements, and what will be checked; `map/` beneath is the write the fleet map is still owed | c4, kernel, obligations, repo, vocabulary |
 | `core/capabilities/` | the declared-capability vocabulary and the fleet rollup joined by `Capability:` | c4, document, kernel, repo |
 | `core/deployment/` | the fleet TOPOLOGY axis: which deployment objects carry an obligation and who owns each, the `deployment/` document a FEATURE brings, and the slice of it one service runs in | c4, repo |
 | `core/doctor/` | the repository's own health: conflict markers, interrupted writes, a stale AGENTS.md | agent, c4, conflict-markers, docs, envelope, gherkin, kernel, repo, staging |
@@ -371,7 +371,7 @@ the workspace layout differs, and that part is already isolated.
     nothing else — no `package.json`, no workspace, no separate publish. That layout tracks how many
     artifacts you publish; you publish one `bin`, and `scripts/release-check.mjs` hard-asserts it.
     It is also the one option here that is not cheaply reversible.
-23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 61 of the 145
+23. **Do not vertical-slice by command.** `core/envelope/json.ts` is imported by 63 of the 156
     modules in `commands/` — the entry module of every command among them; `core/envelope/config.ts`
     and `core/repo/repo.ts` by 24 and 28 of them. Slices would duplicate the hubs or produce a
     `shared/` folder — which is what `src/core/` already is.

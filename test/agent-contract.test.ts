@@ -445,6 +445,27 @@ describe("the code vocabulary reaches the contract loam ships", () => {
     expect(SCAFFOLDED_DOCS).toContain("sources_files");
     expect(PROTOCOLS["loam-adopt"]).toContain("sources_files");
   });
+
+  it("`c4.fleet-project-invalid`'s details format is spelled the way the finding emits it", async () => {
+    // Re-verification 2026-09-04, D10: the row promised `<path> L<n>: <error>`
+    // — no colon after the path — while `details[0]` is
+    // `services/platform/notes.likec4: L2: Could not resolve …`. An agent
+    // splitting on the documented separator split in the wrong place. Both
+    // halves are pinned so neither can move alone: the row's spelling, and the
+    // one expression in the fleet-project view that builds the string.
+    // The row this check OWNS, not the first line naming the code:
+    // `landscape.excluded`'s row names it too, one line above.
+    const row = PROTOCOLS["loam-check"]!
+      .split("\n")
+      .find((line) => line.startsWith("| `c4.fleet-project-invalid`"));
+    expect(row, "no /loam-check row for c4.fleet-project-invalid").toBeDefined();
+    expect(row).toContain("`<path>: L<n>: <error>`");
+    const source = await readRepo("src/commands/validate/fleet/views/fleet-project.ts");
+    expect(
+      source,
+      "the finding must still join the path and the error with `: ` — move the protocol row with it",
+    ).toContain("`${file}: ${errorText(err)}`");
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -640,10 +661,17 @@ describe("the brief promises only what a check can keep", () => {
    * with no check belongs in UNCHECKED instead.
    */
   const RULE_CODE: Array<[fragment: string, code: string]> = [
-    ["`specification { ... }` block", "c4.invalid"],
-    ["`model { ... }` block holding", "c4.invalid"],
-    ["binds to this directory", "landscape.service-unmodelled"],
-    ["A call to another service", "spine.op-undefined"],
+    // The first row is the shape rule, and its code is the one that convicts the
+    // OTHER shape: a model that declares its own kinds still parses, and what it
+    // then risks is its copies of the map's elements drifting.
+    ["No `specification` block of its own", "c4.declaration-diverged"],
+    ["block whose body is", "c4.invalid"],
+    ["The map's element is the binding", "landscape.service-unmodelled"],
+    // The rule names two codes — `c4.element-unowned` for a copied element and
+    // `spine.op-undefined` for the map's twin edge — and the row picks the one
+    // the rule is ABOUT. Both are in the brief's checks[], and the assertion
+    // below only asks that the rule name the code its row claims.
+    ["A call to another system", "c4.element-unowned"],
   ];
 
   it("every model.likec4 shape rule maps to a code the brief itself lists as a check", async () => {

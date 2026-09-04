@@ -17,6 +17,25 @@
  * them has would make the merge disagree with itself one archive later.
  */
 import type { Elem, Rel } from "../../likec4.js";
+import type { ScannedRel } from "../../source-scan.js";
+
+/**
+ * Which AUTHORED STATEMENT a parsed addition was written as — the key that
+ * matches a `Rel` back to its bytes in delta.likec4, so the splice carries the
+ * declaration verbatim instead of re-serializing it.
+ *
+ * Stricter than `relKey` below on purpose, and asking a different question:
+ * `relKey` decides whether the living document already HAS this edge, across
+ * two id namespaces, so it joins on titles; this one runs inside ONE document
+ * where ids are exact, and it must tell apart two statements the merge would
+ * otherwise hand each other's bytes. Both endpoints, the title, all three spine
+ * keys and the tags, because a pool entry shared by two additions gives the
+ * second one the first one's authored source.
+ */
+export function relStatementKey(r: Rel | ScannedRel): string {
+  const spine = [r.op ?? "", r.publishes ?? "", r.consumes ?? ""];
+  return JSON.stringify([r.source, r.target, r.title ?? "", ...spine, [...r.tags].sort()]);
+}
 
 /**
  * The order of loam-inserted relationships that share a landing region:

@@ -211,6 +211,32 @@ describe("a #req- flow beside model.likec4 is graded by the service target", () 
     }
   }, 90_000);
 
+  it("names the FILE holding the flow in `locations`, with the service directory beside it as scope", async () => {
+    // `--json` exists so an agent need not parse prose. Every service-arm flow
+    // code carried the service DIRECTORY alone, so the one thing the reader
+    // needs — which `.likec4` to open — was only in the message text, on the
+    // very axis the report asked for (verification 2026-09-04). `flow-invalid`
+    // on this arm already named its file; these say it the same way.
+    const p = await project({
+      [`${DIR}/usecases/authorize.likec4`]: flow("uc_authorize", ["req-PAY-AUTH", "cap-checkout"], UNBACKED),
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      const graded = useCaseFindings(res.stdout);
+      expect(graded.length).toBeGreaterThan(0);
+      for (const finding of graded) {
+        expect(finding.locations).toEqual([
+          { path: `${DIR}/usecases/authorize.likec4`, role: "primary" },
+          { path: DIR, role: "scope" },
+        ]);
+      }
+      // The two codes this fixture raises, so the pin is not vacuous.
+      expect(graded.map((f) => f.code).sort()).toEqual(["usecase.capability-unresolved", "usecase.step-unbacked"]);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("reads usecases/<name>.likec4 — the documented convention — exactly as it reads views.likec4", async () => {
     const p = await project({ [`${DIR}/usecases/authorize.likec4`]: flow("uc_authorize", ["req-PAY-AUTH"], UNBACKED) });
     try {
@@ -502,16 +528,124 @@ describe("the model's own views, and the cost of a fleet without the axis", () =
     }
   }, 60_000);
 
-  it("costs a service with no sibling no LikeC4 load beyond the two it already paid", async () => {
+  it("costs a service with no sibling no LikeC4 load beyond the one it already paid", async () => {
     // The gate is one recursive readdir. With no sibling the model's own views
-    // are graded off the single-file load already in hand, so the counter
-    // stays at exactly what a service target cost before the axis existed:
-    // its model and the fleet landscape.
+    // are graded off the load already in hand, so the counters stay at exactly
+    // what a service target costs: ONE document parsed alone — this fixture's
+    // model declares its own `specification`, so it stands alone — and no
+    // per-service project, because a standalone model is never staged beside
+    // the map. The fleet map itself is read as the `architecture/` PROJECT in
+    // every mode now (it used to be `landscape.likec4` parsed alone, which is
+    // why this counter used to read 2), memoised for the whole invocation.
     const p = await project({});
     try {
       const fleet = new FleetContext();
       await validateService({ docsDir: p.docsDir, service: rawServiceId(SVC), fleet });
-      expect(fleet.stats().likec4Loads).toBe(2);
+      expect(fleet.stats().likec4Loads).toBe(1);
+      expect(fleet.stats().projectLoads).toBe(0);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+});
+
+/**
+ * The two things `usecase.flow-invalid` could not say, measured on the tree
+ * (verification 2026-09-04, D10).
+ *
+ * An undeclared reserved tag is a bare `Could not resolve reference to Tag
+ * named …` — the author wrote the tag the protocol told them to write, and
+ * nothing said a tag has to be declared before it can be carried.
+ *
+ * And a sibling the SERVICE'S OWN `likec4.config.json` excludes is in no
+ * project the renderer loads, while loam staged it anyway: a finding about a
+ * file nobody will ever open, under a message claiming the project is read the
+ * way the renderer reads it.
+ */
+describe("what a broken service project says", () => {
+  it("names the declaration an undeclared #req- tag is missing", async () => {
+    // Every other tag in MODEL is declared; this one is not, which is the only
+    // fault in the project.
+    const p = await project({ [`${DIR}/views.likec4`]: flow("uc_authorize", ["req-PAY-GHOST"], BACKED) });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      const [invalid, ...rest] = codeFor(res.stdout, "usecase.flow-invalid");
+      expect(rest).toEqual([]);
+      expect(invalid?.details?.some((line) => line.includes("Could not resolve reference to Tag"))).toBe(true);
+      const hint = invalid?.details?.find((line) => line.startsWith("declare `tag "));
+      expect(hint).toContain("declare `tag req-PAY-GHOST` in the `specification { }` block this project reads");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("sends an undeclared #cap- tag to the placement rule, not to a declaration that cannot help", async () => {
+    // Declaring `tag cap-…` here makes the file parse and earns
+    // `usecase.capability-unresolved` on the very next run ("no capability can
+    // be claimed … Drop the tag") — two steps where the answer is one, because
+    // a capability is claimed at fleet altitude and this project is one
+    // service's (verification 2026-09-04).
+    const p = await project({ [`${DIR}/views.likec4`]: flow("uc_authorize", ["cap-ghost"], BACKED) });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      const [invalid, ...rest] = codeFor(res.stdout, "usecase.flow-invalid");
+      expect(rest).toEqual([]);
+      const hint = invalid?.details?.[0];
+      expect(hint).toContain("`#cap-ghost` claims a capability");
+      expect(hint).toContain("FLEET altitude");
+      expect(hint).toContain("usecase.capability-unresolved");
+      // Never the declaration advice: declaring it is the step that does not help.
+      expect(hint).not.toContain("declare `tag cap-ghost`");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("does not grade a sibling the service's own likec4.config.json excludes", async () => {
+    // Measured at the 1.59.2 pin: with this entry the renderer loads
+    // model.likec4 alone (`found 1 source files`, valid), so nothing about
+    // views.likec4 is a fact about any project.
+    const broken = flow("uc_authorize", ["req-PAY-AUTH"], "    paymentService.api -> paymentService.ghost 'talks to nothing'\n");
+    const p = await project({
+      [`${DIR}/views.likec4`]: broken,
+      [`${DIR}/likec4.config.json`]: `{\n  "name": "${SVC}",\n  "title": "${SVC}",\n  "exclude": ["views.likec4"]\n}\n`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(useCaseFindings(res.stdout)).toEqual([]);
+      expect(codeFor(res.stdout, "c4.valid")).toHaveLength(1);
+
+      // The control, and it is what keeps the silence honest: an entry that
+      // covers nothing leaves the file in the project, where it is graded.
+      await p.write(`${DIR}/likec4.config.json`, `{\n  "name": "${SVC}",\n  "exclude": ["other.likec4"]\n}\n`);
+      const kept = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(codeFor(kept.stdout, "usecase.flow-invalid")).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  // Catches: the leading `**/`, which the first matcher compiled to a REQUIRED
+  // `/` — so every entry written in the recursive spelling matched nothing and
+  // loam gated the run (exit 1) on a file in no project it was reading
+  // (verification 2026-09-04). Measured at the 1.59.2 pin on a service directory
+  // holding model.likec4, views.likec4 and usecases/flow.likec4, by
+  // `npx likec4 validate <dir>` counting "found N source files":
+  //   `**/usecases/**`  → 2      `**/views.likec4` → 2      `**/*.likec4` → 0
+  it.each([
+    ["**/usecases/**", "usecases/flow.likec4"],
+    ["**/*.likec4", "usecases/flow.likec4"],
+    ["**/views.likec4", "views.likec4"],
+  ])("does not grade a sibling a recursive entry (%s) excludes", async (entry, where) => {
+    const broken = flow("uc_authorize", ["req-PAY-AUTH"], "    paymentService.api -> paymentService.ghost 'talks to nothing'\n");
+    const p = await project({
+      [`${DIR}/${where}`]: broken,
+      [`${DIR}/likec4.config.json`]: `{\n  "name": "${SVC}",\n  "exclude": ["${entry}"]\n}\n`,
+    });
+    try {
+      const res = await runLoam(p.workDir, "validate", "--service", SVC, "--json");
+      expect(useCaseFindings(res.stdout)).toEqual([]);
+      expect(res.code).toBe(0);
     } finally {
       await p.destroy();
     }

@@ -18,7 +18,7 @@ import { resolveServiceTarget } from "../../core/repo/service-target.js";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
-import { agentsPath as agentsFile, featurePaths, landscapePath as landscapeFile, servicePathsAt } from "../../core/repo/paths.js";
+import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import {
   countSeverity,
@@ -38,8 +38,7 @@ import {
 import { interruptedCommitFinding } from "../../core/staging/recovery/finding.js";
 import { scopeJson, scopeLine, scopeSince, type ValidateScope } from "../../core/diff/scope/changed-paths.js";
 import { validateLandscape } from "./fleet/landscape.js";
-import { loadArchitecture } from "../../core/c4/project/architecture.js";
-import { readLandscape } from "./fleet/load.js";
+import { prefetchFleetDocuments, readLandscape } from "./fleet/load.js";
 import { buildScorecard } from "./fleet/scorecard/scorecard.js";
 import { printScorecard } from "./fleet/scorecard/print.js";
 import { validateFeature } from "./feature.js";
@@ -137,20 +136,9 @@ export function registerValidate(program: Command): void {
 
       try {
         if (opts.all) {
-          // ONE LikeC4 workspace for the whole run. The per-path load pays a
-          // fresh Langium workspace per document (~100ms each even warm), which
-          // made the fleet's main CI command O(documents) workspace spins —
-          // 13.7s median over the 120-service benchmark (docs/BENCHMARKS.md).
-          // So --all enumerates its documents up front — the landscape, every
-          // service model, every active feature's delta — and batch-parses
-          // them into the fleet context's memo; every loadLikeC4 below, the
-          // landscape read included, is then a seeded hit. The enumerations are
-          // the same memoized promises the target loops reuse. If the batch
-          // CANNOT run (a sandbox denying tmpdir writes), prefetch seeds
-          // nothing and every load falls back to today's per-path parse:
-          // identical findings, the old speed. Single-service validate and
-          // list keep their untouched code paths on purpose — the ≤10%
-          // regression bound in docs/BENCHMARKS.md holds by construction.
+          // ONE workspace per document kind for the whole run — the block moved
+          // to `fleet/load.ts` (`prefetchFleetDocuments`), which is where the
+          // rule about which shape parses in which workspace belongs.
           const lp = landscapeFile(docsDir);
           const enumerated = await listServices(docsDir, fleet);
           const active = await listFeatures(docsDir, {}, fleet);
@@ -169,15 +157,13 @@ export function registerValidate(program: Command): void {
           }
           const services = scope === null ? enumerated : scope.services;
           const features = scope === null ? active : scope.features;
-          await fleet.prefetchLikeC4([
-            ...(existsSync(lp) ? [lp] : []),
-            ...services.filter((svc) => svc.has.model).map((svc) => servicePathsAt(svc.dir).model),
-            ...features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
-          ]);
+          await prefetchFleetDocuments({ docsDir, fleet, services, features });
           // Read whether or not the landscape is a TARGET: every service check
           // below joins against it, so a scoped run needs the map in hand even
-          // when it does not grade the map itself.
-          const land = existsSync(lp) ? await readLandscape(() => loadArchitecture(docsDir)) : null;
+          // when it does not grade the map itself. Through the fleet index, so
+          // the single-service path — which now reads the same project — answers
+          // out of the same memo rather than parsing it a second time.
+          const land = existsSync(lp) ? await readLandscape(() => fleet.architecture(docsDir)) : null;
           // The fleet-level cross-check first: it frames everything below it, and a
           // service nobody drew is worth knowing before its own findings scroll past.
           // Under `--base` it is a target only when `architecture/` changed — the

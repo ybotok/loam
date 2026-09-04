@@ -29,8 +29,10 @@ import { VALIDATE_CHECKS, type BriefCheck } from "./checks.js";
 import { UNCHECKED } from "./unchecked.js";
 import { landscapeContext, type LandscapeContext } from "./landscape.js";
 import { landscapeArtifact } from "./map/owed.js";
+import { exampleFor, extendPoint, FQN } from "./map/extend.js";
 import { ARTIFACTS, type BriefTarget } from "./targets.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import { EXTERNAL_TAG } from "../vocabulary/maturity.js";
 
 /* ------------------------------------------------------------------ */
 /* The walk — what to read, in what order, and where each finding lands */
@@ -202,8 +204,14 @@ export async function serviceBrief(
   // model path travels with it — located through the enumeration above, never
   // joined at `services/<id>/` — so the edgeless state can name the calls the
   // service's own model attests.
-  const landscape = await landscapeContext(docsDir, service, paths.model);
+  const landscape = await landscapeContext(docsDir, service, paths);
   const owesApi = apiExpected(landscape);
+
+  // The one id the model target's grammar and example are written against,
+  // resolved here because `ARTIFACTS` is static on purpose (a target list that
+  // varied per repository would be a second thing to keep true) and because this
+  // is the only place the fleet map has already been read.
+  const extend = extendPoint(landscape);
 
   const targets: BriefTarget[] = [];
   for (const { key, ...artifact } of ARTIFACTS) {
@@ -214,6 +222,12 @@ export async function serviceBrief(
     targets.push({
       ...artifact,
       ...(key === "openapi" ? { required: owesApi } : {}),
+      // Every `<fqn>` in the model target, replaced by the element this service
+      // actually extends. The placeholder is left literal in `targets.ts` — the
+      // brief is handed to an agent that will WRITE the file, and
+      // `extend <fqn> {` copied verbatim is a document that does not parse.
+      shape: artifact.shape.map((rule) => rule.replaceAll(FQN, extend.id)),
+      ...(artifact.example === undefined ? {} : { example: exampleFor(artifact.example, extend, service) }),
       path: dir ? `${rel(paths[key])}/` : rel(paths[key]),
       exists,
       action: exists ? "diff" : "create",
@@ -231,7 +245,17 @@ export async function serviceBrief(
   // reached. Everything else about the target is unconditional — the file is
   // shared, so `action` is `edit` whenever it exists and `create` only for the
   // very first service of a brand-new docs repo.
-  if (landscape.modelled !== true || landscape.touched === false) {
+  //
+  // `modelled === false` and not `!== true`: `null` is "loam could not read the
+  // map", and it fell through the same branch as "the map genuinely draws
+  // nothing for this service". The brief then handed over the UNDRAWN target —
+  // whose shape rule is "add one top-level element bound to its directory" and
+  // whose example is a block to splice — for services the map already declares
+  // and binds, and an agent that spliced it earned `landscape.binding-duplicate`
+  // for doing exactly what the brief asked. With the map unreadable there is no
+  // write to ask for; `landscape.instruction` carries the whole answer and names
+  // the documents that failed.
+  if (landscape.modelled === false || landscape.touched === false) {
     targets.push({
       ...landscapeArtifact({
         service,
@@ -240,8 +264,10 @@ export async function serviceBrief(
         servicePath: rel(paths.dir),
         // The existing element's id, in the edgeless state only: it switches
         // the example from a block to edges on that element.
+        // …and whether it is `#external`, which decides what the shape rule may
+        // promise: `landscape.service-isolated` never fires on such an element.
         ...(landscape.touched === false && landscape.elements[0] !== undefined
-          ? { elementId: landscape.elements[0].id }
+          ? { elementId: landscape.elements[0].id, external: landscape.elements[0].tags.includes(EXTERNAL_TAG) }
           : {}),
         attested: landscape.attested,
       }),
@@ -297,10 +323,17 @@ async function hasMarkdown(dir: string): Promise<boolean> {
  * in `openapi.yaml`'s shape rules (`ARTIFACTS`, targets.ts).
  *
  * Positive evidence only, exactly as `list` reads it: a landscape that is
- * absent or does not parse proves nothing about who calls this service, so the
+ * absent or unreadable proves nothing about who calls this service, so the
  * contract is still owed. `expects` is the ops on inbound edges, which is
  * `list`'s `called` set seen from one service.
+ *
+ * `callersKnown` and not `parses`, because since W4 `parses` answers about the
+ * whole `architecture/` PROJECT: a broken palette or use case beside a landscape
+ * loam reads perfectly made this discard the map and demand an OpenAPI contract
+ * of a browser UI — inventing an API into the source of truth, which is the one
+ * class of guess this module exists to refuse. `callersKnown` is the narrower
+ * fact this question actually needs, and it is the one `list` and `context` read.
  */
 function apiExpected(landscape: LandscapeContext): boolean {
-  return !landscape.parses || landscape.expects.length > 0;
+  return !landscape.callersKnown || landscape.expects.length > 0;
 }

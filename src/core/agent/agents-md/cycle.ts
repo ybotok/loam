@@ -11,11 +11,15 @@
  * scrolls looking for it concludes the file is truncated — which, on the two
  * hosts that truncate silently, is a conclusion they cannot check.
  *
- * One section of the AGENTS.md template. ../agents-md.ts assembles the
- * document by PLAIN CONCATENATION — no join separator — so every section
- * starts at the first character of its opening line and ends with the newline
- * that closes its last one. Keep that shape when editing, or two sections glue
- * onto one line in every docs repo loam scaffolds from now on.
+ * Not a section of the scaffolded AGENTS.md any more: that document carries a
+ * condensed cycle of its own (../agents-md.ts), sized for a host that loads it
+ * on every turn. This constant is the long teaching, and it is DELIVERED
+ * through `loam explain`'s term paragraphs — ../../explain/terms.ts pins
+ * verbatim phrases of it, so rewording a sentence here breaks the pairing
+ * loudly instead of letting a term drift away from what loam ships. Two
+ * consequences for an editor: a claim written here is read by an agent through
+ * `loam explain <term>` and must stay true, and a phrase a pin names cannot be
+ * reworded on one side alone.
  */
 export const CYCLE = `## The cycle
 
@@ -105,6 +109,9 @@ edgeless service whose model reaches other systems is
 cross-service check all the same. One whose model attests no such call is
 silent there — the brief's \`landscape.touched: false\` is the only place that
 state is named, so read it before the fleet run rather than hoping for it in it.
+And one edge closes the state; the check is touched/untouched, not a set
+difference, so draw every attested call in one pass — nothing names the ones
+left out.
 
 An adoption ends with two runs, not one: \`loam validate --service <id> --json\`
 for the baseline, then \`loam validate --all --json\` in the docs repo — the

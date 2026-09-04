@@ -25,9 +25,14 @@ checks:
   liveness: GET /internal/health/liveness
   readiness: GET /internal/health/readiness    # consumer group joined + both stores reachable
 dependencies:
-  # Resolved against services/notification-service/model.likec4 and never the
-  # landscape (`health.dependency-unmodelled` when nothing there answers to the
-  # name). The delivery log and the contact store are absent on purpose: both
+  # Resolved against services/platform/notification-service/model.likec4 — this
+  # service's own model, never the fleet map read on its own
+  # (`health.dependency-unmodelled` when nothing there answers to the name).
+  # That model EXTENDS the map, so what answers is its own slice: the elements
+  # it adds, plus the partners it points at and their ancestors. `kafka` below
+  # resolves through the second half — the edges name `kafka.orderEvents` and
+  # the broker that owns the topic comes with it.
+  # The delivery log and the contact store are absent on purpose: both
   # are nested inside the service element and share its lifecycle, so they are
   # blast radius rather than dependency — identity-service's health.yaml states
   # the same rule for its two stores.

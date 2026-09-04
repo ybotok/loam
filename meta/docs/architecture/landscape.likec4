@@ -479,10 +479,16 @@ model {
   loam.core.asyncapi -> loam.core.repo
 
   loam.core.brief -> loam.core.c4
+  loam.core.brief -> loam.core.kernel
   loam.core.brief -> loam.core.obligations
   loam.core.brief -> loam.core.repo
   loam.core.brief -> loam.core.vocabulary
 
+  // For `repoPath` alone, and from one leaf: `c4/service-model/fleet/` spells an
+  // extending model's path the way the merge's messages and writes spell it, and
+  // a second copy of that one line is how two spellings of a repo-relative path
+  // start disagreeing. The envelope's OUTPUT half is not reached from here.
+  loam.core.c4 -> loam.core.envelope
   loam.core.c4 -> loam.core.kernel
   loam.core.c4 -> loam.core.repo
 
@@ -505,6 +511,12 @@ model {
   loam.core.coherence -> loam.core.usecases
 
   loam.core.delta -> loam.core.capabilities
+  // Which of the fleet's models EXTEND the map, so the merge preview a feature's
+  // flows are graded against routes a nested addition exactly as `loam archive`
+  // does. The walk owns this read for the reason it owns the capability
+  // vocabulary read beside it: it holds the invocation's index and
+  // `core/usecases/` does not.
+  loam.core.delta -> loam.core.c4
   loam.core.delta -> loam.core.document
   loam.core.delta -> loam.core.repo
   loam.core.delta -> loam.core.usecases
@@ -650,6 +662,7 @@ model {
 
   loam.core.usecases -> loam.core.c4
   loam.core.usecases -> loam.core.capabilities
+  loam.core.usecases -> loam.core.kernel
   loam.core.usecases -> loam.core.repo
 
   loam.core.verify -> loam.core.asyncapi

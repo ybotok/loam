@@ -336,7 +336,12 @@ following it behaves unexpectedly. Its version-matched body comes from
 
 The agent preserves the original symptom before investigating, collects the binary version,
 `doctor --json`, relevant `status --json` and the smallest safe reproduction, then writes
-`loam-reports/YYYY-MM-DD-<slug>.md`. It classifies the evidence as a loam defect, project-data
+`loam-reports/NNN-YYYY-MM-DD-<slug>.md` — `NNN` the next ordinal, at least three digits and
+zero-padded, which `loam doctor` reports, and a
+`Status: open` header line the team later edits to `sent`, `fixed in <version>` or
+`superseded by <NNN>`. `doctor` reads that line from the header field block above the first `##`
+heading, so a report quoting the protocol's template counts as whatever its own header says. It
+classifies the evidence as a loam defect, project-data
 problem, agent-workflow problem, host/infrastructure problem or inconclusive. A report contains
 stable envelope/finding codes and short relevant excerpts, not a full environment or document
 dump. Secrets and home paths are redacted. A writer is never repeated just to reproduce a failure,
@@ -429,7 +434,12 @@ Every command takes `--json`, and the contract is built so an agent never has to
   that service's repository: the living requirements verbatim, both contracts, the fleet edges one
   hop out, the permission and capability joins, and every feature in flight over the service — one
   deterministic payload, so two runs over the same state are byte-diffable. `--feature <FEAT>`
-  narrows the in-flight section to the feature being implemented.
+  narrows the in-flight section to the feature being implemented. Its `landscape` object carries
+  `broken` beside `parses` — the `architecture/` documents that failed, docs-relative POSIX, deduped
+  and sorted, `[]` while `parses` is true — spelled exactly as `landscape.invalid` and the adopt
+  brief spell them. `parses` answers for the `architecture/` PROJECT, so the document at fault is
+  very often a sibling beside a landscape that reads perfectly, which is why the key exists.
+  `loam explore --json` carries the same key with the same meaning.
 - **`loam show <FEAT> --json` is the review hand-off.** Its `review` object joins the intent summary,
   exact C4 objects, API/event slices, dependencies, artifact states, verification, blockers,
   advisories, use cases and executable next actions without making the reviewer reopen each file.
@@ -549,16 +559,19 @@ refuses it until a person authors the content, or deliberately overrides with `-
 requirements-only feature you delete the scaffolded `delta.likec4` yourself — `new` says so on the
 way out.
 
-**`loam adopt`** — the brief names the target paths, the grammar of each, what the landscape already
-says, the checks that follow, and the ones that do not exist. The default human view now opens with
+**`loam adopt`** — the brief names the target paths, the grammar of each, what the fleet map already
+says — the whole `architecture/` project, not the landscape file alone — the checks that follow, and
+the ones that do not exist. The default human view now opens with
 an orientation block before any of that: how many of those targets are required and still
 outstanding, named, and what each flag in the artifact table means — `MISSING` required and absent,
-lowercase `missing` optional and absent, `present` a document to diff rather than replace, and
-`UNDRAWN` the one row that is the whole system's shared map, which this boundary owes an element
-rather than a file. `--targets` drops the half that is identical for every service — the code walk,
-the frontmatter rules, the 37 named checks and the fifteen statements of what nothing checks — and
-replaces it with a `full` field naming the one run that carries them, which is 42,873 bytes down to
-17,805 on the example fleet.
+lowercase `missing` optional and absent, `present` a document to diff rather than replace, and two
+rows for the one target that is the whole system's shared map: `UNDRAWN` while nothing in the map
+resolves to this boundary, and `EDGELESS` while an element does and no edge touches it. The map owes
+an element in the first state and edges in the second, and `landscape.instruction` says which.
+`--targets` drops the half that is identical for every service — the code walk,
+the frontmatter rules, the 52 named checks and the seventeen statements of what nothing checks — and
+replaces it with a `full` field naming the one run that carries them, which is 54,833 bytes down to
+20,062 on the example fleet (measured 2026-09-04).
 
 **`loam diff`** — the base state is read out of the docs repo's own git history
 (`rev-parse`/`ls-tree`/`show`, read-only, no checkout), so it refuses (`repository-unavailable`)

@@ -265,9 +265,15 @@ function printLandscape(b: Brief): void {
     return;
   }
   if (!l.parses) {
-    console.log("    architecture/landscape.likec4 does not parse — bind by hand, and fix it first.");
+    // Not "architecture/landscape.likec4 does not parse": the map is the whole
+    // `architecture/` project, so the file that broke is usually a sibling —
+    // and this line accused the landscape of errors `validate --all` blamed on
+    // a palette. The instruction printed directly below names the documents
+    // that actually failed, so the headline says the project and nothing more.
+    console.log("    The fleet map (architecture/) does not parse — fix that first; the files are named below.");
     console.log("");
     console.log(wrap(l.instruction ?? "", "    "));
+    printExpects(l);
     return;
   }
   if (l.elements.length === 0) {
@@ -289,15 +295,28 @@ function printLandscape(b: Brief): void {
     console.log("");
     console.log(wrap(l.instruction, "    "));
   }
-  if (l.expects.length > 0) {
-    console.log("");
-    console.log(
-      wrap(
-        `openapi.yaml must define ${l.expects.map((o) => `'${o}'`).join(", ")} — the fleet already calls ${l.expects.length === 1 ? "it" : "them"}, and a contract that omits ${l.expects.length === 1 ? "it" : "them"} fails spine.op-undefined the moment it lands.`,
-        "    ",
-      ),
-    );
-  }
+  printExpects(l);
+}
+
+/**
+ * What the fleet already calls on this service, and why the contract owes it.
+ *
+ * Printed in the unparseable branch as well as the healthy one: the landscape
+ * FILE still answers who calls this service when a sibling under `architecture/`
+ * breaks the project, and it is what decides whether `openapi.yaml` is flagged
+ * required — so a reader who is told the map is unreadable still gets the
+ * evidence behind that row.
+ */
+function printExpects(l: Brief["landscape"]): void {
+  if (l.expects.length === 0) return;
+  const it = l.expects.length === 1 ? "it" : "them";
+  console.log("");
+  console.log(
+    wrap(
+      `openapi.yaml must define ${l.expects.map((o) => `'${o}'`).join(", ")} — the fleet already calls ${it}, and a contract that omits ${it} fails spine.op-undefined the moment it lands.`,
+      "    ",
+    ),
+  );
 }
 
 /**

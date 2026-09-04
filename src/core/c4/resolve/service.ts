@@ -14,6 +14,7 @@
  * The resolution order below is the whole of it, and its last rung is the one
  * that lies: read that comment before adding a caller.
  */
+import { ancestorIds } from "../../kernel/ids/fqn/ancestors.js";
 import { declaredService, type DeclaredService } from "../../kernel/ids/service.js";
 import { type Elem } from "../likec4.js";
 
@@ -30,24 +31,14 @@ export function elementService(e: Elem): DeclaredService {
   return e.service ?? declaredService(e.title);
 }
 
-/**
- * Every id an endpoint may be filed under, nearest first: `a.b.c`, `a.b`, `a`.
- *
- * A landscape does not have to draw a service as one opaque box. The moment
- * somebody models its containers — `paymentService.api`, `paymentService.worker`
- * — an edge drawn INTO a container is still an edge into the service, and every
- * join that groups by service has to know that. Resolving only the exact id is
- * what made those edges invisible: the spine check silently skipped them, and
- * the no-openapi grace treated a service with a dozen inbound container calls as
- * one nobody calls at all.
+/*
+ * `ancestorIds` — every id an endpoint may be filed under, nearest first:
+ * `a.b.c`, `a.b`, `a` — now lives in `core/kernel/ids/fqn/ancestors.ts`, with
+ * the reason it exists at all (a landscape may draw a service's containers, and
+ * an edge into one is still an edge into the service). It moved because five
+ * modules were each walking that chain privately; the kernel is where a leaf
+ * helper goes when the modules that want it are heavier than it is.
  */
-function ancestorIds(id: string): string[] {
-  const out = [id];
-  for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) {
-    out.push(id.slice(0, dot));
-  }
-  return out;
-}
 
 /**
  * A memoized `id -> service` resolver over one document.

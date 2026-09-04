@@ -23,7 +23,13 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   tag the view \`#cap-<capability>\` to have it graded. The tag spells a declared
   capability id with every \`/\` flattened to \`-\` (a LikeC4 tag name cannot carry a
   slash), and it must be declared as a \`tag\` in the one \`specification\` block the
-  project has, since LikeC4 refuses an undeclared tag. EITHER reserved prefix
+  \`architecture/\` project has, since LikeC4 refuses an undeclared tag. loam grades
+  the fleet map as THAT project and nothing else — the landscape plus its
+  siblings, never a service model — so a hop here names SERVICE elements: a step
+  naming a container that a service's extending model declares resolves in the
+  renderer's wider root project and is \`landscape.invalid\` for loam, which takes
+  the whole fleet map down. Container-level flows live beside the model that
+  declares them (below). EITHER reserved prefix
   opts a view in — a view carrying only \`#req-<requirement>\` is graded too, and
   earns \`usecase.requirement-unresolved\` for the \`#cap-\` tag it is missing
   rather than silence. An UNTAGGED dynamic view is somebody's hand-drawn diagram
@@ -45,8 +51,18 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   inside model.likec4 itself; loam reads exactly what the renderer's per-service
   project reads. Never \`architecture/usecases/\`, which cannot resolve a container
   and turns the whole fleet \`landscape.invalid\`. Tag it \`#req-<Requirement-ID>\`
-  (the id flattened as above, the tag declared in model.likec4's one
-  \`specification\` block) and \`loam validate --service <svc>\` grades it — under
+  (the id flattened as above). The tag has to be DECLARED where that project can
+  see it: in model.likec4's own \`specification\` block when the model declares one
+  and therefore stands alone; in \`architecture/landscape.likec4\`'s block when the
+  model EXTENDS the map, or in a tags-only \`specification { tag req-… }\` beside
+  the \`extend\`, which is legal and lands the tag in the project's specification.
+  Declaring it in BOTH is a duplicate, and the code is the one that lands where
+  the second declaration's FILE is: \`c4.invalid\` (an error, and the model's
+  grading is suspended behind it) when the tags-only block is in model.likec4,
+  \`usecase.flow-invalid\` when it is in a sibling. \`c4.fleet-project-invalid\` is
+  the fleet-scope class one step out — two SERVICES each declaring the same tag
+  locally, which no per-service project sees.
+  Then \`loam validate --service <svc>\` grades it — under
   \`--all\`, per service: \`usecase.step-unbacked\` and \`usecase.step-contested\`
   against model.likec4, \`usecase.requirement-unresolved\` against THIS service's
   spec.md and arch.spec.md ids, and \`usecase.flow-invalid\` when a sibling file
@@ -73,8 +89,13 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   that file — the merge is a whole-file copy, so edit the living one directly
   instead) and \`usecase.flow-invalid\` (loam could not read the flows against that
   post-merge map — most often a hop naming an element neither the living
-  landscape nor the delta declares). Do NOT put a \`dynamic view\` inside
+  landscape nor the delta declares; the merge preview stages no service model, so
+  a container an extending model declares is not among them either). Do NOT put a
+  \`dynamic view\` inside
   \`delta.likec4\`: that document re-declares the landscape's own identifiers and
   carries its own \`specification\` block, so it cannot be read beside the map, and
-  the archive refuses it by name.
+  the archive refuses it by name. A feature's \`delta.likec4\` keeps that shape
+  whatever shape the service models take — \`features/**\` stays excluded from the
+  root LikeC4 project, and the delta is pointed at alone
+  (\`npx likec4 start features/<FEAT>\`).
 `;

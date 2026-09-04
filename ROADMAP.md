@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **435 TypeScript modules in 134 source packages**, with an acyclic package graph
+The tree contains **464 TypeScript modules in 143 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **161 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **173 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -127,9 +127,168 @@ exactly the invented need the non-goals forbid.
 Closed since the 2026-08-18 assessment, each with the commit or commit range that landed it on
 `main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
-5cd3942:ROADMAP.md`). The three 2026-09-03 problem-report entries — the two that open the list and
-the styling paragraph under the generated views — landed together in `0eaa101`, one change built as
-three disjoint workstreams and gated as one.
+5cd3942:ROADMAP.md`). The four 2026-09-03 problem-report entries that follow — the extending model
+and the report ordinal, which open the list — landed together in `<commit>`, one change built as
+four disjoint workstreams and gated as one; the three before them — the edgeless brief, the
+intra-service use case, and the styling paragraph under the generated views — landed together in
+`0eaa101` the same way.
+
+#### One model, many documents — a service model may extend the fleet map
+
+**Landed 2026-09-04** in `<commit>`, from three problem reports that turned out to be one cause,
+with a fourth landing beside it in the same change. #010 measured the cause: a service model must
+parse alone, so it re-declares its own `specification` and every partner it names — 78 double
+declarations in a 56-service fleet with four services adopted, projected to ~448 at full adoption —
+and the copies had already diverged, `#platform` missing from every copy of the broker and the
+identity provider but the map's, with no finding code for "two documents describe one element
+differently" because no check read two documents together. #009 measured the symptom: 57 flat
+entries in the renderer's project picker, 52 of them a single box, forced by the per-service
+project file `0.2.0-alpha.5` had to write **because** the models could not share a project. #011 is
+the structural proposal, every claim of it executed against copies of `examples/docs`: `extend`
+resolves across documents of one project, a model rewritten that way makes its containers visible
+in the fleet project with one copy of the broker in the whole model, and deleting a model's
+`specification` under the old loader is eleven `c4.invalid` errors — so the change had to be
+loam's, not a convention a repository could adopt. (#012, reports having no ordinal and loam never
+reading `loam-reports/`, landed in the same commit and has its own entry below.)
+
+**What landed.** The shape of a model is now read from the file's own grammar — a top-level
+`specification { }` block containing an `element` declaration means STANDALONE, its absence means
+EXTENDING — and each shape gets the grade the other cannot need: `c4.declaration-diverged` for a
+standalone model whose copies of the map's elements disagree with it, `c4.element-unowned` for an
+extending model that declares an element outside its own. Around them, the renderer wiring
+`loam subsystem sync` now owns end to end (`service.likec4-config-stray`, `service.model-excluded`,
+`service.model-unexcluded`, the narrowed `service.likec4-config-missing`, and the root project's
+`exclude` rewritten to cover exactly the models that stand alone), and `c4.fleet-project-invalid`,
+which loads the fleet project the way the renderer builds it and reports what only that load can
+see. `examples/docs` is migrated whole, and its ten deliberate warnings are unchanged. CHANGELOG
+has every code, key and message; SCHEMA's new "Two shapes of a service model" has the rules and the
+migration recipe.
+
+**Rejected, each with the reason.** Migrating repositories automatically — the recipe is documented
+and an agent performs it, because a real model's comments are the team's and not loam's to reflow.
+Making the shape a key in `loam.json` or `likec4.config.json` — the file's grammar already decides
+how it can be read, and a key would be a second answer able to disagree with the first. Widening
+loam's fleet map to the renderer's root project — the map is graded as `architecture/` alone so
+that one broken service model cannot blank the fleet's own picture, which is why a cross-service
+flow in `architecture/usecases/` still names service elements and never a container. Retiring the
+standalone shape — it is what lets a service's docs be validated from the service's own repository,
+and a fleet that wants that keeps it, now with a check on the divergence it costs.
+
+**The deliberate remainder**, stated so nobody reads it as an oversight. A cross-service call still
+exists TWICE: container-level in the model, service-level in the map (#011's item 6). The spine,
+the platform census and every other fleet check read the map alone, and `landscape.service-isolated`
+remains the nudge that carries an attested call up into it. Thinning the map to elements plus
+cross-service edges is the [Later](#later--promote-only-from-evidence) "Landscape scaling" row, and
+it is what would remove the duplication. Beside it sits #011's item 5, also deliberate: a
+cross-service flow cannot name a container, because loam grades the fleet map as its own document
+set. Revisit that one when a fleet asks for a cross-service flow whose hops are containers — the
+renderer already resolves such a hop, so the ask will be concrete when it arrives.
+
+**Verified 2026-09-04**, and three things the verification changed. The report's own "next thing to
+check" was the one that did not compose: `loam archive` spliced a delta's nested additions into the
+fleet map, and the extending model could then never declare them — the service went `c4.invalid`
+(duplicate) the moment it wrote the container the adopt brief prescribed. The merge now ROUTES each
+addition to the document that owns the interior, and proves the merged model parses beside the
+merged map before writing either. Second, the consumer census read `architecture/` alone, so under
+this shape a private store's consuming edges — which live in the models now — counted for nothing:
+`landscape.datastore-private` went silent or named the wrong service, and a nested store two
+services reach was graded nowhere. It reads every extending model's attested calls now, and
+`landscape.datastore-shared` fires for a nested store. Third, the wiring guard this entry landed
+failed open on every root `exclude` spelling except `services/<tree>/**`, `loam subsystem sync`
+never removed the stray per-service project file it told repositories to delete (and that file
+CLAIMS the model, rather than holding nothing as the design note said), and
+`c4.fleet-project-invalid` enumerated three roots rather than the renderer's — a `.likec4` in a
+subsystem directory was in none of them. All three are closed; CHANGELOG's `[Unreleased]` has the
+codes and keys.
+
+**The `import` question is answered.** Reports #010 and #011 left open whether LikeC4's
+cross-project `import` could have delivered this without merging the projects. Measured at the
+1.59.2 pin: an import resolves REFERENCES across projects, and that is all — it carries no
+`specification`, so a kind or tag the other project declares is not usable in this one, and it does
+not support `extend`. A model importing the map could name the map's elements and still not add a
+container to one. So the choice was never between two mechanisms; one project holding both
+documents is what the shape requires.
+
+**Known and carried, 2026-09-04.** The second verification round reproduced these and they were
+NOT fixed. Each is written down with the repro that finds it again, so nobody spends a second
+afternoon rediscovering one. They are carried, not closed.
+
+- **Only the basename `likec4.config.json` is surveyed.** LikeC4 1.59.2 also accepts `.likec4rc` and
+  six other spellings; drop `{"name":"svc-a"}` into `services/svc-a/.likec4rc` on a synced extending
+  fleet and `validate --all`, `doctor` and `subsystem sync` all stay green while the renderer loads
+  three projects and refuses without `--project`. Carried on scope: the survey, the stray grade and
+  `sync`'s delete list are one table, and widening it is the same change as the two rows below —
+  worth doing once, together, with the pin's whole name list measured rather than guessed.
+- **A `likec4.config.json` in a SUBSYSTEM directory claims every model beneath it.** Write one at
+  `services/platform/likec4.config.json` over three extending models and all three go
+  `Could not resolve reference to Element named 'svc_svc_d'` in the renderer, while loam names
+  nothing (`sync` → "nothing to write"). Carried on scope, with the row above: the checks look one
+  directory deep, at a service, and seeing this needs a walk of the whole docs tree.
+- **`sync` keeps a config beside a model that is GONE, and that leftover project is not harmless.**
+  `rm services/svc-c/model.likec4` with its config left behind: loam is green everywhere, and
+  `likec4 validate` — and `likec4 build` — at the docs root then need `--project`. The keep is
+  deliberate ("that one really is the team's"), but its premise, that an empty nested project is
+  invisible to the renderer, is false at the pin. Carried on a design decision pending: deleting a
+  file loam never wrote needs a rule about whose file it is, not a bug fix.
+- **`validate --feature` does not preview a merge refusal.** A delta drawing a cross-interior edge,
+  or naming a kind the map does not declare, validates clean and then refuses at `archive`
+  (`merge-failed`, nothing written). Carried on scope: the preview needs the archive's own merge
+  planner run from the validate path, which is a new seam rather than a message.
+- **In the STANDALONE shape a broken UNTAGGED sibling is invisible to loam.** Make one service
+  standalone, `subsystem sync`, then write an unresolvable `services/<id>/usecases/plain.likec4`:
+  loam prints `c4.valid` and 0 errors while `likec4 validate --project <id> .` is Invalid. The
+  extending shape catches the same file through `c4.fleet-project-invalid`. Carried on scope: the
+  per-service load reads the model, and reading the standalone project the renderer builds is a
+  second loader.
+- **A root `exclude` that no longer covers `features/**` is silent.** Delete that one entry from
+  `examples/docs`' config: loam reports 0 errors and `sync` says "nothing to write", while the
+  renderer's fleet project is at 346 errors. The scaffold always writes the entry, so this is a
+  hand edit, which is why it is carried rather than fixed — on the evidence bar: no repository has
+  hit it, and a grade on an entry loam did not write is a policy claim.
+- **A root config the renderer REJECTS is reported only by `sync`'s note.** `"exclude": "services/**"`
+  as a string, or an array-valued `include`, is "loaded 0 projects out of 1" — nothing renders — and
+  `validate --all` is green; an unparseable file is the same. Carried on scope: loam reads the file
+  for one key, and schema-validating somebody else's config is a dependency on the renderer's own
+  schema at the pin.
+- **`LivingSlice.landscape.modelled` is `false` where `adopt` says `null`.** Over an
+  `architecture/` project that did not parse, `loam context <svc> --json` says `modelled: false` and
+  `loam adopt --service <svc> --json` says `modelled: null` about the same tree. Carried on scope:
+  the field is typed non-nullable in the pack, so agreeing with `adopt` is a contract change.
+- **`loam show` never mentions graded intra-service flows.** With a healthy `#req-…`-tagged flow
+  beside an extending model — `validate --service` prints "· 1 tagged flow(s) graded" — neither
+  `loam show <svc>` nor its `--json` names it anywhere. Carried on scope: `show`'s payload is a
+  frozen shape and the flow needs a section of its own.
+- **`loam status` never names the isolated state.** `landscape.service-isolated` is a warning
+  `validate --all` prints and `status`'s next-action ladder has no rung for. Carried on a design
+  decision pending: the ladder is derived from artifact presence and provenance, and a finding-derived
+  rung is a different rule for what `next[0]` means.
+- **The first ever container-level flow a FEATURE brings.** A cross-service flow cannot name a
+  container, because loam grades the fleet map as its own document set; the renderer already resolves
+  such a hop. Carried deliberately — the [Later](#later--promote-only-from-evidence) "Landscape
+  scaling" row owns it, and it is promoted when a fleet asks, not before.
+
+#### Problem reports carry an ordinal, and loam reads the directory it prescribes
+
+**Landed 2026-09-04**, from one problem report (#012). The `loam-report` protocol prescribed a
+directory, a filename shape and a document structure and then stopped: files were named
+`YYYY-MM-DD-<slug>.md` with a numeric suffix only on collision — a collision breaker, not an
+identifier — so in a directory of eleven reports written in two days, none had one, four shared
+their first eleven characters, and the discriminating part of every name sat far to the right of
+what a terminal, a file picker or a chat message shows. There was no field anywhere in the document
+for the one piece of state a report has (three of the eleven were already closed and one superseded,
+all of it living in whoever remembered), and `validate --all`, `doctor`, `status` and `list`
+mentioned `loam-reports` zero times between them. Landed: an unconditional ordinal at the front of
+the name, which is the computation the protocol already described for its suffix applied where it is
+visible; a `Status:` line in the template with a four-value vocabulary a report closes by editing;
+and `loam doctor` reading the directory — total, per-status counts and the next ordinal — as an
+additive `reports` key and one human row. Rejected: a `loam report list` verb (a new command for a
+count `doctor` was already the place for, on a frozen CLI surface); an index file (the workaround
+this replaces — a second place to keep in step, and the reason the state left the files in the first
+place); grading the corpus (an open report is not a defect in the repository holding it, so `doctor`
+reports it as state and `healthy` never moves); parsing past the first word of the status line (the
+rest is prose an author writes for a reader). Cost: one `readdir` and one small read per report on
+every `loam doctor`, and nothing is transmitted — which is the constraint the protocol is built
+around and the reason the whole fix needed no new state.
 
 #### The adopt brief on an edgeless landscape element
 
@@ -150,9 +309,18 @@ refuses a second element; the `EDGELESS` flag in the text view; the evidence-gat
 visibility (placeholder tags, curated views, `include *` over a boundary). Rejected: folding the
 state into `landscape.modelled` (an agent told `false` draws a second box); an unconditional "no
 edge touches it" warning (no correct fix for a worker that calls nothing, and every seeded fleet
-red-ish until adoption); a check on placeholder tags or on what a view shows (rule 26 — loam never
+red-ish until adoption); grading the SET DIFFERENCE between the attested calls and the drawn edges
+(loam cannot tell a call the map forgot from one the fleet does not draw at its own altitude, so
+the difference reported as an omission is an invented edge with a code beside it — the check stays
+touched/untouched, and the brief says so out loud); a check on placeholder tags or on what a view
+shows (rule 26 — loam never
 computes what a view shows). Cost: one LikeC4 load of `model.likec4`, only in the edgeless state, a
 memo hit under `--all`.
+
+**Corrected 2026-09-04** by the verification of this entry: the brief read
+`architecture/landscape.likec4` alone where the fleet check reads the whole `architecture/` project,
+so a fleet keeping a second `model { }` block in a sibling got a brief demanding edges it had
+already drawn while `validate --all` reported `landscape.matched`. Both now read the project.
 
 #### A home for an intra-service use case
 
@@ -216,6 +384,13 @@ renderer's project list grows by one per adopted service, and a fleet-map box is
 that project (LikeC4 projects are separate models); and the project name is not injective (an id spelled billing.core beside one spelled
 billing-core, `service-fleet` beside `fleet`), disclosed in SCHEMA rather than escaped away,
 because the picker shows the id.
+
+**Superseded for extending models, one day later.** The last of those costs — one picker entry per
+adopted service — is what report #009 measured at 57 entries, and the entry that opens this list is
+what removed its cause rather than its symptom: a model that extends the fleet map shares the root
+project with it, so it is owed no project file and adds no entry, and `loam subsystem sync` writes
+the file only for a model that stands alone. Everything measured here still holds for that shape,
+and is why it is still supported; it is no longer what a new model is written as.
 
 #### The generated subsystem views — a label, a boundary, and one reader of the map
 
@@ -500,9 +675,22 @@ item gets promoted — it went from here to `## Now` and from there to
   change as the `arch.spec.md` requirement it answers. Until then a service-local flow is written
   directly into the service directory in the same pull request, where git produces the conflict;
   building the feature route ahead of that evidence is the invented need the non-goals forbid.
-- **Landscape scaling:** retain one landscape while conflicts are exceptional. If same-service
-  conflicts become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is weekly rather than
-  monthly — evaluate service-owned model files plus a thin global cross-service map. Migration must
+- **Landscape scaling:** retain one landscape while conflicts are exceptional, and half of what
+  this row once asked for arrived on 2026-09-04. Per-service internals now live in
+  `services/<svc>/model.likec4` by default: `loam archive` routes a delta's fqn-spelled interior
+  into the owning service's extending model, and a team adopting a service adds nothing to
+  `architecture/landscape.likec4` but one element and its cross-service edges. The map holds a
+  service's interior only where a team puts it on purpose — a store nested under its owner so a
+  second service can name it (SCHEMA's "Private stores") — or where a delta spells its parent by
+  title rather than by the map's id (the archive's documented remainder). What is
+  left is the CROSS-SERVICE EDGE, which still exists twice — container-level in the model,
+  service-level in the map — and that duplication is **deliberate**, not a leftover: the spine, the
+  platform census, `landscape.service-isolated` and every other fleet check read the map alone,
+  which is what lets a fleet answer "who calls this service" from one diffable document without
+  parsing sixty. Thinning the map to elements plus cross-service edges means teaching those checks
+  to read the edges out of the models that attest them, and paying the blast radius that comes with
+  it. If same-service conflicts become routine — the current trigger in [SCHEMA.md](SCHEMA.md) is
+  weekly rather than monthly — evaluate that. Migration must
   preserve archive/undo, deterministic resolution, and readable plain files.
 - **Authored business axis — PROMOTED 2026-08-27, and landed in full; see
   [Recently landed](#recently-landed).** The gate asked for evidence of authorship: analyst edits

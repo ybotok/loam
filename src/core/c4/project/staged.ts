@@ -52,7 +52,8 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { loadFile, type LoadedDoc } from "../likec4.js";
+import { errorText, loadFile, type LoadedDoc } from "../likec4.js";
+import type { ExtendingModel } from "../splice/contract.js";
 import { planLandscapeMerge } from "../splice/landscape-merge.js";
 import { inOrder } from "../../kernel/concurrency.js";
 import { decodeDocument } from "../../kernel/document-bytes.js";
@@ -85,6 +86,25 @@ export interface StagedProjectRequest {
    * `core/coherence/coherence.ts` calls the dominant per-feature cost.
    */
   load?: (path: string) => Promise<LoadedDoc>;
+  /**
+   * The fleet's extending models — the SAME list `loam archive` merges with.
+   * The merge routes a nested addition into the model that owns that service's
+   * interior, so a preview computed without this list holds interior the
+   * archive will put somewhere else, and every gate resting on the preview
+   * grades a map that will never exist (verification 2026-09-04, review C).
+   *
+   * Optional because it must be INJECTED rather than read here: the shape scan
+   * that decides which models extend the map lives in
+   * `../service-model/shape.ts`, and that package imports this one — reading it
+   * from here would be a package cycle. The reader is
+   * `../service-model/fleet/extending.ts`, one level below that scan, and both
+   * shipped callers fill this in from it: `core/delta/delta.ts` for the
+   * use-case overlay, `core/coherence/coherence.ts` for the deployment one.
+   * Omitted, the preview is the pre-routing one — the behaviour every caller
+   * had before this field existed, and what a fleet whose models all stand
+   * alone gets either way.
+   */
+  models?: readonly ExtendingModel[];
 }
 
 /** The staged parse, or the honest refusal to say. */
@@ -160,9 +180,20 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
       // still travels: a hole loam cannot place is still a hole, and dropping
       // it here would grade the feature clean on the strength of a missing
       // field.
+      //
+      // DOCS-RELATIVE, `/`-separated, and carrying the line — the spelling the
+      // SERVICE arm of `usecase.flow-invalid` uses on purpose. These strings are
+      // the feature arm's whole payload (text, `--json` and the `loam archive`
+      // block message), and `real()` alone answered with an absolute Windows path
+      // and no line at all: `C:\Users\…\docs\features\FEAT-1\usecases\x.likec4:
+      // <message>` in a finding a person is asked to act on (verification
+      // 2026-09-04, W7). A path outside the docs root — which nothing here
+      // produces, but `relative` would spell `..\..` — keeps its absolute form.
       return {
         kind: "unreadable",
-        errors: doc.errors.map((e) => (e.sourceFsPath === undefined ? e.message : `${real(e.sourceFsPath)}: ${e.message}`)),
+        errors: doc.errors.map((e) =>
+          e.sourceFsPath === undefined ? errorText(e) : `${spellReal(req.docsDir, real(e.sourceFsPath))}: ${errorText(e)}`,
+        ),
       };
     }
     return { kind: "read", doc, real, mine };
@@ -201,16 +232,30 @@ type MergedLandscape =
  * there and allowed here would be a document graded against a map the merge
  * never writes.
  *
- * THE PARITY IS THE MERGE, NOT THE WHOLE GATE, and the difference is worth
- * naming rather than leaving for a reader to discover. `planLandscape` runs one
- * check BEFORE it computes the merge and this does not: a delta declaring the
- * feature tag on a specification KIND is refused there, because every element
- * of that kind inherits the tag and the merge would splice the whole document.
- * Such a delta reaches `newEls` here unfiltered, so the preview this grades
- * against is one the archive would never write. It changes no verdict — that
- * archive refuses either way, before anything is written — and it is recorded
- * because the next reader to widen either side needs to know the two are not
- * the same gate.
+ * THE PARITY IS THE MERGE, NOT THE WHOLE GATE, and the two places the sides
+ * differ are worth naming rather than leaving for a reader to discover.
+ *
+ * The first changes no verdict. `planLandscape` runs one check BEFORE it
+ * computes the merge and this does not: a delta declaring the feature tag on a
+ * specification KIND is refused there, because every element of that kind
+ * inherits the tag and the merge would splice the whole document. Such a delta
+ * reaches `newEls` here unfiltered, so the preview this grades against is one
+ * the archive would never write — but that archive refuses either way, before
+ * anything is written.
+ *
+ * The second changed every verdict about a fleet with extending models, and is
+ * why `models` is on the request at all. `planLandscape` names the fleet's
+ * extending models, so a nested addition is ROUTED into the model that owns
+ * that service's interior and never reaches the map; a request that omits them
+ * previews a map holding interior the archive will put somewhere else. A
+ * feature-local `usecases/<x>.likec4` whose hop names `<service-fqn>.<container>`
+ * then resolved in the preview, passed `usecase.flow-invalid` — the gate whose
+ * own message is "the archive would land an architecture/ nothing has checked",
+ * and which `--approve` cannot override — and was copied verbatim into
+ * `architecture/`, where it resolves against nothing and takes the whole fleet
+ * map down (verification 2026-09-04, review C; SCHEMA names that outcome as the
+ * thing that must not happen). A caller that leaves `models` out is asking for
+ * the pre-routing preview, and gets exactly the answers it got before.
  *
  * A throw is `failed` rather than propagated. Every `LandscapeSpliceError` this
  * can raise is one `planLandscape` raises again — with its own message, its own
@@ -236,6 +281,7 @@ async function mergedLandscape(req: StagedProjectRequest): Promise<MergedLandsca
       newEls: delta.elements.filter((e) => e.tags.includes(req.featureId)),
       newRels: delta.relationships.filter((r) => r.tags.includes(req.featureId)),
       featureId: req.featureId,
+      ...(req.models === undefined ? {} : { models: req.models }),
     });
     return plan.content === null ? { kind: "living" } : { kind: "merged", content: plan.content };
   } catch (err) {
@@ -251,6 +297,17 @@ async function text(path: string): Promise<string> {
 /** A path spelled the way a staged rel is spelled — `/`-separated, on every platform. */
 function spell(path: string): string {
   return path.split(/[\\/]/).join("/");
+}
+
+/**
+ * An authored path as a FINDING spells it: relative to the docs root,
+ * `/`-separated. A path that does not sit under the docs root keeps its absolute
+ * form — `relative` would answer with `..` segments, and a finding naming a
+ * document outside the repository is more honest as the absolute path it is.
+ */
+function spellReal(docsDir: DocsDir, path: string): string {
+  const rel = relative(docsDir, path);
+  return rel.length > 0 && !rel.startsWith("..") ? spell(rel) : spell(path);
 }
 
 /** Copy one authored document into the staged tree, remembering where it came from. */

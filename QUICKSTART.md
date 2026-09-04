@@ -103,11 +103,16 @@ Or ask naturally: “Create a loam problem report for what just happened.” The
 relevant status and the smallest safe reproduction, and writes a separate file:
 
 ```text
-loam-reports/YYYY-MM-DD-short-symptom.md
+loam-reports/NNN-YYYY-MM-DD-short-symptom.md
 ```
 
-The report records expected versus actual behavior, stable codes, relevant locations, write state,
-classification and missing evidence. It replaces secrets with `<redacted>`, prefers repo-relative
+`NNN` is the report's ordinal — at least three digits, zero-padded, one more than the highest
+already in the directory, which
+`loam doctor` reports together with how many reports are open, sent, fixed or superseded — and a
+`Status: open` line in the header is where the report's own state is kept (`doctor` reads it from
+the header block above the first `##` heading, never from a quoted template inside the body). The report records
+expected versus actual behavior, stable codes, relevant locations, write state, classification and
+missing evidence. It replaces secrets with `<redacted>`, prefers repo-relative
 paths, does not copy source/spec bodies, does not retry a writer merely to reproduce it, and never
 uploads or submits anything automatically. Review the file before sharing or committing it.
 

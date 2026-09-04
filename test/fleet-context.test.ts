@@ -72,6 +72,9 @@ describe("FleetContext", () => {
         textReads: 1,
         requirementParses: 1,
         openapiParses: 1,
+        // The fixture's one model stands alone, so no per-service project is
+        // ever parsed for it: the counter exists and stays at zero here.
+        projectLoads: 0,
         // Nothing in this fixture reads the async axis, and the counter proves
         // it: the event checks must not make every command pay a fleet walk.
         asyncapiParses: 0,

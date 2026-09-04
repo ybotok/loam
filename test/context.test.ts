@@ -80,6 +80,32 @@ Operations: auditAuthorization
 `;
 
 /**
+ * A map that draws payment-service as containers with an edge BETWEEN them, and
+ * nothing else touching it — the service's own internal wiring, which is not a
+ * call from anybody.
+ */
+const SELF_EDGE_LANDSCAPE = `specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    description 'Owns payment authorization/capture'
+    web = container 'web'
+    db = container 'db'
+    web -> db 'reads'
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+/**
  * The canonical fixture plus everything the pack has an axis for: the event
  * contract, both fleet vocabularies, an arch spec carrying every join line,
  * the presence pointers, and FEAT-2 — a second active feature that (unlike
@@ -210,6 +236,73 @@ describe("loam context --json: the pack over the canonical fixture", () => {
     expect(pack.landscape.present).toBe(true);
     expect(pack.landscape.parses).toBe(true);
     expect(pack.landscape.modelled).toBe(true);
+  });
+
+  it("a service's own internal edge is no inbound call — the service is not its own caller", async () => {
+    // `paymentService.web -> paymentService.db` is the service's own wiring.
+    // Filed as inbound it made payment-service its own caller: `inbound` carried
+    // `payment-service` and the Markdown view printed `← payment-service
+    // "reads"` (verification 2026-09-04). `apiExpected` reads `inbound`, so the
+    // same edge also told a service with no callers that it owed an OpenAPI
+    // contract. `loam adopt --json` already filtered it
+    // (core/brief/landscape.ts); this pins the ONE shared derivation the pack
+    // and `explore` read (core/vocabulary/maturity.ts `landscapeEvidence`).
+    const p = await project({
+      ...packFixture(),
+      "architecture/landscape.likec4": SELF_EDGE_LANDSCAPE,
+    });
+    const res = await runLoam(p.workDir, "context", "payment-service", "--json");
+    expect(res.code, res.stdout).toBe(0);
+    const json = JSON.parse(res.stdout);
+    // The controls: the map was read, and it does draw this service — without
+    // them the two empty lists below pass on a pack that saw nothing at all.
+    expect(json.landscape.parses).toBe(true);
+    expect(json.landscape.modelled).toBe(true);
+    expect(json.landscape.inbound).toEqual([]);
+    expect(json.landscape.outbound).toEqual([]);
+
+    const text = await runLoam(p.workDir, "context", "payment-service");
+    expect(text.stdout).not.toContain("← payment-service");
+
+    // `show` kept a fourth line-for-line copy of the partition and printed
+    // `← payment-service` here; it reads the shared derivation now, so the
+    // pack↔show parity pinned above holds on this tree too.
+    const show = JSON.parse(
+      (await runLoam(p.workDir, "show", "payment-service", "--json")).stdout,
+    );
+    expect(show.landscape.inbound).toEqual(json.landscape.inbound);
+    expect(show.landscape.outbound).toEqual(json.landscape.outbound);
+
+    // `adopt` is the reader this one has to agree with: its own copy of the
+    // filter landed first, and `touched` stays TRUE there because the map does
+    // draw an edge on the service — the isolation check counts either endpoint.
+    const brief = JSON.parse(
+      (await runLoam(p.workDir, "adopt", "--service", "payment-service", "--json")).stdout,
+    );
+    expect(brief.landscape.inbound).toEqual([]);
+    expect(brief.landscape.outbound).toEqual([]);
+    expect(brief.landscape.touched).toBe(true);
+  });
+
+  it("the deployment slice reads a `deployment { }` block declared in a SIBLING document", async () => {
+    // A fleet's topology ordinarily lives beside the landscape rather than in
+    // it, and this slice used to reach it through a SECOND load of the
+    // `architecture/` project made only when the landscape file itself declared
+    // none. The pack reads the project outright now, so that fallback is gone —
+    // and this is the answer it existed for: without it the pack tells an agent
+    // about to write a failover that the service runs nowhere.
+    const p = await project(packFixture());
+    await p.write(
+      "architecture/deploy.likec4",
+      "specification {\n  deploymentNode region\n}\n\ndeployment {\n  eu = region 'EU' {\n    payments = instanceOf paymentService\n  }\n}\n",
+    );
+    const res = await runLoam(p.workDir, "context", "payment-service", "--json");
+    expect(res.code, res.stdout).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.landscape.parses).toBe(true);
+    expect(json.deployment.instances.map((i: { element: string }) => i.element)).toEqual([
+      "paymentService",
+    ]);
   });
 
   it("the in-flight section projects the features that touch this service, delta's shapes verbatim", async () => {
@@ -396,6 +489,53 @@ describe("the readability guard: exit 1 with ok true on a silent hole", () => {
     expect(json.landscape.inbound).toEqual([]);
   });
 
+  it("a SIBLING under architecture/ that does not parse — the pack reads the project, as `adopt` does", async () => {
+    // The map is a PROJECT: the landscape merged with every use case, palette
+    // and second `model { }` block beside it. The pack read the landscape FILE
+    // alone, so on this tree `loam adopt` reported `parses: false` and refused
+    // to say anything about the map while `loam context` reported `parses: true`
+    // and listed its edges — two commands, one tree, opposite answers, and an
+    // agent handed both has no way to tell which is right (review finding F26).
+    const p = await project(packFixture());
+    await p.write("architecture/palette.likec4", "model {\n  broken = \n}\n");
+    const res = await runLoam(p.workDir, "context", "payment-service", "--json");
+    expect(res.code).toBe(1);
+    const json = JSON.parse(res.stdout);
+    expect(json.ok).toBe(true);
+    // The landscape FILE is still there — `present` is about the file, `parses`
+    // about the project the renderer loads.
+    expect(json.landscape.present).toBe(true);
+    expect(json.landscape.parses).toBe(false);
+    expect(json.landscape.inbound).toEqual([]);
+    expect(json.landscape.outbound).toEqual([]);
+    // …and the pack names the document that ACTUALLY failed. `parses` answers
+    // for the project, so the landscape file here has no errors at all, and
+    // "architecture/landscape.likec4 does not parse" sent a reader to bytes
+    // loam had read fine (verification 2026-09-04).
+    expect(json.landscape.broken).toEqual(["architecture/palette.likec4"]);
+
+    // The parity itself, asserted rather than described: `adopt` is the reader
+    // this one was made to agree with.
+    const brief = await runLoam(p.workDir, "adopt", "--service", "payment-service", "--json");
+    const adopt = JSON.parse(brief.stdout);
+    expect(adopt.landscape.parses).toBe(json.landscape.parses);
+    expect(adopt.landscape.instruction).toContain("architecture/palette.likec4");
+  });
+
+  it("a control: with the same sibling PARSING, the pack still sees the map's edges", async () => {
+    // Without this the pin above passes on any pack that reports parses:false —
+    // including one that has stopped reading the map at all.
+    const p = await project(packFixture());
+    await p.write("architecture/palette.likec4", "// a sibling that parses\n");
+    const res = await runLoam(p.workDir, "context", "payment-service", "--json");
+    expect(res.code).toBe(0);
+    const json = JSON.parse(res.stdout);
+    expect(json.landscape.parses).toBe(true);
+    expect(json.landscape.broken).toEqual([]);
+    expect(json.landscape.modelled).toBe(true);
+    expect(json.landscape.inbound.length).toBeGreaterThan(0);
+  });
+
   it("an included feature's delta.likec4 with errors", async () => {
     const p = await project(packFixture());
     await p.write("features/FEAT-2-audit/delta.likec4", "model {\n");
@@ -496,6 +636,23 @@ describe("the Markdown view", () => {
     expect(res.code).toBe(0);
     expect(res.stdout).toContain("#### Audit authorization");
     expect(res.stdout.match(/^# /gm)).toHaveLength(1);
+  });
+
+  it("names the `architecture/` document that actually failed, not the landscape it read fine", async () => {
+    // `parses` answers for the PROJECT, so with a broken SIBLING the landscape
+    // file has no errors at all — and the printed line still said
+    // "architecture/landscape.likec4 does not parse", sending a reader to bytes
+    // loam had read fine (verification 2026-09-04). `--json`'s
+    // `landscape.broken` already named the real one; this is the human view
+    // saying the same thing, as `adopt` and `validate --all` already do.
+    const p = await project(packFixture());
+    await p.write("architecture/palette.likec4", "model {\n  broken = \n}\n");
+    const res = await runLoam(p.workDir, "context", "payment-service");
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain(
+      "! architecture/palette.likec4 does not parse — no edge below is derived, and none is missing either",
+    );
+    expect(res.stdout).not.toContain("architecture/landscape.likec4 does not parse");
   });
 
   it("says an unreadable contract first and without hedging, and still exits 1", async () => {

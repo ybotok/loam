@@ -11,8 +11,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { architectureDir } from "../../core/c4/project/architecture.js";
-import { architectureDocuments } from "../../core/c4/project/documents.js";
+import { architectureDir, architectureProjectDocuments } from "../../core/c4/project/architecture.js";
 import { loadProject } from "../../core/c4/project/load.js";
 import type { FleetSeed } from "../../core/c4/seed/fleet-file.js";
 import { serviceDirOf, type DocsDir } from "../../core/kernel/ids/dirs.js";
@@ -94,7 +93,16 @@ export interface SeedPlanInput {
 async function projectFacts(req: SeedPlanInput): Promise<MapFacts> {
   const arch = architectureDir(req.docsDir);
   const landscape = resolve(landscapePath(req.docsDir));
-  const siblings = await architectureDocuments(arch, [landscape, subsystemViewsPath(req.docsDir)]);
+  // The PROJECT's documents, root `exclude` applied — `loadArchitecture`'s own
+  // list minus the landscape, which is staged from memory just below. Walking
+  // `architecture/` directly skipped that filter, and here that is a WRONG
+  // answer rather than an over-scan: a `palette.likec4` under an excluded path
+  // is a document the renderer never loads, so its `global styleGroup` id put
+  // `global style subsystems` into the generated views file — a name the fleet
+  // project cannot resolve — and the very next `validate --all` (seed's own
+  // `next` command) graded that file against the same set THIS one now reads.
+  // The W5b defect, one command over.
+  const siblings = (await architectureProjectDocuments(req.docsDir)).filter((p) => resolve(p) !== landscape);
   if (siblings.length === 0) return req.map;
   // The temp directory is made INSIDE the try, not one line above it: a full
   // disk, a read-only temp root, or a TMPDIR naming a directory that no longer

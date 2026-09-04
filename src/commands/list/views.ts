@@ -73,7 +73,11 @@ export async function serviceViews(
   if (proven) {
     const svcOf = serviceResolver(land.elements, known);
     for (const r of land.relationships) {
-      if (r.op !== undefined) called.add(svcOf(r.target));
+      // …including its self-edge rule: an edge whose two endpoints resolve to
+      // one service is that service's own internal wiring, and counting it made
+      // a service nobody calls owe an OpenAPI contract — `partial` here while
+      // `loam context` (which reads the shared derivation) said `documented`.
+      if (r.op !== undefined && svcOf(r.source) !== svcOf(r.target)) called.add(svcOf(r.target));
     }
   }
 

@@ -12,8 +12,9 @@ import { FleetContext } from "../../core/fleet-context.js";
 import { emitJson, repoPath } from "../../core/envelope/json.js";
 import { listField, readFrontmatter, stringField } from "../../core/document/frontmatter.js";
 import { scopeText } from "../../core/provenance/sample/scope.js";
-import { loadFile } from "../../core/c4/likec4.js";
+import { loadFile, type LoadedDoc } from "../../core/c4/likec4.js";
 import { serviceResolver } from "../../core/c4/resolve/service.js";
+import { landscapeEvidence } from "../../core/vocabulary/maturity.js";
 import { readOpenapi } from "../../core/openapi/doc.js";
 import type { PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath } from "../../core/repo/paths.js";
@@ -23,7 +24,8 @@ import { countMarkdown } from "../../core/repo/tree/fs.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
 import { plural } from "../policy/format.js";
-import { edgeNote, errorText, mark, scenarioCount } from "./marks.js";
+import { edgeNote, mark, scenarioCount } from "./marks.js";
+import { errorText } from "../../core/c4/likec4.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export interface Edge {
@@ -52,9 +54,31 @@ export async function showService(
     health: existsSync(paths.health),
   };
 
-  const model = has.model
-    ? await loadFile(paths.model)
-    : { errors: [], elements: [], relationships: [] };
+  // Through the ONE reader of `model.likec4`, so the counts here are the counts
+  // `validate` prints: a model that EXTENDS the fleet map is a slice of the
+  // project it extends, and opening the file alone would show a screenful of
+  // parse errors for a document that is perfectly valid where it is read.
+  const read = has.model ? await context.serviceModel(docsDir, paths) : null;
+  const model: LoadedDoc =
+    read === null
+      ? { errors: [], elements: [], relationships: [] }
+      : read.mapUnreadable
+        ? // The map did not parse, so an extending model could not be read at
+          // all. `show` must say that rather than print zeroes: "0 elements" is
+          // what a service with no architecture looks like, and this one may
+          // have plenty.
+          {
+            errors: [
+              {
+                message:
+                  "architecture/landscape.likec4 does not parse, and this model extends it — " +
+                  "nothing here could be read. `loam validate --all` reports the map's own errors.",
+              },
+            ],
+            elements: [],
+            relationships: [],
+          }
+        : read.doc;
   const reqs = has.spec ? parseRequirements(await readFile(paths.spec, "utf8")) : [];
   const archReqs = has.archSpec ? parseRequirements(await readFile(paths.archSpec, "utf8")) : [];
   const adrs = await countMarkdown(paths.adrsDir);
@@ -233,19 +257,19 @@ export async function landscapeEdges(
   // box is titled — otherwise renaming a box empties this list without a word —
   // and an edge into a modelled container belongs to the service that owns it.
   const known = new Set((await listServices(docsDir, context)).map((s) => s.id));
-  const svcOf = serviceResolver(land.elements, known);
-
-  const inbound: Edge[] = [];
-  const outbound: Edge[] = [];
-  for (const r of land.relationships) {
-    const edge = (service: string): Edge => ({
-      service,
-      op: r.op ?? null,
-      title: r.title ?? null,
-    });
-    if (svcOf(r.target) === service) inbound.push(edge(svcOf(r.source)));
-    else if (svcOf(r.source) === service) outbound.push(edge(svcOf(r.target)));
-  }
+  // The ONE shared partition (core/vocabulary/maturity.ts `landscapeEvidence`),
+  // not a fourth line-for-line copy of it. This loop was that copy, and it kept
+  // the rule the others have dropped: an edge whose two endpoints resolve to the
+  // same service is its own internal wiring, so `show` printed `← <id>` for a
+  // service nobody calls while `context` — which reads the shared derivation —
+  // printed nothing. `Edge` is that module's `LandscapeEdge` field for field.
+  const { inbound, outbound } = landscapeEvidence({
+    id: service,
+    parses: true,
+    relationships: land.relationships,
+    elementIds: land.elements.map((e) => e.id),
+    svcOf: serviceResolver(land.elements, known),
+  });
   return { inbound, outbound };
 }
 

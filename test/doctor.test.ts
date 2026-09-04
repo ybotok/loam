@@ -75,6 +75,35 @@ describe("doctor", () => {
     ]));
   });
 
+  it("names the LikeC4 line an editor shows, and the same one `validate --all` names", async () => {
+    // `doctor` hand-rolled its own diagnostic spelling and passed the LSP
+    // range's line through raw, so it named the line ABOVE the fault while
+    // `validate --all` on the identical tree named the fault's own line — two
+    // surfaces, one error, two numbers (verification 2026-09-04). The fixture
+    // puts the fault on a line this test can count.
+    const files = coherentFixture();
+    const lines = files["architecture/landscape.likec4"]!.split("\n");
+    const closing = lines.lastIndexOf("}");
+    lines.splice(closing, 0, "  nosuchElement -> paymentService 'Broken'");
+    files["architecture/landscape.likec4"] = lines.join("\n");
+    const faultLine = closing + 1; // 1-based: the number an editor's gutter shows.
+    const project = await makeProject(files, { service: "payment-service" });
+    cleanups.push(() => project.destroy());
+
+    const doctor = await runLoam(project.workDir, "doctor", "--json");
+    const invalid = JSON.parse(doctor.stdout).findings.find(
+      (f: { code: string }) => f.code === "doctor.landscape-invalid",
+    );
+    expect(invalid.message).toContain(`L${faultLine}: `);
+
+    const validate = await runLoam(project.workDir, "validate", "--all", "--json");
+    const details: string[] = JSON.parse(validate.stdout)
+      .targets.flatMap((t: { findings: Array<{ code: string; details?: string[] }> }) => t.findings)
+      .filter((f: { code: string }) => f.code === "landscape.invalid")
+      .flatMap((f: { details?: string[] }) => f.details ?? []);
+    expect(details.some((line) => line.includes(`L${faultLine}: `))).toBe(true);
+  });
+
   it("prints the fix under every finding in the human view", async () => {
     // A diagnostic that names a problem without naming its fix is a diagnostic
     // the reader has to go research — and doctor is what someone runs BECAUSE

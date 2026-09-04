@@ -69,42 +69,41 @@ export const ARTIFACTS: Array<Omit<BriefTarget, "path" | "exists" | "action"> & 
     // `loam validate` passing means more than it does. They now live in
     // UNCHECKED, where their status is the point.
     shape: [
-      "A `specification { ... }` block declaring every element kind you use (`element softwareSystem`, `element container`). LikeC4 rejects an undeclared kind, and `loam validate --service <id>` reports it as `c4.invalid` with line numbers.",
-      "A `model { ... }` block holding the service's element, with containers and components nested inside it. The whole file has to parse — `loam validate` runs LikeC4 in-process and reports `c4.invalid` with line numbers.",
-      "The service element binds to this directory: `metadata { service '<id>' }`. Without a binding the element's TITLE has to equal the directory name — and then renaming the box silently unlinks every check that joined the two. The same binding is what makes the FLEET map resolve an element to `services/<id>/`; until one does, `loam validate --all` reports `landscape.service-unmodelled`.",
-      "A call to another service is an edge that names the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. Cross-service edges belong in `architecture/landscape.likec4` (a target of its own, below) — this file cannot even resolve the other service's element — and there the `op` must be an operationId the TARGET's openapi.yaml defines, or `spine.op-undefined` fires.",
+      "No `specification` block of its own: the kinds and tags come from `architecture/landscape.likec4` (a kind this model needs that the map does not declare — `element database`, `element queue` — is added there, once). A model that declares its own element kinds is the standalone shape: it still parses, alone, and loam then reports where its copies of the map's elements diverge (`c4.declaration-diverged`). New models never use it.",
+      "A `model { ... }` block whose body is `extend <id> { ... }` — the fully-qualified id of the element the fleet map already binds to this directory (the landscape section of this brief names it; write the element into the map first when none resolves) — with containers and components nested inside. The binding and the description live on the map's element; this file may add `#tags` and metadata to it and never a description. The whole file has to parse: `loam validate` runs LikeC4 in-process over the map plus this file and reports `c4.invalid` with line numbers.",
+      "A store or component this service OWNS goes INSIDE the `extend <fqn> { }` block, where its id becomes `<fqn>.<name>`: that is the only place an extending model may declare an element, and one declared anywhere else is `c4.element-unowned` (warn) — the fleet project then carries this service's private copy of somebody else's box. A call to another system is an edge from the container that makes it to the other party's element as the map spells it — `marketplace.paymentService.api -> stripe 'Authorizes cards'` — never a copy of that element: the map declares a system this service merely REACHES once, and another service's internals belong in that service's own model. The map still carries the service-level edge the fleet checks read (`metadata { op '<operationId>' }` graded by `spine.op-undefined`); draw it there too.",
+      "The map's element is the binding: `metadata { service '<id>' }` on the element you extend (the landscape target below). Without it the element's title has to equal the directory name — and then renaming the box silently unlinks every check that joined the two. Until something in the map resolves to `services/<id>/`, `loam validate --all` reports `landscape.service-unmodelled` and there is no element for this file to extend.",
     ],
-    example: `specification {
-  element softwareSystem
-  element container
-}
-
+    // `<fqn>` and `<svc>` are PLACEHOLDERS this module leaves literal:
+    // `serviceBrief` (brief.ts) substitutes the landscape element's real id and
+    // the service being adopted, and for `<fqn>` the "the element's id in
+    // architecture/landscape.likec4" wording where the map holds none. ARTIFACTS
+    // stays a static constant — a target list that varied per repository would
+    // be a second thing to keep true. The header carried the literal
+    // `payment-service` for every service, beside an `extend` line that WAS
+    // substituted, so the half of the example that was personalised taught an
+    // agent the other half had been too.
+    example: `// <svc>'s own C4 — what is INSIDE the element the fleet map binds to
+// this directory. The map declares the kinds and the element; this
+// file extends it and re-declares nothing.
 model {
-  paymentService = softwareSystem 'payment-service' {
-    description 'Owns payment authorization and capture'
-    metadata { service 'payment-service' }
-
+  extend <fqn> {
     api = container 'HTTP API'
-    ledger = container 'Ledger store'
+    ledger = database 'Ledger store'
+    api -> ledger 'Writes every authorization'
   }
+  // 'stripe' stands for the OTHER party, spelled as the fleet map already
+  // declares it — loam has no id to substitute here, and inventing one is
+  // the edge that makes the model unresolvable. The containers above are
+  // this example's own: name yours after what they are.
+  <fqn>.api -> stripe 'Authorizes cards'
 }
 
-// Views are LikeC4's, not loam's: loam parses this file and computes no view,
-// and it never reads a STATIC view's contents in any document, so nothing below
-// is read by any check (docs/DESIGN.md rule 26 — the one thing loam does read is
-// a dynamic view's declared steps, in the fleet map and, once a view opts in
-// with #req-, in this service's own project).
-// Keep it for the renderer, which does draw it — 'npx likec4 start' from the docs
-// repo ROOT, once 'loam subsystem sync' has written services/<id>/likec4.config.json:
-// that file is loam's, never yours, and it is what registers this model as a
-// LikeC4 project of its own beside the fleet map. The root project stays scoped
-// to architecture/ (the root likec4.config.json) because every model declares
-// its own 'specification' block, and a root that merged them would read each
-// declaration as a duplicate.
-// Scoped to one service 'include *' is cheap; the same line in
-// architecture/landscape.likec4 walks every call in the fleet and takes minutes.
+// Views are LikeC4's, not loam's (docs/DESIGN.md rule 26). Render with
+// 'npx likec4 start' from the docs repo root: this file is part of the root
+// project, beside the map — nothing else to write.
 views {
-  view of paymentService {
+  view of <fqn> {
     include *
   }
 }
@@ -177,7 +176,7 @@ Operations: refundPayment
     shape: [
       "Same grammar and frontmatter as spec.md: `## Requirements`, `### Requirement:` + `#### Scenario:` with Given/When/Then. The same checks read it.",
       "A `Covers:` line per requirement names what its scenarios exercise: a C4 element id (`paymentService.db`), an edge (`paymentService -> kafka`), or a health signal from health.yaml (`alert:<id>` / `sli:<id>`). Every entry must resolve, or `covers.unknown` (warn) flags the typo.",
-      "A requirement whose `Covers:` names containers may have its hop sequence drawn as a `dynamic view` in a `.likec4` beside model.likec4 (`usecases/<name>.likec4` by convention; the renderer's per-service project reads every `.likec4` under the directory, and loam reads the same set), tagged `#req-<Requirement-ID>` with the tag declared in model.likec4's `specification` — graded by `loam validate --service <id>` (`usecase.step-unbacked` when a hop names a call the model does not declare, `usecase.requirement-unresolved` when the tag names no `Requirement-ID` here or in spec.md). Optional; nothing grades its absence. Never `architecture/usecases/`, which cannot resolve a container.",
+      "A requirement whose `Covers:` names containers may have its hop sequence drawn as a `dynamic view` in a `.likec4` beside model.likec4 (`usecases/<name>.likec4` by convention; the renderer's per-service project reads every `.likec4` under the directory, and loam reads the same set), tagged `#req-<Requirement-ID>` — with the tag declared in `architecture/landscape.likec4`'s `specification` where the model extends the map, or in model.likec4's own block where it declares one; declaring it in BOTH is a duplicate, and the code lands where the second declaration's FILE is, not at fleet altitude: `c4.invalid` (an ERROR, and the model's grading is suspended behind it) when the tags-only block is in model.likec4, `usecase.flow-invalid` when it is in a sibling. `c4.fleet-project-invalid` is the fleet-scope class one step out — TWO SERVICES each declaring the same tag locally, which no per-service project sees. Graded by `loam validate --service <id>` (`usecase.step-unbacked` when a hop names a call the model does not declare, `usecase.requirement-unresolved` when the tag names no `Requirement-ID` here or in spec.md). Optional; nothing grades its absence. Never `architecture/usecases/`, which cannot resolve a container.",
       "Optional, but expected for a service with real architecture: every alert/SLI health.yaml declares wants a covering requirement here (`health.uncovered`, warn) — a signal nothing tests is dashboard decoration.",
       "Write the obligations no business requirement states — the transactional outbox, what a caller's retry may assume, what pages whom. An arch scenario becomes an integration/ops test, not an acceptance test.",
     ],

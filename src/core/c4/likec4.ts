@@ -10,8 +10,31 @@ import { descText, metaKey } from "./parsed/values.js";
 /** A parse/validation issue reported by LikeC4. */
 export interface LikeC4Error {
   message: string;
+  /** As LikeC4 hands it over: an LSP range line, which starts at 0. Print it through `errorText`. */
   line?: number;
   sourceFsPath?: string;
+}
+
+/**
+ * The one spelling of a diagnostic loam prints — `L<n>: <message>`, with the
+ * line 1-BASED: the number an editor's gutter shows, so an agent told to open
+ * it opens the line the fault is on. LikeC4's `getErrors()` copies the LSP
+ * range's start line, which counts from 0, and every message used to print that
+ * raw number: the named line landed one above the fault every time
+ * (verification 2026-09-04, W6).
+ *
+ * `likec4 validate` DOES NOT AGREE, and that is deliberate rather than
+ * unnoticed. Measured at the 1.59.2 pin on a document whose fault is on file
+ * line 10: the CLI prints `Line 9:` and loam prints `L10:` for the same
+ * diagnostic — it renders the LSP index raw. Copying that would make loam's
+ * output wrong in the way the fix above repaired, so the two spellings differ
+ * by exactly one and a reader comparing them should expect it.
+ *
+ * Four modules used to hand-roll this ternary; they all read this one now, so
+ * the base cannot drift between them again.
+ */
+export function errorText(e: LikeC4Error): string {
+  return typeof e.line === "number" ? `L${e.line + 1}: ${e.message}` : e.message;
 }
 
 /** loam-neutral element view (flattened from the LikeC4 parsed model). */

@@ -11,7 +11,8 @@
  */
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import { loadFile, type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { type Elem, type Rel } from "../../../core/c4/likec4.js";
+import { type ServiceModel } from "../../../core/c4/service-model/load.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
@@ -32,7 +33,6 @@ import { gherkinRoot } from "../../../core/gherkin/stamp.js";
 import { UnsafePathError } from "../../../core/kernel/path-safety.js";
 import { interruptedCommitFinding } from "../../../core/staging/recovery/finding.js";
 import { FleetContext } from "../../../core/fleet-context.js";
-import { errorText } from "../checks/vocabulary.js";
 import { serviceLinkFindings } from "../links/corpus.js";
 import { sourceScopeFindings } from "../checks/sources.js";
 import { apiAxisFindings, generatedContractFindings } from "./api.js";
@@ -40,11 +40,11 @@ import { evidencePinFindings } from "./evidence-pins.js";
 import { spineFindings } from "./spine.js";
 import { eventAxisFindings } from "./events/events.js";
 import { archAxisFindings, readServiceSpecs } from "./specs.js";
-import { serviceUseCaseFindings } from "./usecases/usecases.js";
-import { readServiceFlows } from "../../../core/usecases/service/flows.js";
+import { modelFindings } from "./model/grade.js";
+import { divergedFindings } from "./model/diverged.js";
+import { requirementIdsOf, serviceUseCaseFindings } from "./usecases/usecases.js";
+import { readServiceFlows, type ServiceFlowScan } from "../../../core/usecases/service/flows.js";
 import { unknownDirectiveFindings } from "../../../core/document/grammar/directives.js";
-import { type Requirement } from "../../../core/document/spec.js";
-import { type ServicePaths } from "../../../core/repo/paths.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
 /**
@@ -127,6 +127,27 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
     return report;
   }
 
+  // Which service directories actually exist — the positive evidence
+  // `serviceOf` needs to resolve an edge drawn into a modelled CONTAINER
+  // (`paymentService.api`) back to the service that owns it. Without it every
+  // such edge resolves to the container's own title, i.e. to a service nobody
+  // has ever adopted, and drops out of the spine unnoticed.
+  //
+  // Read before the model rather than after it, because the model is now read
+  // through the same resolver: an extending model's own slice is exactly the
+  // elements this set makes resolvable.
+  const known = new Set((await listServices(docsDir, fleet)).map((s) => s.id));
+
+  /**
+   * The read index this target reads the fleet map and the model through.
+   *
+   * A single-service run may arrive without one, and it gets its own rather
+   * than a second reading rule: `serviceModel` needs the enumeration and a
+   * document memo to answer at all, and both live here. Request-scoped like
+   * every other `FleetContext` — created for this call, dropped with it.
+   */
+  const context = fleet ?? new FleetContext();
+
   // C4 model. Its absence is an error — this is where `adopt` comes in — but it
   // must NOT silence the rest of the gate stack: `loam archive` of a feature
   // introducing a new service creates exactly this state (spec.md, arch.spec.md,
@@ -138,10 +159,19 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   const hasModel = existsSync(paths.model);
   let elements: Elem[] = [];
   let relationships: Rel[] = [];
-  // The single-file doc itself, kept for the service's own use cases below:
-  // with no `.likec4` beside the model, its tagged views ARE the project, and
-  // grading them off this load is what keeps that case free.
-  let model: LoadedDoc | null = null;
+  // The model as its own SHAPE demands it be read — a file parsed alone, or a
+  // slice of the project it extends (`core/c4/service-model/load.ts`). Kept for
+  // the service's own use cases below, which need both its views and which
+  // shape produced them.
+  let model: ServiceModel | null = null;
+  // The service's OWN use cases, scanned here rather than beside the grades it
+  // feeds: `c4.valid` reports how many were graded, and that count is the only
+  // surface a HEALTHY flow appears on. Null means no scan was made — the model
+  // does not parse (`c4.invalid` owns that, and a second load repeats its
+  // cascade under a use-case code) or its map does not (an extending model then
+  // comes back with no errors AND no model, and the flow project would be
+  // staged over the same broken map).
+  let flows: ServiceFlowScan | null = null;
   if (!hasModel) {
     findings.push({
       severity: "error",
@@ -150,42 +180,57 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       text: { marker: false },
     });
   } else {
-    model = fleet === undefined ? await loadFile(paths.model) : await fleet.loadLikeC4(paths.model);
-    elements = model.elements;
-    relationships = model.relationships;
-    if (model.errors.length > 0) {
-      findings.push({
-        severity: "error",
-        code: "c4.invalid",
-        message: `${service}: C4 model has ${model.errors.length} error(s)`,
-        details: model.errors.map(errorText),
-      });
-    } else {
-      findings.push({
-        severity: "ok",
-        code: "c4.valid",
-        message: `${service}: C4 model valid (${elements.length} elements · ${relationships.length} relationships)`,
+    model = await context.serviceModel(docsDir, paths);
+    elements = model.doc.elements;
+    relationships = model.doc.relationships;
+    if (!model.mapUnreadable && model.doc.errors.length === 0) {
+      flows = await readServiceFlows({
+        paths,
+        model: model.doc,
+        known,
+        // An extending model's siblings resolve against the fleet map, so their
+        // project is the docs root's, never the service directory. The project
+        // the model was READ in travels with it because that is the scope of a
+        // view written inside model.likec4: `model.doc` is the service's own
+        // slice, and a hop backed by one of the map's edges is backed wherever
+        // the view sits.
+        ...(model.shape === "extending" && model.project !== null
+          ? { extending: { docsDir, project: model.project } }
+          : {}),
       });
     }
+    findings.push(
+      ...(await modelFindings({
+        service,
+        treePath,
+        docsDir,
+        model,
+        modelPath: paths.model,
+        known,
+        gradedFlows: flows?.kind === "read" ? flows.views.length : 0,
+      })),
+    );
   }
 
-  // The living landscape, parsed at most once per run: under --all the caller
-  // hands in the doc it already loaded, single-service runs load on demand. It
-  // serves two checks below — the no-openapi grace and the spine.
+  // The fleet map as the PROJECT it is, in EVERY mode — landscape plus every
+  // `architecture/**/*.likec4` minus the generated views file. Single-service
+  // runs used to read `landscape.likec4` alone, which made three answers depend
+  // on which flag the caller happened to pass: a use-case file that does not
+  // parse was `spine.landscape-invalid` under `--all` and silence under
+  // `--service`, an extending model was readable under one and not the other,
+  // and `c4.declaration-diverged` would have compared against a different
+  // document. Under `--all` the caller hands in the doc it already loaded.
+  //
+  // Still gated on the landscape FILE existing: `land === null` means "this repo
+  // draws no fleet", and a repo with an `architecture/usecases/` and no map is
+  // that state, not a map that loaded empty.
   const land =
-    preloaded ??
-    (existsSync(landscapeFile(docsDir))
-      ? fleet === undefined
-        ? await loadFile(landscapeFile(docsDir))
-        : await fleet.loadLikeC4(landscapeFile(docsDir))
-      : null);
+    preloaded ?? (existsSync(landscapeFile(docsDir)) ? await context.architecture(docsDir) : null);
 
-  // Which service directories actually exist — the positive evidence
-  // `serviceOf` needs to resolve an edge drawn into a modelled CONTAINER
-  // (`paymentService.api`) back to the service that owns it. Without it every
-  // such edge resolves to the container's own title, i.e. to a service nobody
-  // has ever adopted, and drops out of the spine unnoticed.
-  const known = new Set((await listServices(docsDir, fleet)).map((s) => s.id));
+  // Where a standalone model's copies of the map's elements have drifted. After
+  // `c4.valid` because it is a claim about a model that parsed, and silent for
+  // an extending model, which has no copy to diverge.
+  if (model !== null) findings.push(...divergedFindings({ service, model, architecture: land, known }));
 
 
   // The living landscape's element→service resolver, container-aware and
@@ -212,11 +257,16 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   findings.push(
     ...spineFindings({
       service,
+      docsDir,
+      treePath,
       me,
       land,
       landSvcOf,
       contract: api.contract,
       landscapeReported: check.landscapeReported,
+      // An unreadable map takes an extending model with it, and the spine
+      // finding is where that is said — see `Spine.modelExtends`.
+      modelExtends: model?.shape === "extending",
     }),
   );
   findings.push(
@@ -242,29 +292,28 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       archReqs,
       elements,
       relationships,
+      // The one fact that tells "this service models nothing" apart from "this
+      // service's model could not be read": both arrive here as empty lists, and
+      // only the second one must silence `covers.unknown`.
+      mapUnreadable: model?.mapUnreadable === true,
       land,
       known,
       docsDir,
+      fleet: context,
     })),
   );
 
-  // The service's OWN use cases — every `dynamic view` in its LikeC4 project
-  // (model.likec4 and any `.likec4` beside it, as the renderer reads them) that
-  // opts in with a reserved tag. Graded here rather than on the fleet target
-  // because the flow's steps name this service's containers, which only this
-  // service's project can resolve. After the arch axis, because a `#req-` tag
-  // resolves against the ids both spec documents declare, and those are in
-  // hand by now. Skipped when the model does not parse: a project with a
-  // broken model is `c4.invalid`'s business already, and a second load of it
-  // would only repeat that cascade under a second code.
-  if (model !== null && model.errors.length === 0) {
-    const scan = await readServiceFlows({ paths, model, known });
+  // The service's own use cases, GRADED — scanned beside the model above. Here
+  // rather than on the fleet target because the hops name this service's
+  // containers, which only its project resolves; after the arch axis because a
+  // `#req-` tag resolves against the ids both spec documents declare.
+  if (flows !== null) {
     findings.push(
       ...serviceUseCaseFindings({
         service,
         treePath,
         docsDir,
-        scan,
+        scan: flows,
         services: known,
         requirementIds: requirementIdsOf(paths, livingReqs, archReqs),
       }),
@@ -346,30 +395,4 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   }
 
   return report;
-}
-
-/**
- * The `Requirement-ID`s a service-local `#req-` tag may name: every identified
- * requirement of spec.md (living — a REMOVED one is on its way out and keeps
- * no promise) and of arch.spec.md, as ONE set. `undefined` when NEITHER
- * document exists, which the tag grade reads as "no requirement to satisfy"
- * rather than "none flattening to this slug" — the same two answers the fleet's
- * `requirementsOf` gives for a capability with no document at all.
- *
- * An id both documents declare resolves once (a set dedupes it); two ids that
- * merely flatten alike — `PAY.AUTH` in one file, `PAY-AUTH` in the other — are
- * the `many` arm, because a Requirement-ID is unique inside one document and a
- * flow beside the model has two.
- */
-function requirementIdsOf(
-  paths: ServicePaths,
-  livingReqs: readonly Requirement[],
-  archReqs: readonly Requirement[],
-): ReadonlySet<string> | undefined {
-  if (!existsSync(paths.spec) && !existsSync(paths.archSpec)) return undefined;
-  const ids = new Set<string>();
-  for (const req of [...livingReqs, ...archReqs.filter((r) => r.kind !== "REMOVED")]) {
-    if (req.id !== undefined) ids.add(req.id);
-  }
-  return ids;
 }

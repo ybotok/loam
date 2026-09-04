@@ -1,30 +1,27 @@
-// order-service's own C4 — the model behind `services/order-service/`.
+// order-service's own C4 — what is INSIDE the element the fleet map binds to
+// services/order-service/.
 //
-// Every .likec4 file loam reads is parsed ON ITS OWN; nothing is concatenated and
-// nothing is inherited from architecture/landscape.likec4. So this document declares
-// the kinds it uses even though the landscape declares the same names: leaving them
-// out does not borrow them, it fails to parse (`c4.invalid`, an error), and the arch
-// axis, the `Covers:` resolution and health.yaml's dependency reconciliation all go
-// quiet behind that one failure.
-specification {
-  element softwareSystem
-  element container
-  element database
-  element topic
-}
-
+// This is an EXTENDING model: it declares no `specification` block, so every
+// kind and tag it uses comes from architecture/landscape.likec4, and it declares
+// no partner of its own. The map already says that order-service exists, what it
+// is called and which directory it binds to; this file says what is inside it,
+// with `extend` on the fully-qualified id the map gave that element. The id has
+// to be the full path — `extend orderService` resolves to nothing, because the
+// element is nested in the `marketplace` group.
+//
+// Nothing here re-declares kafka, payment-service or identity-service. That is
+// the whole point of the shape: the root likec4.config.json does not exclude
+// `services/**`, so the map and every model are ONE LikeC4 project, an element
+// is declared exactly once, and two documents cannot disagree about its tags or
+// its description. A PARTNER is what this file refers to and never owns — the
+// map's element, reached by the id the map spells. An element declared here
+// outside `marketplace.orderService` would be `c4.element-unowned`.
+//
+// SCHEMA.md, "Two shapes of a service model", has the other shape (a model that
+// declares its own `specification` and is parsed alone) and the recipe for
+// migrating between them.
 model {
-  orderService = softwareSystem 'order-service' {
-    description 'Owns the order lifecycle and orchestrates the payment behind it'
-    // The binding, not the title, is what ties this element to services/order-service/,
-    // and it is what every join downstream resolves through: health.yaml's dependency
-    // ids, an `arch.spec.md` edge entry written as `order-service -> payment-service`,
-    // the landscape's twin element. Rename the box without it and each of those stops
-    // matching in silence.
-    metadata {
-      service 'order-service'
-    }
-
+  extend marketplace.orderService {
     api = container 'api' {
       description 'REST API: createOrder, getOrder, cancelOrder, and the deprecated createOrderV1'
       technology 'Spring Boot'
@@ -36,7 +33,8 @@ model {
     // The two background containers exist in this model because arch.spec.md has to
     // be able to point at them: ARCH-ORD-OUTBOX and ARCH-ORD-DEDUPE cover them by id,
     // and an obligation whose subject is not modelled is an obligation no `Covers:`
-    // line can name.
+    // line can name. Written the way the map spells them —
+    // `marketplace.orderService.outbox` — because that is the id this file makes.
     outbox = container 'outbox-relay' {
       description 'Publishes committed outbox rows to order.events.v1 — at-least-once'
       technology 'Kotlin'
@@ -48,55 +46,40 @@ model {
     // The store is a NESTED container of this service, never a fleet-level peer: it
     // has exactly one consumer, so drawn beside the services in the landscape it would
     // read as a system in its own right (`landscape.datastore-private` is the check
-    // that pushes it back in here).
+    // that pushes it back in here). Nesting hides nothing — a second service reaching
+    // the same data earns `landscape.datastore-shared`, counted from that service's own
+    // model — but it does decide where the store may be written: an edge naming
+    // `marketplace.orderService.db` resolves only for a project that holds this file,
+    // so a store two services will share belongs on the map inside `marketplace.orderService`.
+    // The `database` kind is the landscape's, declared there once for every model that needs it.
     db = database 'db' {
       description 'Orders, idempotency keys, the applied-payment ledger and the outbox table'
       technology 'PostgreSQL'
     }
 
+    // The internal edges, written INSIDE the extend block, where the children
+    // resolve by their short names.
     api -> domain 'Places, reads and cancels'
     domain -> db 'Writes the order, its idempotency key and its outbox row in one transaction'
     outbox -> db 'Polls unpublished outbox rows and marks them sent'
     consumer -> db 'Records the applied paymentId, then advances the order'
   }
 
-  // Everything the service touches from outside its own boundary. The landscape
-  // carries only the boundary crossing; THIS file carries the whole reach, and it is
-  // the file `health.yaml`'s `dependencies:` are reconciled against — an id nothing
-  // here answers to is `health.dependency-unmodelled`, the check that catches a
-  // dependency the on-call file still swears by after the code stopped calling it.
-  paymentService = softwareSystem 'payment-service' {
-    description 'Authorizes and captures cards'
-    metadata {
-      service 'payment-service'
-    }
-  }
-  identityService = softwareSystem 'identity-service' {
-    description 'Issues and introspects access tokens'
-    metadata {
-      service 'identity-service'
-    }
-  }
-  kafka = softwareSystem 'kafka' {
-    description 'Event backbone (platform)'
-    // A topic per channel rather than one broker box. What a producer and a consumer
-    // actually share is the channel, and pointing every edge at the broker turns the
-    // fleet map into a star with one node in the middle the moment the fleet is
-    // bigger than this example.
-    orderEvents = topic 'order.events'
-    paymentEvents = topic 'payment.events'
-  }
-
-  // The edges, drawn from the container that really makes each call — which is the
-  // half of the truth the landscape cannot hold. A model with elements and no
-  // relationships beside a health.yaml declaring two dependencies is
-  // `c4.no-relationships`: a service that reaches nothing is almost never true.
+  // The cross-boundary edges, drawn OUTSIDE the extend block, from the container
+  // that really makes each call to the other party's element as the MAP spells
+  // it — which is the half of the truth the landscape cannot hold, since the map
+  // carries only the service-level crossing. This file names no `kafka` of its
+  // own: `kafka.orderEvents` is the map's topic, and pointing at it is what makes
+  // health.yaml's `kafka` dependency resolve (a partner brings its ancestors with
+  // it, so the broker answers even though only its topic is named).
   //
   // The `metadata` blocks below are not read for a service model — only landscape
   // edges feed `spine.op-*` and the event spine — but they are written anyway so the
   // two documents cannot drift into disagreeing about which operation and which
-  // message each edge stands for.
-  orderService.domain -> paymentService 'Calls authorizePayment' {
+  // message each edge stands for. A model with elements and no relationships beside
+  // a health.yaml declaring two dependencies is `c4.no-relationships`: a service
+  // that reaches nothing is almost never true.
+  marketplace.orderService.domain -> marketplace.paymentService 'Calls authorizePayment' {
     metadata {
       op 'authorizePayment'
     }
@@ -104,12 +87,12 @@ model {
   // ORD-CANCEL's `Requires: user/orders:cancel` has to be enforced somewhere, and this
   // is that edge: the API introspects the caller's token before it will cancel anything.
   // Drawn here and absent from health.yaml, which states the asymmetry and the reason.
-  orderService.api -> identityService 'Calls introspectToken' {
+  marketplace.orderService.api -> marketplace.identityService 'Calls introspectToken' {
     metadata {
       op 'introspectToken'
     }
   }
-  orderService.outbox -> kafka.orderEvents 'Publishes OrderPlaced' {
+  marketplace.orderService.outbox -> kafka.orderEvents 'Publishes OrderPlaced' {
     metadata {
       publishes 'order.OrderPlaced'
     }
@@ -119,7 +102,7 @@ model {
   // edge drawn the other way round binds to nothing. Nothing grades it in a
   // service model, which is exactly why it follows the same convention — a
   // reader who learns the arrow here should not have to unlearn it upstairs.
-  kafka.paymentEvents -> orderService.consumer 'PaymentAuthorized advances the order' {
+  kafka.paymentEvents -> marketplace.orderService.consumer 'PaymentAuthorized advances the order' {
     metadata {
       consumes 'payment.PaymentAuthorized'
     }
@@ -127,12 +110,15 @@ model {
 }
 
 // Views are the LikeC4 renderer's, never loam's — no check reads this block. Scoped
-// to the system, because "what does an order stand on" is this file's question and
-// the fleet-wide one is already answered in architecture/landscape.likec4.
+// to the service's element, because "what does an order stand on" is this file's
+// question and the fleet-wide one is already answered in architecture/landscape.likec4.
+// This file is part of the ROOT project, beside the map: `npx likec4 start` at the
+// docs root draws it, and there is no per-service likec4.config.json to write.
+// View ids are flat across the whole project, so this one is spelled to be unique.
 views {
-  view order_service of orderService {
+  view order_service of marketplace.orderService {
     title 'order-service — containers, its store, and what it reaches'
     include *
-    include paymentService, identityService, kafka, kafka.*
+    include marketplace.paymentService, marketplace.identityService, kafka, kafka.*
   }
 }

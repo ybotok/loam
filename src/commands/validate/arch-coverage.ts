@@ -71,6 +71,11 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     fleet,
   } = delta;
   const findings: Finding[] = [];
+  // The read index the service models below are read through. A feature target
+  // may arrive without one (`validate --feature` builds no fleet), and it gets
+  // its own for `validateService`'s reason: `serviceModel` needs the enumeration
+  // and a document memo to answer at all.
+  const context = fleet ?? new FleetContext();
 
   // The delta's own element→service resolver, built once for the whole feature.
   // `serviceOf` is a one-shot wrapper that rebuilds its index on every call, and
@@ -215,16 +220,18 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
       };
       const unresolved = coversUnknownFindings(reqs, { where: `${svc}: arch.spec.md`, subject: svc }, scope, health.unreadable);
       if (unresolved.length > 0) {
-        const modelPath = (await locateServicePaths(docsDir, svc, fleet)).model;
-        const model = existsSync(modelPath)
-          ? fleet === undefined
-            ? await loadFile(modelPath)
-            : await fleet.loadLikeC4(modelPath)
-          : null;
-        if (model !== null && model.errors.length === 0) {
+        // Through the ONE reader of `model.likec4`: a model that EXTENDS the map
+        // is not a file this could open, and reading it as one would answer with
+        // a pile of parse errors — which this arm reads as "no widening", so
+        // every `Covers:` line naming a container of a migrated service would be
+        // convicted as a typo. `mapUnreadable` is the same silence for the same
+        // reason: nothing may widen a scope out of a document nobody could read.
+        const svcPaths = await locateServicePaths(docsDir, svc, fleet);
+        const model = existsSync(svcPaths.model) ? await context.serviceModel(docsDir, svcPaths) : null;
+        if (model !== null && !model.mapUnreadable && model.doc.errors.length === 0) {
           scope = {
-            elements: [...baseElements, ...model.elements],
-            relationships: [...baseRels, ...model.relationships],
+            elements: [...baseElements, ...model.doc.elements],
+            relationships: [...baseRels, ...model.doc.relationships],
             health: health.ids,
             known,
           };

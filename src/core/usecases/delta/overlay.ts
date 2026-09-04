@@ -17,6 +17,7 @@
  */
 import { type LoadedDoc } from "../../c4/likec4.js";
 import { stageMergedProject, type StagedProject } from "../../c4/project/staged.js";
+import type { ExtendingModel } from "../../c4/splice/contract.js";
 import { serviceResolver } from "../../c4/resolve/service.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { isUseCase, type UseCaseScan } from "../fleet.js";
@@ -49,6 +50,22 @@ export interface FlowOverlayRequest {
    * running outside an invocation index.
    */
   load?: (path: string) => Promise<LoadedDoc>;
+  /**
+   * The fleet's extending models, for the merge preview — the SAME list
+   * `loam archive` routes with. Without it the preview holds interior the
+   * archive will put in `services/<…>/model.likec4`, so a hop naming
+   * `<service-fqn>.<container>` resolves here and against nothing once the flow
+   * is living: `usecase.flow-invalid` fails open, and it is the gate
+   * `--approve` cannot override (verification 2026-09-04, review F8).
+   *
+   * A THUNK, and both halves of that matter. A function for the reason `load`
+   * is one: the reader takes a `FleetContext` and this package has no edge to
+   * it, so the caller that owns the fleet read supplies the answer. LAZY
+   * because the early return above is the axis's per-feature opt-in — a feature
+   * with no `usecases/` directory must not pay for a fleet enumeration and one
+   * read per extending model to be told there is nothing to grade.
+   */
+  models?: () => Promise<readonly ExtendingModel[]>;
 }
 
 /**
@@ -64,12 +81,16 @@ export async function readFeatureFlows(req: FlowOverlayRequest): Promise<UseCase
   if (flows.length === 0) {
     return { kind: "read", views: [], model: { elements: [], relationships: [], known: req.known }, resolve: (id) => id };
   }
+  // AFTER the early return, which is what makes the thunk worth its shape: the
+  // fleet read is paid only by a feature that actually brings a flow.
+  const models = req.models === undefined ? undefined : await req.models();
   const staged = await stageMergedProject({
     docsDir: req.docsDir,
     featureDir: req.featureDir,
     featureId: req.featureId,
     documents: flows.map((flow) => ({ rel: `${USECASE_SUBDIR}/${flow.rel}`, path: flow.path })),
     ...(req.load === undefined ? {} : { load: req.load }),
+    ...(models === undefined ? {} : { models }),
   });
   return interpret(staged, req.known);
 }

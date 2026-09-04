@@ -1,24 +1,32 @@
 /**
- * The fleet-map half of the adoption brief, READ side: what
- * `architecture/landscape.likec4` already says about one service — its
- * elements, its inbound and outbound edges, the operations the fleet already
- * calls on it — and which of the four states the map is in for it. The write
- * the service still owes the file — the block, when nothing in it resolves to
- * the service yet, or the EDGES, when an element does and no edge touches it —
- * is spelled in `./map/owed.ts` (`landscapeArtifact`, `instructionFor`), which
- * this module hands its findings to. Both halves exist to stop an agent
- * inventing a parallel model: the fleet has already drawn some of these boxes
- * and edges, and a baseline has to attach.
+ * The fleet-map half of the adoption brief, READ side: what the fleet map
+ * already says about one service — its elements, its inbound and outbound
+ * edges, the operations the fleet already calls on it — and which of the four
+ * states the map is in for it. The write the service still owes the file — the
+ * block, when nothing in it resolves to the service yet, or the EDGES, when an
+ * element does and no edge touches it — is spelled in `./map/owed.ts`
+ * (`landscapeArtifact`, `instructionFor`), which this module hands its findings
+ * to. Both halves exist to stop an agent inventing a parallel model: the fleet
+ * has already drawn some of these boxes and edges, and a baseline has to attach.
+ *
+ * "The fleet map" is the `architecture/` PROJECT — the landscape plus every
+ * other `.likec4` under it, minus the generated views file — and not the
+ * landscape FILE. The two are the same document set `validate --all` grades
+ * `landscape.service-isolated` over, and reading one file here let the two
+ * surfaces disagree about the same tree.
  */
 import { existsSync } from "node:fs";
 import { loadFile } from "../c4/likec4.js";
+import { loadArchitecture } from "../c4/project/architecture.js";
 import { attestedCalls, type AttestedCall } from "../c4/resolve/attested.js";
 import { serviceResolver } from "../c4/resolve/service.js";
+import { ServiceModels } from "../c4/prefetch/fleet.js";
 import { OBLIGATION_TAG_PREFIX } from "../obligations/obligations.js";
-import { landscapePath } from "../repo/paths.js";
+import { landscapePath, type ServicePaths } from "../repo/paths.js";
 import { enumeratedServiceIds, serviceTreePathOf } from "../repo/service-target.js";
-import { GRADED_TAGS } from "../vocabulary/maturity.js";
-import { instructionFor } from "./map/owed.js";
+import { EXTERNAL_TAG, GRADED_TAGS } from "../vocabulary/maturity.js";
+import { brokenDocuments, instructionFor } from "./map/owed.js";
+import { properAncestorIds } from "../kernel/ids/fqn/ancestors.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
 /* ------------------------------------------------------------------ */
@@ -42,9 +50,28 @@ export interface LandscapeEdge {
 }
 
 export interface LandscapeContext {
+  /** Whether `architecture/landscape.likec4` — the file the brief asks for edits to — is on disk. */
   present: boolean;
-  /** False when the landscape exists but does not parse. */
+  /**
+   * False when the landscape exists but the `architecture/` project does not
+   * parse. A sibling under `architecture/` counts: a broken use case leaves the
+   * map unusable for `validate --all` too, and a brief that read the landscape
+   * alone would report a fleet nobody can render.
+   */
   parses: boolean;
+  /**
+   * Whether loam could read WHO CALLS this service — the only evidence an EMPTY
+   * `expects` may be read as "nothing calls it".
+   *
+   * A separate fact from `parses` because they answer about different documents.
+   * `parses` is about the whole `architecture/` PROJECT (W4), and the callers
+   * live in the landscape FILE: a broken palette or use case beside a landscape
+   * that reads perfectly left `parses` false, and `apiExpected` then demanded an
+   * OpenAPI contract of a browser UI the map proves nobody calls — while `loam
+   * list` and `loam context`, which read the file (core/pack/living.ts), said the
+   * opposite about the same tree.
+   */
+  callersKnown: boolean;
   /** Whether any element resolves to this service — null when nothing could be read. */
   modelled: boolean | null;
   /**
@@ -52,20 +79,34 @@ export interface LandscapeContext {
    * ancestor also resolves to it is one of its containers, not a second box.
    */
   elements: LandscapeElement[];
+  /**
+   * The map's edges into and out of this service, INTERNAL edges excluded: an
+   * edge whose two endpoints both resolve here (`svc.web -> svc.db`) is this
+   * service's own wiring, and filed as inbound it named the service as its own
+   * caller.
+   */
   inbound: LandscapeEdge[];
   outbound: LandscapeEdge[];
   /** Operations other services already call on this one: the contract owes them. */
   expects: string[];
   /**
    * Whether at least one relationship in the map has an endpoint resolving to
-   * this service — `inbound.length + outbound.length > 0` stated as a fact. An
-   * intra-service edge counts: it is an edge the map draws on this service,
-   * exactly the predicate `loam context` prints as "(modelled, no edges touch
-   * it)". `null` exactly when `modelled` is `null` or `false`. It exists
+   * this service — read off the relationships, NOT off `inbound`/`outbound`,
+   * because an intra-service edge counts here (it is `landscape.service-
+   * isolated`'s predicate) while those two lists drop it. `null` exactly when
+   * `modelled` is `null` or `false`. It exists
    * because `instruction` used to go null on element existence alone, and
    * `loam seed` writes a bound, edgeless element for every service nobody
    * listed under `calls:` — so the brief declared the map finished for exactly
    * the services the map had not reached.
+   *
+   * Binary by design, and the fifth silent case of `landscape.service-isolated`
+   * with it: ONE edge closes the state, so a map drawing one of five attested
+   * calls reports `touched: true`, `attested: []` and no instruction. The check
+   * is touched/untouched, not a set difference — loam cannot tell a call the map
+   * omits from a call it deliberately does not draw at fleet level, and a
+   * difference reported as an omission would be an invented edge with a code
+   * beside it.
    */
   touched: boolean | null;
   /**
@@ -123,36 +164,67 @@ function foreignTagsOf(elements: LandscapeElement[]): string[] {
   return [...new Set(elements.flatMap((e) => e.tags))].filter(unread);
 }
 
-/** Every dotted prefix of an id, nearest first: `a.b` and `a` for `a.b.c`. */
-function properAncestorIds(id: string): string[] {
-  const out: string[] = [];
-  for (let dot = id.lastIndexOf("."); dot !== -1; dot = id.lastIndexOf(".", dot - 1)) out.push(id.slice(0, dot));
-  return out;
-}
-
 /**
- * The attested calls, or nothing off a model that does not parse: `c4.invalid`
+ * The attested calls, or nothing off a model that could not be read: `c4.invalid`
  * is validate's finding, and an edge list read off half a document is invention.
+ *
+ * Through the ONE reader of `model.likec4` (`core/c4/service-model/load.ts`),
+ * because the two shapes are read differently and this brief is handed to an
+ * agent that will act on it: a model that EXTENDS the fleet map, opened as a
+ * lone file, comes back as a pile of parse errors — so the brief would tell
+ * every migrated service that its model attests nothing and quietly drop the
+ * edges the map most likely owes. `mapUnreadable` is the same empty answer for
+ * the same reason: an extending model whose map does not parse was never read.
  */
-async function attestedFrom(modelPath: string, service: string, known: ReadonlySet<string>): Promise<AttestedCall[]> {
-  const model = await loadFile(modelPath);
-  return model.errors.length > 0 ? [] : attestedCalls(model, service, known);
+async function attestedFrom(
+  docsDir: DocsDir,
+  paths: ServicePaths,
+  service: string,
+  known: ReadonlySet<string>,
+): Promise<AttestedCall[]> {
+  // The memo directly rather than through `core/fleet-context.ts`, and the
+  // reason is the package graph: this module already depends on `core/c4/`, and
+  // reaching for the read index would add a `brief -> core-root` edge for one
+  // read in a command that grades a single service. The three things the memo
+  // cannot know for itself are supplied here — the enumeration this function
+  // was already handed, the per-file loader, and a counter nobody is keeping.
+  const models = new ServiceModels({
+    onProjectLoad: () => {
+      // `adopt` reports no read counters, so there is nothing to increment. The
+      // hook is the memo's way of letting a caller own its own statistics, and
+      // an empty one is that answer, not a forgotten line.
+    },
+    known: async () => known,
+    standalone: (path) => loadFile(path),
+  });
+  const model = await models.model(docsDir, paths);
+  if (model.mapUnreadable || model.doc.errors.length > 0) return [];
+  return attestedCalls(model.doc, service, known);
 }
 
 /**
- * What the living landscape already says about this service — the half of the
+ * What the living fleet map already says about this service — the half of the
  * brief that stops an agent inventing a parallel model: the fleet has already
  * drawn some of these boxes and edges, and the baseline has to attach to them.
- * A landscape that does not parse yields `modelled: null` — "nothing models
- * it" would be a claim about a document nobody could read. `modelPath` is the
- * service's own model, located by the caller through the enumeration (never
- * joined at `services/<id>/`): it is opened in exactly one state — an element
- * with no edge — to name the calls the map most likely owes. It is required
- * rather than optional because the edgeless instruction states what that file
- * attests, and a caller that omitted the path would get a brief asserting a
- * fact about a document loam never opened.
+ * An `architecture/` project that does not parse yields `modelled: null` —
+ * "nothing models it" would be a claim about documents nobody could read; the
+ * landscape FILE parsing on its own does not rescue it, because the map the
+ * renderer and `validate --all` see is the whole project. `paths` is the
+ * service's own artifact set, located by the caller through the enumeration
+ * (never joined at `services/<id>/`): the model is opened in exactly one state —
+ * an element with no edge — to name the calls the map most likely owes. The
+ * WHOLE record travels rather than the model path alone, because the model is
+ * now read through its own shape and an extending one is read as a project of
+ * the service's directory plus the map. It is required rather than optional
+ * because the edgeless instruction states what that file attests, and a caller
+ * that omitted it would get a brief asserting a fact about a document loam never
+ * opened.
  */
-export async function landscapeContext(docsDir: DocsDir, service: string, modelPath: string): Promise<LandscapeContext> {
+export async function landscapeContext(
+  docsDir: DocsDir,
+  service: string,
+  paths: ServicePaths,
+): Promise<LandscapeContext> {
   const path = landscapePath(docsDir);
   // The service's own directory, spelled from the enumeration rather than joined
   // at the root: this text is handed to an AGENT that will go and edit files, and
@@ -163,6 +235,7 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
   const empty: LandscapeContext = {
     present: existsSync(path),
     parses: false,
+    callersKnown: false,
     modelled: null,
     elements: [],
     inbound: [],
@@ -174,8 +247,42 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
   };
   if (!empty.present) return { ...empty, modelled: false, instruction: instructionFor({ ...bare, state: "absent" }) };
 
-  const land = await loadFile(path);
-  if (land.errors.length > 0) return { ...empty, instruction: instructionFor({ ...bare, state: "unparseable" }) };
+  // The `architecture/` PROJECT, through the one loader every other reader
+  // shares — never `loadFile(path)`. A fleet spreads its model over more than
+  // the landscape (a second `model { }` block in a sibling, a use case, a
+  // palette), and `landscape.service-isolated` grades `touched` over exactly
+  // this set: reading the landscape alone made `adopt` report `touched: false`,
+  // the attested calls and an edit target for a service the fleet run on the
+  // same tree called matched, with nothing to tell an agent which was right.
+  const known = await knownServices(docsDir);
+  const land = await loadArchitecture(docsDir);
+  if (land.errors.length > 0) {
+    // Since W4 this arm answers for the whole `architecture/` PROJECT, so the
+    // document that broke is very often a SIBLING beside a landscape that parses
+    // perfectly — and two things followed from not saying so:
+    //   - the instruction told an agent to go and fix parse errors in
+    //     `architecture/landscape.likec4`, which has none, contradicting
+    //     `validate --all` run one second later on the same tree;
+    //   - the API question — who CALLS this service — was answered "unknown"
+    //     off a landscape file loam can read, so a broken palette flipped
+    //     `openapi.yaml` to required for a browser UI the map proves nobody
+    //     calls, while `list` and `context` (which read the FILE, see
+    //     core/pack/living.ts) answered the opposite about the same tree.
+    // Nothing else is rescued: `modelled`, `elements` and `touched` stay
+    // unknown, because those are claims about the project the renderer loads.
+    const expects = await expectsFromFile(path, service, known);
+    return {
+      ...empty,
+      callersKnown: expects !== null,
+      expects: expects ?? [],
+      instruction: instructionFor({
+        ...bare,
+        expects: expects ?? [],
+        state: "unparseable",
+        broken: brokenDocuments(docsDir, land),
+      }),
+    };
+  }
 
   // One resolver for the whole scan, built with the real service ids, and
   // built BEFORE the element filter: "an element resolves to this service" is
@@ -191,7 +298,6 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
   // decides whether this service owes an OpenAPI contract at all — has to see
   // it. Building it once also stops the per-edge rebuild the old
   // `serviceOf(land.elements, id)` call did.
-  const known = await knownServices(docsDir);
   const svcOf = serviceResolver(land.elements, known);
   const mine = (id: string): boolean => svcOf(id) === service;
   // The service-LEVEL elements only: one that resolves to the service while
@@ -209,7 +315,14 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
 
   const inbound: LandscapeEdge[] = [];
   const outbound: LandscapeEdge[] = [];
+  // An edge whose BOTH endpoints resolve here is the service's own internal
+  // wiring: filed as inbound it made the service its own caller (verification
+  // 2026-09-04). It still TOUCHES the service, so `touched` below reads the
+  // relationships rather than these lists — the isolation check counts either
+  // endpoint, and the two predicates must not disagree.
+  const self = (r: { source: string; target: string }): boolean => mine(r.source) && mine(r.target);
   for (const r of land.relationships) {
+    if (self(r)) continue;
     const edge = { op: r.op ?? null, title: r.title ?? null };
     if (mine(r.target)) inbound.push({ from: svcOf(r.source), ...edge });
     else if (mine(r.source)) outbound.push({ to: svcOf(r.target), ...edge });
@@ -217,8 +330,9 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
 
   const expects = [...new Set(inbound.map((e) => e.op).filter((op): op is string => op !== null))];
   const modelled = land.elements.some((e) => mine(e.id));
-  const touched = modelled ? inbound.length + outbound.length > 0 : null;
-  const attested = touched === false && existsSync(modelPath) ? await attestedFrom(modelPath, service, known) : [];
+  const touched = modelled ? land.relationships.some((r) => mine(r.source) || mine(r.target)) : null;
+  const attested =
+    touched === false && existsSync(paths.model) ? await attestedFrom(docsDir, paths, service, known) : [];
   const req = {
     service,
     expects,
@@ -226,11 +340,54 @@ export async function landscapeContext(docsDir: DocsDir, service: string, modelP
     attested,
     foreignTags: foreignTagsOf(elements),
     elementId: elements[0]?.id,
+    // The one graded tag that changes what the brief may PROMISE: an `#external`
+    // element is never `landscape.service-isolated`'s subject. Off the same
+    // element `elementId` names, never the union.
+    external: elements[0]?.tags.includes(EXTERNAL_TAG) ?? false,
   };
   const instruction = !modelled
     ? instructionFor({ ...req, state: "unmodelled" })
     : touched === false
       ? instructionFor({ ...req, state: "edgeless" })
       : null;
-  return { present: true, parses: true, modelled, elements, inbound, outbound, expects, touched, attested, instruction };
+  return {
+    present: true,
+    parses: true,
+    callersKnown: true,
+    modelled,
+    elements,
+    inbound,
+    outbound,
+    expects,
+    touched,
+    attested,
+    instruction,
+  };
+}
+
+/**
+ * The operations the fleet already calls on this service, read off the landscape
+ * FILE alone — `null` when that file cannot be read either.
+ *
+ * The fallback for an `architecture/` project that does not parse, and the
+ * narrowest one that can be justified: it answers ONE question, the one `loam
+ * list` and `loam context` answer off the same bytes (`landscapeEvidence`,
+ * core/vocabulary/maturity.ts). "Nothing calls this service" and "loam could not
+ * tell" are different answers, and only the first may switch an API contract
+ * off, which is why the empty list and the unreadable file are told apart here
+ * rather than collapsed to `[]`.
+ */
+async function expectsFromFile(path: string, service: string, known: ReadonlySet<string>): Promise<string[] | null> {
+  try {
+    const doc = await loadFile(path);
+    if (doc.errors.length > 0) return null;
+    const svcOf = serviceResolver(doc.elements, known);
+    const ops = doc.relationships
+      .filter((r) => svcOf(r.target) === service)
+      .map((r) => r.op)
+      .filter((op): op is string => op !== undefined);
+    return [...new Set(ops)];
+  } catch {
+    return null;
+  }
 }

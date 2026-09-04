@@ -200,6 +200,48 @@ describe("the stamp: regenerate while provably untouched, refuse the moment it i
     }
   });
 
+  it("refuses a hand edit PREPENDED to the untouched stub, and writes nothing", async () => {
+    // "Seed never overwrites human work" is this refusal's own sentence, and it
+    // was false above the stub: `isLandscapeStub` matched with `endsWith`, so a
+    // two-line "OWNED BY THE ARCHITECTURE GUILD — do not regenerate" header was
+    // silently replaced while seed printed "replaced the scaffold's untouched
+    // stub" (verification 2026-09-04, second pass). The suffix match existed for
+    // ONE prefix — migrate-openspec's comment preamble, closed by a bare `//` —
+    // and that is now the only one it accepts.
+    const edited =
+      "// OWNED BY THE ARCHITECTURE GUILD — do not regenerate. See ADR-0007.\n" +
+      "// Reviewed 2026-09-04 by the fleet architects.\n" +
+      scaffoldLandscape();
+    const p = await makeProject({ ...EMPTY_REPO, "architecture/landscape.likec4": edited });
+    try {
+      await writeFleet(p, FLEET);
+      // `refusedSeed` hashes the tree before and after: the guild's two lines
+      // are still there, which is the whole claim.
+      const { message } = await refusedSeed(p, "seed-landscape-edited");
+      expect(message).toContain("not the scaffold's untouched stub");
+      expect(await p.read("architecture/landscape.likec4")).toBe(edited);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("still replaces the stub under migrate-openspec's own preamble", async () => {
+    // The reason the match was ever a suffix, kept working: `migrate-openspec`
+    // stages the identical stub under a comment saying why the map is empty, and
+    // a repo staged that way has had no human work done in it yet.
+    const migrated = docsRepoFiles({ landscapePreamble: "// staged out of an OpenSpec corpus" })
+      .find(([rel]) => rel.endsWith("landscape.likec4"))![1];
+    const p = await makeProject({ ...EMPTY_REPO, "architecture/landscape.likec4": migrated });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      expect(JSON.parse(run.stdout).landscape).toBe("replaced-stub");
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("a hand-authored landscape (no stamp, not the stub) refuses seed-landscape-edited", async () => {
     const p = await makeProject({ ...EMPTY_REPO, "architecture/landscape.likec4": LANDSCAPE });
     try {
@@ -649,6 +691,65 @@ describe("the generated views file, including its absence", () => {
       // The other writer reads the same documents: nothing left to sync.
       const sync = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout);
       expect(sync.action).toBe("current");
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("a palette under a path the ROOT exclude covers is referenced by nothing seed writes", async () => {
+    // The census seed renders from is the PROJECT's, and the project is what
+    // the renderer loads — root `exclude` applied. Seed walked `architecture/`
+    // for itself and skipped that filter, so a palette the renderer never
+    // loads put `global style subsystems` into the generated file: a name the
+    // fleet project cannot resolve, written by the command whose own `next`
+    // line is `loam validate --all`. The W5b defect, one command over.
+    const palette = "global {\n  styleGroup subsystems {\n    style element.tag = #external { color gray }\n  }\n}\n";
+    const config = (extra: string[]): string =>
+      JSON.stringify({ name: "fleet", exclude: ["**/node_modules/**", "features/**", ...extra] }, null, 2) + "\n";
+
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "likec4.config.json": config(["architecture/attic"]),
+      "architecture/landscape.likec4": scaffoldLandscape(),
+      "architecture/attic/palette.likec4": palette,
+    });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      const views = await p.read("architecture/subsystems.likec4");
+      expect(views).toContain("    title 'payments'\n");
+      expect(views).not.toContain("global style");
+
+      // And the graders read the same set, so nothing is owed after the seed.
+      const validate = await runLoam(p.workDir, "validate", "--all", "--json");
+      const report = JSON.parse(validate.stdout) as { targets: Target[] };
+      expect(report.targets.flatMap((t) => t.findings).map((f) => f.code)).not.toContain(
+        "subsystem.views-stale",
+      );
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
+  it("the control: the SAME palette, the exclude entry gone, IS referenced", async () => {
+    // One byte of `likec4.config.json` apart from the case above. Without this
+    // the pin would pass on a seed that had stopped reading siblings at all.
+    const p = await makeProject({
+      ...EMPTY_REPO,
+      "likec4.config.json":
+        JSON.stringify({ name: "fleet", exclude: ["**/node_modules/**", "features/**"] }, null, 2) + "\n",
+      "architecture/landscape.likec4": scaffoldLandscape(),
+      "architecture/attic/palette.likec4":
+        "global {\n  styleGroup subsystems {\n    style element.tag = #external { color gray }\n  }\n}\n",
+    });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      expect(await p.read("architecture/subsystems.likec4")).toContain(
+        "    title 'payments'\n    global style subsystems\n",
+      );
     } finally {
       await p.destroy();
     }

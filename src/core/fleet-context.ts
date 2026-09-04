@@ -30,6 +30,10 @@ import { conflictMarkerLines } from "./conflict-markers.js";
 import { decodeDocument } from "./kernel/document-bytes.js";
 import { loadFile, type LoadedDoc } from "./c4/likec4.js";
 import { loadBatch } from "./c4/workspace.js";
+import { ServiceModels } from "./c4/prefetch/fleet.js";
+import type { ServiceModel } from "./c4/service-model/load.js";
+import type { ModelShape } from "./c4/service-model/shape.js";
+import type { ServicePaths } from "./repo/paths.js";
 import { readOpenapi, type OpenapiDoc, type Operation } from "./openapi/doc.js";
 import type { RawServiceId } from "./kernel/ids/service.js";
 import { type FeatureEntry, type ServiceEntry } from "./repo/entries.js";
@@ -72,6 +76,14 @@ export interface FleetContextStats {
    */
   featureCapabilityWalks: number;
   likec4Loads: number;
+  /**
+   * PER-SERVICE PROJECTS parsed — the map plus one extending model, staged
+   * together (`c4/service-model/`). Apart from `likec4Loads` because they are
+   * different units: that counter means documents parsed alone, and a fleet
+   * whose models all extend the map moves every unit to this one. One project
+   * per service is the axis's exit criterion, and this is how a test pins it.
+   */
+  projectLoads: number;
 }
 
 const key = (path: string): string => resolve(path);
@@ -89,6 +101,19 @@ export class FleetContext {
   private readonly capabilityVocabularies = new Map<string, Promise<CapabilityVocabulary>>();
   private readonly featureCapabilities = new Map<string, Promise<CapabilityTree>>();
   private readonly likec4 = new Map<string, Promise<LoadedDoc>>();
+  /**
+   * The service-model axis's own memos, one object because the rules they
+   * encode are `c4/prefetch/fleet.ts`'s rather than this class's. It counts
+   * through this instance's counter, so `stats()` stays the one place a caller
+   * reads what an invocation cost.
+   */
+  private readonly models = new ServiceModels({
+    onProjectLoad: () => {
+      this.counts.projectLoads += 1;
+    },
+    known: async (docsDir) => new Set((await this.listServices(docsDir)).map((s) => s.id)),
+    standalone: (path) => this.loadLikeC4(path),
+  });
 
   private readonly counts: FleetContextStats = {
     serviceEnumerations: 0,
@@ -101,6 +126,7 @@ export class FleetContext {
     capabilityParses: 0,
     featureCapabilityWalks: 0,
     likec4Loads: 0,
+    projectLoads: 0,
   };
 
   /** A copy suitable for diagnostics/tests; callers cannot mutate the counters. */
@@ -332,5 +358,41 @@ export class FleetContext {
       this.counts.likec4Loads += 1;
       this.likec4.set(k, Promise.resolve(doc));
     }
+  }
+
+  /** The fleet map as the PROJECT it is — landscape plus use cases, minus the generated views file. */
+  architecture(docsDir: DocsDir): Promise<LoadedDoc> {
+    return this.models.architecture(docsDir);
+  }
+
+  /**
+   * Which shape each of these models has, keyed by resolved path — one read of
+   * each file's bytes per invocation. Ask over the FULL enumeration, never a
+   * narrowed run's subset: shapes decide which directories are owed a
+   * per-service `likec4.config.json`, and a partial map answers "not
+   * standalone" for every service outside it.
+   */
+  modelShapes(paths: readonly string[]): Promise<Map<string, ModelShape>> {
+    return this.models.shapes(paths);
+  }
+
+  /**
+   * A service's C4 model, read the way its own SHAPE demands — the one entry
+   * point for every reader of `model.likec4`, standalone or extending
+   * (`c4/service-model/load.ts` states the four arms and why each exists).
+   */
+  serviceModel(docsDir: DocsDir, paths: ServicePaths): Promise<ServiceModel> {
+    return this.models.model(docsDir, paths);
+  }
+
+  /**
+   * Every service's model prepared in two workspaces whatever the fleet's mix:
+   * the extending ones as one project each in one of them, the standalone ones
+   * through the document batch above. An accelerator with `prefetchLikeC4`'s
+   * failure story exactly — a batch that could not be created seeds nothing, so
+   * findings never change because of a tmpdir, only the speed does.
+   */
+  async prefetchServiceModels(docsDir: DocsDir, paths: readonly ServicePaths[]): Promise<void> {
+    await this.prefetchLikeC4(await this.models.prefetch(docsDir, paths));
   }
 }

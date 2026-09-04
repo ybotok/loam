@@ -1,27 +1,24 @@
-// Per-service C4 for a UI service. A UI is a first-class C4 system: it has
-// containers, it has runtime dependencies, and its pages (ui/pages/*.page.yaml)
-// hang off the operations the edges below name.
+// checkout-web's own C4 — what is INSIDE the element the fleet map binds to
+// services/checkout-web/. A UI is a first-class C4 system: it has containers, it
+// has runtime dependencies, and its pages (ui/pages/*.page.yaml) hang off the
+// operations the edges below name.
 //
-// Every .likec4 file is parsed ON ITS OWN — loam never concatenates them — so
-// this document declares the kinds it uses even though architecture/landscape.likec4
-// declares the same ones. Leaving them out here does not inherit, it fails to parse
-// (`c4.invalid`, an error), and the spec/API joins that read the model go quiet with it.
-specification {
-  element softwareSystem
-  element container
-  element person
-}
-
+// An EXTENDING model: no `specification` block, no partner copies. The kinds and
+// every element this file points at — `customer`, `marketplace.orderService`,
+// `marketplace.paymentService` — are declared once in
+// architecture/landscape.likec4, and the root `likec4.config.json` does not
+// exclude `services/**`, so the map and every model are read as ONE LikeC4
+// project. `extend` takes the fully-qualified id, because the element is nested
+// in the `marketplace` group.
+//
+// Note what this file does NOT do: it does not declare `customer = person`. The
+// actor is the map's, and the edge below simply points at it. That is the rule
+// the shape turns on — an element declared here outside
+// `marketplace.checkoutWeb` is `c4.element-unowned` — and it is also what stops
+// two documents from holding two different descriptions of the same person.
+// SCHEMA.md, "Two shapes of a service model", has the other shape.
 model {
-  // The actor belongs in a UI's own model in a way it does not in a backend's:
-  // the pages exist for this person, and the flows in ui/pages/ start at them.
-  // The landscape draws the same customer -> checkout-web edge at fleet scale;
-  // a person is exempt from the service/directory cross-check either way.
-  customer = person 'Customer'
-
-  checkoutWeb = softwareSystem 'checkout-web' {
-    description 'Customer-facing checkout UI'
-
+  extend marketplace.checkoutWeb {
     spa = container 'spa' {
       description 'Checkout SPA — cart, payment and order status pages'
       technology 'React'
@@ -37,37 +34,21 @@ model {
       technology 'Node.js'
     }
 
-    customer -> spa 'Buys'
     spa -> bff 'Calls the checkout BFF'
   }
 
-  // The services this one actually calls. A service model carries everything the
-  // service touches, cross-boundary included, drawn with the edge the service
-  // really has — the landscape carries only the boundary crossing (checkout-web ->
-  // order-service), while the edge below says WHICH container makes the call.
-  // Without these three edges this file would be two boxes and a hop, and
-  // `c4.no-relationships` would be right to say a model that reaches nothing is
-  // almost never true.
-  orderService = softwareSystem 'order-service' {
-    description 'Owns the order lifecycle'
-    // Bind rather than rely on the title. A renamed box silently stops matching
-    // its directory everywhere the two are joined — in the landscape that costs
-    // `landscape.binding-unknown` (error) when the id is wrong, and here it is
-    // what `health.dependency-unmodelled` resolves a declared dependency
-    // through in the services that have a health.yaml. checkout-web has none:
-    // a UI is nobody's runtime dependency, so it declares no SLIs, no alerts
-    // and no dependency graph, and owes no arch.spec.md to cover them.
-    metadata {
-      service 'order-service'
-    }
-  }
-  paymentService = softwareSystem 'payment-service' {
-    description 'Owns payment authorization/capture'
-    metadata {
-      service 'payment-service'
-    }
-  }
+  // The person is the MAP's element and the hop into this UI is drawn from it.
+  // The landscape draws the coarser `customer -> marketplace.checkoutWeb` twin
+  // at fleet scale; this one says which container the click reaches. A person is
+  // exempt from the service/directory cross-check either way.
+  customer -> marketplace.checkoutWeb.spa 'Buys'
 
+  // The services this one actually calls, drawn with the edge the service really
+  // has — the landscape carries only the boundary crossing (checkout-web ->
+  // order-service), while the edges below say WHICH container makes the call.
+  // Without them this file would be two boxes and a hop, and `c4.no-relationships`
+  // would be right to say a model that reaches nothing is almost never true.
+  //
   // `metadata { op }` is the C4 half of the operation join: the exact
   // operationId order-service's openapi.yaml declares. What `loam validate`
   // grades is the LANDSCAPE's twin of each edge below — `spine.op-undefined`
@@ -77,12 +58,12 @@ model {
   // nothing would catch it if they did. Two calls to one service are two edges,
   // not one edge with a list — a view has to be able to show that the status
   // page and the checkout page stand on different operations.
-  checkoutWeb.bff -> orderService 'Calls createOrder' {
+  marketplace.checkoutWeb.bff -> marketplace.orderService 'Calls createOrder' {
     metadata {
       op 'createOrder'
     }
   }
-  checkoutWeb.bff -> orderService 'Calls getOrder' {
+  marketplace.checkoutWeb.bff -> marketplace.orderService 'Calls getOrder' {
     metadata {
       op 'getOrder'
     }
@@ -94,16 +75,18 @@ model {
   // for an edge that SAYS it calls something and names no operation, so nothing
   // can check the call still exists. Free here and one warning there, which is
   // the asymmetry worth knowing: the fleet map is what the spine reads.
-  checkoutWeb.spa -> paymentService 'Calls the payment API'
+  marketplace.checkoutWeb.spa -> marketplace.paymentService 'Calls the payment API'
 }
 
 // Views are the LikeC4 renderer's, never loam's — no check reads this block.
-// Scoped to the system so the page answers "what does the checkout UI stand on"
-// rather than redrawing the fleet, which architecture/landscape.likec4 already does.
+// Scoped to the service's element so the page answers "what does the checkout UI
+// stand on" rather than redrawing the fleet, which architecture/landscape.likec4
+// already does. This file is part of the root project: `npx likec4 start` at the
+// docs root draws it, with no per-service project file to write.
 views {
-  view checkout_web of checkoutWeb {
+  view checkout_web of marketplace.checkoutWeb {
     title 'checkout-web — containers and the services they call'
     include *
-    include orderService, paymentService
+    include marketplace.orderService, marketplace.paymentService
   }
 }

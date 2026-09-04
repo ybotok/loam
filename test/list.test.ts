@@ -300,6 +300,52 @@ describe("verification column", () => {
   });
 });
 
+/** A map whose only `op`-carrying edge runs between two containers of ONE service. */
+const SELF_CALL_MAP = `specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  workerService = softwareSystem 'worker-service' {
+    api = container 'api'
+    db = container 'db'
+    api -> db 'reads' {
+      metadata { op 'readLedger' }
+    }
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+/** The same edge, drawn from a second service — a real caller. */
+const FOREIGN_CALL_MAP = `specification {
+  element softwareSystem
+  element container
+}
+
+model {
+  callerService = softwareSystem 'caller-service'
+  workerService = softwareSystem 'worker-service' {
+    api = container 'api'
+  }
+  callerService -> workerService.api 'reads' {
+    metadata { op 'readLedger' }
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
 describe("maturity ladder", () => {
   /** One service per rung. Presence and provenance state only — never content. */
   function ladderFixture(): Record<string, string> {
@@ -361,6 +407,52 @@ describe("maturity ladder", () => {
       // no sources at all: the status cannot lift it past documented
       expect(rung("svc-documented")).toBe("documented");
     });
+  });
+
+  it("a service's own internal op edge is not a caller — the fleet-wide rule agrees with `loam context`", async () => {
+    // `list` derives `called` fleet-wide in ONE pass rather than calling
+    // `landscapeEvidence` per service, and that second spelling kept counting a
+    // service's own internal wiring: `worker-service.api -> worker-service.db`
+    // carrying an `op` made worker-service its own caller, so a service nobody
+    // calls was told it owed an OpenAPI contract and sat at `partial` here while
+    // `loam context` — reading the shared derivation — said `documented`
+    // (verification 2026-09-04).
+    const files = {
+      "services/worker-service/model.likec4": "model {}\n",
+      "services/worker-service/spec.md": "# worker-service\n",
+      "architecture/landscape.likec4": SELF_CALL_MAP,
+    };
+    await withProject(files, async (p) => {
+      const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
+      const svc = json.services.find((s: { id: string }) => s.id === "worker-service");
+      expect(svc.apiExpected).toBe(false);
+      expect(svc.maturity).toBe("documented");
+      expect(svc.missing).not.toContain("openapi.yaml");
+      const ctx = JSON.parse(
+        (await runLoam(p.workDir, "context", "worker-service", "--json")).stdout,
+      );
+      expect(ctx.maturity).toBe(svc.maturity);
+      expect(ctx.missing).toEqual(svc.missing);
+    });
+
+    // The control: the SAME edge drawn from another service is a real caller,
+    // and the contract is owed again — without this the pin passes on a `list`
+    // that has stopped reading the map's operations at all.
+    await withProject(
+      {
+        "services/worker-service/model.likec4": "model {}\n",
+        "services/worker-service/spec.md": "# worker-service\n",
+        "services/caller-service/spec.md": "# caller-service\n",
+        "architecture/landscape.likec4": FOREIGN_CALL_MAP,
+      },
+      async (p) => {
+        const json = JSON.parse((await runLoam(p.workDir, "list", "services", "--json")).stdout);
+        const svc = json.services.find((s: { id: string }) => s.id === "worker-service");
+        expect(svc.apiExpected).toBe(true);
+        expect(svc.maturity).toBe("partial");
+        expect(svc.missing).toEqual(["openapi.yaml"]);
+      },
+    );
   });
 
   it("prints the rollup as one text line next to the status line, in ladder order", async () => {

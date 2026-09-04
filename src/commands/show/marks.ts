@@ -1,6 +1,7 @@
 /**
- * The four one-line shapes both halves of `loam show` are written in: a tick
- * for a file that exists, a scenario count, an edge note, a parse error.
+ * The three one-line shapes both halves of `loam show` are written in: a tick
+ * for a file that exists, a scenario count, an edge note. (The parse-error
+ * line is `errorText` in `core/c4/likec4.ts`, shared with validate.)
  *
  * A leaf of its own because the service view and the feature view both use
  * them, and neither should have to import the other to reach a tick.
@@ -19,8 +20,4 @@ export function scenarioCount(reqs: Requirement[]): number {
 export function edgeNote(e: Edge): string {
   if (e.op) return `  ${e.op}`;
   return e.title ? `  "${e.title}"` : "";
-}
-
-export function errorText(e: { message: string; line?: number }): string {
-  return typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message;
 }

@@ -40,6 +40,13 @@ import { readAsyncapi } from "../src/core/asyncapi/read.js";
 import { readCapabilityVocabulary } from "../src/core/capabilities/capabilities.js";
 import { featureCapabilityDeltas } from "../src/core/capabilities/delta/tree.js";
 import { loadFile } from "../src/core/c4/likec4.js";
+import { loadArchitecture } from "../src/core/c4/project/architecture.js";
+import { asLoadedDoc, loadProject } from "../src/core/c4/project/load.js";
+import { modelProjectDocuments } from "../src/core/c4/service-model/documents.js";
+import { serviceModelAt } from "../src/core/c4/service-model/load.js";
+import { readModelShape, readModelShapes } from "../src/core/c4/service-model/shape.js";
+import { rawServiceId } from "../src/core/kernel/ids/service.js";
+import { unfiledServicePaths } from "../src/core/repo/paths.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { type Requirement } from "../src/core/document/spec.js";
 import { conflictMarkerLines } from "../src/core/conflict-markers.js";
@@ -382,7 +389,76 @@ const READERS: Reader[] = [
       expect(doc.elements.length).toBeGreaterThanOrEqual(1);
     },
   },
+  {
+    name: "architecture",
+    memo: (fleet, at) => fleet.architecture(at.docsDir),
+    direct: (at) => loadArchitecture(at.docsDir),
+    floor: (doc) => {
+      expect(doc.errors).toEqual([]);
+      expect(doc.elements.length).toBeGreaterThanOrEqual(3);
+    },
+  },
+  {
+    name: "modelShapes",
+    memo: (fleet, at) => fleet.modelShapes([at.model]),
+    direct: (at) => readModelShapes([at.model]),
+    // The fixture's model is the harness SERVICE_MODEL, which declares its own
+    // kinds — a standalone model. The floor pins that, so a shape scan that
+    // answered "extending" for everything would not pass as agreement.
+    floor: (shapes) => expect([...shapes.values()]).toEqual(["standalone"]),
+  },
+  {
+    name: "serviceModel",
+    memo: (fleet, at) => fleet.serviceModel(at.docsDir, servicePathsFor(at)),
+    // The honest direct read IS the composition below: `serviceModelAt` is the
+    // one implementation of the two derivations (leaf directory name → service,
+    // docs-relative model path for the views filter), and spelling them again
+    // here would be the second copy rule 12 forbids. What this row pins is the
+    // MEMO — that the context answers with the same document a fresh
+    // composition over fresh reads produces.
+    direct: (at) => directServiceModel(at),
+    floor: (model) => {
+      expect(model.shape).toBe("standalone");
+      expect(model.doc.errors).toEqual([]);
+      expect(model.doc.elements.length).toBeGreaterThanOrEqual(1);
+    },
+  },
+  {
+    name: "prefetchServiceModels",
+    // Not a reader of its own, exactly as `prefetchLikeC4` is not: it SEEDS the
+    // service-model memos, and its parity claim is the seed's — a model answered
+    // from a prefetched batch equals the same model composed directly.
+    memo: async (fleet, at) => {
+      const paths = servicePathsFor(at);
+      await fleet.prefetchServiceModels(at.docsDir, [paths]);
+      return fleet.serviceModel(at.docsDir, paths);
+    },
+    direct: (at) => directServiceModel(at),
+    floor: (model) => {
+      expect(model.shape).toBe("standalone");
+      expect(model.doc.elements.length).toBeGreaterThanOrEqual(1);
+    },
+  },
 ];
+
+/** The fixture's one modelled service, spelled the way a reader would locate it. */
+function servicePathsFor(at: Fixture) {
+  return unfiledServicePaths(at.docsDir, rawServiceId("payment-service"));
+}
+
+/** `serviceModelAt` over fresh reads and no memo anywhere — the direct counterpart of two rows. */
+async function directServiceModel(at: Fixture) {
+  const paths = servicePathsFor(at);
+  return serviceModelAt({
+    docsDir: at.docsDir,
+    paths,
+    shape: await readModelShape(paths.model),
+    known: new Set((await listServices(at.docsDir)).map((s) => s.id)),
+    architecture: () => loadArchitecture(at.docsDir),
+    standalone: () => loadFile(paths.model),
+    project: async () => asLoadedDoc(await loadProject(at.docsDir, await modelProjectDocuments(at.docsDir, paths.model))),
+  });
+}
 
 /** The row by name — the negative control needs one specific reader. */
 function reader(name: string): Reader {

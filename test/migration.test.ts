@@ -98,7 +98,18 @@ const OS_ARCHIVED_CHANGE = `## ADDED Requirements
 The system SHALL authorize a payment before any capture is attempted.
 `;
 
-/** What the `loam adopt` brief would have an agent write — the C4 center OpenSpec never had. */
+/**
+ * The C4 center OpenSpec never had, in the STANDALONE shape — an OpenSpec repo
+ * arrives with no fleet map, so the migration writes the map and the model
+ * together and either shape is legal.
+ *
+ * The binding is repeated here deliberately, and it is the point of
+ * `c4.declaration-diverged`: a standalone model re-declares every element it
+ * talks about, and where its copy of the map's element disagrees — a missing
+ * `metadata { service }`, a different title, a tag one side has — two documents
+ * become two authorities on one element. Drop the binding line and the migrated
+ * repo grows a fifth warning naming exactly that.
+ */
 const MODEL = `specification {
   element softwareSystem
   element container
@@ -107,6 +118,7 @@ const MODEL = `specification {
 model {
   paymentService = softwareSystem 'payment-service' {
     description 'Owns payment authorization for the storefront'
+    metadata { service 'payment-service' }
     api = container 'api'
   }
 }

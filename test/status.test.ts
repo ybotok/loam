@@ -35,7 +35,7 @@ import {
 } from "./helpers/harness.js";
 import { SERVICE_DESCRIPTION_SENTINEL } from "../src/core/coherence/authoring/sentinels.js";
 import { docsRepoFiles } from "../src/core/docs.js";
-import { isLandscapeStub } from "../src/core/scaffold/landscape.js";
+import { isLandscapeStub, LEGACY_LANDSCAPE_STUBS } from "../src/core/scaffold/landscape.js";
 import { COMMIT_INTENT } from "../src/core/staging/interrupted.js";
 import { ARTIFACT_STATUSES } from "../src/core/status/report.js";
 import { FLEET_NEXT_LIMIT } from "../src/core/status/fleet/next.js";
@@ -1164,8 +1164,9 @@ describe("isLandscapeStub — the writer and the checker read one string", () =>
     expect(isLandscapeStub(stub)).toBe(true);
     // A checkout under core.autocrlf is still untouched.
     expect(isLandscapeStub(stub.replace(/\n/g, "\r\n"))).toBe(true);
-    // migrate-openspec prepends a preamble to the identical stub — endsWith,
-    // not equality, is what keeps that form reading as untouched.
+    // migrate-openspec prepends a preamble to the identical stub — the ONE
+    // prefix this checker looks past, and it is built by the writer, so the
+    // bytes come from `docsRepoFiles` rather than from a hand copy of them.
     const migrated = docsRepoFiles({ landscapePreamble: "// staged out of an OpenSpec corpus" }).find(
       ([rel]) => rel.endsWith("landscape.likec4"),
     )![1];
@@ -1177,6 +1178,62 @@ describe("isLandscapeStub — the writer and the checker read one string", () =>
     expect(isLandscapeStub(`${stub}\n// drawn\n`)).toBe(false);
     // Edited inside: a service declared in the model block.
     expect(isLandscapeStub(stub.replace("model {", "model {\n  a = softwareSystem 'a'"))).toBe(false);
+  });
+
+  it("reads a hand-edit PREPENDED to the stub as authored", () => {
+    // The hole the suffix match left open: everything a person put ABOVE the
+    // stub was invisible to the guard, so `loam seed` overwrote a "do not
+    // regenerate" header while reporting "replaced the scaffold's untouched
+    // stub" (verification 2026-09-04, second pass). A comment above the map is
+    // exactly how a team writes "this file is ours".
+    const owned =
+      "// OWNED BY THE ARCHITECTURE GUILD — do not regenerate. See ADR-0007.\n" +
+      "// Reviewed 2026-09-04 by the fleet architects.\n";
+    expect(isLandscapeStub(`${owned}${stub}`)).toBe(false);
+    // Not a comment at all, and equally above the stub.
+    expect(isLandscapeStub(`// note\n\n${stub}`)).toBe(false);
+    // The same edit above an OLD generation is authored too, or the hole simply
+    // moves into the legacy list.
+    for (const legacy of LEGACY_LANDSCAPE_STUBS) expect(isLandscapeStub(`${owned}${legacy}`)).toBe(false);
+  });
+
+  it("still recognises the stub an OLDER loam wrote, under CRLF and the preamble", () => {
+    // D2: the checker is a suffix match on the exact bytes, so rewording the
+    // scaffold's comment reclassifies every untouched older map as authored —
+    // in repositories nobody has touched — and `loam seed` then refuses one it
+    // wrote itself (`seed-landscape-edited`). Each shipped generation stays in
+    // the list, and this is what says the list is wired rather than declared.
+    expect(LEGACY_LANDSCAPE_STUBS.length).toBeGreaterThan(0);
+    for (const legacy of LEGACY_LANDSCAPE_STUBS) {
+      expect(legacy).not.toBe(stub);
+      expect(isLandscapeStub(legacy)).toBe(true);
+      expect(isLandscapeStub(legacy.replace(/\n/g, "\r\n"))).toBe(true);
+      // Under the migration preamble, spelled the way `docsRepoFiles` writes it
+      // — comment lines closed by a bare `//`. That closing line is what tells
+      // loam's own preamble from a hand-written note above the map.
+      expect(isLandscapeStub(`// staged out of an OpenSpec corpus\n//\n${legacy}`)).toBe(true);
+      // A hand-edit of an old map is still authored.
+      expect(isLandscapeStub(`${legacy}\n// drawn\n`)).toBe(false);
+    }
+    // Every generation, not just the previous one: a repository scaffolded two
+    // releases ago is as untouched as one scaffolded yesterday, and before this
+    // an untouched v0.1.0-beta map was read as authored — `seed` refused it with
+    // `seed-landscape-edited` and the ladder lost its teaching step.
+    // Generations 1-2 (v0.1.0-beta.*) wrote no `views` block and no `tag
+    // platform` at all; generation 3 (v0.2.0-alpha.*) is the one the extending
+    // shape retired, teaching that a service model "renders from its OWN
+    // directory" and declares its own `specification`.
+    const beta = LEGACY_LANDSCAPE_STUBS.filter((s) => !s.includes("views {"));
+    expect(beta.length).toBe(2);
+    for (const old of beta) {
+      expect(old).toContain("There is no `views` block, on purpose");
+      expect(old).not.toContain("tag platform");
+      expect(isLandscapeStub(old)).toBe(true);
+    }
+    expect(LEGACY_LANDSCAPE_STUBS.some((s) => s.includes("renders from its OWN directory"))).toBe(
+      true,
+    );
+    expect(stub).not.toContain("renders from its OWN directory");
   });
 });
 

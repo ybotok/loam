@@ -16,13 +16,19 @@
  * documentation has got — and stops. Which of those neighbours the feature
  * really touches is a judgement about intent, and loam does not make those.
  *
- * The landscape is parsed ONCE for the whole exploration. Per-service reads of
- * it exist (`brief/landscape.ts`'s `landscapeContext`) and are correct for one service;
+ * "The fleet map" here is the `architecture/` PROJECT — the landscape plus every
+ * other `.likec4` under it, minus the generated views file — and not the
+ * landscape FILE. See the read below for the disagreement that reading one file
+ * caused.
+ *
+ * It is parsed ONCE for the whole exploration. Per-service reads of it exist
+ * (`brief/landscape.ts`'s `landscapeContext`) and are correct for one service;
  * calling one of those per seed is how `validate --all` came to cost 13 seconds
  * on 120 services, and this command sits in front of authoring, where that is
  * the difference between a habit and a thing people skip.
  */
 import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { FleetContext } from "../fleet-context.js";
 import { type Rel } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
@@ -119,7 +125,15 @@ export interface Exploration {
   /** Ids the ring added that were not asked for — the candidates to weigh. */
   neighbours: string[];
   overlaps: ExploreOverlap[];
-  landscape: { present: boolean; parses: boolean };
+  /**
+   * `broken` is the `architecture/` documents that failed, docs-relative POSIX,
+   * deduped and sorted — `[]` while `parses` is true. `parses` answers for the
+   * PROJECT, so the broken document is very often a SIBLING beside a landscape
+   * that reads perfectly, and naming the landscape file was a claim about bytes
+   * loam read fine (verification 2026-09-04). Spelled as `landscape.invalid`
+   * spells it, so the two surfaces name one file one way.
+   */
+  landscape: { present: boolean; parses: boolean; broken: string[] };
   /**
    * The literal `loam new` line the seeds imply — seeds only. The ring is
    * deliberately NOT folded in: this module's whole claim is that it does not
@@ -163,9 +177,24 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   const byId = new Map<string, ServiceEntry>(entries.map((e) => [e.id, e]));
   const known: ReadonlySet<string> = new Set(byId.keys());
 
-  const landPath = landscapePath(docsDir);
-  const present = existsSync(landPath);
-  const land = present ? await context.loadLikeC4(landPath) : null;
+  // The `architecture/` PROJECT, never `architecture/landscape.likec4` alone.
+  // The map is a project — the landscape merged with every use case, palette and
+  // second `model { }` block beside it — and reading one file of it made this
+  // command answer differently from `loam adopt` and `loam context` about the
+  // same tree (reproduced: with a broken `architecture/palette.likec4` beside a
+  // landscape that parses, `context checkout-web --json` reported
+  // `landscape.parses: false` while `explore checkout-web --json` reported
+  // `parses: true` and went on to describe every edge). `core/pack/living.ts`
+  // named this module as the last reader that disagreed. Whichever answer is
+  // right, an agent handed both has no way to tell — and the renderer's answer
+  // is the project's.
+  //
+  // `present` stays a fact about the FILE, because that file is the WRITE target:
+  // `loam new`'s scaffold and every brief ask for edits to
+  // `architecture/landscape.likec4` by name, and "the project is empty" is not
+  // the same instruction as "there is no map to edit".
+  const present = existsSync(landscapePath(docsDir));
+  const land = present ? await context.architecture(docsDir) : null;
   const parses = land !== null && land.errors.length === 0;
   const elements = parses ? land.elements : [];
   const relationships: Rel[] = parses ? land.relationships : [];
@@ -199,9 +228,15 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
   // other: a service can realize a capability without appearing in its drawn
   // flow, and a flow can pass through a service that has written nothing down.
   //
-  // The scan gates its own load, and this whole block is already behind
-  // `--capability` being passed at all, so an exploration by service or by
-  // operation never touches `architecture/` as a project.
+  // The scan gates its own load — a fleet whose documents mention no reserved
+  // tag never starts LikeC4 for it — and this whole block is behind
+  // `--capability` being passed at all. What it is no longer behind is the
+  // project itself: the read above loads `architecture/` for every exploration,
+  // so a `--capability` run pays for a SECOND parse of the same documents
+  // (`readUseCases` takes a `DocsDir`, not this invocation's memo). Accepted
+  // rather than unnoticed: the alternative is a seam that hands the scan a
+  // pre-loaded project, which is a change to a module five callers share, and
+  // the cost lands only on the flag that already opts into the fleet rollup.
   const capSeeds: ServiceEntry["id"][] = [];
   let unresolvedCaps: string[] = [];
   if (req.capabilities.length > 0) {
@@ -293,7 +328,16 @@ export async function explore(req: ExploreRequest): Promise<Exploration> {
     services,
     neighbours: [...ring.keys()].sort(compareIds),
     overlaps,
-    landscape: { present, parses },
+    landscape: {
+      present,
+      parses,
+      broken:
+        land === null
+          ? []
+          : [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
+              .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
+              .sort(),
+    },
     scaffold: newCommand(featureId, seeds, known),
   };
 }

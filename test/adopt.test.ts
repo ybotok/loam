@@ -14,8 +14,12 @@
  *    the one unrecoverable outcome is an agent overwriting a document a human
  *    wrote;
  *  - it states the GRAMMAR of each artifact, since every check downstream is a
- *    check of that grammar — and the model example it hands out has to parse,
- *    or the brief is teaching the agent to fail `loam validate`;
+ *    check of that grammar — and the examples it hands out have to be the shape
+ *    the checks then grade, or the brief is teaching the agent to fail
+ *    `loam validate`. The model example is asserted on its SHAPE rather than by
+ *    parsing it alone: since 2026-09-04 the brief teaches a model that extends
+ *    `architecture/landscape.likec4`, which by construction does not parse on its
+ *    own, and a test that demanded it did would be pinning the old shape;
  *  - it reports what the landscape already says about this service, so the
  *    baseline binds to the fleet instead of describing a parallel one;
  *  - it is emphatic about `sources`, the only mechanical tie to the code;
@@ -37,7 +41,6 @@ import {
   treeHashes,
   type Project,
 } from "./helpers/harness.js";
-import { loadFile } from "../src/core/c4/likec4.js";
 
 const SVC = "payment-service";
 
@@ -137,17 +140,82 @@ describe("the shape of each artifact", () => {
     expect(shape).toContain("metadata { service");
   });
 
-  it("hands out a model example that actually parses — the brief must not teach a file loam rejects", async () => {
+  it("hands out an EXTENDING model example — no specification, no partner copies", async () => {
+    // The example used to be asserted by parsing it ALONE, which was the right
+    // test while a model was a standalone document. It is not one any more: the
+    // shape the brief teaches declares no kinds and resolves `extend` against
+    // `architecture/landscape.likec4`, so parsing it on its own is guaranteed to
+    // fail and would say nothing about whether the brief is right. What replaces
+    // that assertion is the shape itself plus the substitution below — the two
+    // things an agent copying this example depends on.
     const p = await project({}, { service: SVC });
     const example = target(await brief(p), "model.likec4").example as string;
-    const dir = await makeTmpDir("loam-brief-");
-    cleanups.push(() => rm(dir, { recursive: true, force: true }));
-    const path = join(dir, "model.likec4");
-    await writeFile(path, example, "utf8");
-    const loaded = await loadFile(path);
-    expect(loaded.errors.map((e) => e.message)).toEqual([]);
-    // and it is a model of THIS service, bound to this directory
-    expect(loaded.elements.some((e) => e.service === SVC)).toBe(true);
+    expect(example).not.toContain("specification {");
+    expect(example).toContain("model {");
+    expect(example).toContain("extend ");
+    // and it teaches the cross-boundary edge drawn from a container to the map's
+    // own element, never a re-declaration of that element
+    expect(example).toContain("-> stripe 'Authorizes cards'");
+    expect(example).not.toContain("softwareSystem 'stripe'");
+  });
+
+  it("substitutes the fleet element's real id into the example where exactly one resolves", async () => {
+    // `<fqn>` is a literal placeholder in `ARTIFACTS` (targets.ts stays a static
+    // constant); `serviceBrief` resolves it against the landscape it has already
+    // read. An example still carrying the placeholder would send the agent back
+    // to the map to work out what to type, which is the one thing the brief has
+    // in hand and the agent does not.
+    const p = await project(coherentFixture(), { service: SVC });
+    const b = await brief(p);
+    expect(b.landscape.elements.map((e: { id: string }) => e.id)).toEqual(["paymentService"]);
+    const example = target(b, "model.likec4").example as string;
+    expect(example).toContain("extend paymentService {");
+    expect(example).not.toContain("<fqn>");
+  });
+
+  it("says what to extend when the map holds no element for the service yet", async () => {
+    // With nothing to substitute the example must not print a bare placeholder:
+    // it names the write the landscape target is about to ask for, and the order
+    // the two are done in.
+    const p = await project({}, { service: SVC });
+    const example = target(await brief(p), "model.likec4").example as string;
+    expect(example).not.toContain("<fqn>");
+    expect(example).toContain("architecture/landscape.likec4");
+  });
+
+  it("puts a short token in the code and the reason in one comment above it", async () => {
+    // `<fqn>` occupies three code positions — the `extend` line, the source of a
+    // container edge, and `view of` — and the placeholder was a 103-character
+    // English sentence substituted into all three. It reads as an instruction in
+    // the first and as noise in the other two, on the command's most common
+    // invocation.
+    const p = await project({}, { service: SVC });
+    const example = target(await brief(p), "model.likec4").example as string;
+    expect(example).toContain("extend <your-element-id> {");
+    expect(example).toContain("<your-element-id>.api -> stripe 'Authorizes cards'");
+    expect(example).toContain("view of <your-element-id> {");
+    // The explanation is carried once, as a comment, above the block.
+    const lines = example.split("\n");
+    const said = lines.filter((l) => l.includes("architecture/landscape.likec4"));
+    expect(said.length).toBe(1);
+    expect(said[0]!.startsWith("//")).toBe(true);
+    expect(example.indexOf("architecture/landscape.likec4")).toBeLessThan(example.indexOf("model {"));
+  });
+
+  it("heads the model example with the service being adopted, and marks what it cannot substitute", async () => {
+    // The header read `// payment-service's own C4` for every service — one
+    // line above an `extend` the brief HAD substituted, so the personalised
+    // half taught an agent the literal half was personalised too, and the
+    // constant's own service name travelled into other services' models.
+    const p = await project({}, { service: "order-service" });
+    const example = target(await brief(p), "model.likec4").example as string;
+    expect(example).toContain("// order-service's own C4");
+    expect(example).not.toContain("payment-service");
+    expect(example).not.toContain("<svc>");
+    // `stripe` is the one literal loam has nothing to substitute for — the
+    // counterpart is the fleet's own id, and inventing one is the edge the
+    // whole brief refuses to guess. It says so rather than reading as a name.
+    expect(example).toMatch(/'stripe' stands for the OTHER party/);
   });
 
   it("says operationId is one token spelled three ways, not three names", async () => {
@@ -205,6 +273,95 @@ describe("what already exists around the service", () => {
     expect(b.landscape.elements).toEqual([]);
     // "nothing models it" would be a lie about a document nobody could read
     expect(b.landscape.modelled).toBe(null);
+  });
+
+  /**
+   * The coherent fixture with a broken SIBLING under `architecture/` — a palette
+   * that does not parse — beside a landscape that parses perfectly. The fleet
+   * map is the whole project, so `parses` is false for the project while the
+   * landscape file is fine, and checkout-web is drawn in it with one inbound
+   * edge that names no operation.
+   */
+  function brokenSiblingFixture(): Record<string, string> {
+    const files = coherentFixture();
+    files["services/checkout-web/spec.md"] = "---\nservice: checkout-web\nstatus: draft\n---\n";
+    files["architecture/palette.likec4"] = "this is not likec4 {{{\n";
+    return files;
+  }
+
+  it("names the document that actually failed, not the landscape, when a sibling breaks the map", async () => {
+    // The brief told an agent to go and fix parse errors in
+    // `architecture/landscape.likec4` — which has none — and `loam validate
+    // --all`, run one second later on the same tree, blamed the palette.
+    const p = await project(brokenSiblingFixture(), { service: "checkout-web" });
+    const b = await brief(p, "--service", "checkout-web");
+    expect(b.landscape.parses).toBe(false);
+    const instruction: string = b.landscape.instruction;
+    expect(instruction).toContain("architecture/palette.likec4");
+    expect(instruction).not.toContain("architecture/landscape.likec4");
+    // …and the fleet run names the same file.
+    const res = await runLoam(p.workDir, "validate", "--all", "--json");
+    const json = JSON.parse(res.stdout) as {
+      targets: Array<{ kind: string; findings: Array<{ code: string; message: string }> }>;
+    };
+    const invalid = json.targets
+      .flatMap((t) => t.findings)
+      .filter((f) => f.code === "landscape.invalid");
+    expect(invalid.length, res.out).toBeGreaterThan(0);
+    expect(invalid[0]!.message).toContain("architecture/palette.likec4");
+    // The text view's headline made the same claim, in its own module.
+    const text = await runLoam(p.workDir, "adopt", "--service", "checkout-web");
+    expect(text.code, text.out).toBe(0);
+    expect(text.out).not.toContain("architecture/landscape.likec4 does not parse");
+  });
+
+  it("offers no write to the shared map when the map could not be read", async () => {
+    // `modelled === null` is "loam could not read the map", and it used to fall
+    // through the same gate as "the map draws nothing for this service": the
+    // brief then handed over the UNDRAWN target — add a top-level element bound
+    // to this directory, block included — for a service the map already declares
+    // and binds, and splicing it earns `landscape.binding-duplicate`.
+    const p = await project(brokenSiblingFixture(), { service: "checkout-web" });
+    const b = await brief(p, "--service", "checkout-web");
+    expect(b.landscape.modelled).toBe(null);
+    expect(b.targets.map((t: { artifact: string }) => t.artifact)).not.toContain("landscape.likec4");
+    // …and the model example does not substitute "add the element to the map"
+    // into its `extend` line either.
+    const example = target(b, "model.likec4").example as string;
+    expect(example).toContain("extend <your-element-id> {");
+    // (the note is wrapped into `//` lines, so it is read back unwrapped)
+    const flowed = example.replace(/\n\/\/ /g, " ").replace(/\s+/g, " ");
+    expect(flowed).toContain("<your-element-id> is a placeholder: the fleet map (architecture/) does not parse");
+    expect(example).not.toContain("the id of the element you add");
+  });
+
+  it("does not demand an API contract because a sibling of the landscape broke", async () => {
+    // `apiExpected` read `parses`, which since the widening answers about the
+    // whole `architecture/` project. checkout-web is a browser UI: the landscape
+    // draws exactly one inbound edge into it and that edge names no operation,
+    // so `list` and `context` say no contract is owed — and the brief said the
+    // opposite about the same tree the moment a palette beside the map broke.
+    const healthy = brokenSiblingFixture();
+    delete healthy["architecture/palette.likec4"];
+    const ok = await brief(await project(healthy, { service: "checkout-web" }), "--service", "checkout-web");
+    expect(target(ok, "openapi.yaml").required).toBe(false);
+
+    const p = await project(brokenSiblingFixture(), { service: "checkout-web" });
+    const b = await brief(p, "--service", "checkout-web");
+    expect(b.landscape.callersKnown).toBe(true);
+    expect(b.landscape.expects).toEqual([]);
+    expect(target(b, "openapi.yaml").required).toBe(false);
+  });
+
+  it("keeps the contract owed when the landscape FILE itself is the document that broke", async () => {
+    // The fallback answers one question off one file. With that file unreadable
+    // there is no evidence either way, and "nobody calls this service" is the
+    // one answer a brief may never guess.
+    const files = coherentFixture();
+    files["architecture/landscape.likec4"] = "model {\n  broken !!! not likec4\n";
+    const b = await brief(await project(files, { service: "checkout-web" }), "--service", "checkout-web");
+    expect(b.landscape.callersKnown).toBe(false);
+    expect(target(b, "openapi.yaml").required).toBe(true);
   });
 
   it("decides `modelled` the way validate does — a nearest-ancestor binding wins over a descendant's title", async () => {
@@ -338,6 +495,13 @@ model {
     // documents, and that join is the agent's.
     expect(instruction).toMatch(/names a different thing in the map/);
     expect(instruction).toContain("landscape.service-isolated");
+    // The element is named against the fleet map, not the landscape FILE:
+    // LikeC4 hands back no source document for an element, and the map is a
+    // project of several now, so a file name here would be an unread claim.
+    expect(instruction).toContain("in the fleet map (architecture/)");
+    // …and the state it warns about is BINARY, said where an agent reads it:
+    // one edge silences the check, so the calls left undrawn are named nowhere.
+    expect(instruction).toMatch(/touched\/untouched, not a set difference/);
     // The target is back, as an edit, and its shape refuses the second box.
     const t = target(b, "landscape.likec4");
     expect(t.action).toBe("edit");
@@ -428,6 +592,68 @@ model {
     expect(b.landscape.touched).toBe(true);
     expect(b.landscape.instruction).toBe(null);
     expect(b.targets.map((t: { artifact: string }) => t.artifact)).not.toContain("landscape.likec4");
+    // …and it is NOT a caller of itself. `inbound` filed the edge under the
+    // service's own id, so `adopt --json` reported billing-service calling
+    // billing-service and `loam context` printed `← billing-service "reads"` —
+    // a caller nobody has (verification 2026-09-04). `touched` is unaffected:
+    // it reads the relationships, so it and the isolation check still agree.
+    expect(b.landscape.inbound).toEqual([]);
+    expect(b.landscape.outbound).toEqual([]);
+  });
+
+  it("promises no warning on an #external element, where the isolation check can never fire", async () => {
+    // The brief told an agent `landscape.service-isolated` would hold it to the
+    // edit on exactly the tree the check's own subject filter exempts: an
+    // `#external` element bound to a real directory. Measured on that tree,
+    // `validate --all` reports `landscape.matched` and no isolation finding at
+    // all (verification 2026-09-04).
+    const files = edgelessFixture({ tags: "    #external\n", spec: "  tag external\n" });
+    files["services/billing-service/model.likec4"] = BILLING_MODEL;
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.touched).toBe(false);
+    expect(b.landscape.attested).toHaveLength(1);
+    const instruction: string = b.landscape.instruction;
+    expect(instruction).toContain("carries `#external`");
+    expect(instruction).toContain("will NOT fire here");
+    expect(instruction).toContain("this brief is the only place it is said");
+    expect(instruction).not.toContain("reports `landscape.service-isolated` (warn) until an edge lands");
+    const shape: string = target(b, "landscape.likec4").shape.join("\n");
+    expect(shape).toContain("carries `#external`");
+    expect(shape).not.toContain("reports `landscape.service-isolated` (warn) while this element has no edge");
+    // The check really is silent on this tree — the brief's claim, measured.
+    const res = await runLoam(p.workDir, "validate", "--all", "--json");
+    const json = JSON.parse(res.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> };
+    expect(json.targets.flatMap((t) => t.findings.map((f) => f.code))).not.toContain("landscape.service-isolated");
+  });
+
+  it("counts an edge drawn in a sibling architecture/ document — the map is the project, not the file", async () => {
+    // `touched` was computed off `architecture/landscape.likec4` alone while
+    // `landscape.service-isolated` grades the same predicate over the whole
+    // `architecture/` project. A fleet keeping a second `model { }` block in a
+    // sibling therefore got a brief demanding edges it had already drawn, an
+    // edit target for a shared file, and a `validate --all` on the same tree
+    // that reported nothing — with no way to tell which surface was right.
+    const files = edgelessFixture();
+    files["services/billing-service/model.likec4"] = BILLING_MODEL;
+    files["architecture/extra.likec4"] = "model {\n  checkoutWeb -> billingService 'Bills'\n}\n";
+    const p = await project(files, { service: "billing-service" });
+    const b = await brief(p);
+    expect(b.landscape.parses).toBe(true);
+    expect(b.landscape.modelled).toBe(true);
+    expect(b.landscape.touched).toBe(true);
+    expect(b.landscape.inbound).toHaveLength(1);
+    // Nothing owed: no attested list to name, no instruction, no eighth target.
+    expect(b.landscape.attested).toEqual([]);
+    expect(b.landscape.instruction).toBe(null);
+    expect(b.targets.map((t: { artifact: string }) => t.artifact)).not.toContain("landscape.likec4");
+    // …and the fleet run agrees about the same tree, which is the whole point.
+    const res = await runLoam(p.workDir, "validate", "--all", "--json");
+    const json = JSON.parse(res.stdout) as {
+      targets: Array<{ findings: Array<{ code: string }> }>;
+    };
+    const codes = json.targets.flatMap((t) => t.findings.map((f) => f.code));
+    expect(codes).not.toContain("landscape.service-isolated");
   });
 
   it("opens the service model only in the edgeless state", async () => {
@@ -519,6 +745,20 @@ describe("what happens next, and what will never happen", () => {
     ]) {
       expect(codes).toContain(code);
     }
+  });
+
+  it("names the other side of c4.declaration-diverged as the fleet map, never one file", async () => {
+    // The map is a PROJECT: an element may be declared in any document under
+    // `architecture/`, and the finding's own message and `loam explain` both
+    // refuse to name a file for that reason. The brief still hardcoded
+    // `architecture/landscape.likec4`, which on a fleet whose map is spread over
+    // several documents names a file that may not declare the element at all
+    // (verification 2026-09-04).
+    const p = await project({}, { service: SVC });
+    const row = (await brief(p)).checks.find((c: { code: string }) => c.code === "c4.declaration-diverged");
+    expect(row).toBeDefined();
+    expect(row.what).toContain("the fleet map (`architecture/`)");
+    expect(row.what).not.toContain("architecture/landscape.likec4");
   });
 
   it("grades those checks, so the agent knows which ones stop it", async () => {

@@ -86,7 +86,10 @@ export async function archiveLocked(
   await planGlossary(read, gated, planned, say);
   await planOpenapiContracts(read, gated, planned, say);
   await planAsyncapiContracts(read, gated, planned, say);
-  await planLandscape(config, gated, planned, say);
+  // `read`, not `config`: the C4 merge now asks which services own their own
+  // interior, and that answer comes from the fleet enumeration this run has
+  // already paid for.
+  await planLandscape(read, gated, planned, say);
   // The flows this feature brings, after the elements they draw hops over: the
   // copy is create-only and refused at the gate if the living tree already holds
   // one (`core/usecases/delta/flows.ts`), and it is ordered after the landscape

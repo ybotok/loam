@@ -1,21 +1,21 @@
-// Per-service C4. Written by an agent from the `loam adopt` brief, then curated.
+// payment-service's own C4 — what is INSIDE the element the fleet map binds to
+// services/payment-service/. Written by an agent from the `loam adopt` brief,
+// then curated.
 //
-// loam parses every `.likec4` file ALONE, so this document declares its own
-// `specification` block; a renderer handed the whole tree at once would merge
-// them and call every declaration a duplicate, which is why the root
-// `likec4.config.json` scopes the fleet project to `architecture/` and stays
-// that way. What renders THIS model beside the map from the docs root is this
-// directory's own `likec4.config.json`, written by `loam subsystem sync`.
-specification {
-  element softwareSystem
-  element container
-  element database
-}
-
+// An EXTENDING model: no `specification` block of its own, no copy of any
+// partner. The kinds (`container`, `database`) and every element this file
+// points at are declared once in architecture/landscape.likec4, and the root
+// `likec4.config.json` does not exclude `services/**`, so the map and every
+// model are one LikeC4 project. `extend` takes the FULLY-QUALIFIED id — the
+// element is nested in the `marketplace` group, so `extend paymentService`
+// would resolve to nothing.
+//
+// There is no likec4.config.json beside this file and loam never writes one for
+// an extending model: it belongs to the root project, so `npx likec4 start` at
+// the docs root already draws it beside the map. SCHEMA.md, "Two shapes of a
+// service model", has the other shape and the migration recipe.
 model {
-  paymentService = softwareSystem 'payment-service' {
-    description 'Owns payment authorization/capture'
-
+  extend marketplace.paymentService {
     api = container 'api' {
       description 'REST API'
       technology 'Spring Boot'
@@ -42,28 +42,25 @@ model {
     domain -> outbox 'Appends events in the state-change transaction'
   }
 
-  // The service model carries everything the service touches — cross-boundary
-  // dependencies included, drawn with the edge the service actually has. The
-  // landscape carries only the boundary crossing; health.yaml's dependencies
-  // must resolve HERE (`health.dependency-unmodelled` otherwise), which is why
-  // all three of this service's declared dependencies appear below.
-  kafka = softwareSystem 'kafka' {
-    description 'Event backbone (platform)'
-  }
-  identityService = softwareSystem 'identity-service' {
-    description 'Token validation (degradable: cached decisions carry a request)'
-  }
-  stripe = softwareSystem 'stripe' {
-    description 'Card acquirer'
-  }
-
-  paymentService.outbox -> kafka 'Relay publishes payment events'
-  paymentService.domain -> identityService 'Validates the caller token'
-  paymentService.domain -> stripe 'Authorizes and captures cards'
+  // Everything the service touches across its own boundary, drawn from the
+  // container that really touches it to the other party's element AS THE MAP
+  // SPELLS IT — never a copy of that element. The landscape carries only the
+  // service-level crossing; these three edges say which container makes it.
+  // health.yaml's three dependencies resolve through them
+  // (`health.dependency-unmodelled` otherwise): `identity-service` through the
+  // binding on the map's element, `stripe` by its id, and `kafka` because a
+  // partner brings its ancestors — the edge names the TOPIC and the broker
+  // answers for it.
+  marketplace.paymentService.outbox -> kafka.paymentEvents 'Relay publishes payment events'
+  marketplace.paymentService.domain -> marketplace.identityService 'Validates the caller token'
+  marketplace.paymentService.domain -> stripe 'Authorizes and captures cards'
 }
 
+// Views are the LikeC4 renderer's, never loam's. This file is part of the root
+// project, so `npx likec4 start` at the docs root draws this view beside the
+// fleet map with nothing else to write.
 views {
-  view payment_service of paymentService {
+  view payment_service of marketplace.paymentService {
     include *
   }
 }

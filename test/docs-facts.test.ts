@@ -316,6 +316,12 @@ describe("public docs name only emitted codes", () => {
     "landscape.touched": "adopt brief --json payload field path",
     "landscape.attested": "adopt brief --json payload field path",
     "landscape.modelled": "adopt brief --json payload field path",
+    "landscape.parses": "adopt brief --json payload field path",
+    "landscape.present": "context --json payload field path — whether architecture/landscape.likec4 is on disk, beside `landscape.parses` about the project",
+    "landscape.broken": "context/explore --json payload field path — the architecture/ documents that failed, beside `landscape.parses` about the project",
+    "landscape.inbound": "adopt brief --json payload field path",
+    "landscape.outbound": "adopt brief --json payload field path",
+    "landscape.expects": "adopt brief --json payload field path",
     "readiness.living": "audit-openspec --json payload field path",
     "readiness.active": "audit-openspec --json payload field path",
     "baselines.release": "check-openspec-corpus baseline selector, dev tooling not CLI output",
@@ -327,6 +333,17 @@ describe("public docs name only emitted codes", () => {
     "config.yaml.context": "OpenSpec config key path inventoried by the audit",
     "contracts.openapi": "config key path — where loam.json names the build's OpenAPI output",
     "living.deployment": "context --json payload field path — the service's slice of the fleet topology",
+    "projects.exclude": "subsystem sync --json payload field path — the root likec4.config.json exclude list it rewrote",
+    "projects.created": "subsystem sync --json payload field path — the per-service project files it wrote",
+    "projects.removed": "subsystem sync --json payload field path — the stray per-service project files it deleted",
+    "projects.current": "subsystem sync --json payload field path — the services already holding the project file they are owed",
+    "projects.exclude.removed": "subsystem sync --json payload field path — the exclude entries the rewrite took back",
+    "projects.exclude.unreadable": "subsystem sync --json payload field path — the root config exists and holds no readable exclude list, which is not the same answer as an empty one",
+    "blocked.reason": "subsystem sync --json payload field path — why the generated views file was left alone",
+    "reports.dir": "doctor --json payload field path — the absolute loam-reports/ directory the protocol writes into",
+    "reports.present": "doctor --json payload field path — whether that directory exists",
+    "reports.total": "doctor --json payload field path — how many reports it holds",
+    "reports.next": "doctor --json payload field path — the ordinal the next report takes",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */
@@ -556,6 +573,34 @@ describe("SCHEMA's layout block is the whole map", () => {
       }
     }
     expect(failures, failures.join("\n")).toEqual([]);
+  });
+});
+
+describe("one stance on whose document holds a service's interior", () => {
+  it("SCHEMA never says the map holds no service's interior, because every other surface says it may", async () => {
+    // Re-verification 2026-09-04, E3: the landscape-scaling paragraph asserted
+    // "an extending model is the only place a container can be written, so the
+    // map holds no service's interior" while SCHEMA's own "Private stores",
+    // `landscape.datastore-private`'s message and the archive's title-join
+    // remainder all say the map MAY hold one — and a container nested inside a
+    // service on the map validates clean through both loam and the renderer.
+    // Two sides so the paragraph cannot be re-narrowed without the messages
+    // moving too: the false clause is gone, and the placement the messages
+    // offer is still spelled where a reader looks it up.
+    const schema = flat(await read("SCHEMA.md"));
+    expect(
+      schema,
+      "SCHEMA still forbids what `landscape.datastore-private` prescribes and `loam validate` accepts",
+    ).not.toContain("the map holds no service's interior");
+    expect(
+      schema,
+      "SCHEMA's `Private stores` must still offer the map as a placement — that is the sentence the message quotes",
+    ).toContain("or inside the service's element on the map when the map draws that service's containers");
+    const message = await read("src/commands/validate/fleet/map/consumers.ts");
+    expect(
+      message,
+      "the datastore remedy no longer offers the map placement — move SCHEMA with it",
+    ).toContain("here when the map draws ");
   });
 });
 

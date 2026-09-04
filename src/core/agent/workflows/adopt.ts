@@ -14,7 +14,7 @@ export const LOAM_ADOPT: CommandContent = {
     "wire this repo (`loam init`, then `loam doctor`) if it has no ./loam.json yet",
     "`loam adopt` — the brief: the order to read the service in, every file to write, the grammar of each, and what the fleet map already says",
     "walk the service in the brief's order — shape first, then one surface at a time — keeping the list of every path you open, because that list becomes `sources`",
-    "write the artifacts, everything `status: draft`, then `loam subsystem sync` for the per-service LikeC4 project file — loam's, never yours",
+    "write the artifacts, everything `status: draft` — the model EXTENDS the fleet map — then `loam subsystem sync` for the renderer wiring, which is loam's and never yours",
     "validate the service, then validate the whole fleet — a baseline that passes one and fails the other is documented and invisible",
     "hand back with what you could not determine from the code, which directories you never opened, the branch-to-scenario count per operation, and three behaviours your documents do not describe — then let a human vouch",
   ],
@@ -49,6 +49,11 @@ thin baseline that validates is thin, not done.
      the WHOLE FLEET's map: add this service's element and edges to it, never rewrite it.
      It appears while nothing resolves to the service AND while the element that does
      has no edge touching it; \`targets[].shape\` says which of the two you are in.
+     It does NOT appear when loam could not READ the map (\`landscape.modelled: null\`
+     — a broken landscape, or a broken sibling under \`architecture/\`): nothing is
+     known about what the map already draws, so no write to the whole fleet's map is
+     briefed. \`landscape.instruction\` carries the answer and names the documents that
+     failed; fix those and re-run.
    - \`targets[].shape\` — the grammar of each artifact, and \`example\` where one is
      shorter than a description. Every rule there is one a later check depends on;
      rules nothing checks are in \`unchecked[]\` instead, and are still worth following.
@@ -56,8 +61,10 @@ thin baseline that validates is thin, not done.
      Bind to them; do not draw a second version of the same box. \`landscape.expects\`
      lists operations other services already call — your openapi.yaml owes them.
      \`landscape.instruction\` is the write the fleet map still owes this service; it
-     is \`null\` once an element resolves to it AND at least one edge touches that
-     element (\`landscape.touched\`), and only then. \`landscape.attested\` lists the
+     is \`null\` once an element resolves to it AND at least one edge ANYWHERE in the
+     \`architecture/\` project touches that element (\`landscape.touched\`), and only
+     then — one edge closes the state, so draw every call in one pass.
+     \`landscape.attested\` lists the
      calls \`services/$1/model.likec4\` already declares across its boundary — those
      are the edges the map owes, collapsed to the service; an empty list on a
      service with no model is not licence to invent one, and the instruction says so.
@@ -83,26 +90,64 @@ thin baseline that validates is thin, not done.
    make the landscape edit the brief asks for — the element where none resolves, the
    edges where the element stands alone, and the map's own housekeeping
    \`unchecked[]\` names: a placeholder tag to clear, a curated view to add the
-   element to. A flow behind one of your arch.spec.md requirements — a \`dynamic view\`
+   element to.
+   **model.likec4 EXTENDS the fleet map.** It declares no \`specification\` block and
+   no copy of anything the map already draws: its whole body is
+   \`model { extend <fqn> { …containers… } }\`, where \`<fqn>\` is the FULLY-QUALIFIED
+   id of the element bound to \`services/$1/\` (the brief's \`landscape.elements\` names
+   it; \`extend orderService\` resolves to nothing when the id is
+   \`marketplace.orderService\`). Kinds and tags come from
+   \`architecture/landscape.likec4\` — a kind you need and the map does not declare
+   (\`element database\`, \`element queue\`) is added THERE, once, in the same landscape
+   edit. Cross-boundary edges are written OUTSIDE the extend block, from the container
+   that makes the call to the other party's element as the map spells it; an element
+   this file declares outside its own is \`c4.element-unowned\` (warn), and which fix
+   applies depends on whose it is — a store or component this service OWNS belongs
+   INSIDE the \`extend\` block (its id becomes \`<fqn>.<name>\`), a system the service
+   merely reaches is declared in the map instead, and another service's internals
+   belong in that service's model. If you are DIFFING an existing model
+   that carries its own \`specification\`, leave it alone: that shape is still legal
+   and still parsed on its own, and \`c4.declaration-diverged\` is what reports where
+   its copies of the map's elements have drifted. Migrating one is the recipe in
+   SCHEMA.md, "Two shapes of a service model" — not something to do inside an
+   adoption you were not asked to widen.
+   A flow behind one of your arch.spec.md requirements — a \`dynamic view\`
    over this service's own containers — goes in a \`.likec4\` beside model.likec4
    (\`services/$1/usecases/<name>.likec4\` by convention; \`views.likec4\` reads the
    same, because the renderer's per-service project reads every \`.likec4\` under the
    directory and so does loam), tagged \`#req-<Requirement-ID>\` of a requirement in
-   this service's spec.md or arch.spec.md, with the tag declared in model.likec4's
-   \`specification\` block; step 4 grades it. It never goes in \`architecture/usecases/\`,
+   this service's spec.md or arch.spec.md, with the tag declared in the map's
+   \`specification\` block or in a tags-only \`specification { tag req-… }\` beside the
+   \`extend\` — in exactly ONE of the two. Declared in both, the model's own project
+   holds the tag twice: the error lands on whichever document carries the second
+   declaration, as \`c4.invalid\` (an error, and the model's grading is suspended
+   behind it) when that is model.likec4, or as \`usecase.flow-invalid\` when it is the
+   sibling. Step 4 grades it. It never goes in \`architecture/usecases/\`,
    which cannot see your containers and turns the whole fleet \`landscape.invalid\`; a
    flow that crosses services goes there and is tagged \`#cap-\`. Never a \`#cap-\` tag
    beside a model. Then run \`loam subsystem sync\` (from
    this repo or the docs repo — it resolves \`docsDir\`): once the docs root carries
-   the \`likec4.config.json\` step 0's doctor asks for, it writes
-   \`services/$1/likec4.config.json\` — and the same file beside any other service
-   model in the docs repo still missing one — the LikeC4 project that makes a
-   model.likec4 renderable beside the fleet map from the docs root. Those files are
-   loam's — never write one yourself, never list it in \`sources\`, never diff it —
-   and \`sync\` leaves them untracked for you to commit.
+   the \`likec4.config.json\` step 0's doctor asks for, it keeps that file's
+   \`exclude\` list covering exactly the service directories whose models stand alone —
+   so an extending model stays inside the root project, where it is the only place it
+   parses and where the renderer draws it beside the map — and writes
+   \`services/<…>/<id>/likec4.config.json\` beside each STANDALONE model that has none.
+   Both are loam's — never write one yourself, never list it in \`sources\`, never
+   diff it, never hand-edit the root \`exclude\`'s \`services/\` entries — and \`sync\`
+   leaves what it wrote untracked for you to commit. A repo whose models all extend
+   the map usually has nothing for \`sync\` to write here, and that is the healthy
+   state, not a skipped step.
    Everything \`status: draft\`. Never write \`last_verified\`, \`sources_digest\`,
    \`content_digest\` or \`sources_files\`.
-4. \`loam validate --service $1 --json\`. Fix every error. \`sources.unvouched\` is
+4. \`loam validate --service $1 --json\`. Fix every error. \`c4.valid\` reading
+   "extends the fleet map" is the confirmation that the model was read as one
+   document with the map; \`c4.invalid\` on this run means the model plus the map do
+   not parse together, and every error is YOURS even where the message names
+   \`architecture/landscape.likec4\` — the map parses clean on its own, or
+   \`spine.landscape-invalid\` would say so instead and this model could not be read
+   at all. \`c4.element-unowned\` (warn) is an element you declared outside the
+   element you extend — nest it inside the \`extend\` block if this service owns it,
+   declare it in the map if the service only reaches it. \`sources.unvouched\` is
    expected on a fresh baseline — it closes when a person vouches, not when you do.
    \`sources.unwalked\` is the walk graded against the repository: its \`details\` name
    the top-level paths git tracks and \`sources\` never reached into. Treat each one
@@ -127,15 +172,40 @@ thin baseline that validates is thin, not done.
    and \`landscape.missing\` means there is no map at all. A baseline that passes step 4
    and fails this one is documented and invisible.
    \`landscape.service-isolated\` (a warning) means the element landed with no edge
-   while \`services/$1/model.likec4\` declares calls across its boundary — the map
-   owes those edges. A service whose model declares no such call and whose element
+   anywhere in \`architecture/\` while \`services/$1/model.likec4\` declares calls across
+   its boundary — the map owes those edges. It goes quiet on the FIRST edge, so draw
+   every call the brief listed in one pass: nothing will name the ones you leave out.
+   A service whose model declares no such call and whose element
    has no edge is SILENT here: \`landscape.touched: false\` in step 1's brief is the
    only place that state is named, so read it before this run rather than hoping
    for it in it.
-   \`service.likec4-config-missing\` (a warning) means step 3's sync did not run; the
-   fix is that command.
+   Six warnings on this run are about the RENDERER's wiring rather than about any
+   document, and one command fixes four of them: \`service.model-excluded\` (the root
+   \`likec4.config.json\` excludes a directory holding a model that extends the map, so
+   the renderer never loads it), \`service.model-unexcluded\` (its mirror, and the most
+   damaging — a model that STANDS ALONE whose directory the root \`exclude\` does not
+   cover merges into the root project and duplicates every kind the map declares,
+   which blanks the whole project rather than one service),
+   \`service.likec4-config-stray\` (a project file beside an extending model, which
+   claims the model out of the root project),
+   \`service.likec4-config-missing\` (a model that stands alone with no project file of
+   its own) and, when the first four are clear, \`c4.fleet-project-invalid\` — every
+   document reads clean where loam grades it and the ONE project the renderer builds
+   out of the map plus every extending model does not parse, because something is
+   declared in two of them. The first four: run \`loam subsystem sync\` — it rewrites
+   the root \`exclude\`, writes the missing project file and DELETES the stray one. The
+   fifth is an authoring fix: the message names the file and line, and the answer is
+   to declare the tag or element once, in the map or in the single service that owns it.
+   A sixth reads the same list and is NOT one of sync's: \`landscape.excluded\` says the
+   root \`exclude\` covers \`architecture/landscape.likec4\` itself, so the renderer has no
+   map to draw at all and every extending model in the root project resolves against
+   nothing — delete or narrow that entry by hand, at the line the finding quotes. While
+   it stands, \`c4.fleet-project-invalid\` is not graded at all: that check reads the
+   renderer's project, so the one entry would come back once per model instead of once as
+   the cause. Fix it first, then re-run and read the fifth.
    Done, stated once: step 4 clean when run from inside the service's own repo, this
-   run reporting no \`landscape.*\` finding and no \`service.likec4-config-missing\`, and
+   run reporting no \`landscape.*\` finding, no \`service.*\` renderer warning and no
+   \`c4.fleet-project-invalid\`, and
    step 1's brief re-run reporting \`landscape.touched: true\` — or, for a service that
    truly makes and receives no call, a stated reason its element is edgeless.
    The fleet run is never SILENT —

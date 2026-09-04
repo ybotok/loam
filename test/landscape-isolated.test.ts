@@ -150,6 +150,11 @@ describe("a drawn, bound, edgeless service whose model reaches other systems", (
       expect(f!.severity).toBe("warn");
       expect(f!.subject).toBe("beta-service");
       expect(f!.message).toContain("services/beta-service/ resolves to 'betaService'");
+      // "the fleet map (architecture/)", never one file: the check's input is
+      // the PROJECT, so the closing edge may land in any document under
+      // `architecture/` — measured, and named one file until 2026-09-04.
+      expect(f!.message).toContain("no edge in the fleet map (architecture/) touches it");
+      expect(f!.message).not.toContain("no edge in architecture/landscape.likec4");
       expect(f!.message).toContain("services/beta-service/model.likec4 declares 1 call(s)");
       expect(f!.message).toContain("-> stripe (op 'authorize')");
       expect(f!.message).toContain("betaService");
@@ -253,6 +258,19 @@ describe("the evidence gate — every silence is a fixture family that must stay
     });
   });
 
+  it("an edge in a SIBLING under architecture/ silences it — which is why the message names the project, not a file", async () => {
+    const files = {
+      ...fleet(BETA_MODEL),
+      // Never landscape.likec4: the closing edge lives in another document of
+      // the same project, and the check reads the project.
+      "architecture/extra.likec4": "model {\n  alphaService -> betaService 'Calls beta'\n}\n",
+    };
+    await withProject(files, async (p) => {
+      const { landscape } = await validateAll(p);
+      expect(codesOf(landscape)).not.toContain(CODE);
+    });
+  });
+
   it("an edge into the service's element is touching, whichever direction it runs", async () => {
     await withProject(fleet(BETA_MODEL, "  kafka -> betaService"), async (p) => {
       const { landscape } = await validateAll(p);
@@ -272,6 +290,78 @@ describe("the evidence gate — every silence is a fixture family that must stay
       const { landscape } = await validateAll(p);
       expect(landscape.findings.filter((f) => f.code === CODE)).toEqual([]);
       expect(codesOf(landscape)).toContain("landscape.matched");
+    });
+  });
+
+  it("an #external element BOUND to one of our directories is never a subject either", async () => {
+    // R4: the claim "`#external` elements are never subjects" rested on "an
+    // #external element is not an enumerated service", which is true of the
+    // ordinary case and false of this one — the tag and an explicit
+    // `metadata { service }` on one element, which resolves like any other. The
+    // two binding checks beside this one have always skipped the tag; the
+    // isolation input set had no filter at all, so a foreign box answered for
+    // one of our services.
+    const foreign = `  betaService = softwareSystem 'beta-service' {
+    #external
+    metadata { service 'beta-service' }
+  }
+`;
+    const files = {
+      "architecture/landscape.likec4": landscape(foreign, ""),
+      "services/alpha-service/model.likec4": quietModel("alpha-service"),
+      "services/beta-service/model.likec4": BETA_MODEL,
+    };
+    await withProject(files, async (p) => {
+      const { landscape: target } = await validateAll(p);
+      expect(target.findings.filter((f) => f.code === CODE)).toEqual([]);
+    });
+  });
+
+  it("an edge drawn from the service's OWN #external-tagged element still touches it", async () => {
+    // The `#external` skip belongs to the SUBJECT set alone. It sat inside the
+    // `touched` walk for one round as well, and that walk asks a different
+    // question — does the map draw any edge on this service. LikeC4 puts a kind
+    // tag on every element of the kind, so `element topic { #external }` (the
+    // idiom examples/docs/architecture/landscape.likec4 defends at length) made
+    // an edge from beta-service's own topic stop touching beta-service: the
+    // warning fired on a service the map demonstrably reaches, and `loam adopt`
+    // answered `touched: true` on the same tree.
+    const map = `specification {
+  element softwareSystem
+  element container
+  element topic {
+    #external
+  }
+  tag external
+}
+
+model {
+  alphaService = softwareSystem 'alpha-service' {
+    metadata { service 'alpha-service' }
+  }
+  betaService = softwareSystem 'beta-service' {
+    metadata { service 'beta-service' }
+    betaEvents = topic 'beta.events'
+  }
+
+  betaService.betaEvents -> alphaService 'BetaHappened triggers the read-model update'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+    const files = {
+      "architecture/landscape.likec4": map,
+      "services/alpha-service/model.likec4": quietModel("alpha-service"),
+      "services/beta-service/model.likec4": BETA_MODEL,
+    };
+    await withProject(files, async (p) => {
+      const { landscape: target } = await validateAll(p);
+      expect(target.findings.filter((f) => f.code === CODE)).toEqual([]);
+      expect(codesOf(target)).toContain("landscape.matched");
     });
   });
 

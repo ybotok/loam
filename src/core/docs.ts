@@ -40,38 +40,43 @@ const EMPTY_SUBDIRS = [
  * tool other than itself.
  *
  * LikeC4's workspace loader merges EVERY `.likec4` file under a directory tree
- * into one model. loam's layout is the opposite by design: the landscape,
- * each `services/<id>/model.likec4` and each `features/<FEAT>/delta.likec4` is
- * parsed in isolation (`loadSource`, one file, one throwaway workspace), so
- * every one of them legitimately declares its own `specification { … }` block
- * and re-declares the elements it needs to talk about. Point the real renderer
- * at the repository root and those declarations collide: on loam's own
- * `examples/docs` — four files — `npx likec4 start` reported 16 errors, sixteen
- * duplicate kinds and names, while `loam validate --all` reported none. Both
- * were right; only one of them was reading the tree as a workspace.
+ * into one model, and whether that is what loam wants depends on the document.
+ * A feature's `features/<FEAT>/delta.likec4` is parsed in isolation and declares
+ * its own `specification { … }` block, so merging it into the root would report
+ * every declaration as a duplicate — measured on loam's own `examples/docs`:
+ * `npx likec4 start` reported 16 errors, sixteen duplicate kinds and names,
+ * while `loam validate --all` reported none. Both were right; only one of them
+ * was reading the tree as a workspace. That directory is therefore excluded
+ * here, permanently.
  *
- * So the root is declared as one LikeC4 project holding the landscape, and the
- * two directories whose files are meant to be read alone are excluded from it.
- * That makes `npx likec4 start` in the docs repo — the command loam's own docs
- * have always recommended — render the fleet map instead of failing. What the
- * exclusion cost went unstated for a release: every adopted service was then a
- * box on that map with nothing renderable inside it. A service model renders
- * from the SAME root once `loam subsystem sync` has written a project file of
- * its own beside it — `repo/tree/render/projects.ts` records the measurement
- * and the rule — and only a feature's `delta.likec4`, which is transient, is
- * still rendered by pointing the renderer at its own directory.
+ * `services/**` is NOT, and that is this file's one substantive change since the
+ * axis that let a model EXTEND the fleet map. A model written that way declares
+ * no kinds of its own and says what is inside an element the map already draws,
+ * so the root project is the only place it parses — and excluding it renders the
+ * service as a box with nothing inside. A model that STANDS ALONE still has to
+ * be excluded, and `loam subsystem sync` is what adds `services/<tree>/**` for
+ * each one and removes the entry again when a model migrates. A fresh repo's
+ * models are extending, so the scaffold starts with no `services/` entry at all.
  *
  * `**\/node_modules/**` is repeated because naming `exclude` replaces LikeC4's
- * default rather than adding to it. loam reads none of this file: it is written
- * once, never re-read, and a team that wants a different project layout owns it
- * like every other scaffolded file. The filename and the root project's name
- * are spelled in `repo/paths.ts`, beside every other file loam writes.
+ * default rather than adding to it.
+ *
+ * OWNERSHIP, corrected. This file is still the team's — written once by
+ * `loam init --create`, never regenerated, and a team that wants a different
+ * project layout keeps it. But loam is no longer blind to it: it reads ONE
+ * literal fact out of it (`core/c4/root-project/exclude.ts`, `readRootExclude`
+ * — the `exclude` list and nothing else), because that list decides whether an
+ * extending model is renderable at all, and it MAINTAINS the `services/` entries
+ * in it through `loam subsystem sync`. Every other key, and every entry that is
+ * not about `services/`, is left exactly as written. The filename and the root
+ * project's name are spelled in `repo/paths.ts`, beside every other file loam
+ * writes.
  */
 export const LIKEC4_PROJECT_CONFIG = `${JSON.stringify(
   {
     name: LIKEC4_ROOT_PROJECT,
     title: "Fleet landscape",
-    exclude: ["**/node_modules/**", "services/**", "features/**"],
+    exclude: ["**/node_modules/**", "features/**"],
   },
   null,
   2,

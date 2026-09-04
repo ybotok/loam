@@ -173,7 +173,17 @@ export function victimIndex(snap: {
     const edges: string[] = [];
     if (usable !== null && resolve !== null) {
       for (const r of usable.relationships) {
-        if (r.op === op && resolve(r.target) === provider) edges.push(EDGE(resolve, r));
+        // An edge whose SOURCE resolves to the provider as well is the
+        // provider's own internal call — the rule `usecase.step-unlinked`
+        // already states, that a service owes no operationId to itself — so it
+        // is not a consumer of the operation it is losing. Without this the
+        // downgrade the message half at :198 has always made was unreachable
+        // for any service that draws its own containers: one internal edge
+        // carrying the op kept every removal `diff.op-removed-consumed`
+        // (verification 2026-09-04, R3).
+        if (r.op === op && resolve(r.target) === provider && resolve(r.source) !== provider) {
+          edges.push(EDGE(resolve, r));
+        }
       }
     }
     // Flows last in each list, deliberately: the edge and the requirement say

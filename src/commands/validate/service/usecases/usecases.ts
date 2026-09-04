@@ -31,15 +31,19 @@
  * every model check RAN. Reusing it would tell an agent to fix the wrong file
  * and tell the brief's `checks[]` row ("every other check stops here") a lie.
  */
+import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import type { LikeC4Error } from "../../../../core/c4/likec4.js";
+import type { Requirement } from "../../../../core/document/spec.js";
+import type { ServicePaths } from "../../../../core/repo/paths.js";
 import type { ParsedView } from "../../../../core/c4/parsed/dynamic-views.js";
 import { serviceResolver } from "../../../../core/c4/resolve/service.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { compareIds } from "../../../../core/repo/entries.js";
 import type { ServiceFlowScan } from "../../../../core/usecases/service/flows.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
-import { errorText } from "../../checks/vocabulary.js";
+import { errorText } from "../../../../core/c4/likec4.js";
+import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../../../../core/capabilities/usecase-join.js";
 import { stepFindings, type StepGrading } from "../../fleet/usecases/steps.js";
 import { serviceTagFindings, type ServiceTagScope } from "./tags.js";
 
@@ -90,9 +94,82 @@ function flowInvalidFinding(scope: ServiceUseCaseScope, errors: readonly LikeC4E
       `${scope.service}: ${named} has ${errors.length} error(s) — every .likec4 beside model.likec4 is one LikeC4 ` +
       "project, read the way the renderer reads it, and the renderer refuses the whole project over one broken " +
       "file; no flow in it was graded. model.likec4 itself parses and is graded alone.",
-    details: errors.map((error) => `${fileOf(scope, error)}: ${errorText(error)}`),
+    // The hint first, for `c4.invalid`'s reason (`../model/grade.ts`):
+    // `capDetails` keeps ten lines, one broken document can carry more than ten
+    // errors, and a diagnosis appended after them is dropped exactly when the
+    // reader needs it.
+    details: [...tagHint(errors), ...errors.map((error) => `${fileOf(scope, error)}: ${errorText(error)}`)],
     locations: [{ path: first, role: "primary" }],
   };
+}
+
+/** `Could not resolve reference to Tag named '#req-PAY-AUTH'.` — measured at the 1.59.2 pin. */
+const UNDECLARED_TAG = /reference to Tag named '#?([\w.-]+)'/;
+
+/**
+ * The one line an undeclared RESERVED tag earns.
+ *
+ * The opt-in is a tag, LikeC4 refuses a tag no `specification` declares, and the
+ * refusal is a bare `Could not resolve reference to Tag named …` — so an author
+ * following the protocol's "tag the view `#req-<id>`" got a parse error naming
+ * the thing they had just been told to write, with nothing saying a tag must be
+ * declared first (verification 2026-09-04, D10). One line, from the first such
+ * error only: the second one has the same repair.
+ */
+function tagHint(errors: readonly LikeC4Error[]): string[] {
+  for (const error of errors) {
+    const match = UNDECLARED_TAG.exec(error.message);
+    const name = match?.[1];
+    if (name === undefined) continue;
+    // `cap-` and `req-` do NOT share a repair here, and covering both with one
+    // hint sent an author two steps where one would do: declaring `tag cap-…`
+    // makes the file parse and the very next run says `usecase.capability-
+    // unresolved` — "no capability can be claimed inside this service's own
+    // project. Drop the tag." A capability is claimed at fleet altitude, so the
+    // tag can never resolve to anything beside a model, whatever is declared
+    // (verification 2026-09-04).
+    if (name.startsWith(CAP_TAG_PREFIX)) {
+      return [
+        `\`#${name}\` claims a capability, and a capability is claimed at FLEET altitude only — a flow beside ` +
+          "model.likec4 is read in this service's own project, where no capability can be resolved. Declaring " +
+          `\`tag ${name}\` makes the file parse and earns \`usecase.capability-unresolved\` on the next run: ` +
+          `drop the tag, and tag the flow \`#${REQ_TAG_PREFIX}<Requirement-ID>\` instead, or draw it in ` +
+          "`architecture/usecases/` where a capability tag belongs",
+      ];
+    }
+    if (!name.startsWith(REQ_TAG_PREFIX)) continue;
+    return [
+      `declare \`tag ${name}\` in the \`specification { }\` block this project reads — model.likec4's own ` +
+        "for a model that stands alone, the fleet map's for one that extends it (or a tags-only " +
+        "`specification` in a document beside the model)",
+    ];
+  }
+  return [];
+}
+
+/**
+ * The FILE each finding is about, as `locations[0]`.
+ *
+ * The step and tag grades carry no `locations` of their own, so `findingJson`
+ * fell back to the target's scope — `services/<tree>` and nothing else — and an
+ * agent reading `--json`, which is the reason the envelope exists, had to parse
+ * the prose to learn which `.likec4` to open. `usecase.flow-invalid` on this
+ * same arm already names its file; these say the file the same way, with the
+ * service directory kept beside it as `scope` (`../spine.ts`'s shape).
+ */
+function atView(scope: ServiceUseCaseScope, view: ParsedView, findings: Finding[]): Finding[] {
+  const file = view.sourcePath === undefined ? `${scope.treePath}/` : `${scope.treePath}/${view.sourcePath}`;
+  return findings.map((finding) =>
+    finding.locations === undefined
+      ? {
+          ...finding,
+          locations: [
+            { path: file, role: "primary" as const },
+            { path: scope.treePath, role: "scope" as const },
+          ],
+        }
+      : finding,
+  );
 }
 
 /**
@@ -123,8 +200,40 @@ export function serviceUseCaseFindings(scope: ServiceUseCaseScope): Finding[] {
     (a, b) => compareIds(a.sourcePath ?? "", b.sourcePath ?? "") || compareIds(a.id, b.id),
   );
   for (const view of views) {
-    findings.push(...serviceTagFindings(view, scope, place(view)));
-    for (const step of view.steps) findings.push(...stepFindings({ view, step }, grading));
+    const forView: Finding[] = [...serviceTagFindings(view, scope, place(view))];
+    for (const step of view.steps) forView.push(...stepFindings({ view, step }, grading));
+    findings.push(...atView(scope, view, forView));
   }
   return findings;
+}
+
+/**
+ * The `Requirement-ID`s a service-local `#req-` tag may name: every identified
+ * requirement of spec.md (living — a REMOVED one is on its way out and keeps no
+ * promise) and of arch.spec.md, as ONE set. `undefined` when NEITHER document
+ * exists, which the tag grade reads as "no requirement to satisfy" rather than
+ * "none flattening to this slug" — the same two answers the fleet's
+ * `requirementsOf` gives for a capability with no document at all.
+ *
+ * An id both documents declare resolves once (a set dedupes it); two ids that
+ * merely flatten alike — `PAY.AUTH` in one file, `PAY-AUTH` in the other — are
+ * the `many` arm, because a Requirement-ID is unique inside one document and a
+ * flow beside the model has two.
+ *
+ * It lives beside the grade it feeds rather than in `../service.ts`, which is
+ * the ORDER and nothing else: the set is this axis's input, its two answers are
+ * this axis's vocabulary, and the order module had grown past its line limit
+ * carrying it.
+ */
+export function requirementIdsOf(
+  paths: ServicePaths,
+  livingReqs: readonly Requirement[],
+  archReqs: readonly Requirement[],
+): ReadonlySet<string> | undefined {
+  if (!existsSync(paths.spec) && !existsSync(paths.archSpec)) return undefined;
+  const ids = new Set<string>();
+  for (const req of [...livingReqs, ...archReqs.filter((r) => r.kind !== "REMOVED")]) {
+    if (req.id !== undefined) ids.add(req.id);
+  }
+  return ids;
 }

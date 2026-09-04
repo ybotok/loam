@@ -8,6 +8,16 @@
 // service needs a directory (warning). An element is tied to its directory by
 // `metadata { service '<id>' }`, or by its title when there is no binding.
 // Systems that are not ours carry #external and are exempt.
+//
+// This file is also the SPECIFICATION every service model borrows. Each
+// `services/<…>/<svc>/model.likec4` here is an EXTENDING model: it declares no
+// kinds and no partners, and says what is inside its service with
+// `extend marketplace.<svc> { … }` on the element below that binds to its
+// directory. The root `likec4.config.json` therefore does NOT exclude
+// `services/**` — the map and every model are ONE LikeC4 project, so an element
+// is declared exactly once and no two documents can disagree about its tags.
+// SCHEMA.md, "Two shapes of a service model", has both shapes and the rule that
+// picks between them; a kind or tag a model needs is added HERE, once.
 specification {
   // A grouping element — it stands for no service and owns no directory. The
   // service checks WALK the tree rather than reading only top-level elements:
@@ -20,7 +30,18 @@ specification {
   // Declared here because archive SPLICES a delta's additions verbatim: FEAT-101's
   // new system carries its `api` container along, and the kind has to be legal in
   // THIS document for the merged landscape to parse (archive refuses otherwise).
+  // Only a NEW service arrives this way — one that already has an extending model
+  // takes the addition into that model instead, and this file never grows an
+  // interior.
   element container
+  // Declared here for the SERVICE MODELS, and nothing in this file uses it: a
+  // store lives inside the service that owns it (`landscape.datastore-private`
+  // is the check that pushes one back in), so every `database` element in this
+  // fleet is written in a `services/<svc>/model.likec4` under
+  // `extend marketplace.<svc>`. An extending model declares no kinds of its
+  // own, so a kind it needs and this block does not declare is ONE parse error
+  // on the model — which is what this line prevents.
+  element database
   element person
   // A topic is an element, and the kind carries #external rather than each
   // instance doing it: LikeC4 does NOT inherit tags, so a topic nested inside
@@ -137,6 +158,18 @@ model {
     description 'CRM of record — the fleet reads its events and writes none'
   }
 
+  // Declared HERE rather than in notification-service's model, and that is the
+  // rule an extending model turns on: a system a service reaches is the fleet's
+  // element, declared once, and a model that declared its own copy would be
+  // `c4.element-unowned` (an extending model may only add elements under the
+  // element that resolves to its own service). One consumer, so it never
+  // becomes `landscape.platform-candidate`; #external, so no
+  // services/notification-provider/ is asked for.
+  notificationProvider = softwareSystem 'notification-provider' {
+    #external
+    description 'Third-party email and SMS gateway — quota-limited, and outside this fleet'
+  }
+
   customer -> marketplace.checkoutWeb 'Uses'
 
   // The synchronous spine. Every one of these resolves against the TARGET's
@@ -185,6 +218,14 @@ model {
   // it raises no warning because its title does not claim to be a call into a
   // fleet service.
   marketplace.paymentService -> stripe 'Authorizes cards'
+  // The second half of the rule the extending shape keeps: the container that
+  // really makes the call is drawn in the service's own model
+  // (`marketplace.notificationService.sender -> notificationProvider`), and the
+  // SERVICE-level twin is drawn here, because every fleet check — the spine,
+  // `landscape.service-isolated`, the platform census — reads this file alone.
+  // The edge exists twice on purpose; SCHEMA.md says so where it says the map
+  // is the one document holding every cross-service edge.
+  marketplace.notificationService -> notificationProvider 'Sends email and SMS'
 
   // The event spine, the async mirror of `metadata { op }`: the name must be a
   // message the PRODUCER's own asyncapi.yaml declares an `action: send` for, or

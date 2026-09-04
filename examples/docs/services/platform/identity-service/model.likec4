@@ -1,30 +1,22 @@
-// The identity-service C4 model: the containers behind the token API and the
-// two stores they reach.
+// identity-service's own C4 — what is INSIDE the element the fleet map binds to
+// services/platform/identity-service/: the containers behind the token API and
+// the two stores they reach.
 //
-// The `specification` block is repeated in every .likec4 file on purpose. loam
-// parses each document ALONE — it never stitches this file to
-// architecture/landscape.likec4 before reading it — so a kind declared only in
-// the landscape would resolve in the LikeC4 workspace and fail here, and the
-// failure surfaces as `c4.invalid` on a file whose text looks perfect.
-specification {
-  element softwareSystem
-  element container
-  element database
-}
-
+// An EXTENDING model. There is no `specification` block here and there must not
+// be one: the kinds come from architecture/landscape.likec4, which is read as
+// part of the SAME LikeC4 project (the root `likec4.config.json` excludes
+// `**/node_modules/**` and `features/**`, and nothing under `services/`). A
+// second declaration of a kind the map already declares is a duplicate error
+// blamed on both files. `extend` takes the fully-qualified id the map minted —
+// `marketplace.identityService` — because the element is nested in the
+// `marketplace` group; `extend identityService` resolves to nothing.
+//
+// Where the service sits in the SUBSYSTEM tree changes none of this: the model
+// is found by walking `services/`, and `services/platform/` is a grouping
+// directory, never part of any id. SCHEMA.md, "Two shapes of a service model",
+// has the standalone shape and the recipe for migrating a model to this one.
 model {
-  identityService = softwareSystem 'identity-service' {
-    description 'Issues the access tokens the rest of the fleet presents, and answers whether one is still good'
-    // The binding — not the title — is what ties this element to
-    // services/identity-service/. With a title alone, renaming the box to
-    // 'Identity' would silently stop every join that reads this file (health
-    // dependencies, `Covers:` entries, the landscape spine) while `loam
-    // validate` stayed green, because a title that fails to match is only a
-    // guess at a binding and is graded as one.
-    metadata {
-      service 'identity-service'
-    }
-
+  extend marketplace.identityService {
     api = container 'api' {
       description 'HTTP surface: POST /tokens, POST /tokens/introspect, GET /tokens/{token}/valid'
       technology 'Go'
@@ -51,7 +43,9 @@ model {
     // architecture/landscape.likec4 as a peer is `landscape.datastore-private`:
     // drawn at fleet level a store reads as a system in its own right, available
     // for somebody else's service to depend on, which is the one coupling that is
-    // hardest to undo once a second team believes the picture.
+    // hardest to undo once a second team believes the picture. The extending
+    // shape makes that the default rather than a discipline — internals are
+    // written where they belong because there is nowhere else to write them.
     introspectionCache = container 'introspection-cache' {
       description 'Short-TTL introspection verdicts, keyed by token id'
       technology 'Redis'
@@ -61,11 +55,12 @@ model {
     // These three edges are the WHOLE runtime graph of this service:
     // identity-service is the fleet's root of trust and calls nothing outside
     // its own boundary, which is why health.yaml carries no `dependencies:`
-    // key. They still have to be drawn — with four nested elements and no edge
-    // joining any of them this model is `c4.no-relationships`, on the grounds
-    // that parts which reach nothing are almost never the truth. (The check is
-    // evidence-gated: one lone container proves nothing and stays silent, which
-    // is why the warning is about a model this shape and not about any model.)
+    // key, and why this model draws no cross-boundary edge at all. They still
+    // have to be drawn — with four nested elements and no edge joining any of
+    // them this model is `c4.no-relationships`, on the grounds that parts which
+    // reach nothing are almost never the truth. (The check is evidence-gated:
+    // one lone container proves nothing and stays silent, which is why the
+    // warning is about a model this shape and not about any model.)
     tokens -> keyStore 'Signs with the active key; rotation promotes the next; introspection reads keys and revocations back'
     tokens -> introspectionCache 'Caches introspection verdicts, invalidates on revocation'
   }
@@ -74,9 +69,10 @@ model {
 // Views belong to LikeC4's renderer; no loam check reads anything below. One
 // view is enough here because the whole model fits inside one boundary — the
 // landscape splits its views only because a fleet-wide `include *` is the page
-// nobody can read.
+// nobody can read. View ids are flat across the whole project now that the map
+// and every model share one, so this one is spelled to be unique.
 views {
-  view identity_service of identityService {
+  view identity_service of marketplace.identityService {
     title 'identity-service — containers'
     include *
   }

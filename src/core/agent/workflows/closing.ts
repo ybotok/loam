@@ -218,7 +218,9 @@ export const LOAM_SHIP: CommandContent = {
    replacement.
 4. \`loam archive $1 --json\`. It merges three axes into the living state — requirements
    into \`services/<svc>/spec.md\`, endpoints into \`services/<svc>/openapi.yaml\`,
-   elements and edges into \`architecture/landscape.likec4\` — then moves the feature
+   elements and edges into \`architecture/landscape.likec4\` and, for an addition nested
+   under a service whose model EXTENDS the map, into that
+   \`services/<…>/<svc>/model.likec4\` instead — then moves the feature
    under \`features/archive/\`. Success is \`ok: true\`; on \`ok: false\`, branch on
    \`error.code\`:
    - \`not-coherent\` — gating coherence issues; \`issues[]\` in the envelope lists them,

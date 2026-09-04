@@ -16,8 +16,9 @@ import { readFile } from "node:fs/promises";
 
 /**
  * A planned file write — the merge is computed fully before anything touches
- * disk. `content: null` means "delete this file"; only `unarchive` plans those,
- * to take back a file the archive created.
+ * disk. `content: null` means "delete this file": `unarchive` takes back a file the
+ * archive created, and `subsystem sync` removes the generated views file and a
+ * stray per-service project file beside an extending model.
  *
  * BYTES, not text. The whole write path — pre-image, staged content, snapshot,
  * the compare-and-set before each swap — moves Buffers, because a docs repo is

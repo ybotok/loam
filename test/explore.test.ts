@@ -534,7 +534,7 @@ describe("a landscape it could not read", () => {
     delete files["architecture/landscape.likec4"];
     await withProject(files, async (p) => {
       const json = await explored(p, "svc-quiet");
-      expect(json.landscape).toEqual({ present: false, parses: false });
+      expect(json.landscape).toEqual({ present: false, parses: false, broken: [] });
       expect(json.neighbours).toEqual([]);
 
       // The fail-open that matters. With the map readable, svc-quiet's only
@@ -558,10 +558,81 @@ describe("a landscape it could not read", () => {
       const json = await explored(p, "svc-quiet");
       // present and parses are separate fields because the fixes differ: a map
       // nobody has written yet versus one somebody broke.
-      expect(json.landscape).toEqual({ present: true, parses: false });
+      expect(json.landscape).toEqual({
+        present: true,
+        parses: false,
+        broken: ["architecture/landscape.likec4"],
+      });
       expect(json.neighbours).toEqual([]);
       expect(service(json, "svc-quiet").maturity).toBe("partial");
       expect(service(json, "svc-quiet").modelled).toBe(false);
+    });
+  });
+
+  // Catches: `explore` reading the landscape FILE while `loam adopt` and
+  // `loam context` read the `architecture/` PROJECT. With a broken sibling
+  // beside a landscape that parses, the two surfaces answered opposite
+  // questions about one tree — `context` reported `landscape.parses: false` and
+  // described no edge, `explore` reported `parses: true` and listed the whole
+  // ring — and an agent handed both had no way to tell which was right. The
+  // renderer's answer is the project's, so that is the one both give now.
+  it("a broken sibling under architecture/ reads here exactly as it does in `context`", async () => {
+    const files = ladderFixture();
+    files["architecture/palette.likec4"] = "this is not likec4 {{{\n";
+    await withProject(files, async (p) => {
+      const json = await explored(p, "svc-called");
+      // `present` stays a fact about the FILE — it is the write target every
+      // brief asks for edits to, and "the project is empty" is a different
+      // instruction from "there is no map to edit".
+      // …and `broken` names the document that actually failed. `parses` answers
+      // for the PROJECT, so the file at fault is very often a SIBLING beside a
+      // landscape that reads perfectly — and both commands still said
+      // "architecture/landscape.likec4 does not parse", a claim about bytes
+      // loam had read fine (verification 2026-09-04).
+      expect(json.landscape).toEqual({
+        present: true,
+        parses: false,
+        broken: ["architecture/palette.likec4"],
+      });
+      expect(json.neighbours).toEqual([]);
+      expect(service(json, "svc-called").modelled).toBe(false);
+      expect(service(json, "svc-called").inbound).toEqual([]);
+
+      const ctx = JSON.parse((await runLoam(p.workDir, "context", "svc-called", "--json")).stdout);
+      expect(json.landscape).toEqual({
+        present: ctx.landscape.present,
+        parses: ctx.landscape.parses,
+        broken: ctx.landscape.broken,
+      });
+      expect(service(json, "svc-called").modelled).toBe(ctx.landscape.modelled);
+      expect(service(json, "svc-called").inbound).toEqual(ctx.landscape.inbound);
+    });
+
+    // …and the sibling is what did it. The same fixture without it derives the
+    // ring on both surfaces, so the agreement above is agreement about a broken
+    // document rather than two commands that never see anything.
+    await withProject(ladderFixture(), async (p) => {
+      const json = await explored(p, "svc-called");
+      expect(json.landscape).toEqual({ present: true, parses: true, broken: [] });
+      expect(service(json, "svc-called").modelled).toBe(true);
+      expect(service(json, "svc-called").inbound).toHaveLength(1);
+    });
+  });
+
+  it("names the `architecture/` document that actually failed, not the landscape it read fine", async () => {
+    // The printed line's half of the fix above: `parses` answers for the
+    // PROJECT, so with a broken sibling the landscape file has no errors at all
+    // and naming it sent a reader to bytes loam had read fine (verification
+    // 2026-09-04). `context`'s printer says it the same way.
+    const files = ladderFixture();
+    files["architecture/palette.likec4"] = "this is not likec4 {{{\n";
+    await withProject(files, async (p) => {
+      const res = await runLoam(p.workDir, "explore", "svc-called");
+      expect(res.code, res.out).toBe(0);
+      expect(res.out).toContain(
+        "! architecture/palette.likec4 does not parse — no neighbour below is derived, and none is missing either",
+      );
+      expect(res.out).not.toContain("architecture/landscape.likec4 does not parse");
     });
   });
 

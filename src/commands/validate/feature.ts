@@ -40,7 +40,7 @@ import { documentConflictFinding } from "../../core/conflict-markers.js";
 import { featureCapabilityDeltas } from "../../core/capabilities/delta/tree.js";
 import { docMissingFindings } from "../../core/capabilities/findings.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { errorText } from "./checks/vocabulary.js";
+import { errorText } from "../../core/c4/likec4.js";
 import { coverageFinding, repeatedListLineFindings } from "./checks/requirements.js";
 import { deltaArchCoverage } from "./arch-coverage.js";
 import { featureLinkFindings } from "./links/corpus.js";

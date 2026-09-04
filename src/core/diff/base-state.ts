@@ -9,9 +9,13 @@
  * rule, and that is a recorded risk, not an accident: the walk classifies a
  * LIVE filesystem (readdir, symlinks, marker files) and cannot walk a git
  * ref. What keeps the two honest is sharing the artifact-name table
- * (`ARTIFACT_FILES`/`isServiceArtifactName` from `repo/paths.ts`) and the
- * marker name (`SUBSYSTEM_MARKER`) instead of respelling them, and restating
- * — exactly — the walk's SERVICE branches: (1) a directory holding a service
+ * (`ARTIFACT_FILES`/`isServiceArtifactName` from `repo/paths.ts`), the
+ * marker name (`SUBSYSTEM_MARKER`) and the reserved-interior set
+ * (`RESERVED_INTERIOR` from `repo/tree/walk.ts`) instead of respelling them, and restating
+ * — exactly — the walk's SERVICE branches: (0) a directory named for a
+ * service's own interior (`adrs/`, `usecases/`, `ui/`) is classified nowhere,
+ * counts as nothing beneath its parent, and hides everything under it, because
+ * the walk never descends into one; (1) a directory holding a service
  * artifact is a service, marker present or not (artifacts win); (2) the leaf
  * rule — neither marker nor artifact and nothing beneath (an empty or
  * not-yet-adopted directory, a lone README.md, a lone `.gitkeep` — which is
@@ -44,6 +48,7 @@ import { asyncapiFromText } from "../asyncapi/read.js";
 import type { EventMessage } from "../asyncapi/model.js";
 import { ARTIFACT_FILES, isServiceArtifactName } from "../repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../repo/tree/marker.js";
+import { RESERVED_INTERIOR } from "../repo/tree/walk.js";
 import { listBaseTree, showBaseFile, type ResolvedBase } from "./base-git.js";
 
 /**
@@ -142,13 +147,26 @@ function classifyBaseDirs(paths: string[]): { dirs: BaseDir[]; ambiguous: Map<st
   const hasArtifact = (dir: string): boolean =>
     [...(fileChildren.get(dir) ?? [])].some((f) => isServiceArtifactName(f, "file")) ||
     [...(dirChildren.get(dir) ?? [])].some((d) => isServiceArtifactName(d, "dir"));
+  // The walk's `RESERVED_INTERIOR` rule, restated for a flat listing: a
+  // directory named for a service's own interior is never classified, and
+  // neither is anything beneath it, because the walk never descends into one.
+  // Segment 2 onward, matching where the walk applies it — to a directory's
+  // CHILDREN, so a directory literally at `services/usecases/` is still
+  // classified there.
+  const reserved = (dir: string): boolean => dir.split("/").slice(2).some((s) => RESERVED_INTERIOR.has(s));
+  // …and, for the same reason, one of them is not the subdirectory that keeps
+  // its parent off the leaf rule: the walk filters them out of `dirs` before
+  // asking whether anything is beneath.
+  const classifiableChildren = (dir: string): boolean =>
+    [...(dirChildren.get(dir) ?? [])].some((d) => !RESERVED_INTERIOR.has(d));
   // The walk's leaf rule: neither marker nor artifact and nothing beneath is a
   // service. (A truly EMPTY directory is unrepresentable in a git tree, so at
   // the base this arm means "no visible entry of ours" — files none of which
   // are artifacts, or nothing but dot-named entries, the `loam seed` shape.)
-  const isLeafService = (dir: string): boolean => !hasMarker(dir) && !hasArtifact(dir) && !dirChildren.has(dir);
+  const isLeafService = (dir: string): boolean =>
+    !hasMarker(dir) && !hasArtifact(dir) && !classifiableChildren(dir);
   const candidates = [...new Set([...fileChildren.keys(), ...dirChildren.keys(), ...bare])]
-    .filter((dir) => dir !== "services" && dir.startsWith("services/"))
+    .filter((dir) => dir !== "services" && dir.startsWith("services/") && !reserved(dir))
     .filter((dir) => hasArtifact(dir) || isLeafService(dir))
     .sort((a, b) => {
       const depth = a.split("/").length - b.split("/").length;

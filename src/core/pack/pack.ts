@@ -91,12 +91,15 @@ export function packHoles(pack: ContextPack): boolean {
     pack.permissionsVocabulary.invalid !== undefined ||
     pack.capabilitiesVocabulary.invalid !== undefined ||
     pack.capabilitiesUnread.length > 0 ||
-    // The use-case axis fails the same way, and one step wider than
-    // `landscape.parses` above: that flag is about `architecture/landscape.likec4`
-    // alone, while a flow lives in `architecture/usecases/*.likec4` and the whole
-    // directory is read as ONE LikeC4 project. So a use-case file with an
-    // unresolved element leaves `landscape.parses` true and empties every flow
-    // in the pack — the exact silent hole this predicate exists to refuse.
+    // The use-case axis fails the same way, and it is still its own clause
+    // after `landscape.parses` learned to answer for the whole `architecture/`
+    // PROJECT (core/pack/living.ts). It used to be strictly wider: that flag
+    // was about `architecture/landscape.likec4` alone, so a use-case file with
+    // an unresolved element left it true and emptied every flow in the pack.
+    // The two now flip together on a fleet that HAS a landscape — and the one
+    // that has none is why this clause stays: `landscape.present` gates the
+    // first, so a repo whose only map documents are broken `usecases/*.likec4`
+    // would otherwise report a whole empty axis at exit 0.
     pack.useCaseScan.unreadable ||
     pack.features.some(
       (f) => f.architecture.errors.length > 0 || f.openapi.unreadable || f.events.unreadable,

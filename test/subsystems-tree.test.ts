@@ -95,6 +95,55 @@ describe("three-way classification", () => {
     }
   });
 
+  it("a service's own reserved subdirectory is never read as a service, even when it is the only thing in the directory", async () => {
+    // The trap `loam init` + `loam seed` build together: seed leaves every
+    // `services/<id>/` holding only `.gitkeep`, and the AGENTS.md init just
+    // scaffolded documents `usecases/<name>.likec4` as the service's flow slot.
+    // Writing it used to make the walk read `usecases` as a service and the
+    // parent as an unmarked GROUP — three errors, one of them saying the fleet
+    // was losing services, for following the instruction (verification
+    // 2026-09-04). `usecases`, `adrs` and `ui` are SCHEMA's service layout.
+    const files = coherentFixture();
+    for (const slot of ["usecases/flow.likec4", "ui/pages/checkout.page.yaml"]) {
+      files[`services/slot-only/${slot}`] = "";
+    }
+    const p = await makeProject(files);
+    try {
+      const ids = await listedIds(p.workDir);
+      expect(ids).toContain("slot-only");
+      expect(ids).not.toContain("usecases");
+      expect(ids).not.toContain("ui");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(subsystemFindings(res.stdout)).toEqual([]);
+      // …and nothing downstream ever saw the phantom either.
+      const codes = allFindings(res.stdout).map((f) => f.code);
+      expect(codes).not.toContain("landscape.binding-unknown");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a reserved subdirectory beside a real nested service never hides it — the group still refuses and names it", async () => {
+    // The reason `usecases` is a WALK exclusion rather than a service artifact:
+    // as an artifact it would classify its parent as a service, and the real
+    // service filed beside it would vanish — the silent shrink the walk refuses.
+    const files = coherentFixture();
+    files["services/mixed-group/usecases/flow.likec4"] = "";
+    files["services/mixed-group/svc-c/spec.md"] = "# svc-c\n\n## Requirements\n";
+    const p = await makeProject(files);
+    try {
+      const ids = await listedIds(p.workDir);
+      expect(ids).toContain("svc-c");
+      expect(ids).not.toContain("usecases");
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      const unmarked = subsystemFindings(res.stdout).filter((f) => f.code === "subsystem.unmarked");
+      expect(unmarked).toHaveLength(1);
+      expect(unmarked[0]!.details).toEqual(["services/mixed-group/svc-c"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("an empty directory under services/ is still a service — today's flat behaviour, unchanged", async () => {
     const p = await makeProject(coherentFixture());
     try {
