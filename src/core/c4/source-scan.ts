@@ -21,6 +21,26 @@ export interface ScannedElement {
   bodyClose: number;
   /** Leading whitespace of the declaration's first line. */
   indent: string;
+  /**
+   * The title the declaration's HEAD names — the first string literal before
+   * its body, which is where both declaration forms write it (pinned against
+   * the parser by `test/likec4-scan-parity.test.ts`).
+   *
+   * Absent when the head names none: LikeC4 then titles the element after its
+   * own name, and a default title is one the archive's title join must not
+   * match on — `splice/identity/declared.ts` says why, and why losing it costs
+   * that join nothing.
+   */
+  title?: string;
+  /**
+   * True for an `extend <fqn> { … }` frame — a block that DECLARES nothing and
+   * reopens an element another document owns. Its id is the fqn as written, and
+   * its children hang off that, which is what lets the archive splice a
+   * service's interior into the model that owns it. Placement must skip it: it
+   * is not a top-level declaration of this document, so anchoring beside it
+   * would group additions around a box that lives somewhere else.
+   */
+  extend?: true;
 }
 
 /** A relationship statement located in source, endpoints resolved to full ids (best effort). */
@@ -162,6 +182,30 @@ export function scanModel(text: string): ScannedModel | null {
     const head = code.slice(stmtStart, headEnd);
     const parentId = stack.length > 0 ? stack[stack.length - 1]!.id : "";
 
+    // `extend <fqn> { … }` — the extending model's one construct, and the only
+    // frame here whose id is not minted from the enclosing scope: it names an
+    // element the fleet map already declares, so its children are `<fqn>.<name>`
+    // and a reference inside it resolves against that scope. Without this the
+    // block fell through to the property-line arm and everything in it was
+    // invisible, which is why the archive spliced a service's interior into the
+    // map instead (verification 2026-09-04, E1).
+    const extended = opener === -1 ? null : /^extend\s+([A-Za-z_][\w.-]*)\s*$/.exec(head);
+    if (extended !== null) {
+      const id = parentId === "" ? extended[1]! : `${parentId}.${extended[1]!}`;
+      const el: ScannedElement = {
+        id,
+        start: stmtStart,
+        end: headEnd,
+        bodyOpen: opener,
+        bodyClose: -1,
+        indent: indentOf(stmtStart),
+        extend: true,
+      };
+      stack.push({ id, el });
+      i = opener + 1;
+      continue;
+    }
+
     // Classify: `name = kind` first, then a relationship (the arrow cannot hide
     // in a string — the head is masked), then the `kind name` form, else a
     // property/tag line that is consumed whole, nested block included.
@@ -186,6 +230,8 @@ export function scanModel(text: string): ScannedModel | null {
         bodyClose: -1,
         indent: indentOf(stmtStart),
       };
+      const titled = literalIn(stmtStart, headEnd)?.value;
+      if (titled !== undefined) el.title = titled;
       if (opener !== -1) {
         stack.push({ id, el });
         i = opener + 1;

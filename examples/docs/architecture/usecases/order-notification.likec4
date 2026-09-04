@@ -14,7 +14,10 @@
 // read as ONE LikeC4 project, so the steps below resolve against the landscape's
 // elements even though this file declares none — which also means exactly one
 // file in this directory declares the `specification` block, and it is not this
-// one.
+// one. (The renderer's root project is WIDER than what loam grades here: it also
+// holds every `services/<svc>/model.likec4`, because each of them extends the
+// map. A tag declared twice across that whole set is `c4.fleet-project-invalid`,
+// which is why a tag belongs in the landscape's one block.)
 //
 // THE TAG MUST BE THE FIRST THING IN THE VIEW BODY. Written after `title` it is
 // five parse errors, none of which mentions tags. That is the mistake every
@@ -30,7 +33,7 @@
 // `usecase.step-unlinked` is met except the one that matters, which is that a
 // person is not a caller. Somebody clicking a button owes no operationId. Delete
 // that exemption from the checker and this file is what notices: the example
-// fleet's warning count moves from eight to nine and test/examples.test.ts
+// fleet's warning count moves from ten to eleven and test/examples.test.ts
 // fails.
 //
 // The hop from checkout-web to order-service is DELIBERATELY NOT DRAWN, and its

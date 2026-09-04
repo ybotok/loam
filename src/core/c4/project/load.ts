@@ -22,6 +22,15 @@ import { readSpecification, type DocSpecification } from "../parsed/specificatio
 import { readGlobalStyleIds, readViewIds, type ViewIdClaim } from "../parsed/view-ids.js";
 import { readDeployment, NO_DEPLOYMENT, type DeploymentModel } from "../parsed/deployment.js";
 
+/**
+ * A diagnostic exactly as a WORKSPACE hands it back, where `sourceFsPath` is
+ * always present — unlike loam's own `LikeC4Error`, whose field is optional
+ * because the several literals standing in for an unread file have no path to
+ * put there. Named so the attribution below can take diagnostics rather than
+ * the workspace object, without a non-null assertion per error.
+ */
+type WorkspaceError = LikeC4Error & { sourceFsPath: string };
+
 /** A directory of `.likec4` documents loaded as one LikeC4 project. */
 export interface ProjectDoc {
   /** Errors by the REAL absolute path of the document that raised them. */
@@ -47,17 +56,30 @@ export interface ProjectDoc {
 }
 
 /**
- * Stage a set of documents as ONE project, mirroring their paths relative to
- * `base`.
+ * Stage a set of documents as ONE project named `project`, mirroring their
+ * paths relative to `base`.
  *
  * The relative structure is preserved rather than flattened to basenames, and
  * that is load-bearing twice over: two use cases named `checkout.likec4` in
  * different subdirectories would overwrite each other on copy, and LikeC4
  * reports a view's `sourcePath` relative to the project root — so flattening
  * would make every finding name a file the author cannot find.
+ *
+ * The NAME arrives from the caller rather than being minted in here, and that
+ * is what lets `./batch.ts` reuse this staging verbatim: many projects in one
+ * workspace need the folder name twice over — `parsedModel(<name>)` asks for
+ * that project's model, and error attribution keys on the folder SEGMENT.
+ * `loadProject` below has one project and passes a name it never looks at
+ * again; both spellings carry a crypto-random per-invocation token for
+ * `../workspace.ts`'s reason (an author-written `import` must not be able to
+ * name a sibling project).
  */
-async function stageProject(root: string, base: string, targets: string[]): Promise<Map<string, string>> {
-  const project = `arch_${randomBytes(8).toString("hex")}`;
+export async function stageProject(
+  root: string,
+  project: string,
+  base: string,
+  targets: string[],
+): Promise<Map<string, string>> {
   const folder = join(root, project);
   await mkdir(folder, { recursive: true });
   await writeFile(join(folder, "likec4.config.json"), JSON.stringify({ name: project }), "utf8");
@@ -111,37 +133,17 @@ async function stageProject(root: string, base: string, targets: string[]): Prom
  * blanks the whole fleet map.
  */
 export async function loadProject(base: string, paths: string[]): Promise<ProjectDoc> {
-  const empty = (errors: Map<string, LikeC4Error[]>, clean: boolean): ProjectDoc => ({
-    errors,
-    clean,
-    elements: [],
-    relationships: [],
-    views: [],
-    viewIds: [],
-    globalStyles: [],
-    deployment: NO_DEPLOYMENT,
-  });
   const targets = [...new Set(paths.map((path) => resolve(path)))];
-  if (targets.length === 0) return empty(new Map(), true);
+  if (targets.length === 0) return emptyProject(new Map(), true);
   const root = await mkdtemp(join(tmpdir(), "loam-c4-"));
   try {
-    const byRel = await stageProject(root, resolve(base), targets);
-    if (byRel.size === 0) return empty(new Map(), true);
+    const byRel = await stageProject(root, `arch_${randomBytes(8).toString("hex")}`, resolve(base), targets);
+    if (byRel.size === 0) return emptyProject(new Map(), true);
     const likec4 = await LikeC4.fromWorkspace(root, { logger: false });
     try {
-      const errors = groupProjectErrors(likec4, byRel);
-      if (errors.size > 0) return empty(errors, false);
-      const model = (await likec4.parsedModel()) as ReadableModel;
-      return {
-        errors,
-        clean: true,
-        specification: readSpecification(model.specification),
-        views: readDynamicViews(model),
-        viewIds: readViewIds(model),
-        globalStyles: readGlobalStyleIds(model),
-        deployment: readDeployment(model),
-        ...flattenModel(model),
-      };
+      const errors = groupErrorsByRel(likec4.getErrors(), byRel);
+      if (errors.size > 0) return emptyProject(errors, false);
+      return cleanProjectDoc((await likec4.parsedModel()) as ReadableModel);
     } finally {
       await likec4.dispose();
     }
@@ -151,20 +153,73 @@ export async function loadProject(base: string, paths: string[]): Promise<Projec
 }
 
 /**
- * `getErrors()` split per DOCUMENT inside one project, each error's
+ * A `ProjectDoc` carrying NO model — the answer for a project that did not
+ * parse (`clean: false`) and for one there was nothing to load (`clean: true`,
+ * empty errors).
+ *
+ * Exported for `./batch.ts`, which answers about many projects at once and
+ * must answer each of them in exactly this shape: a second literal there would
+ * be a second chance to spell `deployment` as `undefined` and turn "this
+ * project declares no topology" into a crash in every reader.
+ */
+export function emptyProject(errors: Map<string, LikeC4Error[]>, clean: boolean): ProjectDoc {
+  return {
+    errors,
+    clean,
+    elements: [],
+    relationships: [],
+    views: [],
+    viewIds: [],
+    globalStyles: [],
+    deployment: NO_DEPLOYMENT,
+  };
+}
+
+/**
+ * Everything loam reads out of a project that parsed, from LikeC4's parsed
+ * stage — parsed, never computed, for the reason `../likec4.ts` records.
+ *
+ * Exported beside `emptyProject` and for the same reason: `./batch.ts` builds
+ * one of these per clean project, and an adapter wired into one loader and not
+ * the other reads as an absence rather than an error — the failure shape
+ * test/likec4-batch-parity.test.ts was written to catch.
+ */
+export function cleanProjectDoc(model: ReadableModel): ProjectDoc {
+  return {
+    errors: new Map(),
+    clean: true,
+    specification: readSpecification(model.specification),
+    views: readDynamicViews(model),
+    viewIds: readViewIds(model),
+    globalStyles: readGlobalStyleIds(model),
+    deployment: readDeployment(model),
+    ...flattenModel(model),
+  };
+}
+
+/**
+ * Diagnostics split per DOCUMENT inside one project, each error's
  * `sourceFsPath` rewritten to the document's real absolute path.
  *
- * `groupErrors` above keys on the project folder segment, which cannot work
- * here — every document shares one project. This keys on the staged relative
- * path instead, longest first so `usecases/checkout.likec4` is matched before a
- * hypothetical `checkout.likec4` at the root. An error nobody can attribute
- * throws for the same reason it does there: a dropped error grades its document
- * clean, which is failing open in the fleet gate.
+ * `../workspace.ts`'s `groupErrors` keys on the project folder segment, which
+ * cannot work here — every document shares one project. This keys on the staged
+ * relative path instead, longest first so `usecases/checkout.likec4` is matched
+ * before a hypothetical `checkout.likec4` at the root. An error nobody can
+ * attribute throws for the same reason it does there: a dropped error grades
+ * its document clean, which is failing open in the fleet gate.
+ *
+ * It takes the diagnostics rather than the workspace so `./batch.ts` can hand
+ * it ONE project's share of a multi-project `getErrors()` — the two questions
+ * compose (which project, then which document) exactly because neither is
+ * baked in here.
  */
-function groupProjectErrors(likec4: LikeC4, byRel: Map<string, string>): Map<string, LikeC4Error[]> {
+export function groupErrorsByRel(
+  errors: readonly WorkspaceError[],
+  byRel: Map<string, string>,
+): Map<string, LikeC4Error[]> {
   const rels = [...byRel.keys()].sort((a, b) => b.length - a.length);
   const grouped = new Map<string, LikeC4Error[]>();
-  for (const err of likec4.getErrors()) {
+  for (const err of errors) {
     const spelled = err.sourceFsPath.split(/[\\/]/).join("/");
     const rel = rels.find((candidate) => spelled.endsWith(`/${candidate}`) || spelled === candidate);
     if (rel === undefined) {

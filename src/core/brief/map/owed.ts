@@ -11,11 +11,15 @@
  * cap and `landscape.ts` — which READS what the map already says about the
  * service and decides which state it is in — had parked at the file ceiling
  * with its object literals collapsed onto single lines to fit. The two halves
- * are distinct subjects: one is a derivation over a parsed document, the other
- * is all of the prose. The only tie back to the parent is `import type
- * { BriefTarget }`, which `verbatimModuleSyntax` erases, so this package
- * value-imports nothing from `../` and the package graph stays acyclic.
+ * are distinct subjects: one is the derivation over a parsed document, the
+ * other is all of the prose plus the vocabulary that prose reads (`BrokenMap`
+ * and its builder live here for that reason — beside the arm that spends them,
+ * not in the caller that fills them). The only tie back to the parent is
+ * `import type { BriefTarget }`, which `verbatimModuleSyntax` erases, so this
+ * package value-imports nothing from `../` and the package graph stays acyclic.
  */
+import { relative } from "node:path";
+import type { LikeC4Error } from "../../c4/likec4.js";
 import { spellCall, edgeTemplates, type AttestedCall } from "../../c4/resolve/attested.js";
 import type { BriefTarget } from "../targets.js";
 
@@ -48,6 +52,14 @@ export interface LandscapeArtifactRequest {
   servicePath: string;
   /** The element that already resolves to the service — set only in the edgeless state — and the calls its model attests. */
   elementId?: string;
+  /**
+   * Whether that element carries `#external`. It changes what the brief may
+   * PROMISE and nothing else: `landscape.service-isolated` removes every
+   * `#external` element from its subject set, so on such a tree no warning holds
+   * the agent accountable, and saying one will is the false promise this flag
+   * exists to stop (verification 2026-09-04).
+   */
+  external?: boolean;
   attested: AttestedCall[];
 }
 
@@ -112,6 +124,30 @@ function landscapeBlock(req: LandscapeArtifactRequest): string {
 const OP_EDGE_RULE =
   "Draw every cross-service call as an edge carrying the operation it uses: `a -> b 'Calls createSplit' { metadata { op 'createSplit' } }`. The `op` must be an operationId the TARGET's openapi.yaml defines, or `spine.op-undefined` (error) — a broken contract between services.";
 
+/** What the edgeless state costs when a check is watching — the ordinary case. */
+const ISOLATED_RULE = (servicePath: string): string =>
+  `\`loam validate --all\` reports \`landscape.service-isolated\` (warn) while this element has no edge and ` +
+  `\`${servicePath}/model.likec4\` declares a call across its boundary; with no such call it stays silent, so ` +
+  `an edgeless service that truly calls nothing is correct, and this brief says so.`;
+
+/**
+ * The same state under `#external`, where NO check is watching.
+ *
+ * `landscape.service-isolated` removes every `#external` element from its
+ * subject set — the fix that stopped a foreign box answering for one of our
+ * directories — so on this tree the warning the brief used to promise cannot
+ * fire, measured: `validate --all` reports `landscape.matched` and the full
+ * `--json` findings walk holds no isolation finding at all. A brief that names
+ * a warning nothing will raise is worse than one that says nothing, because the
+ * agent budgets against the check instead of against the sentence.
+ */
+const EXTERNAL_RULE = (elementId: string, servicePath: string): string =>
+  `\`${elementId}\` carries \`#external\`, so \`landscape.service-isolated\` will NOT fire here whatever this ` +
+  `element's edges are — the check skips every element the map marks as somebody else's, exactly as the two ` +
+  `binding checks do. Nothing in \`loam validate --all\` names this state; this brief is the only place it is ` +
+  `said. If \`${servicePath}/\` is ours, drop \`#external\` from the element and the check applies again; if it ` +
+  `is genuinely somebody else's, the calls belong on the element of the service that makes them.`;
+
 /** The fleet map's own brief — assembled per service, because the write it owes names the service. */
 export function landscapeArtifact(req: LandscapeArtifactRequest): Omit<BriefTarget, "path" | "exists" | "action"> {
   const { service, servicePath, elementId } = req;
@@ -138,7 +174,7 @@ export function landscapeArtifact(req: LandscapeArtifactRequest): Omit<BriefTarg
             whole,
             `An element already resolves to \`${servicePath}/\` (\`${elementId}\`). Do NOT add a second one — two elements resolving to one directory is \`landscape.binding-duplicate\` (warn) and every element→service join then picks one of them arbitrarily. What the map lacks is every call in or out of it.`,
             OP_EDGE_RULE,
-            `\`loam validate --all\` reports \`landscape.service-isolated\` (warn) while this element has no edge and \`${servicePath}/model.likec4\` declares a call across its boundary; with no such call it stays silent, so an edgeless service that truly calls nothing is correct, and this brief says so.`,
+            req.external === true ? EXTERNAL_RULE(elementId, servicePath) : ISOLATED_RULE(servicePath),
           ],
     example: landscapeBlock(req),
   };
@@ -148,14 +184,45 @@ export function landscapeArtifact(req: LandscapeArtifactRequest): Omit<BriefTarg
 /* The instruction                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Which documents of `architecture/` failed, and how many errors they carry between them. */
+export interface BrokenMap {
+  /** Docs-relative POSIX paths, deduped and sorted — spelled as `landscape.invalid` spells them. */
+  paths: string[];
+  errors: number;
+}
+
+/**
+ * That record, built from a project's diagnostics — beside the type it fills and
+ * the arm that reads it, rather than in the caller.
+ *
+ * Spelled exactly as `commands/validate/fleet/landscape.ts` spells it for
+ * `landscape.invalid` — deduped, relative to the docs root, `/`-joined — because
+ * the two surfaces are read one after the other on the same tree and an agent
+ * has to be able to tell that they name the same file.
+ */
+export function brokenDocuments(docsDir: string, land: { errors: readonly LikeC4Error[] }): BrokenMap {
+  const paths = [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
+    .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
+    .sort();
+  return { paths, errors: land.errors.length };
+}
+
 /** The inputs of `instructionFor` — a record, because the function sat at the parameter cap. */
 export interface InstructionRequest {
   service: string;
   state: "absent" | "unparseable" | "unmodelled" | "edgeless";
   expects: string[];
   servicePath: string;
+  /**
+   * The documents that failed (`unparseable` state only). Optional so the other
+   * three arms need not carry it, and the arm degrades to naming the project
+   * rather than guessing a file when a caller has none.
+   */
+  broken?: BrokenMap;
   /** The element that already resolves to the service (edgeless state only), and its tags loam does not read. */
   elementId?: string;
+  /** Whether that element carries `#external` — see `LandscapeArtifactRequest.external`. */
+  external?: boolean;
   attested: AttestedCall[];
   foreignTags: string[];
 }
@@ -176,10 +243,13 @@ export function instructionFor(req: InstructionRequest): string {
     `${servicePath}/: the service is documented and invisible — no edge into it can be checked ` +
     `against its openapi.yaml, and no feature can draw a call to it.`;
   // `expects` is reachable only through inbound edges, so it is empty in every
-  // state that produces an instruction — the edgeless one by definition. It is
-  // threaded through anyway rather than dropped: the caller computes it once,
-  // and the day an unmodelled service can inherit an edge (a container-level
-  // binding, say) the sentence is already here instead of being noticed missing.
+  // state that ASKS for an element — the edgeless one by definition. (The
+  // unparseable state can carry it, off the landscape-file fallback, and that
+  // arm deliberately does not append this sentence: it asks for no element, so
+  // "your element is what they will resolve to" would name one loam has not
+  // read.) It is threaded through anyway rather than dropped: the caller
+  // computes it once, and the day an unmodelled service can inherit an edge (a
+  // container-level binding, say) the sentence is already here.
   const owed =
     expects.length > 0
       ? ` The fleet already calls ${expects.map((o) => `'${o}'`).join(", ")} on this service, so those edges exist; your element is what they will resolve to.`
@@ -194,10 +264,26 @@ export function instructionFor(req: InstructionRequest): string {
     );
   }
   if (state === "unparseable") {
+    // The map is the whole `architecture/` project, so the document that broke
+    // is usually a SIBLING of the landscape — a use case, a palette. This arm
+    // named `architecture/landscape.likec4` regardless and told an agent to go
+    // and fix parse errors in a file that has none, contradicting the
+    // `landscape.invalid` that `validate --all` prints on the same tree one
+    // second later. The EDGELESS arm below carries the same rule in its own WHY:
+    // never name bytes loam did not read.
+    const b = req.broken;
+    const named =
+      b === undefined || b.paths.length === 0
+        ? "The fleet map (architecture/) does not parse"
+        : `${b.paths.join(", ")} ${b.paths.length === 1 ? "does" : "do"} not parse (${String(b.errors)} error(s)` +
+          `${b.paths.length === 1 ? "" : " between them"}), so the fleet map (architecture/) cannot be read`;
     return (
-      `architecture/landscape.likec4 exists but does not parse (\`landscape.invalid\`), so nothing can be said ` +
-      `about what it already models. Fix the parse errors first — they blind every cross-service check at once — ` +
-      `then make sure it holds ${bind}. ${consequence}`
+      `${named} (\`landscape.invalid\`). Nothing can be said about what the map already models — not that it ` +
+      `lacks an element for ${servicePath}/, and not that it holds one — so this brief asks for no edit to it. ` +
+      `Fix the parse errors first (they blind every cross-service check at once, and \`loam validate --all\` ` +
+      `names the same file), then re-run \`loam adopt --service ${service}\`: it will say whether the map already ` +
+      `holds ${bind}, and adding one before then risks a second box for a service the map already draws ` +
+      `(\`landscape.binding-duplicate\`).`
     );
   }
   if (state === "edgeless") return edgelessInstruction(req);
@@ -216,11 +302,42 @@ export function instructionFor(req: InstructionRequest): string {
  * invented edge is a dependency the fleet then plans against. Neither arm asks
  * for a second element, and both name the tags loam does not read.
  */
+/**
+ * Which sentence the attested arm may end on: what will hold the agent to this
+ * edit, or the admission that nothing will.
+ *
+ * `landscape.service-isolated` skips every `#external` element, so on such a
+ * tree the promise "reports it until an edge lands" is one the check cannot
+ * keep — and the brief was making it on exactly the tree that fix was written
+ * for (verification 2026-09-04). The `#external` arm says so instead, and says
+ * how to make the check apply.
+ */
+function accountability(req: InstructionRequest, id: string): string {
+  if (req.external === true) {
+    return (
+      `\`${id}\` carries \`#external\`, so \`landscape.service-isolated\` will NOT fire here whatever you draw — ` +
+      `the check skips every element the map marks as somebody else's. Nothing in \`loam validate --all\` names ` +
+      `this state; this brief is the only place it is said. Drop \`#external\` from the element if ` +
+      `${req.servicePath}/ is ours, and the check applies again.`
+    );
+  }
+  return (
+    "`loam validate --all` reports `landscape.service-isolated` (warn) until an edge lands — ONE edge, on any " +
+    "of them: the check is touched/untouched, not a set difference, so nothing will name the calls you leave " +
+    "undrawn."
+  );
+}
+
 function edgelessInstruction(req: InstructionRequest): string {
   const { servicePath, attested, foreignTags } = req;
   const id = req.elementId ?? elementIdFor(req.service);
+  // "the fleet map (architecture/)" rather than the landscape FILE: the map is
+  // the whole project, an element may be declared in any document of it, and
+  // LikeC4 hands back no source document for an element — so naming a file
+  // here would be a claim about bytes loam did not read. The write still lands
+  // in `architecture/landscape.likec4`; the target's `path` says so.
   const opening =
-    `\`${id}\` in architecture/landscape.likec4 resolves to ${servicePath}/ and no edge in the map touches it — ` +
+    `\`${id}\` in the fleet map (architecture/) resolves to ${servicePath}/ and no edge in the map touches it — ` +
     `the service is drawn and invisible to every cross-service check.`;
   const tags =
     foreignTags.length === 0
@@ -241,7 +358,8 @@ function edgelessInstruction(req: InstructionRequest): string {
       `service — ${forms} for a call, \`publishes\`/\`consumes\` ` +
       `for an event — naming the other party as the map already spells it; where the model's word names a ` +
       `different thing in the map, say so in the hand-back instead of drawing it. Do not add a second element: ` +
-      `one already resolves. \`loam validate --all\` reports \`landscape.service-isolated\` (warn) until an edge lands.${tags}`
+      `one already resolves. ${accountability(req, id)} Carry all of them up now, or say in the hand-back which ` +
+      `you did not and why.${tags}`
     );
   }
   return (

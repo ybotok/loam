@@ -23,6 +23,7 @@ import { type DoctorFinding, type DoctorReport } from "./report.js";
 import { canAccess, inspectConfig, inspectLandscape } from "./config.js";
 import { inspectAgentSurface } from "./agents.js";
 import { gradeWritePathResidue } from "./residue.js";
+import { scanReports } from "./reports/scan.js";
 
 export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   const inspected = await inspectConfig(cwd);
@@ -146,16 +147,17 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
       code: "doctor.likec4-config-missing",
       message:
         `${docsDir}/${LIKEC4_PROJECT_FILENAME} is missing, so this tree is not a loadable LikeC4 workspace — `
-        + "every service model and feature delta declares its own `specification` block, and pointing a "
-        + "renderer at the repo root merges them into one model and reports every declaration as a duplicate.",
+        + "a feature delta, and any service model that declares its own `specification` block, has to be "
+        + "excluded from the root project, and pointing a renderer at the repo root with nothing excluded "
+        + "merges them into one model and reports every declaration as a duplicate.",
       fix:
         `Write ${docsDir}/${LIKEC4_PROJECT_FILENAME} with:\n${LIKEC4_PROJECT_CONFIG.trimEnd()}\n`
-        + "That scopes the root project to architecture/, so `npx likec4 start` in the docs repo renders "
-        + "the fleet map. Then run `loam subsystem sync`: it writes one create-only likec4.config.json "
-        + "beside every service model, so each model renders from that same root as a project of its own "
-        + "(the root project excludes services/**, and a model with no project file renders nowhere from the docs root). "
-        + "Only a feature delta still renders from its own directory (`npx likec4 start features/<FEAT>`) — "
-        + "being readable alone is what these files are for.",
+        + "That makes the docs root one LikeC4 project holding the fleet map and every service model that "
+        + "extends it, so `npx likec4 start` in the docs repo renders both. Then run `loam subsystem sync`: "
+        + "it maintains the `exclude` list above — one `services/<tree>/**` entry per model that stands "
+        + "alone — and writes one create-only likec4.config.json beside each of those, so a standalone model "
+        + "renders from the same root as a project of its own. Only a feature delta still renders from its "
+        + "own directory (`npx likec4 start features/<FEAT>`) — being readable alone is what that file is for.",
     });
   }
 
@@ -266,6 +268,32 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
   // the cwd now that config discovery walks upward.
   const agents = await inspectAgentSurface(dirname(path), inspected.config, docsDir, findings);
 
+  // The problem reports, read beside the config that RESOLVED — `config.root`,
+  // the directory the loam.json was found in — because the `loam-report`
+  // protocol says "at the current repository root", and config discovery walks
+  // upward, so the cwd is not that root.
+  //
+  // Where nothing PARSED, the directory of the file loam FOUND, which is what
+  // `dirname(path)` is: `configPath` returns the discovered loam.json, or the
+  // cwd's own spelling of it when there is none, so this is the found root when
+  // there is one and the cwd when there is not — the same root the agent surface
+  // above is inspected against. Falling back to the raw cwd instead meant that
+  // from a subdirectory of a repo whose loam.json is unparseable, `doctor`
+  // reported `total 0, next 001` while five reports sat beside the config it had
+  // just named in the same envelope, and handed out an ordinal already taken
+  // (verification 2026-09-04, second pass). A report corpus in a repo whose
+  // loam.json is broken is still worth counting — this is precisely the preflight
+  // that runs when the config does not resolve — and the blocker above already
+  // names the real problem.
+  //
+  // No findings come back, and that is the design: this is the one directory
+  // loam reads that loam never writes, its contents are the team's, and an open
+  // report is not a defect in the repository holding it. `doctor` reports it as
+  // state — like `docs`, `counts` and the write path — so the corpus is
+  // countable by the protocol that asks for it (`reports.next` is the ordinal
+  // the next report takes) without ever becoming a complaint.
+  const reports = await scanReports(inspected.config?.root ?? dirname(path));
+
   return {
     healthy: !findings.some((finding) => finding.severity === "blocker"),
     runtime: {
@@ -287,6 +315,7 @@ export async function diagnose(cwd = process.cwd()): Promise<DoctorReport> {
     counts: { services: services.length, activeFeatures: activeFeatures.length },
     currentService,
     agents,
+    reports,
     writePath,
     serviceWritePath,
     findings,

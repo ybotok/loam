@@ -67,11 +67,31 @@ more for secrets before handing it back.
 
 ## Write one separate report
 
-Create \`loam-reports/YYYY-MM-DD-<short-slug>.md\` at the current repository root. Use a short neutral
-slug based on the symptom, not a customer, person or secret. Never overwrite a different incident;
-add a numeric suffix when the path exists. Reports are ordinary project files so the team can
-review or commit them deliberately, but do not upload, submit an issue, send telemetry, or contact
-any service automatically.
+Create \`loam-reports/NNN-YYYY-MM-DD-<short-slug>.md\` in the directory holding the \`loam.json\` that
+resolved — or, when a \`loam.json\` was found but does not parse, beside that file, so a report about
+the broken config joins the corpus already there; only when there is no config file at or above you
+is it the directory you run in.
+\`loam doctor --json\` hands you that whole directory — that root WITH \`loam-reports/\`
+already on the end — as \`reports.dir\`: write inside the path it gives, never joined onto
+\`loam-reports/\` a second time. \`NNN\` is an ordinal of at least three digits, zero-padded, one more
+than the highest already in that directory — read \`reports.next\` from the same output, which says
+\`001\` when the directory is empty or absent, and widens past three digits rather than reusing a
+number once the corpus gets there. Use a short neutral slug based on the symptom, not a customer,
+person or secret. Never
+overwrite a different incident: a path that already exists means a concurrent report claimed that
+ordinal, so take the next one rather than adding a suffix. That check is on the PATH, and the
+promise is about the ordinal, so re-run \`loam doctor --json\` after writing: if two entries carry
+the same \`ordinal\`, the one with the later \`Recorded\` timestamp renames itself to the next free
+number. The ordinal is the report's handle —
+cite one by its number in a commit message, an issue, or another report's cross-references, and
+never by filename, which is free to be renamed. The ordinal is unique within that directory, not
+across a fleet: a service repository and the docs repository each number their own, so when two
+repositories are in play cite \`<repo>/loam-reports/NNN\`.
+
+Reports are ordinary project files so the team can review or commit them deliberately, but
+do not upload, submit an issue, send telemetry, or contact any service automatically.
+\`loam doctor\` reads the directory — how many reports it holds, how many are in each status, and
+which ordinal comes next — and that is a local read of local files: nothing is transmitted.
 
 Use this shape, omitting only fields that truly cannot be known and marking them \`not collected\`:
 
@@ -79,6 +99,7 @@ Use this shape, omitting only fields that truly cannot be known and marking them
 
     - Recorded: <ISO-8601 timestamp>
     - Classification: <one value above>
+    - Status: open
     - Repository role: <docs | service | combined | unresolved>
     - loam version: <version>
     - Entry point: <chat command, skill, or CLI command; sanitized>
@@ -94,6 +115,19 @@ Use this shape, omitting only fields that truly cannot be known and marking them
     ## Workaround
     ## Missing evidence
     ## Sanitization
+
+\`Status\` is written as \`open\` and stays the report's own record of where it got to. The vocabulary
+is \`open\`, \`sent\` (handed to loam's author — the person forwarding a report sets this, never the
+agent writing it), \`fixed in <version>\`, and \`superseded by <NNN>\` naming the report that
+replaced this one. Close a report by editing its own \`Status\` line: there is no index to keep in
+step, and \`loam doctor\` counts the directory by reading that line's first word, so
+\`fixed in 0.2.0-alpha.5\` counts as fixed. It reads that line from the HEADER FIELD BLOCK only —
+the lines above the first \`##\` heading, quoted code skipped in either markdown spelling: a fence
+(closed only by a run of the same character at least as long as the one that opened it, so a
+\`\`\` inside a \`\`\`\` block is content) and an indented block, which is the shape THIS template is
+printed in above. So a report that quotes this template, however it quotes it, still counts as
+whatever its own header says. A report written before this
+field existed has no \`Status\` line and counts as unstated.
 
 In \`Machine contract\`, include exit code plus the stable envelope fields and relevant finding
 codes/locations; do not paste an entire large JSON payload. In \`Sanitization\`, list the kinds of

@@ -349,15 +349,17 @@ export function archiveDir(docsDir: DocsDir): string {
  * The LikeC4 project file — the one thing in a docs repo loam writes for a
  * tool other than itself — and it lives at two altitudes.
  *
- * At the ROOT, `loam init --create` writes the project `fleet`, scoped to
- * `architecture/` (`core/docs.ts` composes those bytes). Beside each
- * `services/<…>/<id>/model.likec4`, `loam subsystem sync` writes a project of
- * the service's own: loam parses every `.likec4` file ALONE, so each model
- * declares its own `specification` block and the root project must exclude
- * `services/**` — which left every adopted service a box on the fleet map with
- * nothing renderable inside it, in the renderer opened at the docs root.
- * `core/repo/tree/render/projects.ts` composes the per-service bytes and
- * records what was measured.
+ * At the ROOT, `loam init --create` writes the project `fleet` (`core/docs.ts`
+ * composes those bytes), which holds the fleet map and every service model that
+ * EXTENDS it. Beside a model that STANDS ALONE — one declaring its own
+ * `specification` block, which can only be parsed on its own — `loam subsystem
+ * sync` writes a project of the service's own, and adds that directory to the
+ * root's `exclude`; without both, such a model is either a duplicate of the map
+ * or a box on it with nothing renderable inside.
+ * `core/repo/tree/render/projects.ts` composes the per-service bytes and records
+ * what was measured; `core/c4/root-project/exclude.ts` owns reading the root's
+ * `exclude` list and deciding what an entry covers; `core/c4/service-model/renderer.ts`
+ * owns the list `loam subsystem sync` writes back.
  *
  * Spelled here and NOT in `ARTIFACT_FILES`, and the distinction is
  * load-bearing: a filename in that table classifies a directory as a service,

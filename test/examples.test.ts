@@ -11,6 +11,17 @@
  * table naming what each one teaches — and an exact match makes any new code
  * that starts firing on the example loud instead of quietly accumulating.
  *
+ * All five models are EXTENDING models — no `specification` block, no partner
+ * copies, `extend marketplace.<svc> { … }` on the element the fleet map binds to
+ * the directory — and no `likec4.config.json` sits beside any of them. That is
+ * what keeps the warning set below at exactly ten: nothing standalone, so no
+ * `service.likec4-config-missing`; every added element under its own service, so
+ * no `c4.element-unowned`; every health dependency reaching an element of the
+ * model's own slice, so no `health.dependency-unmodelled`. The root
+ * `likec4.config.json` excludes only the node_modules glob and `features`, which
+ * is exactly what `subsystem sync` would write (the assertion below spells both
+ * entries), so the "sync is current" assertion covers the exclude list too.
+ *
  * The fleet is five services and four features at four points in their life:
  * FEAT-088 and FEAT-120 already archived by a real `loam archive` (snapshot and
  * verification record included), FEAT-101 in flight with a new service arriving,
@@ -25,6 +36,7 @@
  * most of what it claims to be for.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,6 +99,37 @@ describe("examples/docs governs itself", () => {
     const payload = JSON.parse(res.stdout);
     expect(payload.ok).toBe(true);
     expect(payload.services.total).toBe(5);
+  });
+
+  it("carries five extending models, no per-service project file, and the scaffold's root exclude", async () => {
+    // The shape assertion behind the warning set. Read off the TREE rather than
+    // off a finding, because the interesting failure is a model quietly regaining
+    // a `specification` block: `validate --all` would then still be green — a
+    // standalone model is legal — while the example stopped teaching the shape
+    // `loam adopt` briefs, and `service.likec4-config-missing` would appear as
+    // the eleventh warning one edit later.
+    const root = JSON.parse(await readFile(join(docsDir, "likec4.config.json"), "utf8"));
+    expect(root.exclude).toEqual(["**/node_modules/**", "features/**"]);
+    for (const tree of [
+      "checkout-web",
+      "order-service",
+      "payment-service",
+      "platform/identity-service",
+      "platform/notification-service",
+    ]) {
+      const dir = join(docsDir, "services", ...tree.split("/"));
+      const model = await readFile(join(dir, "model.likec4"), "utf8");
+      expect(model, `${tree}: model.likec4 must extend the fleet map`).toContain(
+        "extend marketplace.",
+      );
+      expect(model, `${tree}: an extending model declares no specification`).not.toContain(
+        "specification {",
+      );
+      expect(
+        existsSync(join(dir, "likec4.config.json")),
+        `${tree}: an extending model never carries a likec4.config.json`,
+      ).toBe(false);
+    }
   });
 });
 
@@ -160,7 +203,10 @@ describe("examples/docs vs the subsystem tree", () => {
     // The generated file in the tree is byte-exact: sync answers `current`
     // and writes nothing, which is also what keeps `validate --all` above at
     // zero errors — a stale (or hand-edited) copy would be
-    // `subsystem.views-stale`.
+    // `subsystem.views-stale`. `sync` also owns the RENDERER wiring now, so
+    // "writes nothing" covers two more facts: no per-service
+    // `likec4.config.json` is owed (every model extends the map) and the root
+    // project's `exclude` already equals what sync would compute.
     const before = await treeHashes(docsDir);
     const sync = await runLoam(workDir, "subsystem", "sync", "--json");
     expect(sync.code).toBe(0);

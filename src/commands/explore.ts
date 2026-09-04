@@ -143,10 +143,18 @@ function print(r: Exploration): void {
     // Said first and without hedging: with no readable map there IS no ring,
     // and a reader who takes the empty neighbour list at face value concludes
     // the change is contained when nothing checked that.
-    const why = r.landscape.present ? "does not parse" : "does not exist";
-    console.log(
-      `! architecture/landscape.likec4 ${why} — no neighbour below is derived, and none is missing either\n`,
-    );
+    // Same rule as `context`'s printer: name the document that actually failed.
+    // `parses` answers for the `architecture/` PROJECT, so the document at fault
+    // is very often a SIBLING beside a landscape that reads perfectly, and
+    // naming the landscape was a claim about bytes loam read fine (verification
+    // 2026-09-04). `present` is still about the FILE — it is the write target
+    // every brief asks for edits to — so the absent arm keeps the file name.
+    const named = !r.landscape.present
+      ? "architecture/landscape.likec4 does not exist"
+      : r.landscape.broken.length === 0
+        ? "the fleet map (architecture/) does not parse"
+        : `${r.landscape.broken.join(", ")} ${r.landscape.broken.length > 1 ? "do" : "does"} not parse`;
+    console.log(`! ${named} — no neighbour below is derived, and none is missing either\n`);
   }
 
   for (const s of r.services) {

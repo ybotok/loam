@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { loadFile, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
+import { extendingModels } from "../c4/service-model/fleet/extending.js";
 import { serviceIdProblem } from "../kernel/ids/service.js";
 import { deltaShapeIssues } from "../delta/delta.js";
 import type { Issue } from "../vocabulary/issue.js";
@@ -80,6 +81,12 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
     // overlay states: one memoised read does not justify an edge from
     // `core/deployment/` to `fleet-context`.
     ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+    // The fleet's extending models, so the preview is the map the archive would
+    // really leave: a nested addition is routed into the service's own model,
+    // never onto the map. Read here for the same reason `load` is passed here —
+    // this module holds the context and `core/deployment/` does not — and as a
+    // thunk, so a feature with no `deployment/` directory pays nothing for it.
+    models: () => extendingModels(docsDir, context),
   });
   if (topology.kind === "unreadable") {
     issues.push({

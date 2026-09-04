@@ -2,10 +2,15 @@
  * Which `.likec4` documents in a docs repo's `architecture/` loam loads as one
  * project.
  *
- * The renderer's answer is "all of them" — `likec4.config.json` scopes the root
- * LikeC4 project to everything but `services/**` and `features/**`. loam's
- * answer is all of them EXCEPT the generated `architecture/subsystems.likec4`,
- * and that exception is not an optimisation:
+ * The renderer's answer is "all of them". The root `likec4.config.json` no
+ * longer excludes `services/**`: the root project holds the map AND every
+ * service model that EXTENDS it, because such a model is only readable beside
+ * the map, and `loam subsystem sync` excludes only the directory of each model
+ * that STANDS ALONE — one `services/<tree>/**` entry per standalone model,
+ * never the whole subtree (`c4/service-model/renderer.ts` owns that list, and
+ * is the one place loam reads that file). loam's own answer here is all of them
+ * EXCEPT the generated `architecture/subsystems.likec4`, and that exception is
+ * not an optimisation:
  *
  *  - docs/DESIGN.md rule 26 excludes the generated file from every read loam
  *    performs. Its staleness is a byte compare (`subsystem.views-stale`) and

@@ -1,11 +1,21 @@
 
-import { loadSource, type Elem, type Rel } from "../likec4.js";
+import { parentIdOf } from "../../kernel/ids/fqn/ancestors.js";
+import { errorText, loadSource, type Elem, type Rel } from "../likec4.js";
 import { elementService, serviceOf } from "../resolve/service.js";
 import { scanModel, type ScannedElement, type ScannedModel, type ScannedRel } from "../source-scan.js";
-import { spliceSource } from "./authored-source.js";
-import { LandscapeSpliceError, type LandscapeMergeRequest, type LandscapePlan } from "./contract.js";
+import { matchLineEndings, spliceSource } from "./authored-source.js";
+import {
+  LandscapeSpliceError,
+  type ExtendingModel,
+  type LandscapeMergeRequest,
+  type LandscapePlan,
+  type ModelAdditions,
+} from "./contract.js";
 import { assertMergeableDelta } from "./delta-blocks.js";
-import { relKey, relSortKey } from "./identity/edges.js";
+import { relSortKey, relStatementKey } from "./identity/edges.js";
+import { newAdditions } from "./identity/existing.js";
+import { planInteriors } from "./identity/interior.js";
+import { ownerOf } from "./identity/owner.js";
 import {
   elementSpot,
   nestedInsert,
@@ -43,20 +53,37 @@ import {
  * dotted id at top level, which LikeC4 rejects. The additions carry no marker
  * comment: which archive added what is the git history's to say.
  *
- * Existence is checked semantically against the parsed landscape (by element
- * id/title and by edge identity), so re-archiving is idempotent and title
- * strings appearing elsewhere in the source cause no false skips. Assumes the
- * delta reuses the landscape's element identifiers for existing services. A
- * title match whose two sides are BOTH bound to different services is not an
- * existence hit but a collision, and refuses the archive (see the guard).
+ * Existence is checked semantically against the parsed landscape AND against
+ * every extending model the request carries (by element id/title and by edge
+ * identity), so re-archiving is idempotent whichever document the additions
+ * landed in — `./identity/existing.ts` holds that phase and its two joins, and
+ * this function only turns the collision it reports into the refusal.
  *
  * Splicing is text surgery, so the computed result is PARSED before it is
  * returned: a merged landscape LikeC4 rejects refuses the archive at plan time
  * (merge-failed, nothing written — the unparseable-delta discipline) instead
  * of landing in the living docs.
+ *
+ * NOT EVERYTHING LANDS HERE. A service whose model EXTENDS this map owns its
+ * own interior, and an addition nested under such a service is ROUTED to that
+ * model instead (`./identity/owner.ts` decides, `./model/merge.ts` splices).
+ * Until it was, a delta's container landed in the map and the service was
+ * `c4.invalid` — a duplicate declaration — the moment its model wrote the same
+ * container, which is exactly what the adopt brief tells it to do
+ * (verification 2026-09-04, E1). With no extending models in the request this
+ * function behaves as it always did.
+ *
+ * Routing per ADDITION is not the whole of it, because a service the feature
+ * INTRODUCES carries its interior in one element's authored bytes and those
+ * children carry no feature tag of their own. `./identity/interior.ts` decides, once
+ * per such block, whether it hands that interior to the model — cut out of what
+ * lands on the map — or rides whole; the routing below DEFERS to that decision
+ * for everything written inside the block, which is what keeps the two from
+ * placing the same child twice.
  */
 export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<LandscapePlan> {
   const { landscapeText: text, deltaText, deltaElements, newEls, newRels, featureId } = merge;
+  const models = merge.models ?? [];
   // First, and before the early return for "nothing to add": a block this merge
   // cannot carry is lost whether or not the delta also has tagged elements to
   // splice. See delta-blocks.ts.
@@ -65,66 +92,46 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   if (land.errors.length > 0) {
     throw new LandscapeSpliceError(`landscape.likec4 has ${land.errors.length} error(s) — fix it before archiving`);
   }
-  const haveIds = new Set(land.elements.map((e) => e.id));
-  // The title join needs the matched element back, not just membership: the
-  // cross-service guard below compares service BINDINGS across the join.
-  const byTitle = new Map<string, Elem[]>();
-  const seeTitle = (el: Elem): void => {
-    byTitle.set(el.title, [...(byTitle.get(el.title) ?? []), el]);
-  };
-  for (const el of land.elements) seeTitle(el);
-  const addedEls: Elem[] = [];
-  for (const e of newEls) {
-    if (haveIds.has(e.id)) continue;
-    const sameTitle = byTitle.get(e.title);
-    if (sameTitle !== undefined) {
-      // A title match is the id-less fallback join, and skipping on it is only
-      // safe when the two sides could be the same box. When both sides carry an
-      // explicit `metadata { service }` binding and every binding disagrees,
-      // they are provably DIFFERENT services' boxes sharing a title ('API',
-      // 'Database') — the skip would silently drop the addition, and any delta
-      // edge into it would then refuse the whole archive at the parse net
-      // below with a message about nothing. Refuse here instead, at plan time,
-      // naming both sides.
-      if (e.service !== undefined && sameTitle.every((m) => m.service !== undefined && m.service !== e.service)) {
-        const m = sameTitle[0]!;
-        throw new LandscapeSpliceError(
-          `the delta's '${e.id}' (bound to service '${e.service}') shares the title '${e.title}' with '${m.id}' (bound to service '${m.service}') — a title join across services would silently drop the addition; ` +
-            `retitle one of them, or reuse the id '${m.id}' if they really are the same element`,
-        );
-      }
-      // KNOWN (narrowed by the guard above): with EITHER side unbound the title
-      // join stays trusting — the unbound title-fallback is the legal legacy
-      // pattern — so a cross-service collision hiding behind an unbound element
-      // is still silently skipped here. Scoping titles per service is backlog.
-      continue;
-    }
-    haveIds.add(e.id);
-    seeTitle(e);
-    addedEls.push(e);
+  // Service binding for the existence joins AND for routing and placement:
+  // living elements first (they win a shared id), the delta's after — a spliced
+  // statement's id resolves to its service the moment its bytes land in the scan.
+  const bindEls = [...land.elements, ...deltaElements.filter((d) => !land.elements.some((l) => l.id === d.id))];
+  // What the living fleet already has — the map AND every extending model, by id
+  // and by title. `./identity/existing.ts` holds both joins and their asymmetry.
+  const added = newAdditions({
+    livingEls: land.elements,
+    livingRels: land.relationships,
+    bindEls,
+    deltaElements,
+    candidates: { els: newEls, rels: newRels },
+    models,
+  });
+  if (added.collision !== undefined) {
+    const { addition: e, living: m } = added.collision;
+    throw new LandscapeSpliceError(
+      `the delta's '${e.id}' (bound to service '${e.service}') shares the title '${e.title}' with '${m.id}' (bound to service '${m.service}') — a title join across services would silently drop the addition; ` +
+        `retitle one of them, or reuse the id '${m.id}' if they really are the same element`,
+    );
   }
+  const addedEls = added.els;
+  const addedRels = added.rels;
 
-  // Edges are matched by COUNT, not by membership: two edges the model cannot tell
-  // apart are still two edges, and dropping the second one silently loses a call
-  // the author drew. An edge already in the landscape consumes one delta edge of
-  // the same identity, which is what keeps re-archiving idempotent.
-  const have = new Map<string, number>();
-  for (const r of land.relationships) {
-    const k = relKey(land.elements, r);
-    have.set(k, (have.get(k) ?? 0) + 1);
+  const owner = ownerOf({
+    bindEls,
+    living: new Set(land.elements.map((e) => e.id)),
+    declared: added.declaredIds,
+    added: new Set(addedEls.map((e) => e.id)),
+    models,
+  });
+  // Nothing to add: the same shape the merge returned before routing existed,
+  // and the reason it is decided HERE rather than after the loops below — a
+  // no-op archive must not have to scan the delta, nor answer the landscape
+  // guards further down, which refuse documents this merge is not touching.
+  // Equivalent to the old "nothing reached the map and nothing was routed":
+  // every addition ends up in one of those two, so an empty pair means both.
+  if (addedEls.length === 0 && addedRels.length === 0) {
+    return { content: null, addedEls: [], addedRels: [], models: [] };
   }
-  const addedRels: Rel[] = [];
-  for (const r of newRels) {
-    const k = relKey(deltaElements, r);
-    const n = have.get(k) ?? 0;
-    if (n > 0) {
-      have.set(k, n - 1);
-      continue;
-    }
-    addedRels.push(r);
-  }
-
-  if (addedEls.length === 0 && addedRels.length === 0) return { content: null, addedEls, addedRels };
 
   const scan = scanModel(deltaText);
   if (scan === null) {
@@ -136,6 +143,57 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // parent is itself new is recognised as riding inside the parent's text and
   // is never inserted twice.
   const byId = new Map(scan.elements.map((e) => [e.id, e]));
+  // Relationships: match each parsed addition back to its statement in the
+  // delta source — full identity (`relStatementKey`), consumed one statement
+  // per addition so duplicates stay duplicates. Built before the routing
+  // because routing has to know WHERE an edge was written: one drawn inside a
+  // block that rides whole is already on the map.
+  const pool = new Map<string, ScannedRel[]>();
+  for (const s of scan.rels) {
+    const k = relStatementKey(s);
+    pool.set(k, [...(pool.get(k) ?? []), s]);
+  }
+
+  const interiors = planInteriors({ scan, deltaElements, owner, addedEls });
+  const routed = new Map<string, ModelAdditions>();
+  const into = (model: ExtendingModel): ModelAdditions => {
+    const existing = routed.get(model.path);
+    if (existing !== undefined) return existing;
+    const fresh: ModelAdditions = { model, els: [], rels: [] };
+    routed.set(model.path, fresh);
+    return fresh;
+  };
+  for (const share of interiors.routed) into(share.model).els.push(...share.els);
+
+  const mapEls: Elem[] = [];
+  for (const e of addedEls) {
+    const src = byId.get(e.id);
+    // Written inside a block that has already decided: a split block handed it
+    // to the model with its siblings, and a whole one carries it onto the map
+    // in the parent's own bytes, where the splice loop's `rides` finds it. Both
+    // are placed exactly once, which is the point of asking the block first.
+    const fate = src === undefined ? null : interiors.covering(src);
+    if (fate === "split") continue;
+    const model = fate === "whole" ? undefined : owner(parentIdOf(e.id));
+    if (model === undefined) mapEls.push(e);
+    else into(model).els.push(e);
+  }
+  const mapRels: Rel[] = [];
+  for (const r of addedRels) {
+    // An edge written inside a block that rides whole names its endpoints by
+    // their LOCAL names and reads only there; it stays with its block.
+    const stmts = pool.get(relStatementKey(r)) ?? [];
+    const inBlock = stmts.length > 0 && stmts.every((s) => interiors.covering(s) !== null);
+    // Otherwise the SOURCE decides: a call is drawn where the caller draws its
+    // calls, and only when the source is not itself interior does the target's
+    // owner get the edge. A service-level edge belongs to neither and stays on
+    // the map.
+    const model = inBlock ? undefined : owner(parentIdOf(r.source)) ?? owner(parentIdOf(r.target));
+    if (model === undefined) mapRels.push(r);
+    else into(model).rels.push(r);
+  }
+  const touchesMap = mapEls.length > 0 || mapRels.length > 0;
+
   const spliced: Array<{ start: number; end: number }> = [];
   const rides = (start: number, end: number): boolean =>
     spliced.some((r) => start >= r.start && end <= r.end);
@@ -152,10 +210,6 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
   // LikeC4, so the parse net below would pass a landscape containing none of
   // the architecture).
   let content = text;
-  // Service binding for placement: living elements first (they win a shared
-  // id), the delta's after — a spliced statement's id resolves to its service
-  // the moment its bytes land in the scan.
-  const bindEls = [...land.elements, ...deltaElements.filter((d) => !land.elements.some((l) => l.id === d.id))];
   let livingScan = scanModel(content);
   let stmts = livingScan === null ? [] : topStatements(livingScan, bindEls);
   const rescan = (): void => {
@@ -217,7 +271,7 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
 
   // Ancestors first: a spliced parent covers its children before they are seen.
   const depth = (id: string): number => id.split(".").length;
-  const sortedEls = [...addedEls].sort(
+  const sortedEls = [...mapEls].sort(
     (a, b) => depth(a.id) - depth(b.id) || (byId.get(a.id)?.start ?? 0) - (byId.get(b.id)?.start ?? 0),
   );
   for (const e of sortedEls) {
@@ -228,10 +282,15 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
       );
     }
     if (rides(src.start, src.end)) continue;
+    // Every split block's children, whichever block they belong to:
+    // `spliceSource` keeps only the ranges that fall inside the bytes it is
+    // carrying, so a block riding inside ANOTHER new block still loses its own
+    // interior on the way to the map.
+    const omit = interiors.omit;
     const dot = e.id.lastIndexOf(".");
     if (dot === -1) {
       const spot = elementSpot(modelRegion(), e.id, elementService(e));
-      applyTop(spot, spliceSource(deltaText, src, featureId, "  "));
+      applyTop(spot, spliceSource(deltaText, src, { featureId, indent: "  ", omit }));
       spliced.push({ start: src.start, end: src.end });
       continue;
     }
@@ -242,26 +301,19 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
         `'${e.id}' nests under '${parentId}', which is neither in the living landscape nor added by this delta — there is nowhere to insert it`,
       );
     }
-    const nested = nestedInsert(content, parent, spliceSource(deltaText, src, featureId, parent.indent + "  "));
+    const nested = nestedInsert(
+      content,
+      parent,
+      spliceSource(deltaText, src, { featureId, indent: parent.indent + "  ", omit }),
+    );
     applyAt(nested.at, nested.insert);
     spliced.push({ start: src.start, end: src.end });
   }
 
-  // Relationships: match each parsed addition back to its statement in the
-  // delta source — full identity (endpoints, title, all three spine keys,
-  // tags), consumed one statement per addition so duplicates stay duplicates.
-  // The spine keys earn their place here the same way they do in `relKey`:
-  // without them two additions differing only by `publishes` share one pool
-  // entry, and `shift()` hands the second one the first one's authored bytes.
-  const relKeyOf = (r: Rel | ScannedRel): string =>
-    JSON.stringify([r.source, r.target, r.title ?? "", r.op ?? "", r.publishes ?? "", r.consumes ?? "", [...r.tags].sort()]);
-  const pool = new Map<string, ScannedRel[]>();
-  for (const s of scan.rels) {
-    const k = relKeyOf(s);
-    pool.set(k, [...(pool.get(k) ?? []), s]);
-  }
-  for (const r of addedRels) {
-    const s = pool.get(relKeyOf(r))?.shift();
+  // Each map-bound addition takes its statement out of the pool built above:
+  // one statement per addition, so duplicates stay duplicates.
+  for (const r of mapRels) {
+    const s = pool.get(relStatementKey(r))?.shift();
     if (s === undefined) {
       throw new LandscapeSpliceError(
         `cannot locate the '${r.source} -> ${r.target}' relationship in delta.likec4 — the landscape merge splices authored source, and no matching declaration was found`,
@@ -274,25 +326,34 @@ export async function planLandscapeMerge(merge: LandscapeMergeRequest): Promise<
     // safety-netted by the re-parse below), never which service a check
     // grades.
     const spot = relSpot(modelRegion(), serviceOf(deltaElements, r.source), key);
-    applyTop(spot, spliceSource(deltaText, s, featureId, "  "));
+    applyTop(spot, spliceSource(deltaText, s, { featureId, indent: "  " }));
   }
 
   // The safety net: prove the computed landscape parses before anything is
   // written. Splice bugs — and legal inputs the living document cannot absorb,
   // like a kind its specification never declares — refuse here, at plan time,
-  // instead of corrupting the one file the whole fleet reads.
-  const check = await loadSource(content);
-  if (check.errors.length > 0) {
-    const detail = check.errors
-      .slice(0, 3)
-      .map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message))
-      .join("; ");
-    throw new LandscapeSpliceError(
-      `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
-        `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
-        `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
-    );
+  // instead of corrupting the one file the whole fleet reads. Skipped when
+  // every addition was routed away: the text is the one already parsed above,
+  // and the models get their own net from the caller, which is the only side
+  // that can stage a model beside the map it extends.
+  // The splice composed bytes from two documents, and the delta's newlines are
+  // not necessarily the map's. Corrected before the net, so what is proven is
+  // what would be written.
+  content = matchLineEndings(text, content);
+  if (touchesMap) {
+    const check = await loadSource(content);
+    if (check.errors.length > 0) {
+      const detail = check.errors
+        .slice(0, 3)
+        .map(errorText)
+        .join("; ");
+      throw new LandscapeSpliceError(
+        `the merged landscape would not parse (${check.errors.length} error(s): ${detail}) — nothing was written. ` +
+          `The delta's additions do not fit the living landscape as authored — most often an element kind or tag ` +
+          `its specification block does not declare; fix the landscape's specification or the delta, then re-run`,
+      );
+    }
   }
 
-  return { content, addedEls, addedRels };
+  return { content: touchesMap ? content : null, addedEls: mapEls, addedRels: mapRels, models: [...routed.values()] };
 }

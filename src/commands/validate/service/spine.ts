@@ -13,16 +13,22 @@
  * PRODUCER owns the contract and it lives in another repository, so the two
  * could not share a walk even though they share the shape.
  */
+import { relative } from "node:path";
 import { type DeclaredService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
+import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
-import { errorText } from "../checks/vocabulary.js";
+import { errorText } from "../../../core/c4/likec4.js";
 import { type ServiceContract } from "./api.js";
 
 /** What the service target hands the spine check. */
 export interface Spine {
   service: PathableService;
+  /** The docs root, so a project error's absolute path can be spelled repo-relative. */
+  docsDir: DocsDir;
+  /** The service directory, repo-relative and `/`-separated — the scope location beside the broken file. */
+  treePath: string;
   /** `service` widened for `===` against the resolver's DOCUMENT text — see service.ts. */
   me: string;
   /** The living landscape, or null when the repo has none. */
@@ -32,6 +38,19 @@ export interface Spine {
   contract: ServiceContract;
   /** True when this run also emits a landscape target — see `ServiceCheck`. */
   landscapeReported?: boolean;
+  /**
+   * True when this service's `model.likec4` EXTENDS the map rather than
+   * standing alone (`core/c4/service-model/shape.ts`).
+   *
+   * It changes one sentence and no verdict. An extending model is parsed inside
+   * the `architecture/` project, so a map that does not parse takes the model
+   * with it: there is no `c4.invalid` and no `c4.valid` on the service target,
+   * and without this clause the report shows a service whose model is simply
+   * never mentioned. Said here rather than as a finding of its own because it is
+   * the same fact — one unreadable document — and a second code would be a
+   * second thing to fix for one repair.
+   */
+  modelExtends?: boolean;
 }
 
 export function spineFindings(spine: Spine): Finding[] {
@@ -51,16 +70,54 @@ export function spineFindings(spine: Spine): Finding[] {
       // becomes N copies of a dozen cascading diagnostics on a fleet of N
       // services — the report stops being readable at exactly the moment
       // somebody needs to read it, and the fix is one file either way.
+      // Which DOCUMENT broke, spelled exactly as the fleet arm spells it
+      // (`fleet/landscape.ts`): `land` is the whole `architecture/` project, so
+      // the broken file is as often a `usecases/*.likec4` as the map itself,
+      // and the filename used to be hardcoded here — an agent told to "fix the
+      // file the message names" opened a document that parses (verification
+      // 2026-09-04, W2).
+      const broken = [
+        ...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined)),
+      ]
+        .map((abs) => relative(spine.docsDir, abs).split(/[\\/]/).join("/"))
+        .sort();
+      const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.join(", ");
+      // The verb agrees with the LIST, not with the count after it: `named` is a
+      // comma-joined series once two documents broke, and "a, b, c has 6
+      // error(s)" is a sentence a reader trips over — the same care `remedy()`
+      // in model/diverged.ts takes over "the kind differ".
+      const verb = broken.length > 1 ? "have" : "has";
       findings.push({
         severity: "error",
         code: "spine.landscape-invalid",
         subject: service,
         message:
-          `${service}: landscape.likec4 has ${land.errors.length} error(s) — spine check impossible` +
+          `${service}: ${named} ${verb} ${land.errors.length} error(s) — spine check impossible` +
+          (spine.modelExtends === true
+            ? " — and model.likec4 extends it, so the model cannot be read either"
+            : "") +
           (spine.landscapeReported === true
             ? "; the parser output is reported once, on the landscape target"
             : ""),
-        ...(spine.landscapeReported === true ? {} : { details: land.errors.map(errorText) }),
+        ...(spine.landscapeReported === true
+          ? {}
+          : {
+              // Every line carries its own file once more than one document is
+              // broken, the fleet arm's rule verbatim: a bare `L8:` across two
+              // documents is unactionable.
+              details: land.errors.map((e) =>
+                e.sourceFsPath === undefined || broken.length < 2
+                  ? errorText(e)
+                  : `${relative(spine.docsDir, e.sourceFsPath).split(/[\\/]/).join("/")} ${errorText(e)}`,
+              ),
+            }),
+        // The broken document first, the service second: the finding is about a
+        // file under `architecture/` and is FILED on this service, and without
+        // the pair the payload carried only the service directory.
+        locations: [
+          ...(broken.length === 0 ? [] : [{ path: broken[0]!, role: "primary" as const }]),
+          { path: spine.treePath, role: "scope" as const },
+        ],
       });
     } else {
       // Which element IS this service is the binding's call, then a title that

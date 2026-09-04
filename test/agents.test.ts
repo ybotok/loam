@@ -907,6 +907,23 @@ describe("the contract's claims are checked against the CLI, not asserted", () =
     expect(CODES).toMatch(/`ok`-severity findings are confirmations and never trip/);
   });
 
+  it("names the code a doubly-declared `#req-` tag actually earns, not the fleet-scope one", () => {
+    // Four surfaces named `c4.fleet-project-invalid` (a warning) for a tag
+    // declared in the map AND in a tags-only `specification` beside the
+    // `extend`; measured, the finding lands where the second declaration's file
+    // is — `c4.invalid` (error, gating, grading suspended) inside model.likec4,
+    // `usecase.flow-invalid` in a sibling. SCHEMA.md and `/loam-adopt` step 3
+    // were corrected; this page was the fourth and travelled uncorrected.
+    // `c4.fleet-project-invalid` still belongs to the class one step out.
+    expect(CODES).not.toMatch(
+      /duplicate across the whole root project and is\s+reported as `c4\.fleet-project-invalid`/,
+    );
+    expect(CODES).toMatch(/Declaring it in BOTH is a duplicate, and the code is the one that lands/);
+    expect(CODES).toMatch(/`c4\.invalid`[\s\S]{0,120}when the tags-only block is in model\.likec4/);
+    expect(CODES).toMatch(/`usecase\.flow-invalid` when it is in a sibling/);
+    expect(CODES).toMatch(/two SERVICES each declaring the same tag\s+locally/);
+  });
+
   it("does not overclaim runner exclusivity: --record without --results is the documented fallback", () => {
     expect(DONE_CHECK).not.toMatch(/no agent can SAY a scenario is tested/);
     expect(DONE_CHECK).toMatch(/ALWAYS pass `--results`/);

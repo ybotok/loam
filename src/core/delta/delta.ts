@@ -46,6 +46,7 @@ import { type Requirement } from "../document/spec.js";
 import { featureSpecPaths, SPEC_AXES } from "../repo/paths.js";
 import { featureUseCasesDir, livingCapabilityPaths } from "../repo/authored/paths.js";
 import { readCapabilityVocabulary } from "../capabilities/capabilities.js";
+import { extendingModels } from "../c4/service-model/fleet/extending.js";
 
 import { flowCoverage, type FlowPromises } from "../usecases/delta/claims.js";
 import { enumeratedServiceIds, locateServicePaths } from "../repo/service-target.js";
@@ -215,6 +216,14 @@ export async function deltaShapeIssues(
         // does not justify an edge from `core/usecases/` to `fleet-context`, and
         // the edge would push that package up a DAG level for nothing.
         ...(context === undefined ? {} : { load: (path: string) => context.loadLikeC4(path) }),
+        // The fleet's extending models, for the merge preview the overlay
+        // grades against — read HERE for `vocabulary`'s reason exactly, and as
+        // a thunk so the walk pays for it only when a flow is really there.
+        // Without it the preview is the pre-routing map and `usecase.flow-invalid`
+        // fails open on the one shape it exists for: a hop into
+        // `<service-fqn>.<container>`, which the archive routes into that
+        // service's own model (verification 2026-09-04, review F8).
+        models: () => extendingModels(docsDir, context),
       })
     : { kind: "read", kept: [] };
   if (kept.kind === "unreadable") {

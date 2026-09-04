@@ -42,7 +42,17 @@ export function printPack(pack: ContextPack): void {
   // discipline): every empty section below could otherwise be read as "nothing
   // here", which is the one conclusion an unreadable document never supports.
   if (pack.landscape.present && !pack.landscape.parses) {
-    console.log("! architecture/landscape.likec4 does not parse — no edge below is derived, and none is missing either\n");
+    // The `architecture/` PROJECT is what `parses` answers for, so the document
+    // at fault is very often a SIBLING beside a landscape that reads perfectly
+    // — and naming the landscape sent a reader to bytes loam read fine
+    // (verification 2026-09-04). `adopt` and `validate --all` name the file; so
+    // does this. The project keeps the fallback: a failure LikeC4 reports with
+    // no source document behind it is still a project that does not parse.
+    const broken = pack.landscape.broken;
+    const named = broken.length === 0 ? "the fleet map (architecture/)" : broken.join(", ");
+    // `> 1`, not `=== 1`: the empty arm's subject is the singular "fleet map".
+    const verb = broken.length > 1 ? "do" : "does";
+    console.log(`! ${named} ${verb} not parse — no edge below is derived, and none is missing either\n`);
   }
   if (pack.openapi.unreadable) {
     console.log(`! openapi.yaml does not parse — nothing here lists what ${pack.service} exposes`);

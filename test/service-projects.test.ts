@@ -23,15 +23,32 @@ import { renderServiceProject, serviceProjectName } from "../src/core/repo/tree/
 import { DOCS_LOCK } from "../src/core/staging/lock.js";
 import { coherentFixture, makeProject, runLoam, SERVICE_MODEL, treeHashes } from "./helpers/harness.js";
 
+interface ExcludePayload {
+  updated: boolean;
+  entries: string[];
+  added: string[];
+  removed: string[];
+  /** loam could not read an `exclude` list out of the root file — never the same answer as `entries: []`. */
+  unreadable: boolean;
+}
+
 interface SyncPayload {
   ok: boolean;
   action: string;
   subsystems: number;
-  projects: { root: boolean; created: string[]; current: number };
+  projects: { root: boolean; created: string[]; removed: string[]; current: number; exclude: ExcludePayload };
 }
 
 const PAYMENT_FILE = "services/payment-service/likec4.config.json";
 const BILLING_FILE = "services/platform/billing.core/likec4.config.json";
+const PAYMENT_EXCLUDE = "services/payment-service/**";
+const BILLING_EXCLUDE = "services/platform/billing.core/**";
+
+/** The scaffold's two non-`services/` entries, which every rewrite keeps in order. */
+const SCAFFOLD_EXCLUDE = ["**/node_modules/**", "features/**"];
+
+/** Nothing read, nothing written — the answer for a run with no root project file. */
+const NO_EXCLUDE: ExcludePayload = { updated: false, entries: [], added: [], removed: [], unreadable: false };
 
 /** A model for a second service, parsable alone, whose id carries a `.` the project-name grammar refuses. */
 const BILLING_MODEL = SERVICE_MODEL.replace(/paymentService/g, "billingCore").replace(/payment-service/g, "billing.core");
@@ -66,7 +83,25 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
     try {
       const payload = await sync(p.workDir);
       expect(payload.ok).toBe(true);
-      expect(payload.projects).toEqual({ root: true, created: [BILLING_FILE, PAYMENT_FILE], current: 0 });
+      // Both models declare their own `specification`, so both stand alone: a
+      // project file each, AND an exclude entry each — the scaffold no longer
+      // ships a blanket `services/**`, so the first sync is what covers them.
+      expect(payload.projects).toEqual({
+        root: true,
+        // SORTED BY PATH — `services/payment-service/…` before
+        // `services/platform/…`, which the survey's service-id order
+        // (billing.core, payment-service) does not produce.
+        created: [PAYMENT_FILE, BILLING_FILE],
+        removed: [],
+        current: 0,
+        exclude: {
+          updated: true,
+          entries: [...SCAFFOLD_EXCLUDE, PAYMENT_EXCLUDE, BILLING_EXCLUDE],
+          added: [PAYMENT_EXCLUDE, BILLING_EXCLUDE],
+          removed: [],
+          unreadable: false,
+        },
+      });
       // Two keys, two-space JSON, LF, one trailing newline; the name folds the
       // dot the renderer's grammar refuses, the title is the id verbatim.
       expect(await p.read(PAYMENT_FILE)).toBe('{\n  "name": "payment-service",\n  "title": "payment-service"\n}\n');
@@ -90,7 +125,21 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
       const before = await treeHashes(p.docsDir);
       const again = await sync(p.workDir);
       expect(again.action).toBe("current");
-      expect(again.projects).toEqual({ root: true, created: [], current: 2 });
+      expect(again.projects).toEqual({
+        root: true,
+        created: [],
+        removed: [],
+        current: 2,
+        // The list already says what this run would write, so the file is left
+        // exactly as the first sync formatted it — `entries` still reports it.
+        exclude: {
+          updated: false,
+          entries: [...SCAFFOLD_EXCLUDE, PAYMENT_EXCLUDE, BILLING_EXCLUDE],
+          added: [],
+          removed: [],
+          unreadable: false,
+        },
+      });
       expect(await treeHashes(p.docsDir)).toEqual(before);
     } finally {
       await p.destroy();
@@ -105,7 +154,19 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
     const p = await makeProject(files);
     try {
       const payload = await sync(p.workDir);
-      expect(payload.projects).toEqual({ root: true, created: [BILLING_FILE], current: 1 });
+      expect(payload.projects).toEqual({
+        root: true,
+        created: [BILLING_FILE],
+        removed: [],
+        current: 1,
+        exclude: {
+          updated: true,
+          entries: [...SCAFFOLD_EXCLUDE, PAYMENT_EXCLUDE, BILLING_EXCLUDE],
+          added: [PAYMENT_EXCLUDE, BILLING_EXCLUDE],
+          removed: [],
+          unreadable: false,
+        },
+      });
       expect(await p.read(PAYMENT_FILE)).toBe('{"name":"mine"}');
     } finally {
       await p.destroy();
@@ -129,7 +190,7 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
       const before = await treeHashes(p.docsDir);
       const payload = await sync(p.workDir);
       expect(payload.action).toBe("current");
-      expect(payload.projects).toEqual({ root: false, created: [], current: 0 });
+      expect(payload.projects).toEqual({ root: false, created: [], removed: [], current: 0, exclude: NO_EXCLUDE });
       expect(await treeHashes(p.docsDir)).toEqual(before);
       const text = await runLoam(p.workDir, "subsystem", "sync");
       expect(text.code).toBe(0);
@@ -217,7 +278,23 @@ describe("placement is not identity", () => {
       expect(move.code, move.out).toBe(0);
       const after = await sync(p.workDir);
       expect(after.action).toBe("current");
-      expect(after.projects).toEqual({ root: true, created: [], current: 2 });
+      // The moved service's NEW tree is excluded; its old entry survives,
+      // because `standaloneExclude` only drops entries naming a tree the
+      // enumeration still holds — the same rule that keeps a team's own
+      // `services/legacy/**` over a directory that is not a service.
+      expect(after.projects).toEqual({
+        root: true,
+        created: [],
+        removed: [],
+        current: 2,
+        exclude: {
+          updated: true,
+          entries: [...SCAFFOLD_EXCLUDE, PAYMENT_EXCLUDE, BILLING_EXCLUDE, "services/platform/payment-service/**"],
+          added: ["services/platform/payment-service/**"],
+          removed: [],
+          unreadable: false,
+        },
+      });
       expect(await p.read("services/platform/payment-service/likec4.config.json")).toBe(
         '{\n  "name": "payment-service",\n  "title": "payment-service"\n}\n',
       );

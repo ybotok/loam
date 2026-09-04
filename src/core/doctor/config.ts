@@ -15,7 +15,7 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { configPath, parseConfig, type LoamConfig } from "../envelope/config.js";
-import { loadFile } from "../c4/likec4.js";
+import { errorText, loadFile } from "../c4/likec4.js";
 import { conflictMarkerLines } from "../conflict-markers.js";
 import { type DoctorFinding, type DoctorReport } from "./report.js";
 
@@ -121,9 +121,13 @@ export async function inspectLandscape(path: string, findings: DoctorFinding[]):
     findings.push({
       severity: "blocker",
       code: "doctor.landscape-invalid",
+      // Through `errorText`, the one spelling of a diagnostic loam prints. This
+      // site hand-rolled its own and passed the LSP range's line through raw, so
+      // `doctor` named the line ABOVE the fault and disagreed with `validate
+      // --all` about the same error on the same tree — the last formatter the
+      // 1-based consolidation missed (verification 2026-09-04).
       message:
-        `architecture/landscape.likec4 does not parse: ${first.message}` +
-        (first.line === undefined ? "" : ` (line ${first.line})`) +
+        `architecture/landscape.likec4 does not parse: ${errorText(first)}` +
         (doc.errors.length > 1 ? ` — and ${doc.errors.length - 1} more` : ""),
       fix: `Fix ${path}; every fleet-wide check is blind until it parses.`,
     });

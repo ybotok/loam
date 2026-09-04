@@ -545,6 +545,32 @@ describe("loam diff — identity across placement, prefix, and runs", () => {
     }
   });
 
+  it("a directory holding only its own `usecases/` reads at base exactly as the walk reads it live", async () => {
+    const p = await makeProject({
+      "services/payment-service/spec.md": LIVING_SPEC,
+      // SCHEMA's service layout reserves `usecases/` for a service's own
+      // interior: the live walk never reads one as a service and never counts
+      // one as the subdirectory that makes its parent a group, so `flow-service`
+      // is a not-yet-adopted service through the leaf rule. The base
+      // classification answered twice differently on the same bytes — no
+      // `flow-service` at all (its lone subdirectory defeated the leaf rule)
+      // AND a phantom service called `usecases` — so committing the slot `loam
+      // init` scaffolds and diffing the unchanged tree reported one addition
+      // and one removal.
+      "services/flow-service/usecases/checkout.likec4": "// a flow nobody has adopted yet\n",
+    });
+    try {
+      commitBase(p.docsDir);
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      expect(service(payload, "flow-service").change).toBe("unchanged");
+      expect(payload.services?.map((s) => s.id)).not.toContain("usecases");
+      expect(payload.summary).toMatchObject({ added: 0, removed: 0, modified: 0 });
+    } finally {
+      await p.destroy();
+    }
+  });
+
   it("services beneath a marker-beside-artifacts directory stay enumerated at base — the walk's stranded descent holds", async () => {
     const p = await makeProject({
       // subsystem.yaml BESIDE spec.md: the live walk classifies gateway a

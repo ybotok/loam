@@ -36,6 +36,10 @@
  * a green archive.
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { stageMergedProject, type StagedProject } from "../src/core/c4/project/staged.js";
+import type { ExtendingModel } from "../src/core/c4/splice/contract.js";
+import { featureDirOf } from "../src/core/kernel/ids/dirs.js";
 import { makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
 const FEAT = "FEAT-1";
@@ -227,6 +231,24 @@ describe("a feature brings a flow", () => {
     expect(await treeHashes(p.docsDir)).toEqual(before);
   });
 
+  // Catches: the feature arm printing the STAGING tree's absolute path, and
+  // printing no line at all. The service arm of the same code relativises on
+  // purpose (`services/<tree>/usecases/x.likec4: L3: …`); this one answered
+  // `C:\Users\…\docs\features\FEAT-1-split\usecases\checkout.likec4: <message>`
+  // in the text view, in `--json` and in the archive block message
+  // (verification 2026-09-04, W7). The line is 1-BASED, the way an editor and
+  // `likec4 validate` count: the bad hop is line 3 of the five-line document.
+  it("names the authored file docs-relative, with a 1-based line", async () => {
+    const p = await project({ [`${FEAT_DIR}/usecases/checkout.likec4`]: flow("paymentService -> ghostService 'talks to nothing'") });
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const message = issuesOf(refused.stdout, "usecase.flow-invalid")[0]!.message;
+    expect(message).toContain(`${FEAT_DIR}/usecases/checkout.likec4: L3:`);
+    expect(message).not.toContain("\\");
+    expect(message).not.toMatch(/[A-Za-z]:\//);
+    expect(message).not.toContain("loam-staged-");
+  });
+
   it("refuses a flow the living architecture/ already holds", async () => {
     const p = await project({
       "architecture/usecases/checkout.likec4": flow(LIVING_HOP),
@@ -330,5 +352,186 @@ describe("a feature-local flow covers the promise the same feature adds", () => 
     // The flows themselves were readable — only their tags were unresolvable —
     // so the refusal that means "loam could not read the flows" must stay quiet.
     expect(issuesOf(refused.stdout, "usecase.flow-invalid").length, refused.stdout).toBe(0);
+  });
+});
+
+/**
+ * The gate previews the map the ARCHIVE would leave, and that preview has to
+ * route additions the way the archive routes them.
+ *
+ * `loam archive` names the fleet's extending models, so a container the delta
+ * nests under a service goes into `services/<…>/model.likec4` and never onto the
+ * map. The gate's preview named none, so it held that container on the map: a
+ * feature-local `usecases/<x>.likec4` naming `<service-fqn>.<container>`
+ * resolved, passed `usecase.flow-invalid` — the gate `--approve` cannot override
+ * — and was copied verbatim into `architecture/usecases/`, where it resolves
+ * against nothing and takes the whole fleet map down with one
+ * `landscape.invalid` plus one `spine.landscape-invalid` per service
+ * (verification 2026-09-04, review C; reproduced end to end on a scratch fleet).
+ *
+ * The staging takes the models on its request. It cannot READ them: the shape
+ * scan that decides which models extend the map lives in
+ * `core/c4/service-model/`, which imports `core/c4/project/`, so this side
+ * asking for it would be a package cycle. The reader sits one level below that
+ * scan (`core/c4/service-model/fleet/extending.ts`) and the two callers that own
+ * a fleet read fill the list in. This describe pins the MECHANISM with the list
+ * handed in directly; the one below it pins the WIRING, through the commands.
+ */
+describe("the merge preview routes into extending models exactly as the archive does", () => {
+  // Only `softwareSystem`, because the living map's `specification` declares
+  // that one kind and the merged landscape has to parse against it.
+  const NESTED_DELTA = `specification {
+  element softwareSystem
+  tag FEAT-1
+}
+
+model {
+  paymentService = softwareSystem 'payment-service' {
+    cache = softwareSystem 'Payment cache' {
+      #FEAT-1
+    }
+  }
+}
+`;
+  /** A hop into the element the delta nests under a service that owns its own interior. */
+  const NESTED_HOP = "checkoutWeb -> paymentService.cache 'reads the cache'";
+
+  async function staged(models: readonly ExtendingModel[]): Promise<StagedProject> {
+    const p = await project({
+      [`${FEAT_DIR}/delta.likec4`]: NESTED_DELTA,
+      [`${FEAT_DIR}/usecases/checkout.likec4`]: flow(NESTED_HOP),
+    });
+    return stageMergedProject({
+      docsDir: p.docsDir,
+      featureDir: featureDirOf(join(p.docsDir, FEAT_DIR)),
+      featureId: FEAT,
+      documents: [{ rel: "usecases/checkout.likec4", path: join(p.docsDir, FEAT_DIR, "usecases/checkout.likec4") }],
+      models,
+    });
+  }
+
+  it("refuses a hop into an element the merge routes AWAY from the map", async () => {
+    const read = await staged([
+      {
+        service: "payment-service",
+        path: "services/payment-service/model.likec4",
+        text: "model {\n  extend paymentService {\n    api = softwareSystem 'api'\n  }\n}\n",
+      },
+    ]);
+    expect(read.kind).toBe("unreadable");
+    // The interior is in the service's model now, so the flow living under
+    // `architecture/usecases/` names something that is not in that project.
+    const errors = read.kind === "unreadable" ? read.errors.join("\n") : "";
+    expect(errors).toContain("cache");
+    expect(errors).toContain(`${FEAT_DIR}/usecases/checkout.likec4`);
+  });
+
+  // The control, and the reason the field is optional: with no models named,
+  // nothing is routed, the container lands on the map and the flow resolves —
+  // which is both the pre-routing behaviour every existing caller keeps and,
+  // on a fleet whose models really do stand alone, the correct answer.
+  it("reads the same flow when no extending model owns that interior", async () => {
+    const read = await staged([]);
+    expect(read.kind).toBe("read");
+  });
+});
+
+/**
+ * The same routing, reached the way a person reaches it: through `loam archive`
+ * and `loam validate --feature`, over a fleet whose model really is on disk.
+ *
+ * The describe above hands `stageMergedProject` a list. That proves the preview
+ * CAN route and nothing about whether anything routes it — which is exactly the
+ * state the fail-open was in: the mechanism landed, the two callers still asked
+ * for the pre-routing preview, and `loam archive FEAT-1 --approve` exited 0 on
+ * the reproduction. So these three cases go through the CLI and assert on what
+ * is left on disk afterwards.
+ *
+ * THE FLEET IS THE ONE THING THAT DIFFERS from the cases above: one service now
+ * carries an EXTENDING `model.likec4`. That single file is what makes the delta's
+ * nested container the model's rather than the map's, so every verdict here
+ * turns on loam reading it — and the same three fixtures with a STANDALONE model,
+ * or none, are the fixtures of the describe above.
+ */
+describe("the gate's merge preview is routed by the fleet's real models", () => {
+  /**
+   * payment-service's own interior, EXTENDING the map: no `specification` block,
+   * so every kind comes from `architecture/landscape.likec4`, and one `extend`
+   * on the id the map spells. This is the file that owns the service's interior,
+   * and therefore the file the merge routes a nested addition into.
+   */
+  const MODEL = `model {
+  extend paymentService {
+    api = softwareSystem 'api'
+  }
+}
+`;
+  /**
+   * The shared delta with one addition NESTED inside a service — the addition
+   * the merge routes. Everything else is `DELTA` verbatim, because the fleet
+   * fixture carries `specs/payment-split-service/`, and a delta that stops
+   * introducing that service is refused by `delta.service-unknown` long before
+   * any flow is read.
+   */
+  const NESTED_DELTA = DELTA.replace(
+    "  paymentService = softwareSystem 'payment-service'\n",
+    `  paymentService = softwareSystem 'payment-service' {
+    cache = softwareSystem 'Payment cache' {
+      #FEAT-1
+    }
+  }
+`,
+  );
+  /** A hop into that nested container — legal on the pre-routing preview, legal nowhere else. */
+  const NESTED_HOP = "checkoutWeb -> paymentService.cache 'reads the cache'";
+
+  async function wired(step: string): Promise<Project> {
+    return project({
+      "services/payment-service/model.likec4": MODEL,
+      [`${FEAT_DIR}/delta.likec4`]: NESTED_DELTA,
+      [`${FEAT_DIR}/usecases/checkout.likec4`]: flow(step),
+    });
+  }
+
+  it("refuses a hop into a container the merge routes into a service's own model", async () => {
+    const p = await wired(NESTED_HOP);
+    const before = await treeHashes(p.docsDir);
+
+    // `--approve` from the first call, because the fail-open's whole shape was
+    // "the flag the author reaches for does not save them": the merge is refused
+    // for a mechanical reason, so the flag may not move it.
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const found = issuesOf(refused.stdout, "usecase.flow-invalid");
+    expect(found.length, refused.stdout).toBe(1);
+    expect(found[0]!.overridable).toBe(false);
+    // The message names the feature's own file and the element the merge moved.
+    expect(found[0]!.message).toContain(`${FEAT_DIR}/usecases/checkout.likec4`);
+    expect(found[0]!.message).toContain("cache");
+    expect(await treeHashes(p.docsDir), "a refusal must write nothing").toEqual(before);
+    expect(p.exists("architecture/usecases/checkout.likec4")).toBe(false);
+  });
+
+  it("gives `validate --feature` the gate's verdict, not a second opinion", async () => {
+    const p = await wired(NESTED_HOP);
+    const validated = await runLoam(p.workDir, "validate", "--feature", FEAT, "--json");
+    const payload = JSON.parse(validated.stdout) as { targets?: Array<{ findings?: Array<{ code: string }> }> };
+    const codes = (payload.targets ?? []).flatMap((t) => (t.findings ?? []).map((f) => f.code));
+    expect(codes, validated.stdout).toContain("usecase.flow-invalid");
+  });
+
+  it("still archives a hop between elements the map itself draws", async () => {
+    // The control, and it shares the routed delta on purpose: the container is
+    // moved into the model here too, so this case fails the moment routing
+    // starts refusing flows that never named the moved element.
+    const p = await wired(LIVING_HOP);
+    const archived = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(archived.code, archived.out).toBe(0);
+    expect(await p.read("architecture/usecases/checkout.likec4")).toBe(flow(LIVING_HOP));
+    // And the addition really did go into the model rather than onto the map —
+    // which is what makes the refusal above about routing and not about a
+    // container the merge simply dropped.
+    expect(await p.read("services/payment-service/model.likec4")).toContain("cache");
+    expect(await p.read("architecture/landscape.likec4")).not.toContain("Payment cache");
   });
 });

@@ -32,7 +32,8 @@ import { executableNext } from "../../core/status/actions/execution.js";
 import { findingJson } from "../../core/vocabulary/report.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { plural } from "../policy/format.js";
-import { errorText, mark } from "./marks.js";
+import { mark } from "./marks.js";
+import { errorText } from "../../core/c4/likec4.js";
 
 const REVIEW_INTENT_LIMIT = 1_200;
 

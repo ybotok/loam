@@ -23,6 +23,21 @@
  * this walk would close the exact package cycle `scripts/package-graph.mjs`
  * exists to refuse.
  *
+ * A SERVICE'S OWN SUBDIRECTORIES ARE NEVER CLASSIFIED (`RESERVED_INTERIOR`).
+ * That is a different question from `isServiceArtifact`, which asks whether a
+ * name makes the directory holding it a service; this asks whether a child
+ * directory may be READ as one at all, and the two answers diverged the moment
+ * SCHEMA's service layout grew a slot the artifact table does not carry. A
+ * `services/<svc>/` holding only the documented `usecases/` flow directory was
+ * classified as a group: the walk descended, filed `usecases` as a service, and
+ * one `loam validate --all` reported `subsystem.unmarked`,
+ * `landscape.service-unmodelled` for `services/<svc>/usecases/` and
+ * `landscape.binding-unknown` for the real service — three errors whose text
+ * says the fleet is losing services, earned by following the instruction `loam
+ * init` had just scaffolded (verification 2026-09-04). The names are SCHEMA's
+ * service layout, and a directory named for one is service interior wherever it
+ * sits, so no branch of the classification descends into one.
+ *
  * Cost: exactly one readdir per directory walked, service directories included
  * (their own listing is what classifies them), plus one realpath per directory
  * for the symlink-cycle guard — `entryIs` follows symlinks on purpose, and a
@@ -37,6 +52,30 @@ import { subsystemNameProblem } from "../../kernel/ids/subsystem.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { entryIs } from "./fs.js";
 import { readSubsystemMarker, SUBSYSTEM_MARKER, type SubsystemMeta } from "./marker.js";
+
+/**
+ * The subdirectory names SCHEMA's service layout reserves for a service's own
+ * interior (`SCHEMA.md`, "services/<svc>/"): `adrs/` the decisions, `usecases/`
+ * the flows drawn over its containers, `ui/` the page-specs. A directory with
+ * one of these names is never a service and never a subsystem — it is inside
+ * one — so the walk neither classifies it nor counts it as a subdirectory that
+ * makes its parent a group.
+ *
+ * Kept here rather than folded into `isServiceArtifact` because the two
+ * questions are not the same one: `adrs/` answers both (it is an artifact AND
+ * interior) and `usecases/` answers only this one today. Widening the injected
+ * artifact table instead would also make a lone `usecases/` classify its parent
+ * as a service by ARTIFACT, which hides a real service filed beside it — the
+ * silent shrink this module refuses.
+ *
+ * Exported for the one other reader of this rule: `core/diff/base-state.ts`
+ * classifies a base git ref's tree listing, which no walk can readdir, and its
+ * banner already commits it to restating this module's branches rather than
+ * inventing its own. It shares the SET for the reason it shares the artifact
+ * table — a name respelled there is the drift both modules are written to
+ * avoid.
+ */
+export const RESERVED_INTERIOR: ReadonlySet<string> = new Set(["adrs", "usecases", "ui"]);
 
 export interface WalkedService {
   id: RawServiceId;
@@ -137,11 +176,16 @@ async function visitDir(spot: Spot, ctx: WalkContext): Promise<void> {
   const rel = ["services", ...spot.chain, spot.name].join("/");
   const entries = (await readdir(spot.dir, { withFileTypes: true })).filter((e) => !e.name.startsWith("."));
   const files = entries.filter((e) => entryIs(spot.dir, e, "file")).map((e) => e.name);
-  const dirs = entries.filter((e) => entryIs(spot.dir, e, "dir")).map((e) => e.name).sort();
+  const all = entries.filter((e) => entryIs(spot.dir, e, "dir")).map((e) => e.name).sort();
+  // The classifiable children — a service's own interior removed once, here, so
+  // every branch below agrees about it (see `RESERVED_INTERIOR`). `all` is still
+  // what the artifact probe reads: `adrs/` makes its parent a service, and
+  // `usecases/` is interior the parent may hold without becoming a group.
+  const dirs = all.filter((d) => !RESERVED_INTERIOR.has(d));
   const marker = files.includes(SUBSYSTEM_MARKER);
   const artifact =
     files.some((f) => ctx.request.isServiceArtifact(f, "file")) ||
-    dirs.some((d) => ctx.request.isServiceArtifact(d, "dir"));
+    all.some((d) => ctx.request.isServiceArtifact(d, "dir"));
 
   if (marker && artifact) {
     // Artifacts win the classification: the documents are somebody's work and

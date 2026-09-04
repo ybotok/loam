@@ -10,7 +10,13 @@
  * which is command-layer business because it is about which validate TARGET a
  * failed read is filed against.
  */
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { LoadedDoc } from "../../../core/c4/likec4.js";
+import { FleetContext } from "../../../core/fleet-context.js";
+import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
+import type { FeatureEntry, ServiceEntry } from "../../../core/repo/entries.js";
+import { featurePaths, landscapePath, servicePathsAt } from "../../../core/repo/paths.js";
 
 /**
  * A landscape that could not be READ, shaped as one that did not PARSE.
@@ -62,4 +68,65 @@ export async function readLandscape(load: () => Promise<LoadedDoc>): Promise<Loa
   } catch (err) {
     return unreadableLandscape(err);
   }
+}
+
+/** Everything a `--all` run parses up front, and the enumerations it was narrowed to. */
+export interface FleetPrefetch {
+  docsDir: DocsDir;
+  fleet: FleetContext;
+  /** The services this run grades — the `--base` narrowing when there is one. */
+  services: readonly ServiceEntry[];
+  /** The active features this run grades, likewise. */
+  features: readonly FeatureEntry[];
+}
+
+/**
+ * ONE workspace per document KIND for the whole `--all` run.
+ *
+ * The per-path load pays a fresh Langium workspace per document (~100 ms each
+ * even warm), which made the fleet's main CI command O(documents) workspace
+ * spins — 13.7 s median over the 120-service benchmark (docs/BENCHMARKS.md). So
+ * `--all` enumerates its documents up front and batch-parses them into the
+ * fleet context's memo; every load below, the landscape read included, is then a
+ * seeded hit. The enumerations are the same memoised promises the target loops
+ * reuse.
+ *
+ * TWO WORKSPACES, because the fleet's models no longer parse the same way as
+ * each other: a model that EXTENDS the map is a PROJECT (the map plus that
+ * file) and a model that stands alone is a document. So the shapes are read
+ * first, the DOCUMENT batch is asked for everything that is one — the landscape,
+ * every feature delta, every standalone model — and `prefetchServiceModels`
+ * then batches the extending half as projects, finding its own standalone list
+ * already memoised and asking for nothing.
+ *
+ * The order is load-bearing rather than tidy. `prefetchLikeC4` returns without a
+ * workspace when fewer than two documents are missing (one document gains
+ * nothing from batch isolation it already has), so splitting the documents
+ * across two calls is how a fleet of one service and one feature ends up
+ * batching the feature and parsing the model in a workspace of its own — the
+ * exact per-document spin this function exists to remove, and what
+ * `test/validate-batch-fallback.test.ts` counts.
+ *
+ * If a batch CANNOT run — a sandbox denying tmpdir writes — the prefetch seeds
+ * nothing and every load falls back to today's per-path parse: identical
+ * findings, the old speed. Single-service `validate` and `list` keep their
+ * untouched code paths on purpose, so the ≤10% regression bound in
+ * docs/BENCHMARKS.md holds by construction.
+ *
+ * It lives HERE rather than in `../validate.ts` because it is fleet-loading
+ * business and that module is the argument grammar and the target dispatch; the
+ * block also took that file to its line limit, which is the ceiling asking the
+ * question it exists to ask.
+ */
+export async function prefetchFleetDocuments(input: FleetPrefetch): Promise<void> {
+  const { docsDir, fleet } = input;
+  const paths = input.services.filter((svc) => svc.has.model).map((svc) => servicePathsAt(svc.dir));
+  const shapes = await fleet.modelShapes(paths.map((p) => p.model));
+  const landscape = landscapePath(docsDir);
+  await fleet.prefetchLikeC4([
+    ...(existsSync(landscape) ? [landscape] : []),
+    ...input.features.filter((feat) => feat.has.delta).map((feat) => featurePaths(feat.dir).delta),
+    ...paths.filter((p) => shapes.get(resolve(p.model)) !== "extending").map((p) => p.model),
+  ]);
+  await fleet.prefetchServiceModels(docsDir, paths);
 }

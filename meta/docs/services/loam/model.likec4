@@ -10,12 +10,25 @@
 // Every element below is a real crossing, and `services/loam/arch.spec.md`
 // covers the four of them that a numbered rule governs.
 //
-// loam parses every `.likec4` file ALONE, so this document declares its own
-// `specification` block; a renderer handed the whole tree at once would merge
-// them and call every declaration a duplicate, which is why the root
-// `likec4.config.json` scopes the fleet project to `architecture/` and stays
-// that way. What renders THIS model beside the map from the docs root is this
-// directory's own `likec4.config.json`, written by `loam subsystem sync`.
+// This is a STANDALONE model, and deliberately so — the standing example of the
+// shape loam still supports and no longer briefs. It declares its own
+// `specification` block, so loam parses it ALONE, so it cannot share a LikeC4
+// project with `architecture/landscape.likec4` (inside one project every kind
+// below would be a duplicate blamed on the map as well). That is why the root
+// `likec4.config.json` here excludes this directory and why the directory
+// carries a `likec4.config.json` of its own, written by `loam subsystem sync`:
+// the two files are one decision, and `loam validate --all` grades both halves
+// (`service.model-unexcluded`, `service.likec4-config-missing`).
+//
+// The other shape — an EXTENDING model, which declares no kinds, says
+// `extend <fqn> { … }` on the map's element and lives inside the root project —
+// is what `loam adopt` briefs now, and SCHEMA.md's "Two shapes of a service
+// model" has both plus the recipe for migrating between them. This document
+// does NOT migrate, for two reasons worth keeping written down: its top-level
+// `agent`, `git` and `console` elements stand for the world OUTSIDE loam and
+// resolve to no service, so an extending model would report each of them as
+// `c4.element-unowned`; and `scripts/self-model.mjs` reads the landscape with a
+// regex over four line shapes, which an `extend` block is not one of.
 specification {
   element softwareSystem
   element container

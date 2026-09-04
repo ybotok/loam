@@ -461,7 +461,7 @@ describe("a scaffolded docs repo survives being cloned and rendered", () => {
     expect(await listFeatures(docs)).toEqual([]);
   });
 
-  it("declares one LikeC4 project scoped to the landscape", async () => {
+  it("declares one LikeC4 project holding the map and every model that extends it", async () => {
     const docs = join(await tmp(), "docs");
     await scaffoldDocs(docs);
 
@@ -470,43 +470,53 @@ describe("a scaffolded docs repo survives being cloned and rendered", () => {
       exclude: string[];
     };
     expect(config.name).toBe("fleet");
-    // Every directory in which loam expects a SECOND .likec4 file has to be out
-    // of the root project, or the merge that project performs is the bug.
-    expect(config.exclude).toContain("services/**");
+    // `features/**` is out permanently: a delta declares its own
+    // `specification` block and is only ever parsed alone, so merging it into
+    // the root project is the merge that IS the bug.
     expect(config.exclude).toContain("features/**");
+    // `services/**` is NOT, and that is the axis: a model that EXTENDS the map
+    // parses only inside this project, so a blanket exclusion would render
+    // every adopted service as a box with nothing inside it. `loam subsystem
+    // sync` adds one `services/<tree>/**` per model that stands alone.
+    expect(config.exclude).not.toContain("services/**");
     // naming `exclude` replaces LikeC4's default rather than adding to it
     expect(config.exclude).toContain("**/node_modules/**");
   });
 
-  it("excludes every directory loam writes a .likec4 into, landscape aside", async () => {
+  it("excludes the directories whose files are only ever parsed alone, and no others", async () => {
     // The invariant, asked of the layout rather than of a list written twice:
-    // architecture/ holds the one file the root project is FOR, and anything
-    // else loam models has to be excluded from it.
+    // architecture/ holds the map the root project is FOR, services/ holds the
+    // models that extend it, and features/ holds the one document kind that
+    // must never be merged.
     const docs = join(await tmp(), "docs");
     await scaffoldDocs(docs);
     const { exclude } = await readJson(join(docs, "likec4.config.json")) as { exclude: string[] };
 
     for (const dir of DOCS_SUBDIRS) {
       const excluded = exclude.includes(`${dir}/**`);
-      expect(excluded, `${dir}/ must ${dir === "architecture" ? "not " : ""}be excluded`)
-        .toBe(dir !== "architecture");
+      expect(excluded, `${dir}/ must ${dir === "features" ? "" : "not "}be excluded`)
+        .toBe(dir === "features");
     }
   });
 
   it("loads as ONE workspace under LikeC4's real loader, where it used not to", async () => {
     // The proof, taken from the tool that reports the bug rather than from the
-    // shape of the config file. Two services whose models legitimately declare
-    // the same element kinds and re-declare a shared broker — the ordinary case,
-    // not a contrived one — plus the landscape that names them both.
+    // shape of the config file. Two services whose models EXTEND the map — the
+    // shape `loam adopt` briefs — beside the landscape that declares the kinds
+    // and both elements. All three documents are in the root project, and the
+    // renderer merges them without a word.
     const docs = join(await tmp(), "docs");
     await scaffoldDocs(docs);
-    const model = (id: string, el: string): string =>
-      `specification {\n  element softwareSystem\n  element container\n}\n\n` +
-      `model {\n  ${el} = softwareSystem '${id}' {\n    metadata { service '${id}' }\n  }\n` +
-      `  kafka = softwareSystem 'Kafka'\n  ${el} -> kafka 'Publishes'\n}\n`;
+    const model = (el: string): string =>
+      `model {\n  extend ${el} {\n    api = container 'api'\n  }\n  ${el}.api -> kafka 'Publishes'\n}\n`;
     await writeFiles(docs, {
-      "services/svc-a/model.likec4": model("svc-a", "svcA"),
-      "services/svc-b/model.likec4": model("svc-b", "svcB"),
+      "architecture/landscape.likec4":
+        `specification {\n  element softwareSystem\n  element container\n}\n\n` +
+        `model {\n  svcA = softwareSystem 'svc-a' {\n    metadata { service 'svc-a' }\n  }\n` +
+        `  svcB = softwareSystem 'svc-b' {\n    metadata { service 'svc-b' }\n  }\n` +
+        `  kafka = softwareSystem 'Kafka'\n}\n`,
+      "services/svc-a/model.likec4": model("svcA"),
+      "services/svc-b/model.likec4": model("svcB"),
     });
 
     const load = async (): Promise<number> => {
@@ -516,9 +526,16 @@ describe("a scaffolded docs repo survives being cloned and rendered", () => {
 
     expect(await load()).toBe(0);
 
-    // and without the project file it is the tree that shipped: every
-    // `specification` block and every re-declared element read as a duplicate.
-    await rm(join(docs, "likec4.config.json"));
+    // and a model that STANDS ALONE is the case the exclusion still exists for:
+    // its own `specification` block and its copy of an element the map already
+    // declares are duplicates the moment the root project holds it. That is
+    // `service.model-unexcluded`, and `loam subsystem sync` is the repair —
+    // it adds `services/svc-a/**` to the list above.
+    await writeFiles(docs, {
+      "services/svc-a/model.likec4":
+        `specification {\n  element softwareSystem\n  element container\n}\n\n` +
+        `model {\n  svcA = softwareSystem 'svc-a' {\n    api = container 'api'\n  }\n}\n`,
+    });
     expect(await load()).toBeGreaterThan(0);
   });
 
@@ -534,7 +551,12 @@ describe("a scaffolded docs repo survives being cloned and rendered", () => {
     expect(finding!.severity).toBe("warning");
     // the fix is the file itself, not a description of it
     expect(finding!.fix).toContain('"name": "fleet"');
-    expect(finding!.fix).toContain('"services/**"');
+    expect(finding!.fix).toContain('"features/**"');
+    // and NOT a blanket services exclusion: the scaffolded root project holds
+    // every model that extends the map, and sync maintains one entry per model
+    // that stands alone.
+    expect(finding!.fix).not.toContain('"services/**"');
+    expect(finding!.fix).toContain("services/<tree>/**");
     // and the second half of the repair: the root file alone renders only the
     // map, so a fix that stopped there would leave every service model unrenderable
     expect(finding!.fix).toContain("loam subsystem sync");

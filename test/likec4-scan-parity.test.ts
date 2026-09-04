@@ -76,18 +76,27 @@ views {
 `;
 
 /**
- * Title of a scanned element, read the way the merge would have to: the first
- * string literal inside the declaration's head (before its `{`, if any); the
- * local name when there is none — LikeC4's own default for the `kind name`
- * form, so the fallback is part of the parity claim, not a fudge.
+ * Title of a scanned element, read off the field the SCAN SHIPS
+ * (`ScannedElement.title`) — never re-derived here.
+ *
+ * It used to be re-derived: this file walked `maskSource`'s literals for the
+ * first one inside the declaration's head. That was the only reading available
+ * when the scan reported no title, and it stopped being harmless the moment the
+ * scan started reporting one, because the archive's existence check joins a
+ * delta's element to a living one BY that shipped title
+ * (`src/core/c4/splice/identity/declared.ts`). A pin computing its own answer
+ * pins its own helper: the two readings could drift apart and this suite would
+ * stay green over the drift it exists to catch.
+ *
+ * The fallback stays, and stays here rather than in the scan: an untitled head
+ * carries no `title` at all, and LikeC4 then titles the element after its own
+ * local name. That default is the PARSER's, so making it part of the expected
+ * value is part of the parity claim rather than a fudge — `title` absent must
+ * mean "the head named none", which is exactly what `test/source-scan-titles.test.ts`
+ * pins from the other side.
  */
-function scannedTitles(src: string, scan: ScannedModel): Array<[string, string]> {
-  const { literals } = maskSource(src);
-  return scan.elements.map((el) => {
-    const headEnd = el.bodyOpen === -1 ? el.end : el.bodyOpen;
-    const lit = literals.find((l) => l.start >= el.start && l.end <= headEnd);
-    return [el.id, lit?.value ?? el.id.slice(el.id.lastIndexOf(".") + 1)];
-  });
+function scannedTitles(scan: ScannedModel): Array<[string, string]> {
+  return scan.elements.map((el) => [el.id, el.title ?? el.id.slice(el.id.lastIndexOf(".") + 1)]);
 }
 
 /** Order-free identity of an edge: everything both layers claim to extract. */
@@ -112,10 +121,24 @@ describe("scanModel matches loadSource on one rich source (the merge's splice ma
     expect(doc.relationships.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("both layers see the same element set, id AND title (titles read from the scanned head bytes)", () => {
+  it("both layers see the same element set, id AND title (the title the scan SHIPS)", () => {
     const parsed = doc.elements.map((e): [string, string] => [e.id, e.title]).sort();
-    const scanned = scannedTitles(RICH, scan).sort();
+    const scanned = scannedTitles(scan).sort();
     expect(scanned).toEqual(parsed);
+  });
+
+  it("the titles compared are the scan's OWN field, and at least one of them is non-default", () => {
+    // Without this the assertion above could pass on the fallback alone — every
+    // expected value the element's local name, and `title` never read. RICH
+    // declares titles that differ from their ids (`Payments API`, and one with
+    // double quotes inside single ones), so a scan that dropped the field would
+    // fail the parity test rather than pass it vacuously.
+    const titled = scan.elements.filter((el) => el.title !== undefined);
+    expect(titled.length).toBeGreaterThanOrEqual(4);
+    expect(scan.elements.find((el) => el.id === "payments")?.title).toBe("Payments API");
+    expect(scan.elements.find((el) => el.id === "customer")?.title).toBe('Customer "Retail" portal');
+    // And the fallback arm is exercised too: `container core` names no title.
+    expect(scan.elements.find((el) => el.id === "billing.core")?.title).toBeUndefined();
   });
 
   it("both layers see the same edges: source/target/title/op/tags tuples match as sets", () => {

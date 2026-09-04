@@ -293,6 +293,34 @@ describe("a feature brings topology", () => {
     expect(refused.out).toContain("deployment.doc-reserved");
   });
 
+  it("refuses a document instancing an element the merge routes into a service's own model", async () => {
+    // The same preview the use-case slot rests on, and the same fail-open. The
+    // merge routes an addition NESTED inside a service into that service's
+    // extending `model.likec4`, so `paymentService.cache` is never on the map —
+    // and a topology document lands in `architecture/`, where the models are
+    // not read. Previewed without the fleet's models the element sat on the map,
+    // this parsed, and the archive copied a document into `architecture/` that
+    // resolves against nothing (verification 2026-09-04, review F8).
+    const p = await project({
+      // EXTENDING, unlike the fixture's default `SERVICE_MODEL`: no
+      // `specification` block, so the map owns the kinds and this file owns the
+      // interior. That one difference is what routes the delta's addition.
+      "services/payment-service/model.likec4": `model {\n  extend paymentService {\n    api = softwareSystem 'api'\n  }\n}\n`,
+      [`${FEAT_DIR}/delta.likec4`]: `specification {\n  element softwareSystem\n  tag FEAT-1\n}\n\nmodel {\n  paymentService = softwareSystem 'payment-service' {\n    cache = softwareSystem 'Payment cache' {\n      #FEAT-1\n    }\n  }\n}\n`,
+      [`${FEAT_DIR}/deployment/standby.likec4`]: `deployment {\n  extend eu {\n    dcB = datacenter 'DC-B' {\n      k8sB = cluster 'cluster-b' {\n        instanceOf paymentService.cache\n      }\n    }\n  }\n}\n`,
+    });
+    const before = await treeHashes(p.docsDir);
+
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const found = issuesOf(refused.stdout, "deployment.doc-invalid");
+    expect(found.length, refused.stdout).toBe(1);
+    expect(found[0]!.overridable).toBe(false);
+    expect(found[0]!.message).toContain("standby.likec4");
+    expect(await treeHashes(p.docsDir), "a refusal must write nothing").toEqual(before);
+    expect(p.exists("architecture/standby.likec4")).toBe(false);
+  });
+
   it("two features extending one region both archive — the file is the collision, not the region", async () => {
     const OTHER = "features/FEAT-2-third/";
     const p = await project({

@@ -6,7 +6,7 @@
  * because `core/c4/arch.ts` already exists and a twin name invites the wrong
  * import.
  */
-import { type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
+import { errorText, type Elem, type LoadedDoc, type Rel } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
 import { DocsRepoUnavailableError } from "../repo/state.js";
 import { listServices } from "../repo/repo.js";
@@ -57,7 +57,7 @@ export function archSlice(
 
   const { errors, elements, relationships } = doc;
   if (errors.length > 0) {
-    return { ...empty, errors: errors.map((e) => (typeof e.line === "number" ? `L${e.line}: ${e.message}` : e.message)) };
+    return { ...empty, errors: errors.map(errorText) };
   }
 
   // Which service an element stands for is the binding's call, not the title's

@@ -1,35 +1,21 @@
-// Per-service C4. Written by an agent from the `loam adopt` brief, then curated.
+// notification-service's own C4 — what is INSIDE the element the fleet map binds
+// to services/platform/notification-service/. Written by an agent from the
+// `loam adopt` brief, then curated.
 //
-// Every .likec4 file is parsed ALONE, so the kinds this document uses have to be
-// declared in this document: a `specification` block here is not a duplicate of
-// the landscape's, it is what makes this file readable without it.
-specification {
-  element softwareSystem
-  element container
-  element database
-  // Declared because the consumption edges below point at CHANNELS rather than
-  // at the broker. Three edges into one `kafka` box would say only "talks to
-  // kafka"; three edges into three topics say which contracts this service is
-  // standing on, and they line up one-for-one with the channels in
-  // asyncapi.yaml.
-  element topic {
-    style {
-      shape queue
-    }
-  }
-}
-
+// An EXTENDING model: no `specification` block, no partner copies. The topics
+// this service consumes — `kafka.orderEvents`, `kafka.paymentEvents`,
+// `kafka.crmEvents` — are the MAP's, declared there once with the `topic` kind
+// that carries `#external` and `#platform`; this file points at them. So is
+// `notificationProvider`, the third-party gateway: a system this service reaches
+// belongs in architecture/landscape.likec4, and declaring a copy of it here
+// would be `c4.element-unowned`. `extend` takes the fully-qualified id because
+// the element is nested in the `marketplace` group.
+//
+// SCHEMA.md, "Two shapes of a service model", has the standalone shape — a model
+// that declares its own `specification` and is therefore parsed alone — and the
+// ordered recipe for migrating one to this shape.
 model {
-  notificationService = softwareSystem 'notification-service' {
-    description 'Turns fleet events into customer email and SMS'
-    // The binding, not the title, is what ties this element to
-    // services/notification-service/. With only a title, renaming the box in a
-    // diagram silently detaches every join that runs through it — health.yaml's
-    // dependencies, `Covers:` entries, the landscape's service checks.
-    metadata {
-      service 'notification-service'
-    }
-
+  extend marketplace.notificationService {
     consumer = container 'consumer' {
       description 'Kafka consumer group; one handler per message name'
       technology 'Go'
@@ -67,30 +53,12 @@ model {
     sender -> deliveryLog 'Records delivered / failed'
   }
 
-  // Everything the service touches belongs in its own model, cross-boundary
-  // dependencies included — the landscape carries only the boundary crossing.
-  // health.yaml names `kafka` as a critical dependency and that id has to resolve
-  // HERE, by element id, `metadata { service }` binding or title
-  // (`health.dependency-unmodelled` otherwise); and a model with elements and no
-  // edges beside a health.yaml that declares dependencies is `c4.no-relationships`
-  // — a service that reaches nothing is almost never true.
-  kafka = softwareSystem 'kafka' {
-    description 'Event backbone (platform)'
-    orderEvents = topic 'order.events'
-    paymentEvents = topic 'payment.events'
-    crmEvents = topic 'crm.events'
-  }
-
-  // The second thing this service reaches across its own boundary, and the one
-  // the runbook spends an incident section on: while the provider is down or
-  // throttling, nothing is delivered and there is no fallback path. It belongs
-  // here for the same reason payment-service's model draws `stripe` — a model
-  // that stopped at the broker would show a worker whose only failure mode is
-  // lag, which is the half of the picture the on-call graphs already give you.
-  provider = softwareSystem 'notification-provider' {
-    description 'Third-party email and SMS gateway — quota-limited, and outside this fleet'
-  }
-
+  // The three channels this service takes messages off, pointing at the map's
+  // topics. health.yaml names `kafka` as a critical dependency and that id has to
+  // resolve through this model (`health.dependency-unmodelled` otherwise): it
+  // does, because a partner brings its ANCESTORS with it — the edges name the
+  // topics and the broker answers for them.
+  //
   // No `metadata { consumes }` on these edges, and adding it would change
   // nothing: loam reads the event spine off `architecture/landscape.likec4`
   // alone, never off a service model. What resolves a consumed name against
@@ -104,15 +72,27 @@ model {
   // Drawn topic → consumer, the direction the landscape uses and the one the
   // event spine requires there: `consumes` binds the edge's TARGET, so the same
   // edge drawn the other way round binds to nothing at all.
-  kafka.orderEvents -> notificationService.consumer 'OrderPlaced triggers the confirmation'
-  kafka.paymentEvents -> notificationService.consumer 'PaymentCaptured triggers the receipt'
-  kafka.crmEvents -> notificationService.consumer 'CustomerUpdated refreshes contact details'
+  kafka.orderEvents -> marketplace.notificationService.consumer 'OrderPlaced triggers the confirmation'
+  kafka.paymentEvents -> marketplace.notificationService.consumer 'PaymentCaptured triggers the receipt'
+  kafka.crmEvents -> marketplace.notificationService.consumer 'CustomerUpdated refreshes contact details'
 
-  notificationService.sender -> provider 'Sends email and SMS, and backs off on 429'
+  // The second thing this service reaches across its own boundary, and the one
+  // the runbook spends an incident section on: while the provider is down or
+  // throttling, nothing is delivered and there is no fallback path. Its element
+  // is the map's, and the map also carries the SERVICE-level twin of this edge
+  // (`marketplace.notificationService -> notificationProvider`), because every
+  // fleet check reads the map alone. The cross-boundary call is written twice on
+  // purpose — container-level here, service-level there — and that remainder is
+  // recorded in ROADMAP.md rather than hidden.
+  marketplace.notificationService.sender -> notificationProvider 'Sends email and SMS, and backs off on 429'
 }
 
+// Views belong to LikeC4's renderer; no loam check reads anything below. This
+// file is part of the root project, so `npx likec4 start` at the docs root draws
+// this view beside the fleet map — there is no per-service likec4.config.json,
+// and loam never writes one beside an extending model.
 views {
-  view notification_service of notificationService {
+  view notification_service of marketplace.notificationService {
     include *
   }
 }

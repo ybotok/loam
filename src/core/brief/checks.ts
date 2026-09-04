@@ -32,7 +32,35 @@ export interface BriefCheck {
 /** What `loam validate` will run against the result — each check names the invocation that surfaces it. */
 export const VALIDATE_CHECKS: BriefCheck[] = [
   { code: "service.no-model", severity: "error", via: VIA_SERVICE, what: "there is no model.likec4 — every other check stops here" },
-  { code: "c4.invalid", severity: "error", via: VIA_SERVICE, what: "model.likec4 does not parse as LikeC4" },
+  {
+    code: "c4.invalid",
+    severity: "error",
+    via: VIA_SERVICE,
+    what: "model.likec4 does not parse as LikeC4 — for a model that extends the fleet map, parsed together with `architecture/landscape.likec4`, and every error is this model's, including one the parser blames on the map (the map parses clean on its own)",
+  },
+  // The two shapes' own grades. A model that extends the map cannot diverge from
+  // it — there is one declaration — and a model that stands alone cannot own an
+  // element outside itself, because nothing else is in its project. So exactly
+  // one of these two can ever fire for a given model, and which one is decided
+  // by the file's own grammar (SCHEMA.md, "Two shapes of a service model").
+  {
+    code: "c4.declaration-diverged",
+    severity: "warn",
+    via: VIA_SERVICE,
+    // "the fleet map (architecture/)", never one file: the map is a project, an
+    // element may be declared in any document of it, and the finding's own
+    // message and `loam explain` both refuse to name a file for that reason.
+    // Naming `architecture/landscape.likec4` here sent a reader of a fleet whose
+    // map is spread over several documents to a file that may not declare the
+    // element at all (verification 2026-09-04).
+    what: "a model that declares its own `specification` (the standalone shape) declares an element the fleet map (`architecture/`) also declares, and the two copies disagree about `kind`, `title`, the tag SET or the `metadata { service }` binding — two documents are two authorities on one element. `description` is deliberately not compared. Copy the map's declaration verbatim, or migrate the model to extend the map",
+  },
+  {
+    code: "c4.element-unowned",
+    severity: "warn",
+    via: VIA_SERVICE,
+    what: "a model that extends the fleet map declares an element OUTSIDE the element that resolves to this service — a system this service reaches belongs in `architecture/landscape.likec4`, declared once, and another service's internals belong in that service's model",
+  },
   {
     code: "requirements.missing-scenarios",
     severity: "error",
@@ -284,7 +312,7 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     code: "landscape.service-unmodelled",
     severity: "error",
     via: VIA_ALL,
-    what: "nothing in architecture/landscape.likec4 resolves to services/<id>/ — the fleet map is incomplete until an element exists or an existing one is bound with `metadata { service '<id>' }`",
+    what: "nothing in architecture/landscape.likec4 resolves to services/<id>/ — the fleet map is incomplete until an element exists or an existing one is bound with `metadata { service '<id>' }`. On the FLEET target for any service; on the SERVICE target too when that service's model.likec4 EXTENDS the map, where an unbound directory leaves the model with nothing to be inside and nothing in it can be graded",
   },
   {
     code: "landscape.missing",
@@ -296,7 +324,11 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
     code: "landscape.invalid",
     severity: "error",
     via: VIA_ALL,
-    what: "architecture/landscape.likec4 exists but does not parse — fix it before anything else; the whole cross-service layer is unchecked until it reads",
+    // The fleet map is the whole `architecture/` PROJECT, so this code fires for
+    // a palette or a use case beside the landscape just as readily as for the
+    // landscape itself — and the message names the document that broke. Saying
+    // "landscape.likec4" here sent an author to a file with no errors in it.
+    what: "the `architecture/` project does not parse — the landscape, or any `.likec4` beside it; the message names the document that broke. Fix it before anything else: the whole cross-service layer is unchecked until the map reads",
   },
   {
     code: "landscape.binding-unknown",
@@ -313,15 +345,55 @@ export const VALIDATE_CHECKS: BriefCheck[] = [
   // Evidence-gated: the model's own cross-boundary calls are the proof that
   // the map owes an edge, so a service whose model declares none stays silent
   // — that state is the adopt brief's to name (`landscape.touched`), never a
-  // fleet finding that cannot tell a hermit from a batch job.
-  { code: "landscape.service-isolated", severity: "warn", via: VIA_ALL, what: "an element resolves to services/<id>/ and no edge in the map touches it, while model.likec4 declares a call across its boundary — the service is drawn and invisible to every cross-service check; silent when the model declares no such call" },
-  // Fires on a fresh baseline by construction: the adopt protocol's step 3
-  // writes the model and `subsystem sync` writes the project file, so a
-  // service is owed the second command from the moment the first file lands.
+  // fleet finding that cannot tell a hermit from a batch job. And BINARY: one
+  // edge closes it, because loam cannot tell a call the map forgot from one the
+  // fleet deliberately does not draw at its own altitude, and a set difference
+  // reported as an omission is an invented edge with a code beside it.
+  { code: "landscape.service-isolated", severity: "warn", via: VIA_ALL, what: "an element resolves to services/<id>/ and no edge anywhere in architecture/ touches it, while model.likec4 declares a call across its boundary — the service is drawn and invisible to every cross-service check; silent when the model declares no such call, and silent once ONE edge is drawn: the check is touched/untouched, not a set difference over the attested calls" },
+  // The four renderer-wiring grades, all repaired by one `loam subsystem sync`.
+  // None of them fires on a baseline written from this brief: the model it asks
+  // for extends the map, so it belongs to the root project and is owed no file
+  // and no exclusion. They are listed because an agent adopting into an OLDER
+  // repository — one whose root `likec4.config.json` still excludes
+  // `services/**`, or that carries a hand-written project file — meets them on
+  // the first `--all` run and must not read one as work on the model.
   {
     code: "service.likec4-config-missing",
     severity: "warn",
     via: VIA_ALL,
-    what: "model.likec4 exists and services/<id>/likec4.config.json does not — the renderer's per-service project file, which `loam subsystem sync` writes; without it the model is a box on the fleet map with nothing inside it",
+    what: "a model that stands alone (declares its own `specification`) renders only as a project of its own, and services/<id>/likec4.config.json is not there — `loam subsystem sync` writes it; without it the model is a box on the fleet map with nothing renderable inside it. Never raised for a model that extends the map",
+  },
+  {
+    code: "service.likec4-config-stray",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "the reverse: model.likec4 extends the fleet map and a likec4.config.json sits beside it — the renderer registers that file as a project of its own, holding nothing, or holding the model alone where it cannot parse. Delete it; loam never writes one beside an extending model",
+  },
+  {
+    code: "service.model-excluded",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "model.likec4 extends the fleet map and the root likec4.config.json's `exclude` hides it, so the renderer never loads it. Two entry shapes reach it: one covering the DIRECTORY, which `loam subsystem sync` rewrites (that command maintains the `services/` entries), and one shaped like a FILE (`services/**/model.likec4`), which sync cannot repair — the message says which one you have, and the file shape has to be removed or narrowed by hand",
+  },
+  {
+    code: "service.model-unexcluded",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "the mirror, and the damaging one: a model that stands alone whose directory the root `exclude` does NOT cover — the renderer merges it into the map, reports every kind and element it declares as a duplicate, and blanks the whole root project, not just this service. Same repair",
+  },
+  // The same list, one level up: the entry covers the MAP. It is not a
+  // per-service wiring grade and no `sync` repairs it — sync recomputes the
+  // `services/` entries only — so it is listed separately from the four above.
+  {
+    code: "landscape.excluded",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "the root likec4.config.json's `exclude` covers architecture/landscape.likec4 itself — the renderer loads no fleet map at all, and every extending model in the root project resolves against nothing, while loam keeps grading the map it reads from disk. `c4.fleet-project-invalid` is not graded while the entry stands, because that check reads the renderer's project and would report this one line once per model. The finding quotes the entry verbatim; remove or narrow it by hand, because `loam subsystem sync` maintains only the `services/` entries in that list",
+  },
+  {
+    code: "c4.fleet-project-invalid",
+    severity: "warn",
+    via: VIA_ALL,
+    what: "every document reads clean where loam grades it, and the ONE project the renderer builds out of them — the map, every extending model, and every `.likec4` beside one — does not parse. A tag or an element declared in two of those documents is declared twice there; declare it once, in the map or in the single service that owns it. Not graded at all while `landscape.excluded` holds: with the map out of that project every `extend` is unresolvable, so the entry is the finding",
   },
 ];

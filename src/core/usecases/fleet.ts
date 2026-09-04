@@ -40,11 +40,9 @@ import { readFile } from "node:fs/promises";
 import type { StepScope } from "../c4/resolve/steps.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../capabilities/usecase-join.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
-import { architectureDir, loadArchitecture } from "../c4/project/architecture.js";
-import { architectureDocuments } from "../c4/project/documents.js";
+import { architectureProjectDocuments, loadArchitecture } from "../c4/project/architecture.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
-import { subsystemViewsPath } from "../repo/paths.js";
 
 /**
  * What the fleet's use cases are, or the honest refusal to say.
@@ -182,8 +180,15 @@ export async function readUseCases(req: UseCaseRequest): Promise<UseCaseScan> {
     model: { elements: [], relationships: [], known: req.known },
     resolve: (id) => id,
   };
-  const dir = architectureDir(req.docsDir);
-  const documents = await architectureDocuments(dir, [subsystemViewsPath(req.docsDir)]);
+  // EXACTLY the documents `loadArchitecture` will load two lines down, root
+  // `exclude` and all — `architectureProjectDocuments` is that one answer
+  // (`c4/project/architecture.ts`). The gate used to walk `architecture/` for
+  // itself and skip the exclude, which could only over-scan: the byte gate
+  // reading a document the loader then drops decides "there might be a use
+  // case here" and pays for a project load that finds none. Never a wrong
+  // answer, but two lists that disagree about what the project is, and the
+  // next reader to take the wider one for the project's would be wrong.
+  const documents = await architectureProjectDocuments(req.docsDir);
   if (!(await mentionsTagPrefix(documents))) return none;
 
   const doc = await loadArchitecture(req.docsDir);

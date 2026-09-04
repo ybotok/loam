@@ -43,6 +43,16 @@ const CAPABILITIES = `capabilities:
 `;
 
 /** Two services with C4 models and NOTHING else, drawn by a landscape with no edges. */
+/**
+ * Two services with a model and nothing else — the requirements axis at zero.
+ *
+ * Each model STANDS ALONE (its own `specification` block) and carries the same
+ * `metadata { service }` binding as the map's element, deliberately: a
+ * standalone model's copy of a shared element that disagrees with the map is
+ * `c4.declaration-diverged`, and two of those would be warnings this test's
+ * subject — the not-started banner's grouping arithmetic — has nothing to do
+ * with.
+ */
 function modelOnlyFleet(): Record<string, string> {
   const model = (id: string, name: string): string => `specification {
   element softwareSystem
@@ -51,6 +61,7 @@ function modelOnlyFleet(): Record<string, string> {
 model {
   ${name} = softwareSystem '${id}' {
     description 'Service ${id}'
+    metadata { service '${id}' }
   }
 }
 

@@ -15,9 +15,12 @@ its scenarios exercise, and `loam validate` checks every entry resolves
 (`covers.unknown`) and every declared alert/SLI is covered (`health.uncovered`).
 
 An edge entry resolves by exact element id **or** by the service an endpoint stands for, which
-is why the entries below name `payment-service` rather than `marketplace.paymentService`: the
-landscape draws this service inside a grouping element, and a `Covers:` line written against a
-group path would have to be rewritten the day somebody moves the box.
+is why the edge entries below name `payment-service` rather than `marketplace.paymentService`:
+the landscape draws this service inside a grouping element, and an edge written against a group
+path would have to be rewritten the day somebody moves the box. A CONTAINER has no such coarser
+name, so `marketplace.paymentService.outbox` is spelled in full — `model.likec4` extends the
+element the map declares inside `marketplace`, so that IS the container's id. SCHEMA.md, "Two
+shapes of a service model", has the rule and the migration step that requalifies these lines.
 
 ## Requirements
 
@@ -27,7 +30,7 @@ Requirement-ID: ARCH-PAY-OUTBOX
 The service SHALL write a domain event and the state change it reports in one
 database transaction, published to kafka by an outbox relay — never a dual write.
 
-Covers: paymentService.outbox, payment-service -> kafka.paymentEvents
+Covers: marketplace.paymentService.outbox, payment-service -> kafka.paymentEvents
 Publishes: payment.PaymentAuthorized, payment.PaymentCaptured
 
 #### Scenario: Broker down at commit time

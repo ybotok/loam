@@ -163,6 +163,12 @@ export interface ArchAxis {
   /** The service's own C4 model, empty when it has none. */
   elements: Elem[];
   relationships: Rel[];
+  /**
+   * True when this service's model EXTENDS a fleet map that does not parse, so
+   * `elements` and `relationships` above are empty for that reason and no other
+   * — see `covers.unknown` below, which is suspended on it.
+   */
+  mapUnreadable?: boolean;
   /** The living landscape, or null when the repo has none. */
   land: LoadedDoc | null;
   /** The docs root, for the one lazy load below — see `deployment` in the scope. */
@@ -173,6 +179,12 @@ export interface ArchAxis {
    * naming a service matches an edge drawn into that service's container.
    */
   known?: ReadonlySet<string>;
+  /**
+   * The run's read index, so the one lazy project load below is the same
+   * memoised parse the rest of the target already made rather than a second
+   * workspace spun for one `node:` entry.
+   */
+  fleet?: FleetContext;
 }
 
 /**
@@ -197,16 +209,21 @@ async function topology(
   land: LoadedDoc | null,
   archReqs: Requirement[],
   docsDir: DocsDir,
+  fleet?: FleetContext,
 ): Promise<DeploymentModel | undefined> {
   if (land?.deployment !== undefined && hasDeployment(land.deployment)) return land.deployment;
   const wanted = coversEntries(archReqs).some((e) => e.form === "node" || e.form === "node-edge");
   if (!wanted) return undefined;
-  const project = await loadArchitecture(docsDir);
+  // Through the index when there is one: `land` above is now that same project
+  // in every mode, so this fallback fires only for the caller that handed in
+  // nothing, and it must not be a second parse of documents already in the memo.
+  const project = fleet === undefined ? await loadArchitecture(docsDir) : await fleet.architecture(docsDir);
   return project.errors.length === 0 ? project.deployment : undefined;
 }
 
 export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   const { service, paths, archText, archReqs, elements, relationships, land, known, docsDir } = axis;
+  const { fleet } = axis;
   const findings: Finding[] = [];
 
   // The architecture spec axis — the obligations a business spec never carries
@@ -228,7 +245,18 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
   // warn needs either a second nested element with no edge joining anything,
   // or dependencies declared in this service's own health.yaml. The health
   // half goes quiet when the file is unreadable — no claims on bad data.
-  const nested = elements.filter((e) => e.id.includes(".")).length;
+  // "Nested" is a PARENT in this slice, not a dot in the id, and the two stopped
+  // meaning the same thing when a model could extend the map: an extending
+  // placeholder `extend marketplace.orderService { }` contributes one element
+  // whose id is dotted and whose parent belongs to the map, so a dot count read
+  // it as nested architecture that reaches nothing — the standalone placeholder
+  // `orderService = softwareSystem` was silent for the same shape. One rule for
+  // both: `a`/`a.x`/`kafka`/`kafka.t` still counts two.
+  const sliceIds = new Set(elements.map((e) => e.id));
+  const nested = elements.filter((e) => {
+    const dot = e.id.lastIndexOf(".");
+    return dot !== -1 && sliceIds.has(e.id.slice(0, dot));
+  }).length;
   const deps = health.unreadable ? [] : health.dependencies;
   if (elements.length > 0 && relationships.length === 0 && (nested > 1 || deps.length > 0)) {
     const evidence = [
@@ -279,7 +307,7 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     });
   }
   const landParses = land !== null && land.errors.length === 0 ? land : null;
-  const deployment = await topology(landParses, archReqs, docsDir);
+  const deployment = await topology(landParses, archReqs, docsDir, fleet);
   const scope: CoverageScope = {
     elements: [...elements, ...(landParses?.elements ?? [])],
     relationships: [...relationships, ...(landParses?.relationships ?? [])],
@@ -287,9 +315,28 @@ export async function archAxisFindings(axis: ArchAxis): Promise<Finding[]> {
     health: health.ids,
     known,
   };
-  findings.push(
-    ...coversUnknownFindings(archReqs, { where: `${service}: arch.spec.md`, subject: service }, scope, health.unreadable),
-  );
+  // `covers.unknown` is suspended entirely when the model EXTENDS a map that
+  // does not parse, and this is the standing rule of the whole axis rather than
+  // a special case: nothing may be graded out of a document nobody could read
+  // (`core/c4/service-model/load.ts` states it; `model/grade.ts`, `model/diverged.ts`
+  // and the flow skip in `./service.ts` all honour it). Such a model comes back
+  // with no elements and no edges AND the landscape half of the scope is empty
+  // for the same reason, so every `Covers:` line in the service's arch.spec.md
+  // would resolve to nothing — one unparseable `architecture/usecases/x.likec4`
+  // convicting every Covers: line of every migrated service in the fleet as a
+  // typo, under a code whose whole job is to catch typos.
+  //
+  // The alert:/sli: forms could still be answered out of health.yaml, which IS
+  // readable, and they are suspended with the rest on purpose: a verdict that
+  // grades two of the Covers: forms and drops the others is a report whose
+  // completeness depends on which form the author happened to write, and the one
+  // repair — fix the map — brings all of them back on the next run. The health
+  // axis keeps its own grade either way (`health.uncovered`, below).
+  if (axis.mapUnreadable !== true) {
+    findings.push(
+      ...coversUnknownFindings(archReqs, { where: `${service}: arch.spec.md`, subject: service }, scope, health.unreadable),
+    );
+  }
   const activeCovers = coversEntries(archReqs);
   for (const { form, ids } of [
     { form: "alert" as const, ids: health.ids.alerts },

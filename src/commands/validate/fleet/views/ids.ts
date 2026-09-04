@@ -4,23 +4,38 @@
  *
  * This closes a green-while-broken hole, and the shape of it is measured rather
  * than argued. The LikeC4 renderer merges every `.likec4` file in a project into
- * one model, and `likec4.config.json` scopes the root project to
- * `architecture/` — so `landscape.likec4` and the generated `subsystems.likec4`
- * share ONE flat view-id namespace. Author `view subsystem_commerce { }` in the
- * landscape while the tree has a `commerce` subsystem and the renderer refuses
- * the ENTIRE `architecture/` project with two `Duplicate view` diagnostics, one
- * per file — while `loam validate --all` printed `landscape: N service(s)
- * modelled — architecture/landscape.likec4 and services/ agree`. Reproduced at
- * the 1.59.2 pin.
+ * one model, and `architecture/landscape.likec4` and the generated
+ * `architecture/subsystems.likec4` are two documents of the ROOT project — so
+ * they share ONE flat view-id namespace. (This file used to say the reason was
+ * that `likec4.config.json` scopes the root project to `architecture/`; it does
+ * not, and never had to for the collision to exist. The scaffold's `exclude`
+ * names `features/**` and node_modules, and a fleet whose models extend the map
+ * has `services/` in the root project too — see `./fleet-project.ts`.) Author
+ * `view subsystem_commerce { }` in the landscape while the tree has a `commerce`
+ * subsystem and the renderer refuses the ENTIRE root project with two
+ * `Duplicate view` diagnostics, one per file — while `loam validate --all`
+ * printed `landscape: N service(s) modelled — architecture/landscape.likec4 and
+ * services/ agree`. Reproduced at the 1.59.2 pin.
  *
- * Nothing else in a loam repo can produce this. A duplicate INSIDE one document
- * is already 2 LikeC4 errors, so `landscape.invalid` has it (measured). A
- * service's `model.likec4` and a feature's `delta.likec4` are each their own
- * LikeC4 project — `likec4.config.json` excludes `services/**` and
- * `features/**` from the root — so their view ids cannot collide with the
- * landscape's, and a delta's views never travel through `archive` anyway. That
- * leaves exactly one pair, which is why this check compares exactly one pair
- * rather than taking a census across every document loam parses.
+ * WHICH DOCUMENTS CLAIM IDS IN THAT NAMESPACE, corrected. A duplicate INSIDE one
+ * document is already 2 LikeC4 errors, so `landscape.invalid` has it (measured).
+ * A feature's `delta.likec4` is its own LikeC4 project — the root excludes
+ * `features/**` — and a delta's views never travel through `archive` anyway. A
+ * service's `model.likec4` used to be in the same position and no longer is:
+ * this file's original premise, that `likec4.config.json` excludes `services/**`
+ * so a model's view ids cannot collide with the landscape's, holds only for a
+ * model that STANDS ALONE. A model that EXTENDS the map lives in the root
+ * project beside it, so its authored view ids — and those of every `.likec4`
+ * beside it — share exactly this namespace. That census is made by the merged
+ * load in `./fleet-project.ts` and handed here; the landscape's own claims are
+ * still graded from the `architecture/` project, which is the only census a run
+ * with no extending model can make.
+ *
+ * The claims therefore arrive spelled DOCS-RELATIVE, and the caller does the
+ * spelling: the `architecture/` project reports a view's `sourcePath` relative
+ * to `architecture/`, the merged project reports it relative to the docs root,
+ * and a prefix pasted on here would name `architecture/services/…` for every
+ * model. The message and the location both print the path verbatim.
  *
  * ONLY the real collision is refused, never the merely reserved-looking name.
  * A landscape view called `subsystem_overview` with no `overview` subsystem
@@ -41,11 +56,11 @@ import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
 /**
- * `authored` is every view id the `architecture/` project claims, each with the
- * file that claims it — static views included, because a static view claims an
- * id exactly as firmly as a dynamic one. Absent (the document did not parse, or
- * an older loader did not read them) is treated as "nothing to compare", never
- * as "nothing collides".
+ * `authored` is every view id the project claims, each with the DOCS-RELATIVE
+ * path of the file that claims it — static views included, because a static view
+ * claims an id exactly as firmly as a dynamic one. Absent (the document did not
+ * parse, or an older loader did not read them) is treated as "nothing to
+ * compare", never as "nothing collides".
  */
 export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetTree): Finding[] {
   if (authored === undefined || authored.length === 0) return [];
@@ -69,12 +84,16 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
       // the one the report's target fallback gets wrong: it files this under
       // the landscape, which is exactly the file a reader must NOT rename the
       // view in when the claim came from a document of their own.
-      locations: [{ path: `architecture/${file}`, role: "primary" as const }],
+      locations: [{ path: file, role: "primary" as const }],
       message:
-        `subsystems: architecture/${file} declares \`view ${id}\`, which is the id loam generates ` +
+        `subsystems: ${file} declares \`view ${id}\`, which is the id loam generates ` +
         `into architecture/subsystems.likec4 for services/${owner}/ — LikeC4 merges both files into one project, ` +
-        `so it refuses the whole architecture/ project and renders nothing. ` +
-        `Rename the view in architecture/${file}; ids beginning \`${SUBSYSTEM_VIEW_PREFIX}\` are loam's ` +
+        // The ROOT project, not `architecture/`: the claimant may be a model's
+        // own view now (an extending model is a document of the root project),
+        // and telling that author the `architecture/` project is refused sends
+        // them to look for the breakage in a directory they never touched.
+        `so it refuses the whole root project and renders nothing. ` +
+        `Rename the view in ${file}; ids beginning \`${SUBSYSTEM_VIEW_PREFIX}\` are loam's ` +
         "to mint, and architecture/subsystems.likec4 is generated (`loam subsystem sync`) and must never be hand-edited.",
     });
   }

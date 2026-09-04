@@ -46,6 +46,25 @@ function projectFindings(payload: Payload): Array<{ target: string; finding: Jso
   return payload.targets.flatMap((t) => t.findings.filter((f) => f.code === CODE).map((finding) => ({ target: t.kind, finding })));
 }
 
+/** Its mirror for the other shape: an extending model with a project file beside it. */
+function strayFindings(payload: Payload): JsonFinding[] {
+  return payload.targets.flatMap((t) => t.findings).filter((f) => f.code === "service.likec4-config-stray");
+}
+
+/** The two grades that read the ROOT project's `exclude` list. */
+function excludeFindings(payload: Payload): JsonFinding[] {
+  return payload.targets
+    .flatMap((t) => t.findings)
+    .filter((f) => f.code === "service.model-excluded" || f.code === "service.model-unexcluded");
+}
+
+/** The third reader of that list — the one about the MAP, with the target it rode. */
+function mapExcludedFindings(payload: Payload): Array<{ target: string; finding: JsonFinding }> {
+  return payload.targets.flatMap((t) =>
+    t.findings.filter((f) => f.code === "landscape.excluded").map((finding) => ({ target: t.kind, finding })),
+  );
+}
+
 /**
  * `coherentFixture()` (payment-service, unfiled, with a model) plus a FILED
  * service with a model under `services/platform/`. The landscape gains one
@@ -237,16 +256,68 @@ describe("validate --all — service.likec4-config-missing", () => {
       const sync = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout) as {
         projects: { created: string[]; current: number };
       };
+      // SORTED BY PATH, which is what SCHEMA and CHANGELOG say the key holds:
+      // `services/payment-service/…` before `services/platform/…`, even though
+      // the survey walked identity-service first (it sorts by service id).
       expect(sync.projects.created).toEqual([
-        "services/platform/identity-service/likec4.config.json",
         "services/payment-service/likec4.config.json",
+        "services/platform/identity-service/likec4.config.json",
       ]);
+      expect(sync.projects.created).toEqual([...sync.projects.created].sort());
       expect(sync.projects.current).toBe(0);
       expect(p.exists("services/pay@1/likec4.config.json")).toBe(false);
 
       const after = payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
       expect(projectFindings(after)).toEqual([]);
       expect(after.targets.flatMap((t) => t.findings.filter((f) => f.code === "service.id-invalid"))).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: the grade still asked of every model rather than of the standalone
+  // ones. A model that EXTENDS the map renders in the ROOT project, so a
+  // per-service project file beside it claims the model out of the root project
+  // — and telling its author to run `sync` would advertise a file that verb
+  // refuses to write.
+  it("an extending model is never told it is missing a project file — it is told the opposite", async () => {
+    const files = fixture();
+    files["services/payment-service/model.likec4"] = "model {\n  extend paymentService {\n  }\n}\n";
+    const p = await fleetWithRootProject(files);
+    try {
+      const payload = payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      // The standalone one still is; the extending one is not.
+      expect(projectFindings(payload).map((f) => f.finding.subject)).toEqual(["identity-service"]);
+      // And with a project file beside it, it is `-stray` instead.
+      await p.write("services/payment-service/likec4.config.json", '{"name":"payment-service"}\n');
+      const stray = strayFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout));
+      expect(stray).toHaveLength(1);
+      expect(stray[0]).toEqual(
+        expect.objectContaining({
+          severity: "warn",
+          code: "service.likec4-config-stray",
+          subject: "payment-service",
+          locations: [{ path: "services/payment-service", role: "scope" }],
+        }),
+      );
+      // Catches the message going back to "holds nothing": measured at the
+      // 1.59.2 pin the nested project CLAIMS the model, and the repair the
+      // message names is now one `loam subsystem sync` performs.
+      //
+      // AND catches the container-loss clause going back to an unconditional
+      // "measured" claim. Re-measured at the pin (re-verification 2026-09-04,
+      // area C item 7): on `examples/docs` a stray beside the extending
+      // order-service left `export json --project fleet` byte-identical — 33
+      // elements, every `marketplace.orderService.*` child present — while
+      // `likec4 validate .` went from ✓ Valid to ✗ Invalid ("Specify exact
+      // project, known: [order-service, fleet]"); on a seeded six-service fleet
+      // the same file DID drop `svc_svc_a.api` from that export, and deleting it
+      // brought the container back. Both are true, so the sentence has to name
+      // the certain harm first and the export loss as the case it is.
+      expect(stray[0]?.message).toContain("a project of its own rooted at that directory");
+      expect(stray[0]?.message).toContain("`likec4 validate .` then refuses without `--project`");
+      expect(stray[0]?.message).toContain("wherever that nested project claims the model");
+      expect(stray[0]?.message).toContain("Run `loam subsystem sync`; it deletes the file");
     } finally {
       await p.destroy();
     }
@@ -276,6 +347,188 @@ describe("validate --all — service.likec4-config-missing", () => {
       };
       expect(sync.projects.created).toContain("services/groupA/pay/likec4.config.json");
       expect(sync.projects.created).toContain("services/groupB/pay/likec4.config.json");
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("validate --all — the root project's exclude, read the two ways", () => {
+  /** The scaffold's list plus one entry, written verbatim so the tests read as the file does. */
+  function rootWith(exclude: readonly string[]): string {
+    return `${JSON.stringify({ name: "fleet", title: "Fleet landscape", exclude: [...exclude] }, null, 2)}\n`;
+  }
+
+  // Catches: a standalone model left inside the root project. Every kind it
+  // declares is then a duplicate blamed on the map as well, so the whole root
+  // project blanks — the loudest failure in this family, and until the root
+  // config was read at all, nothing could see it.
+  it("service.model-unexcluded names a standalone model the root does not exclude", async () => {
+    const p = await fleetWithRootProject();
+    try {
+      const found = excludeFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout));
+      expect(found.map((f) => f.code)).toEqual(["service.model-unexcluded", "service.model-unexcluded"]);
+      expect(found.map((f) => f.subject).sort()).toEqual(["identity-service", "payment-service"]);
+      expect(found[0]).toEqual(
+        expect.objectContaining({
+          severity: "warn",
+          locations: [{ path: "services/platform/identity-service", role: "scope" }],
+        }),
+      );
+      expect(found[0]?.message).toContain("adds services/platform/identity-service/** to the root project's `exclude`");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: an extending model hidden behind an inherited `services/**`. It
+  // parses only in the root project, so the exclusion renders it as a box with
+  // nothing inside — and the entry that hides it must be quoted, because on a
+  // filed fleet it names a subsystem rather than the service.
+  it("service.model-excluded quotes the entry that hides an extending model", async () => {
+    const files = fixture();
+    files["services/platform/identity-service/model.likec4"] = "model {\n  extend identityService {\n  }\n}\n";
+    const p = await fleetWithRootProject(files);
+    try {
+      await p.write("likec4.config.json", rootWith(["**/node_modules/**", "services/platform/**", "features/**"]));
+      const found = excludeFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout));
+      const excluded = found.filter((f) => f.code === "service.model-excluded");
+      expect(excluded).toHaveLength(1);
+      expect(excluded[0]?.subject).toBe("identity-service");
+      expect(excluded[0]?.message).toContain("excludes it ('services/platform/**')");
+      // payment-service stands alone and is NOT covered by that entry, so it is
+      // the other half of the pair.
+      expect(found.filter((f) => f.code === "service.model-unexcluded").map((f) => f.subject)).toEqual(["payment-service"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches the defect verbatim (re-verification 2026-09-04, area C item 5). A
+  // FILE-shaped entry hides every model without covering any directory:
+  // measured at the 1.59.2 pin on `examples/docs`, `services/**/model.likec4`
+  // and the bare `**/model.likec4` each leave 3 source files of 8 and take all
+  // five drill-down views out of `export json --project fleet`, while the whole
+  // `validate --all` run reported 0 errors and did not contain the word
+  // "exclude" once. The directory question cannot see it, so the FILE question
+  // is asked too — and the message must NOT name `subsystem sync`, which
+  // maintains only the `services/` directory entries and would report success
+  // having changed nothing.
+  it("service.model-excluded names a FILE-shaped entry, and says sync cannot repair it", async () => {
+    const files = fixture();
+    files["services/platform/identity-service/model.likec4"] = "model {\n  extend identityService {\n  }\n}\n";
+    const p = await fleetWithRootProject(files);
+    try {
+      await p.write("likec4.config.json", rootWith(["**/node_modules/**", "services/**/model.likec4", "features/**"]));
+      const found = excludeFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout));
+      const excluded = found.filter((f) => f.code === "service.model-excluded");
+      expect(excluded).toHaveLength(1);
+      expect(excluded[0]?.subject).toBe("identity-service");
+      expect(excluded[0]?.message).toContain("excludes it ('services/**/model.likec4')");
+      expect(excluded[0]?.message).toContain("hides the model file without covering services/platform/identity-service/");
+      expect(excluded[0]?.message).toContain("cannot repair it");
+      expect(excluded[0]?.message).not.toContain("Run `loam subsystem sync`");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // The DIRECTORY question still wins where both could answer, because that arm
+  // names an entry `subsystem sync` takes back and this one names an entry it
+  // leaves alone. One state, one repair.
+  it("prefers the directory entry when both questions can answer", async () => {
+    const files = fixture();
+    files["services/platform/identity-service/model.likec4"] = "model {\n  extend identityService {\n  }\n}\n";
+    const p = await fleetWithRootProject(files);
+    try {
+      await p.write(
+        "likec4.config.json",
+        rootWith(["**/node_modules/**", "services/**/model.likec4", "services/platform/**", "features/**"]),
+      );
+      const excluded = excludeFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout)).filter(
+        (f) => f.code === "service.model-excluded",
+      );
+      expect(excluded).toHaveLength(1);
+      expect(excluded[0]?.message).toContain("excludes it ('services/platform/**')");
+      expect(excluded[0]?.message).toContain("Run `loam subsystem sync`");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: a grade asserted over a file loam could not parse. loam does not
+  // know what the renderer will do with it, and claiming an exclusion on
+  // evidence it does not have is worse than saying nothing.
+  it("silent when the root config is not readable as a project with an exclude list", async () => {
+    const p = await fleetWithRootProject();
+    try {
+      await p.write("likec4.config.json", '{"name": "fleet", "exclude": "not a list"}\n');
+      const payload = payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout);
+      expect(excludeFindings(payload)).toEqual([]);
+      expect(mapExcludedFindings(payload)).toEqual([]);
+      // The sibling grade, which does not read that file, still holds.
+      expect(projectFindings(payload)).toHaveLength(2);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: the whole point of the code. The architecture loader keeps the map
+  // whatever this list says, so loam's own grades are right — and that is
+  // exactly what made the state invisible: `validate --all` came back with
+  // nothing to say while the renderer opened on an empty fleet. The entry must
+  // be quoted, because `architecture/*.likec4` is a line somebody wrote for a
+  // palette and would never suspect.
+  it("landscape.excluded names the entry that hides the fleet map, on the fleet target, without gating", async () => {
+    const p = await fleetWithRootProject();
+    try {
+      await p.write("likec4.config.json", rootWith(["**/node_modules/**", "architecture/*.likec4", "features/**"]));
+      const res = await runLoam(p.workDir, "validate", "--all", "--json");
+      expect(res.code).toBe(0);
+      const payload = payloadOf(res.stdout);
+      const found = mapExcludedFindings(payload);
+      expect(found.map((f) => f.target)).toEqual(["landscape"]);
+      expect(found[0]?.finding).toEqual(
+        expect.objectContaining({
+          severity: "warn",
+          code: "landscape.excluded",
+          locations: [{ path: "architecture/landscape.likec4", role: "primary" }],
+        }),
+      );
+      expect(found[0]?.finding.message).toContain("covers architecture/landscape.likec4 ('architecture/*.likec4')");
+      // The repair is the team's own edit, and saying otherwise is what the four
+      // per-service grades may say and this one may not: sync recomputes the
+      // `services/` entries only, so it would report success and change nothing.
+      expect(found[0]?.finding.message).toContain("`loam subsystem sync` will not do it");
+      // One finding per fleet, not one per service — the map is one document.
+      expect(found).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: a matcher loose enough to read the scaffold's own list as covering
+  // the map. Every repo loam has ever created carries these two entries, so a
+  // false positive here would fire on all of them.
+  it("the scaffold's own entries — node_modules, services/** and features/** — leave the map alone", async () => {
+    const p = await fleetWithRootProject();
+    try {
+      await p.write("likec4.config.json", rootWith(["**/node_modules/**", "services/**", "features/**"]));
+      expect(mapExcludedFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout))).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: the root gate slipping. With no root `likec4.config.json` there is
+  // no root project, `doctor.likec4-config-missing` is the finding, and an
+  // exclusion asserted over a file loam never opened is a claim about a renderer
+  // nobody has wired yet.
+  it("silent when there is no root likec4.config.json at all", async () => {
+    const p = await makeProject(fixture());
+    try {
+      expect(p.exists("likec4.config.json")).toBe(false);
+      expect(mapExcludedFindings(payloadOf((await runLoam(p.workDir, "validate", "--all", "--json")).stdout))).toEqual([]);
     } finally {
       await p.destroy();
     }

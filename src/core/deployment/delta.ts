@@ -53,6 +53,7 @@ import { basename, join, relative, resolve } from "node:path";
 import { architectureDir } from "../c4/project/architecture.js";
 import { stageMergedProject } from "../c4/project/staged.js";
 import { type LoadedDoc } from "../c4/likec4.js";
+import type { ExtendingModel } from "../c4/splice/contract.js";
 import { architectureDocuments } from "../c4/project/documents.js";
 import { featureDeploymentDir } from "../repo/authored/paths.js";
 import { reservedArchitectureName } from "../repo/paths.js";
@@ -186,6 +187,19 @@ export interface DeploymentOverlayRequest {
    * nothing.
    */
   load?: (path: string) => Promise<LoadedDoc>;
+  /**
+   * The fleet's extending models, for the merge preview — the SAME list
+   * `loam archive` routes with. A preview computed without them holds interior
+   * the archive puts in `services/<…>/model.likec4`, so a topology document
+   * naming `<service-fqn>.<container>` reads clean here and against nothing
+   * once it is living; `deployment.doc-invalid` is the gate that then fails
+   * open (verification 2026-09-04, review F8).
+   *
+   * A THUNK for `load`'s reason and one more: the early return below is the
+   * axis's per-feature opt-in, and a feature with no `deployment/` directory
+   * must not pay a fleet enumeration to be told so.
+   */
+  models?: () => Promise<readonly ExtendingModel[]>;
 }
 
 /** Whether this feature's topology could be read at all, against the map its merge would leave. */
@@ -208,12 +222,16 @@ export type DeploymentOverlay = { kind: "read" } | { kind: "unreadable"; errors:
 export async function readFeatureDeployments(req: DeploymentOverlayRequest): Promise<DeploymentOverlay> {
   const docs = await featureDeployments(req.featureDir);
   if (docs.length === 0) return { kind: "read" };
+  // AFTER the early return: the fleet read is paid only by a feature that
+  // actually brings a topology document.
+  const models = req.models === undefined ? undefined : await req.models();
   const staged = await stageMergedProject({
     docsDir: req.docsDir,
     featureDir: req.featureDir,
     featureId: req.featureId,
     documents: docs.map((doc) => ({ rel: doc.rel, path: doc.path })),
     ...(req.load === undefined ? {} : { load: req.load }),
+    ...(models === undefined ? {} : { models }),
   });
   return staged.kind === "unreadable" ? { kind: "unreadable", errors: staged.errors } : { kind: "read" };
 }

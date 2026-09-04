@@ -10,6 +10,7 @@
  * emits a finding, or knows what a target is.
  */
 import { type Elem } from "../../../core/c4/likec4.js";
+import { properAncestorIds } from "../../../core/kernel/ids/fqn/ancestors.js";
 import { ACTOR_KINDS, EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
 
 /**
@@ -37,15 +38,17 @@ export function standsForService(e: Elem, services: ReadonlySet<string>): boolea
  */
 export function serviceLevelElements(elements: Elem[], services: ReadonlySet<string>): Elem[] {
   const byId = new Map(elements.map((e) => [e.id, e]));
-  /** Declared ancestors of an element, nearest first. */
-  const ancestorsOf = (e: Elem): Elem[] => {
-    const out: Elem[] = [];
-    for (let dot = e.id.lastIndexOf("."); dot !== -1; dot = e.id.lastIndexOf(".", dot - 1)) {
-      const parent = byId.get(e.id.slice(0, dot));
-      if (parent !== undefined) out.push(parent);
-    }
-    return out;
-  };
+  /**
+   * The ancestors this document actually DECLARES, nearest first. The chain
+   * itself is `core/kernel/ids/fqn/ancestors.ts`'s — the one spelling of it —
+   * and the filter is this function's own: an id may name a level nothing
+   * declares, and an undeclared level answers for no service.
+   */
+  const ancestorsOf = (e: Elem): Elem[] =>
+    properAncestorIds(e.id).flatMap((id) => {
+      const parent = byId.get(id);
+      return parent === undefined ? [] : [parent];
+    });
   return elements.filter((e) => !ancestorsOf(e).some((p) => standsForService(p, services)));
 }
 

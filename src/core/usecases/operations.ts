@@ -95,6 +95,12 @@ export function hopsExercising(scan: UseCaseScan, removed: RemovedOperation): Us
     // so a hop drawn into a modelled container `payment.api` is filed against
     // payment-service rather than against a service called "api".
     if (scan.resolve(attribution.to) !== removed.provider) continue;
+    // And the CALLER, through the same resolver: a hop whose two endpoints
+    // resolve to one service is that service calling itself, which owes no
+    // operationId of its own contract — `usecase.step-unlinked`'s fourth guard,
+    // applied to the victim join. Without it an internal hop was a break of the
+    // provider's own removal (verification 2026-09-04, R3).
+    if (scan.resolve(attribution.from) === removed.provider) continue;
     if (attribution.verdict === "attributed") {
       if (attribution.op === removed.op) out.breaks.push(hopPlace(view, step));
       continue;

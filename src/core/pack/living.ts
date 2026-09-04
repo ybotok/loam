@@ -9,7 +9,9 @@
  * briefing, and the line limit is what asked the question.
  */
 import { existsSync } from "node:fs";
+import { relative } from "node:path";
 import { FleetContext } from "../fleet-context.js";
+import { type LoadedDoc } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import { repoPath } from "../envelope/json.js";
 import { listField, parseFrontmatter, stringField, type Frontmatter } from "../document/frontmatter.js";
@@ -25,8 +27,7 @@ import {
 import { type ServiceEntry } from "../repo/entries.js";
 import { landscapePath, servicePathsAt } from "../repo/paths.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
-import { hasDeployment, NO_DEPLOYMENT } from "../c4/parsed/deployment.js";
-import { loadArchitecture } from "../c4/project/architecture.js";
+import { NO_DEPLOYMENT } from "../c4/parsed/deployment.js";
 import { serviceTopology, type ServiceTopology } from "../deployment/objects.js";
 
 /**
@@ -104,10 +105,28 @@ export interface LivingSlice {
    * `present`/`parses` ride beside the edges (explore's shape) so silence is
    * evidence, not absence: an empty edge list under `parses: false` says
    * "nobody could look", not "nobody calls this".
+   *
+   * `present` is about the FILE `architecture/landscape.likec4`; `parses` is
+   * about the `architecture/` PROJECT, which is what the renderer loads and
+   * what `adopt`, `validate --all` and `explore` all grade. A sibling document
+   * with a syntax error therefore reads here as "nobody could look", exactly as
+   * it does everywhere else.
    */
   landscape: {
     present: boolean;
     parses: boolean;
+    /**
+     * The `architecture/` documents that failed, docs-relative POSIX, deduped
+     * and sorted — `[]` while `parses` is true. Spelled exactly as
+     * `landscape.invalid` and the adopt brief spell them, because the three
+     * surfaces are read one after another on the same tree and a reader has to
+     * be able to tell they name the same file. It exists because `parses` moved
+     * to the PROJECT while every sentence about it still said
+     * `architecture/landscape.likec4`: with a broken sibling that file has no
+     * errors at all, so the name sent a reader to bytes loam had read fine
+     * (verification 2026-09-04).
+     */
+    broken: string[];
     modelled: boolean;
     inbound: LandscapeEdge[];
     outbound: LandscapeEdge[];
@@ -164,7 +183,21 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
     // Both headers, exactly as `show` reads both (commands/show/service.ts):
     // a memo hit on the same read the requirements above already paid for.
     existsSync(paths.archSpec) ? context.readText(paths.archSpec) : null,
-    existsSync(landscapePath(docsDir)) ? context.loadLikeC4(landscapePath(docsDir)) : null,
+    // The `architecture/` PROJECT, never `architecture/landscape.likec4` alone.
+    // The map is a project — the landscape merged with every use case, palette
+    // and second `model { }` block beside it — and reading one file of it made
+    // this pack answer differently from `loam adopt` about the same tree
+    // (review finding F26, reproduced: with a broken `architecture/palette.likec4`
+    // beside a landscape that parses, `adopt --service order-service` reported
+    // `parses: false` and refused to say anything about the map, while `context
+    // order-service` reported `parses: true` and listed its edges). The brief's
+    // own banner (core/brief/landscape.ts) already named this module as the
+    // reader that disagreed. Whichever answer is right, an agent handed both
+    // has no way to tell — and the renderer's answer is the project's.
+    //
+    // `present` stays a fact about the FILE (`existsSync` below), so a repo
+    // with no landscape is still "absent" rather than "empty project".
+    existsSync(landscapePath(docsDir)) ? context.architecture(docsDir) : null,
   ]);
 
   const present = land !== null;
@@ -177,8 +210,12 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
   const svcOf = serviceResolver(elements, known);
   // The partition, the modelled probe and the apiExpected rule are ONE shared
   // derivation (core/vocabulary/maturity.ts `landscapeEvidence`) — the same
-  // one explore's describe uses, so the pack and explore cannot grade the
-  // same service differently.
+  // one explore's describe uses, so the pack and explore cannot spell the same
+  // rule two ways. They are handed the same DOCUMENTS as well: `explore` reads
+  // the `architecture/` project too (core/explore/explore.ts), which it did not
+  // when this slice moved off the single file — for a while the two differed by
+  // input on a fleet whose sibling document is broken, which is a disagreement
+  // no reader of both could resolve.
   const { inbound, outbound, modelled, apiExpected } = landscapeEvidence({
     id: entry.id,
     parses,
@@ -193,19 +230,16 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
   // map nobody had read. Empty for every fleet that draws none, which is the
   // axis's opt-in and not a finding.
   //
-  // Read through the PROJECT when the landscape file itself declares none, for
-  // the reason `validate/service/specs.ts` pays the same load: `architecture/`
-  // is one LikeC4 project and a fleet's `deployment { }` block is ordinarily a
-  // file beside the landscape, not inside it. A single-file read would report
-  // "this service runs nowhere" over a repo that draws it, which is the one
-  // answer a briefing must never give.
+  // Read off the PROJECT, for the reason `validate/service/specs.ts` pays the
+  // same load: `architecture/` is one LikeC4 project and a fleet's
+  // `deployment { }` block is ordinarily a file beside the landscape, not
+  // inside it. A single-file read would report "this service runs nowhere" over
+  // a repo that draws it, which is the one answer a briefing must never give.
+  // This used to be a SECOND load, made only when the landscape file itself
+  // declared no topology; `land` is that project now, so the fallback would be
+  // the same document parsed twice.
   const topology = parses ? (land.deployment ?? NO_DEPLOYMENT) : NO_DEPLOYMENT;
-  const deployment = serviceTopology(
-    hasDeployment(topology) || !parses ? topology : ((await loadArchitecture(docsDir)).deployment ?? NO_DEPLOYMENT),
-    elements,
-    known,
-    entry.id,
-  );
+  const deployment = serviceTopology(topology, elements, known, entry.id);
 
   const input = { entry, archSpec: existsSync(paths.archSpec), apiExpected };
 
@@ -232,7 +266,7 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
       sources: listField(fm, "sources"),
     },
     archSpec: { vouch_scope: scopeText(header(archText)) },
-    landscape: { present, parses, modelled, inbound, outbound },
+    landscape: { present, parses, broken: brokenDocuments(docsDir, land), modelled, inbound, outbound },
     deployment,
     requirements: reqs.map(packRequirement),
     archRequirements: archReqs.map(packRequirement),
@@ -259,4 +293,17 @@ export async function buildLiving(req: LivingRequest): Promise<LivingSlice> {
       adrs: { count: entry.adrs, path: repoPath(docsDir, paths.adrsDir) },
     },
   };
+}
+
+/**
+ * The `architecture/` documents that failed, docs-relative POSIX, deduped and
+ * sorted — the same spelling `commands/validate/fleet/landscape.ts` uses for
+ * `landscape.invalid` and `core/brief/landscape.ts` for the brief's unparseable
+ * arm, so the three surfaces name one file one way.
+ */
+function brokenDocuments(docsDir: DocsDir, land: LoadedDoc | null): string[] {
+  if (land === null) return [];
+  return [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))]
+    .map((abs) => relative(docsDir, abs).split(/[\\/]/).join("/"))
+    .sort();
 }

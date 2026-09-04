@@ -203,6 +203,15 @@ export function landscapeEvidence(req: LandscapeEvidenceRequest): LandscapeEvide
   const inbound: LandscapeEdge[] = [];
   const outbound: LandscapeEdge[] = [];
   for (const r of relationships) {
+    // An edge whose BOTH endpoints resolve to this service is its own internal
+    // wiring (`svc.web -> svc.db`): filed as inbound it made the service its own
+    // caller — `← <id> "reads"` in `loam context` (verification 2026-09-04) —
+    // and, through `apiExpected` below, told a service nobody calls that it owed
+    // an OpenAPI contract. `core/brief/landscape.ts` drops it for the same
+    // reason. It still TOUCHES the service, which is why the brief's `touched`
+    // and `landscape.service-isolated` read the relationships rather than these
+    // two lists.
+    if (svcOf(r.source) === id && svcOf(r.target) === id) continue;
     const edge = { op: r.op ?? null, title: r.title ?? null };
     if (svcOf(r.target) === id) inbound.push({ service: svcOf(r.source), ...edge });
     else if (svcOf(r.source) === id) outbound.push({ service: svcOf(r.target), ...edge });

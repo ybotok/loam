@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { diagnose } from "../core/doctor/doctor.js";
-import { type DoctorReport } from "../core/doctor/report.js";
+import { type DoctorReport, type ProblemReportStatus } from "../core/doctor/report.js";
+import { REPORTS_DIR } from "../core/doctor/reports/scan.js";
 import { emitJson } from "../core/envelope/json.js";
 
 interface DoctorOptions {
@@ -54,6 +55,47 @@ function writePathLabel(residue: DoctorReport["writePath"]): string {
   return parts.length === 0 ? "clean" : parts.join(" · ");
 }
 
+/**
+ * The order the statuses are printed in — the lifecycle a report walks, so the
+ * row reads left to right the way the corpus drains.
+ *
+ * A `Record` over the union rather than an array of strings, because that makes
+ * tsc the thing that notices a new status: adding one to `ProblemReportStatus`
+ * fails to compile here instead of silently never being printed.
+ */
+const REPORT_STATUS_ORDER: Record<ProblemReportStatus, number> = {
+  open: 0,
+  sent: 1,
+  fixed: 2,
+  superseded: 3,
+  unstated: 4,
+};
+
+/**
+ * The report corpus as one line: how many there are, how they split by status,
+ * and which ordinal the next one takes.
+ *
+ * Zero counts are left out — a status nothing is in is not news, and this row
+ * is read at a glance — while the total is always there, because "twelve
+ * reports" is the fact somebody scanning for the corpus is looking for. An
+ * absent or empty directory prints `(none)` rather than a row of zeroes: a
+ * repository that has never had to write a report is the normal one.
+ */
+function reportsLabel(reports: DoctorReport["reports"]): string {
+  if (!reports.present || reports.total === 0) return "(none)";
+  const counted = new Map<ProblemReportStatus, number>();
+  for (const entry of reports.entries) {
+    counted.set(entry.status, (counted.get(entry.status) ?? 0) + 1);
+  }
+  const split = [...counted]
+    .sort(([a], [b]) => REPORT_STATUS_ORDER[a] - REPORT_STATUS_ORDER[b])
+    .map(([status, count]) => `${status} ${count}`);
+  // The directory's NAME, not `reports.dir`: the payload spells the absolute
+  // path so an agent can act on it, while the row is read by a person standing
+  // in the repository, for whom the absolute spelling is only longer.
+  return [`${REPORTS_DIR}/ ${reports.total}`, ...split, `next ${reports.next}`].join(" · ");
+}
+
 function printDoctor(report: DoctorReport): void {
   console.log(`loam doctor — ${report.healthy ? "healthy" : "blocked"}`);
   console.log(`  runtime       ${report.runtime.package}@${report.runtime.version}`);
@@ -79,6 +121,11 @@ function printDoctor(report: DoctorReport): void {
     + ` (${agents.toolsSource}) · ${agents.plannedFiles} files · ${agents.missingFiles.length} missing`
     + ` · ${agents.staleFiles.length} stale · AGENTS.md ${stampLabel(agents.stamp)}`,
   );
+  // The problem reports, for the same reason and with a stronger one behind it:
+  // the `loam-report` protocol asks a repository to accumulate this corpus, and
+  // until now no loam command mentioned the directory at all. Printed as state,
+  // never as a finding — an open report is not a defect in the repo holding it.
+  console.log(`  reports       ${reportsLabel(report.reports)}`);
   // The write path is state too, and its clean answer is the one worth printing
   // most often: a reader who has just been told the docs are half-written needs
   // to see it go away.

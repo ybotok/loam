@@ -12,8 +12,9 @@ import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { readFile } from "node:fs/promises";
 import { loadFile, type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
-import { elementService, serviceResolver } from "../../../core/c4/resolve/service.js";
-import { landscapePath as landscapeFile } from "../../../core/repo/paths.js";
+import { serviceResolver } from "../../../core/c4/resolve/service.js";
+import { landscapePath as landscapeFile, servicePathsAt } from "../../../core/repo/paths.js";
+import { readModelShapes } from "../../../core/c4/service-model/shape.js";
 import { serviceIdFindings } from "../../../core/repo/entries.js";
 import { listFleetTree, listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
@@ -26,19 +27,20 @@ import { obligationFindings, obligationVocabularyFindings } from "./obligations.
 import { readObligations } from "../../../core/obligations/obligations.js";
 import { obligationsPath } from "../../../core/repo/paths.js";
 import { EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
-import { errorText } from "../checks/vocabulary.js";
+import { errorText } from "../../../core/c4/likec4.js";
 import { serviceTreePath, type DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { drawnSystems, serviceLevelElements } from "./census.js";
+import { drawnSystems, serviceLevelElements, standsForService } from "./census.js";
 import { unreadableLandscape } from "./load.js";
 import { kindTagFindings } from "./kind-tags.js";
+import { mapAttestation } from "./map/attest.js";
+import { bindingFindings } from "./map/bindings.js";
+import { consumerCensus, datastoreFindings } from "./map/consumers.js";
 import { isolationFindings } from "./map/isolation.js";
-import { useCaseFindings } from "./usecases/usecases.js";
+import { fleetUseCaseFindings } from "./map/usecases.js";
 import { viewIdFindings } from "./views/ids.js";
 import { viewsStaleFindings } from "./views/stale.js";
 import { projectFindings } from "./views/projects.js";
-import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
-import { capabilityRequirementIndex, gradableCapabilityIds } from "../../../core/capabilities/findings.js";
-import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
+import { fleetProjectFindings } from "./views/fleet-project.js";
 import type { ParsedView } from "../../../core/c4/parsed/dynamic-views.js";
 import { isUseCase } from "../../../core/usecases/fleet.js";
 
@@ -120,11 +122,23 @@ export async function validateLandscape(
   // the fleet gate refuse while still naming every service it found.
   const tree = await listFleetTree(docsDir, fleet);
   findings.push(...tree.findings);
-  // A model with no renderer project beside it is a fact about `services/`
-  // too, graded here for `service.id-invalid`'s reason: it holds whether or
-  // not the map parses. One warning per service — views/projects.ts says why
-  // a warning, why this run and not `doctor`, and why the root-file gate.
-  findings.push(...projectFindings(docsDir, entries));
+  // Which SHAPE each model has, read once for the whole target: it decides four
+  // of the grades below (`views/projects.ts`) and which documents the merged
+  // project holds (`views/fleet-project.ts`). Over the full enumeration, which
+  // is what `entries` is here even under `--base` — `validate --all` narrows the
+  // TARGETS it grades and never the fleet the renderer would load.
+  const models = entries.map((entry) => servicePathsAt(entry.dir).model);
+  const shapes = fleet === undefined ? await readModelShapes(models) : await fleet.modelShapes(models);
+  // A model and the renderer's project files disagreeing is a fact about
+  // `services/` too, graded here for `service.id-invalid`'s reason: it holds
+  // whether or not the map parses. One warning per service per disagreement;
+  // views/projects.ts says why a warning, why this run and not `doctor`, why
+  // the root-file gate, and why the grade is KEPT rather than spread and
+  // dropped — one of the five gates the merged-project load below, and
+  // re-deriving that fact there would let a cause and its 161-warning cascade
+  // disagree about which state the run is in.
+  const projects = await projectFindings(docsDir, entries, shapes);
+  findings.push(...projects.findings);
   // Before the landscape's own early returns: the authorization and capability
   // vocabularies are fleet facts that do not depend on the map existing or parsing.
   findings.push(...(await permissionFindings(docsDir, entries, fleet)));
@@ -204,10 +218,29 @@ export async function validateLandscape(
     const broken = [...new Set(land.errors.map((e) => e.sourceFsPath).filter((p): p is string => p !== undefined))];
     const spell = (abs: string): string => relative(docsDir, abs).split(/[\\/]/).join("/");
     const named = broken.length === 0 ? "architecture/landscape.likec4" : broken.map(spell).sort().join(", ");
+    // The verb agrees with the LIST, not with the count after it: `named` is a
+    // comma-joined series once two documents broke, and "a, b has 6 error(s)"
+    // is a sentence a reader trips over. The service arm (`service/spine.ts`)
+    // picks the verb the same way off the same list, and these two messages are
+    // read side by side in one report — a run where the fleet line says "has"
+    // and the service line says "have" about the same two files reads as two
+    // different findings.
+    const verb = broken.length > 1 ? "have" : "has";
     findings.push({
       severity: "error",
       code: "landscape.invalid",
-      message: `landscape: ${named} has ${land.errors.length} error(s) — cross-check with services/ impossible`,
+      // The tail is general on purpose. It used to speak about use-case flows
+      // alone, so an author whose MODEL EDGE named a container was told to move
+      // a flow that does not exist (#01). Both shapes are the same defect: loam
+      // grades the `architecture/` project, the renderer loads that project plus
+      // every extending model, and a reference to a container only the model
+      // declares therefore resolves there and not here.
+      message:
+        `landscape: ${named} ${verb} ${land.errors.length} error(s) — cross-check with services/ impossible. ` +
+        "An unresolved name that a service's extending model declares — a use-case hop or an edge " +
+        "naming `<service-fqn>.<container>` — renders for the renderer and resolves for nobody here: " +
+        "name the SERVICE on the map, and the container in that service's own model (a container-level " +
+        "flow lives beside the model that declares it)",
       // Every line carries its own file, because one project's errors can come
       // from more than one document and a bare `L8:` is unactionable then.
       details: land.errors.map((e) =>
@@ -223,10 +256,34 @@ export async function validateLandscape(
   // grader and `sync` read one record; `views/stale.ts` says why a byte
   // compare and why exactly one finding.
   findings.push(...(await viewsStaleFindings(docsDir, tree, land)));
+  // The renderer's own reading of the tree: the map, every extending model and
+  // every `.likec4` beside one, merged into ONE project. It answers two
+  // questions at once and only one of them can be true at a time — either that
+  // project does not parse (`c4.fleet-project-invalid`), or it parsed and its
+  // view-id census is the real one.
+  const merged = fleet === undefined
+    ? { kind: "skipped" as const }
+    : await fleetProjectFindings({
+        docsDir, entries, shapes, fleet, tree,
+        architecture: land,
+        mapExcluded: projects.mapExcluded,
+        known: new Set(entries.map((s) => s.id)),
+      });
+  if (merged.kind === "invalid") findings.push(...merged.findings);
   // Beside staleness, and for the same file: an authored view id that collides
-  // with one loam mints into it takes the whole architecture/ project down in
-  // the renderer while every check here stays green — see views/ids.ts.
-  findings.push(...viewIdFindings(land.viewIds, tree));
+  // with one loam mints into it takes the whole root project down in the
+  // renderer while every check here stays green — see views/ids.ts. The census
+  // is the merged project's when there is one; otherwise the `architecture/`
+  // project's alone, whose claims are spelled relative to that directory and are
+  // made docs-relative here.
+  findings.push(
+    ...viewIdFindings(
+      merged.kind === "clean"
+        ? merged.viewIds
+        : land.viewIds?.map((claim) => ({ ...claim, sourcePath: `architecture/${claim.sourcePath}` })),
+      tree,
+    ),
+  );
   // The three obligation questions that need the map — where each declared rule
   // is applied, which tags resolve to nothing, and which applications no living
   // arch requirement covers. Here rather than beside the vocabulary above
@@ -254,126 +311,81 @@ export async function validateLandscape(
   // can never disagree about what an element stands for.
   const landSvcOf = serviceResolver(land.elements, services);
   const modelled: ReadonlySet<string> = new Set(land.elements.map((e) => landSvcOf(e.id)));
+  // The same set with `#external` removed — the isolation check's input, and
+  // NOT `service-unmodelled`'s: a foreign box bound to one of our directories
+  // still means the directory is drawn, but "deliberately not ours" must not
+  // make it a subject of an advisory about our own map (R4/W12). The two
+  // binding passes have always skipped the tag; this is the third.
+  const external: ReadonlySet<string> = new Set(
+    land.elements.filter((e) => e.tags.includes(EXTERNAL_TAG)).map((e) => e.id),
+  );
+  const ours: ReadonlySet<string> = new Set(
+    land.elements.filter((e) => !external.has(e.id)).map((e) => landSvcOf(e.id)),
+  );
 
-  // Two boxes standing for one service directory. Every join in loam is
-  // `element -> service`, computed by picking the FIRST element that resolves —
-  // so with two of them, which one wins is readdir order, and the edges of the
-  // loser are attributed to a service they do not belong to. Silent until now,
-  // and unfixable by staring at either element on its own.
-  const perService = new Map<string, Elem[]>();
-  for (const e of drawn) {
-    if (e.tags.includes(EXTERNAL_TAG)) continue;
-    const id = elementService(e);
-    perService.set(id, [...(perService.get(id) ?? []), e]);
-  }
-  for (const [id, elems] of perService) {
-    if (elems.length < 2) continue;
-    // A collision only matters where it decides something: a real directory to
-    // attribute to, or a binding somebody wrote down on purpose.
-    if (!services.has(id) && !elems.some((e) => e.service !== undefined)) continue;
-    findings.push({
-      severity: "warn",
-      code: "landscape.binding-duplicate",
-      subject: id,
-      message: `landscape: ${elems.length} elements resolve to service '${id}' (${elems.map((e) => e.id).join(", ")}) — every element→service join picks one of them arbitrarily, so the others' edges are filed under a service that does not own them; keep one element per services/<id>/`,
-    });
-  }
+  // The element↔directory passes: two boxes for one directory, a directory
+  // nobody drew, a binding naming nothing, and an element nobody owns.
+  const systems = drawnSystems(land.elements, services);
+  findings.push(...bindingFindings({ elements: land.elements, drawn, systems, services, modelled, pathOf }));
 
-  for (const id of services) {
-    if (modelled.has(id)) continue;
-    findings.push({
-      severity: "error",
-      code: "landscape.service-unmodelled",
-      subject: id,
-      message: `landscape: ${pathOf(id)}/ exists but nothing in architecture/landscape.likec4 models it — add an element, or bind one with metadata { service '${id}' }`,
-    });
-  }
-
-  // A binding is a claim about this repo wherever it is written — including
-  // inside another element, which the old top-level filter never looked at, so
-  // a typo one level down bound an edge to a service that does not exist and
-  // nothing said so. Every element with a binding answers for it, at any depth.
-  for (const e of land.elements) {
-    if (e.tags.includes(EXTERNAL_TAG) || e.service === undefined) continue;
-    if (services.has(e.service)) continue;
-    findings.push({
-      severity: "error",
-      code: "landscape.binding-unknown",
-      subject: e.service,
-      message: `landscape: '${e.title}' binds to service '${e.service}', but services/${e.service}/ does not exist`,
-    });
-  }
-
-  // Walked over the SYSTEM census — the same derivation the scorecard counts,
-  // so the map's exemptions and the fleet rollup cannot drift — with the two
-  // residual skips that are not exemptions: a bound element is the binding
-  // pass's subject above, and a title naming a real directory is documented.
-  for (const e of drawnSystems(land.elements, services)) {
-    if (e.service !== undefined) continue; // graded by the binding pass above
-    if (services.has(e.title)) continue;
-    findings.push({
-      severity: "warn",
-      code: "landscape.service-undocumented",
-      subject: e.title,
-      message: `landscape: '${e.title}' has no services/${e.title}/ — bind it with metadata { service '<id>' }, or tag it #${EXTERNAL_TAG} if it is not ours`,
-    });
-  }
-
+  // What the fleet's own models say, read once for the two checks below that
+  // need it: a map edge is not the only evidence that a service consumes
+  // something, nor the only evidence that it calls out (map/attest.ts).
+  const drawnIds: ReadonlySet<string> = new Set(drawn.map((e) => e.id));
+  // `census.ts`'s predicate, handed down rather than respelled: a `fleet/map/`
+  // module may not import `fleet/`, and the store grades were skipping a
+  // datastore that IS a service in one of their two halves only.
+  const isService = (e: Elem): boolean => standsForService(e, services);
+  const attestation = await mapAttestation({
+    docsDir,
+    entries,
+    services,
+    resolve: landSvcOf,
+    standsForService: isService,
+    drawnIds,
+    ...(fleet === undefined ? {} : { fleet }),
+  });
+  const attested = attestation.models;
+  const consumers = consumerCensus({ relationships: land.relationships, services, resolve: landSvcOf, attested });
   // The shape advisories run LAST, over the same drawn set and resolver the
   // structural checks used. Any one of them suppresses `landscape.matched`
   // below on purpose: a map with a shape warning did not fully "agree".
+  findings.push(...fleetShapeFindings({ drawn, services, consumers }));
+  const { nestedStores } = attestation;
   findings.push(
-    ...fleetShapeFindings({ drawn, relationships: land.relationships, services, resolve: landSvcOf, pathOf }),
+    ...datastoreFindings({
+      drawn,
+      elements: land.elements,
+      nestedStores,
+      services,
+      resolve: landSvcOf,
+      standsForService: isService,
+      attested,
+      consumers,
+      pathOf,
+    }),
   );
   // A drawn service nothing reaches, graded only where its own model attests
   // a call across its boundary — map/isolation.ts says why the evidence gate.
-  findings.push(...(await isolationFindings({ entries, land, services, modelled, resolve: landSvcOf, pathOf, fleet })));
+  findings.push(...isolationFindings({ land, modelled: ours, external, attested, resolve: landSvcOf, pathOf }));
 
   // The use cases the SAME `architecture/` project declares — every
   // `dynamic view` in the landscape and in every `architecture/usecases/*.likec4`
-  // — graded against the model above (usecases/usecases.ts owns the opt-in and
+  // — graded against the model above (`map/usecases.ts` holds the call and the
+  // two vocabulary reads it needs; `usecases/usecases.ts` owns the opt-in and
   // the grades). They ride this target for `viewsStaleFindings`' reason: a view
   // belongs to no service, and only the fleet run has both the whole model and
   // the enumerated `services/` in view at once.
-  //
-  // The views come from `preloaded` rather than from `land`, and that is the
-  // file-naming rule made mechanical instead of remembered: only the PROJECT
-  // load gives a view the `sourcePath` a finding has to name, while the
-  // single-file fallback a few lines above calls every document `source.c4` —
-  // so a message built from that load would send its reader to
-  // `architecture/source.c4`, a file that has never existed. No preload, no
-  // grading, and nothing to get wrong.
-  //
-  // Read second, and the ladder APPLIED BY ITS OWN FUNCTION rather than
-  // re-spelled here: an absent or unreadable capabilities.yaml means silence for
-  // the whole family, not a fleet full of unresolved tags, so `null` travels
-  // rather than an empty list — which the join would read as "the fleet declares
-  // no capabilities" and grade every tag against. `gradableCapabilityIds` is the
-  // one statement of that rule (`core/capabilities/findings.ts`), and this is a
-  // caller of it precisely so a fourth un-gradable vocabulary state cannot be
-  // fixed in core while the command layer keeps handing the join a whole key set.
-  // `capabilityFleetFindings` above has already paid for this read through the
-  // fleet context's memo.
-  const vocabulary =
-    fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
-  // The requirement index behind the `#req-` tag, read here rather than inside
-  // the use-case package so that package never learns what a capability
-  // document is. Under `--all` every document was already parsed by
-  // `capabilityFleetFindings` above and the fleet memo answers from cache.
-  const capabilityReqs = await capabilityRequirementIndex(
-    vocabulary,
-    fleet === undefined ? async (p) => parseRequirements(await readRequirementsDocument(p)) : (p) => fleet.readRequirements(p),
-  );
   findings.push(
-    ...useCaseFindings({
+    ...(await fleetUseCaseFindings({
+      docsDir,
       views: preloaded?.views ?? [],
       elements: land.elements,
       relationships: land.relationships,
       services,
       resolve: landSvcOf,
-      capabilities: gradableCapabilityIds(vocabulary),
-      requirementsOf: (capability) => capabilityReqs.byCapability.get(capability),
-    }),
+      fleet,
+    })),
   );
 
   if (findings.length === 0) {

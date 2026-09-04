@@ -36,6 +36,7 @@
  * that refused on it would blame the author for a map it could not read.
  */
 import type { LoadedDoc } from "../../c4/likec4.js";
+import type { ExtendingModel } from "../../c4/splice/contract.js";
 import type { CapabilityVocabulary } from "../../capabilities/capabilities.js";
 import { withFeatureCapabilities } from "../../capabilities/delta/overlay.js";
 import type { CapabilityDeltaDoc } from "../../capabilities/delta/uncovered.js";
@@ -165,6 +166,12 @@ export interface FlowCoverageRequest {
   known: ReadonlySet<string>;
   /** The caller's memoised LikeC4 read; see `./overlay.ts`. */
   load?: (path: string) => Promise<LoadedDoc>;
+  /**
+   * The fleet's extending models for the merge preview, as a thunk the overlay
+   * calls only when this feature really brings a flow; see `./overlay.ts` for
+   * why the preview is wrong without them and why it arrives as a function.
+   */
+  models?: () => Promise<readonly ExtendingModel[]>;
 }
 
 /**
@@ -216,5 +223,6 @@ export async function flowCoverage(req: FlowCoverageRequest): Promise<FlowPromis
     declared: gradableCapabilityIds(vocab),
     requirementsOf: (capability) => byCapability.get(capability),
     ...(req.load === undefined ? {} : { load: req.load }),
+    ...(req.models === undefined ? {} : { models: req.models }),
   });
 }

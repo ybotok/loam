@@ -25,9 +25,16 @@ this service's own `model.likec4` plus the landscape (`covers.unknown`, with a d
 hint, is the typo guard — a mistyped entry otherwise costs exactly the coverage it was written
 for), and every `slis[].name` and `alerts[].name` in `health.yaml` must be named by one of them
 (`health.uncovered`, or a signal ships to the on-call rotation with nothing testing it). Edge
-entries below are spelled as this model draws them — `orderService.outbox -> kafka.orderEvents`
-— because the endpoint that matters is the container; `order-service -> payment-service`
-resolves too, through the `metadata { service }` binding on the root element.
+entries below are spelled as this model draws them — `marketplace.orderService.outbox ->
+kafka.orderEvents` — because the endpoint that matters is the container; `order-service ->
+payment-service` resolves too, through the `metadata { service }` binding on the map's element.
+
+Element ids here carry the FULL path, `marketplace.` and all. That is a consequence of the model
+shape rather than a style: `model.likec4` extends the element the fleet map declares inside the
+`marketplace` group, so the container it adds is `marketplace.orderService.db` and no shorter
+spelling of it exists. A service whose model declares its own `specification` and is parsed alone
+mints shorter ids and writes them here — see SCHEMA.md, "Two shapes of a service model", which also
+lists requalifying these lines as a step of the migration between the two.
 
 ## Requirements
 
@@ -40,7 +47,7 @@ key rather than placing a second order or requesting a second authorization. che
 retry on a gateway timeout is not a rare path — it is the normal shape of a mobile checkout —
 and without the key a customer's flaky connection charges the card twice.
 
-Covers: orderService.db, orderService.domain -> paymentService
+Covers: marketplace.orderService.db, marketplace.orderService.domain -> marketplace.paymentService
 
 #### Scenario: checkout-web retries a placement it never saw acknowledged
 - **Given** an order placed under `Idempotency-Key` "ik-8842" with an authorization already requested
@@ -63,7 +70,7 @@ database and then to kafka. A dual write has no failure mode in which both sides
 between them either announces an order nobody stored or stores one nobody hears about, and
 notification-service is the service that pays for the second case.
 
-Covers: orderService.outbox, orderService.outbox -> kafka.orderEvents
+Covers: marketplace.orderService.outbox, marketplace.orderService.outbox -> kafka.orderEvents
 
 #### Scenario: The broker is unavailable when an order is placed
 - **Given** an accepted order whose `OrderPlaced` row is still in the outbox table
@@ -86,7 +93,7 @@ already recorded. The producer's outbox promises at-least-once delivery and a re
 redelivers whatever was in flight, so a consumer without a ledger is a consumer that confirms
 an order it already confirmed — and, once ORD-CANCEL has moved on, resurrects a cancelled one.
 
-Covers: orderService.consumer, kafka.paymentEvents -> orderService.consumer
+Covers: marketplace.orderService.consumer, kafka.paymentEvents -> marketplace.orderService.consumer
 Consumes: payment.PaymentAuthorized
 
 #### Scenario: The same authorization is redelivered after a consumer rebalance

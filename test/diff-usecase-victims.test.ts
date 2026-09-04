@@ -385,3 +385,165 @@ describe("loam diff — the use case a removal breaks", () => {
     }
   });
 });
+
+/**
+ * The provider's OWN internal edge, which is not a consumer of the operation it
+ * is losing.
+ *
+ * The CHANGELOG promised the downgrade this describe measures: a removal whose
+ * only trace in the fleet is the provider calling itself "now reports
+ * `diff.op-removed` (warn) and the run exits 0". Built exactly as it is
+ * described, the run still reported `diff.op-removed-consumed`, `breaking:
+ * true`, exit 1 — the hop had stopped being a victim, but the internal edge
+ * BACKING it was still counted as an edge consumer (verification 2026-09-04,
+ * R3). The rule is the one `usecase.step-unlinked` already states: a service
+ * owes no operationId to itself, whichever end of its own edge is looked at.
+ */
+describe("loam diff — a service calling itself", () => {
+  /** The map the R3 configuration describes: the provider's two containers and the internal edge carrying the op. */
+  function internalMap(extra = ""): string {
+    return `specification {
+  element softwareSystem
+  element container
+  tag req-PAY-CANCEL
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web' {
+    metadata { service 'checkout-web' }
+  }
+  paymentService = softwareSystem 'payment-service' {
+    metadata { service 'payment-service' }
+    w1 = container 'w1'
+    w2 = container 'w2'
+  }
+
+  paymentService.w2 -> paymentService.w1 'cancels' {
+    metadata { op 'cancelOrder' }
+  }
+${extra}}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+  }
+
+  /** One flow over that map, `hop` being the single step. */
+  function cancelFlow(hop: string): string {
+    return `views {
+  dynamic view uc_cancel {
+    #req-PAY-CANCEL
+    title 'Cancel an order'
+
+${hop}  }
+}
+`;
+  }
+
+  /** The base contract: the living one plus the operation every case below removes. */
+  const WITH_CANCEL = `${LIVING_OPENAPI}  /payments/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+`;
+
+  const CHECKOUT_SPEC = `---
+service: checkout-web
+status: draft
+---
+
+# checkout-web
+
+## Requirements
+
+### Requirement: Place an order
+The service SHALL place exactly one order per checkout.
+
+#### Scenario: One order
+- **Given** a basket
+- **When** checkout completes
+- **Then** one order exists
+`;
+
+  async function internal(map: string, flow: string): Promise<Project> {
+    return makeProject({
+      "architecture/landscape.likec4": map,
+      "architecture/usecases/cancel.likec4": flow,
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": WITH_CANCEL,
+      "services/checkout-web/spec.md": CHECKOUT_SPEC,
+    });
+  }
+
+  // Catches: the missing source-side exclusion on the op-edge branch. The hop
+  // is unbacked (both endpoints resolve to one service, so the fallback tier is
+  // empty by design), which leaves the internal EDGE as the only claimed
+  // consumer — and it is the provider's own.
+  it("downgrades to diff.op-removed and exits 0 when only the provider's internal edge names the op", async () => {
+    const p = await internal(internalMap(), cancelFlow("    paymentService.w1 -> paymentService.w2 'cancels'\n"));
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/openapi.yaml", LIVING_OPENAPI);
+      const found = await findingsFor(p, "payment-service");
+      expect(found.find((f) => f.code === "diff.op-removed-consumed")).toBeUndefined();
+      const removed = byCode(found, "diff.op-removed");
+      expect(removed.severity).toBe("warn");
+      const res = await runLoam(p.workDir, "diff", "--base", "main", "--json");
+      expect(res.code).toBe(0);
+      expect((JSON.parse(res.stdout) as JsonDiff).breaking).toBe(false);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // Catches: the same hole one join over. With the hop on the DECLARED pair it
+  // is attributed to the removed operation and its CALLER is the provider, so
+  // the flow it breaks is the provider's own call to itself.
+  it("is not broken by its own removal when the hop's two endpoints are both the provider", async () => {
+    const p = await internal(internalMap(), cancelFlow("    paymentService.w2 -> paymentService.w1 'cancels'\n"));
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/openapi.yaml", LIVING_OPENAPI);
+      const found = await findingsFor(p, "payment-service");
+      expect(found.find((f) => f.code === "diff.op-removed-consumed")).toBeUndefined();
+      expect(byCode(found, "diff.op-removed").details).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  // The control, and it is what keeps the downgrade from being a blind spot: a
+  // SECOND service's edge naming the same operation is a consumer, and the
+  // removal is breaking exactly as it always was.
+  it("still reports diff.op-removed-consumed when another service's edge names the operation", async () => {
+    const consumer = `  checkoutWeb -> paymentService.w1 'Calls cancelOrder' {
+    metadata { op 'cancelOrder' }
+  }
+`;
+    const p = await internal(internalMap(consumer), cancelFlow("    paymentService.w2 -> paymentService.w1 'cancels'\n"));
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/openapi.yaml", LIVING_OPENAPI);
+      const removal = byCode(await findingsFor(p, "payment-service"), "diff.op-removed-consumed");
+      expect(removal.details).toContain('edge checkout-web → payment-service ("Calls cancelOrder")');
+      // Still only the one edge: the provider's own is no more a consumer here
+      // than it was above.
+      expect(removal.details.filter((d) => d.startsWith("edge "))).toHaveLength(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+});

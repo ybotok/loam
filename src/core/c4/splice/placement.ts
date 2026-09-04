@@ -75,7 +75,12 @@ export interface ModelRegion {
 
 /** The model's top-level statements in document order, joined to the parsed elements for services. */
 export function topStatements(scan: ScannedModel, els: Elem[]): TopStmt[] {
-  const topEls = scan.elements.filter((e) => !e.id.includes("."));
+  // An `extend <fqn>` frame is never a top-level declaration of THIS document —
+  // it reopens one another document owns — so it anchors nothing and displaces
+  // nothing. Undotted fqns are the reason the tag is checked rather than the
+  // dot: `extend paymentService { }` would otherwise read as a declaration of
+  // `paymentService` here.
+  const topEls = scan.elements.filter((e) => e.extend !== true && !e.id.includes("."));
   const bound = new Map(els.map((e) => [e.id, elementService(e)]));
   const stmts: TopStmt[] = topEls.map((e) => ({
     kind: "element" as const,
@@ -226,15 +231,20 @@ function beforeSpot(text: string, before: TopStmt): Spot {
   return { at: before.start, bare: true };
 }
 
-/** The line following the statement that ends at `end` — clamped to the closing brace's own spot. */
-function spotAfter(text: string, close: number, end: number): Spot {
+/**
+ * The line following the statement that ends at `end` — clamped to the closing
+ * brace's own spot. Exported for the service-model splice (`./model/merge.ts`),
+ * which asks the same two questions of a `model { }` block it does not group by
+ * service: after this statement, or last thing in the block.
+ */
+export function spotAfter(text: string, close: number, end: number): Spot {
   const nl = text.indexOf("\n", end);
   const at = nl === -1 ? text.length : nl + 1;
   return at > close ? closeSpot(text, close) : { at, bare: false };
 }
 
 /** The last resort: directly before the model's closing brace. */
-function closeSpot(text: string, close: number): Spot {
+export function closeSpot(text: string, close: number): Spot {
   const ls = lineStartAt(text, close);
   if (/^[ \t]*$/.test(text.slice(ls, close))) return { at: ls, bare: false };
   return { at: close, bare: true };

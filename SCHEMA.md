@@ -71,8 +71,8 @@ docs/
     spec.md                             narrative, then `## Requirements` — `Requirement-ID:` REQUIRED
   glossary/<term>.md                 the system's domain vocabulary, one file per term; nesting allowed [authored, opt-in]
   services/<svc>/                    at the root (unfiled), or inside subsystem directories at any depth
-    model.likec4                        boundary C4 (containers/components) [adopt]
-    likec4.config.json                  one LikeC4 project per service model, create-only  [GENERATED: loam subsystem sync]
+    model.likec4                        boundary C4 (containers/components); extends the map, or stands alone [adopt]
+    likec4.config.json                  one LikeC4 project per STANDALONE service model, create-only  [GENERATED: loam subsystem sync]
     spec.md                          living requirements (Requirement/Scenario)  [adopt]
     arch.spec.md                     living ARCHITECTURE requirements (outbox, retries, alerts; Covers:)  [authored]
     openapi.yaml                     API contract                        [adopt / authored]
@@ -108,21 +108,36 @@ service's directory, and the view's steps join to the landscape's own relationsh
 makes the flow checkable rather than merely drawn.
 
 A flow that stays INSIDE one service — the hop sequence behind an arch.spec.md requirement whose
-`Covers:` names containers — cannot live under `architecture/`: the root project excludes
-`services/**`, so a step naming a container does not resolve, and one such file takes the whole
-fleet map down (`landscape.invalid` plus one `spine.landscape-invalid` per service). It lives beside
+`Covers:` names containers — cannot live under `architecture/`: loam parses that directory as its
+OWN document set — the map plus its siblings, and nothing under `services/` — so a step naming a
+container does not resolve there, and one such file takes the whole fleet map down
+(`landscape.invalid` plus one `spine.landscape-invalid` per service). That holds however the models
+are shaped: the renderer's root project may also hold every extending model and draw such a step
+perfectly, and loam still grades the map alone, because the map is the document every cross-service
+check reads. It lives beside
 the model instead: every `.likec4` under `services/<…>/<svc>/` other than model.likec4, plus any
-tagged `dynamic view` inside model.likec4 itself, is that service's own LikeC4 project — the set
+tagged `dynamic view` inside model.likec4 itself, is that service's own LikeC4 project — for an
+extending model, the map plus those documents; for a standalone one, the set
 `services/<svc>/likec4.config.json` registers for the renderer — and `loam validate --service <id>`
 (and `--all`, per service) reads exactly that set, whether or not the project file exists.
 `usecases/<name>.likec4` is the convention; `views.likec4` reads the same. Tag the view
-`#req-<Requirement-ID>` of a requirement in that service's spec.md or arch.spec.md, the tag declared
-in model.likec4's `specification` — the one block the project has. model.likec4 stays THE model:
+`#req-<Requirement-ID>` of a requirement in that service's spec.md or arch.spec.md. The tag has to
+be DECLARED somewhere the project can see: for a standalone model that is model.likec4's own
+`specification` — the one block that project has; for an extending model it is
+`architecture/landscape.likec4`'s block, or a tags-only `specification { tag req-… }` beside the
+`extend` (legal, and it lands the tag in the project's specification). Declaring it in BOTH is a
+duplicate, and the code depends on which document carries the second declaration — the finding
+lands where the file is, not at fleet altitude: `c4.invalid` (an ERROR, and the model's grading is
+suspended behind it) when the tags-only block is in model.likec4, `usecase.flow-invalid` when it is
+in a sibling. `c4.fleet-project-invalid` is the fleet-scope class one step out: TWO SERVICES each
+declaring the same tag locally, where no per-service project sees the collision.
+model.likec4 stays THE model:
 `c4.valid`, `Covers:` and every other model check read it alone, and a sibling that does not parse
 is one `usecase.flow-invalid` while the model keeps grading. Files loam does not read: a `.likec4`
 in a subsystem directory, in a feature directory outside `delta.likec4`/`usecases/`/`deployment/`,
-the generated `subsystems.likec4`, and every UNTAGGED `dynamic view` anywhere — a diagram, never a
-use case.
+the generated `subsystems.likec4`, a sibling the service's own `likec4.config.json` `exclude`
+covers (it is in no project the renderer loads either), and every UNTAGGED `dynamic view`
+anywhere — a diagram, never a use case.
 
 A feature **brings** one the way it brings every other axis: `features/<FEAT>/usecases/<name>.likec4`
 is a views-only document that `loam archive` copies into `architecture/usecases/` and
@@ -130,6 +145,176 @@ is a views-only document that `loam archive` copies into `architecture/usecases/
 would leave behind — so a flow may draw a hop into a service the feature's own `delta.likec4` adds,
 and a hop into an element the merge does NOT land is refused at plan time rather than archived into
 a map the next reader's `loam validate --all` fails on.
+
+### Two shapes of a service model
+
+`services/<…>/<svc>/model.likec4` comes in two shapes, and **the file's own grammar decides which**
+— never a config key, never a flag. loam scans the bytes (comments and strings masked) for a
+top-level `specification { }` block containing an `element` declaration:
+
+- an **extending model** declares no element kind. It is parsed INSIDE the fleet's `architecture/`
+  project — the landscape plus every other `architecture/**/*.likec4` except the generated
+  `subsystems.likec4` — and says what is inside the service with `extend <fqn> { … }` on the element
+  the map already binds to the directory. `<fqn>` is the FULLY-QUALIFIED id: `extend orderService`
+  resolves to nothing when the element is `marketplace.orderService`. No `specification` is needed,
+  no partner is re-declared, and `model {}` or no model at all are both fine. `extend` accepts
+  `#tags` and a `metadata { }` block on the element it opens (merged into it — the map's `service`
+  binding survives) and REFUSES `description`, which belongs on the map's declaration. This is the
+  shape `loam adopt` briefs, and the shape `loam init --create` scaffolds a repository for.
+- a **standalone model** declares at least one `element <kind>` inside a `specification { }` block.
+  It is parsed ALONE, exactly as every model was before this shape existed; it may re-declare the
+  partners it names; and it renders only as a LikeC4 project of its own. Legal forever — a service
+  whose docs are reviewed from its own repository, a model adopted before the fleet had a map — and
+  not what a new model is written as.
+
+**Who declares kinds and tags.** In the extending shape, `architecture/landscape.likec4` is the one
+`specification` block: a kind a model needs and the map does not declare (`element database`,
+`element queue`) is added THERE, once, and a missing one is a single parse error on the model. A
+tags-only `specification { tag req-CANCEL }` beside an `extend` is legal and lands the tag in the
+project's specification — but a tag the map already declares, declared again there, is a duplicate
+blamed on both files. In the standalone shape the model declares everything it uses, which is
+exactly why its copies of the map's elements can drift.
+
+**Seven grades come with the pair**, and one existing grade is narrowed:
+
+| code | shape | what it says |
+|---|---|---|
+| `c4.declaration-diverged` (warn, service) | standalone | an element this model and the fleet map (`architecture/`) both declare, whose `kind`, `title`, tag SET or `metadata { service }` binding differ. The two are joined by id, then by the `metadata { service }` binding both wrote, then by the map element whose id ends with the model's as a dotted tail (`paymentService` ↔ `marketplace.paymentService`) — a tail two map elements answer to joins nothing, and a tail that is a BARE last segment (`db`, `api`) is a key only for a FLEET-LEVEL map element: one no ancestor of which stands for a service, so a top-level element or a box the map draws inside a plain grouping element, never an element drawn inside a service's own. `description` is deliberately not compared — it is prose, nothing grades it, and the other four each change what a view shows or what loam resolves. When the tag sets are all that differ and copying the map's declaration would not clear them — because the difference comes off `specification { element <kind> { … } }` on one side or the other — the message says so and names the document whose specification declares them, rather than asking for a copy. One finding per divergent element; silent while the map does not parse |
+| `c4.element-unowned` (warn, service) | extending | the model declares an element OUTSIDE the element that resolves to this service. Three remedies, first first: a store or component this service owns goes INSIDE the `extend <fqn> { }` block, where its id becomes `<fqn>.<name>`; a system the service reaches belongs in the map, declared once; another service's internals belong in that service's model |
+| `c4.fleet-project-invalid` (warn, landscape) | extending | `--all` only, and not while `landscape.excluded` holds — this load reads what the renderer reads and so has no floor under the map, and one `exclude` entry covering the map turns every extending model's `extend` into an unresolved reference (measured on `examples/docs`: 161 warnings from one line). loam loads the fleet project the way the renderer does — a walk of the docs root, minus everything the root `exclude` covers, minus the generated `subsystems.likec4`, minus every STANDALONE service directory (`service.model-unexcluded` owns that state), minus `features/` (a delta carries its own `specification` and the directory is transient) — and reports each error NOT already present in the map alone or in any per-service project the same run made. A `.likec4` in a SUBSYSTEM directory, above every service, is in that set. This is the class no per-service grade can see: two services declaring the same tag locally, two models adding the same child id, a broken untagged sibling nobody opted in. All of them are renderer-fatal. `locations[0]` is the file the error is in and the message tail names the failure it actually is |
+| `service.likec4-config-stray` (warn, landscape) | extending | a `likec4.config.json` beside an extending model. The renderer registers it as a project of its own rooted at that directory, so the docs root stops being a one-project workspace (`likec4 validate .` then refuses without `--project`), and wherever that nested project claims the model it parses alone, out of the root project where the map's kinds are: the model does not resolve and `export json --project fleet` loses the service's containers (measured, likec4 1.59.2 — which of the two happens depends on the workspace; on `examples/docs` the fleet export was byte-identical with and without the file, on a seeded fleet the containers went). Run `loam subsystem sync`: it deletes the file. Deleting it by hand works too. loam never writes one beside an extending model |
+| `service.model-excluded` (warn, landscape) | extending | the root `likec4.config.json`'s `exclude` covers this model's directory, so the renderer never loads it and the service is a box with nothing inside it. An entry is read the way the renderer reads it (measured, likec4 1.59.2): a bare entry is a raw path PREFIX starting on a `/` boundary, so `services`, `services/`, `services/*`, `services/**`, `services/**/*`, a wildcard segment in the middle and the bare `services/pay` all cover `services/payment-service` — while the glob form `services/pay/**` wants the literal separator and covers nothing there. An entry shaped like a FILE rather than a directory (`services/**/model.likec4`, `**/model.likec4`) is reported too, with a different repair: `loam subsystem sync` maintains only the `services/` directory entries, so that shape has to be narrowed or deleted by hand. The finding quotes the entry verbatim, because the repair is to edit that line; `loam subsystem sync` is the repair for the directory shape |
+| `service.model-unexcluded` (warn, landscape) | standalone | the mirror, and the one that costs most: the root `exclude` does NOT cover a standalone model's directory, so the renderer merges it into the root project and reports every kind and element it declares as a duplicate — blanking the whole project, not just this service. An entry already covering the directory in any of the spellings above satisfies it, and `sync` appends no second glob for one. Same repair |
+| `service.likec4-config-missing` (warn, landscape) | standalone **only** | a standalone model with no project file beside it. It renders nowhere from the docs root until `loam subsystem sync` writes one. An extending model never earns this |
+| `landscape.excluded` (warn, landscape) | either | `--all` only. The root `likec4.config.json`'s `exclude` covers `architecture/landscape.likec4` itself — an `architecture/*.likec4` written for a palette is the spelling that does it. The renderer then loads NO fleet map: it draws nothing, and every extending model in the root project resolves against nothing. loam is unaffected — the architecture loader keeps the map whatever the list says — which is exactly why the state was invisible. `c4.fleet-project-invalid` is suspended behind it, on the cascade rule `permissions.invalid` states: that check reads the renderer's project, so the same entry would come back once per unresolved reference instead of once as the cause, and the message says the fleet project is not graded until the entry goes. The finding quotes the entry verbatim, and `loam subsystem sync` is NOT the repair: it maintains only the `services/` entries and leaves every other line as the team wrote it |
+
+`c4.invalid` and `c4.valid` are unchanged codes with adjusted scope: for an extending model every
+error the per-service project raises is THIS model's, including one the parser blames on the
+landscape, because the map parsed clean on its own; and `c4.valid`'s message reads
+`extends the fleet map — N elements · M relationships`, followed by ` · K tagged flow(s) graded`
+when the service's own project declared any (the one surface a healthy intra-service flow appears
+on). When the map itself does not parse, an
+extending model cannot be read at all: neither code is emitted, and `spine.landscape-invalid` says
+so with the clause ` — and model.likec4 extends it, so the model cannot be read either`.
+
+Every other model-dependent check reads the same slice it always read — the service's OWN elements
+and relationships. For an extending model that is what the project holds minus what the map alone
+holds, plus the **partners** its own edges point at and their ancestors, so `health.yaml`'s
+`kafka` still resolves when the only edge names `kafka.orderEvents`. Nothing reads the map's edges
+as the model's.
+
+**What loam grades is still the `architecture/` project alone.** The renderer's root project is
+WIDER than the fleet map: it also holds every extending model. loam's fleet checks — the spine, the
+bindings, the fleet-shape advisories, and the steps of every `architecture/usecases/` flow — read
+the landscape plus its `architecture/` siblings and nothing else, whatever shape the models take.
+So a cross-service flow names SERVICE elements: a hop naming a container an extending model
+declares renders perfectly and is `landscape.invalid` for loam. That is deliberate, and the reason
+is blast radius — a service's model is graded on its own merits, and one broken model must never
+blank the fleet's own map. A container-level flow has its own home beside the model that declares
+the container. The same holds for a feature's `features/<FEAT>/usecases/` flow, and the gate says
+so before the merge rather than after it: the preview stages no service model, and it ROUTES a
+nested addition into the model that owns that service's interior exactly as `loam archive` would.
+So a hop naming `<service-fqn>.<container>` resolves in neither the preview nor the tree the archive
+leaves, and `usecase.flow-invalid` refuses — where the un-routed preview resolved it, passed the
+gate `--approve` cannot override, and landed a flow the next `loam validate --all` failed on.
+
+**Private stores.** A store one service owns is nested UNDER that service's element — written in
+the service's `extend <fqn> { store = database … }` block, or inside the service's element on the
+map when the map draws that service's containers. The `extend` placement needs an EXTENDING model:
+a model that declares its own `specification` is parsed alone, so `extend <fqn>` resolves nothing
+there, and for such a service the map is the only placement (or migrate the model — see "Two
+shapes of a service model" above). `landscape.datastore-private` names whichever of the two the
+consumer's model shape allows. Drawn beside the services instead it reads as a
+system in its own right (`landscape.datastore-private`). Nesting closes no door: loam counts a
+consumer a service's EXTENDING model attests exactly as it counts one the map draws, so a nested
+store two services reach is `landscape.datastore-shared` — the store's owner plus every service
+whose model draws an outbound call at it or below it. The second consumer draws that call as a
+container-level edge to `<owner-fqn>.<store>` in its OWN model, and the service-level twin on the
+map as usual. Which of the two placements to choose is decided by that edge: a per-service project
+is `architecture/` plus one model, so the edge resolves only when the MAP declares the store —
+written in the owner's `extend` block, the same edge is `c4.invalid` on the consumer ("Could not
+resolve reference to Referenceable named '<store>'"). Nest it on the map when a second consumer is
+foreseeable, and in the model when it is not. The choice is cheap in ONE direction, and the
+direction is the whole of the rule. The two placements give the store the same id,
+`<owner-fqn>.<store>`, so moving the declaration OUT of the owner's `extend` block into the owner's
+element on the map rewrites no edge and no `Covers:` line — measured on `examples/docs`, where
+moving `db` out of order-service's `extend` block into `orderService` on the map left the model at
+12 elements · 8 relationships, left `Covers: marketplace.orderService.db` in its `arch.spec.md`
+resolving, and left checkout-web's container-level edge to it resolving. The move BACK is free only
+while no other service names the store: with checkout-web's edge drawn, putting `db` back into
+order-service's `extend` block is `c4.invalid` on checkout-web's model ("Could not resolve
+reference to Referenceable named 'db'"), or `landscape.invalid` plus one `spine.landscape-invalid`
+per service when that second edge is drawn on the map. `landscape.datastore-shared` needs a second
+consumer to fire, so it always prints in the state where map→extend breaks, and its message says
+so. The consumer census is fleet-scope: it reads
+EXTENDING models only, because their ids are the map's fully-qualified ids and the join is exact,
+while a standalone model's ids are its own file's and are never matched to a landscape element.
+
+**Renderer consequences.** The root project holds the map **and** every extending model, so one
+`npx likec4 start` at the docs root draws the fleet and the inside of every adopted service, and
+the project picker holds one entry. A standalone model is the exception, and it costs two files:
+ONE entry in the root `likec4.config.json`'s `exclude` covering its directory (its kinds would be
+duplicates of the map's inside one project), plus its own `likec4.config.json`, which is what makes
+it a project of its own.
+`loam subsystem sync` maintains both halves — it writes the per-service file for standalone models
+only, and rewrites the root `exclude` so that it holds `services/<tree>/**` for exactly the models
+that stand alone. The rewrite removes the wholesale `services/**` and every `services/<tree>/**`
+naming a directory that IS a service, keeps every other entry in the order the team wrote it (a
+`services/legacy/**` for a directory that is no service survives untouched), and appends the
+standalone entries sorted. It runs when at least one extending model exists, or when a standalone
+model's directory is not covered — so a repository whose models all stand alone behind `services/**`
+is never touched, and a fresh scaffold that gains its first standalone model earns the entry on the
+next sync. `--json` reports it as `projects.exclude`, with what was added and removed; the text view
+prints one line when it rewrote. An entry covers a directory when it names that directory —
+`<dir>`, `<dir>/`, `<dir>/*`, `<dir>/**` and `<dir>/**/*` all do, and a wildcard segment in the
+middle (`services/*/legacy`) matches one level — or when it is a raw path prefix of it from a `/`
+boundary, which is what the renderer measures: `services/pay` covers `services/payment-service`,
+while `services/pay/**` covers nothing there. An entry is normalised the way the renderer
+normalises it before anything is matched: a leading `./`, an inner `/./` and an inner `//` are
+resolved away, a TRAILING `/` is not (bare `architecture` also hides `architecture-old/`,
+`architecture/` does not), `.//` leaves a literal `.` directory and hides nothing, and a BACKSLASH
+is a literal character to the matcher, never a separator — `services\order-service\**` hides
+nothing at all, so loam neither grades on it nor rewrites it. Measured at the 1.59.2 pin against
+`npx likec4 validate .` file counts; the table is in `src/core/c4/root-project/exclude.ts` and
+pinned in `test/root-exclude.test.ts`. A directory the list already covers in
+any of those spellings earns no second entry. `projects.exclude` carries `updated`, `entries`,
+`added`, `removed` and `unreadable` — the last is `true` when the root file exists and loam could
+not read an `exclude` list out of it, which is never the same answer as `entries: []`, and the list
+is then reported untouched. Beside it, `--json` carries
+`projects.created` (the per-service project files written) and `projects.removed` (POSIX paths
+relative to the DOCS ROOT, deleted this run, sorted by path; `[]` otherwise) — and
+`projects.created` is spelled the same way. Both are relative to the docs root, not to the
+repository root, which differ whenever `docsDir` is a subdirectory. A fresh repository is
+scaffolded with
+`exclude: ["**/node_modules/**", "features/**"]`.
+
+**Migrating a standalone model to the extending shape** is a documented recipe an agent performs;
+loam does not rewrite a model, because the comments in a real one are somebody's and not loam's to
+reflow. In order:
+
+1. Write into `architecture/landscape.likec4` any element kind the model uses that the map does not
+   declare (`element database`, `element queue`), and any element the model reaches that the map
+   does not draw — an external system, a broker's topic — as the fleet's own declaration.
+2. Delete the model's `specification` block.
+3. Delete every element the map declares: the service's own element, and every re-declared partner.
+4. Wrap what is left in `model { extend <fqn> { … } }`, `<fqn>` being the fully-qualified id of the
+   map's element for this service. Child ids inside the block stay relative; internal edges may be
+   written inside it.
+5. Move the cross-boundary edges outside the `extend` block and spell both endpoints in full —
+   `marketplace.orderService.outbox -> kafka.orderEvents`.
+6. Requalify every id that names one of those elements from outside the file: the `Covers:` lines in
+   `arch.spec.md`, the `of <element>` and `include` lines of any `views` block, and the hops of any
+   `#req-`-tagged flow beside the model. There is no suffix matching anywhere — `orderService.db`
+   does not answer for `marketplace.orderService.db` — so every model-local nested id has to be
+   rewritten. `health.yaml`'s `dependencies:` are the one place that usually needs no edit, because
+   a dependency resolves when an element of the own slice answers to it **by id, `metadata { service }`
+   binding or title**, and the slice holds the service's own elements plus every endpoint of the
+   model's own edges and each endpoint's ANCESTORS: `kafka` still answers through an edge naming
+   `kafka.orderEvents`, and a peer service still answers through the binding on the map's element.
+   Prefer the service id or a top-level system id there — those two spellings resolve under either
+   model shape, and a model-local nested id does not.
+7. Delete `services/<…>/<svc>/likec4.config.json`.
+8. Run `loam subsystem sync` (it rewrites the root `exclude`), then `loam validate --all`.
 
 ## Subsystems — a navigable tree under `services/`
 
@@ -152,6 +337,13 @@ A directory under `services/` is classified **three ways, never two**:
    classification loses services silently on an ordinary clean merge: one branch deletes an emptied
    subsystem's marker while another moves a service in, and the group directory would otherwise be
    read as one empty service. The fleet is never reported smaller than it is.
+
+A directory named for one of the service's own subdirectories (`adrs/`, `usecases/`, `ui/`) is
+service interior wherever it sits: the walk never reads one as a service or a subsystem, and never
+counts one as the subdirectory that makes its parent a group. Writing the documented
+`services/<id>/usecases/<name>.likec4` slot into a directory that holds no artifact FILE yet used
+to make the walk read `usecases` as a service and its parent as an unmarked group — three errors
+earned by following the instruction `loam init` had just scaffolded.
 
 `subsystem.yaml` is a **marker, not a manifest**:
 
@@ -187,17 +379,26 @@ and two concurrent moves into different groups merge in git without intervention
 **Styling.** Each generated view carries `global style subsystems` — after its `title` and
 `description`, before its `include`/`group` — exactly when the `architecture/` project declares a
 global style with that id: `global { styleGroup subsystems { style element.tag = #external { color gray } } }`
-(or the single-rule `global { style subsystems … }`), in the landscape or in any
-`architecture/usecases/*.likec4`, with the targeted tag declared in the `specification` block.
+(or the single-rule `global { style subsystems … }`), in the landscape or in ANY `.likec4` under
+`architecture/` the root `likec4.config.json`'s `exclude` does not cover — a `palette.likec4` beside
+the map works, and one under an excluded path is loaded by neither the renderer nor loam.
+`architecture/landscape.likec4` is the one exception: loam keeps the map in that set however the
+list is written, because an architecture project with no documents in it reads as a fleet that
+models nothing. With the targeted tag declared in the `specification` block.
 Declaring it is the whole opt-in. loam reads only that the id is declared, never what the group
 says, and writes nothing when it is not — a reference to an undeclared style is a parse error that
 blanks the whole `architecture/` project in the renderer. When the project declares style groups
 under other names only, the file opens with one comment line naming them and saying none is
 `subsystems`, and the views carry the renderer's defaults; there is no single-group fallback.
-Declaring or removing the group makes the file stale once (`subsystem.views-stale`) until the next
-`loam subsystem sync`. A service's own project is a separate LikeC4 project: a group declared under
-`architecture/` does not reach the views beside its `model.likec4`, which need a declaration of
-their own.
+Both halves restale the file once (`subsystem.views-stale`) until the next `loam subsystem sync`:
+declaring or removing the group named `subsystems` changes whether the views carry the
+`global style subsystems` line, and declaring or removing a group under ANY OTHER name changes the
+disclosure comment that lists what is available. Whether a service's own views can borrow that group depends on the shape of
+its model: a model that EXTENDS the map is in the root project, so a `global styleGroup` declared
+under `architecture/` reaches the views beside it and referencing the id there is legal; a model
+that STANDS ALONE is a project of its own, and a group declared under `architecture/` does not reach
+it — those views need a declaration of their own, or the reference is the parse error that blanks
+that project.
 
 Each view carries the **label a human reads**: `title`, and `description` when the marker authors
 one. The title is the subsystem's **path** — every marked ancestor's label and its own, joined with
@@ -238,17 +439,50 @@ does not parse standalone (its `include` lines reference elements the landscape 
 holds **static** views, whose contents loam never reads in any document. Only the LikeC4 renderer,
 which merges the whole `architecture/` project, resolves its includes.
 
+`sync` refuses to rewrite this file while the `architecture/` project cannot be read. The render
+needs the map's elements and its global-style census, and a tolerant "no elements" answer wrote a
+file holding title and description alone — the `global style subsystems` line, every `include` and
+the boundary comment gone — while reporting `updated … 1 subsystem view(s)` and answering `current`
+ever after. So: a load error falls back to the landscape FILE when that parses on its own (a
+duplicate `subsystems` group declared in two `architecture/` documents costs nothing), and when
+that fails too the facts are UNKNOWN. With an existing views file, `sync` then writes nothing about
+it, prints why, and reports the `--json` action `blocked`, with `blocked.reason` reading
+`landscape-invalid` — exit 0, because `loam validate --all`'s `landscape.invalid` is the gating
+surface. With no file yet, and inside a tree-changing verb's commit window (`new`/`move`/`rm`/
+`rename`, whose contract is that the file lands with the change), the tolerant shape is written as
+before and the same note is printed.
+
 The tree's **second renderer file** is per service — `services/<…>/<svc>/likec4.config.json`,
-which `loam subsystem sync` also writes, beside every `model.likec4` that has none. The root
-project is scoped to `architecture/` and excludes `services/**`, and must be, since each model
-declares its own `specification` block; what that exclusion cost went unstated for a release: an
+which `loam subsystem sync` also writes, beside every **standalone** `model.likec4` that has none.
+An extending model needs no such file and never gets one: it belongs to the root project, which is
+where it parses, and a project file beside it is `service.likec4-config-stray` — which `sync`
+DELETES, in the same journaled commit as everything else it writes. A standalone model
+needs one because it cannot share a project with the map — it declares its own kinds, and inside
+one project every declaration is a duplicate blamed on the map too — so `sync` also keeps the root
+`exclude` covering exactly the directories of the models that stand alone. Before extending models
+existed, `services/**` was excluded wholesale and every model needed the file; what that exclusion
+cost went unstated for a release: an
 adopted service was a box on the fleet map with nothing renderable inside it. Measured at the
 pinned likec4, a project file INSIDE a service directory is registered as a project of its own
-regardless of that exclusion, so one `npx likec4 start` at the docs root loads `fleet` plus one
-project per service, each carrying LikeC4's own `index` view of the containers beside the authored
-one, and a model that does not parse breaks only its own project. The file is **create-only** —
-never compared, never rewritten, never removed — under the root config's ownership rule, not the
-views file's: there is no `-stale` grade because nothing can make it stale. Its bytes are a
+regardless of the exclusion, so a docs root holding standalone models loads `fleet` plus one
+project per such service, each carrying LikeC4's own `index` view of the containers beside the
+authored one, and a model that does not parse breaks only its own project. (An extending model
+is inside `fleet`, so a model that does not parse breaks the root project instead — the trade the
+shape makes, and `c4.fleet-project-invalid` is what names it before a reader meets it in the
+renderer.) The file is **create-only for a standalone model** —
+never compared, never rewritten — under the root config's ownership rule, not the
+views file's: there is no `-stale` grade because nothing can make it stale. It is removed in
+exactly one state, and only there: beside a model that EXTENDS the map. That nested project claims
+the model out of the root project — the workspace loads two projects, the model is Invalid inside
+its own one (the map's kinds are not in there with it) and `export json --project fleet` then loses
+the service's containers. Which of the two the workspace does was measured both ways at the 1.59.2
+pin: on a seeded fleet whose model extends a top-level id the containers went; on `examples/docs`
+the root project kept the model and the export was byte-identical. What is true in every state is
+the second project itself — `likec4 validate .` at the docs root refuses without `--project` from
+the moment that file exists. So it is not a harmless leftover, and `loam subsystem sync` deletes
+it. One beside a model that is GONE stays: that one really is the team's — though the same second
+project it registers is there too, so `likec4 validate .` and `likec4 build` at the docs root need
+`--project` while it stands (ROADMAP's "Known and carried, 2026-09-04"). Its bytes are a
 function of the id alone (two keys, `name` and `title`), so placement never changes them and a
 `subsystem move` carries the file with no write of its own — it rides inside the rename the move's
 transaction already journals (in a git-backed repo, commit the files `sync` wrote first: `move`
@@ -267,11 +501,19 @@ nothing is written and the text output says so. No model, no file: a spec-only s
 nothing and gets its file on the first `sync` after its model lands. No legal id, no file either: a
 directory whose name breaks the service-id grammar (`service.id-invalid`) would get a `name` the
 renderer silently drops, and a create-only file the renderer ignores would silence the grade for
-good, so `sync` skips it and the rename that clears `service.id-invalid` earns the file. A file left behind by a
-deleted model is the team's and harmless (measured: a nested project holding no `.likec4` file is
-absent from the project list). `validate --all` grades presence only — one warning per service,
-`service.likec4-config-missing`, on the fleet `landscape` target, never an error, never in
-`--service`, `status` or `doctor`; the fix is `loam subsystem sync`, never a hand-written file. A
+good, so `sync` skips it and the rename that clears `service.id-invalid` earns the file.
+`validate --all` grades presence only — one warning per service with
+a STANDALONE model and no file, `service.likec4-config-missing`, on the fleet `landscape` target,
+never an error, never in `--service`, `status` or `doctor`; the fix is `loam subsystem sync`, never
+a hand-written file. Its two siblings grade the extending shape's version of the same question —
+`service.likec4-config-stray` for a project file that should not be there, `service.model-excluded`
+for a root `exclude` entry that hides the model from the renderer — and `sync` is the repair for
+both: it removes the stray and rewrites the entry. A third reads the same list and is nobody's to
+rewrite: `landscape.excluded` says an entry covers `architecture/landscape.likec4` itself, so the
+renderer loads no map at all — `sync` maintains only the `services/` entries and will not touch that
+line, and the finding quotes it so its author can. It also suspends
+`c4.fleet-project-invalid` for that run, because the renderer's project is exactly what the entry
+broke and grading it would report the one line once per extending model. A
 feature's `delta.likec4` is deliberately out of scope: the directory is transient and
 `loam archive` moves it where a project file would still be registered, so every shipped feature
 would keep a dead project in the list forever.
@@ -728,7 +970,13 @@ There is no manifest of services: the directories under `services/` **are** the 
   existing element, collapsed to the service. Evidence-gated on purpose — a service with no model,
   an unparseable one (`c4.invalid`), or a model reaching nothing is silent here, because an edgeless
   element that is TRUE is a fact and an invented edge is a dependency the fleet then plans against;
-  the adopt brief's `landscape.touched` is the only place that silent state is named.
+  the adopt brief's `landscape.touched` is the only place that silent state is named. And BINARY:
+  one edge closes it, so a map drawing one of five attested calls is silent too — the check is
+  touched/untouched, never a set difference over the attested calls, because loam cannot tell a
+  call the map forgot from one the fleet deliberately does not draw at its own altitude. "Edge in
+  the map" means an edge in the `architecture/` PROJECT — the landscape plus every other `.likec4`
+  under it, minus the generated `subsystems.likec4` — and `loam adopt` reads the same set. An
+  `#external` element is never the subject, whatever directory it is bound to.
 
 **`architecture/landscape.likec4` is required, not optional.** Its absence is a finding, never a
 skipped check: an **error** as soon as `services/` holds at least one service directory, and a
@@ -1027,7 +1275,9 @@ the source for tests.
   diff, tagged to the feature.
 - **`loam archive <FEAT>`** merges the delta into the living state on three axes — **requirements**
   (`spec.md`, and `arch.spec.md` beside it: the two files ride one merge code path, parameterized by
-  filename), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`) — then archives the
+  filename), **API** (`openapi.yaml`), **architecture** (`landscape.likec4`, plus the
+  `services/<…>/<svc>/model.likec4` of each service whose EXTENDING model owns an addition nested
+  inside it) — then archives the
   feature, so the living state stays complete. Archived deltas are the evolution history (like
   `git log`). `--dry-run` prints the whole plan and writes nothing.
 - **Coherence gate:** `loam validate --feature` checks the three axes agree (C4 edge `op` ↔ OpenAPI
@@ -1187,10 +1437,16 @@ the CI escalation.
   such entry into a false `covers.unknown` "typo" pointing at the spec, when the truth was the file.
 - `health.dependency-unmodelled` (service scope): a `dependencies:` id that nothing in the service's
   OWN `model.likec4` answers to — by element id, `metadata { service }` binding, or title; exact
-  match, with a did-you-mean hint. Deliberately the service model and never the landscape: the
+  match, with a did-you-mean hint. Deliberately the service model and never the landscape read on
+  its own: the
   landscape carries only what crosses the service boundary, the model carries everything the service
-  touches (a private store as a nested container — `landscape.datastore-private` is the check
-  pushing it there), and that is the set the on-call file must agree with.
+  touches (a private store nested inside the service's own element — `landscape.datastore-private`
+  is the check pushing it there, and `landscape.datastore-shared` is what a second consumer of that
+  nested store now earns), and that is the set the on-call file must agree with. For an extending model
+  the set is its own SLICE: the elements it adds, plus the partners its own edges point at and their
+  ancestors — so a dependency named `kafka` resolves through an edge that names `kafka.orderEvents`,
+  and a peer service resolves through the `metadata { service }` binding on the map's element the
+  model points at. A partner the model never reaches still does not answer, which is the check.
 
 The rest of the machinery treats the axis as what it is — requirements. `loam archive` merges an
 `arch.spec.md` delta into the living one through the same code path as `spec.md` (same delta
@@ -1866,6 +2122,44 @@ unparseable delta. A living declaration sharing its line with another statement 
 splice map cannot see around — its statement scan runs to the end of the line) refuses the same way:
 give each top-level declaration its own line, then re-run.
 
+**Which document an addition lands in.** The C4 merge asks it per declaration, not per feature. An
+element whose PARENT resolves to a service whose `model.likec4` extends the map is spliced into that
+model — and so is the interior a delta writes inside a service element the same archive introduces,
+since those containers carry no feature tag and would otherwise ride onto the map inside their
+parent's bytes. The parent chain has to be spelled in the map's own ids for either to happen. The
+splice goes inside the `extend <fqn> { … }` block for the parent — appended when the model has none, as
+the `model { }` block itself is appended to a model that has none (an empty file, a `views { }`-only
+file and a tags-only `specification { }` are all extending models, and all three are legal to
+archive into). A
+relationship goes to the model of the service owning its SOURCE when the source is interior to such
+a service, else to the model owning its TARGET, else to the map: a service-level edge stays where
+every fleet check reads it. A service with a STANDALONE model, or none yet, owns nothing — the map
+draws its containers, which is legal and is what every repository did before the extending shape.
+The merged model is proved the way the grader reads it (the `architecture/` documents with this
+archive's own merged landscape in place, plus the model) before anything is written, and it appears
+in the `--json` plan as an ordinary write, so `loam unarchive` restores it from the same
+`.loam-before` snapshot as any other overwritten file. Two limits are deliberate and each refuses at
+plan time with nothing written: a merged model that does not parse beside the map (`merge-failed`),
+and a container-level edge whose other end lives in a THIRD document — another service's interior
+resolves in neither this model nor the map, so that call is drawn service to service on the map. One
+more is silent: a delta that spells the parent under its own name rather than the map's (the legacy
+title-join) keeps landing on the map, because splicing its bytes into a document that shares the
+map's id namespace would carry ids nothing there resolves. It is the WHOLE chain that decides, not
+the outermost box — `marketplace.orderSvc.cache` under a map that spells the service
+`marketplace.orderService` is a title join and stays on the map, even though the group
+`marketplace` is the map's own. A block a delta writes for a NEW service is split — the box to the
+map, its containers to the model — unless the block also draws a relationship between those
+containers. Such an edge names its endpoints by their local names inside the block, so splitting it
+would leave the map naming children it no longer declares; the block rides whole instead, as it did
+before routing existed. The block decides once for everything written inside it: a container or an
+edge the delta tags with the feature follows its block rather than its own tag, so it is placed
+exactly once whichever way the block goes. Re-archiving is idempotent in the models
+too: an addition whose id, or whose title inside the same bound service, an extending model already
+declares is skipped exactly as one the map declares is. The title half is service-scoped in a model
+and global on the map — the map's global join is the fallback for documents written before
+`metadata { service }` existed, and a service's interior is where two boxes called `api` would
+collide.
+
 The OpenAPI merge carries components along with operations, and since the path-item/component
 baselines it decides each one **by verdict rather than by reachability**: a component the feature
 declares with a pin equal to its own content is a quote and is skipped (the living document keeps
@@ -2392,21 +2686,27 @@ through the forge, not through loam features:
   tags and ordered steps, already materialized by the parse loam pays for) and never what a view
   **shows**. It renders nothing, and view *computation* is what is superlinear in edges. (If you
   want diagrams, add a `views` block and render it with LikeC4's own tooling — `npx likec4 start`
-  at the docs root, which renders the fleet map AND every adopted service's model, each as the
-  project its own `services/<svc>/likec4.config.json` declares (written by `loam subsystem sync`;
-  the Layout section has the rule), and `npx likec4 start features/<FEAT>` for a delta, which is
+  at the docs root, which renders the fleet map AND every adopted service's model: an extending
+  model is part of the root `fleet` project, beside the map, and a standalone one is the project its
+  own `services/<svc>/likec4.config.json` declares (written by `loam subsystem sync`; the Layout
+  section, "Two shapes of a service model", has the rule), and `npx likec4 start features/<FEAT>`
+  for a delta, which is
   transient and gets no project — and scope the views, because an `include *` over a fleet-sized
-  landscape takes minutes. Two costs arrive with the first service project. Measured at the
+  landscape takes minutes. Two costs arrive with the first STANDALONE service project, and only
+  with it. Measured at the
   pinned likec4: with more than one project, `likec4 validate` at the docs root refuses without
   `--project <name>`, so a CI step that ran it bare changes (`likec4 build` and `likec4 export` take
-  every project and need no flag). And the renderer's project list grows by one per adopted service
+  every project and need no flag). And the renderer's project list grows by one per such service
   beside `fleet` — LikeC4 projects are separate models, so a box on the fleet map is not a link into
-  that service's project. `loam init`
+  that service's project. A fleet whose models all extend the map pays neither: one project, one
+  picker entry, and the containers of every adopted service reachable from the map's own boxes.
+  `loam init`
   scaffolds the landscape with no `views` block for that reason: loam should not plant a diagram it
   never draws **— and never asks for one: a fleet that draws nothing owes no views block.** It also
-  scaffolds a `likec4.config.json` that scopes the root LikeC4 project to `architecture/`: loam
-  parses every `.likec4` file **alone**, so each one declares its own `specification` block, and a
-  renderer given the whole tree at once merges them and reports every declaration as a duplicate.)
+  scaffolds a `likec4.config.json` whose `exclude` is `["**/node_modules/**", "features/**"]`: a
+  feature's `delta.likec4` re-declares the landscape's own identifiers and carries a `specification`
+  block of its own, so it is read alone, and `services/` is deliberately NOT excluded — the models a
+  fresh repository writes extend the map and the root project is the only place they parse.)
   `loam validate --all --json` over the same 120 services used to be the outlier at ~13–14 s — one
   fresh LikeC4 workspace per service; since the batched loader it parses the run's C4 documents in
   one shared workspace and answers in **~0.7 s median** on the committed 120-service benchmark
@@ -2512,7 +2812,28 @@ repairing anything:
 
   `loam-report` is a separate support protocol, generated as a command and skill in every profile
   but never appended to the lifecycle. It writes
-  `loam-reports/YYYY-MM-DD-<short-slug>.md` in the current repository with expected/actual behavior,
+  `loam-reports/NNN-YYYY-MM-DD-<short-slug>.md` — `NNN` an ORDINAL of at least three digits,
+  zero-padded, one more
+  than the highest already in the directory (`001` when it is empty or absent, and widening past
+  three digits rather than reusing a number once a corpus gets there), so a report has a
+  short handle a commit message, an issue or the next report can cite. The document carries a
+  `- Status: open` line beside its classification, whose vocabulary is `open` / `sent` (handed to
+  the author, set by whoever forwards it) / `fixed in <version>` / `superseded by <NNN>`, and
+  `loam doctor` reads the directory: how many reports it holds, how many stand at each status, and
+  which ordinal comes next. `doctor --json` carries that as the `reports` object — `reports.dir`
+  (the ABSOLUTE path of the directory, `loam-reports/` included, so an agent writes inside it rather
+  than joining the name on a second time), resolved beside the `loam.json` that parsed, or beside
+  the one loam FOUND when it did not parse, and only beside the run directory when there is no
+  config file at or above it — `doctor` is the preflight that runs precisely when the config may not
+  resolve, so it counts the corpus that is there rather than handing out an ordinal five existing
+  reports already used — `reports.present`, `reports.total`, `reports.next`, and
+  `reports.entries[]` with a `file`, an `ordinal` (`null` for a name written before the numbering)
+  and a `status`, in ordinal order, numerically, with unnumbered names last (byte order stopped
+  being report order at exactly the width the ordinal widens to: `1000-…` sorts before `998-…`). The status is read from the report's HEADER FIELD BLOCK alone — the lines above
+  the first `##` heading, quoted code skipped in both markdown spellings (a fence, closed only by a
+  run of the same character at least as long as the one that opened it, and an indented block,
+  which is how the protocol prints its own template) — so a report quoting this protocol's own
+  template still counts as whatever its own header says. The body carries expected/actual behavior,
   version, stable envelope and finding codes, relevant locations, write state, a minimal safe
   reproduction, classification and missing evidence. Before writing, the agent redacts secrets and
   home paths and reduces command output to the excerpt that proves the symptom. It never retries a
@@ -2621,23 +2942,43 @@ hand-merges the block. That resolution has a documented cost, not a surprise: a 
 landscape moves the file away from the bytes the archive's `.loam-before/` snapshot recorded, so a
 later `loam unarchive` of that feature refuses with `snapshot-stale` and needs `--force` — the
 resolver is trading undo precision for the merge, and should know it. The trigger for revisiting is
-written down so nobody relitigates it early: when landscape merge conflicts become routine — weekly,
-not monthly — move per-service internals fully into `services/<svc>/model.likec4` and thin the
-landscape down to top-level elements plus cross-service edges. Until then, one file keeps the fleet
-map one diffable document.
+written down so nobody relitigates it early — and half of what it once asked for has already
+arrived. Per-service internals now live in `services/<svc>/model.likec4` **by default**, and that is
+where a second team adopting a service writes, so it adds nothing to this file. It is a default and
+not a prohibition: the map MAY hold a service's interior, and sometimes must. A store a second
+service will reach has to be declared where that consumer's project can see it — a per-service
+project is `architecture/` plus one model — so it is nested inside the owner's element ON THE MAP,
+which is exactly what "Private stores" above prescribes and what `landscape.datastore-private` and
+`landscape.datastore-shared` offer as a placement. A delta spelling a parent in the legacy
+title-join lands its container on the map too. What an extending model owns is what it DECLARES,
+not everything below the service's element. `loam archive` routes rather than forbids — a delta's
+additions nested under a service whose model extends the map, with the whole parent chain spelled
+in the map's own ids, are spliced into that model's `extend <fqn> { … }` block instead of this
+file, and the merged model is proved to parse beside the merged map before anything is written. What is left of the
+trigger is the CROSS-SERVICE EDGE, which still exists twice — container-level in the model, service
+level here — because the spine, the platform census and every other fleet check read this file
+alone. So: when landscape merge conflicts become routine — weekly, not monthly — thin the map to
+elements plus cross-service edges and teach the fleet checks to read the edges out of the models
+that attest them. Until then, one file keeps the fleet map one diffable document, and
+`landscape.service-isolated` remains the nudge that carries an attested call up into it.
 
 ## Two flows
 
 - **Bootstrap (reverse):** `loam adopt --service <id>` emits a **brief**, not an extraction — the
   target paths (and which already exist, to be diffed and never overwritten), the grammar of each
-  artifact, what the living landscape already says about the service, the frontmatter to write, the
+  artifact, what the living fleet map — the `architecture/` project, not the landscape file alone —
+  already says about the service, the frontmatter to write, the
   checks `loam validate --service <id>` will then run, and the ones that do not exist. One target is
   not under `services/<id>/`: `architecture/landscape.likec4`, carried with `action: "edit"` and a
   `landscape.instruction` naming the write this service owes the fleet map — the element while
   nothing in the map resolves to the service, the EDGES while an element does and no edge touches it
   (`landscape.touched: false`, with `landscape.attested` listing the calls the service's own
   model.likec4 declares across its boundary); absent, and the instruction `null`, only once an
-  element resolves and an edge touches it. An agent reads the code and writes draft
+  element resolves and an edge touches it. `landscape.callersKnown` says whether loam could read WHO
+  CALLS this service — true when the `architecture/` project parses, and true when it does not but
+  `architecture/landscape.likec4` does. It is what an empty `landscape.expects` has to be read
+  against: only a readable landscape makes "nothing calls this service" evidence, and it is the one
+  fact `openapi.yaml`'s `required` is derived from. An agent reads the code and writes draft
   `model.likec4` + `spec.md` + `openapi.yaml` + `adrs/`, `runbook.md`, `health.yaml`, and makes that
   one addition to the shared map. A human promotes `draft` -> `verified` with `loam vouch`.
 - **Forward (generative):** author `features/<FEAT>/delta.likec4` -> `loam delta <FEAT>` projects it

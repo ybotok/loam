@@ -16,9 +16,10 @@ export const CONTEXT_COMMAND = `- \`loam context <service>\` assembles the docs 
   requirements and arch requirements VERBATIM (bodies and scenarios included),
   the OpenAPI operations with the requirements governing each, the AsyncAPI
   messages with their send/receive direction, the fleet edges one hop out with
-  the map's own health beside them (\`landscape.present\`/\`parses\` — an empty
-  edge list under a map that does not parse is "nobody could look", never
-  "nobody calls this"), the \`Requires:\` permissions resolved against the
+  the map's own health beside them (\`landscape.present\` is the FILE,
+  \`landscape.parses\` is the whole \`architecture/\` project the renderer loads,
+  as \`loam adopt\` reads it — an empty edge list under a map that does not parse
+  is "nobody could look", never "nobody calls this"), the \`Requires:\` permissions resolved against the
   vocabulary (an undeclared entry is carried with \`declared: false\`, never
   refused — and when the vocabulary ITSELF does not read, its parse failure
   rides beside them, so \`declared: false\` there means nobody could look, not

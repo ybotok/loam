@@ -113,6 +113,37 @@ describe("the fix-table parser reads the shipped /loam-check body", () => {
     expect(scopes).toEqual(["--service <id>", "--feature <FEAT-id>"]);
   });
 
+  it("usecase.flow-invalid's two arms carry the two scopes that raise them", () => {
+    // D9: both rows sat in the `--service` run — a markdown table ends at the
+    // first line that is not a `|` row, and nothing separated the feature-delta
+    // rows from the service ones — so `loam explain usecase.flow-invalid --json`
+    // told an agent the feature/archive arm was raised by `--service <id>`.
+    const scopes = rows.filter((r) => r.codes.includes("usecase.flow-invalid")).map((r) => r.scope);
+    expect(scopes).toEqual(["--service <id>", "--feature <FEAT-id>"]);
+    // The rows that travelled with it: each is about a `features/<FEAT>/`
+    // document and none of them can be raised by a service run.
+    for (const code of [
+      "capability.uncovered",
+      "capability.remove-requirement-realized",
+      "glossary.term-exists",
+      "usecase.flow-exists",
+      "deployment.doc-exists",
+      "deployment.doc-invalid",
+      "deployment.doc-reserved",
+    ]) {
+      expect(rows.filter((r) => r.codes.includes(code)).map((r) => r.scope), code)
+        .toEqual(["--feature <FEAT-id>"]);
+    }
+  });
+
+  it("usecase.step-unlinked is answered for the scope its header claims", () => {
+    // D9's other half: the code's own text says "surfaced by `loam validate
+    // --service <id>`" for a hop into a sibling's stand-in, and the only row
+    // was the `--all` one.
+    const scopes = rows.filter((r) => r.codes.includes("usecase.step-unlinked")).map((r) => r.scope);
+    expect(scopes).toEqual(["--service <id>", "--all"]);
+  });
+
   it("walks every workflow body, not only /loam-check: the verify notices resolve", () => {
     // The verify text report prints its notice codes directly above the
     // explain footer, so this family being answerable is what keeps that

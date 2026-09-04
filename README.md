@@ -71,7 +71,8 @@ Topology changes where loam's checks pay off; it does not change the lifecycle:
   nesting depth, decides which `services/<id>/` owns an element.
 
 For example, the frozen `service` term can name an application while its internal modules remain
-ordinary C4 elements:
+ordinary C4 elements. This is `architecture/landscape.likec4`, the fleet map — the one document
+that declares the kinds:
 
 ```likec4
 specification {
@@ -91,6 +92,11 @@ model {
   }
 }
 ```
+
+The modules can equally live in `services/commerce-app/model.likec4`, which is the ordinary place
+for them once the application has one — as an **extending model**, declaring no kinds of its own and
+saying `extend commerce { … }` on the element above. SCHEMA.md's "Two shapes of a service model" has
+that shape, the older one that parses alone, and the rule that picks between them.
 
 An internal edge normally carries no `metadata { op }`: that key specifically joins a call to the
 governed boundary's OpenAPI contract. An architecture requirement can instead say
@@ -359,7 +365,7 @@ cannot hold.
 | `loam new <FEAT>` | `--title <text>` `--touches <id>` `--new-service <id>` `--capability <id>` | Scaffold a feature: intent, C4 delta, a requirement delta per service named by `--touches`/`--new-service`, and a capability delta per promise named by `--capability` (all repeatable) |
 | `loam show <service\|FEAT>` | `--type <kind>` | Everything loam knows about one service or feature. A feature's JSON includes a semantic `review` pack: intent, exact architecture objects, API/event slices, dependencies, artifacts, verification, blockers and next actions. `--type` forces an ambiguous reading |
 | `loam subsystem <verb> [names...]` | `--into <name>` `--under <name>` `--title <text>` `--description <text>` `--owner <name>` | Manage the grouping tree under `services/` — a navigable tree no identity depends on. `new`/`rm`, `move … --into`, `rename`, `list`, `history`, `sync` |
-| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 45 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them: 48,788 bytes to 18,846 on the example fleet's payment-service |
+| `loam adopt` | `--service <id>` `--subsystem <name>` `--targets` | Brief an agent to write this service's baseline into the docs repo as `draft`: the target paths, the grammar of each, what the landscape already says — and, for an element no edge touches, the edges the service's own model.likec4 attests — and the checks that follow. Writes nothing. `--targets` narrows it to what varies by service — the walk, the 52 checks and the seventeen statements of what nothing checks are the same bytes everywhere, so a `full` field names the one run that carries them: 54,833 bytes to 20,062 on the example fleet's payment-service (measured 2026-09-04) |
 | `loam delta <FEAT>` | `--service <id>` | Project a feature onto one service: the intent, its requirement deltas with every body and Given/When/Then line verbatim, the endpoints it adds or retires, and the edges around it. Doubles as a coding-agent task |
 | `loam gherkin [<FEAT>]` | `--service <id>` `--dry-run` | Emit spec scenarios as digest-stamped Gherkin `.feature` files into the service repo's `<gherkinDir>/loam/` |
 | `loam rebase [<FEAT>]` | `--service <id>` `--dry-run` `--living` | Pin the feature to the living versions it was written against, on the requirement axis and the contract axis. `--living` takes no feature: it pins the living corpus's `Realizes:` entries to the capability requirements they name, which is what makes `capability.realizes-stale` able to fire later |
@@ -523,7 +529,7 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
 `stability` job has still to be observed green. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **161 test files** (counted 2026-09-03): the count is graded
+generation come later. Behind that status stand **173 test files** (counted 2026-09-04): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
