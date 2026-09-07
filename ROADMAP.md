@@ -27,10 +27,10 @@ dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
 
-_Measured 2026-09-04 at `0.2.0-alpha.6`, and dated because neither number has a cheap derivation:_
+_Measured 2026-09-07 at `0.2.0-alpha.7`, and dated because neither number has a cheap derivation:_
 lint, typecheck, `npm run arch:check` and `npm run meta:check` green; `npm test` passing
-**3,772/3,772 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
-coverage gate passing with **92.78% statements, 84.65% branches, 97.08% functions, and 94.63%
+**3,802/3,802 tests**, with two `skipIf(asRoot)` cases the root gate container cannot run; the
+coverage gate passing with **92.88% statements, 84.83% branches, 97.14% functions, and 94.70%
 lines** against its thresholds of 91 / 82 / 95 / 93; and `npm run release:check` plus
 `npm run test:package` green against the real tarball.
 

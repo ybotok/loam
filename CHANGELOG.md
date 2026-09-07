@@ -10,6 +10,18 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.7] - 2026-09-07
+
+Infrastructure belongs on the fleet map, and the render is navigable at fleet scale. Still a
+prerelease on the `alpha` line: `npm i @ybotok/loam@alpha` installs it. One code is REMOVED —
+`landscape.datastore-private`, the first code this project has ever retired — and no flag, path or
+payload key is. What a repo NOTICES on its first `validate --all` after upgrading: a
+`subsystem.views-stale` error against the new `architecture/services.likec4`, in every fleet whose
+map draws a service, cleared by one `loam subsystem sync`; a second one against
+`architecture/subsystems.likec4` wherever subsystems exist, because those views gained boundary
+edges and an `of` subject; and silence where a datastore drawn beside the services used to be told
+to move.
+
 **Upgrading: one `loam subsystem sync` per docs repo, once.** `loam validate --all` reports
 `subsystem.views-stale` (error) against the new `architecture/services.likec4` in EVERY existing
 docs repo whose fleet map draws a service — flat fleets with no subsystems included, because the
