@@ -30,7 +30,7 @@ import { UNCHECKED } from "./unchecked.js";
 import { landscapeContext, type LandscapeContext } from "./landscape.js";
 import { landscapeArtifact } from "./map/owed.js";
 import { exampleFor, extendPoint, FQN } from "./map/extend.js";
-import { ARTIFACTS, type BriefTarget } from "./targets.js";
+import { ARTIFACTS, USECASES_DIR, type BriefTarget } from "./targets.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { EXTERNAL_TAG } from "../vocabulary/maturity.js";
 
@@ -215,10 +215,21 @@ export async function serviceBrief(
 
   const targets: BriefTarget[] = [];
   for (const { key, ...artifact } of ARTIFACTS) {
-    // `adrs/` is a directory, and an empty one is not an existing artifact —
-    // reporting it as present would tell the agent to diff against nothing.
-    const dir = key === "adrsDir";
-    const exists = dir ? await hasMarkdown(paths[key]) : existsSync(paths[key]);
+    // `adrs/` and `usecases/` are DIRECTORIES, and an empty one is not an
+    // existing artifact — reporting it as present would tell the agent to diff
+    // against nothing, and for `usecases/` it would also tell the agent an
+    // optional slot was already taken.
+    //
+    // `usecases/` is the one target with no `ServicePaths` entry, and that is
+    // deliberate rather than an omission: nothing loam checks JOINS on that
+    // path. The slot a service's flows are graded out of is its whole LikeC4
+    // project (`core/usecases/service/flows.ts` reads every `.likec4` under the
+    // directory), so `usecases/<name>.likec4` is a convention this brief
+    // publishes, not a path a writer writes — and `targets.ts` is where a
+    // convention belongs.
+    const ext = key === "adrsDir" ? ".md" : key === "usecasesDir" ? ".likec4" : null;
+    const at = key === "usecasesDir" ? join(paths.dir, USECASES_DIR) : paths[key];
+    const exists = ext === null ? existsSync(at) : await hasEntry(at, ext);
     targets.push({
       ...artifact,
       ...(key === "openapi" ? { required: owesApi } : {}),
@@ -228,7 +239,7 @@ export async function serviceBrief(
       // `extend <fqn> {` copied verbatim is a document that does not parse.
       shape: artifact.shape.map((rule) => rule.replaceAll(FQN, extend.id)),
       ...(artifact.example === undefined ? {} : { example: exampleFor(artifact.example, extend, service) }),
-      path: dir ? `${rel(paths[key])}/` : rel(paths[key]),
+      path: ext === null ? rel(at) : `${rel(at)}/`,
       exists,
       action: exists ? "diff" : "create",
     });
@@ -292,14 +303,20 @@ export async function serviceBrief(
   };
 }
 
-async function hasMarkdown(dir: string): Promise<boolean> {
+/**
+ * Does this directory already hold an artifact of the given extension? The
+ * "exists" question for the two DIRECTORY targets — `adrs/` (`.md`) and
+ * `usecases/` (`.likec4`) — where an empty or absent directory is the same
+ * answer, because neither is something to diff against.
+ */
+async function hasEntry(dir: string, ext: string): Promise<boolean> {
   if (!existsSync(dir)) return false;
   const entries = await readdir(dir, { withFileTypes: true });
   // `statSync` for the symlink case: a Dirent never follows one, so `isFile()`
   // is false for a symlinked ADR and the directory reads as empty (repo.ts's
   // `entryIs` is the same rule for `services/` and `features/`).
   return entries.some((e) => {
-    if (!e.name.endsWith(".md")) return false;
+    if (!e.name.endsWith(ext)) return false;
     if (e.isFile()) return true;
     if (!e.isSymbolicLink()) return false;
     try {

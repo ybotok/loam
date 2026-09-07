@@ -16,6 +16,9 @@ import { describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { LikeC4 } from "likec4";
+import { loadFile } from "../src/core/c4/likec4.js";
+import { listFleetTree } from "../src/core/repo/repo.js";
+import { renderServiceOverviews } from "../src/core/repo/tree/render/views.js";
 import {
   coherentFixture,
   LANDSCAPE,
@@ -48,6 +51,8 @@ function nestedFixture(): Record<string, string> {
 }
 
 const VIEWS = "architecture/subsystems.likec4";
+/** The OTHER generated file `loam subsystem sync` owns — one overview view per service the map draws. */
+const SERVICE_VIEWS = "architecture/services.likec4";
 
 describe("loam subsystem sync — the renderer", () => {
   it("writes one view per subsystem, sorted by path, one include per line, members resolved to landscape ELEMENT ids", async () => {
@@ -83,6 +88,8 @@ describe("loam subsystem sync — the renderer", () => {
           "    group 'Payments' {\n" +
           "      include paymentService\n" +
           "    }\n" +
+          "\n" +
+          "    include paymentService -> *, * -> paymentService\n" +
           "  }\n" +
           "\n" +
           "  // services/web\n" +
@@ -91,6 +98,8 @@ describe("loam subsystem sync — the renderer", () => {
           "    group 'web' {\n" +
           "      include checkoutWeb\n" +
           "    }\n" +
+          "\n" +
+          "    include checkoutWeb -> *, * -> checkoutWeb\n" +
           "  }\n" +
           "}\n",
       );
@@ -164,18 +173,32 @@ describe("loam subsystem sync — the renderer", () => {
     const addedA = added(aLines);
     const addedB = added(bLines);
     // A filed member turns an empty view into a boxed one, so the move adds
-    // the box's two lines beside the include. Three lines instead of one, and
-    // every line that NAMES anything is still disjoint between the two
+    // the box's two lines beside the include, the member's boundary line, and
+    // the blank line that separates the two blocks. Five lines instead of one,
+    // and every line that NAMES anything is still disjoint between the two
     // variants — which is the line-orientation this file promises.
-    expect(addedA).toEqual(["    group 'payments' {", "      include paymentService", "    }"]);
-    expect(addedB).toEqual(["    group 'web' {", "      include checkoutWeb", "    }"]);
-    const naming = (lines: string[]): string[] => lines.filter((l) => l.trim() !== "}");
+    expect(addedA).toEqual([
+      "    group 'payments' {",
+      "      include paymentService",
+      "    }",
+      "    include paymentService -> *, * -> paymentService",
+      "",
+    ]);
+    expect(addedB).toEqual([
+      "    group 'web' {",
+      "      include checkoutWeb",
+      "    }",
+      "    include checkoutWeb -> *, * -> checkoutWeb",
+      "",
+    ]);
+    const naming = (lines: string[]): string[] => lines.filter((l) => l.trim() !== "}" && l.trim() !== "");
     expect(naming(addedA).filter((l) => naming(addedB).includes(l))).toEqual([]);
-    // A bare `}` is structural and repeats by construction, so it is excluded
-    // here rather than asserted away: whether git merges the two moves is not
-    // a question about identical line TEXT, and it is answered where it can
-    // be answered honestly — by git itself, in test/subsystem-move.test.ts's
-    // "two moves into DIFFERENT groups merge without intervention".
+    // A bare `}` and a blank separator are structural and repeat by
+    // construction, so both are excluded here rather than asserted away:
+    // whether git merges the two moves is not a question about identical line
+    // TEXT, and it is answered where it can be answered honestly — by git
+    // itself, in test/subsystem-move.test.ts's "two moves into DIFFERENT
+    // groups merge without intervention".
     expect(addedA.filter((l) => l.trim() === "}")).toEqual(["    }"]);
   });
 
@@ -211,6 +234,14 @@ describe("loam subsystem sync — the renderer", () => {
           "    include mp.core.checkoutWeb\n" +
           "    include mp.core.paymentService\n",
       );
+      // The same element the box comes from is what the view is declared `of`,
+      // and that keyword is the whole of the navigation: LikeC4 then computes
+      // `navigateTo` into this view from every OTHER view that draws `mp.core`,
+      // so the fleet map's own group box becomes click-through with no
+      // authored link anywhere. Measured at 58 services in 11 groups: the fleet
+      // view's 11 group boxes all navigate, and a subsystem view's neighbouring
+      // group boxes navigate into THEIR subsystem views.
+      expect(bytes).toContain("  view subsystem_payments of mp.core {\n");
       // No synthetic box: one boundary, the author's.
       expect(bytes).not.toContain("group '");
       expect(bytes).not.toContain("// model:");
@@ -242,6 +273,10 @@ describe("loam subsystem sync — the renderer", () => {
       expect(bytes).toContain("  // model: no boundary — mp.core also holds services outside this subsystem.\n");
       expect(bytes).not.toContain("include mp.core\n");
       expect(bytes).toContain("    include mp.core.paymentService\n");
+      // No owning element, so nothing to be `of`: the view stays unanchored and
+      // earns no navigation rather than borrowing a box that holds strangers.
+      expect(bytes).toContain("  view subsystem_payments {\n");
+      expect(bytes).not.toContain("view subsystem_payments of ");
     } finally {
       await p.destroy();
     }
@@ -291,6 +326,14 @@ describe("loam subsystem sync — the renderer", () => {
           "      }\n" +
           "      include checkoutWeb\n" +
           "    }\n" +
+          // The boundary lines sit OUTSIDE every `group { }`, at view level, and
+          // that placement is the measured one: inside the block the same
+          // predicate parses and validates with zero errors and draws each
+          // neighbour as a CHILD of the group — a diagram claiming a service
+          // outside the subsystem is inside it. `render/body.ts` records it.
+          "\n" +
+          "    include checkoutWeb -> *, * -> checkoutWeb\n" +
+          "    include paymentService -> *, * -> paymentService\n" +
           "  }\n",
       );
       // The child's own view is the same box without the parent around it —
@@ -298,7 +341,8 @@ describe("loam subsystem sync — the renderer", () => {
       // `Platform` while the box keeps the subsystem's own label.
       expect(bytes).toContain(
         "  view subsystem_platform__order_2dflow {\n    title 'Platform / Order flow'\n" +
-          "    group 'Order flow' {\n      include paymentService\n    }\n  }\n",
+          "    group 'Order flow' {\n      include paymentService\n    }\n" +
+          "\n    include paymentService -> *, * -> paymentService\n  }\n",
       );
       expect(bytes).not.toContain("// model:");
     } finally {
@@ -537,6 +581,8 @@ describe("the repository's styling: `global style subsystems` when the map decla
           "    group 'Payments' {\n" +
           "      include paymentService\n" +
           "    }\n" +
+          "\n" +
+          "    include paymentService -> *, * -> paymentService\n" +
           "  }\n",
       );
       expect(bytes).toContain("    title 'web'\n    global style subsystems\n    group 'web' {\n");
@@ -599,15 +645,27 @@ describe("the repository's styling: `global style subsystems` when the map decla
     }
   }, 60_000);
 
-  it("declaring the group AFTER a sync is the one `subsystem.views-stale` the change costs, and one sync clears it", async () => {
+  it("declaring the group AFTER a sync restales BOTH generated files, and one sync clears them", async () => {
     const files = nestedFixture();
     const p = await makeProject(files);
     try {
       expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       await p.write("architecture/landscape.likec4", styledLandscape(SUBSYSTEMS_GROUP));
       const stale = await runLoam(p.workDir, "validate", "--all", "--json");
-      expect(subsystemFindings(stale.stdout).map((f) => f.code)).toEqual(["subsystem.views-stale"]);
-      expect(JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout).action).toBe("updated");
+      // TWO findings under ONE code, one per generated file. The subsystem
+      // views gain `global style subsystems`; the per-service views gain the
+      // DISCLOSURE that a palette exists under another name — the style census
+      // is one census and each file asks it about its own reserved group, so a
+      // fleet declaring either group restales both.
+      const findings = subsystemFindings(stale.stdout);
+      expect(findings.map((f) => f.code)).toEqual(["subsystem.views-stale", "subsystem.views-stale"]);
+      expect(findings.map((f) => f.subject).sort()).toEqual([
+        "architecture/services.likec4",
+        "architecture/subsystems.likec4",
+      ]);
+      const repaired = JSON.parse((await runLoam(p.workDir, "subsystem", "sync", "--json")).stdout);
+      expect(repaired.action).toBe("updated");
+      expect(repaired.serviceViews).toEqual({ path: "architecture/services.likec4", action: "updated" });
       expect(subsystemFindings((await runLoam(p.workDir, "validate", "--all", "--json")).stdout)).toEqual([]);
     } finally {
       await p.destroy();
@@ -801,22 +859,26 @@ describe("a map that does not parse never guts the generated file", () => {
 });
 
 describe("validate --all — subsystem.views-stale", () => {
-  it("subsystems with no views file: exactly one error, naming the file and `loam subsystem sync`", async () => {
+  it("no generated files: ONE error per file under one code, each naming its own file and `loam subsystem sync`", async () => {
     const p = await makeProject(nestedFixture());
     try {
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(1);
       const findings = subsystemFindings(res.stdout);
-      expect(findings).toHaveLength(1);
-      expect(findings[0]).toMatchObject({
-        severity: "error",
-        code: "subsystem.views-stale",
-        subject: "architecture/subsystems.likec4",
-      });
-      expect(findings[0]!.message).toContain("loam subsystem sync");
-      // The file does not exist yet, so the location is the directory the
-      // regenerator writes into — never a `primary` pointing at nothing.
-      expect(findings[0]!.locations).toEqual([{ path: "architecture", role: "scope" }]);
+      // One code covers two files honestly only because each finding names the
+      // file it is about: fold them and the message has nothing left to say.
+      expect(findings).toHaveLength(2);
+      expect(findings.map((f) => f.subject).sort()).toEqual([
+        "architecture/services.likec4",
+        "architecture/subsystems.likec4",
+      ]);
+      for (const finding of findings) {
+        expect(finding).toMatchObject({ severity: "error", code: "subsystem.views-stale" });
+        expect(finding.message).toContain("loam subsystem sync");
+        // Neither file exists yet, so the location is the directory the
+        // regenerator writes into — never a `primary` pointing at nothing.
+        expect(finding.locations).toEqual([{ path: "architecture", role: "scope" }]);
+      }
     } finally {
       await p.destroy();
     }
@@ -877,16 +939,24 @@ describe("validate --all — subsystem.views-stale", () => {
     }
   });
 
-  it("zero subsystems and no file is silence; zero subsystems and a leftover file is stale", async () => {
+  it("zero subsystems: no subsystems file is silence, and a leftover one is stale", async () => {
+    // A FLAT fleet still earns per-service overviews — the map draws its
+    // services — so the sync is what makes the run silent, and the subsystem
+    // file is the one that must stay absent.
     const flat = await makeProject(coherentFixture());
     try {
+      expect((await runLoam(flat.workDir, "subsystem", "sync")).code).toBe(0);
+      expect(flat.exists(VIEWS)).toBe(false);
+      expect(flat.exists(SERVICE_VIEWS)).toBe(true);
       const clean = await runLoam(flat.workDir, "validate", "--all", "--json");
       expect(clean.code).toBe(0);
       expect(subsystemFindings(clean.stdout)).toEqual([]);
       await flat.write(VIEWS, "views {\n}\n");
       const stale = await runLoam(flat.workDir, "validate", "--all", "--json");
       expect(stale.code).toBe(1);
-      expect(subsystemFindings(stale.stdout).map((f) => f.code)).toEqual(["subsystem.views-stale"]);
+      const findings = subsystemFindings(stale.stdout);
+      expect(findings.map((f) => f.code)).toEqual(["subsystem.views-stale"]);
+      expect(findings[0]!.subject).toBe(VIEWS);
     } finally {
       await flat.destroy();
     }
@@ -1003,7 +1073,8 @@ describe("validate --all — subsystem.view-id-collision", () => {
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(1);
       const codes = subsystemFindings(res.stdout).map((f) => f.code).sort();
-      expect(codes).toEqual(["subsystem.view-id-collision", "subsystem.views-stale"]);
+      // Two stale findings because neither generated file has been written yet.
+      expect(codes).toEqual(["subsystem.view-id-collision", "subsystem.views-stale", "subsystem.views-stale"]);
     } finally {
       await p.destroy();
     }
@@ -1025,9 +1096,13 @@ describe("validate --all — subsystem.view-id-collision", () => {
 
   it("an ordinary authored view is never refused, and a fleet with no subsystems is silent", async () => {
     // The harness landscape already declares `view landscape`; a fleet with no
-    // subsystems generates no ids at all, so there is nothing to collide with.
+    // subsystems mints no `subsystem_` id at all, and `view landscape` is not
+    // one of the `service_` ids the map's own services earn either.
     const p = await makeProject(coherentFixture());
     try {
+      // Synced first: a flat fleet still owes `architecture/services.likec4`,
+      // and this case is about the collision census, not about staleness.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(0);
       expect(subsystemFindings(res.stdout).map((f) => f.code)).not.toContain("subsystem.view-id-collision");
@@ -1049,4 +1124,236 @@ describe("validate --all — subsystem.view-id-collision", () => {
       await p.destroy();
     }
   });
+});
+
+/**
+ * The OTHER generated views file: `architecture/services.likec4`, one overview
+ * view per service — the service, its own interior, and its links to everything
+ * else the map draws.
+ *
+ * Graded against the renderer directly rather than through `loam subsystem
+ * sync`, because the recipe is the subject here and it is a measurement rather
+ * than a taste: the obvious wildcard form passes every small flat fixture and
+ * collapses every peer to its group box on a map that nests, with zero
+ * drill-down. The last case in this block is the one that would have caught
+ * that — it loads the generated bytes in the REAL renderer and asks whether the
+ * peers are click-through.
+ */
+describe("the generated per-service overviews — architecture/services.likec4", () => {
+  const SPEC = (id: string): string => `---\nservice: ${id}\n---\n\n# ${id}\n`;
+
+  /**
+   * A map with everything the recipe has to survive: services NESTED two groups
+   * deep (the shape the wildcard form fails on), a service with an interior of
+   * its own, an edge landing on that interior from outside, a shared store, and
+   * an actor. The ids are deliberately not the service ids, so the element→
+   * service join is exercised rather than bypassed.
+   */
+  const NESTED_MAP = `specification {
+  element softwareSystem
+  element container
+  element database
+  element group
+  element person
+}
+
+model {
+  customer = person 'Customer'
+  ledger = database 'ledger'
+  mp = group 'Marketplace' {
+    core = group 'Core' {
+      paymentService = softwareSystem 'payment-service' {
+        api = container 'api'
+        db = database 'db'
+        api -> db 'reads'
+      }
+      checkoutWeb = softwareSystem 'checkout-web'
+    }
+  }
+  customer -> checkoutWeb 'Uses'
+  checkoutWeb -> paymentService.api 'Calls'
+  paymentService -> ledger 'Writes'
+}
+
+views {
+  view fleet {
+    include *
+    include mp.core.*
+  }
+}
+`;
+
+  /** payment-service filed under a subsystem, checkout-web left at the root. */
+  const NESTED_FILES: Record<string, string> = {
+    "architecture/landscape.likec4": NESTED_MAP,
+    "services/payments/subsystem.yaml": "title: Payments\n",
+    "services/payments/payment-service/spec.md": SPEC("payment-service"),
+    "services/checkout-web/spec.md": SPEC("checkout-web"),
+  };
+
+  /** The bytes the renderer produces for a fixture, or null when it renders no file. */
+  async function render(files: Record<string, string>): Promise<string | null> {
+    const p = await makeProject(files);
+    try {
+      const tree = await listFleetTree(p.docsDir);
+      const doc = await loadFile(join(p.docsDir, "architecture", "landscape.likec4"));
+      expect(doc.errors).toEqual([]);
+      return renderServiceOverviews(tree, doc);
+    } finally {
+      await p.destroy();
+    }
+  }
+
+  it("names every peer explicitly, then prunes with the UNARY edge predicates — the whole recipe, pinned", async () => {
+    // Pinned whole, and every line of it is load-bearing. `include *` is the
+    // subject and its interior (`of` scopes the wildcard to the subtree).
+    // The peer lines are what stop LikeC4 collapsing a counterpart to its
+    // enclosing group box — measured on a 58-service map, the wildcard form
+    // draws `growth`/`catalog`/`support` instead of the services and navigates
+    // nowhere. `exclude * -> *` drops the peer-to-peer cross traffic the named
+    // peers drag in (24 edges instead of 9 on that same subject). And the two
+    // edge lines are UNARY: their binary forms re-introduce the parent group
+    // boxes as extra NODES, 15 instead of 11, with no error anywhere.
+    expect(await render(NESTED_FILES)).toBe(
+      "// generated by loam — one overview view per service under services/, drawn from the fleet map.\n" +
+        "// Do not edit: `loam subsystem sync` regenerates this file from the directories and the map,\n" +
+        "// and `loam validate --all` reports `subsystem.views-stale` when it drifts.\n" +
+        "// A navigation aid, not the fleet's architecture: author your own diagrams elsewhere.\n" +
+        "\n" +
+        "views {\n" +
+        "  view service_checkout_2dweb of mp.core.checkoutWeb {\n" +
+        "    title 'checkout-web'\n" +
+        "    include *\n" +
+        "    include customer\n" +
+        "    include mp.core.paymentService.api\n" +
+        "    exclude * -> *\n" +
+        "    include -> mp.core.checkoutWeb\n" +
+        "    include mp.core.checkoutWeb ->\n" +
+        "    include mp.core.checkoutWeb.* -> mp.core.checkoutWeb.*\n" +
+        "  }\n" +
+        "\n" +
+        "  view service_payment_2dservice of mp.core.paymentService {\n" +
+        "    title 'Payments / payment-service'\n" +
+        "    include *\n" +
+        "    include ledger\n" +
+        "    include mp.core.checkoutWeb\n" +
+        "    exclude * -> *\n" +
+        "    include -> mp.core.paymentService\n" +
+        "    include mp.core.paymentService ->\n" +
+        "    include mp.core.paymentService.* -> mp.core.paymentService.*\n" +
+        "  }\n" +
+        "}\n",
+    );
+  }, 30_000);
+
+  it("takes each peer as the MAP declares the endpoint, and never names the subject's own interior", async () => {
+    const bytes = (await render(NESTED_FILES)) ?? "";
+    // `checkoutWeb -> paymentService.api` names the container, not the service
+    // box, so checkout-web's view names the container: the truer picture, and
+    // the one the map already draws.
+    expect(bytes).toContain("  view service_checkout_2dweb of mp.core.checkoutWeb {\n    title");
+    expect(bytes).toContain("    include mp.core.paymentService.api\n");
+    // payment-service's own `api -> db` is INTERIOR — already drawn by
+    // `include *`, so neither endpoint may reappear as a peer include.
+    const own = bytes.slice(bytes.indexOf("view service_payment_2dservice"));
+    expect(own).not.toContain("    include mp.core.paymentService.api\n");
+    expect(own).not.toContain("    include mp.core.paymentService.db\n");
+  }, 30_000);
+
+  it("titles a view with its subsystem PATH and the service's DIRECTORY id, and renders NO file when the map draws nobody", async () => {
+    const bytes = (await render(NESTED_FILES)) ?? "";
+    // The path is what puts the overview in the same browser folder as its
+    // subsystem's own view — LikeC4 splits a title on `/`. An unfiled service
+    // has a chain of nothing and reads as its own id.
+    expect(bytes).toContain("    title 'Payments / payment-service'\n");
+    expect(bytes).toContain("    title 'checkout-web'\n");
+    // A service the map does not draw is omitted (that omission is already
+    // `landscape.service-unmodelled`), and a map that draws none renders no
+    // file at all — absent, exactly as `subsystems.likec4` is for a flat fleet.
+    expect(
+      await render({
+        "architecture/landscape.likec4":
+          "specification {\n  element softwareSystem\n}\n\nmodel {\n" +
+          "  somethingElse = softwareSystem 'something-else'\n}\n\nviews {\n  view fleet {\n    include *\n  }\n}\n",
+        "services/checkout-web/spec.md": SPEC("checkout-web"),
+      }),
+    ).toBeNull();
+  }, 30_000);
+
+  it("is byte-reproducible: the same logical tree written in a different order renders identical bytes", async () => {
+    const backward: Record<string, string> = {};
+    for (const key of Object.keys(NESTED_FILES).reverse()) backward[key] = NESTED_FILES[key]!;
+    expect(await render(backward)).toBe(await render(NESTED_FILES));
+  }, 30_000);
+
+  it("references `global style services` only when the map DECLARES that id, and discloses another name", async () => {
+    // The emission gate is the same one the subsystem views carry, and for the
+    // same reason: a reference to an undeclared style id is a parse error that
+    // blanks the whole `architecture/` project in the renderer.
+    const declare = (id: string): Record<string, string> => ({
+      ...NESTED_FILES,
+      "architecture/landscape.likec4": NESTED_MAP.replace(
+        "views {",
+        `global {\n  styleGroup ${id} {\n    style * {\n      color muted\n    }\n  }\n}\n\nviews {`,
+      ),
+    });
+    const styled = (await render(declare("services"))) ?? "";
+    expect(styled.match(/^ {4}global style services$/gm)).toHaveLength(2);
+    expect(styled).toContain("    title 'checkout-web'\n    global style services\n    include *\n");
+    expect(styled).not.toContain("// styles:");
+
+    const other = (await render(declare("palette"))) ?? "";
+    // No view references anything — a reference to `services` here would be the
+    // parse error the emission gate exists to prevent. The disclosure's own
+    // prose says "global style group(s)", so the match is on the emitted LINE.
+    expect(other.match(/^ {4}global style /gm)).toBeNull();
+    expect(other).toContain(
+      "// styles: the project declares global style group(s) palette, and none named `services` —" +
+        " these views carry the renderer's defaults until one is.",
+    );
+
+    expect((await render(NESTED_FILES)) ?? "").not.toContain("// styles:");
+  }, 60_000);
+
+  it("the REAL renderer resolves the file, and every peer node drills down into that peer's own view", async () => {
+    // The case the naive recipe would have failed. It is not enough that the
+    // bytes look right: `of <fqn>` is what makes LikeC4 compute `navigateTo`
+    // into a view from every other view that draws that element, and naming
+    // the peers is what keeps those nodes the SERVICES rather than their group
+    // boxes. Both are only observable through the renderer.
+    const p = await makeProject(NESTED_FILES);
+    try {
+      const tree = await listFleetTree(p.docsDir);
+      const doc = await loadFile(join(p.docsDir, "architecture", "landscape.likec4"));
+      await p.write("architecture/services.likec4", renderServiceOverviews(tree, doc) ?? "");
+      const workspace = await LikeC4.fromWorkspace(join(p.docsDir, "architecture"), { logger: false });
+      try {
+        expect(workspace.getErrors()).toEqual([]);
+        const model = await workspace.computedModel();
+        const views = new Map(
+          [...model.views()].map((v) => [
+            v.id as string,
+            [...v.nodes()].map((n) => `${n.id}->${n.navigateTo?.id ?? "-"}`),
+          ]),
+        );
+        // The subject, its two interior boxes, and its two peers — no group box
+        // anywhere, and the peer that IS a service is click-through.
+        expect(views.get("service_payment_2dservice")?.sort()).toEqual([
+          "ledger->-",
+          "mp.core.checkoutWeb->service_checkout_2dweb",
+          "mp.core.paymentService->-",
+          "mp.core.paymentService.api->-",
+          "mp.core.paymentService.db->-",
+        ]);
+        // And the mesh closes: the fleet map the author wrote drills into the
+        // generated views without one authored link.
+        expect(views.get("fleet")).toContain("mp.core.paymentService->service_payment_2dservice");
+        expect(views.get("fleet")).toContain("mp.core.checkoutWeb->service_checkout_2dweb");
+      } finally {
+        await workspace.dispose();
+      }
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
 });

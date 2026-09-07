@@ -127,10 +127,14 @@ export async function stageProject(
  *    landscape — but loam's standing rule is that errors mean no model, and
  *    here the model is the project's. `clean` says which case the caller is in.
  *
- * The generated `architecture/subsystems.likec4` must NOT be in `targets`:
- * docs/DESIGN.md rule 26 keeps it a byte compare, and a stale one whose
- * `include` names a removed element would otherwise be a parse error that
- * blanks the whole fleet map.
+ * The documents loam GENERATES under `architecture/` must NOT be in `targets`
+ * — there are two of them now (`subsystems.likec4` and `services.likec4`, both
+ * written by `loam subsystem sync`), and `repo/paths.ts`'s
+ * `GENERATED_ARCHITECTURE_FILES` is the one table that names them. docs/DESIGN.md
+ * rule 26 keeps each a byte compare, and a stale one whose `include` names a
+ * removed element would otherwise be a parse error that blanks the whole fleet
+ * map. `./architecture.ts` holds the join from that table to a docsDir, so no
+ * caller has to remember the list.
  */
 export async function loadProject(base: string, paths: string[]): Promise<ProjectDoc> {
   const targets = [...new Set(paths.map((path) => resolve(path)))];

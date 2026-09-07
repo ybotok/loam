@@ -71,7 +71,13 @@ function fleet(): Record<string, string> {
 
 describe(`the synthetic fleet: ${SERVICES} services, ${FEATURES} features`, () => {
   async function fleetProject(): Promise<Project> {
-    return makeProject(fleet());
+    const p = await makeProject(fleet());
+    // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+    // files belong to a docs repo the way the landscape does, and their absence
+    // is its own `subsystem.views-stale`. At this size it is also the case that
+    // matters — 30 services means 30 generated views, rendered in one pass.
+    await runLoam(p.workDir, "subsystem", "sync");
+    return p;
   }
 
   it("validate --all is green at fleet size, with finding counts derived from construction", async () => {

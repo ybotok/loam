@@ -111,10 +111,11 @@ export function livingDeploymentPath(docsDir: DocsDir, rel: string): string {
  *
  * `deployment.doc-reserved` — the name is one loam owns inside `architecture/`.
  * The merge writes straight into that directory, unlike a flow, which lands
- * under `usecases/`, so `<name>` is free to collide with the living map, the
- * generated subsystem views, or the flow tree. `reservedArchitectureName`
- * carries which and why. It is asked FIRST and WITHOUT an existence test,
- * because two of the three fail silently when the target does not exist yet.
+ * under `usecases/`, so `<name>` is free to collide with the living map, either
+ * of the two GENERATED views files (`subsystems.likec4` and `services.likec4`),
+ * or the flow tree. `reservedArchitectureName` carries which and why. It is
+ * asked FIRST and WITHOUT an existence test, because three of the four fail
+ * silently when the target does not exist yet.
  *
  * `deployment.doc-exists` — a topology document this feature introduces that
  * the living `architecture/` already holds.
@@ -135,12 +136,13 @@ export function livingDeploymentPath(docsDir: DocsDir, rel: string): string {
 export async function deploymentDeltaIssues(docsDir: DocsDir, featureDir: FeatureDir): Promise<Issue[]> {
   const docs = await featureDeployments(featureDir);
   const issues: Issue[] = [];
-  // The reservation runs FIRST and independently of existence, because two of
-  // the three names it refuses need not exist for the merge to be wrong. A
-  // topology copied over `subsystems.likec4` is destroyed by the next
-  // `loam subsystem sync` and is invisible to every project load until then —
-  // the merge would report `created architecture/subsystems.likec4` and nothing
-  // downstream would ever say another word about it.
+  // The reservation runs FIRST and independently of existence, because three of
+  // the four names it refuses need not exist for the merge to be wrong. A
+  // topology copied over either GENERATED file — `subsystems.likec4` or
+  // `services.likec4` — is destroyed by the next `loam subsystem sync` and is
+  // invisible to every project load until then: the merge would report
+  // `created architecture/subsystems.likec4` and nothing downstream would ever
+  // say another word about it.
   for (const doc of docs) {
     const reason = reservedArchitectureName(doc.rel);
     if (reason === null) continue;

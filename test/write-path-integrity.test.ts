@@ -926,7 +926,9 @@ describe("the closing completeness claim", () => {
       const res = await runLoam(p.workDir, "archive", "FEAT-1");
       expect(res.code).toBe(0);
       expect(res.out).not.toContain("living spec + landscape are now complete + current.");
+      // One line per stale generated file, each naming the file a reader opens.
       expect(res.out).toContain("architecture/subsystems.likec4 no longer matches");
+      expect(res.out).toContain("architecture/services.likec4 no longer matches");
       expect(res.out).toContain("loam subsystem sync");
       // …because the same archive handed back a fleet the gate fails on, and
       // the one command the warning names is the one that clears it.
@@ -935,7 +937,8 @@ describe("the closing completeness claim", () => {
         const payload = json(out.stdout) as { targets: Array<{ findings: Array<{ code: string }> }> };
         return payload.targets.flatMap((t) => t.findings).map((f) => f.code).filter((c) => c.startsWith("subsystem."));
       };
-      expect(await codes()).toEqual(["subsystem.views-stale"]);
+      // One finding per stale generated file, under the one code they share.
+      expect(await codes()).toEqual(["subsystem.views-stale", "subsystem.views-stale"]);
       expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       expect(await codes()).toEqual([]);
     } finally {

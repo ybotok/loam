@@ -9,8 +9,8 @@
  * that STANDS ALONE — one `services/<tree>/**` entry per standalone model,
  * never the whole subtree (`c4/service-model/renderer.ts` owns that list, and
  * is the one place loam reads that file). loam's own answer here is all of them
- * EXCEPT the generated `architecture/subsystems.likec4`, and that exception is
- * not an optimisation:
+ * EXCEPT the documents loam GENERATES there (`architecture/subsystems.likec4`
+ * and `architecture/services.likec4`), and that exception is not an optimisation:
  *
  *  - docs/DESIGN.md rule 26 excludes the generated file from every read loam
  *    performs. Its staleness is a byte compare (`subsystem.views-stale`) and
@@ -22,8 +22,9 @@
  *    whose only problem is a stale generated file would lose its whole map
  *    instead of getting the one finding that names the repair.
  *
- * The skip is passed in by the caller rather than spelled here, so the filename
- * stays written in `repo/paths.ts` alone.
+ * The skip is passed in by the caller rather than spelled here, so the filenames
+ * stay written in `repo/paths.ts` alone, and every reader takes the same SET out
+ * (`./architecture.ts` holds the one join).
  */
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";

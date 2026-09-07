@@ -15,8 +15,8 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   [--owner]\` creates a group (an empty one is legal — its \`subsystem.yaml\` is a
   marker, never a member list); \`move <name>... --into <sub|.>\` relocates
   services and whole subtrees in ONE journaled transaction over the renames
-  plus the regenerated views file (\`--into .\` unfiles; the renames and the
-  regenerated views file are staged in git without committing, where git answers); \`rename <old> <new>\` renames a
+  plus BOTH regenerated views files (\`--into .\` unfiles; the renames and the
+  regenerated views files are staged in git without committing, where git answers); \`rename <old> <new>\` renames a
   group through the same transaction (services are never renamed — the id is
   the identity); \`rm <name>\` removes an EMPTY group; \`list\` shows the tree
   with member counts and the unfiled count (unfiled is permanent and normal —
@@ -24,9 +24,12 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   additive keys \`services[].subsystem\`, \`subsystems[]\` and
   \`unfiledServices\`); \`history <name>\` asks git how a service or subsystem
   moved and answers nothing — exit 0, no finding — when git will not say;
-  \`sync\` regenerates \`architecture/subsystems.likec4\`, the one repair for
-  \`subsystem.views-stale\`, and also maintains the RENDERER's wiring for the
-  service models. Which wiring a model needs is decided by the file's own
+  \`sync\` regenerates BOTH generated views files —
+  \`architecture/subsystems.likec4\` (one view per subsystem) and
+  \`architecture/services.likec4\` (one overview view per service the fleet map
+  draws) — the one repair for \`subsystem.views-stale\`, which grades each file
+  separately and names the one that drifted. It also maintains the RENDERER's
+  wiring for the service models. Which wiring a model needs is decided by the file's own
   grammar, never by a config key: a model that declares its own
   \`specification { element … }\` block STANDS ALONE — it cannot share a project
   with the fleet map, since every kind it declares would be a duplicate there —
@@ -58,16 +61,24 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   (\`build\` and \`export\` take every project). A view id claimed twice inside one
   project — the landscape and an extending model both minting it, or either
   claiming a generated one — is
-  \`subsystem.view-id-collision\`. Each generated view is titled by its PATH —
+  \`subsystem.view-id-collision\` — ids beginning \`subsystem_\` or \`service_\` are
+  loam's to mint. Each generated view is titled by its PATH —
   every marked ancestor's label and its own, which the renderer reads as
   folders — where a label is the marker's \`title\` or the directory name; the
-  marker's \`description\` rides along. So editing \`subsystem.yaml\` changes
+  marker's \`description\` rides along. A per-service view is titled
+  \`<subsystem path> / <service id>\`, so it lands in the same folder as its
+  group, and a \`dynamic view\` you write under
+  \`services/<…>/<id>/usecases/\` titled \`<subsystem path> / <service id> / <use
+  case>\` lands beside it. So editing \`subsystem.yaml\` changes
   what the renderer LABELS the group, a parent's title changes every view
-  beneath it, and either makes the file stale until the next \`sync\`. The
-  generated file is NEVER part of the fleet-project load
+  beneath it, and either makes both files stale until the next \`sync\`. Neither
+  generated file is part of the fleet-project load
   (\`c4.fleet-project-invalid\` reads every other \`.likec4\` the root project holds);
-  \`subsystem.views-stale\` is the only check that reads it, by byte comparison.
-  Each view
+  \`subsystem.views-stale\` is the only check that reads them, by content
+  comparison against the deterministic re-render, never by reading what a view
+  shows. Each per-service view is declared \`of\` its service's element, which is
+  what makes every other view — the fleet map, its subsystem view, its peers'
+  views — drill into it with no authored link. Each subsystem view
   carries \`global style subsystems\` — written after its title, the one line
   LikeC4 gives a view for borrowing a palette — exactly when the \`architecture/\`
   project declares a global style with that id (\`global { styleGroup subsystems
@@ -79,9 +90,11 @@ export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the group
   names only, the file opens with one comment line naming them and saying none is
   \`subsystems\`, and the views carry the renderer's defaults — so declaring a group
   under ANY name restales the file, because that comment is part of the bytes.
-  \`sync\` refuses to rewrite it at all while \`architecture/\` does not parse
-  (\`action: "blocked"\`): fix the map first. It is generated wholesale:
+  \`architecture/services.likec4\` reads a group named \`services\` the same way.
+  \`sync\` refuses to rewrite either file while \`architecture/\` does not parse
+  (\`action: "blocked"\`): fix the map first. Both are generated wholesale:
   an authored diagram of the same services belongs in the landscape or in a
-  file of your own name, never here. \`loam adopt --subsystem <name>\` briefs a new
+  file of your own name, never here. \`--json\` reports the subsystem file as
+  \`path\`/\`action\` and the per-service one as \`serviceViews\`. \`loam adopt --subsystem <name>\` briefs a new
   service's baseline directly into a group, so adoption need not land unfiled.
 `;

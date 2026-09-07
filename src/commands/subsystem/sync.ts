@@ -4,9 +4,17 @@
  *
  *  - `architecture/subsystems.likec4`, the GENERATED views file. Recomputed from
  *    the tree on every run, compared, written when it differs, removed when the
- *    tree has no subsystems. The ONE repair for `subsystem.views-stale`. Left
- *    exactly as it is when the `architecture/` project does not parse and the
- *    file already exists — `action: "blocked"`, below.
+ *    tree has no subsystems. One of the two repairs for `subsystem.views-stale`.
+ *    Left exactly as it is when the `architecture/` project does not parse and
+ *    the file already exists — `action: "blocked"`, below.
+ *  - `architecture/services.likec4`, the OTHER generated views file: one
+ *    overview view per service the map draws, so a reader can open a service and
+ *    see what it touches. Same rules, same commit, same code when it drifts —
+ *    which is what makes ONE `subsystem.views-stale` honest about two files, and
+ *    why this command is named as the repair for both. Removed when NO service
+ *    resolves to a map element, exactly as the subsystem file is removed when
+ *    the tree has no subsystems. `serviceViews` is its `action`; `action` still
+ *    means the subsystem file alone.
  *  - `services/<…>/<id>/likec4.config.json`, one LikeC4 project file beside
  *    every model that STANDS ALONE. Never compared, never rewritten. Created
  *    where a standalone model has none, and DELETED where an extending model has
@@ -27,9 +35,38 @@
  *    extending model — a subsystem-wide `services/platform/**` survived every
  *    sync while `service.model-excluded` named this command as the repair.
  *
+ * NEITHER views file is written over a document loam did not write. Both are
+ * filenames loam RESERVES inside `architecture/`, a directory the team owns, and
+ * both are rewritten whole — so a repository that already kept a hand-authored
+ * diagram at one of those paths would have lost it, silently, on the first sync
+ * after the release that reserved the name. One predicate answers it for both
+ * (`readGeneratedFile`, off the file's own first line), the run reports
+ * `refused` for that file, writes nothing for it, and exits non-zero. A hand
+ * EDIT of a generated file is a different thing and is still repaired: it keeps
+ * the mark, so it is loam's file with wrong bytes in it, which is exactly what
+ * `subsystem.views-stale` says.
+ *
+ * THIS COMMAND IS NOT THE ONLY WRITER, and for a while it was the only one
+ * holding that line — reproduced, with a hand-authored
+ * `architecture/services.likec4` in the tree: `loam subsystem new platform`
+ * printed "architecture/services.likec4 updated" and destroyed it. The predicate
+ * and the refusal sentence therefore live below every writer
+ * (`core/repo/tree/render/service/header.ts`), and `./txn/txn.ts` and
+ * `../seed/plan.ts` ask the same question of the same two paths.
+ *
+ * WHAT DIFFERS IS THE POLICY, not the question, and the difference is the shape
+ * of the operation rather than a second opinion about ownership. Sync REPORTS
+ * `refused` for the one file and does the rest: nothing it writes depends on
+ * that file, every part of it is idempotent, and a run that also created a
+ * project file really did create it. A tree-changing verb and `seed` REFUSE
+ * WHOLE, because their generated file has to land in the same commit as the
+ * change to the tree — completing half of that is the very state the commit
+ * window exists never to leave between two commits, and `subsystem move` would
+ * additionally leave git-staged renames behind it.
+ *
  * The rules differ because the files answer to different owners. The
- * views file is a pure function of the tree and the committed landscape, so
- * every byte of it is loam's and a hand edit is by definition stale. The
+ * views files are a pure function of the tree and the committed landscape, so
+ * every byte of them is loam's and a hand edit is by definition stale. The
  * project file's bytes are a function of the service id ALONE — the identity
  * no verb ever changes — so nothing can make it stale, and the keys LikeC4
  * lets a team add to it (`title`, styles, a contact) are the team's; a compare
@@ -62,17 +99,11 @@
  * and the phase that is not part of the commit.
  */
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readModelShapes, type ModelShape } from "../../core/c4/service-model/shape.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { fail, repoPath } from "../../core/envelope/json.js";
-import {
-  LIKEC4_ROOT_PROJECT,
-  rootProjectPath,
-  serviceRenderPaths,
-  subsystemViewsPath,
-} from "../../core/repo/paths.js";
+import { LIKEC4_ROOT_PROJECT, rootProjectPath, serviceRenderPaths } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
 import {
   type ProjectGap,
@@ -87,10 +118,11 @@ import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
+import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
 import { viewsAgree } from "../../core/repo/tree/render/views.js";
 import { NO_EXCLUDE, planExclude } from "./txn/exclude.js";
 import { type ProjectsReport, reportSync, type SyncAction } from "./txn/report.js";
-import { expectedViews } from "./txn/views.js";
+import { type ExpectedFile, expectedViews } from "./txn/views.js";
 
 /**
  * The per-service project half of one sync, before the write: what the
@@ -138,23 +170,12 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     }
 
     const tree = await listFleetTree(docsDir);
+    // BOTH generated files, from ONE read of the map — `./txn/views.ts` says why
+    // the pair is one answer and why the parsed document, never a literal, is
+    // what the per-service peer sets are computed from.
     const expected = await expectedViews(docsDir, tree);
-    const path = subsystemViewsPath(docsDir);
-    const expectedBytes = expected.content === null ? null : Buffer.from(expected.content, "utf8");
-    // Content, not bytes: `viewsAgree` records why, beside the generator. A
-    // Windows clone hands this file back CRLF with not one fact changed, and a
-    // byte compare made `sync` answer `updated` and rewrite it LF — after which
-    // git shows the file permanently modified and the next checkout puts the
-    // CRLF back. `validate` stopped demanding that rewrite; `sync` must stop
-    // offering it, or the two disagree about the same file.
-    const actual = existsSync(path) ? await readFile(path, "utf8") : null;
-    // The render cannot be trusted against a file that already exists when the
-    // map is unreadable: without the element join and the style census it is a
-    // title and a description, and writing it would take the `include` lines,
-    // the boundary comment and the palette reference off a file whose only fault
-    // is a sibling document that does not parse.
-    const blocked = !expected.known && actual !== null;
-    const agree = blocked || viewsAgree(actual, expected.content);
+    const views = await planFile(expected.subsystems, expected.known);
+    const services = await planFile(expected.services, expected.known);
     // ONE read of every model's bytes for the whole run, and the same scan the
     // grader uses: it decides which directories are owed a project file AND
     // which the root project must exclude, and those are opposite answers for
@@ -179,32 +200,39 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
       modelled: plan.modelled,
       exclude,
     });
-    // `action` still describes the views file alone: a run that only created
-    // project files answers `current` for it, exactly as before the projects
-    // existed, so nothing reading the key sees a new meaning. `blocked` is the
-    // one exception and it is about that same file: it was left as it is.
-    const action: SyncAction = blocked
-      ? "blocked"
-      : agree
-        ? "current"
-        : actual === null
-          ? "created"
-          : expectedBytes === null
-            ? "removed"
-            : "updated";
-    const say = (): void =>
+    // `action` still describes `architecture/subsystems.likec4` ALONE — a run
+    // that only created project files, or only rewrote the per-service
+    // overviews, answers `current` for it, exactly as before either existed, so
+    // nothing reading the key sees a new meaning. The second generated file
+    // arrives as a key of its own (`serviceViews`), because a payload key's
+    // meaning is frozen and folding two files into one answer would lose which
+    // one moved — the only thing either sentence has to say.
+    const say = (): void => {
       reportSync(json, {
-        action,
+        action: views.action,
+        serviceViews: services.action,
         subsystems: tree.subsystems.length,
         recovered,
         projects: projects(),
         mapUnreadable: !expected.known,
       });
-    if (agree && plan.gaps.length === 0 && plan.strays.length === 0 && exclude.write === null) {
+      // A REFUSAL MUST NOT READ AS A CLEAN RUN. The rest of the sync really did
+      // happen — the other generated file, the project files, the root
+      // `exclude` — so this is `loam doctor`'s and `loam validate`'s shape and
+      // not `fail()`'s: the whole report is emitted, and the exit code says the
+      // tree was not left in the state the command was asked to leave it in. A
+      // caller that runs `loam subsystem sync` in a hook or a CI step would
+      // otherwise be told nothing, forever, about a file it can never repair —
+      // and `loam validate --all` would go on reporting `subsystem.views-stale`
+      // for that path with this very command named as the fix.
+      if (views.action === "refused" || services.action === "refused") process.exitCode = 1;
+    };
+    const generated = [views.write, services.write].filter((write) => write !== null);
+    if (generated.length === 0 && plan.gaps.length === 0 && plan.strays.length === 0 && exclude.write === null) {
       say();
       return;
     }
-    const writes: PlannedWrite[] = agree ? [] : [{ path, content: expectedBytes }];
+    const writes: PlannedWrite[] = [...generated];
     // `planWrite` marks a non-existent target exclusive — a no-clobber create
     // that fails EEXIST rather than replacing a file another writer landed in
     // the same instant. That IS the create-only rule, enforced by the write
@@ -240,6 +268,66 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
   } finally {
     await releaseLock();
   }
+}
+
+/**
+ * What this run will do to ONE generated file: the action to report, and the
+ * write to stage (or null for "leave it alone").
+ *
+ * ONE function for both generated files, because the rule is one rule and a
+ * second spelling of it would be a second chance for `subsystems.likec4` and
+ * `services.likec4` to answer differently about the same map.
+ *
+ * The compare is over CONTENT, not bytes: `viewsAgree` records why, beside the
+ * generator. A Windows clone hands a generated file back CRLF with not one fact
+ * changed, and a byte compare made `sync` answer `updated` and rewrite it LF —
+ * after which git shows the file permanently modified and the next checkout puts
+ * the CRLF back. `validate` stopped demanding that rewrite; `sync` must stop
+ * offering it, or the two disagree about the same file.
+ *
+ * `blocked` is the map's veto and it is the whole reason `known` is threaded
+ * this far. The render cannot be trusted against a file that already exists when
+ * `architecture/` does not parse as one project: without the element join and
+ * the style census, `subsystems.likec4` is a title and a description — writing
+ * it would take the `include` lines, the boundary comment and the palette
+ * reference off a file whose only fault is a sibling document that does not
+ * parse — and `services.likec4` is NOTHING AT ALL, because every one of its
+ * views is gated on a service resolving to a map element, so the tolerant render
+ * would delete the whole file. An absent file is not protected: there is nothing
+ * to lose and a fleet being scaffolded must still get its first one.
+ *
+ * `refused` is the OTHER veto and it comes from the file rather than from the
+ * map: a file at one of these reserved paths that does not open with loam's mark
+ * was written by somebody, and this command writes both files whole. It is
+ * checked first, applies to both files through one predicate, and is the one
+ * answer here that makes the run exit non-zero — see `runSync`.
+ */
+async function planFile(file: ExpectedFile, known: boolean): Promise<{ action: SyncAction; write: PlannedWrite | null }> {
+  // ONE read for both questions — what the file says, and whose it is. The
+  // predicate and the reader live beside the mark itself
+  // (`core/repo/tree/render/service/header.ts`), below every writer of these two
+  // paths, because sync is one of FIVE and was for a while the only one holding
+  // the line.
+  const { text: actual, authored } = await readGeneratedFile(file.path);
+  // OWNERSHIP FIRST, before the map's veto and before the compare, because it is
+  // the one question whose wrong answer destroys work. Both of these are
+  // filenames loam RESERVES inside a directory the team owns, and every arm
+  // below writes the whole file or deletes it: a docs repo that already kept a
+  // hand-authored diagram at one of them would have lost it on the first sync
+  // after the upgrade that reserved the name, silently, breaking the promise the
+  // rest of the tree keeps (archive's verbatim splice: authored bytes stay
+  // authored). So the file is asked who wrote it. An EDIT of a generated file
+  // still carries the mark and is still loam's to repair — that is the whole
+  // point of `subsystem.views-stale` — and only a file that never carried it is
+  // somebody else's. Absent is not refused: there is nothing to lose.
+  if (authored) return { action: "refused", write: null };
+  if (!known && actual !== null) return { action: "blocked", write: null };
+  if (viewsAgree(actual, file.content)) return { action: "current", write: null };
+  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
+  return {
+    action: actual === null ? "created" : bytes === null ? "removed" : "updated",
+    write: { path: file.path, content: bytes },
+  };
 }
 
 /**

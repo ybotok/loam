@@ -90,6 +90,10 @@ describe("a full session over the coherent fixture", () => {
 
   beforeAll(async () => {
     p = await makeProject(coherentFixture());
+    // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+    // files belong to a docs repo the way the landscape does, and their absence
+    // is its own `subsystem.views-stale`.
+    await runLoam(p.workDir, "subsystem", "sync");
     main = await session(p.workDir, [
       request(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } }),
       { jsonrpc: "2.0", method: "notifications/initialized" },

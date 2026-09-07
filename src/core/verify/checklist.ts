@@ -28,7 +28,7 @@ import { readFile } from "node:fs/promises";
 import { readAsyncapi } from "../asyncapi/read.js";
 import { type Elem } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
-import { ACTOR_KINDS } from "../vocabulary/maturity.js";
+import { ACTOR_KINDS, INFRA_KINDS } from "../vocabulary/maturity.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
@@ -136,26 +136,55 @@ export async function featureChecklist(
     // reports it; inventing claims out of a broken document would only add noise.
     if (res.errors.length === 0) {
       const elements: Elem[] = res.elements;
+      // The enumerated fleet — `services/` plus this feature's own `specs/`
+      // directories, the only place a service the feature INTRODUCES has a
+      // directory at all. Built once, above both readers below, because they
+      // must not disagree: the skip loop asks whether an element STANDS FOR a
+      // service, and the resolver asks WHICH service an endpoint belongs to,
+      // and a set that answered the second question only left the first one
+      // reading a title as unknown that the very next line resolved.
+      const known = new Set<string>([
+        ...(await enumeratedServiceIds(docsDir, ctx)),
+        ...specServices,
+      ]);
       for (const e of elements) {
         if (!e.tags.includes(featureId)) continue;
-        // A dotted id is a container INSIDE a service, and an actor is nobody's
-        // repository. Neither is a service that has to exist.
-        if (e.id.includes(".") || ACTOR_KINDS.has(e.kind.toLowerCase())) continue;
+        // A dotted id is a container INSIDE a service, an actor is nobody's
+        // repository, and the fleet's own infrastructure — a `database`,
+        // `queue`, `topic`, `cache` or `bucket` — has no repository either.
+        // None of the three is a service that has to exist.
+        //
+        // The infra skip closes a claim no repository could ever answer: a
+        // delta that draws a fleet-level `database` minted `service.exists` for
+        // it, and `loam verify` then asked somebody to point at the code that
+        // proves a Postgres has a services/ directory. It is the SAME shape as
+        // the container-and-actor skips beside it — an element that is not a
+        // team's system — not a new kind of exemption.
+        //
+        // STANDING FOR A SERVICE still wins, because that is a claim about
+        // this repo rather than a guess at one, and it is the same predicate
+        // every other surface applies — `commands/validate/fleet/census.ts`'s
+        // `standsForService`, spelled here rather than imported because core
+        // may not reach into commands. Both of its rungs matter: a `database`
+        // carrying `metadata { service '<id>' }` names a directory the author
+        // says exists, and one whose TITLE names a real `services/<id>/` names
+        // a directory the enumeration just read. Testing the binding alone made
+        // an adopted store a service on every other surface and infrastructure
+        // here, so its `service.exists` claim silently went missing from the
+        // checklist that is supposed to hold every promise the feature made.
+        const standsFor = e.service !== undefined || known.has(e.title);
+        const infra = !standsFor && INFRA_KINDS.has(e.kind.toLowerCase());
+        if (e.id.includes(".") || ACTOR_KINDS.has(e.kind.toLowerCase()) || infra) continue;
         const svc = elementService(e);
         exists.push(claim("service.exists", svc, [svc], `service '${svc}' exists`));
       }
-      // The enumerated fleet — `services/` plus this feature's own `specs/`
-      // directories, the only place a service the feature INTRODUCES has a
-      // directory at all — rides into the resolver so a claim about an edge
-      // drawn into a modelled container names the service that owns it. A
-      // claim against a service called "api" that has never existed is one no
+      // That same set rides into the resolver so a claim about an edge drawn
+      // into a modelled container names the service that owns it. A claim
+      // against a service called "api" that has never existed is one no
       // evidence in any repository could ever answer, and the fleet half alone
       // still derived exactly that claim for an introduced service's own
       // container. Unenumerable services/ degrades to the feature's names.
-      const svcOf = serviceResolver(
-        elements,
-        new Set<string>([...(await enumeratedServiceIds(docsDir, ctx)), ...specServices]),
-      );
+      const svcOf = serviceResolver(elements, known);
       for (const r of res.relationships) {
         // Untagged edges are context for the diagram; an edge with no operation
         // names nothing specific enough to look for in the code.

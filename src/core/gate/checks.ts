@@ -133,7 +133,11 @@ function partnersFindings(scan: PartnerScan, service: string): Finding[] {
   for (const p of scan.partners) {
     // An `#external` partner is somebody else's system: its side of the join
     // is unrecorded ON PURPOSE, the same exemption the landscape census grants
-    // (`landscape.service-undocumented` skips #external too).
+    // (`landscape.service-undocumented` skips #external too). The fleet's own
+    // infrastructure — a `database`, `queue`, `topic`, `cache` or `bucket` — is
+    // not a partner at all and never reaches this loop: `./partners.ts` drops it
+    // from the SET, beside the actors, because the three remedies below are all
+    // false of a store the fleet runs.
     if (p.external) continue;
     if (p.maturity === null) {
       findings.push({

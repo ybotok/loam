@@ -45,6 +45,10 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files, opts);
+  // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+  // files belong to a docs repo the way the landscape does, and their absence
+  // is its own `subsystem.views-stale`. Every case here is about something else.
+  await runLoam(p.workDir, "subsystem", "sync");
   try {
     await fn(p);
   } finally {
@@ -793,6 +797,9 @@ owner: web-team${withSources ? "\nsources:\n  - web/src" : ""}
     const p = await makeProject(fleet(true), { service: SVC });
     await writeFiles(p.workDir, { "src/payment.ts": "// code\n" });
     try {
+      // The generated views files, as any real fleet carries them — the note in
+      // `withProject` above says why every case here needs them.
+      await runLoam(p.workDir, "subsystem", "sync");
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(0);
       const json = JSON.parse(res.stdout);

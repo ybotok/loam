@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **464 TypeScript modules in 143 source packages**, with an acyclic package graph
+The tree contains **468 TypeScript modules in 144 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
 CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **173 test files**. Those four counts are deliberately stated OUTSIDE the
+and the suite stands at **174 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -193,7 +193,9 @@ merged map before writing either. Second, the consumer census read `architecture
 this shape a private store's consuming edges — which live in the models now — counted for nothing:
 `landscape.datastore-private` went silent or named the wrong service, and a nested store two
 services reach was graded nowhere. It reads every extending model's attested calls now, and
-`landscape.datastore-shared` fires for a nested store. Third, the wiring guard this entry landed
+`landscape.datastore-shared` fires for a nested store. (That census still stands; the code named
+here does not — `landscape.datastore-private` was retired on 2026-09-07, because where a store is
+drawn is the team's choice. See the CHANGELOG entry.) Third, the wiring guard this entry landed
 failed open on every root `exclude` spelling except `services/<tree>/**`, `loam subsystem sync`
 never removed the stray per-service project file it told repositories to delete (and that file
 CLAIMS the model, rather than holding nothing as the design note said), and
@@ -675,6 +677,25 @@ item gets promoted — it went from here to `## Now` and from there to
   change as the `arch.spec.md` requirement it answers. Until then a service-local flow is written
   directly into the service directory in the same pull request, where git produces the conflict;
   building the feature route ahead of that evidence is the invented need the non-goals forbid.
+- **A subsystem-scoped use-case slot.** A flow whose hops all sit inside one subsystem's subtree
+  looks like it wants a home between the two that exist — `architecture/usecases/` is the fleet's
+  slot, `services/<…>/<svc>/usecases/` is one service's. Deliberately NOT built (2026-09-07), and
+  the reason is that the capability is already there: a subsystem-scoped flow IS a fleet use case
+  whose hops happen to share a subtree, `architecture/usecases/<name>.likec4` already grades it, and
+  its view already folds into the same title-path folders as the generated subsystem view above it.
+  A second slot would duplicate the grader, the tag vocabulary and the archive route for no
+  capability that does not exist today. Promote only on evidence that a fleet's subsystem flows are
+  being lost among its fleet flows in the renderer's view list — which is a naming problem before it
+  is a slot problem, and one the title convention answers first.
+- **A flow-untagged check** (it would be spelled usecase.flow-untagged): a `.likec4` beside a
+  service's model that mentions a `req-` prefix while no view in that project carries the tag — an
+  author who reached for the intra-service use-case axis and missed, whose flow renders and is
+  graded by nothing. It grades a view that EXISTS rather than an absence, so docs/DESIGN.md rule 26
+  permits it, unlike the service.usecases-missing nobody may ever build. Not built (2026-09-07) for
+  a mechanical reason worth stating: `core/brief/checks.ts` sits at 399 of 400 lines inside a
+  five-file-capped package, so a new non-ok code forces a split-module commit before any behaviour
+  can land, and that split should be chosen for a seam rather than for a code. Promote when a second
+  fleet reports a flow that rendered and was graded by nothing.
 - **Landscape scaling:** retain one landscape while conflicts are exceptional, and half of what
   this row once asked for arrived on 2026-09-04. Per-service internals now live in
   `services/<svc>/model.likec4` by default: `loam archive` routes a delta's fqn-spelled interior

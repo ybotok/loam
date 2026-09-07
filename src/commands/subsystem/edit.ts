@@ -119,7 +119,8 @@ export async function runNew(
             command: "subsystem",
             created: name,
             path: repoPath(docsDir, dir),
-            views,
+            views: views.subsystems,
+            serviceViews: views.services,
             ...(recovered === null ? {} : { recovered }),
           });
           return;
@@ -208,7 +209,8 @@ export async function runRm(docsDir: DocsDir, name: string, json: boolean): Prom
             removed: name,
             path: repoPath(docsDir, sub.dir),
             directoryRemoved,
-            views,
+            views: views.subsystems,
+            serviceViews: views.services,
             ...(recovered === null ? {} : { recovered }),
           });
           return;

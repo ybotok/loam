@@ -349,6 +349,176 @@ describe("the partner check", () => {
     expect(partnerWarns[0]!.message).toContain("partial");
   });
 
+  it("the fleet's own infrastructure is no partner at all — a store has no docs to grade", async () => {
+    // The third of the three surfaces that used to nag a fleet-level store the
+    // fleet OWNS (the other two are `landscape.datastore-private` and
+    // `landscape.service-undocumented`, both pinned in test/landscape.test.ts).
+    // Redis joined svc-a like any other counterparty, and since there is no
+    // `services/Redis/` its rung came back null — so `gate.partner-undocumented`
+    // told the deployer to "adopt it, bind its landscape element … or tag it
+    // #external", three remedies not one of which is true of a cache the fleet
+    // runs. It is dropped from the partner SET rather than exempted from the
+    // finding, which is the ACTOR precedent exactly: `partners` lists the
+    // counterparties whose documentation this gate grades, and a store has none.
+    const p = await project(
+      {
+        "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element container
+  element database
+  tag external
+}
+
+model {
+  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  redis = database 'Redis'
+  svcA -> redis 'caches sessions'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+        "services/svc-a/model.likec4": "model {\n  extend svcA {\n    api = container 'api'\n  }\n}\n",
+        "services/svc-a/spec.md":
+          "---\nservice: svc-a\nstatus: draft\n---\n\n# svc-a\n\n## Requirements\n\n### Requirement: Sessions are cached\nThe service SHALL keep session state in Redis.\n\n#### Scenario: A session round-trips\n- **Given** a session\n- **When** it is written\n- **Then** it can be read back\n",
+      },
+      { service: "svc-a" },
+    );
+    const res = await gate(p);
+    expect(res.payload.landscape).toBe("read");
+    expect(res.payload.partners).toEqual([]);
+    expect(findingsOf(res.payload, "partners")).toEqual([]);
+    expect(res.payload.verdict).toBe("pass");
+    expect(res.code).toBe(0);
+  });
+
+  it("…but a BOUND store is an adopted service and keeps its rung — the kind never overrides a binding", async () => {
+    // The guard that keeps the exemption from swallowing a real partner. A
+    // `database` carrying `metadata { service '<id>' }` is a service somebody
+    // adopted that happens to be drawn as a store: its side of the join IS
+    // recorded, so it stays in the set and stays graded. Without this,
+    // `gate.partner-undocumented` would go silent for every service a fleet
+    // chose to draw with a storage shape.
+    const p = await project(
+      {
+        "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element container
+  element database
+  tag external
+}
+
+model {
+  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  catalogDb = database 'catalog store' {
+    metadata { service 'catalog-db' }
+  }
+  svcA -> catalogDb 'queries'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+        "services/svc-a/model.likec4": "model {\n  extend svcA {\n    api = container 'api'\n  }\n}\n",
+        "services/svc-a/spec.md":
+          "---\nservice: svc-a\nstatus: draft\n---\n\n# svc-a\n\n## Requirements\n\n### Requirement: Reads the catalog\nThe service SHALL read the catalog.\n\n#### Scenario: A read succeeds\n- **Given** a catalog\n- **When** it is read\n- **Then** rows come back\n",
+        // Adopted, spec only — `partial` on the ladder, which is what makes it
+        // visible here rather than merely present.
+        "services/catalog-db/spec.md":
+          "---\nservice: catalog-db\nstatus: draft\n---\n\n# catalog-db\n\n## Requirements\n",
+      },
+      { service: "svc-a" },
+    );
+    const res = await gate(p);
+    expect(res.payload.partners).toEqual([
+      {
+        service: "catalog-db",
+        maturity: "partial",
+        role: "provider",
+        via: ["edge 'queries'"],
+        external: false,
+      },
+    ]);
+    const warns = findingsOf(res.payload, "partners").filter((f) => f.code === "gate.partner-undocumented");
+    expect(warns.map((f) => f.subject)).toEqual(["catalog-db"]);
+  });
+
+  it("…and a store drawn INSIDE a service is that service's interior, not infrastructure", async () => {
+    // The other half of the same guard, and the one that cost a partner. The
+    // ordinary way a team draws a private datastore is nested under its owner,
+    // so the edge lands on `orderService.db` — and the infra walk read the
+    // store's KIND off the endpoint before ever reaching the service above it,
+    // marking the whole endpoint infrastructure. order-service then failed
+    // `!facts.infra` and left the partner set entirely: a service this gate
+    // exists to grade, silently absent, with no finding to say so.
+    //
+    // `commands/validate/fleet/census.ts` gets this right by construction —
+    // `serviceLevelElements` drops a service's interior BEFORE `drawnSystems`
+    // applies the kind test — and the two must not disagree about what a
+    // partner is.
+    const p = await project(
+      {
+        "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element container
+  element database
+  tag external
+}
+
+model {
+  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  orderService = softwareSystem 'order-service' {
+    metadata { service 'order-service' }
+    db = database 'orders'
+  }
+  svcA -> orderService.db 'reads orders'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+        "services/svc-a/model.likec4": "model {\n  extend svcA {\n    api = container 'api'\n  }\n}\n",
+        "services/svc-a/spec.md":
+          "---\nservice: svc-a\nstatus: draft\n---\n\n# svc-a\n\n## Requirements\n\n### Requirement: Reads orders\nThe service SHALL read orders.\n\n#### Scenario: A read succeeds\n- **Given** an order\n- **When** it is read\n- **Then** it comes back\n",
+        // Adopted, spec only — `partial` on the ladder, so the assertion is
+        // that the partner arrives WITH its rung, not merely that it arrives.
+        "services/order-service/spec.md":
+          "---\nservice: order-service\nstatus: draft\n---\n\n# order-service\n\n## Requirements\n",
+      },
+      { service: "svc-a" },
+    );
+    const res = await gate(p);
+    expect(res.payload.landscape).toBe("read");
+    expect(res.payload.partners).toEqual([
+      {
+        service: "order-service",
+        maturity: "partial",
+        role: "provider",
+        via: ["edge 'reads orders'"],
+        external: false,
+      },
+    ]);
+    const warns = findingsOf(res.payload, "partners").filter(
+      (f) => f.code === "gate.partner-undocumented",
+    );
+    expect(warns.map((f) => f.subject)).toEqual(["order-service"]);
+  });
+
   it("an absent landscape does not convict a service for a contract nobody may be owed", async () => {
     // checkout-ui: model + spec, no openapi.yaml — a UI. With the map absent
     // the api question is unanswerable, and the fail-closed apiExpected used

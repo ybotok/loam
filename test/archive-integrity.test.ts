@@ -747,6 +747,10 @@ describe("a removal is checked against the living consumers", () => {
   it("passes once the consuming edge is gone, and the fleet stays green", async () => {
     const p = await makeProject({ ...fleetFixture(FLEET_LANDSCAPE_NO_CAPTURE), ...retireCapture() });
     try {
+      // A realistic fleet has run `loam subsystem sync`: the two GENERATED
+      // views files belong to a docs repo the way the landscape does, and
+      // their absence is its own `subsystem.views-stale` in the sweep below.
+      await runLoam(p.workDir, "subsystem", "sync");
       const res = await runLoam(p.workDir, "archive", "FEAT-50", "--json");
       expect(res.code).toBe(0);
       expect(await livingOps(p, "payment-service")).toEqual(["authorizePayment"]);

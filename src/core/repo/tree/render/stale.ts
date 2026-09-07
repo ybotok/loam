@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { FleetTree } from "../walk.js";
-import { type MapFacts, renderSubsystemViews, viewsAgree } from "./views.js";
+import { type MapFacts, renderServiceOverviews, renderSubsystemViews, viewsAgree } from "./views.js";
 
 /**
  * The three states, kept apart: absent, must-be-absent, and
@@ -34,7 +34,26 @@ export interface ViewsState {
 }
 
 export async function viewsState(path: string, tree: FleetTree, map: MapFacts): Promise<ViewsState> {
-  const expected = renderSubsystemViews(tree, map);
+  return stateOf(path, renderSubsystemViews(tree, map));
+}
+
+/**
+ * The same question about the OTHER generated file, `architecture/services.likec4`.
+ *
+ * A second exported function rather than a `which` parameter, and a second call
+ * at every asker rather than one that answers about both: the two files go stale
+ * for different reasons and are repaired in one command, so a caller that wants
+ * both asks twice and names each file in its own finding —
+ * `subsystem.views-stale` carries the path precisely so one code can honestly
+ * cover two files. Folding them into one state would lose which one drifted,
+ * which is the only thing the message has to say.
+ */
+export async function serviceViewsState(path: string, tree: FleetTree, map: MapFacts): Promise<ViewsState> {
+  return stateOf(path, renderServiceOverviews(tree, map));
+}
+
+/** Read the file, or record its absence, and compare — the half both askers share. */
+async function stateOf(path: string, expected: string | null): Promise<ViewsState> {
   const actual = existsSync(path) ? await readFile(path, "utf8") : null;
   return { actual, expected, agrees: viewsAgree(actual, expected) };
 }

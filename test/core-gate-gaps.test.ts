@@ -79,6 +79,22 @@ describe("a symlinked directory is a directory", () => {
     const p = await makeProject(fleetFixture());
     try {
       await externalise(p, "services/checkout-web", "checkout-web-elsewhere");
+      // A realistic fleet has run `subsystem sync` at least once, and since
+      // `architecture/services.likec4` exists (2026-09-07) an absent one is
+      // `subsystem.views-stale` — an ERROR — on every `--all` run, which would
+      // sink the `payload.valid` assertion below over a check this suite is not
+      // about (`test/landscape.test.ts` carries the same adaptation).
+      //
+      // It runs AFTER `externalise` on purpose, and that is the second thing
+      // this line proves: the per-service overview for `checkout-web` can only
+      // be rendered if the walk enumerates the service THROUGH the symlink, so
+      // a sync that could not see past one would leave the file behind and the
+      // stale finding would come straight back below.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
+      // Said outright rather than left to the finding count: the generated
+      // overviews carry a view TITLED for the symlinked service, so `sync` read
+      // the tree through the link and joined it to the map's element.
+      expect(await p.read("architecture/services.likec4")).toContain("title 'checkout-web'");
 
       const services = (await listServices(p.docsDir)).map((s) => s.id);
       expect(services).toEqual(["checkout-web", "payment-service"]);

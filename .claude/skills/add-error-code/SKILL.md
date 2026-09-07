@@ -50,10 +50,79 @@ Ask: could a caller distinguish this case by the payload instead? If yes, do tha
 6. **CHANGELOG.** A new refusal is user-visible: a case that used to succeed, or used to report
    `internal`, now reports this. Say that in the terms a user notices.
 
+## Retiring a code
+
+Retiring a code is not the checklist above run backwards, and it is not free.
+`landscape.datastore-private` was the
+**first code this repository has ever retired** (2026-09-07, because where a store is drawn is the
+team's choice and the check graded the drawing rather than the architecture). What that cost is
+written down here so the next retirement is a checklist rather than archaeology.
+
+**First, check you are allowed to.** A member of the `ErrorCode` union in `json.ts` or of the
+`IssueCode` family in `issue.ts` is FROZEN — AGENTS.md says so — and removing one is a breaking
+change, not a cleanup. A plain validate `Finding`/`Issue` code string that is in neither union is
+retirable; `landscape.datastore-private` was one. Read both files and confirm which you have. Do not
+infer it from the shape of the name: `landscape.*` holds both kinds.
+
+Then, in this order.
+
+1. **Delete the emitter, and prune what only it kept alive.** Retiring one arm of a check leaves
+   dead weight behind: this one took a finding builder, a placement helper, an exported type and two
+   fields of the check's input record with it. `lint` and `typecheck` convict the unused locals; an
+   exported type and an unread interface field they do not, so grep each name and delete by hand.
+2. **Remove its row from `src/core/agent/workflows/check.ts`.** That table is not prose *about*
+   `loam explain` — it **is** `loam explain`'s source, parsed out of the shipped constant at runtime
+   by `src/core/explain/fix-tables.ts`. Leave the row and the binary explains, in the present tense,
+   a code nothing can emit. Nothing catches this for you: `test/codes-drift.test.ts` grades
+   emitted → documented and never the reverse. Removing a row also lowers the parsed row count, so
+   check `test/explain.test.ts`'s count floor still clears.
+3. **Remove it from the generated agent surface.** The `AGENTS_MD` sections in
+   `src/core/agent/agents-md/` enumerate the codes each command emits — `command-map.ts` carries the
+   `loam validate` lists. Then run `npm run meta:agents`: `meta/docs/AGENTS.md` is checked in, and
+   `agents.stale` grades the version STAMP, so a same-version edit leaves that file wrong while
+   every check reports the repo healthy.
+4. **Correct the comments that named it — never delete them.** "This used to fire and no longer
+   does, and here is why" is the sentence a future reader needs most; a deleted comment is how the
+   next person re-derives the whole argument. The retirement left a corrected sentence in each of
+   `fleet/map/consumers.ts`, `fleet/census.ts` and `checks/health-deps.ts`.
+5. **Add ONE `ALLOWED_PROSE_TOKENS` entry in `test/docs-facts.test.ts`.** This is the step that is
+   invisible until it fails, and it is what made this retirement expensive. That test asserts every
+   dotted backticked token in a packaged page is a code loam **emits** — and CHANGELOG.md names a
+   retired code once per release that shipped or reworded it (about eight times for this one),
+   SCHEMA and ROADMAP more. Use the existing entry's reason verbatim, with your code's date and
+   one-line reason — `retired code, named in release history — CHANGELOG and ROADMAP describe the
+   releases that emitted it (retired <date>: <reason>)`. The entry stays honest by construction: the
+   same test still proves the token occurs in a packaged page, and the sibling check still proves
+   the code is not emitted.
+6. **Walk every packaged page** — `PACKAGED_MARKDOWN` in `scripts/package-docs.mjs`: README.md, the
+   `files[]` Markdown (CHANGELOG, SCHEMA, ROADMAP, QUICKSTART, WORKFLOW, …) and `examples/**`. A
+   page speaking in the PRESENT tense ("this warning fires when…") is now false and must be
+   rewritten to the new stance — SCHEMA's "Private stores" became "where a store is drawn is the team's choice",
+   and ROADMAP's line gained "retired on 2026-09-07, because…". The allowlist entry licenses
+   HISTORY, never a live claim.
+7. **Rewrite the tests in both directions.** Every case asserting the code fired, and — the one that
+   is easy to miss — every case that bought SILENCE from it. `test/landscape.test.ts` had been
+   tagging a fleet-owned Redis `#external` purely to stop the retired check firing; with the check
+   gone that tag is a lie about the fleet, and it had to go with it. Add a case pinning the
+   criterion the retirement asserts (here: ZERO findings for exactly the shape that used to be
+   graded), and a case that fails if the code is ever emitted again — `collectEmittedCodes()` reads
+   the source the way codes-drift does.
+8. **CHANGELOG, under `### Removed`.** Name the code, what fired it, why it is gone, and what a user
+   notices: `loam explain <code>` no longer answers and the row is gone from the agent-facing check
+   table. State outright whether the code was in a frozen union, because a reader needs to know
+   whether a contract broke.
+
+**What you must NOT do: rewrite release history.** The entry that announced the code, and every
+later entry that changed its message, describe what those versions actually emitted. They are true
+and they stay. A changelog edited to pretend a shipped version never had a code is worse than one
+that names a dead code — permitting exactly that is why the allowlist entry exists.
+
 ## Verify
 
 ```bash
 npx vitest run test/codes-drift.test.ts test/agent-contract.test.ts test/agent-commands-runnable.test.ts
 ```
+
+Retiring one adds `test/docs-facts.test.ts` and `test/explain.test.ts` to that line.
 
 Then run the full gate.

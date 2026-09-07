@@ -11,7 +11,7 @@
  */
 import { type Elem } from "../../../core/c4/likec4.js";
 import { properAncestorIds } from "../../../core/kernel/ids/fqn/ancestors.js";
-import { ACTOR_KINDS, EXTERNAL_TAG } from "../../../core/vocabulary/maturity.js";
+import { ACTOR_KINDS, EXTERNAL_TAG, INFRA_KINDS } from "../../../core/vocabulary/maturity.js";
 
 /**
  * Does this element stand for a `services/<id>/` directory — an explicit
@@ -54,7 +54,8 @@ export function serviceLevelElements(elements: Elem[], services: ReadonlySet<str
 
 /**
  * The drawn SYSTEMS: service-level elements minus everything the map itself
- * says is not a service. Actor kinds model people; `#external` is somebody
+ * says is not a service. Actor kinds model people; INFRA kinds model the
+ * datastores, queues and buckets the fleet RUNS; `#external` is somebody
  * else's system; and an element that CONTAINS a service is a grouping — a
  * domain, a boundary, an enterprise — not a service nobody adopted. There is
  * nothing to bind on a grouping and nothing to tag #external, so asking for
@@ -63,14 +64,36 @@ export function serviceLevelElements(elements: Elem[], services: ReadonlySet<str
  * the scorecard's `c4.elements` census counts it — one predicate, two readers,
  * zero drift.
  *
+ * The INFRA skip is the newest and the one with a measured cost behind it. A
+ * `database` the fleet OWNS and draws at fleet level is neither a person nor
+ * somebody else's system, so it used to earn `landscape.service-undocumented`
+ * — "bind it with `metadata { service '<id>' }`, or tag it `#external`" —
+ * whose two remedies are both FALSE of it: there is no directory to bind, and
+ * it is ours. Measured on a one-service fixture drawing an owned `database` at
+ * fleet level (2026-09-07): that warning plus `landscape.datastore-private`
+ * plus `gate.partner-undocumented` on its one consumer, three findings and no
+ * correct fix, which is why both `examples/docs` and this repo's own suite
+ * tagged an owned Redis `#external` to buy silence.
+ *
+ * `standsForService` wins over the kind, and that guard is load-bearing rather
+ * than defensive: a `database` bound with `metadata { service '<id>' }`, or one
+ * whose title names a real `services/<id>/`, IS an adopted service — dropping
+ * it here would take it out of the scorecard's `c4.elements` denominator and
+ * out of the binding passes at once. The kind is the fallback for an element
+ * nothing else answers for, never an override.
+ *
  * The `#external` skip here is exactly what `./kind-tags.ts` guards: read off a
- * tag a KIND declared, it can empty this census for a whole fleet at once.
+ * tag a KIND declared, it can empty this census for a whole fleet at once. The
+ * INFRA skip is NOT guarded there and does not need to be — a kind is what an
+ * element already is, not a claim declared over the fleet, and `#infrastructure`
+ * is deliberately not a tag loam grades on (`GRADED_TAGS`).
  */
 export function drawnSystems(elements: Elem[], services: ReadonlySet<string>): Elem[] {
   return serviceLevelElements(elements, services).filter(
     (e) =>
       !e.tags.includes(EXTERNAL_TAG) &&
       !ACTOR_KINDS.has(e.kind.toLowerCase()) &&
+      !(INFRA_KINDS.has(e.kind.toLowerCase()) && !standsForService(e, services)) &&
       !elements.some((c) => c.id.startsWith(`${e.id}.`) && standsForService(c, services)),
   );
 }

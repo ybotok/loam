@@ -10,11 +10,13 @@
  * concerned.
  *
  * Resolution is against the SERVICE'S OWN model — deliberately never the
- * landscape. A private datastore lives nested inside the service element
- * (`landscape.datastore-private` is the check pushing it there), so the
- * landscape carries only what crosses the service boundary, while the model
- * carries everything the service touches — and that is the set the on-call
- * file has to agree with. An id resolves by the same names every other join
+ * landscape. A store one service owns may be nested inside that service's
+ * element or drawn as a fleet-level peer, whichever the team chose (loam grades
+ * neither: `landscape.datastore-private`, which used to push it into the first,
+ * was retired 2026-09-07). Only the nested placement puts it in the landscape's
+ * interior at all, so the landscape is not a set this check could rely on, while
+ * the model carries everything the service touches — and that is the set the
+ * on-call file has to agree with. An id resolves by the same names every other join
  * uses: the element's likec4 id, its `metadata { service }` binding, or its
  * title. Exact match, no case folding — a fold would be a permanent
  * equivalence semantic no other loam join has, able to silently join two
@@ -61,7 +63,8 @@ export function healthDependencyFindings(deps: HealthDeps): Finding[] {
         `${service}: health.yaml declares dependency '${dep}' but nothing in ` +
         `${modelPath} answers to that name — either a dependency nobody ` +
         `modelled, or one that no longer exists. Model it (an external system as its own element ` +
-        `with the edge this service actually has; a private store as a nested container), or ` +
+        `with the edge this service actually has; a store this service owns as a nested container ` +
+        `or as its own element, whichever the map already does), or ` +
         `delete the entry` +
         (close.length > 0 ? `. Did you mean: ${close.join(", ")}?` : ""),
     });

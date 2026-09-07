@@ -14,13 +14,14 @@
  * is what that sentence means.
  */
 import { describe, expect, it } from "vitest";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildProgram } from "../src/cli.js";
 import { docsRepoFiles } from "../src/core/docs.js";
 import { parseServiceId } from "../src/core/kernel/ids/service.js";
 import { renderLandscape } from "../src/core/c4/seed/template.js";
 import { landscapeProvenance, sealLandscape } from "../src/core/c4/seed/stamp.js";
+import { GENERATED_MARK } from "../src/core/repo/tree/render/service/header.js";
 import { LANDSCAPE, makeProject, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 
 /** The scaffold's landscape, from the scaffolder itself — never a hand copy. */
@@ -629,15 +630,51 @@ describe("a Windows checkout: line endings are not hand edits", () => {
 });
 
 describe("the generated views file, including its absence", () => {
+  it("lands BOTH generated files in the seed commit — the per-service overviews included", async () => {
+    // Seed is the one command that creates the tree AND the map in one commit,
+    // so it is the only moment `architecture/services.likec4` can be rendered
+    // from a landscape that does not exist yet. A seed that wrote only the
+    // subsystem views would send its caller, through its own `next` list, into
+    // a `subsystem.views-stale` no re-seed could clear.
+    const p = await makeProject({ ...EMPTY_REPO });
+    try {
+      await writeFleet(p, FLEET);
+      const run = await runLoam(p.workDir, "seed", "--json");
+      expect(run.code, run.stdout).toBe(0);
+      expect(JSON.parse(run.stdout).created).toContain("architecture/services.likec4");
+      const views = await p.read("architecture/services.likec4");
+      // Titled by the subsystem path and the DIRECTORY id, and `of` the map
+      // element — the keyword that makes every other view drill down into it.
+      expect(views).toContain("view service_checkout of ");
+      expect(views).toMatch(/^ {4}title '(payments \/ )?checkout'$/m);
+      // The peers the seeded `calls:` list drew, named one per line.
+      expect(views).toContain("    exclude * -> *\n");
+      // And the fleet is current: the grader recomputes from the same project.
+      const validate = await runLoam(p.workDir, "validate", "--all", "--json");
+      const report = JSON.parse(validate.stdout) as { targets: Target[] };
+      expect(report.targets.flatMap((t) => t.findings).map((f) => f.code)).not.toContain(
+        "subsystem.views-stale",
+      );
+    } finally {
+      await p.destroy();
+    }
+  }, 60_000);
+
   it("removes a leftover subsystems.likec4 when the seeded tree has no subsystems", async () => {
     // renderSubsystemViews' contract is that a subsystem-less tree owes NO
     // views file, and validate grades a leftover `subsystem.views-stale`. Seed
     // exiting 0 and then sending the caller to `loam validate --all` — its own
     // next command — over a file it had in hand is the failure this pins.
+    // The leftover CARRIES LOAM'S MARK, and that is not decoration: a real
+    // leftover is a file loam wrote on an earlier run, and since the ownership
+    // guard reached seed (2026-09-07) a file at this path WITHOUT the mark is
+    // somebody's authored document that seed refuses to touch — the case the
+    // next test pins. A markless fixture here would have been asserting that
+    // seed deletes a stranger's file.
     const p = await makeProject({
       ...EMPTY_REPO,
       "architecture/landscape.likec4": scaffoldLandscape(),
-      "architecture/subsystems.likec4": "// stale leftover\nviews {\n}\n",
+      "architecture/subsystems.likec4": `${GENERATED_MARK} — stale leftover\nviews {\n}\n`,
     });
     try {
       await writeFleet(p, "services:\n  - checkout\n");
@@ -656,6 +693,54 @@ describe("the generated views file, including its absence", () => {
       await p.destroy();
     }
   });
+
+  it("refuses the WHOLE seed over a hand-authored file at either generated path, and not one byte moves", async () => {
+    // The clobber hole, one command over from `subsystem sync`. Both of these
+    // are filenames loam RESERVES inside `architecture/`, a directory the team
+    // owns, and seed rewrites them whole — so a repository that already kept a
+    // hand-drawn diagram at one of those paths lost it on the first seed after
+    // the release that reserved the name, silently, with nothing to restore it
+    // from. The same clobber was reproduced through `loam subsystem new`.
+    //
+    // THE WHOLE SEED, not just the file: seed regenerates the landscape, the
+    // markers and the `.gitkeep`s wholesale, so a run that landed those and
+    // declined the views file would leave a tree whose very next
+    // `validate --all` — seed's own `next` command — reports
+    // `subsystem.views-stale` over a file no command could ever repair. That is
+    // the same promise `seed-landscape-edited` makes one file over, which is
+    // why the exit code and the payload have to say a refusal and not a partial
+    // success.
+    const authored = "// our own overview, hand-drawn, here long before loam.\nviews {\n  view ours {\n    include *\n  }\n}\n";
+    for (const path of ["architecture/subsystems.likec4", "architecture/services.likec4"]) {
+      const p = await makeProject({ ...EMPTY_REPO, [path]: authored });
+      try {
+        await writeFleet(p, FLEET);
+        const before = await treeHashes(p.docsDir);
+        const run = await runLoam(p.workDir, "seed", "--json");
+        expect(run.code, run.stdout).toBe(1);
+        const payload = JSON.parse(run.stdout);
+        expect(payload.ok).toBe(false);
+        expect(payload.error.code).toBe("already-exists");
+        expect(payload.error.message).toContain(`${path} left as it is`);
+        // The sentence names the mark loam looked for, so a person can see what
+        // makes the file theirs rather than loam's.
+        expect(payload.error.message).toContain(GENERATED_MARK);
+        // Byte for byte, and the WHOLE tree with it: no landscape, no marker,
+        // no `.gitkeep` — which is what `treeHashes` says and a read of the one
+        // file could not.
+        expect(await p.read(path)).toBe(authored);
+        expect(await treeHashes(p.docsDir)).toEqual(before);
+        expect(p.exists("architecture/landscape.likec4")).toBe(false);
+
+        // And the repair the message names really works, with no other step.
+        await rm(join(p.docsDir, path));
+        const repaired = await runLoam(p.workDir, "seed", "--json");
+        expect(repaired.code, repaired.stdout).toBe(0);
+      } finally {
+        await p.destroy();
+      }
+    }
+  }, 120_000);
 
   it("renders the views from the whole architecture/ project — a palette in a sibling document is referenced, and validate and sync agree", async () => {
     // `validate --all` and `subsystem sync` recompute the expected bytes from

@@ -270,19 +270,25 @@ element and point the edges at it — \`paymentService -> kafka.paymentEvents\`,
 \`paymentService -> kafka\`. One hub of degree sixty becomes twelve of degree
 five, and it is the truer model besides: what a producer and a consumer share is
 the topic, never the broker. Every check joins the same way, because an edge into
-a nested element resolves to the element that owns it. Declare the kind once and
-tag it there —
+a nested element resolves to the element that owns it. Declare the kind once —
 
     specification {
       element topic {
-        #external
         style { shape queue }
       }
     }
 
-— because **LikeC4 does not inherit tags**: a topic nested inside an \`#external\`
-broker is not external itself, and \`loam validate --all\` will ask for a
-\`services/payment.events/\` nobody owes (\`landscape.service-undocumented\`).
+The KIND is what does the work: since 2026-09-07 loam reads \`database\`, \`queue\`,
+\`topic\`, \`cache\` and \`bucket\` as infrastructure rather than as candidate
+services, so a topic drawn this way is out of the service census and nobody is
+asked for a \`services/payment.events/\` (measured: the same element spelled
+\`container\` earns \`landscape.service-undocumented\`, spelled \`topic\` it earns
+nothing). This used to need \`#external\` ON THE KIND as a workaround, because
+**LikeC4 does not inherit tags** and a topic nested inside an \`#external\` broker
+is not external itself. That workaround is no longer owed. Tag the kind
+\`#external\` if you want the topics out of the fleet VIEW as well — that is what
+the next paragraph's \`exclude\` reads, and it is a rendering choice now rather
+than a way to silence a check.
 
 **Scope the views.** \`exclude element.tag = #external\` keeps the fleet overview to
 the calls between our own services; a second view over the broker draws the event

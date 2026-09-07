@@ -24,10 +24,12 @@ model {
       description 'Payment domain logic'
       technology 'Java'
     }
-    // The store is a container of THIS service, not a fleet-level peer. Drawn
-    // in the landscape it would be a system in its own right, available to be
-    // depended on — which is the claim `landscape.datastore-private` exists to
-    // refuse when only one service reaches it.
+    // The store is a container of THIS service rather than a fleet-level peer —
+    // where a store is drawn is the team's choice and loam grades neither, so
+    // this is a decision the example makes and explains, not one it was forced
+    // into. Kept here because nothing else reaches this data: the day something
+    // does, its edge resolves only against a declaration the MAP holds, and the
+    // store moves up into `marketplace.paymentService` on the landscape.
     db = database 'db' {
       description 'Payments store'
       technology 'PostgreSQL'

@@ -115,6 +115,10 @@ function fleet(files: Record<string, string>): Record<string, string> {
 async function project(files: Record<string, string>): Promise<Project> {
   const p = await makeProject(fleet(files), { service: "payment-service" });
   cleanups.push(() => p.destroy());
+  // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+  // files belong to a docs repo the way the landscape does, and their absence
+  // is its own `subsystem.views-stale`. Every case here is about something else.
+  await runLoam(p.workDir, "subsystem", "sync");
   return p;
 }
 
@@ -256,11 +260,13 @@ describe("a feature brings topology", () => {
   it("refuses a name loam owns inside architecture/, whether or not the target exists", async () => {
     // The merge writes STRAIGHT into `architecture/` — unlike a flow, which
     // lands under `usecases/` — so the document's name is free to collide with
-    // what loam owns there, and two of the three fail silently: nothing parses
-    // `subsystems.likec4` and `loam subsystem sync` overwrites it wholesale, so
-    // topology copied there is gone and invisible in the same breath. Neither
-    // target exists in this fixture, which is the case `deployment.doc-exists`
-    // cannot see.
+    // what loam owns there, and three of the four fail silently: nothing parses
+    // either GENERATED file (`subsystems.likec4`, `services.likec4`) and
+    // `loam subsystem sync` overwrites both wholesale, so topology copied there
+    // is gone and invisible in the same breath. Neither target here exists in
+    // this fixture, which is the case `deployment.doc-exists` cannot see — the
+    // second generated name has its own case below, where the target DOES
+    // exist.
     const p = await project({
       [`${FEAT_DIR}/deployment/subsystems.likec4`]: STANDBY,
       [`${FEAT_DIR}/deployment/usecases/nested.likec4`]: STANDBY,
@@ -278,6 +284,44 @@ describe("a feature brings topology", () => {
 
     const approved = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
     expect(approved.code, approved.out).toBe(1);
+    expect(await treeHashes(p.docsDir)).toEqual(before);
+  });
+
+  it("refuses architecture/services.likec4, the second generated name, and refuses it AS reserved", async () => {
+    // The per-service overview file is the newer of the two names loam owns,
+    // and the arm that had no case: the older test above stages
+    // `subsystems.likec4` against a fixture where nothing generated exists, so
+    // a reservation that had never learned the second name would have passed it
+    // untouched.
+    //
+    // The target EXISTS here — the fixture runs `loam subsystem sync`, and the
+    // map draws one bound service, so `architecture/services.likec4` is on disk
+    // — which pins the half the other case cannot: the refusal is
+    // `deployment.doc-reserved` and NOT `deployment.doc-exists`. Both would
+    // refuse this archive, so an exit code proves nothing; the codes differ in
+    // what they tell the author to do, and only the reserved one says the name
+    // is unusable rather than merely taken. A `deployment.doc-exists` here
+    // would send its reader to "edit architecture/services.likec4 directly",
+    // which is advice to hand-edit a file `loam subsystem sync` overwrites
+    // wholesale.
+    const p = await project({ [`${FEAT_DIR}/deployment/services.likec4`]: STANDBY });
+    expect(p.exists("architecture/services.likec4")).toBe(true);
+    const before = await treeHashes(p.docsDir);
+
+    const refused = await runLoam(p.workDir, "archive", FEAT, "--json");
+    expect(refused.code, refused.out).toBe(1);
+    const found = issuesOf(refused.stdout, "deployment.doc-reserved");
+    expect(found, refused.stdout).toHaveLength(1);
+    expect(found[0]!.message).toContain("services.likec4");
+    expect(found[0]!.overridable).toBe(false);
+    expect(issuesOf(refused.stdout, "deployment.doc-exists")).toHaveLength(0);
+    expect(await treeHashes(p.docsDir), "a refusal must write nothing").toEqual(before);
+
+    // Never overridable, exactly as the other reserved names are: the name is
+    // loam's, and approving a document into it approves its own erasure.
+    const approved = await runLoam(p.workDir, "archive", FEAT, "--approve", "--json");
+    expect(approved.code, approved.out).toBe(1);
+    expect(issuesOf(approved.stdout, "deployment.doc-reserved"), approved.stdout).toHaveLength(1);
     expect(await treeHashes(p.docsDir)).toEqual(before);
   });
 

@@ -18,6 +18,7 @@ import { serviceResolver } from "../c4/resolve/service.js";
 import {
   ACTOR_KINDS,
   EXTERNAL_TAG,
+  INFRA_KINDS,
   landscapeEvidence,
   maturityGaps,
   serviceMaturity,
@@ -91,23 +92,40 @@ export function atLeastDocumented(m: Maturity): boolean {
 }
 
 /**
- * What the map says about one edge END: does it stand for a person, and is it
- * tagged `#external`? Walked up the ancestor chain because both facts are
- * usually written on the containing system while the edge is drawn from a
- * nested element — but the walk STOPS at the first element that stands for a
- * service (an explicit binding or a title naming a real directory,
- * `serviceResolver`'s own first two rungs, checked after that element's own
- * facts are read). What sits above the service boundary is a grouping, and a
- * grouping's `#external` is the grouping's claim, not the service's: without
- * the stop, an adopted service drawn inside an `#external` zone was exempted
- * from `gate.partner-undocumented` and its real rung hidden.
+ * What the map says about one edge END: does it stand for a person, is it
+ * INFRASTRUCTURE, and is it tagged `#external`? Walked up the ancestor chain
+ * because all three facts are usually written on the containing system while
+ * the edge is drawn from a nested element — but the walk STOPS at the first
+ * element that stands for a service (an explicit binding or a title naming a
+ * real directory, `serviceResolver`'s own first two rungs, checked after that
+ * element's own facts are read). What sits above the service boundary is a
+ * grouping, and a grouping's `#external` is the grouping's claim, not the
+ * service's: without the stop, an adopted service drawn inside an `#external`
+ * zone was exempted from `gate.partner-undocumented` and its real rung hidden.
+ *
+ * `infra` is read only off an element that stands for NO service AND sits
+ * inside none, which is the asymmetry the `standsFor` local exists for. That is
+ * `commands/validate/fleet/census.ts` in two steps and in its order:
+ * `serviceLevelElements` drops everything drawn inside a service BEFORE
+ * `drawnSystems` ever applies the kind test, so a service's own interior never
+ * reaches it. Both halves are load-bearing. A `database` bound with
+ * `metadata { service '<id>' }` is an adopted service that happens to be drawn
+ * as a store — its side of the join IS recorded, and dropping it would hide a
+ * real partner's rung. And a store drawn INSIDE its owner — `orderService.db`,
+ * the ordinary way a team draws a private datastore — is that service's
+ * interior: reading the kind off it convicted the WHOLE endpoint as
+ * infrastructure, and `partnerScan` then dropped order-service from the partner
+ * set, so a service this gate exists to grade vanished because of how somebody
+ * drew its storage. The kind is the fallback for an element nothing else
+ * answers for, never the override.
  */
 function endFacts(
   byId: Map<string, Elem>,
   known: ReadonlySet<string>,
   id: string,
-): { actor: boolean; external: boolean } {
+): { actor: boolean; infra: boolean; external: boolean } {
   let actor = false;
+  let infra = false;
   let external = false;
   // The id itself, then each dotted ancestor — the same walk `serviceResolver`
   // resolves through, out of the one module that spells it
@@ -115,11 +133,23 @@ function endFacts(
   for (const candidate of ancestorIds(id)) {
     const e = byId.get(candidate);
     if (e === undefined) continue;
+    const standsFor = e.service !== undefined || known.has(e.title);
     if (ACTOR_KINDS.has(e.kind.toLowerCase())) actor = true;
+    if (!standsFor && INFRA_KINDS.has(e.kind.toLowerCase())) infra = true;
     if (e.tags.includes(EXTERNAL_TAG)) external = true;
-    if (e.service !== undefined || known.has(e.title)) break;
+    if (standsFor) {
+      // Everything the walk has visited so far was drawn INSIDE this service,
+      // so nothing visited so far was service-LEVEL and no kind read off it
+      // answers for a service — `serviceLevelElements` filtering ahead of the
+      // kind test, spelled as a walk. `actor` and `external` are deliberately
+      // left standing: a person or an `#external` tag written on a container is
+      // still a claim about this endpoint, while the store shape is a claim
+      // about the owner's interior.
+      infra = false;
+      break;
+    }
   }
-  return { actor, external };
+  return { actor, infra, external };
 }
 
 /** How one edge joins the two ends, in the words the finding and the payload both use. */
@@ -234,12 +264,26 @@ export async function partnerScan(req: PartnerScanRequest): Promise<PartnerScan>
     if (source === target) continue;
     if (target === service) {
       const facts = endFacts(byId, known, r.source);
-      // A person is never a deploy participant: the actor exemption every
-      // landscape census applies (drawnSystems, commands/validate/fleet/census.ts).
-      if (!facts.actor) join(source, "consumer", r, facts.external);
+      // A person is never a deploy participant, and neither is the fleet's own
+      // infrastructure: the two kind exemptions every landscape census applies
+      // (drawnSystems, commands/validate/fleet/census.ts), spelled here off the
+      // same two sets so a gate and a validate run cannot disagree about what a
+      // partner IS.
+      //
+      // The infra half is the newer one, and it had a measured cost. A
+      // `database` the fleet owns and draws at fleet level joined every service
+      // that reads it, with `maturity: null` because there is no
+      // `services/<title>/` — so `gate.partner-undocumented` told the deployer
+      // to "adopt it, bind it … or tag it #external", three remedies none of
+      // which is true of a Postgres (measured on a one-service fixture,
+      // 2026-09-07). It is dropped from the partner SET rather than exempted
+      // from the finding, which is the actor precedent exactly: `partners` is
+      // the list of counterparties whose DOCS the gate grades, and a store has
+      // none to grade.
+      if (!facts.actor && !facts.infra) join(source, "consumer", r, facts.external);
     } else if (source === service) {
       const facts = endFacts(byId, known, r.target);
-      if (!facts.actor) join(target, "provider", r, facts.external);
+      if (!facts.actor && !facts.infra) join(target, "provider", r, facts.external);
     }
   }
 

@@ -18,7 +18,7 @@
  */
 import { type Elem } from "../../../../core/c4/likec4.js";
 import { elementService } from "../../../../core/c4/resolve/service.js";
-import { EXTERNAL_TAG } from "../../../../core/vocabulary/maturity.js";
+import { EXTERNAL_TAG, INFRA_KINDS } from "../../../../core/vocabulary/maturity.js";
 import { type Finding } from "../../../../core/vocabulary/report.js";
 
 export interface BindingInput {
@@ -93,6 +93,13 @@ export function bindingFindings(input: BindingInput): Finding[] {
   // so the map's exemptions and the fleet rollup cannot drift — with the two
   // residual skips that are not exemptions: a bound element is the binding
   // pass's subject above, and a title naming a real directory is documented.
+  //
+  // Infrastructure the fleet OWNS is out of `systems` upstream, in
+  // `../census.ts drawnSystems` (INFRA_KINDS), and it had to be: this message
+  // offers exactly two remedies and BOTH are false of an owned datastore — there
+  // is no `services/<id>/` to bind, and `#external` would claim somebody else
+  // runs it. Measured on a one-service fixture drawing an owned `database` at
+  // fleet level (2026-09-07), it fired here and had no correct fix.
   for (const e of input.systems) {
     if (e.service !== undefined) continue; // graded by the binding pass above
     if (services.has(e.title)) continue;
@@ -100,7 +107,13 @@ export function bindingFindings(input: BindingInput): Finding[] {
       severity: "warn",
       code: "landscape.service-undocumented",
       subject: e.title,
-      message: `landscape: '${e.title}' has no services/${e.title}/ — bind it with metadata { service '<id>' }, or tag it #${EXTERNAL_TAG} if it is not ours`,
+      // The third remedy is spelled from `INFRA_KINDS` rather than typed out,
+      // for the reason the set exists at all: the hook is a kind NAME, so a
+      // fleet whose specification spells its store `postgres` still lands here,
+      // and this sentence is the only place that tells its author which
+      // spellings loam reads. A prose copy would be a second list free to drift
+      // from the one the census walks.
+      message: `landscape: '${e.title}' has no services/${e.title}/ — bind it with metadata { service '<id>' }, tag it #${EXTERNAL_TAG} if it is not ours, or give it one of the kinds loam reads as infrastructure (${[...INFRA_KINDS].join(", ")}) if it is a store, queue or bucket the fleet runs rather than a system somebody adopts`,
     });
   }
 

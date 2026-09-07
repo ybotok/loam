@@ -9,9 +9,9 @@
  * consumer census walked the MAP's relationships alone, so a store whose
  * consuming edges are all drawn in `services/<…>/model.likec4` had zero
  * consumers and earned nothing at all — and a store reached by three models plus
- * one map edge was reported `landscape.datastore-private` naming the single
- * service the MAP happened to draw (R1). A model is evidence about the fleet
- * exactly as the map is, so it is read here and handed to both.
+ * one map edge was graded against the single service the MAP happened to draw
+ * (R1). A model is evidence about the fleet exactly as the map is, so it is read
+ * here and handed to both.
  *
  * EXTENDING MODELS ONLY, for the consumer join. An extending model's ids ARE the
  * map's fully-qualified ids — one project, one id space — so `counterpartId`
@@ -38,9 +38,7 @@ import { inOrder } from "../../../../core/kernel/concurrency.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import { type ServiceEntry } from "../../../../core/repo/entries.js";
 import { servicePathsAt } from "../../../../core/repo/paths.js";
-
-/** The element kind read as a datastore, compared case-insensitively — `fleet-shape.ts`'s spelling. */
-const DATASTORE_KIND = "database";
+import { DATASTORE_KIND } from "../../../../core/vocabulary/maturity.js";
 
 /** One service's model, as the map checks read it. */
 export interface AttestedModel {

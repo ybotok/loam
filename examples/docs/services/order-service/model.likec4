@@ -43,14 +43,16 @@ model {
       description 'Applies payment.PaymentAuthorized once per paymentId, then advances the order'
       technology 'Kotlin'
     }
-    // The store is a NESTED container of this service, never a fleet-level peer: it
-    // has exactly one consumer, so drawn beside the services in the landscape it would
-    // read as a system in its own right (`landscape.datastore-private` is the check
-    // that pushes it back in here). Nesting hides nothing — a second service reaching
-    // the same data earns `landscape.datastore-shared`, counted from that service's own
-    // model — but it does decide where the store may be written: an edge naming
-    // `marketplace.orderService.db` resolves only for a project that holds this file,
-    // so a store two services will share belongs on the map inside `marketplace.orderService`.
+    // The store is a NESTED container of this service, and that is this fleet's
+    // CHOICE rather than a rule: loam grades neither placement, and the same store
+    // drawn beside the services in the landscape earns no finding either. What the
+    // choice decides is one thing, and it is a fact about LikeC4 rather than a
+    // preference: an edge naming `marketplace.orderService.db` resolves only for a
+    // project that holds this file, and a per-service project is `architecture/`
+    // plus ONE model — so a store a second service will name belongs on the map,
+    // inside `marketplace.orderService`. Nesting hides nothing meanwhile: a second
+    // service reaching the same data earns `landscape.datastore-shared`, counted
+    // from that service's own model.
     // The `database` kind is the landscape's, declared there once for every model that needs it.
     db = database 'db' {
       description 'Orders, idempotency keys, the applied-payment ledger and the outbox table'

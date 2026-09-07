@@ -222,7 +222,7 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
   \`landscape.merge-conflict\`, \`landscape.service-unmodelled\`,
   \`landscape.service-undocumented\`, \`landscape.binding-unknown\`,
   \`landscape.binding-duplicate\`, the fleet-shape advisories
-  \`landscape.platform-candidate\`, \`landscape.datastore-private\` and
+  \`landscape.platform-candidate\` and
   \`landscape.datastore-shared\`, \`service.id-invalid\` (fleet scope only, and
   graded before the map is opened, so it stands even when the landscape is
   missing or unreadable), the four renderer-wiring warnings a
