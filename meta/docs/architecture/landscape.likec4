@@ -62,10 +62,14 @@ specification {
   // unused. `person` has no subject here — nobody is drawn using loam, because
   // what would be drawn is a terminal. `database` is refused on purpose: the
   // nearest candidates are `core/staging/` (the write path) and `core/repo/`
-  // (the read model over the docs tree), and drawing either as a datastore
-  // fires `landscape.datastore-private` / `landscape.datastore-shared`, which
-  // are advisories about a fleet-level store two services share. Neither is
-  // one, and a warning with no correct fix is a warning somebody silences.
+  // (the read model over the docs tree), and neither is a store: `staging/` is
+  // a write protocol and `repo/` is a read over files somebody else owns.
+  // Drawing either as a `database` would also put it outside the service census
+  // — infrastructure is not a service — so the box would stop being graded as
+  // the subject it is. Nothing about the KIND is a warning any more
+  // (`landscape.datastore-private` was retired 2026-09-07 and
+  // `landscape.datastore-shared` needs two consumers); the reason is simply
+  // that the claim would be false.
   element softwareSystem
   element container
 }

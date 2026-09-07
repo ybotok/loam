@@ -128,7 +128,7 @@ export interface Scorecard {
     linked: number;
   };
   c4: {
-    /** The drawn SYSTEMS — `drawnSystems`, the fleet map's own census, so the map's exemptions (actors, `#external`, groupings, containers) and this count cannot drift. */
+    /** The drawn SYSTEMS — `drawnSystems`, the fleet map's own census, so the map's exemptions (actors, INFRA kinds the fleet runs rather than adopts, `#external`, groupings, containers) and this count cannot drift. An INFRA-kind element that DOES stand for a `services/<id>/` stays in, so adopting a store never shrinks the denominator. */
     elements: number;
     /** Of them, the ones some living arch requirement's `Covers:` entry names. */
     covered: number;

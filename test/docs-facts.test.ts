@@ -344,6 +344,19 @@ describe("public docs name only emitted codes", () => {
     "reports.present": "doctor --json payload field path — whether that directory exists",
     "reports.total": "doctor --json payload field path — how many reports it holds",
     "reports.next": "doctor --json payload field path — the ordinal the next report takes",
+    // The first RETIRED code to reach this list, and the reason is worded for
+    // the next one rather than for this one. A code loam has stopped emitting
+    // still occurs in immutable release history: CHANGELOG entries describe the
+    // releases that shipped it, and a roadmap line may cite the defect that
+    // retired it. Those sentences are true and must not be edited — a changelog
+    // that rewrites what an old version emitted is worse than one naming a dead
+    // code. What the entry does NOT license is a LIVE page telling a reader a
+    // retired code will fire: the check below still proves the token appears
+    // somewhere packaged, and the sibling check still proves it is not emitted,
+    // so an entry here can only ever be honest about history. When a future
+    // retirement lands, add its code with this same reason.
+    "landscape.datastore-private":
+      "retired code, named in release history — CHANGELOG and ROADMAP describe the releases that emitted it (retired 2026-09-07: where a store is drawn is the team's choice)",
   };
 
   /** File-name tails that make a dotted token a filename, not a code. */
@@ -577,30 +590,68 @@ describe("SCHEMA's layout block is the whole map", () => {
 });
 
 describe("one stance on whose document holds a service's interior", () => {
-  it("SCHEMA never says the map holds no service's interior, because every other surface says it may", async () => {
-    // Re-verification 2026-09-04, E3: the landscape-scaling paragraph asserted
-    // "an extending model is the only place a container can be written, so the
-    // map holds no service's interior" while SCHEMA's own "Private stores",
-    // `landscape.datastore-private`'s message and the archive's title-join
-    // remainder all say the map MAY hold one — and a container nested inside a
-    // service on the map validates clean through both loam and the renderer.
-    // Two sides so the paragraph cannot be re-narrowed without the messages
-    // moving too: the false clause is gone, and the placement the messages
-    // offer is still spelled where a reader looks it up.
+  /**
+   * The stance CHANGED on 2026-09-07 and this block changed with it, so read
+   * both halves before editing either.
+   *
+   * The old stance was a preference loam enforced: a one-consumer store drawn
+   * as a fleet-level peer earned `landscape.datastore-private`, whose whole
+   * message prescribed deleting the peer and writing the store inside its
+   * owner. This block then existed to stop SCHEMA re-narrowing to "the map
+   * holds no service's interior" while that message told an agent to put one
+   * there. The maintainer's verdict on the preference itself: "that is not
+   * correct" — where a store is drawn is the team's choice, and grading the
+   * DRAWING while the identical nested store was silent graded the picture
+   * rather than the architecture.
+   *
+   * So the code is retired and the pins are inverted. What must hold now is
+   * that no surface prescribes a move — and that the one genuinely
+   * load-bearing consequence, which is a fact about LikeC4 and not a
+   * preference, survived the deletion instead of going with it: a second
+   * consumer's edge resolves only against a declaration the MAP holds, because
+   * a per-service project is `architecture/` plus one model. That sentence is
+   * why placement is a decision at all, and it is the half a rewrite would
+   * most plausibly throw away along with the prescription.
+   */
+  it("placement is free, the LikeC4 consequence survives, and no emitted code grades where a store is drawn", async () => {
     const schema = flat(await read("SCHEMA.md"));
+    // Kept from the old block, and still true for the old reason: the archive's
+    // title-join and `loam archive`'s routing both put containers on the map.
     expect(
       schema,
-      "SCHEMA still forbids what `landscape.datastore-private` prescribes and `loam validate` accepts",
+      "SCHEMA still forbids a placement `loam validate` accepts",
     ).not.toContain("the map holds no service's interior");
     expect(
       schema,
-      "SCHEMA's `Private stores` must still offer the map as a placement — that is the sentence the message quotes",
+      "SCHEMA's `Private stores` must offer BOTH placements — a store nested in the owner's model and one drawn as a fleet-level peer are equally first-class",
     ).toContain("or inside the service's element on the map when the map draws that service's containers");
-    const message = await read("src/commands/validate/fleet/map/consumers.ts");
     expect(
-      message,
-      "the datastore remedy no longer offers the map placement — move SCHEMA with it",
-    ).toContain("here when the map draws ");
+      schema,
+      "SCHEMA's `Private stores` must say outright that the placement is the team's choice — the sentence that replaced the prescription",
+    ).toContain("Where a store is drawn is the team's choice");
+    expect(
+      schema,
+      "SCHEMA dropped the one consequence that is a FACT rather than a preference — a second consumer's edge needs the store on the MAP",
+    ).toContain("a per-service project is `architecture/` plus one model");
+    // The proof that no message prescribes a move is that the code which did no
+    // longer exists. `collectEmittedCodes` reads the source the way
+    // codes-drift does, so this fails the moment the arm is restored — and a
+    // restored arm is exactly what would make the SCHEMA pins above wrong.
+    const emitted = await collectEmittedCodes();
+    expect(
+      emitted.has("landscape.datastore-private"),
+      "`landscape.datastore-private` is emitted again — it graded WHERE a store is drawn, which is the team's choice; if it was deliberately restored, this whole block and SCHEMA's `Private stores` move with it",
+    ).toBe(false);
+    // The surviving grade states coupling and never placement, so its remedy
+    // must be about the DATA. "let this warning state the coupling" is the
+    // clause that makes that explicit, and it is the one a re-prescription
+    // would delete first. flat() because the sentence is assembled across
+    // source lines and this checkout's line endings are not the pin's business.
+    const consumers = flat(await read("src/commands/validate/fleet/map/consumers.ts"));
+    expect(
+      consumers,
+      "`landscape.datastore-shared`'s remedy no longer says a store may stay where it is — the shared grade is about the same DATA, never about the drawing",
+    ).toContain("let this warning state the coupling");
   });
 });
 

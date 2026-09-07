@@ -54,6 +54,10 @@ describe("validate --all when the batch workspace cannot be created", () => {
   it("emits byte-identical output for a clean fleet", async () => {
     const p = await makeProject(coherentFixture());
     try {
+      // A realistic fleet has run `loam subsystem sync`: the two GENERATED
+      // views files belong to a docs repo the way the landscape does, and
+      // their absence is its own `subsystem.views-stale`.
+      await runLoam(p.workDir, "subsystem", "sync");
       batch.denied = false;
       const healthy = await runLoam(p.workDir, "validate", "--all", "--json");
       perPath.healthyRunCalls = perPath.loadFileCalls;

@@ -209,6 +209,10 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
   it("author → rebase → validate → archive → validate --all → unarchive restores every byte", async () => {
     const p = await makeProject(lifecycleFixture());
     try {
+      // A realistic fleet has run `loam subsystem sync`: the two GENERATED
+      // views files belong to a docs repo the way the landscape does, and
+      // their absence is its own `subsystem.views-stale`.
+      await runLoam(p.workDir, "subsystem", "sync");
       // The fleet is red before the feature lands: the consumer's message has
       // no producer anywhere.
       const before = await runLoam(p.workDir, "validate", "--all", "--json");

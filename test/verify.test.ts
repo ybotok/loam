@@ -257,6 +257,70 @@ describe("what the checklist asks about", () => {
     );
   });
 
+  it("does not ask whether a datastore the feature ADDS exists — no repository can answer that", async () => {
+    // The third surface that treated the fleet's own infrastructure as a service
+    // (the other two are `landscape.service-undocumented` and
+    // `gate.partner-undocumented`). A delta that draws the store its feature
+    // introduces minted `service.exists` for it, and `loam verify` then asked an
+    // agent to point at the code proving a Postgres has a services/ directory —
+    // a claim no repository could ever answer, sitting in a checklist whose
+    // whole value is that every question is answerable. It is the same shape as
+    // the container and actor skips beside it: an element that is nobody's
+    // repository.
+    const files = coherentFixture();
+    files[`${DIR}/delta.likec4`] = files[`${DIR}/delta.likec4`]!
+      .replace("  element softwareSystem\n", "  element softwareSystem\n  element database\n")
+      .replace(
+        "  paymentSplitService = softwareSystem 'payment-split-service' {",
+        "  splitLedger = database 'split-ledger' {\n    #FEAT-1\n  }\n\n  paymentSplitService = softwareSystem 'payment-split-service' {",
+      );
+    const p = await project(files);
+    const subjects = of(await claims(p), "service.exists").map((c) => c.subject);
+    expect(subjects).not.toContain("split-ledger");
+    // …and the new SERVICE the same delta introduces is still asked about: the
+    // exemption is about the kind, not about tagged elements in general.
+    expect(subjects).toEqual([SPLIT]);
+  });
+
+  it("…but a BOUND datastore is an adopted service and is still asked about", async () => {
+    // The guard that keeps the kind from overriding a binding. `metadata
+    // { service '<id>' }` is a claim about this repo rather than a guess at
+    // one — it names a directory the author says exists — and that claim is
+    // exactly what this checklist is for.
+    const files = coherentFixture();
+    files[`${DIR}/delta.likec4`] = files[`${DIR}/delta.likec4`]!
+      .replace("  element softwareSystem\n", "  element softwareSystem\n  element database\n")
+      .replace(
+        "  paymentSplitService = softwareSystem 'payment-split-service' {",
+        "  splitLedger = database 'split-ledger' {\n    #FEAT-1\n    metadata { service 'split-ledger' }\n  }\n\n  paymentSplitService = softwareSystem 'payment-split-service' {",
+      );
+    const p = await project(files);
+    expect(of(await claims(p), "service.exists").map((c) => c.subject)).toContain("split-ledger");
+  });
+
+  it("…and so is a datastore whose TITLE names a real services/<id>/", async () => {
+    // The second rung of `standsForService`, which this surface used to skip.
+    // Every other surface — the fleet census, the kind-tag check, the gate's
+    // partner scan — treats "explicitly bound OR titled after a real
+    // `services/<id>/`" as one predicate, because a docs repo written before
+    // the binding existed has only the title. Testing the binding alone made an
+    // adopted store a service everywhere and infrastructure here, and the
+    // promise the feature made about it went missing from the one artifact
+    // whose value is that it holds every promise.
+    const files = coherentFixture();
+    // A real directory on disk, so the enumeration answers for the title.
+    files["services/ledger/spec.md"] =
+      "---\nservice: ledger\nstatus: draft\n---\n\n# ledger\n\n## Requirements\n";
+    files[`${DIR}/delta.likec4`] = files[`${DIR}/delta.likec4`]!
+      .replace("  element softwareSystem\n", "  element softwareSystem\n  element database\n")
+      .replace(
+        "  paymentSplitService = softwareSystem 'payment-split-service' {",
+        "  ledgerStore = database 'ledger' {\n    #FEAT-1\n  }\n\n  paymentSplitService = softwareSystem 'payment-split-service' {",
+      );
+    const p = await project(files);
+    expect(of(await claims(p), "service.exists").map((c) => c.subject)).toContain("ledger");
+  });
+
   it("asks that every scenario of every changed requirement is covered by a test", async () => {
     const p = await project();
     const cs = of(await claims(p), "scenario.tested");

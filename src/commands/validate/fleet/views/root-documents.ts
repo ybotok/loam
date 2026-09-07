@@ -16,10 +16,12 @@
  *
  * FOUR THINGS COME OUT, and each is a rule rather than a filter of convenience:
  *
- *  - The GENERATED `architecture/subsystems.likec4`, for `c4/project/documents.ts`'s
- *    reason — docs/DESIGN.md rule 26 makes its staleness a byte compare, and a
- *    stale one naming a removed element would blank this load and report a
- *    cascade whose repair is `loam subsystem sync`.
+ *  - Every GENERATED `architecture/` document — `subsystems.likec4` and
+ *    `services.likec4`, taken from the ONE list every project read shares
+ *    (`c4/project/architecture.ts`) — for `c4/project/documents.ts`'s reason:
+ *    docs/DESIGN.md rule 26 makes their staleness a byte compare, and a stale
+ *    one naming a removed element would blank this load and report a cascade
+ *    whose repair is `loam subsystem sync`.
  *  - Anything the root `exclude` covers, read through `c4/root-project/exclude.ts`
  *    — the renderer does not load it, so grading it would be loam reporting a
  *    failure nobody can see. A root config loam cannot read an `exclude` list out
@@ -44,7 +46,7 @@ import { readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { excludingPath, readRootExclude } from "../../../../core/c4/root-project/exclude.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
-import { subsystemViewsPath } from "../../../../core/repo/paths.js";
+import { generatedArchitectureDocuments } from "../../../../core/c4/project/architecture.js";
 
 /** The directory name loam never walks, beside every dot-directory. */
 const PACKAGES = "node_modules";
@@ -58,12 +60,12 @@ const FEATURES = "features";
  */
 export async function rootProjectDocuments(docsDir: DocsDir, standalone: readonly string[]): Promise<string[]> {
   const exclude = await readRootExclude(docsDir);
-  const generated = resolve(subsystemViewsPath(docsDir));
+  const generated = new Set(generatedArchitectureDocuments(docsDir).map((path) => resolve(path)));
   const excluded = standalone.map((dir) => `${resolve(dir)}${sep}`);
   const root = resolve(docsDir);
   const found: string[] = [];
   const keeps = (path: string): boolean => {
-    if (resolve(path) === generated) return false;
+    if (generated.has(resolve(path))) return false;
     if (excluded.some((dir) => resolve(path).startsWith(dir))) return false;
     const rel = relative(root, path).split(/[\\/]/);
     if (rel[0] === FEATURES) return false;

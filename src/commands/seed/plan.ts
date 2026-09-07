@@ -1,30 +1,37 @@
 /**
  * What a seed run will write, decided in full before a byte lands. Split from
  * `./commit.ts` on the phase seam: that module owns the WINDOW — the lock, the
- * interrupted-commit recovery, the two refusals and the transaction — while
+ * interrupted-commit recovery, the refusals and the transaction — while
  * this one answers the single question "given the tree as it is and the fleet
  * file as it reads, which files change and how". Nothing here acquires
  * anything, and nothing here writes: it is called under the lock and hands
  * back a plan the transaction executes or rolls back whole.
  */
-import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { architectureDir, architectureProjectDocuments } from "../../core/c4/project/architecture.js";
 import { loadProject } from "../../core/c4/project/load.js";
 import type { FleetSeed } from "../../core/c4/seed/fleet-file.js";
+import { repoPath } from "../../core/envelope/json.js";
 import { serviceDirOf, type DocsDir } from "../../core/kernel/ids/dirs.js";
 import {
   landscapePath,
   servicePathsUnder,
   servicesDir,
+  serviceViewsPath,
   subsystemPathUnder,
   subsystemViewsPath,
   unfiledServicePaths,
 } from "../../core/repo/paths.js";
 import { SUBSYSTEM_MARKER } from "../../core/repo/tree/marker.js";
-import { type MapFacts, renderSubsystemViews, viewsAgree } from "../../core/repo/tree/render/views.js";
+import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
+import {
+  type MapFacts,
+  renderServiceOverviews,
+  renderSubsystemViews,
+  viewsAgree,
+} from "../../core/repo/tree/render/views.js";
 import type { FleetTree, SubsystemEntry, WalkedService } from "../../core/repo/tree/walk.js";
 import { TEMP_FILE_RE } from "../../core/staging/commit.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
@@ -126,7 +133,16 @@ async function projectFacts(req: SeedPlanInput): Promise<MapFacts> {
       staged.push(dest);
     }
     const project = await loadProject(root, staged);
-    return project.clean ? { elements: project.elements, globalStyles: project.globalStyles } : req.map;
+    // RELATIONSHIPS travel with the elements, and dropping them is silent: they
+    // are what each per-service overview computes its peer set from, so a facts
+    // record without them renders every service view peerless — the service and
+    // its own interior, and nothing it touches — with no error anywhere
+    // (`core/repo/tree/render/views.ts` states the consequence beside the
+    // optional field). The fallback `req.map` is the whole self-check document
+    // and already carries them.
+    return project.clean
+      ? { elements: project.elements, globalStyles: project.globalStyles, relationships: project.relationships }
+      : req.map;
   } catch {
     // `loadProject` throws on an error it cannot attribute to a document, and
     // a full disk fails the staging above; both are the fail-closed arm.
@@ -140,6 +156,15 @@ export interface SeedPlan {
   writes: PlannedWrite[];
   /** Service ids split by whether this run creates the directory. */
   services: { created: string[]; existing: string[] };
+  /**
+   * Repo-relative paths of the generated views files that hold a document loam
+   * did NOT write — the plan's own refusal, handed to `./commit.ts` rather than
+   * spelled here, because this module decides and never announces.
+   *
+   * Empty on every ordinary run. Non-empty means the whole seed must be refused
+   * before a byte lands: see `stageGenerated`.
+   */
+  authored: string[];
 }
 
 /**
@@ -252,11 +277,52 @@ export async function planSeedWrites(req: SeedPlanInput, tree: FleetTree): Promi
   // to disk that writes.ts forbids; a views file whose bytes are not UTF-8
   // therefore fails the compare and is regenerated, which is the right answer
   // for it anyway.
-  const viewsPath = subsystemViewsPath(docsDir);
-  const views = renderSubsystemViews(plannedTree, await projectFacts(req));
-  const wanted = views === null ? null : Buffer.from(views, "utf8");
-  const onDisk = existsSync(viewsPath) ? await readFile(viewsPath, "utf8") : null;
-  if (!viewsAgree(onDisk, views)) writes.push({ path: viewsPath, content: wanted });
+  //
+  // BOTH generated files, from ONE read of the project: `architecture/services.likec4`
+  // is the same contract one file over — one overview view per service the map
+  // draws, absent when it draws none — and a seed that landed only the subsystem
+  // views would send its caller, through its own `next` list, into a
+  // `subsystem.views-stale` no `seed` could clear. This is where the seeded
+  // services first exist AND the sealed landscape first says what they are, so
+  // it is the only moment the pair can be rendered together.
+  const facts = await projectFacts(req);
+  const authored = [
+    await stageGenerated(writes, subsystemViewsPath(docsDir), renderSubsystemViews(plannedTree, facts)),
+    await stageGenerated(writes, serviceViewsPath(docsDir), renderServiceOverviews(plannedTree, facts)),
+  ].filter((path): path is string => path !== null);
 
-  return { writes, services: { created: created.sort(), existing: existing.sort() } };
+  return {
+    writes,
+    services: { created: created.sort(), existing: existing.sort() },
+    authored: authored.map((path) => repoPath(docsDir, path)),
+  };
+}
+
+/**
+ * Append the write for ONE generated file, or nothing when the file already
+ * says it — the comparison the block above argues for, spelled once so the two
+ * generated files cannot drift into two rules. Answers the path when the file
+ * standing there is SOMEBODY ELSE'S, and stages nothing for it.
+ *
+ * OWNERSHIP FIRST, before the compare, exactly as `commands/subsystem/sync.ts`
+ * asks it — through the same reader, from beneath every writer
+ * (`core/repo/tree/render/service/header.ts`). Both of these are filenames loam
+ * RESERVES inside `architecture/`, a directory the team owns, and seed rewrites
+ * them whole; until this line existed a `loam seed` into a repository that kept
+ * a hand-authored diagram at one of those paths destroyed it without a word.
+ * That is the same promise `seed-landscape-edited` makes one file over — seed
+ * never overwrites human work — and it was missing for the two files seed
+ * reserves rather than shares.
+ *
+ * It is checked before the compare and not after, so that "the file already says
+ * this" can never vouch for a file loam did not write. An authored file cannot
+ * in fact agree with a render that opens with loam's mark, but a reader must not
+ * have to prove that to know the guard holds.
+ */
+async function stageGenerated(writes: PlannedWrite[], path: string, content: string | null): Promise<string | null> {
+  const { text: onDisk, authored } = await readGeneratedFile(path);
+  if (authored) return path;
+  if (viewsAgree(onDisk, content)) return null;
+  writes.push({ path, content: content === null ? null : Buffer.from(content, "utf8") });
+  return null;
 }

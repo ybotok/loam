@@ -98,13 +98,17 @@ describe("moving services and subtrees", () => {
     ]);
 
     // Every byte of the service travelled unchanged — the join keys did not
-    // move — and nothing else changed except the generated views file.
+    // move — and nothing else changed except the two GENERATED views files.
+    // The per-service overviews are in that list and not beside it: a view is
+    // titled `<subsystem path> / <service id>`, so filing a service is exactly
+    // what changes its title.
+    const generated = new Set(["architecture/subsystems.likec4", "architecture/services.likec4"]);
     const after = await treeHashes(p.docsDir);
     for (const [path, hash] of Object.entries(before)) {
       if (path.startsWith("services/payment-service/")) {
         expect(after[path.replace("services/payment-service/", "services/payments/payment-service/")]).toBe(hash);
         expect(after[path]).toBeUndefined();
-      } else if (path !== "architecture/subsystems.likec4") {
+      } else if (!generated.has(path)) {
         expect(after[path], path).toBe(hash);
       }
     }
@@ -201,6 +205,45 @@ describe("the only move-specific refusal: uncommitted changes", () => {
     expect(git(p.docsDir, "rev-list", "--count", "HEAD").trim()).toBe(commits);
   });
 
+  it("stages the DELETION of a generated file the commit removed — the index carries a D, not a leftover", async () => {
+    // The regression for a real defect: `stageInGit` filtered the two generated
+    // paths through `existsSync` ALONE, so the one file the commit had just
+    // DELETED was dropped from `git add` — it does not exist any more, which is
+    // the whole point. The rename pair landed in the index and the deletion did
+    // not, so `git status` showed a staged move beside an unstaged deletion of
+    // a file loam had written and removed in the same transaction, and a person
+    // committing the staged change shipped a views file the tree no longer owed.
+    // The fix reads the ACTION beside the path (`action === "removed" ||
+    // existsSync(path)`), and nothing in the gate held it until this test.
+    const files = coherentFixture();
+    files["services/payments/subsystem.yaml"] = "";
+    const p = await project(files);
+    await runLoam(p.workDir, "subsystem", "sync");
+    expect(p.exists("architecture/services.likec4")).toBe(true);
+
+    // Make the per-service overviews file OWED-ABSENT: the map still parses (so
+    // the render is trusted rather than protected) but draws no element any
+    // service directory resolves to, and `renderServiceOverviews` answers null
+    // — "this file must not exist". A rename is then the first commit that has
+    // to delete it. Nothing else can produce a `removed` action out of a move.
+    await p.write(
+      "architecture/landscape.likec4",
+      LANDSCAPE.replace(/'payment-service'/g, "'billing-gateway'").replace(/'checkout-web'/g, "'storefront'"),
+    );
+    gitInit(p.docsDir);
+
+    expect((await runLoam(p.workDir, "subsystem", "rename", "payments", "cash")).code).toBe(0);
+    expect(p.exists("architecture/services.likec4")).toBe(false);
+
+    // Staged as a deletion — `D ` in the index column, nothing in the worktree
+    // column — and the subsystem file's rewrite is staged beside it.
+    const status = git(p.docsDir, "status", "--porcelain");
+    expect(status).toMatch(/^D {2}architecture\/services\.likec4$/m);
+    expect(status).toMatch(/^M {2}architecture\/subsystems\.likec4$/m);
+    // Nothing about that file is left for the person to stage by hand.
+    expect(status).not.toMatch(/^.D architecture\/services\.likec4$/m);
+  });
+
   it("a fleet without git is never refused: the move proceeds where git will not say", async () => {
     const files = coherentFixture();
     files["services/payments/subsystem.yaml"] = "";
@@ -265,11 +308,14 @@ Operations: authorizePayment
     }
     delete expected["services/payment-service/"];
     expected["services/payments/payment-service/"] = "<dir>";
-    // The generated views file is the ONE file that rightly differs from the
-    // pre-archive tree: it reflects the move (that is its job), and the fleet
-    // gate below proves it is exactly current rather than merely different.
+    // The two generated views files are the ONLY files that rightly differ from
+    // the pre-archive tree: they reflect the move (that is their job), and the
+    // fleet gate below proves they are exactly current rather than merely
+    // different.
     const restored = await treeHashes(p.docsDir);
-    expected["architecture/subsystems.likec4"] = restored["architecture/subsystems.likec4"]!;
+    for (const file of ["architecture/subsystems.likec4", "architecture/services.likec4"]) {
+      expected[file] = restored[file]!;
+    }
     expect(restored).toEqual(expected);
     expect(await p.read("services/payments/payment-service/spec.md")).toBe(living);
     expect((await runLoam(p.workDir, "validate", "--all")).code).toBe(0);

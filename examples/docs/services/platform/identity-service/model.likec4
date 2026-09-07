@@ -39,13 +39,15 @@ model {
     // byte in here costs latency and never correctness, and ARCH-INTROSPECT-CACHE
     // in arch.spec.md is the requirement that says so in a scenario.
     //
-    // Both stores stay NESTED inside the service boundary. Lifting either into
-    // architecture/landscape.likec4 as a peer is `landscape.datastore-private`:
-    // drawn at fleet level a store reads as a system in its own right, available
-    // for somebody else's service to depend on, which is the one coupling that is
-    // hardest to undo once a second team believes the picture. The extending
-    // shape makes that the default rather than a discipline — internals are
-    // written where they belong because there is nowhere else to write them.
+    // Both stores stay NESTED inside the service boundary, and nothing makes
+    // them: loam grades neither placement, so lifting either into
+    // architecture/landscape.likec4 as a peer would earn no finding. They stay
+    // here because the extending shape makes it the cheapest default — an
+    // internal is written where the service is described, and nobody has to
+    // decide anything. The one consequence to know before choosing is about
+    // LikeC4 and not about taste: a second service's edge resolves only against
+    // a declaration the MAP holds, so a store somebody else will name goes up
+    // onto the landscape, inside `marketplace.identityService`.
     introspectionCache = container 'introspection-cache' {
       description 'Short-TTL introspection verdicts, keyed by token id'
       technology 'Redis'

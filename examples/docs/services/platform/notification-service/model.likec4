@@ -25,11 +25,10 @@ model {
       technology 'Go'
     }
     // Both stores are nested INSIDE the service and neither is drawn beside it
-    // in the landscape: a store with one consumer drawn as a fleet-level peer
-    // reads as a system other services may depend on, which is what
-    // `landscape.datastore-private` pushes back on. Neither appears in
-    // health.yaml's dependencies either — they share this service's lifecycle
-    // rather than being something it reaches across a boundary.
+    // in the landscape — the example's choice, and one loam does not grade
+    // either way. Neither appears in health.yaml's dependencies either: they
+    // share this service's lifecycle rather than being something it reaches
+    // across a boundary, and that is the fact the nesting is drawn from.
     deliveryLog = database 'delivery-log' {
       description 'One row per (message id, channel) — the idempotency key that makes redelivery a no-op — carrying the orderId and customer each send was addressed to, so a receipt can find its order and a capture that arrives first has somewhere to wait'
       technology 'PostgreSQL'

@@ -55,8 +55,26 @@ export interface BriefTarget {
 /** Where an artifact lives — `repo/paths.ts` spells the filenames, this only points at them. */
 type PathKey = "model" | "spec" | "archSpec" | "openapi" | "asyncapi" | "adrsDir" | "runbook" | "health";
 
+/**
+ * The service-local use-case directory, and the one artifact key `ServicePaths`
+ * deliberately does NOT carry.
+ *
+ * `repo/paths.ts` spells the paths loam JOINS ON — the ones a check resolves, a
+ * writer writes and the tree walk classifies a directory by. This is not one of
+ * them: the slot a service's flows are graded out of is the service's whole
+ * LikeC4 project, every `.likec4` under its directory
+ * (`core/usecases/service/flows.ts`), and `usecases/<name>.likec4` is the
+ * CONVENTION the brief publishes for it. Putting the directory in
+ * `ARTIFACT_FILES` would be worse than redundant — `isServiceArtifactName`
+ * reads that table, so a `usecases/` directory anywhere under `services/` would
+ * mint a service.
+ */
+export const USECASES_DIR = "usecases";
+
 /** The artifacts, in the order a baseline is best written in. */
-export const ARTIFACTS: Array<Omit<BriefTarget, "path" | "exists" | "action"> & { key: PathKey }> = [
+export const ARTIFACTS: Array<
+  Omit<BriefTarget, "path" | "exists" | "action"> & { key: PathKey | "usecasesDir" }
+> = [
   {
     artifact: "model.likec4",
     key: "model",
@@ -202,6 +220,56 @@ Covers: paymentService.db, paymentService -> kafka
 - **Given** an event in the outbox
 - **When** the broker is unavailable
 - **Then** the state stays committed and the event is published once it returns
+`,
+  },
+  {
+    artifact: "usecases/<name>.likec4",
+    key: "usecasesDir",
+    // Never required, and here the optionality is a RULE rather than a
+    // judgement. docs/DESIGN.md rule 26 — "presence is never owed. A model with
+    // no views is missing nothing loam wants, and no check may grade its
+    // absence" — is enforced by scripts/arch-check.mjs, not merely written, so
+    // there is no `service.usecases-missing` and there never will be one.
+    //
+    // The slot is briefed anyway because a team cannot choose a slot nobody
+    // named. The grader landed 2026-09-03 (`core/usecases/service/flows.ts`) and
+    // `c4.valid` has been reporting ` · K tagged flow(s) graded` ever since, on
+    // an axis nothing scaffolded, briefed or named — so the only way to discover
+    // it was to read the source. Publication is the whole of this entry: every
+    // rule below is either a check that already exists or a convention loam
+    // states and never grades, and each says which it is.
+    required: false,
+    purpose:
+      "optional — one requirement's hop sequence, drawn as a LikeC4 dynamic view over this service's own containers",
+    shape: [
+      "A `dynamic view` in a `.likec4` under this service's directory. THE SLOT IS THE PROJECT: `loam subsystem sync` registers every `.likec4` under `services/<…>/<id>/` as one LikeC4 project, and loam reads exactly the set the renderer reads — `model.likec4` plus every sibling, recursively. `usecases/<name>.likec4` is the convention this brief publishes, and `<name>` is yours. Never `architecture/usecases/`, which is a different project: it holds the map and no service's containers, so a hop naming one is `landscape.invalid` for the whole fleet.",
+      "`#req-<Requirement-ID>` as the FIRST thing in the view body, before `title` — written after it, LikeC4 reports five parse errors and none of them mentions tags. The tag is the opt-in: an untagged view is somebody's hand-drawn diagram and loam never says a word about it. The slug is the `Requirement-ID` from this service's own `spec.md` or `arch.spec.md` with every character outside `[A-Za-z0-9_-]` flattened to `-`; a slug naming no requirement of this service is `usecase.requirement-unresolved`. Several `#req-` tags on one view are legal and normal.",
+      "DECLARE the tag exactly once — in `architecture/landscape.likec4`'s `specification` block when this model EXTENDS the map (the usual shape, and the block the whole root project shares), or in `model.likec4`'s own `specification` when the model STANDS ALONE. Declaring it in both is a duplicate, and the code lands where the SECOND declaration's file is: `c4.invalid` when a tags-only block sits in model.likec4, `usecase.flow-invalid` when it sits in a sibling. Two SERVICES each declaring the same tag locally is the fleet-scope class one step out, `c4.fleet-project-invalid`.",
+      "Every hop must be backed by a relationship the model already declares, or it is `usecase.step-unbacked` — LikeC4 itself reports nothing for an unbacked hop, so the diagram renders and every other check stays green. A return step is written `<target> <- <source>`: a reply is attributed to the CALL it answers. A hop whose caller and provider resolve to the SAME service never owes an `operationId`, which is what makes this altitude cheap: `usecase.step-unlinked` is silent inside one service.",
+      "Namespace the view id by the service — `uc_payment_service_authorize`, not `uc_authorize`. An EXTENDING model's views live in the ROOT project beside the map, so view ids are one flat namespace across the whole fleet: two services minting `uc_authorize` makes the renderer refuse the entire project. Ids beginning `subsystem_` or `service_` are loam's own (`subsystem.view-id-collision`).",
+      "Title it `'<subsystem path> / <service id> / <use case>'`. LikeC4 has no view-folder syntax — it splits a view title on `/` into browser folders and shows only the last segment (measured at 1.59.2) — so that convention lands the flow in the same folder as the generated overview of its service in `architecture/services.likec4`. **Nothing checks this**: it is a convention loam states and never grades, exactly like the EARS form in spec.md.",
+      "OPTIONAL, and its absence is graded by nothing, ever. That is docs/DESIGN.md rule 26 and it is enforced. Write one where a requirement's `Covers:` names containers and the sequence is the thing that is hard to hold in the head; write none otherwise. `c4.valid` reports ` · K tagged flow(s) graded` when the project declares any, and that count is the only place a healthy flow appears at all.",
+    ],
+    example: `// One of <svc>'s own use cases: the hops behind ONE requirement of its
+// arch.spec.md, over its OWN containers. Optional — nothing grades the
+// absence of this file, and an untagged view here is never graded either.
+views {
+  // Namespace the id by the service, underscores for hyphens: an extending
+  // model's views share ONE flat id namespace with the whole root project.
+  dynamic view uc_authorize_payment {
+    // The tag comes FIRST. Written after 'title' this is five parse errors.
+    // AUTH-1 is a Requirement-ID in this service's spec.md or arch.spec.md.
+    #req-AUTH-1
+    title '<subsystem path> / <svc> / Authorize a payment'
+    description 'What the service does between the request and the answer'
+
+    // Every hop is backed by a relationship model.likec4 declares. Both of
+    // these are inside one service, so neither owes an operationId.
+    <fqn>.api -> <fqn>.ledger 'Records the authorization'
+    // A reply is attributed to the call it answers, hence the '<-'.
+    <fqn>.api <- <fqn>.ledger 'Confirms the write'
+  }
+}
 `,
   },
   {

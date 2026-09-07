@@ -10,6 +10,7 @@
  * caller hands over what happened and this spells it.
  */
 import { emitJson } from "../../../core/envelope/json.js";
+import { authoredRefusal } from "../../../core/repo/tree/render/service/header.js";
 import type { CommitRecovery } from "../../../core/staging/interrupted.js";
 import type { ExcludePlan } from "./exclude.js";
 import { LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
@@ -23,8 +24,17 @@ import { LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
  * used to run anyway and rewrote a good file down to title and description
  * (verification 2026-09-04, W5). The project half is unaffected and still runs —
  * neither the per-service files nor the root `exclude` depend on the map.
+ *
+ * `refused` is the sixth, and it is about OWNERSHIP rather than about the map:
+ * the file standing at a path loam generates does not open with loam's mark, so
+ * it is somebody's authored document and this command will not take it. It is
+ * the only action that also sets a non-zero exit code (`../sync.ts` says why),
+ * because unlike `blocked` it is not a state any later run clears on its own.
  */
-export type SyncAction = "current" | "created" | "updated" | "removed" | "blocked";
+export type SyncAction = "current" | "created" | "updated" | "removed" | "blocked" | "refused";
+
+/** The second generated file's name, spelled once here so the key and the sentence cannot drift. */
+const SERVICE_VIEWS = "architecture/services.likec4";
 
 /** Why a run answered `blocked`. One reason today; a key rather than a bare string so a second one is additive. */
 interface SyncBlocked {
@@ -53,7 +63,19 @@ export interface ProjectsReport {
 
 /** Everything one run has to say, as the caller knows it. */
 export interface SyncReport {
+  /** `architecture/subsystems.likec4` — and nothing else; the `--json` `action` key is exactly this. */
   action: SyncAction;
+  /**
+   * `architecture/services.likec4` — the per-service overviews.
+   *
+   * A field of its own rather than a folded `action`, for the reason the shared
+   * finding code carries the path: the two files drift for different reasons and
+   * a reader told only that "the generated views changed" would have to diff the
+   * repo to find out which one. `blocked` reaches it exactly as it reaches the
+   * other, and for a sharper reason — with no readable map no service resolves,
+   * so the tolerant render is the empty file rather than a poorer one.
+   */
+  serviceViews: SyncAction;
   subsystems: number;
   recovered: CommitRecovery | null;
   projects: ProjectsReport;
@@ -72,6 +94,12 @@ export function reportSync(json: boolean, out: SyncReport): void {
       path: "architecture/subsystems.likec4",
       action: out.action,
       subsystems: out.subsystems,
+      // ADDITIVE, and emitted on every run including the untouched one: a
+      // consumer must be able to read what happened to the second generated file
+      // without branching on whether this run happened to change it. `path` and
+      // `action` keep their frozen meaning — the subsystem file — so nothing
+      // reading them sees a new one.
+      serviceViews: { path: SERVICE_VIEWS, action: out.serviceViews },
       ...(blocked === null ? {} : { blocked }),
       ...(out.recovered === null ? {} : { recovered: out.recovered }),
       projects: {
@@ -105,6 +133,7 @@ export function reportSync(json: boolean, out: SyncReport): void {
     );
   }
   console.log(views(out));
+  serviceViews(out.serviceViews);
   // Owed on BOTH arms: the run that declined to rewrite an existing file, and
   // the run that wrote the tolerant shape because there was none to protect.
   if (out.mapUnreadable) console.log(LANDSCAPE_UNREADABLE_NOTE);
@@ -115,12 +144,17 @@ export function reportSync(json: boolean, out: SyncReport): void {
 /** The one line about the generated views file. */
 function views(out: SyncReport): string {
   // "nothing to write" is a claim about the WHOLE run, and it is false the moment
-  // any of this verb's three writers landed something beside a current views
-  // file: a project file created, one removed, or the root `exclude` rewritten.
-  // The third was missed when it was added, so the tail contradicted the very
-  // next line of output (verification 2026-09-04, review C).
+  // any of this verb's FOUR writers landed something beside a current subsystem
+  // views file: the per-service views file, a project file created, one removed,
+  // or the root `exclude` rewritten. The exclude arm was missed when it was
+  // added, so the tail contradicted the very next line of output (verification
+  // 2026-09-04, review C) — and the per-service file is the same trap one file
+  // over, which is why it is in the same expression rather than a second one.
   const quiet =
-    out.projects.created.length === 0 && out.projects.removed.length === 0 && !out.projects.exclude.updated;
+    out.serviceViews === "current" &&
+    out.projects.created.length === 0 &&
+    out.projects.removed.length === 0 &&
+    !out.projects.exclude.updated;
   const sentence: Record<SyncAction, string> = {
     current: `architecture/subsystems.likec4 is current (${out.subsystems} subsystem(s))${quiet ? " — nothing to write." : "."}`,
     created: `wrote architecture/subsystems.likec4 — ${out.subsystems} subsystem view(s).`,
@@ -130,8 +164,44 @@ function views(out: SyncReport): string {
       "architecture/subsystems.likec4 left as it is — architecture/ does not parse as one project, so the " +
       "render's element join is the landscape file's alone (a use-case document that binds an element of its " +
       "own is not in it), and rewriting the file would take its `include` lines with it.",
+    refused: authoredRefusal("architecture/subsystems.likec4"),
   };
   return sentence[out.action];
+}
+
+/**
+ * The one line about `architecture/services.likec4`, printed on every answer but
+ * `current` — so on the two that left the file alone (`blocked`, `refused`) as
+ * well as the three that changed it. "Nothing happened to it, and here is why"
+ * is exactly the sentence a person needs; only "nothing happened to it because
+ * nothing needed to" is silence worth keeping.
+ *
+ * SILENT WHEN CURRENT, and that is the difference from the subsystem file's line
+ * above: that one is the sentence this command has always ended on and a person
+ * reads it as "the run happened", while a second unconditional line about a file
+ * nothing touched is noise on every run in a fleet that is already in order. The
+ * `--json` key is unconditional for the opposite reason — a consumer branches on
+ * a value, not on a line's presence.
+ *
+ * No view COUNT here, deliberately. The subsystem line counts subsystems because
+ * the tree answers that without reading anything; the per-service file draws
+ * only the services the MAP resolves, and the honest count is the render's, not
+ * the tree's. loam never reads a generated file's content (docs/DESIGN.md rule
+ * 26), so counting the views in it is the one place the count could come from
+ * and the one place it may not.
+ */
+function serviceViews(action: SyncAction): void {
+  if (action === "current") return;
+  const sentence: Record<Exclude<SyncAction, "current">, string> = {
+    created: `wrote ${SERVICE_VIEWS} — one overview view per service the fleet map draws.`,
+    updated: `updated ${SERVICE_VIEWS} — one overview view per service the fleet map draws.`,
+    removed: `removed ${SERVICE_VIEWS} — the fleet map draws none of the services under services/, so the generated file must be absent.`,
+    blocked:
+      `${SERVICE_VIEWS} left as it is — architecture/ does not parse as one project, so no service resolves to a ` +
+      "map element and the render would have emptied the file rather than improved it.",
+    refused: authoredRefusal(SERVICE_VIEWS),
+  };
+  console.log(sentence[action]);
 }
 
 /** The per-service project files this run created and removed. */

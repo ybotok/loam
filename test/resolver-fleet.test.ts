@@ -259,6 +259,10 @@ describe("the removal gate sees a consumer drawn into a container", () => {
       ...retireAuthorize(),
     });
     try {
+      // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+      // files belong to a docs repo the way the landscape does, and their
+      // absence is its own `subsystem.views-stale` in the sweep below.
+      await runLoam(p.workDir, "subsystem", "sync");
       const res = await runLoam(p.workDir, "archive", "FEAT-10", "--json");
       expect(res.code).toBe(0);
       expect(await p.read("services/payment-service/openapi.yaml")).not.toContain(

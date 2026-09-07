@@ -41,10 +41,19 @@ export function renderContext(tree: FleetTree, elements: Elem[]): RenderContext 
   };
 }
 
-/** A view's body lines, and the one comment the render may write above it. */
+/** A view's body lines, the one comment the render may write above it, and its subject. */
 export interface ViewBody {
   lines: string[];
   disclosure: string | null;
+  /**
+   * The element this view is declared `of`, or null when the map holds none
+   * that owns exactly this subsystem. It is computed here rather than by the
+   * file render because `owningAncestor` below already decides it — the same
+   * answer decides which of the three body shapes applies, and two callers
+   * deriving it separately could draw the boundary of one element while
+   * declaring the view of another.
+   */
+  of: string | null;
 }
 
 /**
@@ -75,18 +84,59 @@ export interface ViewBody {
  */
 export function viewBody(ctx: RenderContext, sub: SubsystemEntry): ViewBody {
   const members = memberElements(ctx, sub);
-  if (members.length === 0) return { lines: [], disclosure: null };
-  if (members.every((id) => !id.includes("."))) return { lines: groupedBody(ctx, sub, "    "), disclosure: null };
-  const lines = [...ownedAncestors(ctx, sub), ...members].map((id) => `    include ${id}`);
-  if (owningAncestor(ctx, sub) !== null) return { lines, disclosure: null };
+  if (members.length === 0) return { lines: [], disclosure: null, of: null };
+  if (members.every((id) => !id.includes("."))) {
+    return { lines: [...groupedBody(ctx, sub, "    "), ...boundaryLines(members)], disclosure: null, of: null };
+  }
+  const includes = [...ownedAncestors(ctx, sub), ...members].map((id) => `    include ${id}`);
+  const lines = [...includes, ...boundaryLines(members)];
+  const owner = owningAncestor(ctx, sub);
+  if (owner !== null) return { lines, disclosure: null, of: owner };
   const shared = sharedAncestor(ctx, members);
   return {
     lines,
+    of: null,
     disclosure:
       shared === null
         ? "model: no boundary — these members do not share a containing element."
         : `model: no boundary — ${shared} also holds services outside this subsystem.`,
   };
+}
+
+/**
+ * What this group TOUCHES: for each member, every edge it has in either
+ * direction, so the view answers "what does payments talk to" and not only
+ * "who is in payments".
+ *
+ * **The measured trap, and it is why these lines are appended by the caller of
+ * `groupedBody` rather than inside it:** placed INSIDE the `group { }` block of
+ * the flat-map body shape, this exact predicate parses and validates with ZERO
+ * errors and draws a false picture. Measured at likec4 1.59.2 on a flat map of
+ * `alpha, beta` grouped and `outsider, store` outside it: at view level the two
+ * neighbours are drawn with no parent, correctly outside the box; moved inside
+ * the `group { }`, both are drawn as CHILDREN of that group — the diagram then
+ * claims `outsider` and `store` are part of the subsystem. A maintainer tidying
+ * the body by moving these lines next to the includes they refer to would ship
+ * that, and nothing anywhere would report it. They belong at view level, always.
+ *
+ * The WILDCARD is correct here, and that is not an inconsistency with the
+ * per-service views, which measure it as a defect (`./service/peers.ts`): at
+ * subsystem altitude a counterpart collapsing to its own group box is exactly
+ * the sentence "payments touches identity", and — once those group boxes are
+ * themselves views' subjects (`of <ancestor>`) — it is a click-through into
+ * that subsystem. At service altitude the same collapse is a lie about who
+ * calls whom.
+ *
+ * MEMBERS only, never `ownedAncestors`: `-> *` on an authored container pulls
+ * in every edge any descendant of it has, and in the `// model: no boundary`
+ * shape that container also holds services outside this subsystem — the view
+ * would draw traffic that is nobody-here's. Measured at 58 services in 11
+ * groups: 13-15 nodes and 31-39 edges per subsystem view, of which 11-12 nodes
+ * carry drill-down — the members into their own service views, the neighbouring
+ * group boxes into THEIR subsystem views.
+ */
+function boundaryLines(members: readonly string[]): string[] {
+  return ["", ...members.map((id) => `    include ${id} -> *, * -> ${id}`)];
 }
 
 /**

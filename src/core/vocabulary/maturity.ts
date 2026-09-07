@@ -100,7 +100,8 @@ export function maturityRollup(graded: readonly { maturity: Maturity }[]): Recor
  * C4 kinds that model people, and the tag marking an element as somebody
  * else's system. A person is never a service directory, and `#external` is
  * undocumented on purpose — every census and exemption over the fleet map
- * asks both questions.
+ * asks both questions, and `INFRA_KINDS` below is the third they now ask
+ * beside them.
  *
  * Extracted on the third strike: `commands/validate/checks/vocabulary.ts`,
  * `core/gate/partners.ts` and `core/verify/checklist.ts` each carried a copy.
@@ -118,6 +119,47 @@ export function maturityRollup(graded: readonly { maturity: Maturity }[]): Recor
  * in one place anyway — that list IS what the kind-tag check is about.
  */
 export const ACTOR_KINDS = new Set(["person", "actor", "user"]);
+
+/**
+ * C4 kinds that model INFRASTRUCTURE the fleet runs rather than a system a team
+ * adopts. A person is never a `services/<id>/`, and neither is a datastore: a
+ * Postgres, a Kafka topic or an S3 bucket has no spec.md to write, no OpenAPI to
+ * publish, no maturity rung to climb and nobody to adopt it.
+ *
+ * The third census category, beside `ACTOR_KINDS` and `EXTERNAL_TAG`, and it
+ * exists because the fleet had only two. A store the fleet OWNS and draws at
+ * fleet level was neither a person nor somebody else's system, so it earned
+ * `landscape.service-undocumented` ("bind it with `metadata { service }`, or tag
+ * it `#external`") — two remedies, neither of them true of it — and
+ * `gate.partner-undocumented` on every service that reads it. `examples/docs`
+ * and this repo's own suite both tagged an owned Redis `#external` purely to buy
+ * that silence, which is a map that lies about ownership to satisfy a check.
+ *
+ * The LIMITATION is `ACTOR_KINDS`' exactly, and is stated here so the next
+ * reader does not have to measure it: the hook is a kind NAME, compared
+ * case-insensitively, so a fleet whose specification spells its kind `postgres`,
+ * `store` or `datastore` is not covered. That is deliberate rather than
+ * unfinished — a tag (`#infrastructure`) can be added later as a SECOND spelling
+ * without moving anything, exactly as `#external` sits beside `ACTOR_KINDS`
+ * today. An element of one of these kinds that stands for a real
+ * `services/<id>/` — a bound `database`, a title naming a directory — is a
+ * service and every reader here must say so first; the kind is the fallback,
+ * never the override.
+ */
+export const INFRA_KINDS = new Set(["database", "queue", "topic", "cache", "bucket"]);
+
+/**
+ * The one element kind read as a datastore, compared case-insensitively — the
+ * subject of `landscape.datastore-shared`.
+ *
+ * It was a bare string declared twice, in `commands/validate/fleet/map/consumers.ts`
+ * and `commands/validate/fleet/map/attest.ts`, each with a comment pointing at
+ * the other. Two literals free to drift about what a store IS are exactly the
+ * failure the trio above was extracted to stop: the peer census and the nested
+ * census would have graded different fleets the day one of them learned a second
+ * spelling.
+ */
+export const DATASTORE_KIND = "database";
 export const EXTERNAL_TAG = "external";
 /** Tag marking ubiquitous infrastructure; the scaffolded fleet view excludes it. */
 export const PLATFORM_TAG = "platform";

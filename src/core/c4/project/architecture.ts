@@ -9,9 +9,9 @@
  * `core/` may not import from `commands/` (AGENTS.md), so the choice was a second
  * copy of the two-line composition or one copy one level down. A second copy is
  * the copy that drifts, and the thing that would drift is which documents are in
- * the project: the generated `architecture/subsystems.likec4` exclusion is a
- * correctness rule (see `./documents.ts`), not a preference, and a reader that
- * forgot it would blank a fleet's whole map over a stale generated file.
+ * the project: the GENERATED documents' exclusion is a correctness rule (see
+ * `./documents.ts`), not a preference, and a reader that forgot it would blank a
+ * fleet's whole map over a stale generated file.
  *
  * So the wrapper moved here and `validate`'s own module kept the landscape
  * CONTAINMENT — `readLandscape` / `unreadableLandscape` — which is genuinely
@@ -24,11 +24,34 @@ import { excludingPath, readRootExclude } from "../root-project/exclude.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
-import { landscapePath, subsystemViewsPath } from "../../repo/paths.js";
+import { GENERATED_ARCHITECTURE_FILES, landscapePath } from "../../repo/paths.js";
 
 /** `<docsDir>/architecture` — the LikeC4 project root, spelled once. */
 export function architectureDir(docsDir: DocsDir): string {
   return join(docsDir, "architecture");
+}
+
+/**
+ * Every document inside `architecture/` that LOAM GENERATES, absolute — the ONE
+ * answer four project reads have to agree on, and the reason it is a SET rather
+ * than the single path it used to be.
+ *
+ * There are two generated files now (`subsystems.likec4` and `services.likec4`,
+ * both written by `loam subsystem sync`), and every one of these readers must
+ * drop BOTH: this module's own project list, the merge-preview staging beside it
+ * (`./staged.ts`), and the renderer's-eye load `c4.fleet-project-invalid` builds
+ * (`commands/validate/fleet/views/root-documents.ts`). A views-only document
+ * does not parse standalone — its `include` lines name elements the landscape
+ * declares — so a reader that keeps one loads a document whose only fault may be
+ * that `sync` has not run yet, and ONE parse error in a project blanks the model
+ * for every document in it. A file listed by one reader and forgotten by another
+ * fails silently in exactly that direction, which is why the NAMES live in one
+ * table (`repo/paths.ts`'s `GENERATED_ARCHITECTURE_FILES`) and the join to a
+ * docsDir lives here, once, rather than as one `…ViewsPath(docsDir)` call per
+ * reader that somebody has to remember to extend.
+ */
+export function generatedArchitectureDocuments(docsDir: DocsDir): string[] {
+  return Object.keys(GENERATED_ARCHITECTURE_FILES).map((name) => join(architectureDir(docsDir), name));
 }
 
 /**
@@ -39,10 +62,10 @@ export function architectureDir(docsDir: DocsDir): string {
  * model that extends the map is parsed beside it (`c4/service-model/`), and the
  * set it must be staged with is this one plus the model. Two spellings of "the
  * architecture project's documents" would be two chances to forget the
- * generated `subsystems.likec4` exclusion — a correctness rule, not an
- * optimisation (`./documents.ts` says what it prevents) — and the reader that
- * forgot it would blank a service's whole model over a stale generated file it
- * has nothing to do with.
+ * generated documents' exclusion — a correctness rule, not an optimisation
+ * (`./documents.ts` says what it prevents) — and the reader that forgot it would
+ * blank a service's whole model over a stale generated file it has nothing to do
+ * with.
  *
  * THE ROOT `exclude` IS HONOURED HERE, and that is the second correctness rule
  * this one list carries. A `.likec4` under `architecture/` that the root project
@@ -72,7 +95,7 @@ export function architectureDir(docsDir: DocsDir): string {
  * renderer drops.
  */
 export async function architectureProjectDocuments(docsDir: DocsDir): Promise<string[]> {
-  const paths = await architectureDocuments(architectureDir(docsDir), [subsystemViewsPath(docsDir)]);
+  const paths = await architectureDocuments(architectureDir(docsDir), generatedArchitectureDocuments(docsDir));
   const exclude = await readRootExclude(docsDir);
   if (exclude === null || exclude.length === 0) return paths;
   const map = resolve(landscapePath(docsDir));

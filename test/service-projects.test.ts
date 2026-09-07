@@ -176,8 +176,9 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
   // Catches: a sync that writes service projects with no root project file to
   // put them beside, or stays silent about why it wrote none.
   it("writes nothing without the root project file, and names `loam doctor` as where the root file comes from", async () => {
-    // Flat on purpose — no subsystem, so no views file either: the tree must
-    // not change by a single byte, and `treeHashes` is what says so.
+    // Flat on purpose — no subsystem, so no subsystems.likec4 either: past the
+    // first sync the tree must not change by a single byte, and `treeHashes`
+    // is what says so.
     const files = projectsFixture();
     delete files["likec4.config.json"];
     delete files["services/platform/subsystem.yaml"];
@@ -187,9 +188,15 @@ describe("loam subsystem sync — one LikeC4 project per service model", () => {
     files["services/billing.core/spec.md"] = "---\nservice: billing.core\n---\n\n# billing.core\n";
     const p = await makeProject(files);
     try {
+      // One sync first, so the generated views files are already what they must
+      // be: they are a function of the tree and the map and are written with or
+      // without a root project file — the root gate is about the per-service
+      // PROJECT files and the root `exclude`, which is what this case pins.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const before = await treeHashes(p.docsDir);
       const payload = await sync(p.workDir);
       expect(payload.action).toBe("current");
+      expect(payload.serviceViews.action).toBe("current");
       expect(payload.projects).toEqual({ root: false, created: [], removed: [], current: 0, exclude: NO_EXCLUDE });
       expect(await treeHashes(p.docsDir)).toEqual(before);
       const text = await runLoam(p.workDir, "subsystem", "sync");

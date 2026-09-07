@@ -1,6 +1,14 @@
 /**
  * An authored view id that collides with one loam GENERATES into
- * `architecture/subsystems.likec4`.
+ * `architecture/subsystems.likec4` or `architecture/services.likec4`.
+ *
+ * TWO RESERVED PREFIXES, one check: `subsystem_<name>` for a subsystem's view
+ * and `service_<id>` for a service's generated overview, both minted through the
+ * one encoder (`render/service/view-id.ts`) so no two distinct names can fold
+ * onto one id across BOTH files. The failure they guard is identical — the
+ * renderer merges every document of the root project into one flat view-id
+ * namespace and refuses the whole project over a duplicate — so they are one
+ * finding code with the right file named in each message, not two codes.
  *
  * This closes a green-while-broken hole, and the shape of it is measured rather
  * than argued. The LikeC4 renderer merges every `.likec4` file in a project into
@@ -43,7 +51,10 @@
  * name that harms no one. The latent case is not lost: the moment somebody
  * creates that subsystem, the generator mints the id, and this same check fires
  * on the same run. The message names the reservation anyway, so an author fixing
- * one collision learns not to make the next.
+ * one collision learns not to make the next. The service half holds the same
+ * line one step further in: an id is minted only for a service the MAP DRAWS,
+ * because that is the render's own gate, so a `services/<id>/` the map does not
+ * resolve reserves nothing until it is modelled.
  *
  * Graded on `validate --all` only, and the caller holds that gate together with
  * the landscape-parsed one: under a single-target run the fleet tree is not
@@ -51,7 +62,9 @@
  * the check stays silent rather than half-answering.
  */
 import type { ViewIdClaim } from "../../../../core/c4/parsed/view-ids.js";
-import { SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/render/views.js";
+import { renderContext } from "../../../../core/repo/tree/render/body.js";
+import { SERVICE_VIEW_PREFIX, serviceViewId } from "../../../../core/repo/tree/render/service/view-id.js";
+import { type MapFacts, SUBSYSTEM_VIEW_PREFIX, subsystemViewId } from "../../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../../core/repo/tree/walk.js";
 import type { Finding } from "../../../../core/vocabulary/report.js";
 
@@ -62,9 +75,34 @@ import type { Finding } from "../../../../core/vocabulary/report.js";
  * parse, or an older loader did not read them) is treated as "nothing to
  * compare", never as "nothing collides".
  */
-export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetTree): Finding[] {
+export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetTree, map: MapFacts): Finding[] {
   if (authored === undefined || authored.length === 0) return [];
-  const generated = new Map(tree.subsystems.map((sub) => [subsystemViewId(sub), sub.path.join("/")]));
+  const generated = new Map<string, Minted>(
+    tree.subsystems.map((sub) => [
+      subsystemViewId(sub),
+      { owner: sub.path.join("/"), file: "architecture/subsystems.likec4", prefix: SUBSYSTEM_VIEW_PREFIX },
+    ]),
+  );
+  // The per-service ids, and ONLY for a service the map actually resolves —
+  // which is why the map comes in at all. `architecture/services.likec4` draws a
+  // view for a service exactly when the element→service join answers, so a
+  // service the map does not draw mints NOTHING and an authored `service_<id>`
+  // beside it breaks nothing today. Reserving it anyway would be this check
+  // inventing a rule about a name that harms no one — the same line the module
+  // banner already holds for `subsystem_overview` with no `overview` subsystem —
+  // and the latent case is not lost: the run after somebody puts that service on
+  // the map, the generator mints the id and this check fires. The join arrives
+  // through `renderContext`, the generator's OWN, so the census and the render
+  // can never disagree about which services are drawn.
+  const drawn = renderContext(tree, map.elements);
+  for (const service of tree.services) {
+    if (!drawn.elementOf.has(service.id)) continue;
+    generated.set(serviceViewId(service.id), {
+      owner: [...service.subsystem, service.id].join("/"),
+      file: "architecture/services.likec4",
+      prefix: SERVICE_VIEW_PREFIX,
+    });
+  }
   const findings: Finding[] = [];
   // Sorted and de-duplicated by id so a project claiming the same id twice —
   // itself already a parse error, but reachable through a partial read — yields
@@ -74,8 +112,8 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
   const claimants = new Map<string, string>();
   for (const claim of authored) if (!claimants.has(claim.id)) claimants.set(claim.id, claim.sourcePath);
   for (const [id, file] of [...claimants].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const owner = generated.get(id);
-    if (owner === undefined) continue;
+    const mint = generated.get(id);
+    if (mint === undefined) continue;
     findings.push({
       severity: "error",
       code: "subsystem.view-id-collision",
@@ -87,15 +125,34 @@ export function viewIdFindings(authored: ViewIdClaim[] | undefined, tree: FleetT
       locations: [{ path: file, role: "primary" as const }],
       message:
         `subsystems: ${file} declares \`view ${id}\`, which is the id loam generates ` +
-        `into architecture/subsystems.likec4 for services/${owner}/ — LikeC4 merges both files into one project, ` +
+        `into ${mint.file} for services/${mint.owner}/ — LikeC4 merges both files into one project, ` +
         // The ROOT project, not `architecture/`: the claimant may be a model's
         // own view now (an extending model is a document of the root project),
         // and telling that author the `architecture/` project is refused sends
         // them to look for the breakage in a directory they never touched.
         `so it refuses the whole root project and renders nothing. ` +
-        `Rename the view in ${file}; ids beginning \`${SUBSYSTEM_VIEW_PREFIX}\` are loam's ` +
-        "to mint, and architecture/subsystems.likec4 is generated (`loam subsystem sync`) and must never be hand-edited.",
+        `Rename the view in ${file}; ids beginning \`${mint.prefix}\` are loam's ` +
+        `to mint, and ${mint.file} is generated (\`loam subsystem sync\`) and must never be hand-edited.`,
     });
   }
   return findings;
+}
+
+/**
+ * What loam mints one reserved id FOR — which subject, into which generated
+ * file, under which reserved prefix.
+ *
+ * A record rather than the bare owner path the map used to hold, because the
+ * message has to name the right FILE and the right PREFIX: telling the author of
+ * a colliding `service_checkout` that `subsystem_` is loam's and that
+ * `subsystems.likec4` is the generated file sends them to look at a file their
+ * name has nothing to do with.
+ */
+interface Minted {
+  /** The tree path of the subsystem or service the id belongs to, under `services/`. */
+  owner: string;
+  /** The generated document loam writes that id into, docs-relative. */
+  file: string;
+  /** The reserved prefix the author is told not to mint under. */
+  prefix: string;
 }

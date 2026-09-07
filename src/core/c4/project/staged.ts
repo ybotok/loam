@@ -58,8 +58,8 @@ import { planLandscapeMerge } from "../splice/landscape-merge.js";
 import { inOrder } from "../../kernel/concurrency.js";
 import { decodeDocument } from "../../kernel/document-bytes.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
-import { featurePaths, landscapePath, subsystemViewsPath } from "../../repo/paths.js";
-import { architectureDir } from "./architecture.js";
+import { featurePaths, landscapePath } from "../../repo/paths.js";
+import { architectureDir, generatedArchitectureDocuments } from "./architecture.js";
 import { architectureDocuments } from "./documents.js";
 import { asLoadedDoc, loadProject } from "./load.js";
 
@@ -134,7 +134,11 @@ export async function stageMergedProject(req: StagedProjectRequest): Promise<Sta
   if (merged.kind === "failed") return { kind: "unreadable", errors: [merged.reason] };
 
   const arch = architectureDir(req.docsDir);
-  const living = await architectureDocuments(arch, [subsystemViewsPath(req.docsDir)]);
+  // BOTH generated documents come out, through the one list every project read
+  // shares: a views-only file does not parse standalone, so staging one that
+  // `sync` has not caught up with would blank the merge preview this whole
+  // module exists to parse (`./architecture.ts` states the rule).
+  const living = await architectureDocuments(arch, generatedArchitectureDocuments(req.docsDir));
   const root = await mkdtemp(join(tmpdir(), "loam-staged-"));
   try {
     // Staged rel -> the path the AUTHOR wrote, so every message that leaves

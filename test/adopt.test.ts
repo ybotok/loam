@@ -77,13 +77,16 @@ describe("the work it hands over", () => {
       "model.likec4",
       "spec.md",
       "arch.spec.md",
+      // Optional and unnamed until now: the intra-service use-case slot,
+      // published so a team can find it. Its absence is graded by nothing.
+      "usecases/<name>.likec4",
       "openapi.yaml",
       "asyncapi.yaml",
       "adrs/",
       "runbook.md",
       "health.yaml",
-      // The eighth: not this service's file, but the one write without which the
-      // other seven are invisible to every cross-service check.
+      // The last: not this service's file, but the one write without which the
+      // others are invisible to every cross-service check.
       "landscape.likec4",
     ]);
   });
@@ -899,7 +902,7 @@ describe("the orientation block the human view opens with", () => {
     expect(target(b, "landscape.likec4").action).toBe("edit");
     expect(owed(b)).toContain("landscape.likec4");
     const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
-    expect(flowed).toContain("3 of the 9 artifacts below are required and not yet done");
+    expect(flowed).toContain("3 of the 10 artifacts below are required and not yet done");
   });
 
   it("says so plainly when nothing is owed, rather than printing a count of zero", async () => {
@@ -908,7 +911,7 @@ describe("the orientation block the human view opens with", () => {
     const p = await project(coherentFixture(), { service: SVC });
     expect(owed(await brief(p))).toEqual([]);
     const flowed = (await runLoam(p.workDir, "adopt")).out.replace(/\s+/g, " ");
-    expect(flowed).toContain("None of the 8 artifacts below is both required and outstanding");
+    expect(flowed).toContain("None of the 9 artifacts below is both required and outstanding");
   });
 
   it("decodes the table's own convention, capitals included", async () => {

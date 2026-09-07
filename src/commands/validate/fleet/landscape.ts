@@ -250,11 +250,13 @@ export async function validateLandscape(
     return report;
   }
 
-  // The generated subsystem views, graded only now that the landscape has
-  // parsed: the expected bytes are a function of (tree, landscape elements,
-  // the global style ids the map declares) — the whole doc goes across so the
-  // grader and `sync` read one record; `views/stale.ts` says why a byte
-  // compare and why exactly one finding.
+  // The generated views files, graded only now that the landscape has parsed:
+  // the expected bytes are a function of (tree, landscape elements, the global
+  // style ids the map declares) — the whole doc goes across so the grader and
+  // `sync` read one record. There are TWO generated files now
+  // (`subsystems.likec4` and `services.likec4`) and this pushes ONE error PER
+  // STALE FILE, each naming its own file; `views/stale.ts` says why a content
+  // compare, and why two files share one code but never one finding.
   findings.push(...(await viewsStaleFindings(docsDir, tree, land)));
   // The renderer's own reading of the tree: the map, every extending model and
   // every `.likec4` beside one, merged into ONE project. It answers two
@@ -276,14 +278,13 @@ export async function validateLandscape(
   // is the merged project's when there is one; otherwise the `architecture/`
   // project's alone, whose claims are spelled relative to that directory and are
   // made docs-relative here.
-  findings.push(
-    ...viewIdFindings(
-      merged.kind === "clean"
-        ? merged.viewIds
-        : land.viewIds?.map((claim) => ({ ...claim, sourcePath: `architecture/${claim.sourcePath}` })),
-      tree,
-    ),
-  );
+  // `land` goes across for the SERVICE half of the reservation: an id is minted
+  // per service the map DRAWS, so the census needs the render's own element join.
+  const claims =
+    merged.kind === "clean"
+      ? merged.viewIds
+      : land.viewIds?.map((claim) => ({ ...claim, sourcePath: `architecture/${claim.sourcePath}` }));
+  findings.push(...viewIdFindings(claims, tree, land));
   // The three obligation questions that need the map — where each declared rule
   // is applied, which tags resolve to nothing, and which applications no living
   // arch requirement covers. Here rather than beside the vocabulary above
@@ -360,9 +361,7 @@ export async function validateLandscape(
       services,
       resolve: landSvcOf,
       standsForService: isService,
-      attested,
       consumers,
-      pathOf,
     }),
   );
   // A drawn service nothing reaches, graded only where its own model attests

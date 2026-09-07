@@ -1,17 +1,31 @@
 /**
- * What the generated views file MUST say — the shared answer every subsystem
+ * What the generated views files MUST say — the shared answer every subsystem
  * writer and `subsystem sync` render from. A module beneath the verbs (in the
  * txn/ subpackage) because the commit window and sync both consume it, and a
  * second spelling of "what should the views say" would be a second chance to
  * disagree with `validate`'s staleness check.
+ *
+ * BOTH generated files come out of ONE read of the map, and that is the reason
+ * this module answers about the pair rather than about one file: they are
+ * rendered from the same parsed `architecture/` project, they are repaired by
+ * the same command, and they must land in the same commit — a verb that changed
+ * a service's placement changed a subsystem view's members AND that service's
+ * overview TITLE (`<subsystem path> / <service id>`), so shipping one without
+ * the other is the "stale between two commits" state the generated files'
+ * contract exists to refuse. Reading the project twice would also parse the
+ * whole fleet map twice per run for one answer.
  */
 import { existsSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { loadFile } from "../../../core/c4/likec4.js";
 import { architectureProjectDocuments, loadArchitecture } from "../../../core/c4/project/architecture.js";
 import { serviceDirOf, type DocsDir } from "../../../core/kernel/ids/dirs.js";
-import { landscapePath } from "../../../core/repo/paths.js";
-import { type MapFacts, renderSubsystemViews } from "../../../core/repo/tree/render/views.js";
+import { landscapePath, serviceViewsPath, subsystemViewsPath } from "../../../core/repo/paths.js";
+import {
+  type MapFacts,
+  renderServiceOverviews,
+  renderSubsystemViews,
+} from "../../../core/repo/tree/render/views.js";
 import type { FleetTree } from "../../../core/repo/tree/walk.js";
 
 /** What one read of the map yielded, and whether it came from the whole project. */
@@ -28,8 +42,9 @@ export interface LandscapeRead {
 }
 
 /**
- * The elements and declared global style ids of the whole `architecture/`
- * PROJECT — the member join, and the one line a view may borrow a palette
+ * The elements, the relationships and the declared global style ids of the whole
+ * `architecture/` PROJECT — the member join, the edges every per-service view
+ * computes its peer set from, and the one line a view may borrow a palette
  * with — with the provenance of that answer beside it.
  *
  * The PROJECT, not the landscape file alone, and that is a correctness rule
@@ -69,7 +84,10 @@ export interface LandscapeRead {
  */
 export async function landscapeFacts(docsDir: DocsDir): Promise<LandscapeRead> {
   const path = landscapePath(docsDir);
-  if (!existsSync(path)) return { facts: { elements: [] }, known: true };
+  // No map at all: no elements and NO EDGES, said outright. `relationships` is
+  // required of every `MapFacts` precisely so an empty answer has to be written
+  // down rather than dropped — see the type.
+  if (!existsSync(path)) return { facts: { elements: [], relationships: [] }, known: true };
   try {
     const doc = await loadArchitecture(docsDir);
     // The whole document on success, so the render reads the same record
@@ -93,7 +111,23 @@ export async function landscapeFacts(docsDir: DocsDir): Promise<LandscapeRead> {
     // cannot merge them (that is what failed one line up), but a document that
     // parses alone certainly declares the style groups it declares.
     if (file.errors.length === 0) {
-      return { facts: { elements: file.elements, globalStyles: await declaredStyles(docsDir, file) }, known: false };
+      // THE LANDSCAPE'S OWN RELATIONSHIPS TRAVEL WITH ITS ELEMENTS. This arm
+      // composes a record rather than handing the document across, because the
+      // style census below is widened past what this one document declares — and
+      // the first version of it listed the fields it happened to be thinking
+      // about and dropped the edges the document was carrying all along. That is
+      // silent: every per-service view then renders with no peers, the service
+      // and its own interior and nothing it touches, and no check anywhere says
+      // so. `MapFacts` now REQUIRES the field for exactly this reason; the copy
+      // stays explicit so the widening above it stays visible.
+      return {
+        facts: {
+          elements: file.elements,
+          relationships: file.relationships,
+          globalStyles: await declaredStyles(docsDir, file),
+        },
+        known: false,
+      };
     }
   } catch {
     // Unreadable bytes; the caller is told loam could not say.
@@ -136,29 +170,71 @@ async function declaredStyles(docsDir: DocsDir, landscape: MapFacts): Promise<st
 }
 
 /**
- * The bytes the views file must hold for this tree, and whether the map they
- * were computed from was read as a PROJECT.
+ * ONE generated file: where it lives, and the bytes it must hold — `null` for
+ * "this file must not exist", which is a state of its own and not a blank file
+ * (`render/stale.ts` keeps the same three apart on the reading side).
+ */
+export interface ExpectedFile {
+  path: string;
+  content: string | null;
+}
+
+/**
+ * The bytes BOTH generated files must hold for this tree, and whether the map
+ * they were computed from was read as a PROJECT.
  *
  * The content is always renderable — from the landscape file alone, or from
  * nothing — because a fleet with no generated file yet must still get one, and
  * the tree-changing verbs must still land theirs in the commit that changes the
  * tree. `known: false` is the caller's licence to leave an EXISTING file alone
  * instead (`../sync.ts`, `action: "blocked"`).
+ *
+ * NAMED FIELDS, never an array, and never one folded answer: the two files go
+ * stale for different reasons and each is named in its own finding and its own
+ * report line, so a caller that could not tell them apart would have nothing to
+ * say. `subsystem.views-stale` carries the path precisely so one code covers
+ * both honestly.
+ *
+ * THE SERVICE FILE IS THE ONE THE MAP CAN EMPTY. `renderSubsystemViews` answers
+ * null only when the TREE has no subsystems — a fact no map can change — while
+ * `renderServiceOverviews` answers null whenever no service resolves to an
+ * element, which is exactly what an unreadable map looks like from here (`facts`
+ * falls back to an empty element list and an empty edge list alike). So for that
+ * file "must be absent" and "loam could not read the map" are the same bytes,
+ * and only `known` tells them apart:
+ * a writer must not treat a null service render under `known: false` as evidence
+ * that the file should go. Both callers hold that line, and say so.
  */
 export interface ExpectedViews {
   /**
    * The `architecture/` PROJECT was read. False means the content was rendered
    * from the landscape file alone — or from nothing at all — so its style census
-   * is not one an existing file may be rewritten from.
+   * is not one an existing file may be rewritten from, and its element join is
+   * not one the per-service file may be deleted on.
    */
   known: boolean;
-  /** The bytes the file must hold, or null for "must be absent". */
-  content: string | null;
+  /** `architecture/subsystems.likec4` — one view per subsystem, from the tree. */
+  subsystems: ExpectedFile;
+  /** `architecture/services.likec4` — one overview view per service the map draws. */
+  services: ExpectedFile;
 }
 
 export async function expectedViews(docsDir: DocsDir, tree: FleetTree): Promise<ExpectedViews> {
   const read = await landscapeFacts(docsDir);
-  return { known: read.known, content: renderSubsystemViews(tree, read.facts ?? { elements: [] }) };
+  // The parsed DOCUMENT goes across, never a literal composed here: `MapFacts`
+  // carries the relationships the per-service peer sets are computed from, and a
+  // caller that dropped them would render every service view peerless — the
+  // service and its interior, and nothing it touches — with no error anywhere.
+  // The type now REQUIRES the field so that mistake cannot be made silently
+  // (`render/views.ts` records what it cost); this last-resort literal is the one
+  // place an empty answer is the TRUE one — loam could not read the map at
+  // all — and it says so rather than leaving the field off.
+  const map = read.facts ?? { elements: [], relationships: [] };
+  return {
+    known: read.known,
+    subsystems: { path: subsystemViewsPath(docsDir), content: renderSubsystemViews(tree, map) },
+    services: { path: serviceViewsPath(docsDir), content: renderServiceOverviews(tree, map) },
+  };
 }
 
 /**

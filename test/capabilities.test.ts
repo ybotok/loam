@@ -24,6 +24,10 @@ afterEach(async () => {
 async function project(files: Record<string, string>): Promise<Project> {
   const p = await makeProject(files, { service: "payment-service" });
   cleanups.push(() => p.destroy());
+  // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+  // files belong to a docs repo the way the landscape does, and their absence
+  // is its own `subsystem.views-stale`. Every case here is about something else.
+  await runLoam(p.workDir, "subsystem", "sync");
   return p;
 }
 

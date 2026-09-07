@@ -31,6 +31,12 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files, opts);
+  // A realistic fleet has run `subsystem sync` at least once, and since
+  // `architecture/services.likec4` exists (2026-09-07) an absent one is
+  // `subsystem.views-stale` on every `--all` run. Without this line every
+  // fixture here carries that error into assertions about the LANDSCAPE
+  // target's findings, which is noise from a different check.
+  await runLoam(p.workDir, "subsystem", "sync");
   try {
     await fn(p);
   } finally {
@@ -627,38 +633,175 @@ describe("an external hub every service leans on", () => {
   });
 });
 
+/**
+ * Infrastructure the fleet OWNS, drawn at fleet level.
+ *
+ * The stance this block encodes changed on 2026-09-07 and the old one is worth
+ * naming, because every fixture below used to be built around it: a `database`
+ * with one consumer at fleet level was `landscape.datastore-private`, whose
+ * whole message prescribed deleting the peer and nesting the store inside its
+ * owner. WHERE A STORE IS DRAWN IS NOW THE TEAM'S CHOICE — nested and peer are
+ * both first-class, loam grades neither — so that code is retired and this
+ * block pins the criterion that replaced it.
+ *
+ * The criterion, and it is absolute: a `database` drawn at fleet level, owned by
+ * the fleet (no `#external`, no `metadata { service }`), consumed by exactly one
+ * service, earns ZERO findings from `loam validate --all` and from `loam gate`.
+ * Three surfaces used to fire on exactly that element — `landscape.datastore-private`
+ * here, `landscape.service-undocumented` from the census, and
+ * `gate.partner-undocumented` on its consumer (that third one is pinned in
+ * test/gate-command.test.ts, which has the gate harness) — and between them they
+ * offered five remedies, not one of which was true of a Postgres the fleet runs.
+ * The suite's own damage is the evidence: the first fixture here used to tag an
+ * owned Redis `#external` purely to silence the census, and the datastore
+ * warning fired anyway.
+ *
+ * `landscape.datastore-shared` is untouched by all of it, in both its branches.
+ * Stating that two services reach the same data is a fact about coupling, not a
+ * restriction on where a box is drawn, and half of these cases exist to prove
+ * the retirement did not take it with it.
+ */
 describe("a datastore drawn at fleet level", () => {
-  it("warns landscape.datastore-private on a single consumer, naming the move", async () => {
+  it("earns ZERO findings when the fleet owns it and one service consumes it", async () => {
+    // THE acceptance criterion, and the fixture is deliberately the plainest
+    // shape a fleet can write: an owned `database` beside its one consumer, no
+    // tag bought to buy silence, no binding invented to answer a check.
     const files = {
-      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
-  redis = database 'Redis' {
-    #external
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
   }
-  orphan = database 'Orphan' {
-    #external
-  }
+  redis = database 'Redis'
+  orphan = database 'Orphan'
   svcA -> redis 'caches sessions'`),
-      "services/svc-a/model.likec4": serviceModel("svc-a"),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }`),
     };
     await withProject(files, {}, async (p) => {
       const { code, targets } = await validateAll(p);
       expect(code).toBe(0);
       const t = landscapeTarget(targets)!;
-      const f = t.findings.find((x) => x.code === "landscape.datastore-private")!;
-      expect(f.severity).toBe("warn");
-      expect(f.subject).toBe("Redis");
-      expect(f.message).toContain("services/svc-a/model.likec4");
-      // #external does not exempt a datastore: this fleet tags private stores
-      // external precisely to silence service-undocumented, and the drawing is
-      // false regardless of whose logo is on the box.
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.service-undocumented");
-      // A datastore nothing consumes is neither private nor shared — no
-      // finding names 'Orphan'.
+      // Nothing at all names the store — not the retired private warning, not
+      // the census's undocumented warning, not anything else that may arrive
+      // later. Asserting the SUBJECT set rather than a list of codes is what
+      // makes this a criterion instead of three exemptions.
+      expect(t.findings.filter((x) => x.subject === "Redis")).toEqual([]);
       expect(t.findings.filter((x) => x.subject === "Orphan")).toEqual([]);
+      expect(t.findings.map((x) => x.code)).toEqual(["landscape.matched"]);
+      // And nothing on this target is even a warning, which is the half that
+      // used to bite hardest: `validate --strict` exits 1 on a warning, so the
+      // two retired findings did not merely nag — they failed the pipeline of
+      // every fleet that drew a store it owns as a peer.
+      expect(t.findings.filter((x) => x.severity !== "ok")).toEqual([]);
     });
   });
 
-  it("a store nested under its owner on the map is not a fleet-level peer", async () => {
+  it("exempts every kind loam reads as infrastructure, not the datastore alone", async () => {
+    // INFRA_KINDS is `database, queue, topic, cache, bucket`. A queue and a
+    // topic were never datastore-graded, but they earned the census's
+    // `service-undocumented` for exactly the same wrong reason — and the topic
+    // case is the one `core/brief/unchecked.ts` has been documenting as a known
+    // wart, since a topic nested in an `#external` broker inherits no tag.
+    // The `landscape()` helper declares only the four kinds the rest of this
+    // file needs, so the specification is spelled out here — the point of the
+    // case is precisely the kinds it does not carry.
+    const files = {
+      "architecture/landscape.likec4": `specification {
+  element softwareSystem
+  element container
+  element database
+  element queue
+  element topic
+  element cache
+  element bucket
+  tag external
+}
+
+model {
+  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  orders = database 'Order store'
+  jobs = queue 'Job queue'
+  events = topic 'payment.events'
+  sessions = cache 'Session cache'
+  blobs = bucket 'Invoice blobs'
+  svcA -> orders 'reads'
+  svcA -> jobs 'enqueues'
+  svcA -> events 'publishes'
+  svcA -> sessions 'caches'
+  svcA -> blobs 'stores'
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`,
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }`),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      expect(landscapeTarget(targets)!.findings.map((x) => x.code)).toEqual(["landscape.matched"]);
+    });
+  });
+
+  it("names the infrastructure kinds as the third remedy when an element really is undocumented", async () => {
+    // The hook is a kind NAME, so a fleet whose specification spells its store
+    // `postgres` still lands on `service-undocumented` — and that message used
+    // to offer exactly two remedies, both false of a store the fleet runs. The
+    // list is spelled from INFRA_KINDS itself, so this assertion also pins that
+    // the message and the census cannot drift apart.
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  store = softwareSystem 'Postgres cluster'
+  svcA -> store 'reads'`),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }`),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const f = landscapeTarget(targets)!.findings.find((x) => x.code === "landscape.service-undocumented")!;
+      expect(f, "no service-undocumented finding").toBeDefined();
+      expect(f.subject).toBe("Postgres cluster");
+      expect(f.message).toContain("database, queue, topic, cache, bucket");
+    });
+  });
+
+  it("the kind is a fallback, never an override: a BOUND database naming nothing is still an error", async () => {
+    // `standsForService` wins over the kind everywhere the exemption is
+    // spelled. Without that guard a `database` carrying a binding would drop
+    // out of the census, and `landscape.binding-unknown` — an ERROR, because a
+    // binding is a claim about this repo rather than a guess at one — would go
+    // silent for every store somebody bound by mistake.
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  orders = database 'Order store' {
+    metadata { service 'ghost-service' }
+  }
+  svcA -> orders 'reads'`),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }`),
+    };
+    await withProject(files, {}, async (p) => {
+      const { code, targets } = await validateAll(p);
+      expect(code).toBe(1);
+      const f = landscapeTarget(targets)!.findings.find((x) => x.code === "landscape.binding-unknown")!;
+      expect(f.severity).toBe("error");
+      expect(f.subject).toBe("ghost-service");
+    });
+  });
+
+  it("a store nested under its owner on the map is silent at one consumer, exactly as a peer now is", async () => {
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
     redis = database 'Redis'
@@ -668,76 +811,16 @@ describe("a datastore drawn at fleet level", () => {
     await withProject(files, {}, async (p) => {
       const { targets } = await validateAll(p);
       const t = landscapeTarget(targets)!;
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
-      expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
+      expect(t.findings.map((x) => x.code)).toEqual(["landscape.matched"]);
     });
   });
 
-  it("counts a consumer its extending model attests, not only an edge on the map", async () => {
-    // R1: the census walked the map's relationships alone, so a store whose one
-    // consuming edge is drawn in the consumer's own model had zero consumers and
-    // earned nothing at all — the check went silent for the whole extending
-    // shape, which is the shape `loam adopt` briefs.
-    const files = {
-      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
-    metadata { service 'svc-a' }
-  }
-  orderDb = database 'Order store' {
-    #external
-  }`),
-      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
-    api = container 'api'
-  }
-  svcA.api -> orderDb 'Reads orders'`),
-    };
-    await withProject(files, {}, async (p) => {
-      const { targets } = await validateAll(p);
-      const t = landscapeTarget(targets)!;
-      const f = t.findings.find((x) => x.code === "landscape.datastore-private")!;
-      expect(f, `no datastore finding in ${t.findings.map((x) => x.code).join(", ")}`).toBeDefined();
-      expect(f.subject).toBe("Order store");
-      expect(f.message).toContain("('svc-a')");
-      // The placement, named for the consumer's own model shape — and the door
-      // the old message left the author believing was shut.
-      expect(f.message).toContain("`extend svcA { … }` block of services/svc-a/model.likec4");
-      expect(f.message).toContain("landscape.datastore-shared");
-    });
-  });
-
-  it("names the map placement, never an `extend` block, when the consumer's model stands alone", async () => {
-    // The remedy asserted the extending shape instead of reading it. `extend
-    // svcA` in a model that declares its own `specification` resolves nothing —
-    // such a model is parsed alone — so following this sentence literally turned
-    // a run with 0 errors into `c4.invalid` ("Could not resolve reference to
-    // Element named 'svcA'").
-    const files = {
-      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
-  redis = database 'Redis' {
-    #external
-  }
-  svcA -> redis 'caches sessions'`),
-      "services/svc-a/model.likec4": serviceModel("svc-a"),
-    };
-    await withProject(files, {}, async (p) => {
-      const { targets } = await validateAll(p);
-      const t = landscapeTarget(targets)!;
-      const f = t.findings.find((x) => x.code === "landscape.datastore-private")!;
-      expect(f, `no datastore finding in ${t.findings.map((x) => x.code).join(", ")}`).toBeDefined();
-      expect(f.message).not.toContain("`extend svcA { … }` block of services/svc-a/model.likec4");
-      expect(f.message).toContain("services/svc-a/model.likec4 declares its own `specification`");
-      expect(f.message).toContain("write it inside 'svcA' here");
-      // The extending shape is offered as the migration, not as the first arm.
-      expect(f.message).toContain("Two shapes of a service model");
-      // And the "never silence" promise carries its caveat: a standalone
-      // consumer's ids are its own file's, so loam cannot count its edges.
-      expect(f.message).toContain("A consumer whose model stands alone is not counted");
-    });
-  });
-
-  it("is shared when one service reaches it through the map and another through its model", async () => {
-    // The mixed case answered `datastore-private` naming whichever consumer the
-    // MAP happened to draw, and told the reader to move the store into that
-    // service — while two services reach it.
+  it("counts consumers its extending models attest, not only edges on the map", async () => {
+    // R1: the census walked the map's relationships alone, so a store whose
+    // consuming edges are drawn in the consumers' own models was graded against
+    // whatever the map happened to draw — which for the extending shape, the
+    // shape `loam adopt` briefs, was nothing at all. Neither consuming edge
+    // below is on the map, and the coupling is still stated.
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
     metadata { service 'svc-a' }
@@ -745,9 +828,77 @@ describe("a datastore drawn at fleet level", () => {
   svcB = softwareSystem 'svc-b' {
     metadata { service 'svc-b' }
   }
-  orderDb = database 'Order store' {
-    #external
+  orderDb = database 'Order store'`),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
   }
+  svcA.api -> orderDb 'Reads orders'`),
+      "services/svc-b/model.likec4": extendingModel(`  extend svcB {
+    api = container 'api'
+  }
+  svcB.api -> orderDb 'Reads orders'`),
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      const f = t.findings.find((x) => x.code === "landscape.datastore-shared")!;
+      expect(f, `no datastore finding in ${t.findings.map((x) => x.code).join(", ")}`).toBeDefined();
+      expect(f.subject).toBe("Order store");
+      expect(f.message).toContain("svc-a, svc-b");
+    });
+  });
+
+  it("takes no evidence from a STANDALONE consumer — its ids are its own file's", async () => {
+    // The id-space rule, which the retired message used to state in prose and
+    // which now shows only through the count: svc-b's model declares its own
+    // `specification`, so it is parsed alone and its `orderDb` is a coincidence
+    // of spelling, not the map's element. One counted consumer, and silence.
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  svcB = softwareSystem 'svc-b' {
+    metadata { service 'svc-b' }
+  }
+  orderDb = database 'Order store'`),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }
+  svcA.api -> orderDb 'Reads orders'`),
+      "services/svc-b/model.likec4": `specification {
+  element softwareSystem
+  element database
+}
+
+model {
+  s = softwareSystem 'svc-b'
+  orderDb = database 'Order store'
+  s -> orderDb 'Reads orders'
+}
+
+views {
+  view index {
+    include *
+  }
+}
+`,
+    };
+    await withProject(files, {}, async (p) => {
+      const { targets } = await validateAll(p);
+      const t = landscapeTarget(targets)!;
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-shared");
+    });
+  });
+
+  it("is shared when one service reaches it through the map and another through its model", async () => {
+    const files = {
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
+    metadata { service 'svc-a' }
+  }
+  svcB = softwareSystem 'svc-b' {
+    metadata { service 'svc-b' }
+  }
+  orderDb = database 'Order store'
   svcB -> orderDb 'Reads orders'`),
       "services/svc-a/model.likec4": extendingModel(`  extend svcA {
     api = container 'api'
@@ -763,15 +914,14 @@ describe("a datastore drawn at fleet level", () => {
       const f = t.findings.find((x) => x.code === "landscape.datastore-shared")!;
       expect(f, `no datastore finding in ${t.findings.map((x) => x.code).join(", ")}`).toBeDefined();
       expect(f.message).toContain("svc-a, svc-b");
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
     });
   });
 
   it("grades a NESTED store two services reach — the coupling the peer census could never see", async () => {
-    // The store sits inside its owner's element, which is the placement every
-    // message now prescribes; a second service draws the container-level edge in
-    // its own model. `landscape.datastore-shared` could not fire for a nested
-    // store at all, so this coupling rendered and was graded nowhere (E3).
+    // The store sits inside its owner's element, which is one of the two
+    // placements a team may choose; a second service draws the container-level
+    // edge in its own model. `landscape.datastore-shared` could not fire for a
+    // nested store at all, so this coupling rendered and was graded nowhere (E3).
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
     metadata { service 'svc-a' }
@@ -808,33 +958,39 @@ describe("a datastore drawn at fleet level", () => {
       // against the MAP's declaration, so performing the move it called free
       // costs `c4.invalid` on that consumer's model or `landscape.invalid` on
       // the map (verification 2026-09-04). The store is on the map here, so the
-      // message says the move OUT of the map is the one that breaks.
+      // message says the move OUT of the map is the one that breaks. This is
+      // the LOAD-BEARING half of the old stance, and it survives the retirement
+      // of `landscape.datastore-private` because it is a fact about LikeC4
+      // rather than a preference about where a box goes.
       expect(f.message).toContain("give it the same id, svcA.store");
       expect(f.message).toContain("ONE-WAY");
       expect(f.message).toContain("svc-b's edge resolves only against a declaration the MAP holds");
       expect(f.message).toContain("Out of svc-a's `extend` block onto svc-a's element on the map is always safe");
       expect(f.message).toContain("moving it back INTO the `extend` block breaks that edge");
       expect(f.message).not.toContain("rewrites no edge and no `Covers:` line");
-      // A nested store with only its owner stays silent — that is what the
-      // fixture above this one pins, and both must hold at once.
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
     });
   });
 
   it("takes no evidence from a consumer whose model does not parse", async () => {
+    // svc-b's model would supply the second consumer; it does not parse, so it
+    // attests nothing and the coupling is not asserted out of bytes nobody read.
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
     metadata { service 'svc-a' }
   }
-  orderDb = database 'Order store' {
-    #external
-  }`),
-      "services/svc-a/model.likec4": "model {\n  broken !!! not likec4\n",
+  svcB = softwareSystem 'svc-b' {
+    metadata { service 'svc-b' }
+  }
+  orderDb = database 'Order store'`),
+      "services/svc-a/model.likec4": extendingModel(`  extend svcA {
+    api = container 'api'
+  }
+  svcA.api -> orderDb 'Reads orders'`),
+      "services/svc-b/model.likec4": "model {\n  broken !!! not likec4\n",
     };
     await withProject(files, {}, async (p) => {
       const { targets } = await validateAll(p);
       const t = landscapeTarget(targets)!;
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
       expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-shared");
       expect(codesIn(targets)).toContain("c4.invalid");
     });
@@ -844,9 +1000,7 @@ describe("a datastore drawn at fleet level", () => {
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
   svcB = softwareSystem 'svc-b'
-  store = database 'Category store' {
-    #external
-  }
+  store = database 'Category store'
   svcA -> store 'reads categories'
   svcA -> store 'writes categories'
   svcB -> store 'reads categories'`),
@@ -860,36 +1014,25 @@ describe("a datastore drawn at fleet level", () => {
       expect(f.severity).toBe("warn");
       expect(f.message).toContain("svc-a, svc-b");
       expect(f.message).toContain("DATA");
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
+      // The shared store is the ONLY thing said about it — the store is owned
+      // and untagged, so nothing asks for a services/Category store/ either.
+      expect(t.findings.map((x) => x.code)).toEqual(["landscape.datastore-shared"]);
     });
   });
 
-  it("offers a consumer with NO model an extending model to write, never a model to migrate", async () => {
-    // `shape === null` reused the standalone arm's "migrate the model to the
-    // extending shape" one sentence after saying loam had read no model there
-    // at all — a repair on a file that does not exist (verification
-    // 2026-09-04).
+  it("--strict escalates the shared-store warning to exit 1", async () => {
     const files = {
-      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a' {
-    metadata { service 'svc-a' }
-  }
-  redis = database 'Redis' {
-    #external
-  }
-  svcA -> redis 'caches sessions'`),
-      "services/svc-a/spec.md": "# svc-a\n\n## Requirements\n",
+      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
+  svcB = softwareSystem 'svc-b'
+  store = database 'Category store'
+  svcA -> store 'reads categories'
+  svcB -> store 'reads categories'`),
+      "services/svc-a/model.likec4": serviceModel("svc-a"),
+      "services/svc-b/model.likec4": serviceModel("svc-b"),
     };
     await withProject(files, {}, async (p) => {
-      const { targets } = await validateAll(p);
-      const t = landscapeTarget(targets)!;
-      const f = t.findings.find((x) => x.code === "landscape.datastore-private")!;
-      expect(f, `no datastore finding in ${t.findings.map((x) => x.code).join(", ")}`).toBeDefined();
-      expect(f.message).toContain("loam read no extending model at services/svc-a/model.likec4");
-      expect(f.message).toContain("write an extending model at services/svc-a/model.likec4");
-      expect(f.message).not.toContain("migrate the model");
-      // And the one-consumer reversibility states the rule rather than a symmetry.
-      expect(f.message).toContain("with one consumer either move is free");
-      expect(f.message).not.toContain("rewrites no edge and no `Covers:` line");
+      const res = await runLoam(p.workDir, "validate", "--all", "--strict");
+      expect(res.code).toBe(1);
     });
   });
 
@@ -919,12 +1062,16 @@ describe("a datastore drawn at fleet level", () => {
       const { targets } = await validateAll(p);
       const t = landscapeTarget(targets)!;
       expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-shared");
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
       expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
     });
   });
 
-  it("never fires on a datastore that IS a service of the fleet", async () => {
+  it("never fires on a datastore that IS a service of the fleet — and keeps it in the census", async () => {
+    // The other half of the fallback rule: a `database` whose TITLE names a
+    // real services/<id>/ is an adopted service that happens to be drawn as a
+    // store. Dropping it for its kind would take a genuinely adopted service
+    // out of the scorecard's `c4.elements` denominator and out of both binding
+    // passes at once — silently, since nothing would then say a word about it.
     const files = {
       "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
   catalogDb = database 'catalog-db'
@@ -935,23 +1082,11 @@ describe("a datastore drawn at fleet level", () => {
     await withProject(files, {}, async (p) => {
       const { targets } = await validateAll(p);
       const t = landscapeTarget(targets)!;
-      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-private");
-      expect(t.findings.map((x) => x.code)).toContain("landscape.matched");
-    });
-  });
-
-  it("--strict escalates the shape warnings to exit 1", async () => {
-    const files = {
-      "architecture/landscape.likec4": landscape(`  svcA = softwareSystem 'svc-a'
-  redis = database 'Redis' {
-    #external
-  }
-  svcA -> redis 'caches sessions'`),
-      "services/svc-a/model.likec4": serviceModel("svc-a"),
-    };
-    await withProject(files, {}, async (p) => {
-      const res = await runLoam(p.workDir, "validate", "--all", "--strict");
-      expect(res.code).toBe(1);
+      expect(t.findings.map((x) => x.code)).not.toContain("landscape.datastore-shared");
+      // `landscape.matched` means the map and services/ agree — which for
+      // catalog-db means the census still sees it as the service it is, rather
+      // than skipping it and leaving `landscape.service-unmodelled` to fire.
+      expect(t.findings.map((x) => x.code)).toEqual(["landscape.matched"]);
     });
   });
 });

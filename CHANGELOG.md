@@ -10,6 +10,156 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+**Upgrading: one `loam subsystem sync` per docs repo, once.** `loam validate --all` reports
+`subsystem.views-stale` (error) against the new `architecture/services.likec4` in EVERY existing
+docs repo whose fleet map draws a service — flat fleets with no subsystems included, because the
+file is new everywhere and an absent generated file is a state of its own. This is not a
+subsystems-only upgrade: a fleet that has never run `loam subsystem new` gets the finding too. A
+repo that DOES have subsystems gets a second finding on the same run, against
+`architecture/subsystems.likec4`, because the subsystem views gained boundary edges and an `of`
+subject and every existing copy therefore re-renders differently. One `loam subsystem sync` writes
+both files and clears both findings. `loam archive` names the same repair rather than claiming
+"complete + current". Nothing else in a repository has to change, and no document a team wrote is
+touched — and a document a team wrote that is already standing at one of the two generated paths is
+refused by name rather than overwritten (below).
+
+### Removed — `landscape.datastore-private`, because where a store is drawn is the team's choice
+
+- **`landscape.datastore-private` (warn) is retired.** It fired on a `database` element drawn at
+  fleet level with exactly ONE consumer, and its whole message prescribed deleting the peer and
+  writing the store inside its owner. The identical store nested was silent, so the check graded the
+  DRAWING and not the architecture — a restriction rather than a fact about the fleet. A store one
+  service owns may now be nested under that service's element or drawn beside the services, and loam
+  grades neither. The code is not in the frozen `ErrorCode` or `IssueCode` unions, so removing it
+  breaks no contract; `loam explain landscape.datastore-private` no longer answers, and the row is
+  gone from the agent-facing check table.
+- **`landscape.datastore-shared` (warn) is unchanged**, both arms. Two or more services on one store
+  is a fact about coupling, not a restriction, and it fires at two consumers for both placements
+  alike. What survives from the retired code's message is the one clause that was a fact about
+  LikeC4 rather than a preference, and SCHEMA's "Private stores" now leads with it: a second
+  consumer's edge resolves only against a declaration the MAP holds, because a per-service project
+  is `architecture/` plus one model.
+- **Infrastructure is not a service.** A new `INFRA_KINDS` set in `core/vocabulary/maturity.ts` —
+  `database`, `queue`, `topic`, `cache`, `bucket`, compared case-insensitively — takes such an
+  element out of four surfaces at once: the drawn-service census behind
+  `landscape.service-undocumented`, the `loam gate` partner set (an infra endpoint is dropped from
+  the `partners` payload, exactly as an actor already was), the `loam verify` checklist (a
+  fleet-level store no longer mints a `service.exists` claim no repository can answer), and the
+  scorecard's element denominator, whose `c4` row now counts services rather than services plus
+  their stores. The hook is the kind NAME, with the same limitation `ACTOR_KINDS` lives with: a
+  fleet spelling its kind `postgres` is not covered, and a tag can be added later as a second
+  spelling. A store BOUND to a directory with `metadata { service }`, or titled like one, stays an
+  adopted service on every one of the four surfaces — the census predicate wins over the kind.
+  `landscape.service-undocumented`'s message gained a THIRD remedy beside "bind it" and "tag it
+  `#external`", spelled from the same set: neither of the old two was true of a store the fleet
+  owns, and that message is the only place an author learns which kind spellings loam reads.
+- `c4.uncovered` was left alone, and the measurement is the reason: a delta drawing
+  `splitLedger = database 'split-ledger'` earns it, and adding `Covers: splitLedger` to the
+  feature's `arch.spec.md` delta silences it exactly, with no `covers.unknown`. The remedy the
+  message names is true, so this is not a residual restriction — and the code fires only on elements
+  a feature DELTA adds, never from `validate --all` over a living tree.
+- The acceptance criterion, run for real: a `database` drawn at fleet level, owned by the fleet, with
+  one consumer, no `#external` tag and no binding, now earns ZERO findings from `loam validate --all`
+  and from `loam gate`.
+
+### Added — `architecture/services.likec4`: one generated overview view per service
+
+- **New generated path `architecture/services.likec4`**, written by `loam subsystem sync` beside
+  `architecture/subsystems.likec4`, removed by it when the fleet map draws no service, and owned
+  outright by loam: views only, byte-reproducible, one view per service the map resolves, sorted by
+  service directory id. Each view is declared `of` its service's element, which is what makes the
+  fleet map, every subsystem view and every other service view click-through into it with no
+  authored link — measured at likec4 1.59.2. Peers are NAMED one by one rather than wildcarded,
+  because on a map that groups its services the wildcard form collapses every peer to its group box
+  and yields no drill-down at all (measured on a 120-service fleet: 0 of 10 nodes navigable). Median
+  at 58 services in 11 groups: 10 nodes, 8 edges per view, about 7 ms of layout each.
+- **Titles are folders.** A per-service view is titled `<subsystem path> / <service directory id>`,
+  built from the same path helper the subsystem views use, so both generated files fold into one
+  browser folder tree mirroring `services/`. LikeC4 has no view-folder syntax — `views { group … }`
+  is a parse error at the pin — and splitting the title on `/` is the whole mechanism.
+- **An authored view of the same element keeps precedence.** Two views `of` one element are legal;
+  the first document alphabetically wins the default navigation target and both stay reachable,
+  because the subject's own node cycles to the other. `architecture/landscape.likec4` sorts before
+  `architecture/services.likec4`. loam does not detect the authored view and never will:
+  docs/DESIGN.md rule 26 forbids reading what a view SHOWS.
+- **Subsystem views gained two things** in the same generator: `include <member> -> *, * -> <member>`
+  per member, so a subsystem view answers "what does this group touch" and not only "who is in it",
+  and `view subsystem_<name> of <ancestor>` when the map holds an element owning exactly that
+  subsystem's members. Measured at 58/11: ~14 nodes, ~38 edges, 12 of 14 nodes navigable. Every
+  existing `architecture/subsystems.likec4` therefore re-renders differently and is stale once.
+- **`subsystem.views-stale` now grades two files**, one finding per file, each naming its own path in
+  `subject`, `locations[0]` and the message. No new code was minted: both files are written by one
+  command in one commit and repaired by one run, which is what makes one code honest.
+- **`subsystem.view-id-collision` reserves `service_` as well as `subsystem_`.** A `service_` id is
+  reserved only for a service the fleet map actually DRAWS, so an unmodelled `services/<id>/`
+  reserves nothing; the message names which generated file and which prefix.
+- `deployment.doc-reserved` refuses a feature deployment document named `services.likec4` for the
+  same reason it already refused `subsystems.likec4`: both names are generated, overwritten
+  wholesale, and parsed by nothing.
+- **No writer overwrites a generated views file it did not write, and refusing is now an exit 1.**
+  Both generated paths are filenames loam RESERVES inside `architecture/`, a directory the team
+  owns, and every writer of them rewrites the file whole — so a repository that already kept a
+  hand-authored diagram at one of those paths would have lost it, silently, on the first run after
+  the release that reserved the name. Reproduced before the guard existed: with a hand-authored
+  `architecture/services.likec4` in the tree, `loam subsystem new platform` printed
+  `architecture/services.likec4 updated` and destroyed it, first line and all.
+- **What makes a file loam's is its FIRST LINE**, `// generated by loam`, with a leading byte-order
+  mark stripped before the test — a Windows editor adds one without changing a fact, and without the
+  strip loam would call its own output authored and refuse to regenerate it for good. A hand EDIT of
+  a generated file keeps that line, so it is still loam's to repair and one `loam subsystem sync`
+  puts it back: that has always been what `subsystem.views-stale` says. Only a file that never
+  carried the mark is somebody else's. **A 0-byte file at either path counts as somebody else's** —
+  it carries no mark — so an empty `architecture/subsystems.likec4` or
+  `architecture/services.likec4` is no longer filled in; delete it and re-run.
+- **`loam subsystem sync` declines the one file and finishes the rest.** `--json` reports the new
+  `action` value **`refused`** — on `action` for `architecture/subsystems.likec4`, on
+  `serviceViews.action` for `architecture/services.likec4`, one predicate behind both — while the
+  other generated file, the per-service project files and the root `exclude` are still done and
+  still reported, and the **exit code is 1**. That is `loam validate`'s shape rather than a refusal
+  envelope, and the non-zero exit is the point: `loam validate --all` goes on reporting
+  `subsystem.views-stale` for that path with `loam subsystem sync` named as the repair, so a run in
+  a hook or a CI step must not report success over a file it can never fix.
+- **`loam subsystem new` / `rm` / `move` / `rename` and `loam seed` refuse WHOLE**, before a byte is
+  staged: `error.code` `already-exists`, exit 1, nothing written and — for `move` and `rename` —
+  nothing renamed. No new code was minted, because that is what `already-exists` has always meant on
+  these verbs; `loam seed` can answer it for the first time. They refuse whole rather than per-file
+  because their entire contract is that the generated files land in the SAME commit as the change,
+  so completing the structural half would manufacture the very `subsystem.views-stale` state that
+  commit window exists never to leave behind — irreversibly, for a `move` that also stages renames.
+- **The refusal sentence is one sentence, verbatim from all five writers.** It names the mark loam
+  looked for, says that not one byte changed, and gives the way out: rename the file to a name loam
+  does not reserve — every other `.likec4` under `architecture/` renders in the same project, so the
+  diagram is not lost — or delete it, then re-run.
+- **Payload keys, all additive.** `loam subsystem sync --json` keeps `path` and `action` meaning the
+  subsystem file and adds `serviceViews: { path, action }`; `loam subsystem new` / `move` / `rm` /
+  `rename --json` keep `views` and add `serviceViews`; `loam archive --json` keeps
+  `subsystemViewsStale` and adds `staleViews: string[]`, the generated files it left behind. Nothing
+  existing changed meaning.
+- The generated-file SET is now one table (`GENERATED_ARCHITECTURE_FILES`), read by the path
+  builders, the name reservation, both project loads that must EXCLUDE these files (the fleet map's
+  and `c4.fleet-project-invalid`'s), archive's staging and `loam seed`'s. Four readers that must
+  never disagree about which files are generated, and a name in one but not another failed silently
+  both ways while there was only one.
+
+### Added — the intra-service use-case slot, published rather than graded
+
+- **`loam adopt` briefs `services/<…>/<id>/usecases/<name>.likec4` as an OPTIONAL target**, with the
+  tag grammar and a worked example: a `dynamic view` tagged `#req-<Requirement-ID>` as the first
+  thing in the view body, the tag declared once (in the landscape's `specification` for an extending
+  model, in the model's own for a standalone one), every hop backed by a relationship the model
+  declares, and the view id namespaced by the service because an extending model's views share the
+  root project's flat id namespace. Optional-and-absent prints lowercase `missing` and is not a
+  finding — the existing mechanism for an optional artifact, not a new one.
+- **The generated AGENTS.md names the slot and its title convention**,
+  `'<subsystem path> / <service id> / <use case>'`, so an authored use-case view lands in the same
+  browser folder as its service's generated overview.
+- **No new finding code, and no check on absence.** docs/DESIGN.md rule 26 — presence is never owed,
+  and no check may grade a view's absence — is enforced by `scripts/arch-check.mjs`, so there is no
+  service.usecases-missing and there never will be. The grader (`c4.valid`'s
+  ` · K tagged flow(s) graded`) has existed since 2026-09-03; all that was missing was anyone being
+  told. A usecase.flow-untagged check, which would grade a view that EXISTS, is recorded on
+  [ROADMAP.md](ROADMAP.md) with its promotion bar rather than built.
+
 ## [0.2.0-alpha.6] - 2026-09-04
 
 A service model may extend the fleet map, and the nine problem reports one fleet filed against the

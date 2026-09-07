@@ -38,6 +38,10 @@ async function withProject(
   fn: (p: Project) => Promise<void>,
 ): Promise<void> {
   const p = await makeProject(files, opts);
+  // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+  // files belong to a docs repo the way the landscape does, and their absence
+  // is its own `subsystem.views-stale`. Every case here is about something else.
+  await runLoam(p.workDir, "subsystem", "sync");
   try {
     await fn(p);
   } finally {

@@ -5,7 +5,7 @@
  * the docs lock, nothing outside it does, and the module prints nothing —
  * the caller renders every arm.
  *
- * The checks live UNDER the lock on purpose: the never-overwrite promise is a
+ * The three refusals live UNDER the lock on purpose: the never-overwrite promise is a
  * statement about the landscape as it is at the moment of the write, and an
  * unlocked classification would be a TOCTOU against every other docs writer.
  */
@@ -18,6 +18,7 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { parseServiceId } from "../../core/kernel/ids/service.js";
 import { landscapePath } from "../../core/repo/paths.js";
 import { listFleetTree } from "../../core/repo/repo.js";
+import { authoredRefusal } from "../../core/repo/tree/render/service/header.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { stageWrites } from "../../core/staging/commit.js";
@@ -60,7 +61,9 @@ export type SeedCommit =
         | "commit-interrupted"
         | "merge-failed"
         | "rollback-incomplete"
-        | "seed-landscape-edited";
+        | "seed-landscape-edited"
+        /** A hand-authored document standing at one of the two generated views paths — see the refusal in `commitSeed`. */
+        | "already-exists";
       message: string;
     }
   /** The under-lock fleet-consistency preflight refusing; see `missingServices`. */
@@ -104,6 +107,39 @@ export async function commitSeed(req: SeedCommitRequest): Promise<SeedCommit> {
     if (inconsistency !== null) return inconsistency;
 
     const plan = await planSeedWrites(req, tree);
+    // THE OTHER never-overwrite promise, and the third refusal this window owns.
+    //
+    // `classifyLandscape` above keeps it for `architecture/landscape.likec4`;
+    // this keeps it for the two files seed does not share with the team at all —
+    // `architecture/subsystems.likec4` and `architecture/services.likec4` are
+    // filenames loam RESERVES inside a directory the team owns, and seed writes
+    // them whole. Until this line existed a `loam seed` into a repository that
+    // kept a hand-authored diagram at one of those paths destroyed it in
+    // silence: the same clobber reproduced through `loam subsystem new`, and the
+    // guard that caught it lived in `subsystem sync` alone.
+    //
+    // THE WHOLE SEED IS REFUSED, exactly as an edited landscape refuses it, and
+    // for the same reason: seed regenerates every file it owns wholesale from
+    // fleet.yaml, so landing the landscape and the markers while declining a
+    // views file would leave a tree whose very next `validate --all` — seed's
+    // own `next` command — reports `subsystem.views-stale` over a file no
+    // command could ever repair. `planSeedWrites` has staged nothing; the
+    // transaction below is the first byte, and it does not run.
+    if (plan.authored.length > 0) {
+      return {
+        ok: false,
+        // `already-exists` for the reason commands/subsystem/txn/txn.ts gives at
+        // its own copy of this refusal: it is what that code has always meant —
+        // refusing to create over something that already exists, because
+        // overwriting would destroy work nobody asked to lose.
+        code: "already-exists",
+        message:
+          plan.authored.map((file) => authoredRefusal(file)).join(" ") +
+          " NOTHING was written: not the landscape, not a subsystem marker, not a `.gitkeep`. Seed regenerates " +
+          "every file it owns wholesale, so it never proceeds past human work standing at one of its paths — the " +
+          "same promise `seed-landscape-edited` makes one file over.",
+      };
+    }
     const staged = await stageWrites(plan.writes);
     const committed = await commitStaged(
       { root: docsDir, command: "seed", rerun: req.rerun, target: "landscape" },

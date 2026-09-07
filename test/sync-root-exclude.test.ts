@@ -333,6 +333,11 @@ describe("subsystem sync — the root project's exclude list", () => {
       "services/svc-b/spec.md": LIVING_SPEC.replace(/payment-service/g, "svc-b"),
     });
     try {
+      // The generated views files are not gated on the root project file — they
+      // are a function of the tree and the map — so one sync lands them first
+      // and `before` is the state this case is actually about: the per-service
+      // project files and the root `exclude`, neither of which may be touched.
+      await sync(p);
       const before = await treeHashes(p.docsDir);
       const payload = await sync(p);
       expect(payload.projects.root).toBe(false);

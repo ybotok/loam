@@ -88,6 +88,10 @@ describe("three-way classification", () => {
       const ids = await listedIds(p.workDir);
       expect(ids).toContain("payment-service");
       expect(ids).not.toContain("notes");
+      // Synced first: the map draws this service, so `architecture/services.likec4`
+      // is owed and its absence is a `subsystem.views-stale` of its own — nothing
+      // to do with the classification this case is about.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(subsystemFindings(res.stdout)).toEqual([]);
     } finally {
@@ -113,6 +117,7 @@ describe("three-way classification", () => {
       expect(ids).toContain("slot-only");
       expect(ids).not.toContain("usecases");
       expect(ids).not.toContain("ui");
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(subsystemFindings(res.stdout)).toEqual([]);
       // …and nothing downstream ever saw the phantom either.
@@ -331,6 +336,9 @@ describe("what is NOT a finding", () => {
   it("unfiled services are permanent, normal and SILENT — the flat fleet is the compatibility case", async () => {
     const p = await makeProject(coherentFixture());
     try {
+      // A FLAT fleet still owes the per-service overviews — the map draws its
+      // services — so one sync, and then the run must be silent about placement.
+      expect((await runLoam(p.workDir, "subsystem", "sync")).code).toBe(0);
       const res = await runLoam(p.workDir, "validate", "--all", "--json");
       expect(res.code).toBe(0);
       expect(subsystemFindings(res.stdout)).toEqual([]);
@@ -349,6 +357,10 @@ describe("placement is never part of any identity", () => {
       // filing adds); it appears in no command's output below, so the sweep
       // still compares byte for byte.
       expect((await runLoam(nested.workDir, "subsystem", "sync")).code).toBe(0);
+      // The flat fleet is synced too: BOTH now carry architecture/services.likec4,
+      // whose titles are the one place placement legitimately shows — and it
+      // appears in no command compared below either.
+      expect((await runLoam(flat.workDir, "subsystem", "sync")).code).toBe(0);
       // The sweep: same fleet, same feature, same service — one filed, one
       // not. Identical answers, byte for byte, because every join runs on the
       // id and every path resolves through the enumeration. `list --json` is

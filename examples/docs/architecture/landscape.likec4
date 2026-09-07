@@ -34,13 +34,19 @@ specification {
   // takes the addition into that model instead, and this file never grows an
   // interior.
   element container
-  // Declared here for the SERVICE MODELS, and nothing in this file uses it: a
-  // store lives inside the service that owns it (`landscape.datastore-private`
-  // is the check that pushes one back in), so every `database` element in this
-  // fleet is written in a `services/<svc>/model.likec4` under
-  // `extend marketplace.<svc>`. An extending model declares no kinds of its
-  // own, so a kind it needs and this block does not declare is ONE parse error
-  // on the model — which is what this line prevents.
+  // Declared here for the SERVICE MODELS, and nothing in this file uses it.
+  // This fleet writes every `database` element inside the service that owns it,
+  // in a `services/<svc>/model.likec4` under `extend marketplace.<svc>` — a
+  // CHOICE this example makes, not a rule loam enforces. Drawing an owned store
+  // beside the services is equally first-class and earns no finding; what the
+  // placement decides is one thing, and it is a fact about LikeC4: a second
+  // service's edge naming `marketplace.<svc>.<store>` resolves only against a
+  // declaration the MAP holds, because a per-service project is `architecture/`
+  // plus one model. So a store a second consumer will name belongs on the map,
+  // and one nobody else reaches may live wherever the team finds it clearest.
+  // An extending model declares no kinds of its own, so a kind it needs and
+  // this block does not declare is ONE parse error on the model — which is what
+  // this line prevents.
   element database
   element person
   // A topic is an element, and the kind carries #external rather than each

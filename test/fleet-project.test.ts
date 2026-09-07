@@ -72,7 +72,7 @@ function rootWith(exclude: readonly string[]): string {
 }
 
 async function fleet(files: Record<string, string>): Promise<Project> {
-  return makeProject({
+  const p = await makeProject({
     "architecture/landscape.likec4": MAP,
     "services/svc-a/model.likec4": extending("svcA"),
     "services/svc-a/spec.md": spec("svc-a"),
@@ -82,6 +82,11 @@ async function fleet(files: Record<string, string>): Promise<Project> {
     "services/svc-b/openapi.yaml": LIVING_OPENAPI,
     ...files,
   });
+  // A realistic fleet has run `loam subsystem sync`: the two GENERATED views
+  // files belong to a docs repo the way the landscape does, and their absence
+  // is its own `subsystem.views-stale`. Every case here is about something else.
+  await runLoam(p.workDir, "subsystem", "sync");
+  return p;
 }
 
 describe("c4.fleet-project-invalid — clean apart, broken together", () => {

@@ -11,5 +11,8 @@ views {
     description 'Cross-cutting identity and messaging'
     include marketplace.identityService
     include marketplace.notificationService
+
+    include marketplace.identityService -> *, * -> marketplace.identityService
+    include marketplace.notificationService -> *, * -> marketplace.notificationService
   }
 }
