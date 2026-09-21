@@ -10,6 +10,15 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+## [0.2.0-alpha.8] - 2026-09-21
+
+The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:
+`npm i @ybotok/loam@alpha` installs it. Everything in it is additive — no stable code was added,
+changed or retired, no existing flag, path or payload key moved, and nothing a repository has
+committed needs to change. What a repo NOTICES after upgrading: one new read-only command
+(`loam tasks`), new keys on two `--json` payloads it may already consume, and a corrected SCHEMA
+sentence about how scenario digests are salted — the code did not move, the sentence did.
+
 ### Added — `loam tasks`, the derived answer to "what do I do next, and what closes it"
 
 The question an authored task file answers is a good one; the file is the wrong place to answer it,
