@@ -15,8 +15,8 @@
  * sources). test/mcp-protocol.test.ts pins this string against MCP_TOOLS
  * instead: a tool added to the table without its name here fails there.
  */
-export const MCP_COMMAND = `- \`loam mcp\` serves the fourteen base read commands — validate, status, list, show,
-  delta, diff, explore, dependencies, doctor, context, gate, steps, explain,
+export const MCP_COMMAND = `- \`loam mcp\` serves the fifteen base read commands — validate, status, list, show,
+  delta, tasks, diff, explore, dependencies, doctor, context, gate, steps, explain,
   instructions — as MCP tools over stdio (JSON-RPC 2.0), for hosts that reach
   tools through MCP rather than a shell:
   configure the host to launch \`loam mcp\` in the repository the tools should

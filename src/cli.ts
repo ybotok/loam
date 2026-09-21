@@ -11,6 +11,7 @@ import { registerShow } from "./commands/show/show.js";
 import { registerStatus } from "./commands/status/status.js";
 import { registerSubsystem } from "./commands/subsystem/subsystem.js";
 import { registerDelta } from "./commands/delta/delta.js";
+import { registerTasks } from "./commands/tasks/tasks.js";
 import { registerDiff } from "./commands/diff/diff.js";
 import { registerGherkin } from "./commands/gherkin/gherkin.js";
 import { registerRebase } from "./commands/rebase/rebase.js";
@@ -73,6 +74,7 @@ export function buildProgram(): Command {
   registerStatus(program);
   registerSubsystem(program);
   registerDelta(program);
+  registerTasks(program);
   registerDiff(program);
   registerGherkin(program);
   registerRebase(program);
@@ -100,10 +102,10 @@ export function buildProgram(): Command {
  * The two lines under the command list: where to start, and what to run when
  * lost.
  *
- * {@link HELP_GROUPS} does nearly all of the orienting work — twenty-nine
+ * {@link HELP_GROUPS} does nearly all of the orienting work — thirty
  * commands under seven headings, in the order of the work — but it stops one
  * step short of the two facts a newcomer does not have. Nothing on the page
- * said that `init` must run before any of the other twenty-eight, and nothing
+ * said that `init` must run before any of the others, and nothing
  * named the command that answers "what now"; the last thing a first
  * `loam --help` printed was `help [command]`.
  *
@@ -131,7 +133,7 @@ export const HELP_EPILOG = [
  * protocols (`loam instructions`) rather than inventing a second taxonomy, so a
  * reader who has met one has met the other.
  *
- * Twenty-nine commands printed as one flat registration-ordered list tells a
+ * Thirty commands printed as one flat registration-ordered list tells a
  * new reader nothing about which four to run first. NOTHING IS HIDDEN — a
  * hidden command is a command an agent cannot discover, and every one of these
  * still parses, still appears, and still carries the same flags. This is
@@ -143,7 +145,7 @@ const HELP_GROUPS: Record<string, string> = {
   explore: "Read the fleet", context: "Read the fleet", dependencies: "Read the fleet",
   explain: "Read the fleet", instructions: "Read the fleet", steps: "Read the fleet",
   adopt: "Adopt what exists", vouch: "Adopt what exists",
-  new: "Change it", delta: "Change it", gherkin: "Change it", rebase: "Change it",
+  new: "Change it", delta: "Change it", tasks: "Change it", gherkin: "Change it", rebase: "Change it",
   subsystem: "Change it",
   validate: "Check it", diff: "Check it", verify: "Check it", gate: "Check it",
   archive: "Ship it", unarchive: "Ship it",
@@ -153,7 +155,7 @@ const HELP_GROUPS: Record<string, string> = {
 /**
  * Apply {@link HELP_GROUPS}, and FAIL CLOSED on a command it does not name.
  *
- * The throw is the point. A thirtieth command added without a heading would
+ * The throw is the point. A thirty-first command added without a heading would
  * otherwise land silently in an "unclassified" bucket at the bottom of the
  * page, which is the drift this whole file's neighbours are written to prevent;
  * `test/help-groups.test.ts` catches it at gate time, and this catches it the

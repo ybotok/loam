@@ -130,6 +130,7 @@ const INVOCATIONS: Record<string, Invocation> = {
   status: { run: [["status", "--json"]] },
   steps: { run: [["steps", "--json"]] },
   subsystem: { run: [["subsystem", "list", "--json"]] },
+  tasks: { run: [["tasks", FEATURE, "--json"]] },
   unarchive: { run: [["archive", FEATURE, "--approve"], ["unarchive", FEATURE, "--json"]] },
   validate: { run: [["validate", "--json"]] },
   verify: { run: [["verify", FEATURE, "--json"]] },

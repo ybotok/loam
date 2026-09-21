@@ -7,10 +7,11 @@
  * documented suspected bugs (see the structured report of the run).
  */
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { LIVING_SPEC, FEATURE_SPEC } from "./helpers/harness.js";
 import { parseRequirements, sectionHeadings } from "../src/core/document/parse.js";
 import { applyRequirementDelta } from "../src/core/document/apply.js";
-import { serializeRequirements } from "../src/core/document/spec.js";
+import { requirementDigest, serializeRequirements } from "../src/core/document/spec.js";
 import { requirementsMissingScenarios } from "../src/core/document/scenarios.js";
 import { type DeltaKind, type Requirement } from "../src/core/document/spec.js";
 
@@ -466,6 +467,92 @@ describe("parsing: the enclosing H2 section", () => {
 
   it("an H3 is not an H2 — `### Requirement:` never opens a section", () => {
     expect(parseRequirements(MIXED).every((r) => r.section?.startsWith("## "))).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Parsing: scenario line numbers                                      */
+/* ------------------------------------------------------------------ */
+
+describe("parsing: scenario line numbers", () => {
+  // `Scenario.line` is `Requirement.line` one level down: it exists so a finding
+  // or a projection can send an author to the `#### Scenario:` they wrote rather
+  // than to the top of the file. Two properties have to hold, and the second is
+  // the one that made the field safe to add at all.
+
+  const DOC = `# svc
+
+## Requirements
+
+### Requirement: Cancel an order
+The service SHALL let a customer cancel an order.
+
+#### Scenario: Cancellation succeeds
+- **Given** an open order
+- **Then** the order is cancelled
+
+#### Scenario: Cancellation is refused after shipping
+- **Given** a shipped order
+- **Then** cancellation is refused
+`;
+
+  it("each scenario records the 1-based line of its own `#### Scenario:` heading", () => {
+    const [r] = parseRequirements(DOC);
+    expect(r!.line).toBe(5);
+    expect(r!.scenarios.map((s) => [s.name, s.line])).toEqual([
+      ["Cancellation succeeds", 8],
+      ["Cancellation is refused after shipping", 12],
+    ]);
+  });
+
+  it("body line `lines[i]` sits at `line + 1 + i`, which is the arithmetic the field promises", () => {
+    // Asserted against the document itself rather than against more constants:
+    // an off-by-one that moved both the number and its expectation would still
+    // point at the wrong text here, which is the failure an author would see.
+    const lines = DOC.split("\n");
+    const [r] = parseRequirements(DOC);
+    for (const s of r!.scenarios) {
+      expect(lines[s.line! - 1]).toBe(`#### Scenario: ${s.name}`);
+      s.lines.forEach((body, i) => expect(lines[s.line! + i]).toBe(body));
+    }
+  });
+
+  it("recording the line moves NO digest — `line` is not serialized, so it cannot be hashed", () => {
+    // The property the whole field rests on. `requirementDigest` is defined AS
+    // the sha256 of `serializeRequirements`, and that writer reads a scenario
+    // from `name` and `lines` alone. If it ever learned to read `line`, every
+    // `Based-On:` pin in every living document in every fleet would go stale at
+    // once, on upgrade, with no error anywhere — the exact silent-corpus-wide
+    // failure the pin exists to report rather than to cause.
+    const [r] = parseRequirements(DOC);
+    // 1. The same requirement with every recorded position stripped hashes
+    //    identically — `line` is not an input.
+    const positionless: Requirement = {
+      ...r!,
+      line: undefined,
+      scenarios: r!.scenarios.map(({ line: _dropped, ...rest }) => rest),
+    };
+    expect(requirementDigest(r!)).toBe(requirementDigest(positionless));
+    // 2. And the value is the hash of the canonical text, spelled out here
+    //    without calling loam's serializer at all. Assertion 1 alone would still
+    //    pass if the serializer started emitting positions for BOTH objects;
+    //    this one pins the bytes, so it would not.
+    const canonical =
+      "### Requirement: Cancel an order\n\n" +
+      "The service SHALL let a customer cancel an order.\n\n" +
+      "#### Scenario: Cancellation succeeds\n" +
+      "- **Given** an open order\n" +
+      "- **Then** the order is cancelled\n\n" +
+      "#### Scenario: Cancellation is refused after shipping\n" +
+      "- **Given** a shipped order\n" +
+      "- **Then** cancellation is refused\n";
+    expect(requirementDigest(r!)).toBe(
+      createHash("sha256").update(canonical, "utf8").digest("hex").slice(0, 16),
+    );
+    // 3. And the literal that value WAS before `Scenario.line` existed. A hex
+    //    constant is the only assertion here that survives somebody rewriting
+    //    both the serializer and the expectation above in one edit.
+    expect(requirementDigest(r!)).toBe("0a6aee7b701c358a");
   });
 });
 

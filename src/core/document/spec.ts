@@ -20,6 +20,16 @@ export type DeltaKind = "ADDED" | "MODIFIED" | "REMOVED" | "BASE";
 export interface Scenario {
   name: string;
   lines: string[];
+  /**
+   * 1-based line of this scenario's `#### Scenario:` heading in its source document
+   * — `Requirement.line` one level down, so body line `lines[i]` sits at `line + 1 + i`.
+   *
+   * NOT part of identity, and that is load-bearing: `serializeRequirements` writes a
+   * scenario from `name` and `lines` alone and `requirementDigest` is the hash OF that
+   * serialization, so recording a position moves no digest and no living `Based-On:`
+   * pin goes stale because the parser learned to count lines.
+   */
+  line?: number;
 }
 
 export interface Requirement {
@@ -388,11 +398,3 @@ export function serializeRequirements(reqs: Requirement[]): string {
   }
   return chunks.join("\n\n").trim() + "\n";
 }
-
-/**
- * A delta requirement as it lands in the living document, with the bookkeeping
- * that belongs to the DELTA left behind: the `Based-On:` pin (a claim about
- * which living version this was written against — meaningless once it IS the
- * living version, and poison for the next feature's baseline, which would then
- * hash the previous feature's pin) and the line it was parsed from.
- */

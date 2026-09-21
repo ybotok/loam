@@ -66,6 +66,7 @@ const LOAM_ALLOWED_VERBS = [
   "status",
   "steps",
   "subsystem",
+  "tasks",
   "unarchive",
   "validate",
   "verify",

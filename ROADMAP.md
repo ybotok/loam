@@ -18,11 +18,11 @@ acceptance tests, and implementation evidence remain ordinary files in repositor
 state inside a service. The CLI is small enough to audit, and every writer — not only archive — now
 commits through a locked, journaled transaction that a crash cannot leave half-applied.
 
-The tree contains **468 TypeScript modules in 144 source packages**, with an acyclic package graph
+The tree contains **475 TypeScript modules in 146 source packages**, with an acyclic package graph
 checked by
 [scripts/package-graph.mjs](https://github.com/ybotok/loam/blob/main/scripts/package-graph.mjs). The
-CLI exposes **29 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
-and the suite stands at **174 test files**. Those four counts are deliberately stated OUTSIDE the
+CLI exposes **30 commands** from [src/cli.ts](https://github.com/ybotok/loam/blob/main/src/cli.ts),
+and the suite stands at **175 test files**. Those four counts are deliberately stated OUTSIDE the
 dated snapshot below: each derives from the tree in one readdir, so
 [test/docs-facts.test.ts](https://github.com/ybotok/loam/blob/main/test/docs-facts.test.ts) grades
 them live and this paragraph cannot quietly trail the code the way its predecessor did.
@@ -128,10 +128,57 @@ Closed since the 2026-08-18 assessment, each with the commit or commit range tha
 `main`. [CHANGELOG.md](CHANGELOG.md) is the user-facing record; the full item texts — required
 changes, exit criteria, and what each review surfaced — are in this file's history (`git show
 5cd3942:ROADMAP.md`). The four 2026-09-03 problem-report entries that follow — the extending model
-and the report ordinal, which open the list — landed together in `f751909`, one change built as
-four disjoint workstreams and gated as one; the three before them — the edgeless brief, the
-intra-service use case, and the styling paragraph under the generated views — landed together in
-`0eaa101` the same way.
+and the report ordinal, the pair opening the 2026-09-04 group — landed together in `f751909`, one
+change built as four disjoint workstreams and gated as one; the three before them — the edgeless
+brief, the intra-service use case, and the styling paragraph under the generated views — landed
+together in `0eaa101` the same way.
+
+#### The work packet — the verify checklist read forwards
+
+**Landed 2026-09-21.** loam could already say what a feature PROMISES (`loam verify`'s checklist)
+and what to BUILD (`loam delta`), and nothing joined the two into the question an agent actually
+opens a session with: which promise is still open, at which step, and what fact closes it. The
+artifact a team reaches for to answer it is a `tasks.md` — the one document this project refuses,
+because a task list authored beside a spec is a second mutable state that drifts the moment the
+spec moves. That refusal (SCHEMA's "Deliberate limits of the workflow surface") is unchanged; what
+this item settles is that the question was never the problem, only the file.
+
+**What landed.** A read-only `loam tasks <FEAT> [--service <id>] [--next] [--json]`, and a
+`loam_tasks` MCP tool beside it, projecting one work unit per verify-checklist claim under the
+claim's own id — so the thing to do and the answer that closes it are one identity — plus a unit
+of kind requirement.described for an ADDED or MODIFIED requirement with no scenario at all. Each
+unit reports the step it waits on in `at` (`describe`, `generate`, `implement`, `attested`), and a
+unit is retired by exactly one fact: a claim recorded `confirmed` in a `verification.yaml` that is
+not stale against the current checklist. An agent-attested scenario deliberately stays on the list
+at `attested`. `frontier` is the first ten open units, providers before consumers on the exact token
+join and never on prose, and the order is advice rather than a lock; `--next` is the single leaf
+packet — scenario verbatim, digest, the check that closes it, the follow-up command — that an
+orchestrator hands one coding agent. Nothing is written to disk on any path, and no stable code was
+minted: every fact in the payload is a projection of state other commands already grade. CHANGELOG
+has every flag and payload key; SCHEMA's "The same checklist read forwards" has the unit model and
+the done rule.
+
+**Deliberately NOT built, each with its reason.** None of these is a gap nobody noticed.
+
+- **`--results` refinement against a live red/green run** — it needs the report readers re-exposed
+  read-only, which is a seam rather than a flag.
+- **A status rung for tasks in `loam status`'s `next[]`** — that is a new stable `next.*` code, and
+  minting one is a separate decision on a frozen surface.
+- **Removal-direction units** — a retirement's consumers are answered in prose by the consumer
+  scans today, and a unit would be a second account of the same walk.
+- **Obligation-coverage units** — `covers()` never checks that a scenario exists, so a unit derived
+  from an obligation would assert work nothing grades.
+- **A `size.phrasesOwed` figure from `loam steps`** — the step inventory is a report about a
+  service's whole suite, not about one feature's units, and joining them would put a fleet-wide
+  number inside a per-feature packet.
+- **A Jira (or any tracker) export protocol** — that is an agent workflow over `--json` and stays
+  one: an HTTP call from loam is the network dependency the product does not have.
+
+**Exit criteria**, each answerable by one run rather than by a reading: a unit leaves the list only
+when a confirmed claim in a non-stale record retires it, and an attested scenario is still on the
+list at `attested`; the frontier's provider-before-consumer order comes from the exact operation
+token join and from nowhere else; and a run writes no byte and mints no code, so the projection
+cannot be behind the documents it projected.
 
 #### One model, many documents — a service model may extend the fleet map
 

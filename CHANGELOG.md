@@ -10,6 +10,98 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `loam tasks`, the derived answer to "what do I do next, and what closes it"
+
+The question an authored task file answers is a good one; the file is the wrong place to answer it,
+because a second mutable state drifts from the spec it was copied out of. So this is that answer
+DERIVED — the `loam verify` checklist read forwards, one work unit per promise the feature makes,
+each carrying the step it is waiting on and the fact that retires it, recomputed on every run from
+the delta, the generated suite and the verification record. SCHEMA's "Deliberate limits of the
+workflow surface" row refusing an authored `tasks.md` as authoritative state **stands unchanged**;
+this is the projection that row has always pointed at, and it is a projection precisely so that
+nothing here can disagree with the documents it was derived from.
+
+- **New read-only command `loam tasks <FEAT> [--service <id>] [--next] [--json]`.** It writes
+  nothing, anywhere, ever, and creates no artifact. Every unit it reports is one claim of the same
+  checklist `loam verify` derives, **under the same id** — a unit and the answer that closes it are
+  one identity on both commands. The one unit with no claim behind it is minted for an ADDED or
+  MODIFIED requirement carrying no scenario at all (kind requirement.described): nothing to test
+  means nothing for the checklist to ask, and a promise with no acceptance criteria is still work.
+- **`units[]` is the projection**, one entry per unit, carrying `id`, `kind`, `subject`, `at`,
+  `claim`, `dependsOn[]`, a `done` block, and — where the ledger has them — `digest`, `operation`,
+  `token` and a `source` naming the document, the 1-based line and, for a scenario, its body
+  verbatim.
+- **`at` is the step the unit is waiting at**, one of `describe`, `generate`, `implement` or
+  `attested` — never a percentage. It is spelled `at` rather than `stage` or `verdict` on purpose:
+  both of those already mean something else on payloads an agent reads beside this one.
+- **Done is a fact, not a tick.** A closed unit stops appearing, and exactly one thing closes one: a
+  claim recorded `confirmed` in a `verification.yaml` that is **not stale** against the current
+  checklist. A stale record closes nothing — the words moved under the answers. An agent-attested
+  scenario never vanishes: it stays visible at `attested`, because attested is not verified and a
+  work list that hid the difference would be the gate that teaches everyone to say yes.
+- **`frontier` is the ids of the first ten open units in derived order**, providers before consumers
+  on the exact token join `c4.calls.token == api.exposes.operation` — never a reading of prose —
+  with `frontierElided` saying how many open units it left off. **The order is advice and never a
+  lock**: nothing is assigned, nothing is reserved, and working out of order is legal and invisible
+  to every other command.
+- **`--next` is the leaf packet**: the same payload with `units` narrowed to the frontier head, and
+  what an orchestrator hands one coding agent. Everything else is left whole on purpose, so a cheap
+  model handed one unit cannot read it as the whole job. The text view prints that leaf in full —
+  the scenario's Given/When/Then verbatim and never reflowed (those are the bytes the digest was
+  taken over), its digest, the `done` block whose `check` is the fact that closes the unit, and the
+  literal follow-up command. Literal rather than a shape to fill in, because "the appropriate verify
+  invocation" is a guess the reader will get wrong.
+- **`--service <id>` is a pure lens** over the same derivation, and adds `waitingOn[]`: the open
+  units in OTHER services that this service's units depend on.
+- **`stamps` is `read` or `unknown`.** `unknown` means the bound service repo's generated suite could
+  not be read — could-not-look, and never nothing-wrong.
+- **The rest of the payload**: `feature`, `service` (the lens, or null), `services[]`, `path`,
+  `intent`, `checklist` (the digest of the question set the units derive from), `record` (`absent`,
+  `recorded`, `stale` or `unreadable`), `size{requirements,scenarios,operations,messages,calls}` —
+  the size of the DELTA and never of the open work, so that "this feature is small" and "this
+  feature is nearly done" cannot become one sentence — `contracts{expose[],call[]}`,
+  `counts{open,done,attested}`, and `review[]`, the four instructions for re-deriving this answer
+  and reviewing it.
+- **A broken `delta.likec4` or contract axis exits 1 with `ok: true`**, naming what it could not read
+  in `unreadable` (`architecture`, `contracts[]`). That is `loam delta`'s own rule rather than a new
+  one: a feeder that could not be read empties the packet, an agent consuming an empty packet reads
+  "nothing to do", so the envelope stays informative and true while the exit code stops a pipeline
+  building on it.
+- **New MCP read-only tool `loam_tasks`**, declaring `readOnlyHint` like every other read tool; the
+  base table is fifteen tools where it was fourteen.
+- **No stable code was added, changed or retired, and no existing flag, path or payload key moved.**
+  The change is purely additive: everything `loam tasks` reports is a projection of state other
+  commands already derive and grade.
+
+### Added — `loam delta --json` carries the joins and the lines it had been dropping
+
+- **New additive keys per requirement**: `line` (where it sits in the document it was parsed from, so
+  a consumer can send an author to the line rather than to the file), `basedOn`, `requires`,
+  `capabilities`, `realizes`, `publishes` and `consumes`. Every one of them is already written on the
+  requirement and every one names work — which permission gates it, which capability it belongs to,
+  which named promise it realizes, which messages it produces and consumes — and an implementer
+  handed this projection had to go and read the Markdown it claimed to have projected to find them.
+- **New additive keys per scenario**: `line`, and `digest`, the 16-hex scenario body hash. That
+  digest is the exact join key the rest of the toolchain already uses — the `@loam-digest-<16hex>`
+  tag `loam gherkin` stamps and the string `loam verify --results` matches a cucumber report on — so
+  a consumer of this brief can now name the test that answers an acceptance criterion instead of
+  regenerating the suite to find out. It is salted by the owning service and the axis, like every
+  other spelling of it, so an arch requirement's scenarios digest differently from identically
+  worded business ones.
+- **Nothing existing moved.** Every key this payload already carried is untouched, the text output is
+  unchanged, and no stable code was added or changed.
+
+### Added — `loam gherkin --json` says which stamp belongs to which scenario
+
+- **New additive key `files[].stamped`**, a list of `{scenario, digest}` pairs. `digests` was a bare
+  array and `scenarios` a bare count, so the one thing a consumer needed — which stamp belongs to
+  which scenario — was the one thing this payload could not say, and the only way to learn it was to
+  read the generated file back off disk. A `kept` row reads its pairs off the file that is really on
+  disk, because its numbers describe the in-flight emission that stayed rather than the one that was
+  withheld.
+- **`digests` and `scenarios` are unchanged beside it**, and no stable code was added or changed: the
+  envelope permits adding a key and never changing one.
+
 ## [0.2.0-alpha.7] - 2026-09-07
 
 Infrastructure belongs on the fleet map, and the render is navigable at fleet scale. Still a

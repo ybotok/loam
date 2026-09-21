@@ -10,6 +10,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, type Project } from "./helpers/harness.js";
+import { parseRequirements } from "../src/core/document/parse.js";
+import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 
 const NEW_SVC = "payment-split-service";
 
@@ -318,6 +320,136 @@ components:
         (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
       );
       expect(json.capabilities).toEqual([]);
+    });
+  });
+});
+
+/**
+ * FEAT-1's delta for the new service, carrying every join a requirement can
+ * write. A pin nobody minted: `loam delta` PROJECTS the baseline, it does not
+ * grade it (`delta.baseline-*` is validate's job), so a well-formed sixteen hex
+ * digits is all this fixture owes the payload under test.
+ */
+const JOINED_SPEC = `# payment-split-service — delta for FEAT-1
+
+## MODIFIED Requirements
+
+### Requirement: Split a payment
+Requirement-ID: SPLIT-1
+Based-On: 0123456789abcdef
+The service SHALL split a payment across payees summing to the total.
+
+Operations: createSplit
+Covers: paymentSplitService
+Requires: payment/split
+Capability: payments
+Realizes: payments#PAY-1
+Publishes: payment.SplitRecorded
+Consumes: payment.PaymentAuthorized
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+`;
+
+/** The same feature's ARCH delta — the second axis, which salts its digests differently. */
+const JOINED_ARCH_SPEC = `# payment-split-service — arch delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Retries stay idempotent
+The service SHALL apply createSplit idempotently under retry.
+
+Covers: paymentSplitService
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+`;
+
+/** `coherentFixture` with both axes of FEAT-1 rewritten to carry every join. */
+function joinedFixture(): Record<string, string> {
+  const files = coherentFixture();
+  files[`features/FEAT-1-split/specs/${NEW_SVC}/spec.md`] = JOINED_SPEC;
+  files[`features/FEAT-1-split/specs/${NEW_SVC}/arch.spec.md`] = JOINED_ARCH_SPEC;
+  return files;
+}
+
+describe("--json requirement joins", () => {
+  it("carries the five joins the projection used to drop on the floor", async () => {
+    // Every one of these is already written on the requirement and every one
+    // names work — which permission gates it, which capability it belongs to,
+    // which named promise it realizes, which messages it produces and consumes.
+    // An implementer handed "add the endpoint" and none of this had to go read
+    // the markdown the payload claims to have projected.
+    await withProject(joinedFixture(), async (p) => {
+      const res = await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json");
+      expect(res.code).toBe(0);
+      const r = JSON.parse(res.stdout).requirements[0];
+      expect(r.kind).toBe("MODIFIED");
+      expect(r.id).toBe("SPLIT-1");
+      expect(r.basedOn).toBe("0123456789abcdef");
+      expect(r.requires).toEqual(["payment/split"]);
+      expect(r.capabilities).toEqual(["payments"]);
+      expect(r.realizes).toEqual(["payments#PAY-1"]);
+      expect(r.publishes).toEqual(["payment.SplitRecorded"]);
+      expect(r.consumes).toEqual(["payment.PaymentAuthorized"]);
+      // The two that were already there keep their meaning beside the new ones.
+      expect(r.operations).toEqual(["createSplit"]);
+      expect(r.covers).toEqual(["paymentSplitService"]);
+    });
+  });
+
+  it("carries the 1-based line of the requirement and of each scenario", async () => {
+    await withProject(joinedFixture(), async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      const r = json.requirements[0];
+      // Checked against the document, not only against a constant: a line
+      // number whose expectation moved with it would still point at the wrong
+      // text here, and the wrong text is what an author would be sent to.
+      const lines = JOINED_SPEC.split("\n");
+      expect(r.line).toBe(5);
+      expect(lines[r.line - 1]).toBe("### Requirement: Split a payment");
+      expect(r.scenarios[0].line).toBe(18);
+      expect(lines[r.scenarios[0].line - 1]).toBe("#### Scenario: Split across two payees");
+    });
+  });
+
+  it("carries the scenario digest `loam gherkin` stamps and `loam verify` matches on, salted per axis", async () => {
+    // The join key, not a new one: the recipe lives in core/gherkin/digest.ts,
+    // `loam gherkin` writes it into each generated .feature as
+    // `@loam-digest-<16hex>`, and `--results` matches a cucumber report's
+    // scenarios on it. Publishing it here is what lets a consumer of this brief
+    // go from "the requirement says X" to "the test answering X is that one"
+    // without regenerating the suite to find out.
+    await withProject(joinedFixture(), async (p) => {
+      const json = JSON.parse(
+        (await runLoam(p.workDir, "delta", "FEAT-1", "--service", NEW_SVC, "--json")).stdout,
+      );
+      const business = parseRequirements(JOINED_SPEC)[0]!.scenarios[0]!.lines;
+      const arch = parseRequirements(JOINED_ARCH_SPEC)[0]!.scenarios[0]!.lines;
+      expect(json.requirements[0].scenarios[0].digest).toBe(
+        scenarioDigest(NEW_SVC, business, "business"),
+      );
+      expect(json.archRequirements[0].scenarios[0].digest).toBe(
+        scenarioDigest(NEW_SVC, arch, "arch"),
+      );
+      // The fixture words the two scenarios IDENTICALLY, so the only thing
+      // telling these digests apart is the axis salt. Without it a green
+      // business run would answer the arch claim too — an integration test
+      // nobody wrote, reading as run.
+      expect(business.join("\n").trim()).toBe(arch.join("\n").trim());
+      expect(json.archRequirements[0].scenarios[0].digest).not.toBe(
+        json.requirements[0].scenarios[0].digest,
+      );
+      // And the service salt, for the same reason one axis over.
+      expect(json.requirements[0].scenarios[0].digest).not.toBe(
+        scenarioDigest("ledger-service", business, "business"),
+      );
     });
   });
 });
