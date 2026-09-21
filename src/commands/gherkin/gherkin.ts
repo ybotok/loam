@@ -282,6 +282,30 @@ export function registerGherkin(program: Command): void {
             // emission), not the emission that was withheld.
             scenarios: a.action === "kept" ? a.kept.scenarios.length : a.digests.length,
             digests: a.action === "kept" ? a.kept.scenarios.map((s) => s.digest) : a.digests,
+            // `digests` is a bare array and `scenarios` a bare count, so the one
+            // thing a consumer actually needs — which stamp belongs to which
+            // scenario — was the one thing this payload could not say, and the
+            // only way to learn it was to go read the generated file back off
+            // disk. `stamped` is that pairing; `digests` stays exactly as it was
+            // beside it, because the envelope permits adding a key and never
+            // changing one (core/envelope/json.ts).
+            //
+            // The positional zip is sound because `renderFeature`
+            // (core/gherkin/emit.ts) pushes exactly one digest per scenario, in
+            // scenario order, inside the same loop that writes the `Scenario:`
+            // line — but it is written to FAIL CLOSED rather than to assert
+            // that: a scenario with no digest opposite it drops out of the
+            // pairing instead of being published with a null one. A kept row
+            // reads its pairs off the file that is really on disk, because its
+            // numbers describe the in-flight emission that stayed, not the one
+            // that was withheld.
+            stamped:
+              a.action === "kept"
+                ? a.kept.scenarios.map((s) => ({ scenario: s.name, digest: s.digest }))
+                : a.requirement.scenarios.flatMap((s, i) => {
+                    const digest = a.digests[i];
+                    return digest === undefined ? [] : [{ scenario: s.name, digest }];
+                  }),
             ...(a.action === "kept"
               ? { inFlight: a.kept.tags.filter((t) => activeIds.has(t)) }
               : {

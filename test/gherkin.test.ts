@@ -91,6 +91,30 @@ The service SHALL apply createSplit idempotently under retry.
 - **THEN** exactly one split is recorded
 `;
 
+/**
+ * FEAT-1's business delta with TWO scenarios under one requirement — the only
+ * shape in which a positional scenario→digest pairing can be graded at all.
+ */
+const TWO_SCENARIOS = `# payment-split-service — delta for FEAT-1
+
+## ADDED Requirements
+
+### Requirement: Split a payment
+The service SHALL split a payment across payees summing to the total.
+
+Operations: createSplit
+
+#### Scenario: Split across two payees
+- **Given** a payment of 100.00
+- **When** it is split 60/40
+- **Then** two shares are recorded
+
+#### Scenario: Split rejects shares that do not sum
+- **Given** a payment of 100.00
+- **When** it is split 60/30
+- **Then** the split is refused
+`;
+
 /** coherentFixture plus the arch delta and a model for the new service. */
 function fixtureWithArch(): Record<string, string> {
   return {
@@ -494,10 +518,44 @@ describe("feature mode", () => {
     expect(scenarioDigest("payment-split-service", req!.scenarios[0]!.lines)).toBe(expected);
     expect(scenarioDigest("ledger-service", req!.scenarios[0]!.lines)).not.toBe(expected);
     expect(payload.files[0].digests).toEqual([expected]);
+    // The PAIRING, not just the list. `digests` is positional and `scenarios` a
+    // bare count, so `stamped` is the only thing in this payload that says which
+    // stamp belongs to which scenario — the map a consumer needs to go from a
+    // requirement's acceptance criteria to the test that answers them.
+    expect(payload.files[0].stamped).toEqual([
+      { scenario: "Split across two payees", digest: expected },
+    ]);
     const onDisk = await readWork(p, "features/loam/split-a-payment.feature");
     // as a TAG on the line above the Scenario keyword — cucumber's JSON report
     // carries tags per scenario, so the stamp survives the runner
     expect(onDisk).toMatch(new RegExp(` {2}@loam-digest-${expected}\\n {2}Scenario:`));
+  });
+
+  it("every file's `stamped` pairs its scenario NAMES with its own digests, in the order on disk", async () => {
+    // The zip in the payload is positional — `renderFeature` pushes one digest
+    // per scenario, in scenario order — so the assertion that actually grades it
+    // is the file that was written: a pairing that drifted by one, or that used
+    // the requirement's name instead of the scenario's, would still look like a
+    // list of the right length while telling `--results` the wrong thing.
+    const files = fixtureWithArch();
+    files["features/FEAT-1-split/specs/payment-split-service/spec.md"] = TWO_SCENARIOS;
+    const p = await project(files, { service: "payment-split-service" });
+    const payload = JSON.parse(
+      (await runLoam(p.workDir, "gherkin", "FEAT-1", "--json")).stdout,
+    );
+    // Two files (both axes), and the business one carries two scenarios — a
+    // single-scenario suite cannot tell a correct zip from an off-by-one.
+    expect(payload.files).toHaveLength(2);
+    for (const f of payload.files) {
+      const written = parseStampedFeature(await readWork(p, f.path));
+      expect(f.stamped).toEqual(written!.scenarios.map((s) => ({ scenario: s.name, digest: s.digest })));
+      expect(f.stamped.map((s: { digest: string }) => s.digest)).toEqual(f.digests);
+      expect(f.stamped).toHaveLength(f.scenarios);
+    }
+    expect(payload.files[0].stamped.map((s: { scenario: string }) => s.scenario)).toEqual([
+      "Split across two payees",
+      "Split rejects shares that do not sum",
+    ]);
   });
 
   it("a capability delta changes NOTHING — the two corpora are not derived from each other", async () => {
@@ -1049,6 +1107,14 @@ Operations: authorizePayment
     expect(entry.action).toBe("kept");
     expect(entry.inFlight).toEqual(["FEAT-2"]);
     expect(entry.digests).toEqual(parseStampedFeature(inFlight)!.scenarios.map((s: { digest: string }) => s.digest));
+    // A kept row's `stamped` describes the emission that STAYED, so it is read
+    // off the file on disk rather than zipped from the plan that was withheld —
+    // and this file has two scenarios, so a pairing that came from the withheld
+    // plan (one scenario, the living spec's) could not pass.
+    expect(entry.stamped).toEqual(
+      parseStampedFeature(inFlight)!.scenarios.map((s) => ({ scenario: s.name, digest: s.digest })),
+    );
+    expect(entry.stamped.map((s: { digest: string }) => s.digest)).toEqual(entry.digests);
     expect(payload.deleted).toEqual([]);
     expect(await readWork(p, "features/loam/authorize-a-payment.feature"), "the in-flight file must be byte-identical").toBe(inFlight);
     // the human view never says "replace" for it

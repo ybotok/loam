@@ -197,7 +197,14 @@ export function parseRequirements(md: string): Requirement[] {
     }
     const ms = SCN_RE.exec(line);
     if (ms && req) {
-      scn = { name: ms[1]!, lines: [] };
+      // `index + 1` is the heading's own 1-based line, exactly as the
+      // requirement capture above records its `### Requirement:` — body line
+      // `lines[i]` then sits at `line + 1 + i`, because the capture below is
+      // contiguous from here to the next heading. Purely additive: nothing in
+      // `serializeRequirements` reads it, so `requirementDigest` cannot see it
+      // and no `Based-On:` pin in any living document moves because the parser
+      // learned where a scenario starts.
+      scn = { name: ms[1]!, lines: [], line: index + 1 };
       req.scenarios.push(scn);
       continue;
     }

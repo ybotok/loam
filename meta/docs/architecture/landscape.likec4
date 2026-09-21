@@ -123,6 +123,7 @@ model {
       scaffold = container 'src/core/scaffold/'
       staging = container 'src/core/staging/'
       status = container 'src/core/status/'
+      tasks = container 'src/core/tasks/'
       usecases = container 'src/core/usecases/'
       verify = container 'src/core/verify/'
       vocabulary = container 'src/core/vocabulary/'
@@ -156,6 +157,7 @@ model {
       status = container 'src/commands/status/'
       steps = container 'src/commands/steps/'
       subsystem = container 'src/commands/subsystem/'
+      tasks = container 'src/commands/tasks/'
       unarchive = container 'src/commands/unarchive/'
       validate = container 'src/commands/validate/'
       verify = container 'src/commands/verify/'
@@ -209,6 +211,7 @@ model {
   loam.cli -> loam.commands.status
   loam.cli -> loam.commands.steps
   loam.cli -> loam.commands.subsystem
+  loam.cli -> loam.commands.tasks
   loam.cli -> loam.commands.unarchive
   loam.cli -> loam.commands.validate
   loam.cli -> loam.commands.verify
@@ -250,6 +253,7 @@ model {
   loam.commands.delta -> loam.core.capabilities
   loam.commands.delta -> loam.core.document
   loam.commands.delta -> loam.core.envelope
+  loam.commands.delta -> loam.core.gherkin
   loam.commands.delta -> loam.core.kernel
   loam.commands.delta -> loam.core.projection
   loam.commands.delta -> loam.core.repo
@@ -340,6 +344,7 @@ model {
   loam.commands.mcp -> loam.commands.show
   loam.commands.mcp -> loam.commands.status
   loam.commands.mcp -> loam.commands.steps
+  loam.commands.mcp -> loam.commands.tasks
   loam.commands.mcp -> loam.commands.validate
   loam.commands.mcp -> loam.core.envelope
   loam.commands.mcp -> loam.core.mcp
@@ -422,6 +427,12 @@ model {
   loam.commands.subsystem -> loam.core.provenance
   loam.commands.subsystem -> loam.core.repo
   loam.commands.subsystem -> loam.core.staging
+
+  loam.commands.tasks -> loam.core.envelope
+  loam.commands.tasks -> loam.core.kernel
+  loam.commands.tasks -> loam.core.projection
+  loam.commands.tasks -> loam.core.repo
+  loam.commands.tasks -> loam.core.tasks
 
   loam.commands.unarchive -> loam.commands.archive
   loam.commands.unarchive -> loam.core.envelope
@@ -663,6 +674,15 @@ model {
   loam.core.status -> loam.core.usecases
   loam.core.status -> loam.core.verify
   loam.core.status -> loam.core.vocabulary
+
+  loam.core.tasks -> loam.core.c4
+  loam.core.tasks -> loam.core.document
+  loam.core.tasks -> loam.core.envelope
+  loam.core.tasks -> loam.core.fleet_context
+  loam.core.tasks -> loam.core.gherkin
+  loam.core.tasks -> loam.core.projection
+  loam.core.tasks -> loam.core.repo
+  loam.core.tasks -> loam.core.verify
 
   loam.core.usecases -> loam.core.c4
   loam.core.usecases -> loam.core.capabilities

@@ -183,6 +183,20 @@ export const MCP_TOOLS: readonly McpTool[] = [
     flags: [{ ...SERVICE_FLAG, description: "service to project onto (defaults to the configured service)" }],
   },
   {
+    name: "loam_tasks",
+    command: "tasks",
+    description:
+      "What is still open on a feature, at which step, and what closes each unit — a read-only projection that writes nothing. " +
+      "CLI equivalent: loam tasks <featureId> [--service <id>] [--next] --json",
+    positionals: [
+      { property: "featureId", required: true, variadic: false, description: "feature id, e.g. FEAT-101" },
+    ],
+    flags: [
+      { ...SERVICE_FLAG, description: "narrow the packet to the units one service owns (a lens: no binding needed)" },
+      { property: "next", flag: "--next", kind: "boolean", description: "the frontier head alone — the single leaf to hand to a worker" },
+    ],
+  },
+  {
     name: "loam_explore",
     command: "explore",
     description:

@@ -481,10 +481,13 @@ A task list authored beside a spec is a second mutable state. It drifts — the 
 checklist does not, and now two documents describe the work and only one of them is checked. The
 question a task list answers is a good one; the file is the wrong place to answer it.
 
-loam derives the answer instead, at two altitudes:
+loam derives the answer instead, at three altitudes:
 
 - **What to do next**, from `loam status`: the artifact table plus an ordered `next[]`, recomputed
   every run, so it cannot disagree with the files.
+- **Which promise to pick up, and what closes it**, from `loam tasks <FEAT>`: one unit per promise
+  the feature makes, each carrying the step it is waiting on and the fact that retires it. `--next`
+  narrows it to the single leaf packet an orchestrator hands one coding agent.
 - **What to build**, from `loam delta <FEAT> --service <svc>`: the intent, every requirement body
   and every Given/When/Then line reproduced verbatim, the endpoints added or retired, and the edges
   around it. That output *is* the coding task, and it is regenerated from the spec each time rather
@@ -500,6 +503,15 @@ input — a human's statement of the problem, which nothing can derive. The desi
 `delta.likec4`, which is checkable: its elements and edges resolve against the fleet map, its
 operations against the contracts. A prose design document beside those would be a third description
 of the same change, and the only one nothing grades.
+
+The third altitude is new; the decision above is not. `loam tasks` is the `loam verify` checklist
+read forwards — the same claims under the same ids, one unit per promise, each with the fact that
+closes it — recomputed on every run from the delta, the generated suite and the verification record.
+It is still not a file: nothing to tick, nothing to commit, nothing that can disagree with the
+documents it was derived from, and so the reason there is no `tasks.md` is unchanged. A unit leaves
+the list only when a confirmed claim in a non-stale `verification.yaml` retires it, and an
+agent-attested scenario stays on it at `attested` rather than being ticked off — the work list must
+not be able to say more than the record does.
 
 ## Picking the work back up
 
@@ -670,15 +682,15 @@ both text and JSON. See [SCHEMA.md](SCHEMA.md) for the lifecycle contract.
 
 ## The MCP server
 
-For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the fourteen read
-commands — `validate`, `status`, `list`, `show`, `delta`, `explore`, `dependencies`, `diff`,
-`doctor`, `context`, `gate`, `steps`, `explain`, `instructions` — as MCP tools (`loam_validate` …
-`loam_instructions`) over stdio, newline-delimited JSON-RPC 2.0, protocol revision 2025-06-18 (older
-revisions negotiated down; JSON-RPC batch arrays refused). Every tool is advertised
-`readOnlyHint: true` and `openWorldHint: false`, which is what a host needs to run one without
-stopping to ask its user: the first says the call cannot change the repository, the second that it
-cannot reach anything outside the directory the server was launched in — and both are true of the
-whole base table only because the writing commands are kept out of it. It also publishes
+For hosts that reach tools through MCP rather than a shell, `loam mcp` serves the fifteen read
+commands — `validate`, `status`, `list`, `show`, `delta`, `tasks`, `explore`, `dependencies`,
+`diff`, `doctor`, `context`, `gate`, `steps`, `explain`, `instructions` — as MCP tools
+(`loam_validate` … `loam_instructions`) over stdio, newline-delimited JSON-RPC 2.0, protocol
+revision 2025-06-18 (older revisions negotiated down; JSON-RPC batch arrays refused). Every tool is
+advertised `readOnlyHint: true` and `openWorldHint: false`, which is what a host needs to run one
+without stopping to ask its user: the first says the call cannot change the repository, the second
+that it cannot reach anything outside the directory the server was launched in — and both are true
+of the whole base table only because the writing commands are kept out of it. It also publishes
 `loam://orientation` and every `loam://instructions/<name>` page as Markdown resources, so the host
 can load version-matched guidance progressively; `loam://instructions/loam-check/compact` omits the
 large fix table and pairs with `loam explain <code>`. A typical host entry:

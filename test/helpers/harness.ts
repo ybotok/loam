@@ -29,6 +29,7 @@ import { registerShow } from "../../src/commands/show/show.js";
 import { registerStatus } from "../../src/commands/status/status.js";
 import { registerSubsystem } from "../../src/commands/subsystem/subsystem.js";
 import { registerDelta } from "../../src/commands/delta/delta.js";
+import { registerTasks } from "../../src/commands/tasks/tasks.js";
 import { registerDiff } from "../../src/commands/diff/diff.js";
 import { registerGherkin } from "../../src/commands/gherkin/gherkin.js";
 import { registerRebase } from "../../src/commands/rebase/rebase.js";
@@ -281,6 +282,7 @@ async function runLoamNow(cwd: string, args: string[]): Promise<RunResult> {
     registerStatus(program);
     registerSubsystem(program);
     registerDelta(program);
+    registerTasks(program);
     registerDiff(program);
     registerGherkin(program);
     registerRebase(program);

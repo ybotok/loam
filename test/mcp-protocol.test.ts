@@ -179,7 +179,7 @@ describe("routing", () => {
 });
 
 describe("tools/list", () => {
-  it("offers exactly the fourteen read-only commands — no writer is reachable", () => {
+  it("offers exactly the fifteen read-only commands — no writer is reachable", () => {
     const result = resultOf(replyOf(request(1, "tools/list")));
     const tools = result["tools"] as Array<Record<string, unknown>>;
     expect(tools.map((tool) => tool["name"]).sort()).toEqual([
@@ -196,6 +196,7 @@ describe("tools/list", () => {
       "loam_show",
       "loam_status",
       "loam_steps",
+      "loam_tasks",
       "loam_validate",
     ]);
     // The trust boundary, asserted from the other side: vouch is a HUMAN act

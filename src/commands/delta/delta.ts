@@ -10,6 +10,8 @@ import { featurePaths, featureSpecPaths } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { parseRequirements } from "../../core/document/parse.js";
 import { type Requirement } from "../../core/document/spec.js";
+import { type ScenarioAxis } from "../../core/gherkin/digest.js";
+import { scenarioDigest } from "../../core/gherkin/stamp.js";
 import { stripFrontmatter } from "../../core/document/frontmatter.js";
 import { apiChanges } from "../../core/projection/api.js";
 import { eventChanges } from "../../core/projection/events.js";
@@ -208,16 +210,49 @@ export function registerDelta(program: Command): void {
       if (arch.errors.length > 0 || api.unreadable || events.unreadable) process.exitCode = 1;
 
       if (json) {
-        const reqJson = (r: Requirement): Record<string, unknown> => ({
+        // `axis` is a parameter and `service` stays in the closure, because the
+        // scenario digest is salted by BOTH and only one of them varies per
+        // call — the same Given/When/Then under `spec.md` and under
+        // `arch.spec.md` are two different claims, and one hash for both would
+        // let a green business run answer an integration test nobody wrote
+        // (core/gherkin/digest.ts owns that reasoning and the recipe).
+        const reqJson = (r: Requirement, axis: ScenarioAxis): Record<string, unknown> => ({
           kind: r.kind,
           id: r.id,
+          // Where the requirement sits in the document it was parsed from, so a
+          // consumer can send an author to the line rather than to the file.
+          line: r.line,
+          basedOn: r.basedOn,
           name: r.name,
           text: r.text.join("\n").trim(),
           operations: r.operations,
           covers: r.covers,
+          // The five joins this projection used to drop on the floor. Every one
+          // of them is already written on the requirement and every one names
+          // work: which permission gates it, which capability it belongs to,
+          // which named promise it realizes, and which messages it produces and
+          // consumes. An implementer handed "add the endpoint" and none of this
+          // has to go read the markdown the payload claims to have projected.
+          requires: r.requires,
+          capabilities: r.capabilities,
+          realizes: r.realizes,
+          publishes: r.publishes,
+          consumes: r.consumes,
           // Scenarios go out verbatim: they are the acceptance criteria and the
           // source for the tests whoever picks this up is expected to write.
-          scenarios: r.scenarios.map((s) => ({ name: s.name, lines: s.lines })),
+          //
+          // `digest` is the EXACT join key the rest of the toolchain uses —
+          // `loam gherkin` stamps it on the generated scenario as
+          // `@loam-digest-<16hex>` (core/gherkin/stamp.ts) and `loam verify`
+          // matches a cucumber report's scenarios on it. Without it a consumer
+          // of this brief could name the acceptance criteria but not the test
+          // that answers them, and had to regenerate the suite to find out.
+          scenarios: r.scenarios.map((s) => ({
+            name: s.name,
+            lines: s.lines,
+            line: s.line,
+            digest: scenarioDigest(service, s.lines, axis),
+          })),
         });
         emitJson({
           command: "delta",
@@ -226,11 +261,12 @@ export function registerDelta(program: Command): void {
           services: featureServices,
           path: repoPath(config.docsDir, feature.dir),
           intent,
-          requirements: reqs.map(reqJson),
+          requirements: reqs.map((r) => reqJson(r, "business")),
           // Same shape, separate section: an arch requirement's scenarios are
           // integration/ops tests, and a consumer must not have to parse prose
-          // to tell the two apart.
-          archRequirements: archReqs.map(reqJson),
+          // to tell the two apart. The axis is passed rather than inferred
+          // because it is a digest SALT, not a label — see `reqJson` above.
+          archRequirements: archReqs.map((r) => reqJson(r, "arch")),
           api: api.changes,
           // `api` stays exactly the operations array it has always been — a
           // consumer indexing it must not have to learn a new shape — so the

@@ -31,6 +31,7 @@ import { registerStatus } from "../status/status.js";
 import { registerList } from "../list/list.js";
 import { registerShow } from "../show/show.js";
 import { registerDelta } from "../delta/delta.js";
+import { registerTasks } from "../tasks/tasks.js";
 import { registerDiff } from "../diff/diff.js";
 import { registerExplore } from "../explore.js";
 import { registerDependencies } from "../dependencies.js";
@@ -126,6 +127,7 @@ function readProgram(sinks: Sinks, authoring = false): Command {
   registerList(program);
   registerShow(program);
   registerDelta(program);
+  registerTasks(program);
   registerDiff(program);
   registerExplore(program);
   registerDependencies(program);

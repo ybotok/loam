@@ -112,7 +112,10 @@ seventh lifecycle step.
    `loam validate <FEAT> --json`, and use `loam explain <code>` for reported
    codes. `loam dependencies --json` names features that must archive first.
 6. **Build** — load `loam instructions loam-implement <FEAT>`.
-   `loam delta <FEAT> --service <id> --json` is one service's task; in that
+   `loam delta <FEAT> --service <id> --json` is one service's task;
+   `loam tasks <FEAT> --service <id> --next --json` is the next open unit of it —
+   its `at` says whether you owe a scenario, a generated suite or code, and
+   `done.check` is the fact that closes it. In that
    service checkout, `loam gherkin <FEAT>` emits its executable scenarios.
 7. **Verify** — `loam verify <FEAT> --json` is the checklist. Record evidence
    from each affected service's own checkout. Read
