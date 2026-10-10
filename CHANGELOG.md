@@ -331,13 +331,14 @@ unchanged.
 - README's spine-first section now says that under the `--base` gate a PR adding a service's
   `openapi.yaml` stays red until that service has a `model.likec4` — `service.no-model` is the
   ratchet working as designed.
-- **A committed map that does not parse is reported even when the branch left `architecture/`
-  alone.** On such a branch the scoped run emits no `landscape` target, yet each service in scope
-  still said `spine.landscape-invalid … the parser output is reported once, on the landscape
-  target`, with empty `details`. So the parser output was reported nowhere. Each service's
-  `spine.landscape-invalid` now carries the parser output in `details` whenever the run has no
-  `landscape` target, as `validate --service` always has. The defect predates this release's
-  `--base` changes and is present in `0.2.0-alpha.8`.
+- **Each service target in scope reports a committed map that does not parse, even when the branch
+  left `architecture/` alone.** On such a branch the scoped run emits no `landscape` target, yet
+  each service in scope still said `spine.landscape-invalid … the parser output is reported once,
+  on the landscape target`, with empty `details`. So the parser output was reported nowhere. Each
+  service's `spine.landscape-invalid` now carries the parser output in `details` whenever the run
+  has no `landscape` target, as `validate --service` always has. A feature target does not report
+  the map, so a run whose only targets are features still says nothing about it. The defect
+  predates this release's `--base` changes and is present in `0.2.0-alpha.8`.
 
 ### Fixed — one LikeC4 typo no longer floods agent-facing output
 
