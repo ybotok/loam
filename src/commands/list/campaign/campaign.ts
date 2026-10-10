@@ -8,12 +8,12 @@
  * already keeps.
  *
  * Resolution reuses the tree machinery verbatim (`findInTree`,
- * `servicesUnder`, `nearestTreeNames`), so `list --subsystem` and every
+ * `servicesUnder`, `closeNamesHint`), so `list --subsystem` and every
  * `loam subsystem` verb read the flat namespace the same way — two spellings
  * of "what does this name mean" would drift.
  */
 import { fail } from "../../../core/envelope/json.js";
-import { findInTree, nearestTreeNames, servicesUnder, subsystemsUnder } from "../../../core/repo/tree/find.js";
+import { closeNamesHint, findInTree, servicesUnder, subsystemsUnder } from "../../../core/repo/tree/find.js";
 import type { FleetTree, SubsystemEntry } from "../../../core/repo/tree/walk.js";
 
 export interface SubsystemSlice {
@@ -58,14 +58,12 @@ export function resolveSubsystemSlice(tree: FleetTree, name: string, json: boole
   if (hit === null) {
     // The Set: a real subsystem named 'unfiled' would otherwise sit in the
     // hint pool twice and could be offered twice in one hint.
-    const close = nearestTreeNames(name, [...new Set([...tree.subsystems.map((s) => s.name), "unfiled"])]);
+    const pool = [...new Set([...tree.subsystems.map((s) => s.name), "unfiled"])];
     fail(
       json,
       "unknown-target",
       `No subsystem '${name}' in the tree.` +
-        (close.length > 0
-          ? ` Close names: ${close.join(", ")}.`
-          : " `loam subsystem list` shows what exists; `unfiled` selects the services filed under none."),
+        closeNamesHint(name, pool, " `loam subsystem list` shows what exists; `unfiled` selects the services filed under none."),
     );
     return null;
   }
