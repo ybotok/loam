@@ -1,7 +1,8 @@
 /**
  * `loam diff --base <ref>` — the review lens over a docs-repo branch: what
  * changed in fleet-meaningful terms since a base git ref of the DOCS repo,
- * with the current consumers of every removal named. Read-only by
+ * with the authored consumers of every removal, deprecation and contract
+ * modification named. Read-only by
  * construction: the base state comes out of git's object store
  * (`core/diff/base-git.ts`), the current state off the working tree, and
  * nothing is written anywhere.

@@ -8,9 +8,10 @@
  * monorepo prefix (a docs repo one level below the git root must not read as
  * all-added), the two victim kinds on a consumed removal (a landscape edge
  * into a modelled CONTAINER — the serviceResolver known-set lesson — and a
- * foreign living requirement), digest identity that ignores rebase pins, and
- * the containment rule that an unreadable base contract suspends the axis
- * instead of reporting mass-change.
+ * foreign living requirement), digest identity that ignores rebase pins, the
+ * containment rule that an unreadable base contract suspends the axis
+ * instead of reporting mass-change, the `$ref` closure behind a modified
+ * operation or message, and a caller drawn with no op riding as a suspension.
  */
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -684,6 +685,249 @@ describe("loam diff — output modes", () => {
       expect((payload as Record<string, unknown>)["command"]).toBe("diff");
       expect(payload.base?.ref).toBe("main");
       expect(payload.base?.commit).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+/*
+ * A contract that CHANGED rather than lost something, and a caller drawn with
+ * no op. Each case was a wrong answer reachable on the shipped example fleet
+ * (ANALYSIS-7 B1/B3, verified 2026-10-09): renaming a required field of a
+ * shared `components` schema printed "no fleet-meaningful changes" and exited
+ * 0, because the operation's own bytes never move for that edit — the `$ref`
+ * closure is the whole point of `diff.op-modified`; the same held for an
+ * AsyncAPI payload; and a caller drawn into the provider with no
+ * `metadata { op }` (what `loam seed` draws for every edge) was silently
+ * dropped, so a removal read "no current landscape edge or living requirement
+ * names it" while validate warned `spine.op-link-missing` on that very edge.
+ * The restraint cases matter as much: a modification is never an error
+ * whoever consumes it, a pure deprecation is not reported twice, and a
+ * reformat that moves no content is not a change.
+ */
+
+/** Two operations: one returns the shared `Payment` schema, the other references nothing. */
+const FACTORED_OPENAPI = `openapi: 3.1.0
+info:
+  title: payment-service
+  version: "1.0"
+paths:
+  /payments/authorize:
+    post:
+      operationId: authorizePayment
+      summary: Authorize a payment
+      responses:
+        "200":
+          description: Authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+  /payments/health:
+    get:
+      operationId: paymentHealth
+      responses:
+        "200":
+          description: Up
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [paymentId, status]
+      properties:
+        paymentId:
+          $ref: '#/components/schemas/PaymentId'
+        status:
+          type: string
+          enum: [authorized, declined]
+    PaymentId:
+      type: string
+`;
+
+const OP_EDGE_LANDSCAPE = `specification {
+  element softwareSystem
+}
+
+model {
+  checkoutWeb = softwareSystem 'checkout-web'
+  paymentService = softwareSystem 'payment-service'
+
+  checkoutWeb -> paymentService 'Calls authorizePayment' {
+    metadata { op 'authorizePayment' }
+  }
+}
+
+views {
+  view landscape {
+    include *
+  }
+}
+`;
+
+function factoredFleet(): Record<string, string> {
+  return {
+    "architecture/landscape.likec4": OP_EDGE_LANDSCAPE,
+    "services/payment-service/spec.md": LIVING_SPEC,
+    "services/payment-service/openapi.yaml": FACTORED_OPENAPI,
+    "services/checkout-web/spec.md": CONSUMER_SPEC,
+  };
+}
+
+describe("loam diff — an operation whose contract changed", () => {
+  it("a field renamed in a shared component is diff.op-modified on the operation that reaches it — consumers named, a warning, exit 0", async () => {
+    const p = await makeProject(factoredFleet());
+    try {
+      commitBase(p.docsDir);
+      // The rename and the enum change both sit inside Payment; authorizePayment's
+      // own node is byte-identical, so only its `$ref` reaches either edit.
+      await p.write(
+        "services/payment-service/openapi.yaml",
+        FACTORED_OPENAPI.replace("required: [paymentId, status]", "required: [id, status]")
+          .replace("        paymentId:\n          $ref", "        id:\n          $ref")
+          .replace("enum: [authorized, declined]", "enum: [AUTHORIZED, DECLINED]"),
+      );
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      expect(payload.breaking).toBe(false);
+      const provider = service(payload, "payment-service");
+      // The closure is the operation's, not the document's: paymentHealth
+      // references nothing that moved and is not reported.
+      expect(codes(provider)).toEqual(["diff.op-modified"]);
+      const modified = provider.findings[0]!;
+      expect(modified.severity).toBe("warn");
+      expect(modified.message).toContain("authorizePayment");
+      expect(modified.message).toContain("oasdiff");
+      expect(modified.details).toContain('edge checkout-web → payment-service ("Calls authorizePayment")');
+      expect(modified.details).toContain("checkout-web's living requirement 'Start checkout payment'");
+      expect(payload.summary?.modified).toBe(1);
+
+      const human = await runLoam(p.workDir, "diff", "--base", "main");
+      expect(human.code).toBe(0);
+      expect(human.stdout).not.toContain("no fleet-meaningful changes");
+      expect(human.stdout).toContain("⚠ diff.op-modified");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a change DEEPER in the closure — a component the referenced component references — still reaches the operation", async () => {
+    const p = await makeProject(factoredFleet());
+    try {
+      commitBase(p.docsDir);
+      await p.write(
+        "services/payment-service/openapi.yaml",
+        FACTORED_OPENAPI.replace("    PaymentId:\n      type: string\n", "    PaymentId:\n      type: string\n      format: uuid\n"),
+      );
+      expect(codes(service((await diffJson(p, "main")).payload, "payment-service"))).toEqual(["diff.op-modified"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a reformat that moves no content — keys reordered, a comment added — is not a change", async () => {
+    const p = await makeProject(factoredFleet());
+    try {
+      commitBase(p.docsDir);
+      await p.write(
+        "services/payment-service/openapi.yaml",
+        FACTORED_OPENAPI.replace(
+          "      operationId: authorizePayment\n      summary: Authorize a payment\n",
+          "      # reviewed 2026-10\n      summary: Authorize a payment\n      operationId: authorizePayment\n",
+        ),
+      );
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      expect(service(payload, "payment-service").findings).toEqual([]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a deprecation is reported once, as diff.op-deprecated — not a second time as a modification", async () => {
+    const p = await makeProject(factoredFleet());
+    try {
+      commitBase(p.docsDir);
+      await p.write(
+        "services/payment-service/openapi.yaml",
+        FACTORED_OPENAPI.replace("operationId: authorizePayment", "operationId: authorizePayment\n      deprecated: true"),
+      );
+      expect(codes(service((await diffJson(p, "main")).payload, "payment-service"))).toEqual(["diff.op-deprecated"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("loam diff — a message whose contract changed", () => {
+  it("a payload change is diff.message-modified, naming the Consumes: consumer, a warning, exit 0", async () => {
+    const p = await makeProject({
+      "services/payment-service/asyncapi.yaml": LIVING_ASYNCAPI,
+      "services/checkout-web/arch.spec.md": `# checkout-web arch
+
+## Requirements
+
+### Requirement: React to authorization
+The UI SHALL refresh when a payment authorizes.
+
+Consumes: payment.Authorized
+
+#### Scenario: Refresh
+- **Given** an open checkout
+- **When** payment.Authorized arrives
+- **Then** the view refreshes
+`,
+    });
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/asyncapi.yaml", LIVING_ASYNCAPI.replace("          paymentId:\n", "          id:\n"));
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      const provider = service(payload, "payment-service");
+      expect(codes(provider)).toEqual(["diff.message-modified"]);
+      const modified = provider.findings[0]!;
+      expect(modified.severity).toBe("warn");
+      expect(modified.message).toContain("payment.Authorized");
+      expect(modified.message).toContain("asyncapi diff");
+      expect(modified.details).toContain("checkout-web's living requirement 'React to authorization'");
+      expect(payload.summary?.modified).toBe(1);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
+describe("loam diff — a caller drawn with no op", () => {
+  it("suspends the removal's consumer scan — never 'no current landscape edge names it' — and stays a warning", async () => {
+    const p = await makeProject({
+      "architecture/landscape.likec4": OP_EDGE_LANDSCAPE.replace(
+        "  checkoutWeb -> paymentService 'Calls authorizePayment' {\n    metadata { op 'authorizePayment' }\n  }\n",
+        "  checkoutWeb -> paymentService 'Calls the payment API'\n",
+      ),
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": FACTORED_OPENAPI,
+      "services/checkout-web/spec.md": "# checkout-web\n",
+    });
+    try {
+      commitBase(p.docsDir);
+      // Remove paymentHealth: no requirement names it, and the provider's one
+      // drawn caller says nothing about which operation it uses.
+      await p.write("services/payment-service/openapi.yaml", FACTORED_OPENAPI.replace(/ {2}\/payments\/health:\n(?: {4}.*\n)+/, ""));
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      expect(payload.breaking).toBe(false);
+      const removal = service(payload, "payment-service").findings.find((f) => f.code === "diff.op-removed");
+      expect(removal).toBeDefined();
+      expect(removal!.severity).toBe("warn");
+      expect(removal!.message).not.toContain("no current landscape edge or living requirement names it");
+      expect(removal!.message).toContain("could NOT be fully answered");
+      expect(removal!.details).toEqual([
+        "edge checkout-web → payment-service (\"Calls the payment API\") has no `metadata { op }`, so whether it calls 'paymentHealth' is unknown",
+      ]);
     } finally {
       await p.destroy();
     }

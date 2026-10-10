@@ -48,8 +48,11 @@ replace consumer-driven contract tests.
 detection](https://buf.build/docs/breaking/overview/) inspect contract revisions in much greater
 depth than loam. They answer whether an OpenAPI or Protobuf change is structurally breaking; loam
 answers which authored consumers and requirements are joined to the operation or message being
-changed. Use the specialist diff in CI beside loam rather than expecting either tool to infer the
-other half.
+changed — `loam diff` names them for a removal, a deprecation, and a modification of the operation
+or anything its `$ref`s reach — and never whether the change breaks them. Authored means drawn or
+written in the docs repo: a caller the map does not draw is invisible to it, and one drawn without
+an operation on its edge is reported as a consumer nobody could check. Use the specialist diff in
+CI beside loam rather than expecting either tool to infer the other half.
 
 ## Requirements traceability: OpenFastTrace, Doorstop, StrictDoc and Sphinx-Needs
 

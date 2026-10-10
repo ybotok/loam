@@ -1,7 +1,8 @@
 /**
- * `$ref` as a pair of plain questions — which ones does this tree contain, and
- * what does one point at — and the component closure the merge answers them
- * for.
+ * The component closure the merge computes over `$ref`s. The two plain
+ * questions it asks — which refs does this tree contain, and what does one
+ * point at — moved to `../depth.ts` once the reader needed them too (that
+ * module's header says why the root, not here).
  *
  * The closure is verdict-driven, not reachability-driven: every component the
  * feature DECLARES is classified against its `x-loam-baselines` entry exactly
@@ -23,44 +24,7 @@ import { isDeepStrictEqual } from "node:util";
 import { isMap, isScalar, type Document } from "yaml";
 import { classifyBaselineDigests, valueDigest, withoutFeatureKeysDeep } from "../digest.js";
 import { entryFor, restatedSurfaces, surfaceIn, type BaselineRecord } from "../baseline/record.js";
-
-export function collectRefs(node: unknown): string[] {
-  const out: string[] = [];
-  const walk = (current: unknown): void => {
-    if (Array.isArray(current)) {
-      for (const value of current) walk(value);
-      return;
-    }
-    if (current !== null && typeof current === "object") {
-      for (const [key, value] of Object.entries(current)) {
-        if (key === "$ref" && typeof value === "string") out.push(value);
-        else walk(value);
-      }
-    }
-  };
-  walk(node);
-  return out;
-}
-
-/** Resolve a local JSON pointer (`#/a/b~1c`) against a plain JS tree. */
-export function resolvePointer(root: unknown, ref: string): { found: boolean; value: unknown } {
-  let current: unknown = root;
-  for (const raw of ref.slice(2).split("/")) {
-    const segment = raw.replace(/~1/g, "/").replace(/~0/g, "~");
-    if (Array.isArray(current)) {
-      const index = Number(segment);
-      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
-        return { found: false, value: undefined };
-      }
-      current = current[index];
-    } else if (current !== null && typeof current === "object" && segment in (current as Record<string, unknown>)) {
-      current = (current as Record<string, unknown>)[segment];
-    } else {
-      return { found: false, value: undefined };
-    }
-  }
-  return { found: true, value: current };
-}
+import { collectRefs, resolvePointer } from "../depth.js";
 
 /** Everything the closure needs; one object because the merge is its only caller. */
 export interface ComponentClosureInput {

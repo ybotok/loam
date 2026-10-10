@@ -202,7 +202,13 @@ describe("readAsyncapi", () => {
   it("reads a message's name, and which operations send and receive it", async () => {
     const doc = await parseDoc(PRODUCER);
     expect(doc.unreadable).toBe(false);
-    expect(doc.messages).toEqual([{ name: "payment.PaymentAuthorized", slot: "components.messages.PaymentAuthorized" }]);
+    expect(doc.messages).toEqual([
+      {
+        name: "payment.PaymentAuthorized",
+        slot: "components.messages.PaymentAuthorized",
+        closureDigest: expect.stringMatching(/^[0-9a-f]{16}$/),
+      },
+    ]);
     expect(doc.sent).toEqual(["payment.PaymentAuthorized"]);
     expect(doc.received).toEqual([]);
   });

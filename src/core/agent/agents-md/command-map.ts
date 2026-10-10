@@ -72,7 +72,9 @@ is wrong: with \`--json\` anywhere in the arguments, an unknown flag, unknown
 command or missing argument still yields \`{ ok: false, error: { code:
 "invalid-option" } }\` on stdout with exit 1 (commander's own diagnostic goes
 to stderr; \`--help\` and \`--version\` output pass through untouched). Without
-\`--json\` the same refusal is plain text on stderr with nothing on stdout.
+\`--json\` the same refusal is plain text on stderr with nothing on stdout, and
+like every other refusal it ends on a fix line and the code line
+(\`invalid-option  ·  loam explain invalid-option\`).
 
 Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
 not.

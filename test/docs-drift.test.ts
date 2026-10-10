@@ -63,6 +63,16 @@ describe("mutable release facts", () => {
     expect(section).not.toMatch(/`npm i @ybotok\/loam@\w+` installs it/);
   });
 
+  it("pins the fleet-edges recipe to the version README names, and runs no unpinned loam", async () => {
+    // The recipe is the first gate a fleet installs, and an unpinned `npx`
+    // resolves `latest` on the day the job runs, so a release can move what
+    // gates every PR mid-review. A pin is only worth having if it cannot trail
+    // the version this README describes.
+    const readme = await read("README.md");
+    expect(readme).toContain(`LOAM: "@ybotok/loam@${await version()}"`);
+    expect(readme).not.toMatch(/npx -y @ybotok\/loam (?:diff|validate)\b/);
+  });
+
   it("does not restore superseded publication claims", async () => {
     const readme = flat(await read("README.md"));
     expect(readme).not.toMatch(/not on npm yet/i);

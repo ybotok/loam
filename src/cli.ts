@@ -31,7 +31,7 @@ import { registerOpen } from "./commands/open.js";
 import { registerInstructions } from "./commands/instructions.js";
 import { registerExplain } from "./commands/explain/explain.js";
 import { registerMigrateOpenSpec } from "./commands/migrate-openspec/migrate-openspec.js";
-import { emitJsonError } from "./core/envelope/json.js";
+import { emitJsonError, sayExplain } from "./core/envelope/json.js";
 import { LOAM_VERSION } from "./core/envelope/version.js";
 
 /**
@@ -175,6 +175,20 @@ function groupCommands(program: Command): void {
 /** CommanderError codes whose output (already printed) is the point, not a failure to wrap. */
 const PASS_THROUGH = new Set(["commander.help", "commander.helpDisplayed", "commander.version"]);
 
+/**
+ * What a text-mode usage error prints under commander's own diagnostic: the
+ * fix and the stable code, the two lines every other refusal carries through
+ * `fail`. Without them `loam diff` with no `--base` printed commander's one
+ * sentence and nothing else — the only refusals in the CLI a person could not
+ * look up, while `--json` already reported them as `invalid-option`.
+ */
+function sayUsageFix(program: Command): void {
+  const name = process.argv.slice(2).find((token) => program.commands.some((c) => c.name() === token));
+  const help = name === undefined ? "`loam --help` lists the commands" : `\`loam ${name} --help\` lists the arguments and options it takes`;
+  console.error(`Fix the invocation: ${help}.`);
+  sayExplain("invalid-option");
+}
+
 function main(): void {
   const program = buildProgram();
 
@@ -209,8 +223,9 @@ function main(): void {
       // Anything else is a usage error (unknown option/command, missing or
       // invalid argument). Commander has already printed its diagnostic to
       // stderr, and that line stays: the invariant below is about stdout only.
-      if (!PASS_THROUGH.has(err.code) && jsonRequested()) {
-        emitJsonError("invalid-option", err.message.replace(/^error: /, ""));
+      if (!PASS_THROUGH.has(err.code)) {
+        if (jsonRequested()) emitJsonError("invalid-option", err.message.replace(/^error: /, ""));
+        else sayUsageFix(program);
       }
       process.exitCode = err.exitCode;
       return;

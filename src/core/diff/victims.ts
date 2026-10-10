@@ -1,7 +1,8 @@
 /**
  * Who, in the CURRENT fleet, still depends on a thing the diff says was
- * removed or deprecated — the joins that turn "an operation left the
- * contract" into "and these named consumers break".
+ * removed, deprecated or modified — the joins that turn "an operation left
+ * the contract" into "and these named consumers break", and "an operation's
+ * shape moved" into "and these are the consumers to check it against".
  *
  * THREE SOURCES answer that, and only the first two are copies of anything.
  *
@@ -27,6 +28,13 @@
  * victim strings or the scan rules in either module owes the other the same
  * change. The victim string spellings are kept byte-compatible with the
  * coherence findings on purpose, so a reader meets one vocabulary.
+ *
+ * One rule here has no mirror there, and that is recorded rather than hidden:
+ * an inbound edge drawn with NO op is a SUSPENSION in `opConsumers` (2026-10-10),
+ * because `ConsumerScan` has a channel for "could not be answered" and
+ * coherence's `edgeConsumers` returns victims only. Giving the archive gate the
+ * same doubt needs that channel first; until then the two answers differ on an
+ * op-less edge.
  *
  * The THIRD source is not a copy and does not fall under that rule: the fleet's
  * USE CASES, joined in `core/usecases/operations.ts`. A hop of a
@@ -63,11 +71,11 @@ export interface ConsumerScan {
   suspended: string[];
 }
 
-/** The current-state consumer questions `semantic.ts` asks per removal. */
+/** The current-state consumer questions `semantic.ts` asks per removal, deprecation and modification. */
 export interface VictimIndex {
-  /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements, then the use-case hops the model attributes to it (contested hops ride as suspensions). */
+  /** Current consumers of `provider`'s operation `op`: landscape edges into the provider, then other services' living requirements, then the use-case hops the model attributes to it (contested hops, and inbound edges drawn with no op, ride as suspensions). */
   opConsumers(provider: string, op: string): Promise<ConsumerScan>;
-  /** Current consumers of message `name` a `provider` is dropping: consumes-edges (not into the provider), then other services' `Consumes:` lines over both spec axes, then the use-case hops backed by such an edge. */
+  /** Current consumers of message `name` a `provider` is dropping or changing: consumes-edges (not into the provider), then other services' `Consumes:` lines over both spec axes, then the use-case hops backed by such an edge. */
   messageConsumers(provider: string, name: string): Promise<ConsumerScan>;
   /** Current services whose asyncapi declares `name` — positive evidence only; a message still declared elsewhere is not orphaned by one producer dropping it. */
   declarers(name: string): string[];
@@ -171,18 +179,31 @@ export function victimIndex(snap: {
     const { usable, resolve } = await landscape();
     const scan = scanRequirements({ provider, axes: ["spec"], hit: (r) => r.operations.includes(op) });
     const edges: string[] = [];
+    const unlinked: string[] = [];
     if (usable !== null && resolve !== null) {
       for (const r of usable.relationships) {
         // An edge whose SOURCE resolves to the provider as well is the
         // provider's own internal call — the rule `usecase.step-unlinked`
         // already states, that a service owes no operationId to itself — so it
         // is not a consumer of the operation it is losing. Without this the
-        // downgrade the message half at :198 has always made was unreachable
-        // for any service that draws its own containers: one internal edge
-        // carrying the op kept every removal `diff.op-removed-consumed`
-        // (verification 2026-09-04, R3).
-        if (r.op === op && resolve(r.target) === provider && resolve(r.source) !== provider) {
+        // downgrade the message half (`messageConsumers` below) has always
+        // made was unreachable for any service that draws its own containers:
+        // one internal edge carrying the op kept every removal
+        // `diff.op-removed-consumed` (verification 2026-09-04, R3).
+        if (resolve(r.target) !== provider || resolve(r.source) === provider) continue;
+        if (r.op === op) {
           edges.push(EDGE(resolve, r));
+        } else if (r.op === undefined && r.publishes === undefined && r.consumes === undefined) {
+          // A caller drawn with NO op is neither a victim nor proof of absence:
+          // it calls the provider, and nobody wrote down which operation.
+          // Dropping it silently made every removal on a seeded fleet (`loam
+          // seed` draws every edge without an op) read "no current landscape
+          // edge names it" while validate warned `spine.op-link-missing` on the
+          // very edge. It rides as a suspension — a warning's worth of doubt,
+          // never an error, so an op-less map does not turn every removal red.
+          // An edge naming a message instead (`publishes`/`consumes`) said what
+          // it carries and is the message half's to grade.
+          unlinked.push(`${EDGE(resolve, r)} has no \`metadata { op }\`, so whether it calls '${op}' is unknown`);
         }
       }
     }
@@ -192,7 +213,7 @@ export function victimIndex(snap: {
     const hops = hopsExercising(await useCases(), { provider, op });
     return {
       victims: [...edges, ...scan.victims, ...hops.breaks],
-      suspended: [...scan.suspended, ...hops.unsure],
+      suspended: [...unlinked, ...scan.suspended, ...hops.unsure],
     };
   };
 
