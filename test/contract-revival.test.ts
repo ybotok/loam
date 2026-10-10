@@ -220,6 +220,18 @@ paths:
     expect(ofCode(all, "api.op-unconsumed").map((x) => x.message).join("\n")).toContain("importOrders");
   });
 
+  it("a retired operation re-added at a new path is the same operation back — identity is the operationId", async () => {
+    const f = await exampleFleet();
+    expect((await runLoam(f.fleet, "archive", "FEAT-112")).code).toBe(0);
+    contractOnly(f, "FEAT-307", "FEAT-307-v1-elsewhere", QUOTED_V1.replace("  /v1/orders:\n", "  /v1/orders/legacy:\n"));
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-307", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("spells 'createOrderV1' (POST /v1/orders/legacy), which the living contract no longer has — archived FEAT-112 retired it");
+  });
+
   it("retired, re-added on purpose, now living: a later quote of it is not a revival", async () => {
     const f = await exampleFleet();
     contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", QUOTED_V1);
@@ -639,6 +651,30 @@ ${CANCEL_OP}`);
     expect(ofCode(pinned, "openapi.op-revived").map((r) => r.message)).toEqual([
       expect.stringContaining("archived FEAT-204 retired it there; it lives at POST /orders/{id}/abort now"),
     ]);
+  });
+
+  it("moved, then removed from its new address by hand: the quote of the address the move vacated is still that feature's to answer for", async () => {
+    // The hand edit is invisible (no marker), so nothing says the operation
+    // was retired — but FEAT-200's move vacated /cancel on the record, and the
+    // quote puts the id back exactly there. The living contract holds it
+    // nowhere, so it reads as the retired shape, naming the move.
+    const f = await moved();
+    const living = f.read(LIVING_ORDER_API);
+    const start = living.indexOf("  /orders/{id}/cancellation:");
+    const next = living.indexOf("\n  /", start + 1);
+    const end = next === -1 ? living.indexOf("\ncomponents:") : next;
+    f.write(LIVING_ORDER_API, living.slice(0, start) + living.slice(end + 1));
+    expect(f.read(LIVING_ORDER_API)).not.toContain("operationId: cancelOrder");
+    expect(f.read(LIVING_ORDER_API)).toContain("operationId: createOrderV1");
+    contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", QUOTED_CANCEL);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain(
+      "spells 'cancelOrder' (POST /orders/{id}/cancel), which the living contract no longer has — archived FEAT-200 moved it to POST /orders/{id}/cancellation, and archiving this delta would put it back",
+    );
   });
 
   it("a removal marker at an address the operation does not live at takes it out of nowhere, so the quote of the vacated address is still refused", async () => {
