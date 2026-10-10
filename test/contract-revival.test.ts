@@ -552,6 +552,58 @@ paths:
     const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-203", "--json")).stdout);
     expect(ofCode(all, "openapi.op-revived")).toEqual([]);
   });
+
+  /** FEAT-209: the swap back — another operation at the address cancelOrder moved to, cancelOrder at the one it left. */
+  const SWAP_BACK = `openapi: 3.1.0
+paths:
+  /orders/{id}/cancellation:
+    post:
+      operationId: requestCancellation
+      responses:
+        "202":
+          description: Cancellation requested.
+  /orders/{id}/cancel:
+    post:
+${CANCEL_OP}`;
+
+  it("swapping it back — another operation defined where it lives now — is a move, and archives after rebase with the id at one address", async () => {
+    // The merge writes per method and path, so requestCancellation replaces
+    // cancelOrder at /cancellation: archived, the id stands at /cancel alone.
+    // This was refused as a revival, naming a remedy (a marker at
+    // /cancellation) that could not be written beside requestCancellation.
+    const f = await moved();
+    contractOnly(f, "FEAT-209", "FEAT-209-swap-cancel", SWAP_BACK);
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-209", "--json")).stdout);
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+
+    const rebased = await runLoam(f.fleet, "rebase", "FEAT-209", "--json");
+    expect(rebased.code, rebased.out).toBe(0);
+    expect((JSON.parse(rebased.stdout) as { revived: unknown[] }).revived).toEqual([]);
+    const archived = await runLoam(f.fleet, "archive", "FEAT-209");
+    expect(archived.code, archived.out).toBe(0);
+    const living = f.read(LIVING_ORDER_API);
+    expect(living.match(/operationId: cancelOrder\b/g)).toHaveLength(1);
+    expect(living.indexOf("operationId: cancelOrder")).toBeGreaterThan(living.indexOf("/orders/{id}/cancel:"));
+    expect(living).toContain("operationId: requestCancellation");
+  });
+
+  it("a QUOTE of another operation at that address is not written, so cancelOrder stays there and the quote of the old address is still refused", async () => {
+    // Pinned to its own content, the /cancellation definition is a quote —
+    // the merge keeps the living operation — and archiving would answer
+    // cancelOrder at both addresses after all.
+    const f = await moved();
+    const head = SWAP_BACK.slice(0, SWAP_BACK.indexOf("  /orders/{id}/cancel:\n"));
+    const quoted = pinOpenapi(head, head);
+    expect(quoted).toContain("x-loam-based-on:");
+    expect(quoted.endsWith("\n")).toBe(true);
+    contractOnly(f, "FEAT-209", "FEAT-209-swap-cancel", `${quoted}  /orders/{id}/cancel:\n    post:\n${CANCEL_OP}`);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-209", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("spells 'cancelOrder' at POST /orders/{id}/cancel");
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -996,6 +1048,148 @@ components:
     expect(invalid!.message).toContain("message 'payment.Legacy' is declared at components.messages.LegacyV2 now: a parallel feature moved it");
     expect(invalid!.message).not.toContain("past `asyncapi.slot-revived`");
     expect(ofCode(pinned, "asyncapi.slot-revived")).toHaveLength(1);
+  });
+
+  describe("a message an archived feature moved INLINE, under its channel", () => {
+    /** The channel as FEAT-44 leaves it: payment.Legacy declared inside it. */
+    const INLINE_CHANNEL = `channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        name: payment.Legacy
+        payload:
+          type: object
+          properties:
+            paymentId:
+              type: string
+`;
+    /** payment.Legacy at its old key again — what every move back declares. */
+    const AT_OLD_KEY = `components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      payload:
+        type: object
+        properties:
+          paymentId:
+            type: string
+`;
+
+    /** FEAT-44 (archived): the components key marked, the message declared inline instead. */
+    async function movedInline(back: string): Promise<Project> {
+      const p = await makeProject({
+        "services/payment-service/spec.md": EVENTS_SPEC,
+        "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+        "features/FEAT-44-inline-legacy/intent.md": INTENT("FEAT-44"),
+        "features/FEAT-44-inline-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+${INLINE_CHANNEL}components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`,
+        "features/FEAT-47-legacy-back/intent.md": INTENT("FEAT-47"),
+        "features/FEAT-47-legacy-back/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0\n${back}`,
+      });
+      cleanups.push(() => p.destroy());
+      // --approve past the channel restated unpinned: setup, not the subject.
+      const inlined = await runLoam(p.workDir, "archive", "FEAT-44", "--approve");
+      expect(inlined.code, inlined.out).toBe(0);
+      const living = await p.read("services/payment-service/asyncapi.yaml");
+      expect(living).not.toContain("components:");
+      expect(living).toContain("name: payment.Legacy");
+      return p;
+    }
+
+    it("moving it back — the channel restated with a $ref — is not a revival, and archives after rebase with the name declared once", async () => {
+      // The channel upsert replaces its interior wholesale, so the inline
+      // declaration does not survive the merge. This was refused as "one
+      // message name in two places", naming a remedy (a marker on the inline
+      // message) that retires nothing.
+      const p = await movedInline(`channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        $ref: '#/components/messages/Legacy'
+${AT_OLD_KEY}`);
+      expect(await eventFindings(p, "FEAT-47")).toEqual([]);
+
+      const rebased = await runLoam(p.workDir, "rebase", "FEAT-47", "--json");
+      expect(rebased.code, rebased.out).toBe(0);
+      expect((JSON.parse(rebased.stdout) as { revived: unknown[] }).revived).toEqual([]);
+      const archived = await runLoam(p.workDir, "archive", "FEAT-47");
+      expect(archived.code, archived.out).toBe(0);
+      const living = await p.read("services/payment-service/asyncapi.yaml");
+      expect(living.match(/name: payment\.Legacy/g)).toHaveLength(1);
+      expect(living).toMatch(/\$ref: ["']#\/components\/messages\/Legacy["']/);
+    });
+
+    it("retiring the channel takes the inline declaration with it — not a revival either", async () => {
+      const p = await movedInline(`channels:
+  legacyEvents:
+    x-loam-remove: true
+${AT_OLD_KEY}`);
+      expect(await eventFindings(p, "FEAT-47")).toEqual([]);
+    });
+
+    it("a channel that keeps declaring it inline is refused, and the remedy names the channel — never a marker on the inline message", async () => {
+      const p = await movedInline(`${INLINE_CHANNEL}${AT_OLD_KEY}`);
+      const [warned, ...more] = await eventFindings(p, "FEAT-47");
+      expect(more).toEqual([]);
+      expect(warned!.message).toContain("declares message 'payment.Legacy' at components.messages.Legacy");
+      expect(warned!.message).toContain("one message name in two places");
+      expect(warned!.message).toContain(
+        "to move it back on purpose, restate channel legacyEvents with a $ref to components.messages.Legacy, or retire channel legacyEvents in this same delta",
+      );
+      expect(warned!.message).not.toContain("retire it at channels.");
+    });
+
+    it("a marker nested on the inline message retires nothing, so the name would still stand there — refused, with the channel remedy", async () => {
+      // The deep strip publishes the inline message without its marker
+      // (asyncapi.remove-marker-inline says so at archive): the merged
+      // contract would declare payment.Legacy in both places.
+      const p = await movedInline(`channels:
+  legacyEvents:
+    address: payment.legacy.v1
+    messages:
+      Legacy:
+        name: payment.Legacy
+        x-loam-remove: true
+${AT_OLD_KEY}`);
+      const [warned, ...more] = await eventFindings(p, "FEAT-47");
+      expect(more).toEqual([]);
+      expect(warned!.message).toContain("restate channel legacyEvents with a $ref to components.messages.Legacy, or retire channel legacyEvents");
+      expect(warned!.message).not.toContain("retire it at channels.");
+    });
+
+    it("pinned, baseline-invalid's move-back remedy names the channel too", async () => {
+      // Pinned while Legacy still stood at its components key, then moved
+      // inline underneath it by FEAT-44's archive.
+      const p = await makeProject({
+        "services/payment-service/spec.md": EVENTS_SPEC,
+        "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+        "features/FEAT-44-inline-legacy/intent.md": INTENT("FEAT-44"),
+        "features/FEAT-44-inline-legacy/specs/payment-service/asyncapi.yaml": `asyncapi: 3.0.0
+${INLINE_CHANNEL}components:
+  messages:
+    Legacy:
+      name: payment.Legacy
+      x-loam-remove: true
+`,
+        "features/FEAT-46-pinned-legacy/intent.md": INTENT("FEAT-46"),
+        "features/FEAT-46-pinned-legacy/specs/payment-service/asyncapi.yaml": pinAsyncapi(`asyncapi: 3.0.0\n${AT_OLD_KEY}`, LIVING_EVENTS),
+      });
+      cleanups.push(() => p.destroy());
+      expect((await runLoam(p.workDir, "archive", "FEAT-44", "--approve")).code).toBe(0);
+      const [invalid] = ofCode(findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-46", "--json")).stdout), "asyncapi.baseline-invalid");
+      expect(invalid!.message).toContain("message 'payment.Legacy' is declared at channels.legacyEvents.messages.Legacy now: a parallel feature moved it");
+      expect(invalid!.message).toContain(
+        "drop the pin and restate channel legacyEvents with a $ref to components.messages.Legacy, or retire channel legacyEvents in this delta",
+      );
+      expect(invalid!.message).not.toContain("retire it at channels.");
+    });
   });
 });
 
