@@ -164,6 +164,18 @@ new paths are `docs/SERVICE-TEAMS.md` and `scripts/payload-sizes.ts`.
   `test/docs-drift.test.ts` now also requires every exact `@ybotok/loam@<version>` in README to be
   this checkout's version.
 
+### Fixed — `loam diff` reads a spec saved as UTF-16 without a byte-order mark the same way on both sides
+
+No code, flag, path or payload key was added, changed or retired.
+
+- On disk, a `spec.md` or `arch.spec.md` saved as UTF-16 without a byte-order mark was refused as
+  unreadable. At the base ref, the same bytes were read as a readable spec with no requirements.
+  That happened because only the working-tree side checked for NUL characters. So an untouched file
+  was suspended on one side only, and a branch that re-saved the file as UTF-8 reported every
+  requirement in it as `diff.requirement-added`. The base side now applies the same decoding rule as
+  the working tree. Both sides report the file as unreadable, and the spec axis is suspended. The
+  contract axes are unchanged: their readers on both sides already applied the same rule.
+
 ### Fixed — a writer waiting on the lock no longer deletes the next writer's live lock
 
 No code, flag, path or payload key was added, changed or retired. What changes is that concurrent
