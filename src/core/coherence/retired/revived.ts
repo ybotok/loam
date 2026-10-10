@@ -33,7 +33,14 @@ import { slotKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import type { EventMessage } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
-import { retiredKey, type ArchivedBy, type RetiredIndex, type RetiredLookup } from "./archived.js";
+import {
+  operationAddress,
+  retiredKey,
+  type ArchivedBy,
+  type ArchivedMoves,
+  type RetiredIndex,
+  type RetiredLookup,
+} from "./archived.js";
 import { readEventPair, type EventPairRead } from "./event-pair.js";
 import { messageRetirements, operationRetirements } from "./retirement.js";
 
@@ -54,9 +61,6 @@ export interface Absent<T> {
   entry: T;
   livesAt: string[];
 }
-
-/** `METHOD /path` — how every finding here names an operation's address. */
-const address = (op: Operation): string => `${op.method.toUpperCase()} ${op.path}`;
 
 /**
  * The feature operations the living contract does not hold as spelled — the
@@ -89,7 +93,7 @@ export function absentOperations(featDoc: OpenapiDoc, livingDoc: OpenapiDoc): Ab
     }
     const occupied = living.some((l) => l.method === op.method && l.path === op.path);
     if (occupied || relocating.has(op.id)) continue;
-    const livesAt = at.filter((l) => !overwritten(l, featDoc.ops)).map(address);
+    const livesAt = at.filter((l) => !overwritten(l, featDoc.ops)).map(operationAddress);
     if (livesAt.length > 0) absent.push({ entry: op, livesAt });
   }
   return absent;
@@ -127,17 +131,17 @@ export function revivedOperations(service: string, absent: readonly Absent<Opera
     issues.push({ severity: "warn", gates: true, code: "openapi.op-revived", subject: service, message: `${service}: this feature's openapi.yaml spells ${what}` });
   };
   for (const { entry: op, livesAt } of absent) {
-    const at = address(op);
+    const at = operationAddress(op);
     if (livesAt.length === 0) {
       const by = index.operations.get(retiredKey(service, op.id));
       if (by !== undefined) revive(`'${op.id}' (${at}), which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`);
       continue;
     }
     // Moved, not retired: the remedy is not "bring it back" — it never left.
-    const by = index.movedOperations.get(retiredKey(service, op.id, op.method, op.path));
-    if (by === undefined) continue;
+    const moves = index.movedOperations.get(retiredKey(service, op.id, op.method, op.path));
+    if (moves === undefined) continue;
     const where = livesAt.join(" and ");
-    revive(`'${op.id}' at ${at}, an address the living contract no longer has — ${retirers(by)} moved it to ${where}, where it lives now, and archiving this delta would put it back at ${at} as well: one operationId at two addresses. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, add a removal marker for '${op.id}' at ${where} to this same delta.`);
+    revive(`'${op.id}' at ${at}, an address the living contract no longer has — ${movers(moves, livesAt, "lives")}, and archiving this delta would put it back at ${at} as well: one operationId at two addresses. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, add a removal marker for '${op.id}' at ${where} to this same delta.`);
   }
   return issues;
 }
@@ -245,14 +249,14 @@ export function revivedEvents(service: string, absent: AbsentEvents, index: Reti
       message: `${service}: this feature's asyncapi.yaml declares ${what}, which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`,
     });
   };
-  const moved = (message: EventMessage, livesAt: readonly string[], by: ArchivedBy): void => {
+  const moved = (message: EventMessage, livesAt: readonly string[], moves: ArchivedMoves): void => {
     const where = livesAt.join(" and ");
     issues.push({
       severity: "warn",
       gates: true,
       code: "asyncapi.slot-revived",
       subject: service,
-      message: `${service}: this feature's asyncapi.yaml declares message '${message.name}' at ${message.slot}, a key the living contract no longer has — ${retirers(by)} moved it to ${where}, where it is declared now, and archiving this delta would declare it at ${message.slot} as well: one message name in two places. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, ${moveBackRemedy(livesAt, message.slot)} in this same delta.`,
+      message: `${service}: this feature's asyncapi.yaml declares message '${message.name}' at ${message.slot}, a key the living contract no longer has — ${movers(moves, livesAt, "is declared")}, and archiving this delta would declare it at ${message.slot} as well: one message name in two places. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, ${moveBackRemedy(livesAt, message.slot)} in this same delta.`,
     });
   };
   const revivedChannels = new Set<string>();
@@ -268,8 +272,8 @@ export function revivedEvents(service: string, absent: AbsentEvents, index: Reti
     // revival — one act, one finding.
     if ([...revivedChannels].some((ck) => message.slot.startsWith(`channels.${ck}.messages.`))) continue;
     if (livesAt.length > 0) {
-      const by = index.movedMessages.get(retiredKey(service, message.name, message.slot));
-      if (by !== undefined) moved(message, livesAt, by);
+      const moves = index.movedMessages.get(retiredKey(service, message.name, message.slot));
+      if (moves !== undefined) moved(message, livesAt, moves);
       continue;
     }
     const by = index.messages.get(retiredKey(service, message.name));
@@ -321,7 +325,36 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
 
 /** "archived FEAT-112", "archived FEAT-112 and FEAT-140", "archived FEAT-1, FEAT-2 and FEAT-3". */
 function retirers(by: ArchivedBy): string {
-  const [first, ...rest] = by;
-  const list = rest.reduce((said, id, i) => `${said}${i === rest.length - 1 ? " and" : ","} ${id}`, first);
-  return `archived ${list}`;
+  return `archived ${idList(by)}`;
+}
+
+/** "FEAT-112", "FEAT-112 and FEAT-140", "FEAT-1, FEAT-2 and FEAT-3". */
+function idList([first, ...rest]: readonly [string, ...string[]]): string {
+  return rest.reduce((said, id, i) => `${said}${i === rest.length - 1 ? " and" : ","} ${id}`, first);
+}
+
+/**
+ * Who moved an entry, where each of them put it, and where it stands now —
+ * "archived FEAT-200 moved it to POST /y, where it lives now" in the common
+ * case, "archived FEAT-200 moved it to POST /y; it lives at POST /z now" once
+ * anything landed since (retired at /y, re-added at /z). The destinations
+ * come from the index, the present from the living contract: this once said
+ * the present address was where the mover put it, crediting a later
+ * feature's address to the mover. Movers that put it in the same place share
+ * one clause. `verb` is how the axis says it — an operation "lives", a
+ * message "is declared".
+ */
+function movers(moves: ArchivedMoves, livesAt: readonly string[], verb: "lives" | "is declared"): string {
+  const byDestination = new Map<string, [string, ...string[]]>();
+  for (const { by, to } of moves) {
+    const where = to.join(" and ");
+    const ids = byDestination.get(where);
+    if (ids === undefined) byDestination.set(where, [by]);
+    else ids.push(by);
+  }
+  const clauses = [...byDestination].map(([where, ids], i) => `${idList(ids)} ${i === 0 ? "moved it " : ""}to ${where}`);
+  const said = `archived ${clauses.reduce((all, clause, i) => `${all}${i === clauses.length - 1 ? ", and" : ","} ${clause}`)}`;
+  const now = new Set(livesAt);
+  const unchanged = moves.every(({ to }) => to.length === now.size && to.every((where) => now.has(where)));
+  return unchanged ? `${said}, where it ${verb} now` : `${said}; it ${verb} at ${livesAt.join(" and ")} now`;
 }

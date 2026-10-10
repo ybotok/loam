@@ -49,7 +49,9 @@
  * slot-keyed baseline gate and the id-keyed revival check both missed (the id
  * is living, the slot is empty). So the index records moves as well: the
  * marker ids the relocation rule removes from the net set are exactly the
- * moved ids, and their old slots are on the markers. The event axis has the
+ * moved ids, their old slots are on the markers, and where each went is the
+ * delta's own definition of it — kept, because where the id lives NOW may be
+ * somewhere a later feature put it (`ArchivedMove`). The event axis has the
  * same shape in one place only — a `components.messages` marker whose message
  * name the delta declares again elsewhere; a channel or operation slot's
  * identity IS its key, so a "moved" channel is a retired key plus a new one,
@@ -94,6 +96,27 @@ import { messageRetirements, operationRetirements } from "./retirement.js";
  */
 export type ArchivedBy = readonly [string, ...string[]];
 
+/**
+ * One archived feature's relocation of one entry away from one address: the
+ * feature, and every address its delta put the entry at. Recorded apart from
+ * where the entry lives NOW, because the two part ways as soon as anything
+ * lands after the move — A moves an operation from /x to /y, B retires it at
+ * /y, D re-adds it at /z — and a finding that named the living address as
+ * the mover's destination said "A moved it to /z", an address A never wrote.
+ */
+export interface ArchivedMove {
+  by: string;
+  to: readonly string[];
+}
+
+/** The archived features that moved one entry away from one address — `ArchivedBy`'s order, distinctness and non-emptiness. */
+export type ArchivedMoves = readonly [ArchivedMove, ...ArchivedMove[]];
+
+/** `METHOD /path` — how the index records, and every finding names, an operation's address. */
+export function operationAddress(op: { method: string; path: string }): string {
+  return `${op.method.toUpperCase()} ${op.path}`;
+}
+
 /** Everything the archived features retired or moved away, each entry naming the features that did it. */
 export interface RetiredIndex {
   /** `retiredKey(service, operationId)` → the archived features whose openapi delta retired it. */
@@ -103,9 +126,9 @@ export interface RetiredIndex {
   /** `retiredKey(service, messageName)` — by the join token, wherever the message was declared. */
   messages: ReadonlyMap<string, ArchivedBy>;
   /** `retiredKey(service, operationId, method, path)` — the address a relocation moved that operation away from. */
-  movedOperations: ReadonlyMap<string, ArchivedBy>;
+  movedOperations: ReadonlyMap<string, ArchivedMoves>;
   /** `retiredKey(service, messageName, slot)` — the `components.messages.<key>` a relocation moved that message away from. */
-  movedMessages: ReadonlyMap<string, ArchivedBy>;
+  movedMessages: ReadonlyMap<string, ArchivedMoves>;
 }
 
 /** The index's one key spelling. NUL-joined: no id, section, key or message name can contain it. */
@@ -151,18 +174,25 @@ export function retiredLookup(docsDir: DocsDir, context?: FleetContext): Retired
   };
 }
 
+/** One move, as one archived feature's walk finds it: the index key of the vacated address, and where the delta put the entry. */
+interface MoveFound {
+  key: string;
+  to: string[];
+}
+
 /** What one archived feature's deltas for one service retired or moved away, as index keys. */
 interface ServiceRetirements {
   featureId: string;
   operations: string[];
   slots: string[];
   messages: string[];
-  movedOperations: string[];
-  movedMessages: string[];
+  movedOperations: MoveFound[];
+  movedMessages: MoveFound[];
 }
 
-/** The index's parts, in the one order `readRetiredIndex` records them. */
-const PARTS = ["operations", "slots", "messages", "movedOperations", "movedMessages"] as const;
+/** The index's parts, in the one order `readRetiredIndex` records them — retirements, then moves. */
+const RETIRED_PARTS = ["operations", "slots", "messages"] as const;
+const MOVED_PARTS = ["movedOperations", "movedMessages"] as const;
 
 /** Walk every archived feature's contract deltas and record what each one retired or moved away. */
 async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promise<RetiredIndex> {
@@ -170,8 +200,8 @@ async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promi
     operations: new Map<string, ArchivedBy>(),
     slots: new Map<string, ArchivedBy>(),
     messages: new Map<string, ArchivedBy>(),
-    movedOperations: new Map<string, ArchivedBy>(),
-    movedMessages: new Map<string, ArchivedBy>(),
+    movedOperations: new Map<string, ArchivedMoves>(),
+    movedMessages: new Map<string, ArchivedMoves>(),
   };
   // A `features/archive` that is not a directory holds no archived feature,
   // and listing it would throw ENOTDIR out of the feature gate — refusing an
@@ -185,7 +215,10 @@ async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promi
   // RECORDED in, and `inOrder` hands the answers back in input order — the
   // features sorted by `compareIds`, as `listFeatures` returns them.
   for (const found of await inOrder(units, ({ feature, service }) => serviceRetirements(feature, service, context))) {
-    for (const part of PARTS) for (const key of found[part]) record(index[part], key, found.featureId);
+    for (const part of RETIRED_PARTS) for (const key of found[part]) record(index[part], key, found.featureId);
+    for (const part of MOVED_PARTS) {
+      for (const { key, to } of found[part]) recordMove(index[part], key, { by: found.featureId, to });
+    }
   }
   return index;
 }
@@ -220,10 +253,12 @@ async function serviceRetirements(
     const { markerIds, net } = operationRetirements(carried);
     for (const id of net) found.operations.push(retiredKey(service, id));
     // The marker ids the relocation rule took out of `net` are the moved ones,
-    // and each marker carrying one stands on an address it vacated.
+    // and each marker carrying one stands on an address it vacated; the
+    // delta's definitions of the same id are where it went.
     for (const op of carried) {
       if (op.remove && markerIds.has(op.id) && !net.has(op.id)) {
-        found.movedOperations.push(retiredKey(service, op.id, op.method, op.path));
+        const to = carried.filter((d) => !d.remove && d.id === op.id).map(operationAddress);
+        found.movedOperations.push({ key: retiredKey(service, op.id, op.method, op.path), to });
       }
     }
   }
@@ -253,10 +288,12 @@ async function serviceRetirements(
   const retired = messageRetirements(carriedEvents, carriedSlots, before?.doc ?? NOTHING_DECLARED);
   for (const name of retired.net) found.messages.push(retiredKey(service, name));
   // A message marker whose name the delta declares again is a relocation: the
-  // key it stands on is the address the message moved away from.
+  // key it stands on is the address the message moved away from, and the
+  // declarations are where it went — another key, or inline under a channel.
   for (const m of carriedEvents.messages) {
     if (m.remove === true && m.slot.startsWith("components.messages.") && retired.redeclared.has(m.name)) {
-      found.movedMessages.push(retiredKey(service, m.name, m.slot));
+      const to = carriedEvents.messages.filter((d) => d.remove !== true && d.name === m.name).map((d) => d.slot);
+      found.movedMessages.push({ key: retiredKey(service, m.name, m.slot), to });
     }
   }
   return found;
@@ -306,4 +343,24 @@ function record(into: Map<string, ArchivedBy>, key: string, featureId: string): 
   const by = into.get(key);
   if (by === undefined) into.set(key, [featureId]);
   else if (!by.includes(featureId)) into.set(key, [...by, featureId]);
+}
+
+/**
+ * Add one move, in `record`'s order and distinct by feature for its reason:
+ * a second directory carrying the same id adds its destinations to that
+ * feature's move rather than naming the feature twice.
+ */
+function recordMove(into: Map<string, ArchivedMoves>, key: string, move: ArchivedMove): void {
+  const moves = into.get(key);
+  if (moves === undefined) {
+    into.set(key, [move]);
+    return;
+  }
+  if (!moves.some((m) => m.by === move.by)) {
+    into.set(key, [...moves, move]);
+    return;
+  }
+  const widen = (m: ArchivedMove): ArchivedMove => (m.by === move.by ? { by: m.by, to: [...new Set([...m.to, ...move.to])] } : m);
+  const [first, ...rest] = moves;
+  into.set(key, [widen(first), ...rest.map(widen)]);
 }
