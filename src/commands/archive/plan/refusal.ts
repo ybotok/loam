@@ -27,7 +27,9 @@ export interface ArchiveOptions {
 }
 
 /**
- * An Issue as the `--json` envelope spells it — the Finding shape, minus details.
+ * An Issue as the `--json` envelope spells it — the whole Finding shape, `details`
+ * included (`[]` when the issue carries none; the overwrite warnings list their
+ * current consumers there), plus `overridable`.
  * `gates` and `overridable` are always present and already resolved: a consumer
  * must not have to re-implement the severity default to know what blocks
  * archive, nor keep a code list to know what `--approve` can move.
