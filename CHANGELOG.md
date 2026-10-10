@@ -33,10 +33,11 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   new address, one operationId at two slots (only the advisory `openapi.duplicate-operationid`
   said so afterwards): the slot-keyed baseline gate saw nothing living at the slot, and the
   id-keyed check saw the id living. That quote is now `openapi.op-revived` too, and its message
-  says which archived feature moved the operation and where it lives now. A delta that carries its
-  own removal marker for the id is its own relocation (moving it back on purpose) and is not
-  graded, nor is one that defines another operation at the address the id lives at (a swap — the
-  merge replaces what stands at that method and path). On the event axis the one slot a move
+  says which archived feature moved the operation, where it moved it to, and — apart from that,
+  since anything landed after the move can have moved it again — where it lives now. A delta that
+  carries its own removal marker for the id is its own relocation (moving it back on purpose) and
+  is not graded, nor is one that defines another operation at the address the id lives at (a swap
+  — the merge replaces what stands at that method and path). On the event axis the one slot a move
   vacates is a `components.messages` key whose message name the archived delta declared again
   elsewhere — under another key, or inline under a channel; a declaration at the old key is
   `asyncapi.slot-revived`, naming where the name is declared now, unless the merge would take it
