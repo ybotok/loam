@@ -10,10 +10,10 @@
 import { existsSync } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { asRecord } from "../../kernel/records.js";
+import { asRecord, isStringArray } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 import { type OpenSpecConfigSummary, type OpenSpecUnsupportedShape } from "../model/model.js";
-import { isSymbolicLink, isStringArray, yamlRecord } from "./walk.js";
+import { isSymbolicLink, yamlRecord } from "./walk.js";
 import { issue } from "./shape.js";
 
 export async function inspectConfig(

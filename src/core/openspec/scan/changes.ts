@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { asRecord } from "../../kernel/records.js";
+import { asRecord, isStringArray } from "../../kernel/records.js";
 import { compareIds } from "../../repo/entries.js";
 import { inspectSpecFile } from "./shape.js";
 import {
@@ -27,10 +27,9 @@ import {
 import { schemaSpecPolicy } from "./config.js";
 import {
   isSymbolicLink,
-  isStringArray,
   portable,
   sourceInventoryPath,
-  walkFiles,
+  walkTree,
   yamlRecord,
 } from "./walk.js";
 import { addCounts, issue } from "./shape.js";
@@ -148,9 +147,9 @@ export async function inventoryChanges(ingest: Ingest, tree: ChangeTree): Promis
   const changes: OpenSpecChange[] = [];
   for (const id of ids) {
     const dir = join(base, id);
-    const allArtifacts = await walkFiles(dir);
+    const allArtifacts = (await walkTree(dir)).files;
     const specRoot = join(dir, "specs");
-    const allSpecs = await walkFiles(specRoot);
+    const allSpecs = (await walkTree(specRoot)).files;
     const specFiles = allSpecs.filter((path) => basename(path) === "spec.md");
     const metadata = await inspectChangeMetadata(scoped, dir, scope, fallbackSchema);
     const counts: OpenSpecCounts = { specFiles: 0, requirements: 0, scenarios: 0 };

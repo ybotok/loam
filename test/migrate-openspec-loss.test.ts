@@ -207,7 +207,7 @@ describe("a migration never records a decision for an artifact it does not migra
 
     const inventory = await inventoryOpenSpec(hidden.root);
 
-    // subdirs() drops it from the enumeration and walkFiles() does not, which is
+    // subdirs() drops it from the enumeration and walkTree() does not, which is
     // how migration-plan.json came to record `selectedDisposition` for a proposal
     // that reached nothing and was named in no follow-up.
     expect(inventory.changes.active.map((change) => change.id)).toEqual(["add-refunds"]);
