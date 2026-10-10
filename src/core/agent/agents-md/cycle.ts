@@ -72,8 +72,9 @@ export const CYCLE = `## The cycle
    ran) but the exit code is 1: the C4 slice is empty because delta.likec4 did not
    parse, not because the feature changes no architecture — do not build on it.
 7. **Verify** — \`loam verify FEAT-101 --json\` turns the feature's own promises into a
-   checklist. The scenario claims are answered by the cucumber report
-   (\`--results report.json\`); answer the rest with evidence and record them
+   checklist. The scenario claims are answered by the test report
+   (\`--results report.json\` — cucumber JSON, or loam's runner-neutral
+   \`loamScenarioReport\` shape for any other runner); answer the rest with evidence and record them
    (\`--record answers.json --service <id>\`), **from each affected service's own
    repo**. See \`loam instructions loam-done-check\`.
 8. **Ship** — \`loam archive FEAT-101\` once the code is merged. \`--dry-run\` shows

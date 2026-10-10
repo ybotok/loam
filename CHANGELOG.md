@@ -292,6 +292,41 @@ maturity rung of every service is unchanged.
   the one file otherwise. `archive` and `unarchive` carry the directory with the feature they move.
   No code, flag or payload key was added, changed or retired.
 
+### Changed — `verified` means a run of the stamped scenario, and the runner-neutral path is findable
+
+- **A cucumber run must have run the stamped scenario's step count.** `verify --results` used to
+  confirm a `scenario.tested` claim from any report element carrying its `@loam-digest-…` tag whose
+  steps passed — a one-step stub tagged by hand confirmed five-step scenarios. A matched cucumber
+  element must now have run exactly as many steps as `loam gherkin` emits for the scenario (`And` /
+  `But` included); otherwise the claim is `unconfirmed`, noted `ran N step(s) where the stamped
+  scenario has M`. The step text is not compared (outlines fill their placeholders in, dialects
+  differ on keyword spacing). cucumber-js's hook entries inside `steps[]` (`hidden`, keyword
+  `Before`/`After`) are read as hooks, not steps: they no longer count toward the steps, and a
+  failing one is reported `failed in a before/after hook`. `loamScenarioReport` entries carry no
+  steps and are held to their status, as before. What a repo notices: a report whose elements do
+  not run every stamped step stops confirming.
+- **A `--results` file that is not JSON is refused naming both accepted shapes.** A JUnit XML report
+  died with the parser's raw "Unexpected token '<'". It is still `answers-unreadable`, and the
+  message now says the file is XML or not JSON and names what `--results` reads: cucumber JSON
+  (cucumber-js, cucumber-jvm, behave, SpecFlow/Reqnroll, pytest-bdd `--cucumberjson`, godog) or
+  loam's runner-neutral `{"loamScenarioReport": 1, …}`. A `--contract-results` file that is not JSON
+  names its one shape the same way.
+- **`loamScenarioReport` is named wherever cucumber is.** The `--results` description in
+  `loam verify --help` now reads "cucumber JSON, or loam's runner-neutral loamScenarioReport JSON for
+  any other runner"; the `check` in the `done` block `loam tasks` prints for a `scenario.tested` unit names both
+  report shapes; the `verify.scenario-attested` message's suggested command reads
+  `--results <report.json>` and names both; WORKFLOW, the verify, implement and done-check protocols
+  and the cycle `loam explain` teaches say the same.
+- **The all-at-once `--record` checks that each citation exists.** Without `--service` it accepted
+  any non-empty evidence — `src/foo.py:1` for a file that does not exist — and printed `verified`,
+  while the federated form refused the same citation. Each `file:line` of an agent-confirmed answer
+  must now be a canonical relative path to a regular file inside the repository loam.json was found
+  in, with that line in it; otherwise `answers-unevidenced`. The form still binds to no commit and
+  stamps no pins. Evidence that lives in another service's repository is recorded from there, with
+  `--service`. A missing cited file is now named in the repository's own spelling ("does not exist
+  in this repository") in both forms, never through the machine's absolute path.
+- No code, flag, path or payload key was added, changed or retired.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line.

@@ -42,10 +42,18 @@ export type ReportArtifactRead =
     }
   | { ok: false; code: "answers-unreadable"; message: string };
 
+/**
+ * `shapes` is the sentence naming what the flag accepts, appended when the file
+ * is not JSON at all. A JUnit XML report handed to `--results` used to die
+ * with the parser's own "Unexpected token '<' … is not valid JSON" — true, and
+ * no help to somebody whose runner speaks XML: the refusal has to say which
+ * shapes ARE read, because one of them exists precisely for that runner.
+ */
 export async function readReportArtifact(
   spelled: string,
   repoDir: string | undefined,
   label: string,
+  shapes: string,
 ): Promise<ReportArtifactRead> {
   const refuse = (message: string): ReportArtifactRead => ({ ok: false, code: "answers-unreadable", message });
   let path: string;
@@ -74,10 +82,14 @@ export async function readReportArtifact(
     return refuse(`Cannot read ${spelled} as a ${label}: the file is not valid UTF-8`);
   }
   let doc: unknown;
+  const text = bytes.toString("utf8");
   try {
-    doc = JSON.parse(bytes.toString("utf8"));
+    doc = JSON.parse(text);
   } catch (err) {
-    return refuse(`Cannot read ${spelled} as a ${label}: ${err instanceof Error ? err.message : String(err)}`);
+    const what = text.trimStart().startsWith("<") ? "it is XML (a JUnit report?), not JSON" : "it is not JSON";
+    return refuse(
+      `Cannot read ${spelled} as a ${label}: ${what} (${err instanceof Error ? err.message : String(err)}). ${shapes}`,
+    );
   }
   return {
     ok: true,

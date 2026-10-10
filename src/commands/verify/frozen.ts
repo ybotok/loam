@@ -21,9 +21,9 @@ import {
   type ConsumedReport,
   type Verification,
   type VerifyNotice,
-  recordLocation,
   verificationVerdict,
 } from "../../core/verify/record.js";
+import { recordLocation } from "../../core/verify/location.js";
 import { plural } from "../policy/format.js";
 import { type VerifyTarget } from "./report.js";
 

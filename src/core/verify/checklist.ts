@@ -29,6 +29,7 @@ import { readAsyncapi } from "../asyncapi/read.js";
 import { type Elem } from "../c4/likec4.js";
 import { elementService, serviceResolver } from "../c4/resolve/service.js";
 import { ACTOR_KINDS, INFRA_KINDS } from "../vocabulary/maturity.js";
+import { scenarioGherkin } from "../vocabulary/steps.js";
 import { operationIds, operations } from "../openapi/doc.js";
 import { featurePaths, featureSpecPaths } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
@@ -64,6 +65,18 @@ export interface Claim {
    * what `--results` matches on. Absent on every other kind.
    */
   digest?: string;
+  /**
+   * `scenario.tested` only: how many steps `loam gherkin` emits for the
+   * scenario — `scenarioGherkin`'s own count, the one the generated `.feature`
+   * carries. `--results` holds a cucumber run to it: the digest says WHICH
+   * scenario a report entry claims to be, and only the step count can say the
+   * entry is that scenario's run rather than a one-step stub tagged by hand
+   * (which confirmed five-step scenarios before this existed). The count, not
+   * the step text: an outline's steps reach the report with their
+   * `<placeholders>` filled in, and dialects disagree about keyword spacing and
+   * localisation, while every one of them reports one entry per step.
+   */
+  steps?: number;
   /**
    * `api.exposes` only: the operationId the claim asserts, structurally — the
    * join key `--contract-results` matches a contract report's entries on,
@@ -267,6 +280,7 @@ export async function featureChecklist(
               `scenario '${s.name}' of requirement '${r.name}' (${svc}) is covered by a test`,
             ),
             digest: body.slice(0, DIGEST_LENGTH),
+            steps: scenarioGherkin(s.lines).steps.length,
           });
         }
       }
@@ -293,6 +307,7 @@ export async function featureChecklist(
               `scenario '${s.name}' of arch requirement '${r.name}' (${svc}, arch.spec.md) is covered by a test`,
             ),
             digest: body.slice(0, DIGEST_LENGTH),
+            steps: scenarioGherkin(s.lines).steps.length,
           });
         }
       }

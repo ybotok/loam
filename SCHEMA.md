@@ -2395,18 +2395,22 @@ nobody wrote must not carry over as if it still applied.
 anything that does not answer the *current* checklist, each under its own `--json` `error.code`:
 `answers-unreadable` (not JSON, or a verdict outside `confirmed` / `unconfirmed`),
 `answers-mismatch` (an id nobody asked about, a claim with no answer, or one answered twice),
-`answers-unevidenced` (a `confirmed` with no `file:line` behind it). An unchecked claim must never
-be able to masquerade as checked.
+`answers-unevidenced` (a `confirmed` with no `file:line` behind it, or one citing a file or a line
+that does not exist in the repository the record is written from — the all-at-once form included,
+which binds to no commit but no longer takes a citation on trust). An unchecked claim must never be
+able to masquerade as checked.
 
 **`--results <report.json>` answers the `scenario.tested` claims mechanically, from a cucumber JSON
-test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave and SpecFlow
-speak too. The contract is exactly this and nothing more: a top-level array of features, each
+test report** — the format `cucumber-js --format json` emits, and cucumber-jvm, behave,
+SpecFlow/Reqnroll, pytest-bdd (`--cucumberjson`) and godog's cucumber formatter speak too. The contract is exactly this and nothing more: a top-level array of features, each
 `elements[]` (scenarios) with `name`, `tags[] {name}` and `steps[] {result {status}}` — plus the two
 places those dialects put a failure the steps never see: cucumber-jvm's per-element
 `before[]`/`after[]` hook results and behave's element-level `status`. Every other field is ignored,
 tagless elements (backgrounds, hand-written scenarios) are invisible, and a file that is not that
 array at all refuses under `answers-unreadable` rather than quietly answering every claim "not
-found".
+found". A file that is not JSON at all — a JUnit XML report is the usual one — refuses the same way,
+and the refusal names both shapes `--results` reads, because the second one exists for exactly that
+runner.
 
 Matching is by digest and nothing else: a claim is answered by the report scenarios carrying its
 `@loam-digest-<16hex>` tag — the tag `loam gherkin` stamped, the same 16 hex of the same body hash
@@ -2415,12 +2419,21 @@ name), so a business run can never answer an arch claim however identically the 
 worded. Names never match anything: a reworded spec scenario matches nothing until the suite is
 regenerated and re-run — an agent must not be able to SAY a scenario is tested; only a green run
 may. The verdicts: every matching occurrence (a digest the report holds twice is a re-run, and all
-occurrences count) ran at least one step, every step `passed`, every before/after hook `passed`, and
-the element-level status (when the dialect carries one) is `passed` → `confirmed`, with evidence
+occurrences count) ran at least one step, every step `passed`, every before/after hook `passed`, the
+element-level status (when the dialect carries one) is `passed`, and **it ran exactly as many steps
+as the stamped scenario has** — the count `loam gherkin` emits for it, `And`/`But` included →
+`confirmed`, with evidence
 `<report-path>: <feature uri or name> › <scenario name>` per occurrence; a failed / undefined /
 pending / ambiguous step (`failed at step N`), a failing hook (`failed in a before/after hook`), a
 failed element status, a skipped-only run (`skipped`), or no match at all (`not found in report`) →
-`unconfirmed` with the reason as the note.
+`unconfirmed` with the reason as the note — and a run whose step count differs from the stamped
+scenario's is `unconfirmed` too (`ran N step(s) where the stamped scenario has M`). The digest is
+only a tag, and a tag is text: a one-step stub carrying the right digest used to confirm five-step
+scenarios, because nothing compared what ran with what was stamped. The count is what every dialect
+can be held to; the step TEXT is not compared, because an outline's steps reach the report with
+their placeholders filled in and dialects disagree about keyword spacing and localisation. The hook
+entries cucumber-js lists among `steps[]` (marked `hidden`, keyword `Before`/`After`) are read as
+hooks, never counted as steps — and a failing one still sinks the run.
 
 `--results` OWNS every `scenario.tested` claim **in the same run**: an answers-file entry for one is
 refused (`answers-mismatch` — the runner owns it), `--record` alongside must answer exactly the
@@ -2452,6 +2465,8 @@ own runner-neutral shape, chosen by its marker key:
 ```
 
 `digest` is the 16 lowercase hex of the `@loam-digest-…` tag `loam gherkin` stamped on the scenario.
+An entry carries no steps, so it is held to its `status` alone — the step-count check above is a
+property of the cucumber shape.
 `status` is `passed` or `failed` — nothing else. `test` is optional free text: the runner's own name
 for the run, used as the evidence string a reader follows. `loamScenarioReport: 1` is the format
 version this loam reads; any other value refuses rather than being partly understood.

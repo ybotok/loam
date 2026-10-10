@@ -46,9 +46,12 @@ so a JUnit or pytest fleet is not held at \`attested\` by a file format —
 \`loam verify <FEAT> --results report.json\`. A claim is confirmed only when a
 report scenario carrying its \`@loam-digest-<16hex>\` tag ran at least one step
 and every step passed — every occurrence, when the report holds a re-run, and
-every before/after hook with it. A failed, undefined, pending or skipped step,
-a failed hook, or no matching scenario at all, is \`unconfirmed\` with the
-reason. The digest is the only identity: a reworded spec scenario matches
+every before/after hook with it — and, in a cucumber report, ran exactly as
+many steps as the stamped scenario has: a hand-tagged stub is not that
+scenario's run. A failed, undefined, pending or skipped step, a failed hook, a
+step count that differs, or no matching scenario at all, is \`unconfirmed\` with
+the reason. A report that is not JSON (a JUnit XML file) is refused
+\`answers-unreadable\`, naming both shapes. The digest is the only identity: a reworded spec scenario matches
 nothing until the suite is regenerated and re-run. When a report exists,
 ALWAYS pass \`--results\` — under it the runner owns every scenario claim, and
 an answers-file entry for one is refused.

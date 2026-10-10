@@ -39,6 +39,7 @@ import { parse } from "yaml";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import { parseRequirements } from "../src/core/document/parse.js";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   makeTmpDir,
@@ -59,6 +60,9 @@ afterEach(async () => {
 async function project(files: Record<string, string> = coherentFixture()): Promise<Project> {
   const p = await makeProject(files);
   cleanups.push(() => p.destroy());
+  // The citations this file's all-at-once answer sets make, made real: that
+  // form resolves every agent citation in the repository it records from.
+  await citeable(p.workDir, "src/split/Service.ts:12", "src/x.ts:12", "a.ts:1");
   return p;
 }
 
@@ -127,6 +131,17 @@ interface Run {
   status?: string;
 }
 
+/**
+ * How many steps the fixtures' scenarios have, by name — what a real run of
+ * each reports. `--results` holds a cucumber run to the stamped scenario's step
+ * count, so a run left at a default count would model a different scenario.
+ */
+const FIXTURE_STEPS: Record<string, number> = {
+  "Split across two payees": 3,
+  "Reject a split that does not sum": 2,
+  "Duplicate delivery": 2,
+};
+
 /** A standard cucumber JSON report: one feature, one element per run — extra fields included on purpose. */
 function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.feature"): unknown {
   return [
@@ -148,7 +163,7 @@ function cucumberReport(runs: Run[], uri = "features/loam/split-a-payment.featur
         ...(r.after === undefined
           ? {}
           : { after: r.after.map((status) => ({ result: { status, error_message: "hook failed" } })) }),
-        steps: (r.steps ?? ["passed", "passed", "passed"]).map((status) => ({
+        steps: (r.steps ?? Array<string>(FIXTURE_STEPS[r.name ?? "Split across two payees"] ?? 3).fill("passed")).map((status) => ({
           keyword: "Then ",
           result: { status, duration: 1 },
         })),
@@ -648,7 +663,7 @@ describe("answering from the runner (--results)", () => {
     const p = await project(scenarioOnlyFixture());
     const report = await writeReport(p, [
       { digest: d1, steps: ["passed", "failed", "skipped"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code, res.out).toBe(0);
@@ -697,7 +712,7 @@ describe("answering from the runner (--results)", () => {
     const report = await writeReport(p, [
       { digest: d1 },
       { digest: d1, steps: ["failed"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code).toBe(0);
@@ -712,7 +727,7 @@ describe("answering from the runner (--results)", () => {
     const p = await project(scenarioOnlyFixture());
     const report = await writeReport(p, [
       { digest: d1, steps: ["skipped", "skipped"] },
-      { digest: d2 },
+      { digest: d2, name: "Reject a split that does not sum" },
     ]);
     const res = await runLoam(p.workDir, "verify", FEAT, "--results", report, "--json");
     expect(res.code).toBe(0);
@@ -1623,7 +1638,11 @@ describe("federated service verification", () => {
     expect(forked["message"]).toContain("payment-service");
   });
 
-  it("keeps legacy global --record compatible with arbitrary non-empty evidence", async () => {
+  it("keeps legacy global --record writing the one-file schema-1 record, with no commit to bind", async () => {
+    // It used to accept ANY non-empty evidence, a file that does not exist
+    // included; it now resolves each citation in this repository like the
+    // federated form does (test/verify-matching-run.test.ts) — and is
+    // otherwise the same record it always wrote.
     const p = await project();
     const result = await runLoam(p.workDir, "verify", FEAT, "--record", await confirmAll(p), "--json");
     expect(result.code, result.out).toBe(0);

@@ -10,7 +10,7 @@ import type { CapabilityDoc } from "../../capabilities/tree.js";
 import type { PathableService } from "../../kernel/ids/service.js";
 import type { FeatureEntry } from "../../repo/entries.js";
 import { featurePaths, featureSpecPaths } from "../../repo/paths.js";
-import { recordLocation } from "../../verify/record.js";
+import { recordLocation } from "../../verify/location.js";
 import type { Finding } from "../../vocabulary/report.js";
 import { owesContract } from "../contracts.js";
 import type { ServiceEntry } from "../../repo/entries.js";

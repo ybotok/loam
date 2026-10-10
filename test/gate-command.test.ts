@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { parseRequirements } from "../src/core/document/parse.js";
 import { scenarioDigest } from "../src/core/gherkin/stamp.js";
 import {
+  citeable,
   coherentFixture,
   makeProject,
   runLoam,
@@ -37,6 +38,9 @@ async function project(
 ): Promise<Project> {
   const p = await makeProject(files, opts);
   cleanups.push(() => p.destroy());
+  // The all-at-once form resolves every agent citation in the repository it
+  // records from, so the evidence this file's answer sets cite is made real.
+  await citeable(p.workDir, "src/split/Service.ts:12");
   return p;
 }
 
@@ -158,7 +162,8 @@ async function recordVerified(p: Project, digests: string[]): Promise<void> {
         tags: [{ name: "@FEAT-1", line: 2 }, { name: `@loam-digest-${digest}` }],
         // A run with no step results is not a green run — the reader rightly
         // refuses to confirm from it, so the report carries passed steps.
-        steps: [{ keyword: "Then ", result: { status: "passed", duration: 1 } }],
+        // One per Given/When/Then: a cucumber run is held to the stamped scenario's step count.
+        steps: ["Given ", "When ", "Then "].map((keyword) => ({ keyword, result: { status: "passed", duration: 1 } })),
       })),
     },
   ];

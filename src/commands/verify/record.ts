@@ -20,19 +20,17 @@ import { type RecordFiles } from "../../core/verify/read/file.js";
 import { assembleRecord } from "../../core/verify/read/union.js";
 import { commitVerification, type RecordWrite } from "../../core/verify/store/commit.js";
 import {
-  recordLocation,
-  serviceRecordPath,
   tallyRecord,
   type ConsumedReports,
   type Verification,
   type VerifyNotice,
-  verificationPath,
   verificationVerdict,
 } from "../../core/verify/record.js";
+import { recordLocation, serviceRecordPath, verificationPath } from "../../core/verify/location.js";
 import { plural, sayDiscarded, sayRecovered } from "../policy/format.js";
 import { readContractResults } from "./evidence/contract.js";
 import { claimTokens, pinAnswers } from "./evidence/pins.js";
-import { readResults, repositoryCommit, validateServiceEvidence } from "./results.js";
+import { readResults, repositoryCommit, validateLocalEvidence, validateServiceEvidence } from "./results.js";
 import { contestedNotices, contestedOperationNotices, contractReportLine, noticesFor, reportLine } from "./frozen.js";
 import { type VerifyTarget } from "./report.js";
 
@@ -204,6 +202,20 @@ export async function record(
     const evidence = await validateServiceEvidence(answers, { repoDir, commit: serviceCommit }, reports, claimTokens(scopedClaims));
     if (!evidence.ok) return fail(json, "answers-unevidenced", evidence.message);
     ({ answers, notice: pinNotice } = pinAnswers(answers, evidence, serviceCommit));
+  } else {
+    // The all-at-once form binds to no commit, but a citation still has to be
+    // a line that exists — see `validateLocalEvidence`. Resolved against the
+    // repository loam.json was found in, which is the one place a reviewer
+    // reading this record can go and look.
+    const evidence = await validateLocalEvidence(answers, repoDir);
+    if (!evidence.ok) {
+      return fail(
+        json,
+        "answers-unevidenced",
+        `${evidence.message} The all-at-once form resolves every citation inside this repository; ` +
+          "evidence that lives in a service's own repository is recorded from there, with `--service`.",
+      );
+    }
   }
 
   const recorded = today(new Date());

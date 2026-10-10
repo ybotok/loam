@@ -23,7 +23,7 @@ export function registerVerify(program: Command): void {
     .option("--record <file>", "record a JSON answer set against the current checklist")
     .option(
       "--results <file>",
-      "answer the scenario.tested claims mechanically from a cucumber JSON test report",
+      "answer the scenario.tested claims mechanically from a test report: cucumber JSON, or loam's runner-neutral loamScenarioReport JSON for any other runner",
     )
     .option(
       "--contract-results <file>",

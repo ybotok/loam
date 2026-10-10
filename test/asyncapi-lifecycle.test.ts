@@ -14,6 +14,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  citeable,
   FEATURE_ASYNCAPI,
   LIVING_ASYNCAPI,
   LIVING_OPENAPI,
@@ -307,6 +308,8 @@ describe("the AsyncAPI feature lifecycle, end to end", () => {
       // kind (all-at-once form — no attestations exist here to erase), the
       // written verification.yaml carries it, and a re-read is not stale.
       const answers = claims.map((c) => ({ id: c.id, verdict: "confirmed", evidence: ["src/refunds/publisher.ts:12"] }));
+      // A citation the all-at-once form can resolve: it checks the line exists.
+      await citeable(p.workDir, "src/refunds/publisher.ts:12");
       await writeFile(join(p.workDir, "answers.json"), JSON.stringify({ answers }), "utf8");
       expect((await runLoam(p.workDir, "verify", "FEAT-60", "--record", "answers.json")).code).toBe(0);
       const record = parse(await p.read("features/FEAT-60-refunds/verification.yaml")) as {
