@@ -596,6 +596,41 @@ describe("loam diff — an unreadable contract the branch did not touch", () => 
       await p.destroy();
     }
   });
+
+  /*
+   * UTF-16 WITHOUT a byte-order mark is a valid UTF-8 sequence — every other
+   * byte NUL — so only `decodeDocument`'s NUL test refuses it. The base side
+   * once tested `isUtf8` alone: the base read a readable EMPTY spec while the
+   * working tree refused the identical bytes, so the untouched file suspended
+   * one side only, and a branch that re-saved it as UTF-8 reported every
+   * requirement in it as added.
+   */
+  it("a spec saved as UTF-16 without a byte-order mark is unreadable at the base exactly as on disk", async () => {
+    const p = await makeProject({ "services/checkout-web/spec.md": CONSUMER_SPEC });
+    try {
+      const specPath = join(p.docsDir, "services", "checkout-web", "spec.md");
+      await writeFile(specPath, Buffer.from(CONSUMER_SPEC, "utf16le"));
+      commitBase(p.docsDir);
+      const untouched = await diffJson(p, "main");
+      expect(untouched.code).toBe(1);
+      expect(service(untouched.payload, "checkout-web").unreadable.map((u) => `${u.side}:${u.axis}`)).toEqual([
+        "base:spec",
+        "current:spec",
+      ]);
+
+      // The branch repairs the encoding: the base still could not be read, so
+      // nothing is "added" — the axis suspends instead.
+      await writeFile(specPath, CONSUMER_SPEC);
+      const repaired = await diffJson(p, "main");
+      expect(repaired.code).toBe(1);
+      const subject = service(repaired.payload, "checkout-web");
+      expect(codes(subject)).not.toContain("diff.requirement-added");
+      expect(subject.unreadable.map((u) => `${u.side}:${u.axis}`)).toEqual(["base:spec"]);
+      expect(subject.unreadable[0]!.error).toContain("NUL characters");
+    } finally {
+      await p.destroy();
+    }
+  });
 });
 
 describe("loam diff — identity across placement, prefix, and runs", () => {
