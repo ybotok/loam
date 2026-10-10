@@ -570,6 +570,38 @@ components:
     expect(revived.map((r) => r.code)).toEqual(["asyncapi.slot-revived", "asyncapi.slot-revived", "asyncapi.slot-revived"]);
   });
 
+  it("rebase's standalone read and the gate's walk give one answer on one tree — living present, absent, or unreadable", async () => {
+    // Two readers of the same pair of documents (core/coherence/retired/
+    // event-pair.ts): the gate's walk behind validate and archive, and the
+    // standalone read behind rebase. They used to spell their guards twice.
+    const p = await eventFleet(LIVING_EVENTS, RETIRE_EVENTS);
+    await p.write("features/FEAT-41-legacy-again/intent.md", INTENT("FEAT-41"));
+    await p.write("features/FEAT-41-legacy-again/specs/payment-service/asyncapi.yaml", LIVING_EVENTS);
+    const both = async (): Promise<{ gate: string[]; rebase: string[] }> => {
+      const gate = (await eventFindings(p, "FEAT-41")).map((f) => f.message);
+      const rebased = await runLoam(p.workDir, "rebase", "FEAT-41", "--dry-run", "--json");
+      const payload = JSON.parse(rebased.stdout) as { revived?: Array<{ code: string; message: string }> };
+      return { gate, rebase: ofCode(payload.revived ?? [], "asyncapi.slot-revived").map((r) => r.message) };
+    };
+    const living = "services/payment-service/asyncapi.yaml";
+
+    const present = await both();
+    expect(present.gate).toHaveLength(3);
+    expect(present.rebase).toEqual(present.gate);
+
+    // Absent is an answer: every slot the delta declares is absent from it.
+    await rm(join(p.docsDir, living));
+    const absent = await both();
+    expect(absent.gate).toHaveLength(3);
+    expect(absent.rebase).toEqual(absent.gate);
+
+    // Unreadable is not: nothing is graded against a document nobody could open.
+    await p.write(living, "asyncapi: 3.0.0\nchannels: [unclosed\n");
+    const unreadable = await both();
+    expect(unreadable.gate).toEqual([]);
+    expect(unreadable.rebase).toEqual(unreadable.gate);
+  });
+
   it("a slot absent from living that nobody retired stays silent", async () => {
     const p = await eventFleet(LIVING_EVENTS, RETIRE_EVENTS);
     await p.write("features/FEAT-41-fresh/intent.md", INTENT("FEAT-41"));

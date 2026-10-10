@@ -79,6 +79,23 @@ export interface AsyncapiSlot {
   digest: string;
 }
 
+/**
+ * A slot's identity as one map key — the (section, key) pair, NUL-joined: no
+ * section name or YAML key a slot walk returns can contain it. Spelled once,
+ * because the gate's walk, the rebase revival read, the marker and baseline
+ * graders, the pin planner and the merge all build or look up the same map,
+ * and a lookup spelled differently from its build finds nothing without
+ * failing.
+ */
+export function slotKey(slot: { section: AsyncapiSection; key: string }): string {
+  return `${slot.section}\0${slot.key}`;
+}
+
+/** Slots by `slotKey` — the living side of every slot judgement. */
+export function slotsByKey(slots: readonly AsyncapiSlot[]): Map<string, AsyncapiSlot> {
+  return new Map(slots.map((slot) => [slotKey(slot), slot]));
+}
+
 /** Is this slot value a feature-only explicit removal marker? One test for both axes. */
 export const isSlotRemoval = isRemoval;
 

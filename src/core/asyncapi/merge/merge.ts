@@ -20,7 +20,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { isMap } from "yaml";
 import { classifyBaselineDigests, withoutFeatureKeysDeep } from "../../openapi/digest.js";
-import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
+import { asyncapiSlots, slotDigest, slotKey, slotsByKey, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { readBaselineRecord } from "../../openapi/baseline/record.js";
@@ -134,7 +134,7 @@ export function mergeAsyncapiSlots(
   if (featSlots.length === 0 && asyncapiSurfaces(featPlain).length === 0) return noop();
 
   const { doc: living, plain: livingPlain } = readEventTree(livingText, "living", service);
-  const livingBySlot = new Map(asyncapiSlots(livingPlain).map((slot) => [`${slot.section}\0${slot.key}`, slot]));
+  const livingBySlot = slotsByKey(asyncapiSlots(livingPlain));
   // Read ONCE here, not per surface: `problems` are deliberately ignored — a
   // malformed record is the gate's diagnosis (`asyncapi.baseline-invalid`) and
   // a parser never prints, so what reaches the surface merge is whatever read
@@ -149,7 +149,7 @@ export function mergeAsyncapiSlots(
   const touched = new Set<AsyncapiSection>();
   let edited = false;
   for (const slot of featSlots) {
-    const before = livingBySlot.get(`${slot.section}\0${slot.key}`);
+    const before = livingBySlot.get(slotKey(slot));
     const name = slot.section === "components.messages" ? messageName(slot.node, slot.key) : undefined;
     const at = { section: slot.section, label: slotLabel(slot.section, slot.key, name) };
     if (slot.remove) {
