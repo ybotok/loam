@@ -23,7 +23,7 @@ import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 
 export async function planOpenapiContracts(
-  config: { docsDir: DocsDir; fleet?: FleetContext; consumers: ContractConsumers },
+  config: { docsDir: DocsDir; fleet: FleetContext; consumers: ContractConsumers },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,

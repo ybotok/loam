@@ -42,15 +42,15 @@ export interface ContractConsumers {
   message(provider: string, name: string): Promise<ConsumerScan>;
 }
 
-export function contractConsumers(config: { docsDir: DocsDir; fleet?: FleetContext }): ContractConsumers {
+export function contractConsumers(config: { docsDir: DocsDir; fleet: FleetContext }): ContractConsumers {
   let index: Promise<VictimIndex> | undefined;
   const victims = (): Promise<VictimIndex> =>
     (index ??= (async (): Promise<VictimIndex> => {
-      // The run's own read index when it has one: the planners have already
-      // read the delta services' living contracts through it.
-      const context = config.fleet ?? new FleetContext();
-      const current = await readCurrentFleet(config.docsDir, context);
-      return victimIndex({ docsDir: config.docsDir, context, current: current.services, ambiguous: current.ambiguous });
+      // The run's own read index: the planners have already read the delta
+      // services' living contracts through it.
+      const { docsDir, fleet: context } = config;
+      const current = await readCurrentFleet(docsDir, context);
+      return victimIndex({ docsDir, context, current: current.services, ambiguous: current.ambiguous });
     })());
   return {
     op: async (provider, operationId) => (await victims()).opConsumers(provider, operationId),

@@ -32,7 +32,7 @@ function modifiedCode(section: AsyncapiSection): IssueCode {
 }
 
 export async function planAsyncapiContracts(
-  config: { docsDir: DocsDir; fleet?: FleetContext; consumers: ContractConsumers },
+  config: { docsDir: DocsDir; fleet: FleetContext; consumers: ContractConsumers },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,

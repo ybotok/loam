@@ -35,7 +35,7 @@ import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
 
 export async function planSpecs(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -144,7 +144,7 @@ export async function planSpecs(
  * is graded on must not do it silently.
  */
 export async function planCapabilities(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet: FleetContext },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,

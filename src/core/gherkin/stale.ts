@@ -10,7 +10,6 @@
 import { existsSync, statSync, type Dirent } from "node:fs";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { parseRequirements } from "../document/parse.js";
 import type { PathableService } from "../kernel/ids/service.js";
 import { SPEC_AXES } from "../repo/paths.js";
 import { locateServicePaths } from "../repo/service-target.js";
@@ -71,7 +70,7 @@ export async function gherkinFindings(ctx: {
   /** The service repo, when loam is standing in it. Undefined disables the chain, like sources.*. */
   repoDir?: string;
   gherkinDir?: string;
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }): Promise<Finding[]> {
   if (ctx.repoDir === undefined) return [];
   let root: string;
@@ -104,10 +103,7 @@ export async function gherkinFindings(ctx: {
     const state: AxisState = { file: axis.file, reqNames: new Set(), digests: new Set(), scenarios: [] };
     const path = paths[axis.key];
     if (existsSync(path)) {
-      const reqs = ctx.fleet === undefined
-        ? parseRequirements(await readFile(path, "utf8"))
-        : await ctx.fleet.readRequirements(path);
-      for (const r of reqs) {
+      for (const r of await ctx.fleet.readRequirements(path)) {
         if (r.kind === "REMOVED") continue;
         state.reqNames.add(r.name);
         for (const s of r.scenarios) {
