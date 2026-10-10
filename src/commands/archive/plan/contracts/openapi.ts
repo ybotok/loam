@@ -18,11 +18,12 @@ import { stripOpenapiRemovalMarkers } from "../../../../core/openapi/merge/marke
 import { mergeOpenapiPaths, type OpenapiMergeResult } from "../../../../core/openapi/merge/merge.js";
 import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
+import { consumerClause, type ContractConsumers } from "./consumers.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 
 export async function planOpenapiContracts(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet?: FleetContext; consumers: ContractConsumers },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -86,7 +87,7 @@ export async function planOpenapiContracts(
         throw err;
       }
       const {
-        text, modified, pathItemModified, removed, quoted, pathItemQuoted, pathItemStale,
+        text, modified, modifiedOperationIds, pathItemModified, removed, quoted, pathItemQuoted, pathItemStale,
         componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,
       } = merge;
       if (text !== null) {
@@ -127,13 +128,23 @@ export async function planOpenapiContracts(
         say(`      ⚠ stale baseline on component ${comp} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
       }
       for (const label of modified) {
+        // Who the overwrite lands on: the living fleet's consumers of the
+        // operation, through `loam diff`'s own scan (./consumers.ts). An
+        // operation with no operationId on either side has nothing anyone can
+        // name it by, so the warning stays the sentence it always was.
+        const id = modifiedOperationIds.get(label);
+        const named = id === undefined ? null : consumerClause(await config.consumers.op(svc, id));
         planWarns.push({
           severity: "warn",
           code: "openapi.op-modified",
           subject: svc,
-          message: `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale`,
+          message:
+            `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale` +
+            (named === null ? "" : `; ${named.clause}`),
+          ...(named === null ? {} : { details: named.details }),
         });
-        say(`      ⚠ overwrites ${label} — the living definition differs`);
+        say(`      ⚠ overwrites ${label} — the living definition differs${named === null ? "" : `; ${named.clause}`}`);
+        for (const line of named?.details ?? []) say(`          ${line}`);
       }
       for (const label of pathItemModified) {
         planWarns.push({

@@ -34,6 +34,15 @@ export interface OpenapiMergeResult {
   /** Labels of existing operations overwritten with different content. */
   modified: string[];
   /**
+   * The operationId each `modified` label overwrites, keyed by the label: the
+   * LIVING operation's id, or the delta's when the living slot carries none.
+   * The living id first because it is the join key consumers name today —
+   * `loam archive` asks the fleet's consumer scan with it, to say who the
+   * overwrite lands on. A label whose operation carries no id on either side
+   * is absent: nothing can name it, so no consumer joins to it by name.
+   */
+  modifiedOperationIds: ReadonlyMap<string, string>;
+  /**
    * Labels of PATH-LEVEL keys (`parameters`, `servers`, `summary`, `x-*`)
    * overwritten with different content. They are not operations, so they were
    * excluded from the difference check entirely and overwritten in silence —
@@ -157,6 +166,7 @@ export function mergeOpenapiPaths(
     throw new OpenapiMergeError("living", service, "`paths` is not a mapping");
   }
   const modified: string[] = [];
+  const modifiedOperationIds = new Map<string, string>();
   const pathItemModified: string[] = [];
   const removed: string[] = [];
   const quoted: string[] = [];
@@ -251,8 +261,14 @@ export function mergeOpenapiPaths(
         // The difference check covers EVERY key of the path item; only the
         // LABEL depends on whether the key is an HTTP method.
         if (before !== undefined && !isDeepStrictEqual(beforePlain, afterPlain)) {
-          if (HTTP_METHODS.has(m)) modified.push(opLabel(beforePlain, afterPlain, m, path));
-          else pathItemModified.push(`'${m}' (${path})`);
+          if (HTTP_METHODS.has(m)) {
+            const label = opLabel(beforePlain, afterPlain, m, path);
+            modified.push(label);
+            const id = operationIdOf(beforePlain) ?? operationIdOf(afterPlain);
+            if (id !== undefined) modifiedOperationIds.set(label, id);
+          } else {
+            pathItemModified.push(`'${m}' (${path})`);
+          }
         }
         // Every shape question above was answered from the RESOLVED tree, which
         // is exactly what makes an aliased path item read as an ordinary
@@ -306,7 +322,7 @@ export function mergeOpenapiPaths(
     throw new OpenapiMergeError("living", service, errorMessage(error));
   }
   return {
-    text, modified, pathItemModified, removed, quoted, baselineStale,
+    text, modified, modifiedOperationIds, pathItemModified, removed, quoted, baselineStale,
     pathItemQuoted, pathItemStale, componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved,
   };
 }
@@ -320,8 +336,8 @@ export function mergeOpenapiPaths(
  */
 function noop(): OpenapiMergeResult {
   return {
-    text: null, modified: [], pathItemModified: [], removed: [], quoted: [], baselineStale: [],
-    pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsAdded: [],
+    text: null, modified: [], modifiedOperationIds: new Map(), pathItemModified: [], removed: [], quoted: [],
+    baselineStale: [], pathItemQuoted: [], pathItemStale: [], componentsModified: [], componentsAdded: [],
     componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }

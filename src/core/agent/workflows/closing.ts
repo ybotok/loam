@@ -220,8 +220,10 @@ export const LOAM_SHIP: CommandContent = {
    truth, and stop if a file you did not expect is on it. \`warnings[]\` is what the
    merge will do that is legal but lossy — advisory warnings never block, which is
    exactly why you read them now: \`openapi.op-modified\` means an operation the living
-   contract already defines gets overwritten wholesale (\`openapi.component-modified\`
-   is the same story for a component the merged operations carry),
+   contract already defines gets overwritten wholesale, and its \`details\` name the
+   current consumers that overwrite lands on (\`asyncapi.message-modified\` likewise for
+   a message; \`openapi.component-modified\` is the same story for a component the
+   merged operations carry, with no consumer list),
    \`service.no-model\` means a service arrives with no C4 centre behind it, and
    \`delta.added-conflict\`
    means another feature in flight adds the same requirement — the first to archive

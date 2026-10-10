@@ -7,7 +7,7 @@ owner: spentsov
 # loam — architecture spec
 
 `docs/DESIGN.md`'s numbered rules, as requirements whose `Covers:` lines land on the
-real objects of `architecture/landscape.likec4` (73 boxes of `src/`, 455 import edges)
+real objects of `architecture/landscape.likec4` (73 boxes of `src/`, 456 import edges)
 and `model.likec4` (the runtime crossings). DESIGN.md remains the normative text: it
 carries the measurement and the defect history behind each rule, and this file carries
 only what a machine can hold the rule to.

@@ -164,6 +164,30 @@ new paths are `docs/SERVICE-TEAMS.md` and `scripts/payload-sizes.ts`.
   `test/docs-drift.test.ts` now also requires every exact `@ybotok/loam@<version>` in README to be
   this checkout's version.
 
+### Changed — `loam archive`'s overwrite warnings name the current consumers
+
+No code or flag was added. Existing warnings now fill a payload key that was always empty.
+
+- **`openapi.op-modified` and `asyncapi.message-modified` now say who the overwrite affects.**
+  Each message ends with one of three phrases: `N current consumer(s) still name it`,
+  `whether current consumers name it could not be fully answered`, or
+  `no current consumer names it`. The warning's `details` in `archive --json` `warnings[]` (until
+  now always `[]`) list the consumers:
+  - landscape edges;
+  - other services' living requirements;
+  - use-case hops;
+  - and last, any consumer whose documents could not be read, or any caller drawn without an
+    `op`.
+
+  The human plan prints the same lines under the warning. This is the scan `loam diff` runs for
+  `diff.op-modified` and `diff.message-modified`. Here it runs over the living fleet as it stands
+  before the merge, and only when one of these warnings fires. On the 120-service benchmark fleet
+  that costs about 130 ms. Severity is unchanged, and neither warning gates the archive. Whether a
+  change breaks a consumer is still not graded (`oasdiff breaking` / `asyncapi diff` do that).
+- `openapi.component-modified` and `asyncapi.component-modified` do not name consumers. A
+  component's consumers are the operations or messages whose `$ref` closure reaches it, and loam
+  has no index of those.
+
 ### Fixed — `loam validate` reports an unreadable verification record from the docs repo
 
 No code, flag or payload key was added. An existing code fires in one more place.

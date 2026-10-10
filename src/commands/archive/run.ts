@@ -34,6 +34,7 @@ import { ArchiveFailure, issueJson, printPlan, refuseJson, type ArchiveOptions }
 import { planCapabilities, planGlossary, planSpecs } from "./plan/specs.js";
 import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
+import { contractConsumers } from "./plan/contracts/consumers.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
 import { checklistAtArchive } from "./shipped.js";
@@ -77,8 +78,12 @@ export async function archiveLocked(
   // a create-only whole-file copy, refused at the gate if the word already
   // lives (`core/glossary/delta.ts`).
   await planGlossary(read, gated, planned, say);
-  await planOpenapiContracts(read, gated, planned, say);
-  await planAsyncapiContracts(read, gated, planned, say);
+  // One consumer index for both contract planners, built only if one of them
+  // overwrites an operation or a message (./plan/contracts/consumers.ts) —
+  // and then over the living fleet as it stands before this merge.
+  const contracts = { ...read, consumers: contractConsumers(read) };
+  await planOpenapiContracts(contracts, gated, planned, say);
+  await planAsyncapiContracts(contracts, gated, planned, say);
   // `read`, not `config`: the C4 merge now asks which services own their own
   // interior, and that answer comes from the fleet enumeration this run has
   // already paid for.
