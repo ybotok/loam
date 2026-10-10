@@ -19,6 +19,7 @@ import { sayRecovered } from "../policy/format.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { capabilityIdProblem } from "../../core/kernel/ids/capability.js";
 import { capabilityNotes } from "../../core/capabilities/authoring/notes.js";
+import { modifiedFiles, planModifies } from "./modifies.js";
 import {
   archSpecTemplate,
   capabilityDeltaTemplate,
@@ -33,6 +34,7 @@ interface NewOptions {
   touches: string[];
   newService: string[];
   capability: string[];
+  modifies: string[];
   json?: boolean;
 }
 
@@ -63,6 +65,14 @@ export function registerNew(program: Command): void {
     // promises is as real as a feature touching two services, and the flag that
     // is not repeatable is the one that sends an author to mkdir by hand.
     .option("--capability <id>", "a business capability this feature changes (repeatable)", collect, [])
+    // The small-change lane (./modifies.ts): the living requirement copied
+    // into an uncommented MODIFIED block, pinned at scaffold time.
+    .option(
+      "--modifies <Req-ID>",
+      "a living requirement of a --touches service this feature rewrites (repeatable): scaffolds its MODIFIED block, already pinned",
+      collect,
+      [],
+    )
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string, opts: NewOptions) => {
       const json = opts.json === true;
@@ -150,13 +160,27 @@ export function registerNew(program: Command): void {
       const touched = touches.ids.filter((s) => !created.has(s));
       const dir = join(featuresDir(docsDir), dirName);
 
-      const files: Record<string, string> = {
-        "intent.md": intentTemplate(featureId, opts.title),
-        "delta.likec4": deltaTemplate(featureId, touched, [...created], await drawnIds(docsDir, touched)),
-      };
+      // Resolved before anything is written: an id naming no living
+      // requirement refuses the whole scaffold, as a bad --touches id does.
+      const modifies = await planModifies(docsDir, touched, opts.modifies);
+      if (!modifies.ok) return fail(json, modifies.code, modifies.message);
+      // `--modifies` and nothing else — every touched service has a requirement
+      // rewritten, none is introduced, no promise opened — is a feature that
+      // changes no architecture, and the scaffold's own advice for that case is
+      // "delete delta.likec4". So it is not written; validate and archive read
+      // a requirements-only feature as complete without it.
+      const requirementsOnly =
+        modifies.targets.length > 0 && created.size === 0 && capabilities.length === 0 &&
+        touched.every((svc) => modifies.targets.some((t) => t.service === svc));
+
+      const files: Record<string, string> = { "intent.md": intentTemplate(featureId, opts.title) };
+      if (!requirementsOnly) {
+        files["delta.likec4"] = deltaTemplate(featureId, touched, [...created], await drawnIds(docsDir, touched));
+      }
       for (const svc of [...touched, ...created]) {
         files[join("specs", svc, "spec.md")] = specTemplate(featureId, svc);
       }
+      Object.assign(files, modifiedFiles(featureId, modifies.targets, files));
       // The business axis, and the ONE file `--capability` adds. No service
       // spec rides with it, and that is the inversion rather than an omission:
       // the whole point of opening the document that changes first is that the
@@ -251,7 +275,17 @@ export function registerNew(program: Command): void {
       }
       console.log(`${featureId} scaffolded at ${repoPath(docsDir, dir)}`);
       for (const w of written) console.log(`  + ${w}`);
+      for (const t of modifies.targets) console.log(`  ~ MODIFIED ${t.id}: copied from ${t.living}, Based-On already pinned`);
       for (const note of notes) console.log(`\n  note: ${note}`);
+      if (requirementsOnly) {
+        console.log(
+          `\nNext: edit each MODIFIED requirement in place, write intent.md's Why, then\n` +
+            `\`loam validate --feature ${featureId}\` and \`loam archive ${featureId}\`. No delta.likec4 was written:\n` +
+            "rewriting requirements changes no architecture. If this change also moves an element or\n" +
+            "an edge, add one — `loam instructions loam-feature` shows its shape.",
+        );
+        return;
+      }
       console.log(`\nNext: fill in the delta, then \`loam validate --feature ${featureId}\`.`);
       console.log(
         "If this feature changes no architecture, delete delta.likec4 — a requirements-only\n" +
