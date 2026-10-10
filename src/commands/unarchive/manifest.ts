@@ -62,6 +62,11 @@ export interface ManifestRequest {
   serviceDirOf: (service: string) => string | null;
 }
 
+/**
+ * The snapshot manifest, or null when there is nothing this command can honour —
+ * absent, unreadable, or a layout version it would have to guess at. All three are
+ * the same answer to the caller: this feature cannot be unarchived automatically.
+ */
 export async function readManifest(request: ManifestRequest): Promise<ValidatedSnapshotManifest | null> {
   const { featureDir, docsDir, featureId, dirName } = request;
   try {
