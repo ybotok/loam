@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { coherentFixture, makeProject, runLoam } from "./helpers/harness.js";
 
@@ -22,6 +23,15 @@ describe("harness smoke", () => {
     } finally {
       await p.destroy();
     }
+  });
+
+  it("drives the binary's own program, and refuses `mcp` instead of hanging on a stdin nobody owns", async () => {
+    // runLoam parses against buildProgram() rather than a copy of its
+    // registrations, so `mcp` is registered here too — and its real action
+    // would await process.stdin until the runner's timeout. The harness
+    // replaces that one action with a throw; this pins that it does, because
+    // the failure it prevents is a hang that reads as an unrelated timeout.
+    await expect(runLoam(tmpdir(), "mcp")).rejects.toThrow(/runLoam cannot drive `mcp`/);
   });
 
   it("serialises two overlapping in-process runs, and both come out uncorrupted", async () => {
