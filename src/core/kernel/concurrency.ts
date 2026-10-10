@@ -7,6 +7,16 @@
  * either opens all of them — on a big fleet that is not a faster run, it is a
  * bigger one. The cap and the ordering guarantee travel together because a
  * caller that wants the first cannot afford to lose the second.
+ *
+ * The third answer to "how much may happen at once" is `memo`: the same read
+ * asked for twice in one invocation happens once, both askers sharing the one
+ * in-flight promise. It lives here, in a leaf, because both read indexes —
+ * `core/fleet-context.ts` and the service-model memos it owns
+ * (`core/c4/prefetch/fleet.ts`) — spell every cache they keep with it, and
+ * neither should own the other's idiom. The read index could borrow it from
+ * the package it already imports, but then a rule about caching in general
+ * would live inside the LikeC4 adapter, and the next memo outside `c4/` would
+ * have to import that adapter to obey it.
  */
 import { cpus } from "node:os";
 
