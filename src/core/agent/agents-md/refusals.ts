@@ -168,8 +168,9 @@ filtered-and-ordered row order, \`unowned[]\` listing the rows no rule matched,
 worklists. A CODEOWNERS path that cannot be read, or a line that cannot be
 parsed as \`pattern owner…\`, refuses \`owners-unreadable\` naming the path and
 line — fail-closed, exactly as \`answers-unreadable\` treats the other
-user-named file. Either flag with the \`features\` or \`capabilities\` section
-is refused (\`invalid-option\`).
+user-named file. Either flag with the \`features\`, \`capabilities\`, \`glossary\`
+or \`suites\` section is refused (\`invalid-option\`), as is \`--needs-work\` with
+\`features\` or \`suites\`, and a \`[name]\` after any section but \`suites\`.
 
 \`--strict\` (every targeting mode, \`--all\` included) exits 1 when any error
 or warning exists — \`ok\`-severity findings are confirmations and never trip

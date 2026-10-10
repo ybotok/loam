@@ -804,7 +804,7 @@ human trust and irreversible lifecycle transitions stay under the CLI permission
 
 loam makes no network call, so it syncs with no tracker, dashboard or catalog — and does not need
 to. Every command's `--json` is a stable contract, and the integrations are a few lines of shell
-over it, owned by whoever runs them. Three recipes, each run against `examples/docs`.
+over it, owned by whoever runs them. Four recipes, each run against `examples/docs`.
 
 **Feature work into a tracker.** `loam tasks <FEAT> --json` lists every open unit of a feature:
 `id`, `subject` (the owning service), `claim`, `done` (its `check` is the fact that closes it) and
@@ -852,6 +852,27 @@ loam list --json | jq -r --slurpfile r reports.json '
 
 The day-old cutoff is a policy and yours to set; what is not a policy is that `generatedAt` comes
 from the CI's clock, never loam's, so an old one means that repo stopped reporting.
+
+**Which services must be up for suite X.** A fleet usually keeps that answer by hand — a compose
+file, a CI matrix, a paragraph in a runbook — and it drifts from the journeys it is for. Tag each
+cross-service use case with the suites it runs in (`#suite-smoke` on its `dynamic view`, declared in
+the landscape's `specification`; one journey may carry several) and `loam list suites <name>`
+derives it: the union of the suite's participants, resolved to service ids through the same join the
+step grades use. The participants no service stands for are listed beside them rather than dropped —
+the person who drives the flow, an `#external` topic or partner — because a stand that comes up
+short fails its journey against something nobody was told to start:
+
+```bash
+loam list suites smoke --json | jq -r '
+  if .useCases.unreadable then error("architecture/ did not parse: \(.useCases.error)") else . end
+  | .suites[0] | (.services[] | "up \(.)"), (.unresolved[] | "stand-in \(.element)\(if .external then " (#external)" else "" end)")'
+```
+
+On the example that is three services up — checkout-web, notification-service, order-service — and
+two stand-ins: `customer`, and `kafka.orderEvents`, `#external` through its kind. Tagging a journey
+also opts it in to grading, so a suite cannot list a hop the map does not declare
+(`usecase.step-unbacked`); `ungrouped[]` names the use cases in no suite, and an unknown suite name
+refuses `unknown-target` rather than answering an empty environment.
 
 **LikeC4's own MCP server beside loam's.** The fleet map is plain LikeC4, so LikeC4's MCP server
 runs on the same docs repo with no configuration — `npx likec4 mcp --stdio .` from the docs root

@@ -105,9 +105,9 @@ docs/
 
 There is no `flows/` tree, and there will not be one. A cross-service **interaction flow** is a
 `dynamic view` under `architecture/` — the one place that already holds every cross-service edge —
-tagged with the capability it realizes. A flow that spans services does not belong under one
-service's directory, and the view's steps join to the landscape's own relationships, which is what
-makes the flow checkable rather than merely drawn.
+tagged with the capability it realizes, or with the suites it runs in (below). A flow that spans
+services does not belong under one service's directory, and the view's steps join to the
+landscape's own relationships, which is what makes the flow checkable rather than merely drawn.
 
 A flow that stays INSIDE one service — the hop sequence behind an arch.spec.md requirement whose
 `Covers:` names containers — cannot live under `architecture/`: loam parses that directory as its
@@ -147,6 +147,39 @@ is a views-only document that `loam archive` copies into `architecture/usecases/
 would leave behind — so a flow may draw a hop into a service the feature's own `delta.likec4` adds,
 and a hop into an element the merge does NOT land is refused at plan time rather than archived into
 a map the next reader's `loam validate --all` fails on.
+
+**A fleet flow can also say which SUITE it runs with: `#suite-<name>`.** A suite is a set of
+journeys a test run exercises together — a smoke suite, a payments suite — and a journey joins one
+by carrying the tag on its `dynamic view`, declared like every LikeC4 tag in the landscape's one
+`specification` block (`tag suite-smoke`), so a mistyped suite is a parse error rather than a second,
+empty suite. It is a SEPARATE prefix, not `#cap-`: a capability says what a flow is FOR, a suite says
+what it is RUN WITH, and membership is **many-to-many** — one view may carry several `#suite-` tags,
+and a suite holds as many views as carry its tag, which is why it is a tag and not a directory.
+
+**Tagging is the opt-in, and it grades.** A view carrying only `#suite-` tags — no `#cap-`, no
+`#req-` — IS a use case: every reader takes it (the predicate and the byte gate below now read three
+prefixes), and `loam validate --all` grades its hops like any other's (`usecase.step-unbacked`,
+`usecase.step-contested`, `usecase.step-unlinked`). A journey a test stand is provisioned from must
+be held to the model it is drawn over. The suite tag claims no capability and no requirement, so it
+earns nothing from the capability axis. An UNTAGGED view stays ungraded, exactly as before.
+
+`loam list suites [<name>] [--json]` is the answer the tag exists for: **which services must be up
+for suite X.** For each suite it lists the views carrying the tag, the enumerated services their
+steps resolve to — through the same element→service resolver the step grades use, so a step into
+one of order-service's containers counts order-service — and every participant that resolves to NO
+service, by element id, with whether it (or anything it is drawn inside) carries `#external`: the
+customer who drives the flow, a topic, a partner's API. Those are named and never dropped, because an environment list
+that is silently short comes up, and the journey then fails against something nobody was told to
+start. The payload is `suites[]` (`name`, `views[]` of `{id, file}`, `services[]`, `unresolved[]`
+of `{element, external}`), `ungrouped[]` — the use cases carrying no `#suite-` tag, which every
+per-suite line would otherwise leave out — and `useCases` (`state`: `absent` when the fleet
+declares no use case, `ok`, or `unreadable` with `error`, beside the `unreadable` boolean
+`list capabilities` spells). Over an unreadable `architecture/` the section degrades rather than
+refusing, and `suites` and `ungrouped` are ABSENT rather than `[]`. A `<name>` narrows `suites[]`
+only; an unknown one refuses `unknown-target` with the close names. The listing reads the FLEET
+map's use cases; a `#suite-` tag on a flow inside one service's own project is graded there like any
+other use-case tag, and is not listed — that flow runs inside one service, whose environment is the
+service itself.
 
 ### Two shapes of a service model
 
@@ -1964,13 +1997,15 @@ refusing it, which is why the flattening is a whitelist and not a list of substi
   document declares no requirements yet, it declares none flattening to this slug (close ids
   offered, each already spelled as the tag to write), or two of its ids flatten to one slug.
 
-**Either reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
+**Any reserved prefix opts a view in.** A view carrying `#req-` and no `#cap-` is an author who
 asked to be graded and forgot half the claim; it earns the `unscoped` message rather than silence.
-That opt-in is **one predicate**, and every reader takes it: `loam validate`, `loam diff`,
-`loam delta`, `loam status`, the context and explore packs and `loam list capabilities` all decide
-"is this a use case" the same way, so a flow one of them can see is a flow all of them can see. The
-byte scan that lets a fleet with no use cases skip the LikeC4 load looks for both prefixes for the
-same reason — a gate narrower than the predicate is silence, not a smaller answer.
+A view carrying only `#suite-<name>` is a use case too (see the layout section above). That opt-in
+is **one predicate**, and every reader takes it: `loam validate`, `loam diff`, `loam delta`,
+`loam status`, the context and explore packs, `loam list capabilities` and `loam list suites` all
+decide "is this a use case" the same way, so a flow one of them can see is a flow all of them can
+see. The byte scan that lets a fleet with no use cases skip the LikeC4 load looks for every prefix
+— `cap-`, `req-` and `suite-` — for the same reason: a gate narrower than the predicate is silence,
+not a smaller answer.
 
 Being SEEN is not the same as claiming something, and the difference is worth stating because it
 looks like a gap and is not. A view with no resolved `#cap-` tag claims no capability, so it seeds
