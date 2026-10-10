@@ -12,9 +12,9 @@ import { PassThrough } from "node:stream";
 import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes, type Project } from "./helpers/harness.js";
 import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
-import { captureConsole, runToolArgv, type Sinks } from "../src/commands/mcp/dispatch.js";
+import { captureConsole, resolveRegistrars, toolRunner, type Sinks } from "../src/commands/mcp/dispatch.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
-import { MCP_TOOLS } from "../src/core/mcp/tools.js";
+import { MCP_TOOLS, type McpTool } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
 
 interface SessionResult {
@@ -31,7 +31,7 @@ interface SessionResult {
  * commands resolve loam.json through process.cwd(); serial within the file, so
  * nothing else observes the moved cwd.
  */
-async function drive(cwd: string, chunks: readonly string[], runTool: ToolRunner = runToolArgv): Promise<SessionResult> {
+async function drive(cwd: string, chunks: readonly string[], runTool: ToolRunner = toolRunner()): Promise<SessionResult> {
   const previousCwd = process.cwd();
   process.chdir(cwd);
   try {
@@ -259,48 +259,82 @@ describe("protocol errors surface per call and never kill the loop", () => {
   });
 });
 
+/** What a roster probe reads back: the envelope's error, if the call refused. */
+type ProbeEnvelope = { ok: boolean; error?: { code?: string; message?: string } };
+
 describe("every advertised tool is a command the dispatcher can actually run", () => {
-  it("no tool in MCP_TOOLS answers `unknown command` — the two rosters are one roster", async () => {
+  it("no tool in MCP_TOOLS answers `unknown command` or `internal` — the two rosters are one roster", async () => {
     // The hole this closes shipped once. `MCP_TOOLS` is what `tools/list`
-    // advertises; `readProgram` in dispatch.ts is what `tools/call` runs, and
+    // advertises; `toolRunner` in dispatch.ts is what `tools/call` runs, and
     // its `REGISTRARS` lookup is a separate list because core/ may not import
-    // commands/ (it registers from the table now, and refuses a miss). When
-    // `loam_instructions` and `loam_steps` were added to the first and not the
-    // second, `tools/list` promised fourteen tools and two of them answered
-    // `{ ok: false, error: { code: "invalid-option", message: "unknown
-    // command 'instructions'" } }` — an envelope that reads as the CALLER's
-    // mistake, which is the worst shape a server-side gap can take. Every
-    // suite stayed green: nothing called a tool it had just been told about.
+    // commands/ (it registers from the table now, and refuses a miss at
+    // startup). When `loam_instructions` and `loam_steps` were added to the
+    // first and not the second, `tools/list` promised fourteen tools and two
+    // of them answered `{ ok: false, error: { code: "invalid-option", message:
+    // "unknown command 'instructions'" } }` — an envelope that reads as the
+    // CALLER's mistake, which is the worst shape a server-side gap can take.
+    // Every suite stayed green: nothing called a tool it had just been told
+    // about.
+    //
+    // `unknown command` alone stopped being the symptom once the program was
+    // built from the table: the miss then surfaced as an `internal` envelope
+    // on EVERY call, and this test — asserting only the old message — passed
+    // over exactly the drift it was written for. Both shapes are asserted now.
     //
     // Run with no arguments beyond the command name: most tools then refuse
     // for a real reason (`no-config` in a bare directory), and that is fine —
     // this asserts only that the verb REACHES a command, never that it
     // succeeds.
+    const run = toolRunner();
     for (const tool of MCP_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"]);
+      const res = await run([tool.command, "--json"]);
       expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
-      const envelope = JSON.parse(res.stdout) as { ok: boolean; error?: { message?: string } };
-      const message = envelope.error?.message ?? "";
-      expect(message, `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
+      expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      expect(envelope.error?.code, `${tool.name} -> ${tool.command}: ${envelope.error?.message}`).not.toBe("internal");
     }
   });
 
   it("the opt-in author roster reaches registered commands too", async () => {
+    const run = toolRunner([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]);
     for (const tool of MCP_AUTHOR_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"], [...MCP_TOOLS, ...MCP_AUTHOR_TOOLS]);
+      const res = await run([tool.command, "--json"]);
       expect(res.stdout, `${tool.name} produced no envelope`).not.toBe("");
-      const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
       expect(envelope.error?.message ?? "", `${tool.name} -> ${tool.command}`).not.toContain("unknown command");
+      expect(envelope.error?.code, `${tool.name} -> ${tool.command}: ${envelope.error?.message}`).not.toBe("internal");
     }
+  });
+
+  it("every command either tool table names has a registrar", () => {
+    // The roster probes above prove a call REACHES its command; this proves
+    // the lookup itself, without running anything — the startup check
+    // `loam mcp` makes, asserted for both tables the server can be launched
+    // with.
+    const commands = new Set([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.command));
+    expect(resolveRegistrars(MCP_TOOLS)).toHaveLength(new Set(MCP_TOOLS.map((tool) => tool.command)).size);
+    expect(resolveRegistrars([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS])).toHaveLength(commands.size);
+  });
+
+  it("a table naming a command with no registrar refuses at startup, not per call", () => {
+    // The drift this file guards, injected: one tool with no registrar. The
+    // refusal must come from building the runner — once, when `loam mcp`
+    // starts — and name the command; a runner that existed would have had to
+    // answer every call, the correctly wired ones included, for the sake of
+    // the one tool none of them named.
+    const fake: McpTool = { name: "loam_frobnicate", command: "frobnicate", description: "probe", positionals: [], flags: [] };
+    expect(() => resolveRegistrars([...MCP_TOOLS, fake])).toThrow(/no command registered for MCP tool command 'frobnicate'/);
+    expect(() => toolRunner([...MCP_TOOLS, fake])).toThrow(/'frobnicate'/);
   });
 
   it("without the author roster, no authoring writer is registered at all", async () => {
     // The read-only table is the gate: the program a call runs holds only the
     // commands its active table names, so an argv naming a writer cannot reach
     // one even if something upstream were to build it.
+    const run = toolRunner();
     for (const tool of MCP_AUTHOR_TOOLS) {
-      const res = await runToolArgv([tool.command, "--json"]);
-      const envelope = JSON.parse(res.stdout) as { error?: { message?: string } };
+      const res = await run([tool.command, "--json"]);
+      const envelope = JSON.parse(res.stdout) as ProbeEnvelope;
       expect(envelope.error?.message ?? "", tool.command).toContain(`unknown command '${tool.command}'`);
     }
   });
