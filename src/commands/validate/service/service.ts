@@ -92,7 +92,10 @@ interface ServiceCheck {
    * True when this run ALSO emits a `landscape` target. It decides one thing:
    * whether a landscape parse error's details are repeated here. Under --all
    * they are not — the landscape target already carries them once, and N copies
-   * of one parser's cascade is the whole report.
+   * of one parser's cascade is the whole report. Under --all --base the
+   * landscape is a target only when the branch changed `architecture/`, so the
+   * caller states this per run (`validate.ts`'s `serviceTarget`) rather than
+   * inferring it from `preloaded`: a map handed in is not a map reported.
    */
   landscapeReported?: boolean;
 }
