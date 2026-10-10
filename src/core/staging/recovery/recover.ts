@@ -13,7 +13,9 @@
  *
  * The journaled writers reach it through `openCommitWindow` below — the lock,
  * then this — so the two refusals that can keep a commit window shut are
- * spelled once rather than once per writer.
+ * spelled once rather than once per writer. Archive and unarchive are the
+ * exception: they call it directly, inside their plan, under a lock they took
+ * themselves, and throw its refusal to a handler that maps it.
  */
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
@@ -173,7 +175,7 @@ export interface CommitWindowRefusal {
  * and 0 refuses on first contact; `acquireDocsLockWaiting` says which writers
  * wait and why archive does not.
  *
- * Every writer used to spell this sequence out by hand, and the copy in
+ * Each writer here used to spell this sequence out by hand, and the copy in
  * `verify` once let its recovery refusal keep the lock — one bad answer set
  * became a wedged docs repo for everyone else. So the refusal releases HERE,
  * before it is returned, and an error that is neither refusal releases before
