@@ -13,6 +13,7 @@ import { coherentFixture, makeProject, makeTmpDir, runLoam, treeHashes, type Pro
 import { rm } from "node:fs/promises";
 import { serve, type ToolRunner } from "../src/commands/mcp/serve.js";
 import { captureConsole, resolveRegistrars, toolRunner, type Sinks } from "../src/commands/mcp/dispatch.js";
+import { startMcp } from "../src/commands/mcp/mcp.js";
 import { LOAM_VERSION } from "../src/core/envelope/version.js";
 import { MCP_TOOLS, type McpTool } from "../src/core/mcp/tools.js";
 import { MCP_AUTHOR_TOOLS } from "../src/core/mcp/author-tools.js";
@@ -360,6 +361,44 @@ describe("every advertised tool is a command the dispatcher can actually run", (
     const fake: McpTool = { name: "loam_frobnicate", command: "frobnicate", description: "probe", positionals: [], flags: [] };
     expect(() => resolveRegistrars([...MCP_TOOLS, fake])).toThrow(/no command registered for MCP tool command 'frobnicate'/);
     expect(() => toolRunner([...MCP_TOOLS, fake])).toThrow(/'frobnicate'/);
+  });
+
+  it("`loam mcp` itself refuses that table before serving — no startup line, no frame", async () => {
+    // The two assertions above pin `toolRunner`; this pins the WIRING that
+    // calls it. `startMcp` is the action's body with the stdio triple
+    // injected, so a rewrite to `(argv) => toolRunner(tools)(argv)` — a
+    // runner per call, the refusal moved back onto every `tools/call` —
+    // fails here: the server would log its startup line, read the ended
+    // input and resolve, and nothing would have refused.
+    const fake: McpTool = { name: "loam_frobnicate", command: "frobnicate", description: "probe", positionals: [], flags: [] };
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const log = new PassThrough();
+    const written: string[] = [];
+    output.on("data", (chunk) => written.push(String(chunk)));
+    log.on("data", (chunk) => written.push(String(chunk)));
+    input.end(JSON.stringify(request(1, "ping")) + "\n");
+    let refused: unknown;
+    try {
+      await startMcp([...MCP_TOOLS, fake], { input, output, log });
+    } catch (err) {
+      refused = err;
+    }
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toMatch(/no command registered for MCP tool command 'frobnicate'/);
+    expect(written).toEqual([]);
+  });
+
+  it("`loam mcp` serves the table it was started with — tools/list advertises the author roster under --author", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const log = new PassThrough();
+    const out: string[] = [];
+    output.on("data", (chunk) => out.push(String(chunk)));
+    input.end(JSON.stringify(request(1, "tools/list")) + "\n");
+    await startMcp([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS], { input, output, log });
+    const frame = JSON.parse(out.join("").trim()) as { result: { tools: Array<{ name: string }> } };
+    expect(frame.result.tools.map((tool) => tool.name)).toEqual([...MCP_TOOLS, ...MCP_AUTHOR_TOOLS].map((tool) => tool.name));
   });
 
   it("without the author roster, no authoring writer is registered at all", async () => {
