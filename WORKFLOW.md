@@ -315,11 +315,11 @@ repository, while the runtime page cannot go out of date the same way.
 
 `AGENTS.md` — the one file `init` lays down that every host auto-loads, and so the first thing an
 agent reads — now works the same way, which changes the reading order. It is orientation only (the
-layout, the cycle, what gates and what only advises, at 8,762 bytes rather than 109,399), and the
-four **reference pages** it used to carry inline come out of the binary at the moment the question
-arises: `loam instructions loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, each
-taking no arguments and printing whole, listed beside the six workflows by a bare
-`loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
+layout, the cycle, what gates and what only advises, held under a 12,000-byte ceiling a test enforces
+where it used to be 109,399 bytes), and the four **reference pages** it used to carry inline come
+out of the binary at the moment the question arises: `loam instructions loam-codes`, `loam-spine`,
+`loam-authoring` and `loam-done-check`, each taking no arguments and printing whole, listed beside
+the six workflows by a bare `loam instructions`. `init` writes no file for any of them, so nothing new landed in the repo.
 
 | Workflow | When | What it drives |
 |---|---|---|
@@ -408,15 +408,15 @@ Every command takes `--json`, and the contract is built so an agent never has to
 - **Findings carry stable codes** — `c4.valid`, `spine.op-undefined`, `coherence.ok`. Branch on the
   code. Prose gets reworded; codes do not.
 - **The protocol has a narrowed form, and one code is answerable as data** —
-  `loam instructions loam-check` is 84,151 bytes, almost all of it the per-code fix tables, and
-  `--no-fix-tables` prints the same page at 3,541 with each table's scope paragraph kept. Branch on
-  the code, then `loam explain <code> --json` for the two or three a run reported (473 bytes each),
-  or `loam explain --codes --json` once for the whole vocabulary — 293 finding codes and 46 refusal
-  codes, 339 of the 390 loam emits. The four families no fix table grades (`doctor.*`, `next.*`,
-  `diff.*`, `gate.*`) are among them, so a code read out of a `status`, `doctor`, `diff` or `gate`
-  payload is answerable as data like any other; the 51 that are not are the OpenSpec migration
-  surface (`openspec.*`, `mapping.*`), which an agent meets once before the repository is governed
-  at all, and two `ok`-severity confirmations.
+  `loam instructions loam-check` is almost all per-code fix tables, and `--no-fix-tables` prints the
+  same page in a few kilobytes with each table's scope paragraph kept. Branch on the code, then
+  `loam explain <code> --json` for the two or three a run reported, or `loam explain --codes --json`
+  once for the whole vocabulary — every finding and refusal code `loam explain` answers. The four
+  families no fix table grades (`doctor.*`, `next.*`, `diff.*`, `gate.*`) are among them, so a code
+  read out of a `status`, `doctor`, `diff` or `gate` payload is answerable as data like any other;
+  the codes that are not are the OpenSpec migration surface (`openspec.*`, `mapping.*`), which an
+  agent meets once before the repository is governed at all, and a couple of `ok`-severity
+  confirmations.
 - **`validate --json` already carries the fix for every code it raised** — `fixes` is a map keyed by
   code, so joining `findings[].code` to `fixes[code]` answers "what now" out of the payload you are
   holding: no `loam explain` round trip per code, and no fix table loaded into context to read one.

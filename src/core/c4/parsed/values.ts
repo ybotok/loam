@@ -9,7 +9,9 @@
  * (`../likec4.ts`) that calls them, because the adapter is at its line limit and
  * because "decode a value LikeC4 left untyped" is a subject of its own: the
  * specification reader beside this file is the same subject on a different
- * corner of the same object.
+ * corner of the same object. The ORDER relationships come back in is one more
+ * such corner — LikeC4 promises none, and the one it happens to give changes
+ * between runs — so `compareRels` lives here too.
  */
 
 /**
@@ -51,4 +53,70 @@ export function descText(d: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * The fields of a relationship its order is decided on — `Rel` in
+ * `../likec4.ts`, stated structurally because that module imports this one and
+ * a type imported back would close a cycle.
+ */
+export interface RelKeys {
+  readonly source: string;
+  readonly target: string;
+  readonly title?: string;
+  readonly op?: string;
+  readonly publishes?: string;
+  readonly consumes?: string;
+  readonly tags: readonly string[];
+}
+
+/**
+ * The ONE order every loader hands relationships back in: by source, then
+ * target, title, `op`, `publishes`, `consumes` and tags — plain code-unit
+ * compares, so the order is a function of the documents' text alone and never
+ * of the locale, the machine or the run. Two edges equal on every key are equal
+ * in every field `Rel` (`../likec4.ts`) carries, so which of them comes first
+ * cannot be seen. `flattenModel` there sorts with it; it lives here, beside the
+ * other reads of LikeC4's parse output that cannot be taken at face value,
+ * because the adapter is at its line limit.
+ *
+ * LikeC4 does not give one, for two measured reasons (1.59.2). Its parsed
+ * model indexes relations in a plain object keyed by an id HASHED FROM THE
+ * DOCUMENT'S URI — and every loader stages documents under a fresh
+ * crypto-random folder per invocation (`../workspace.ts` says why), so the ids
+ * change on every run. A JavaScript object enumerates integer-like keys
+ * numerically ahead of every other key, so whenever a hash comes out all
+ * digits (about one hash in 2,200) that edge jumps to the front of the list,
+ * on that run only. And inside a project of several documents the base order
+ * is whichever file Langium's concurrent folder walk finished reading first.
+ * The first reason is what failed a scheduled CI run on 2026-09-28:
+ * `loadProjectBatch` and `loadProject` returned one service's two edges in
+ * opposite orders on an unchanged commit — and on a fleet map of a few hundred
+ * edges it would reorder some run's findings far more often than that.
+ *
+ * Declaration order is therefore NOT what a reader gets, and nothing may read
+ * meaning into the position of an edge: what the `Rel` list promises is the
+ * same order for the same documents, which is what the text report and the
+ * `--json` envelope being diffed between runs and machines needs.
+ */
+export function compareRels(a: RelKeys, b: RelKeys): number {
+  // An absent field sorts ahead of every present one, the empty string
+  // included, so "no title" and "an empty title" cannot tie. Tags are LikeC4
+  // identifiers, which cannot contain the comma that joins them.
+  const opt = (value: string | undefined): string => (value === undefined ? "" : `=${value}`);
+  const keys = (r: RelKeys): string[] => [
+    r.source,
+    r.target,
+    opt(r.title),
+    opt(r.op),
+    opt(r.publishes),
+    opt(r.consumes),
+    r.tags.join(","),
+  ];
+  const ka = keys(a);
+  const kb = keys(b);
+  for (let i = 0; i < ka.length; i++) {
+    if (ka[i] !== kb[i]) return ka[i]! < kb[i]! ? -1 : 1;
+  }
+  return 0;
 }

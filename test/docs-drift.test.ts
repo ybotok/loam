@@ -22,11 +22,45 @@ async function version(): Promise<string> {
 }
 
 describe("mutable release facts", () => {
-  it("derives the README version from package.json", async () => {
+  it("derives the README version from package.json, as the version of this checkout", async () => {
     const readme = flat(await read("README.md"));
     const current = await version();
-    expect(readme).toContain(`**Pre-release: \`${current}\`**`);
-    expect(readme).toContain(`currently \`${current}\``);
+    expect(readme).toContain(`**Pre-release: \`${current}\`** is the version this checkout's \`package.json\` names`);
+    expect(readme).toContain(`This checkout is \`${current}\``);
+  });
+
+  /**
+   * The test above is exactly why the README must never say the version it
+   * names is PUBLISHED. It derives that version from package.json, and the
+   * version is bumped before the publish runs — so a sentence calling it "the
+   * newest published version" was true by construction of the bump and false
+   * whenever the publish then failed. That happened to 0.2.0-alpha.8: its
+   * release run died at `npm ci` on a lockfile npm-on-Windows had stripped, and
+   * the README went on calling it published for weeks while npm served alpha.7.
+   * The repository cannot know what npm serves; the dist-tags can, so README
+   * points at them and this pins that it keeps doing so.
+   */
+  it("never asserts that the checkout's version is published — it names the dist-tags instead", async () => {
+    const readme = flat(await read("README.md"));
+    expect(readme).not.toMatch(/newest published/i);
+    expect(readme).not.toMatch(/\b\w+ published release of\b/i);
+    expect(readme).not.toMatch(/always installs this line/i);
+    expect(readme).toContain("the npm dist-tags are the source of truth");
+    expect(readme).toContain("`npm view @ybotok/loam dist-tags`");
+  });
+
+  it("CHANGELOG's section for the checkout's version does not promise a dist-tag installs it", async () => {
+    // The same root cause one file over: the section is written in the commit
+    // that bumps the version, before any publish, so "`npm i …@alpha` installs
+    // it" is a claim about an event that has not happened yet — and it stayed
+    // in alpha.3's and alpha.8's sections after both publishes failed.
+    const changelog = await read("CHANGELOG.md");
+    const current = await version();
+    const start = changelog.indexOf(`## [${current}]`);
+    if (start === -1) return;
+    const end = changelog.indexOf("\n## [", start + 1);
+    const section = flat(changelog.slice(start, end === -1 ? undefined : end));
+    expect(section).not.toMatch(/`npm i @ybotok\/loam@\w+` installs it/);
   });
 
   it("does not restore superseded publication claims", async () => {

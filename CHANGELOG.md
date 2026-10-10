@@ -59,6 +59,48 @@ diagnostics LikeC4 hands loam, and one warning that stops cascading.
   `loam gate` "landscape cannot be used" message raw — 173 KB and 152 KB — and now goes through the
   same spelling as every other diagnostic, which adds its 1-based `L<n>:` line (23 KB and 2 KB).
 
+### Fixed — `doctor.agent-files-stale` fires on a changed body, not on every release
+
+No code, flag, path or payload key was added, changed or retired; what a repo NOTICES is that
+`loam doctor` stops warning about generated command and skill files whose only difference is the
+version stamp.
+
+- The stamp sits inside every generated command and skill file, so every release used to turn every
+  one of them stale in every repo, even when the release had not changed a word of the pointer — a
+  warning that is always on, which then hid the release where a pointer really did change. A file is
+  now stale only when its body, the stamp line set aside, is not what this loam writes, AND its stamp
+  is missing or older. Line endings do not count (a Windows checkout that converts them to CRLF is
+  not a change). A customized body under a current stamp stays quiet, as before. Same code, same severity;
+  the `agents.staleFiles` list in `loam doctor --json` simply stops naming stamp-only files.
+
+### Fixed — relationship order is the same on every run
+
+No code, flag, path or payload key was added, changed or retired; lists built from relationships
+come back in one stable order.
+
+- LikeC4 indexes relationships by a hash of the document's path, and loam stages documents under a
+  fresh random folder per run, so an edge whose hash happened to come out all digits (about one in
+  2,200) jumped to the front of the list on that run only; inside a project of several documents the
+  base order was whichever file finished reading first. A scheduled CI run failed on it. Every loader
+  now returns relationships sorted by source, target, title, `op`, `publishes`, `consumes` and tags,
+  so anything listed from edges — `loam explore`'s neighbours, the candidates a
+  `usecase.step-contested` finding names, findings emitted per edge — keeps one order between runs
+  and machines. That order is no longer the declaration order.
+
+### Fixed — the repository no longer claims a version is published
+
+No code, flag, path or payload key was added, changed or retired; only documentation moved.
+
+- README called the version in `package.json` "the newest published version", by construction of
+  the test that pinned it — and kept saying so for `0.2.0-alpha.8`, whose publish failed. It now
+  names that version as the version of the checkout and points at the npm dist-tags as the source of
+  truth; the drift test forbids the publication claim in README and in the CHANGELOG section of the
+  checkout's own version. The `0.2.0-alpha.8` section below carries a dated note that it was never
+  published.
+- README and WORKFLOW no longer quote byte sizes and code counts that had gone stale (the
+  `loam-check` page, the AGENTS.md orientation, the finding-code total). A finding- or refusal-code
+  count quoted on a shipped page is now graded against `loam explain --codes`.
+
 ### Added
 
 - **New warning `frontmatter.owner-mismatch`** from `loam validate` (`--service` and `--all`) when
@@ -105,10 +147,22 @@ diagnostics LikeC4 hands loam, and one warning that stops cascading.
   `### Requirement: Invoice totals ###` stages as `Invoice totals` and a MODIFIED delta naming it
   no longer fails `loam validate` as `delta.modified-unknown`. loam's own parser is unchanged.
 
+### Contributors — release preflight and test harness
+
+- `npm run release:check` runs `npm ci --dry-run --offline` on a scratch copy of `package.json` and
+  `package-lock.json` (new `scripts/lockfile-check.mjs`): the check that would have refused
+  `0.2.0-alpha.8`'s stripped lockfile before the tag instead of after it.
+- The test harness creates its temporary directories under the canonical (symlink-resolved) temp
+  root, so the suite passes on macOS without a `TMPDIR` override.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
-The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:
-`npm i @ybotok/loam@alpha` installs it. Everything in it is additive — no stable code was added,
+The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line.
+**Not published (noted 2026-10-10):** the `v0.2.0-alpha.8` tag was cut, but its release run failed at
+`npm ci` — npm on Windows had stripped other platforms' optional packages from the tagged commit's
+`package-lock.json` during the version bump (restored on `main` the same day) — so the publish never
+ran. `npm i @ybotok/loam@alpha` does not install this version, and `npm view @ybotok/loam dist-tags`
+is the record of what does. Everything in it is additive — no stable code was added,
 changed or retired, no existing flag, path or payload key moved, and nothing a repository has
 committed needs to change. What a repo NOTICES after upgrading: one new read-only command
 (`loam tasks`), new keys on two `--json` payloads it may already consume, and a corrected SCHEMA

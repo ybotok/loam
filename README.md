@@ -7,12 +7,14 @@
 [![CI](https://github.com/ybotok/loam/actions/workflows/ci.yml/badge.svg)](https://github.com/ybotok/loam/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ybotok/loam/alpha.svg?label=npm%20alpha)](https://www.npmjs.com/package/@ybotok/loam)
 
-> **Pre-release: `0.2.0-alpha.8`**, the seventh published release of the 0.2 line and the newest published
-> version of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). It publishes under the
-> `alpha` npm dist-tag — which is what the badge above reads: `npm i @ybotok/loam@alpha`, or the
-> exact version, always installs this line. `latest` is moved onto a release by hand once it has
-> published, so a plain `npm i @ybotok/loam` resolves to an earlier release until it is moved. See
-> [Status](#status).
+> **Pre-release: `0.2.0-alpha.8`** is the version this checkout's `package.json` names, on the 0.2
+> line of [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam). Whether npm serves it is not
+> something this file can know — a version is cut before its publish runs, and a publish can fail
+> after — so **the npm dist-tags are the source of truth**: the badge above reads the `alpha` tag, and
+> `npm view @ybotok/loam dist-tags` prints every tag. Prereleases publish under `alpha`, so
+> `npm i @ybotok/loam@alpha` installs the newest one that did. `latest` is moved onto a release by
+> hand once it has published, so a plain `npm i @ybotok/loam` resolves to an earlier release until it
+> is moved. See [Status](#status).
 
 `loam` keeps an authored C4 model, requirements, API and event contracts, permissions, domain
 vocabulary and verification evidence in explicit agreement as a system changes. The same lifecycle
@@ -365,8 +367,8 @@ cannot hold.
 | `loam explore [<service>...]` | `--op <operationId>` `--capability <id>` `--as <FEAT>` | Read the fleet around a change nobody has written down yet: the ring one hop out, each service's maturity and living operations, the features already in flight over the same ground, and the `loam new` line the seeds imply |
 | `loam context <service>` | `--feature <FEAT>` | Assemble one service's docs slice — living requirements verbatim, both contracts, the fleet edges around it, permissions, capabilities, provenance, and every active feature's delta over it — as one deterministic briefing |
 | `loam steps` | `--service <id>` `--duplicates` `--json` | Inventory the step phrases of one service's scenarios: how many distinct steps its suite is written in, how few definitions cover most of them, and which phrases differ only by an article or a trailing clause. Reads the living specs, writes nothing — the work-list a team writes its step definitions from, diffed against the optional `services/<svc>/steps.yaml` catalogue when one exists |
-| `loam instructions [<workflow>] [args...]` | `--no-fix-tables` | Print one of the six workflow protocols, the separate `loam-report` support protocol, or one of the four reference pages `loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, version-matched to this binary. Workflow `$1`/`$2` placeholders are filled; support/reference pages take no arguments. Reads no config. `--no-fix-tables` collapses the per-code fix tables to a line each, keeping the paragraph that says which scope graded them: `loam-check`'s page goes 84,151 bytes to 3,541, while a support/reference page holds no such table and comes back byte-identical |
-| `loam explain [<subject>]` | `--codes` | Explain a finding code, a refusal code, or a concept term. Most finding prose is parsed at runtime from the shipped fix tables, so it cannot drift from the binary; the `doctor.*`, `next.*`, `diff.*` and `gate.*` families, which no fix table grades, are answered from a registry written beside them. Every text-mode refusal prints `<code>  ·  loam explain <code>` on stderr and every non-`ok` finding line carries its code in parentheses, so the lookup is reachable without re-running under `--json`. Omit the subject to list the terms; `--codes` lists the whole vocabulary — 293 finding codes and 46 refusal codes, each row the same answer `explain <code> --json` gives for that one |
+| `loam instructions [<workflow>] [args...]` | `--no-fix-tables` | Print one of the six workflow protocols, the separate `loam-report` support protocol, or one of the four reference pages `loam-codes`, `loam-spine`, `loam-authoring` and `loam-done-check`, version-matched to this binary. Workflow `$1`/`$2` placeholders are filled; support/reference pages take no arguments. Reads no config. `--no-fix-tables` collapses the per-code fix tables to a line each, keeping the paragraph that says which scope graded them: `loam-check`'s page, almost all of it fix tables, comes back in a few kilobytes, while a support/reference page holds no such table and comes back byte-identical |
+| `loam explain [<subject>]` | `--codes` | Explain a finding code, a refusal code, or a concept term. Most finding prose is parsed at runtime from the shipped fix tables, so it cannot drift from the binary; the `doctor.*`, `next.*`, `diff.*` and `gate.*` families, which no fix table grades, are answered from a registry written beside them. Every text-mode refusal prints `<code>  ·  loam explain <code>` on stderr and every non-`ok` finding line carries its code in parentheses, so the lookup is reachable without re-running under `--json`. Omit the subject to list the terms; `--codes` lists the whole vocabulary — every finding code and every refusal code it can answer, each row the same answer `explain <code> --json` gives for that one |
 | `loam open` | `--root <dir>` `--out <file>` `--force` | Write a `.code-workspace` joining the docs repo and every service checkout whose committed `loam.json` binds to it. Never overwrites without `--force` |
 | `loam mcp` | `--author` | Serve fifteen read tools, version-matched instruction resources and a declared envelope output schema over MCP. `--author` adds `new`, `rebase`, `gherkin` and an archive dry-run; it never exposes `vouch`, verification recording or a committing archive — [the MCP server](WORKFLOW.md#the-mcp-server) |
 | `loam new <FEAT>` | `--title <text>` `--touches <id>` `--new-service <id>` `--capability <id>` | Scaffold a feature: intent, C4 delta, a requirement delta per service named by `--touches`/`--new-service`, and a capability delta per promise named by `--capability` (all repeatable) |
@@ -444,29 +446,29 @@ run. That split exists because the two go stale in opposite directions and only 
 fixable: embedded protocol text eventually describes a different loam with total confidence, while
 the command cannot. Pointing at the binary is also what makes the protocol
 affordable to load: `loam instructions loam-check --no-fix-tables` prints the same page with its
-per-code fix tables collapsed to a line each — 84,151 bytes down to 3,541 — and
-`loam explain <code> --json` answers, in 473 bytes, whichever two or three of those rows a run
-actually reported. A copy frozen into the generated file would have charged the full 84 KB every
-session, and gone stale doing it. `AGENTS.md` itself was the one generated file that argument did
+per-code fix tables collapsed to a line each — from a page that is almost all tables down to a few
+kilobytes — and `loam explain <code> --json` answers, one code at a time, whichever two or three of
+those rows a run actually reported. A copy frozen into the generated file would have charged the
+whole page every session, and gone stale doing it. `AGENTS.md` itself was the one generated file that argument did
 not reach — it was the process contract *and* the reference manual, and every session paid for all
 of it — so four **reference pages** now come out of the binary instead, printed by
 `loam instructions`: `loam-codes` (which codes each invocation can raise), `loam-spine` (every join
 between the artifacts, and the `Based-On:` pins), `loam-authoring` (`arch.spec.md`, the generated
 Gherkin suite, frontmatter) and `loam-done-check` (how `loam verify` derives its claims, and
 verified versus attested). What stayed is what a reader needs to form a question at all: the layout,
-the cycle, which element is which service, the validator's rules and the archive gate. The current
-orientation is **8,762 bytes**, below both the 32,768-byte Codex chain limit and the smaller 12,000
-workspace-rule ceiling. Detailed pages are fetched only when the task reaches them. `loam init`
+the cycle, which element is which service, the validator's rules and the archive gate. The
+orientation stays below both the 32,768-byte Codex chain limit and the smaller 12,000-byte
+workspace-rule ceiling — `test/agents.test.ts` fails the build the day it does not. Detailed pages are fetched only when the task reaches them. `loam init`
 writes **no file** for a reference page: a page printed on demand describes the loam you are
 running, not the one that scaffolded the repository.
 
 The code inventory is that same split applied twice, and the largest page is what it left behind.
-`loam instructions loam-codes` lists which codes each invocation can raise — 331 of the 335 the
-scaffolded docs name between them, the one fact no other surface carries — and no longer says what
+`loam instructions loam-codes` lists which codes each invocation can raise — nearly every code the
+scaffolded docs name, and the one fact no other surface carries — and no longer says what
 any of them means, because `loam explain <code>` answers that from the binary actually running and a
 paragraph written once at `init` cannot. Dropping the duplicated gloss came first and took the file
 from 120,896 bytes to 109,399; moving the inventory off it took the remaining 79,679. The OpenSpec
-migration codes keep their notes inline on the page, because they are 49 of the 51 codes
+migration codes keep their notes inline on the page, because they are almost all of the codes
 `loam explain` does not answer yet, and a pointer to an explanation that does not exist is worse
 than the prose it replaced.
 
@@ -537,15 +539,17 @@ authored-capability axes with the `Realizes:` join, use cases graded as `dynamic
 `architecture/obligations.yaml` architectural obligations checked through `#obl-` tags and
 `Covers:`. Known limits, each with its owner in [ROADMAP.md](ROADMAP.md): the scheduled CI
 `stability` job has still to be observed green. Speculative `render`, health composition and UI
-generation come later. Behind that status stand **176 test files** (counted 2026-10-10): the count is graded
+generation come later. Behind that status stand **177 test files** (counted 2026-10-10): the count is graded
 against a live readdir by `test/docs-facts.test.ts`, so this sentence fails the suite the moment it
 trails the tree.
 
-The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam), currently
-`0.2.0-alpha.8`: the unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships
-under the maintainer's own npm user scope. Releases are tag-driven and maintainer-only
-([CONTRIBUTING.md](CONTRIBUTING.md)); the version this line names is pinned to `package.json` by a
-drift test, so it cannot silently trail a release.
+The package is published as [`@ybotok/loam`](https://www.npmjs.com/package/@ybotok/loam): the
+unscoped `loam` name is taken by an unrelated GDAL wrapper, so the package ships under the
+maintainer's own npm user scope. Releases are tag-driven and maintainer-only
+([CONTRIBUTING.md](CONTRIBUTING.md)). This checkout is `0.2.0-alpha.8` — a version pinned to
+`package.json` by a drift test, so it is always the version of the checkout you are reading, and for
+that reason it says nothing about whether that version reached npm.
+`npm view @ybotok/loam dist-tags` is the answer to what installs.
 
 ## Contributing
 
