@@ -32,7 +32,7 @@ export interface ProducerQuestion {
   events: AsyncapiDoc;
   /** The deduped message names this service consumes, from edges and requirement lines alike. */
   consumed: readonly string[];
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 // The fleet question, and the one check on either spine that a single

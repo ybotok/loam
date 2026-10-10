@@ -40,9 +40,9 @@ import type { DocsDir } from "../../kernel/ids/dirs.js";
 export async function featureStatus(
   docsDir: DocsDir,
   feature: FeatureEntry,
-  opts: { service?: string; boundService?: string; context?: FleetContext } = {},
+  opts: { service?: string; boundService?: string; context: FleetContext },
 ): Promise<FeatureStatusReport> {
-  const context = opts.context ?? new FleetContext();
+  const { context } = opts;
   const interrupted = await readInterruptedCommit(docsDir);
   const services = await featureSpecServices(feature.dir, context);
   const narrowed = opts.service;

@@ -81,7 +81,7 @@ export interface AttestInput {
   /** The ids the map draws at FLEET level: a datastore among them is a peer, and the peer census owns it. */
   drawnIds: ReadonlySet<string>;
   /** Under `--all` every model.likec4 is already in this memo, so the reads below are hits. */
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 export async function mapAttestation(input: AttestInput): Promise<MapAttestation> {
@@ -91,7 +91,6 @@ export async function mapAttestation(input: AttestInput): Promise<MapAttestation
   // as a standalone one attests the calls it draws in its own file. Memoised in
   // the index, so under `--all` these are hits. Pooled and joined on the entry,
   // never by index.
-  const context = input.fleet ?? new FleetContext();
   const present = input.entries.filter((entry) => existsSync(servicePathsAt(entry.dir).model));
   // ONE workspace for the fleet's models rather than one per service. Both
   // answers below are about the WHOLE fleet — who else reaches this store is not
@@ -100,7 +99,7 @@ export async function mapAttestation(input: AttestInput): Promise<MapAttestation
   // workspace per un-narrowed service. An accelerator with `prefetchLikeC4`'s
   // failure story exactly: a batch that cannot run seeds nothing, and every read
   // below falls back to its own load.
-  await context.prefetchServiceModels(input.docsDir, present.map((entry) => servicePathsAt(entry.dir)));
+  await input.fleet.prefetchServiceModels(input.docsDir, present.map((entry) => servicePathsAt(entry.dir)));
   const loaded = await inOrder(present, async (entry) => ({
     entry,
     // CONTAINED, for `fleet/load.ts unreadableLandscape`'s reason: this runs on
@@ -110,7 +109,7 @@ export async function mapAttestation(input: AttestInput): Promise<MapAttestation
     // no report at all for the ninety-nine services that are fine. A model that
     // could not be READ contributes nothing here, exactly as one that did not
     // parse does; `service.unreadable` is its own target's finding.
-    model: await context.serviceModel(input.docsDir, servicePathsAt(entry.dir)).catch(() => null),
+    model: await input.fleet.serviceModel(input.docsDir, servicePathsAt(entry.dir)).catch(() => null),
   }));
 
   const models: AttestedModel[] = [];

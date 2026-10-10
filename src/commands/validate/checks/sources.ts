@@ -35,7 +35,7 @@ export async function sourceScopeFindings(
   docsDir: DocsDir,
   service: PathableService,
   repoDir: string | undefined,
-  fleet?: FleetContext,
+  fleet: FleetContext,
 ): Promise<Finding[]> {
   const paths = await locateServicePaths(docsDir, service, fleet);
   const out: Finding[] = [];

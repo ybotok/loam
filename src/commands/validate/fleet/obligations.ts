@@ -44,7 +44,6 @@ import { servicePathsAt } from "../../../core/repo/paths.js";
 import { type ServiceEntry } from "../../../core/repo/entries.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { FleetContext } from "../../../core/fleet-context.js";
-import { readRequirementsDocument, parseRequirements } from "../../../core/document/parse.js";
 import { coversEntries } from "../checks/requirements.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
@@ -64,7 +63,7 @@ export interface ObligationCheck {
    */
   land: LoadedDoc;
   services: ServiceEntry[];
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 /**
@@ -289,11 +288,7 @@ async function livingCovers(check: ObligationCheck): Promise<CoversEntry[]> {
     const paths = servicePathsAt(service.dir);
     for (const path of [paths.spec, paths.archSpec]) {
       if (!existsSync(path)) continue;
-      const reqs =
-        check.fleet === undefined
-          ? parseRequirements(await readRequirementsDocument(path))
-          : await check.fleet.readRequirements(path);
-      entries.push(...coversEntries(reqs));
+      entries.push(...coversEntries(await check.fleet.readRequirements(path)));
     }
   }
   return entries;

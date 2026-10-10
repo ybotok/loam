@@ -11,10 +11,9 @@
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { readFile } from "node:fs/promises";
-import { loadFile, type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
+import { type Elem, type LoadedDoc } from "../../../core/c4/likec4.js";
 import { serviceResolver } from "../../../core/c4/resolve/service.js";
 import { landscapePath as landscapeFile, servicePathsAt } from "../../../core/repo/paths.js";
-import { readModelShapes } from "../../../core/c4/service-model/shape.js";
 import { serviceIdFindings } from "../../../core/repo/entries.js";
 import { listFleetTree, listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
@@ -51,8 +50,8 @@ import { isUseCase } from "../../../core/usecases/fleet.js";
  *
  * `capability.requirement-unrealized` says a business promise is kept by
  * nobody. A use case is one of the two things that can keep it, so a run that
- * could not read the flows must not make that claim: no preload (a single-target
- * run) and a project that did not parse are both "loam did not look", never
+ * could not read the flows must not make that claim: no map at all (`null`)
+ * and a project that did not parse are both "loam did not look", never
  * "there is nothing there". A preload that DID parse and declares no views is a
  * real, empty answer and grades normally.
  *
@@ -63,8 +62,8 @@ import { isUseCase } from "../../../core/usecases/fleet.js";
  * matched for want of an input that could tell them apart. A `#req-`-only view
  * is exactly that input.
  */
-function gradableFlows(preloaded: LoadedDoc | null | undefined): readonly ParsedView[] | null {
-  if (preloaded === null || preloaded === undefined || preloaded.errors.length > 0) return null;
+function gradableFlows(preloaded: LoadedDoc | null): readonly ParsedView[] | null {
+  if (preloaded === null || preloaded.errors.length > 0) return null;
   return (preloaded.views ?? []).filter(isUseCase);
 }
 
@@ -95,8 +94,8 @@ function gradableFlows(preloaded: LoadedDoc | null | undefined): readonly Parsed
  */
 export async function validateLandscape(
   docsDir: DocsDir,
-  preloaded?: LoadedDoc | null,
-  fleet?: FleetContext,
+  preloaded: LoadedDoc | null,
+  fleet: FleetContext,
 ): Promise<TargetReport> {
   const path = landscapeFile(docsDir);
   const findings: Finding[] = [];
@@ -128,7 +127,7 @@ export async function validateLandscape(
   // is what `entries` is here even under `--base` — `validate --all` narrows the
   // TARGETS it grades and never the fleet the renderer would load.
   const models = entries.map((entry) => servicePathsAt(entry.dir).model);
-  const shapes = fleet === undefined ? await readModelShapes(models) : await fleet.modelShapes(models);
+  const shapes = await fleet.modelShapes(models);
   // A model and the renderer's project files disagreeing is a fact about
   // `services/` too, graded here for `service.id-invalid`'s reason: it holds
   // whether or not the map parses. One warning per service per disagreement;
@@ -201,7 +200,7 @@ export async function validateLandscape(
       findings.push(conflict);
       return report;
     }
-    land = preloaded ?? (fleet === undefined ? await loadFile(path) : await fleet.loadLikeC4(path));
+    land = preloaded ?? (await fleet.loadLikeC4(path));
   } catch (err) {
     land = unreadableLandscape(err);
   }
@@ -263,14 +262,12 @@ export async function validateLandscape(
   // questions at once and only one of them can be true at a time — either that
   // project does not parse (`c4.fleet-project-invalid`), or it parsed and its
   // view-id census is the real one.
-  const merged = fleet === undefined
-    ? { kind: "skipped" as const }
-    : await fleetProjectFindings({
-        docsDir, entries, shapes, fleet, tree,
-        architecture: land,
-        mapExcluded: projects.mapExcluded,
-        known: new Set(entries.map((s) => s.id)),
-      });
+  const merged = await fleetProjectFindings({
+    docsDir, entries, shapes, fleet, tree,
+    architecture: land,
+    mapExcluded: projects.mapExcluded,
+    known: new Set(entries.map((s) => s.id)),
+  });
   if (merged.kind === "invalid") findings.push(...merged.findings);
   // Beside staleness, and for the same file: an authored view id that collides
   // with one loam mints into it takes the whole root project down in the
@@ -344,7 +341,7 @@ export async function validateLandscape(
     resolve: landSvcOf,
     standsForService: isService,
     drawnIds,
-    ...(fleet === undefined ? {} : { fleet }),
+    fleet,
   });
   const attested = attestation.models;
   const consumers = consumerCensus({ relationships: land.relationships, services, resolve: landSvcOf, attested });
