@@ -168,9 +168,11 @@ for suite X.** For each suite it lists the views carrying the tag, the enumerate
 steps resolve to — through the same element→service resolver the step grades use, so a step into
 one of order-service's containers counts order-service — and every participant that resolves to NO
 service, by element id, with whether it (or anything it is drawn inside) carries `#external`: the
-customer who drives the flow, a topic, a partner's API. Those are named and never dropped, because an environment list
-that is silently short comes up, and the journey then fails against something nobody was told to
-start. The payload is `suites[]` (`name`, `views[]` of `{id, file}`, `services[]`, `unresolved[]`
+customer who drives the flow, a topic, a partner's API. The walk up stops at the first element
+bound to or titled for a service, as `loam gate`'s partner reading does, so a service drawn inside
+an `#external` grouping is still ours. Those are named and never dropped, because an environment
+list that is silently short comes up, and the journey then fails against something nobody was
+told to start. The payload is `suites[]` (`name`, `views[]` of `{id, file}`, `services[]`, `unresolved[]`
 of `{element, external}`), `ungrouped[]` — the use cases carrying no `#suite-` tag, which every
 per-suite line would otherwise leave out — and `useCases` (`state`: `absent` when the fleet
 declares no use case, `ok`, or `unreadable` with `error`, beside the `unreadable` boolean
