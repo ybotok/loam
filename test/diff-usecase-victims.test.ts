@@ -320,8 +320,9 @@ describe("loam diff — the use case a removal breaks", () => {
     // The asymmetry this pins. `validate --all` graded a `#req-`-only flow hop by
     // hop while every reader — this one included — opted in on `#cap-` alone, so
     // one fleet had a flow worth an error on its own grade and no existence at
-    // all on somebody's pull request. `req-CHK-ONCE` is DECLARED in the landscape
-    // beside `cap-checkout`, so the byte gate is open under either predicate and
+    // all on somebody's pull request. The flow's own `#req-CHK-ONCE` reference
+    // opens the byte gate (it reads `#` references, not the landscape's `tag`
+    // declarations), and test/usecase-blast-radius.test.ts pins that half, so
     // what this measures is which views are read, not whether the project loaded.
     const p = await makeProject(fixture("", "    #req-CHK-ONCE\n"));
     try {
