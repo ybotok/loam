@@ -2,9 +2,10 @@
  * The contract as the feature would leave it: the REAL merge
  * (core/asyncapi/merge/merge.ts) run over the two texts and read back,
  * nothing written. One simulation feeds two gate questions — the
- * `declares()` join in ./events.ts (a retired or edited-away send must stop
- * answering "the service declares this" BEFORE archive, or a leftover
- * `Publishes:` line passes the gate and breaks the post-archive fleet) and
+ * `declares()` join in ../events/events.ts (a retired or edited-away send
+ * must stop answering "the service declares this" BEFORE archive, or a
+ * leftover `Publishes:` line passes the gate and breaks the post-archive
+ * fleet) and
  * the consumer gate's wire half (a channel or operation removal that stops
  * the service SENDING a message the fleet still consumes).
  *
@@ -30,8 +31,8 @@ export interface MergeSimulationInput {
 
 /**
  * Simulate the archive-time merge, or stand down. Both documents are known
- * readable here (the walk in ./declared.ts checked), so the only refusals
- * left are the merge's own judgement calls — an aliased section, a section
+ * readable here (the walk in ../events/declared.ts checked), so the only
+ * refusals left are the merge's own judgement calls — an aliased section, a section
  * spelling one slot key twice. `undefined` on those rather than a throw: the
  * caller falls back to the feature ∪ living union view, which can only be
  * too lenient, and the archive's own plan will surface the refusal by name.
