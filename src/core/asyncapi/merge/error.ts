@@ -34,7 +34,7 @@ export class AsyncapiMergeError extends Error {
 }
 
 /**
- * The `fail` the shared tree helpers take (../../openapi/merge/error.ts), for
+ * The `fail` the shared tree helpers take (../../openapi/contract-tree.ts), for
  * one side of this axis — always the default "is not valid YAML" problem,
  * because every failure they report is a parse or a serialization.
  */

@@ -15,7 +15,7 @@
  * pinned on its own — SCHEMA.md's recorded decision.
  */
 import { isMap } from "yaml";
-import { writeTree } from "../../openapi/merge/error.js";
+import { writeTree } from "../../openapi/contract-tree.js";
 import { asyncapiRefusal } from "./error.js";
 import { readEventTree, slotPair } from "./markers.js";
 import {

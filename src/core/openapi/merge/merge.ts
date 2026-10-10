@@ -14,7 +14,8 @@ import { isMap } from "yaml";
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
 import { HTTP_METHODS } from "../doc.js";
-import { OpenapiMergeError, openapiRefusal, readTree, writeTree } from "./error.js";
+import { OpenapiMergeError, openapiRefusal } from "./error.js";
+import { readTree, writeTree } from "../contract-tree.js";
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
 import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";

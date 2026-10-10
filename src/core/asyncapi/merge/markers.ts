@@ -30,7 +30,7 @@ import { isRecord } from "../../kernel/records.js";
 import { FEATURE_ONLY_KEYS, withoutFeatureKeysDeep } from "../../openapi/digest.js";
 import { ASYNCAPI_BASELINES_KEY, isSlotRemoval, type AsyncapiSection } from "../digest.js";
 import { pairAt, setKeyed } from "../../openapi/merge/components.js";
-import { readTree, writeTree, type ContractTree } from "../../openapi/merge/error.js";
+import { readTree, writeTree, type ContractTree } from "../../openapi/contract-tree.js";
 import { AsyncapiMergeError, asyncapiRefusal, type AsyncapiMergeSource } from "./error.js";
 
 /** The three slot sections, in document order — every whole-document walk here goes over them. */

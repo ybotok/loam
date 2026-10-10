@@ -23,7 +23,8 @@ import {
   operationDigest,
   OPENAPI_BASELINE_KEY,
 } from "../digest.js";
-import { openapiRefusal, readTree, writeTree } from "./error.js";
+import { openapiRefusal } from "./error.js";
+import { readTree, writeTree } from "../contract-tree.js";
 import { isRemoval } from "../digest.js";
 import { plainChild } from "./markers.js";
 
