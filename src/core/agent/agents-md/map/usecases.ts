@@ -30,13 +30,15 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   naming a container that a service's extending model declares resolves in the
   renderer's wider root project and is \`landscape.invalid\` for loam, which takes
   the whole fleet map down. Container-level flows live beside the model that
-  declares them (below). EITHER reserved prefix
+  declares them (below). ANY reserved prefix
   opts a view in — a view carrying only \`#req-<requirement>\` is graded too, and
   earns \`usecase.requirement-unresolved\` for the \`#cap-\` tag it is missing
-  rather than silence. An UNTAGGED dynamic view is somebody's hand-drawn diagram
+  rather than silence; so is a view carrying only \`#suite-<name>\` (below). An
+  UNTAGGED dynamic view is somebody's hand-drawn diagram
   and is never graded — that opt-in is what lets a fleet full of existing
   diagrams upgrade without turning red, and \`loam validate\`, \`loam diff\`,
-  \`loam delta\`, \`loam status\`, \`loam context\` and \`loam list capabilities\` all
+  \`loam delta\`, \`loam status\`, \`loam context\`, \`loam list capabilities\` and
+  \`loam list suites\` all
   read the same opt-in, so a flow one of them sees is a flow all of them see. On a tagged
   view: \`usecase.capability-unresolved\`, \`usecase.step-unbacked\`,
   \`usecase.step-contested\` and \`usecase.step-unlinked\`. The first is silent
@@ -45,6 +47,21 @@ export const USECASE_VIEWS = `- Business use cases are \`dynamic view\`s, and \`
   hop written \`a <- b\` is attributed to the call it answers, so spell replies
   that way rather than as fresh hops. Every message names the file the view was
   written in, never the landscape.
+- A fleet flow says which test SUITES it runs in with \`#suite-<name>\` tags —
+  a separate prefix from \`#cap-\`, many-to-many (one view may carry several),
+  each declared as a \`tag suite-<name>\` in the landscape's \`specification\` so a
+  typo is a parse error. Tagging is the opt-in: a view carrying ONLY \`#suite-\`
+  tags is a use case and its hops are graded like any other's. To answer "which
+  services must be up for suite X", run \`loam list suites smoke --json\` (or
+  \`loam list suites --json\` for every suite): \`suites[]\` carries each suite's
+  \`views[]\` (\`id\`, \`file\`), \`services[]\` (enumerated service ids, through the
+  same element→service join the step grades use) and \`unresolved[]\` (\`element\`,
+  \`external\`) — participants no service stands for, never dropped, so a stand
+  that needs a double for them says so; \`ungrouped[]\` names the use cases in no
+  suite, and \`useCases.state\` is \`absent\`, \`ok\` or \`unreadable\` (with
+  \`error\`; \`suites\`/\`ungrouped\` are then absent, not empty). An unknown suite
+  name refuses \`unknown-target\` with close names. Only the fleet map's flows
+  are listed.
 - A flow behind ONE service's own requirement — the hop sequence over its
   containers that an arch.spec.md \`Covers:\` names — lives in that service's own
   LikeC4 project: any \`.likec4\` beside \`services/<…>/<svc>/model.likec4\`

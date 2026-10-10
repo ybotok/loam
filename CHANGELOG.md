@@ -10,6 +10,46 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Added — `#suite-<name>` tags and `loam list suites`: which services a test suite needs up
+
+No code was added. One reserved tag prefix, one list section and one positional argument were.
+
+- **A `dynamic view` may carry `#suite-<name>` tags** to say which test suites the journey runs in —
+  a separate prefix from `#cap-`, many-to-many (one view may carry several), each declared as
+  `tag suite-<name>` in the landscape's `specification` block like every LikeC4 tag, so a mistyped
+  suite is a parse error.
+- **A view carrying only `#suite-` tags is now a use case.** The one opt-in predicate takes three
+  prefixes (`cap-`, `req-`, `suite-`), and so does the byte scan that lets a fleet with no use cases
+  skip the LikeC4 load. Such a view's hops are graded by `loam validate` like any other use case's
+  (`usecase.step-unbacked`, `usecase.step-contested`, `usecase.step-unlinked` — at fleet scope, and
+  per service for a flow beside a service's model), and every reader that names use cases sees it:
+  `loam diff`'s removed-operation victims, `loam delta` and `loam status`'s use-case blast radius,
+  and the context packs. A view that already carried `#cap-` or `#req-` is unaffected, and an
+  untagged view is still never graded. On a fleet that had drawn `#suite-`-tagged views before this
+  release, those views can now earn findings.
+- **New section `loam list suites [<name>] [--json]`** — the answer to "which services must be up
+  for suite X". `[section]` accepts `suites`, and a new optional positional `[name]` narrows the
+  listing to one suite. Additive `--json` keys, emitted only with this section: `suites[]` (`name`,
+  `views[]` of `{id, file}`, `services[]` — enumerated service ids, sorted — and `unresolved[]` of
+  `{element, external}`: the participants that resolve to no service, `external` true when the
+  element or anything it is drawn inside carries `#external`), `ungrouped[]` (`{id, file}` of every
+  use case carrying no `#suite-` tag, never narrowed by `[name]`), and `useCases` (`state`:
+  `absent` | `ok` | `unreadable`, beside `unreadable` and, when unreadable, `error`, spelled as
+  `loam list capabilities` spells them). Over an `architecture/` that does not parse the section
+  degrades instead of refusing, and `suites` / `ungrouped` are absent rather than `[]`. Only the
+  fleet map's use cases are listed. The text view prints one block per suite — its services, the
+  unresolved participants marked `!`, its use cases — then the use cases in no suite.
+- **Refusals use existing codes.** An unknown suite name is `unknown-target` with close names; a
+  `[name]` after any other section, and `--needs-work` with `suites`, are `invalid-option` (a name
+  after another section used to be commander's "too many arguments", also `invalid-option` under
+  `--json`). The campaign flags (`--subsystem`, `--owners`) refuse `suites` as they refuse every
+  section but `services`.
+- The MCP tool `loam_list` gains the matching optional `name` argument, and its `section`
+  description now lists `glossary` and `suites`.
+- `examples/docs` tags its one use case `#suite-smoke` and `#suite-notifications`, so
+  `loam list suites` there answers checkout-web, notification-service and order-service, with
+  `customer` and the `#external` topic `kafka.orderEvents` named as unresolved.
+
 ### Changed — `loam-feature` asks whether a feature is owed, and analyzes before it pins
 
 No code, flag or payload key was added, changed or retired. What changes is the protocol text an
