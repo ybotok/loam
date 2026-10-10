@@ -72,7 +72,7 @@ components:
 
 /** What `loam rebase` would stamp for the surfaces — the real planner, never a hand copy. */
 const pinSurfaces = (feature: string, living: string): string =>
-  planAsyncapiBaselines(feature, living, "payment-service").text ?? feature;
+  planAsyncapiBaselines(feature, living).text ?? feature;
 
 /** A delta that only restates the Authorized message, pinned against `against`. */
 function quoteDelta(against: string): string {

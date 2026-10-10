@@ -13,7 +13,8 @@
  * `./record.ts`, so a value edge back into `merge/` would be a package cycle.
  * That is also why an unreadable document is answered with "nothing to pin"
  * instead of `OpenapiMergeError`: every caller chains this AFTER
- * `pinOpenapiOperations`, which has already thrown that error for any document
+ * `pinOpenapiOperations` (on the event axis, after `pinAsyncapiSlots` and its
+ * `AsyncapiMergeError`), which has already thrown that error for any document
  * either side cannot parse, so the silent answer here is unreachable in
  * practice and merely keeps the failure ownership where it already lives.
  */
@@ -21,7 +22,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { isRecord } from "../../kernel/records.js";
 import { OPENAPI_BASELINES_KEY, valueDigest } from "../digest.js";
-import { buildRecord, entryFor, readBaselineRecord, restatedSurfaces, surfaceIn } from "./record.js";
+import { buildRecord, entryFor, readBaselineRecord, restatedSurfaces, surfaceIn, type RestatedSurface } from "./record.js";
 
 /** What happened to one restated surface's baseline entry. */
 export interface SurfacePin {
@@ -53,14 +54,25 @@ export interface OpenapiBaselinePlan {
  * the living one. The entry is always `valueDigest` of the LIVING value, never
  * of the delta's own — the one rule that yields both merge verdicts: a surface
  * the author only QUOTED equals its own entry, one they EDITED differs from it.
+ *
  * A surface with no living counterpart is `unresolved` and deliberately absent
- * from the record: there is no baseline to claim, and inventing one would make
- * `classifyBaselineDigests` call a genuinely new value `unfounded`.
+ * from the record. Stamping a pin against nothing is not a harmless extra key:
+ * `classifyBaselineDigests` calls a pin with no living side `unfounded`, and
+ * the gate then refuses the delta as `openapi.baseline-invalid` (or
+ * `asyncapi.baseline-invalid`) — rebase would be writing the file the gate
+ * sends its author back to rebase.
+ *
+ * `surfacesOf` is the one thing the two contract axes do differently: the
+ * OpenAPI default walks `paths` and `components`, and the event axis passes
+ * `asyncapiSurfaces` (core/asyncapi/baseline/surfaces.ts says why it is a
+ * separate enumeration). Everything after the walk — the record, its sorted
+ * writer, the idempotence check — is axis-neutral, which is why the event
+ * planner is this function rather than a copy of it.
  */
 export function planOpenapiBaselines(
   featureText: string,
   livingText: string,
-  _service: string,
+  surfacesOf: (plain: unknown) => readonly RestatedSurface[] = restatedSurfaces,
 ): OpenapiBaselinePlan {
   const doc = parseDocument(featureText);
   if (doc.errors.length > 0) return { text: null, pins: [] };
@@ -79,11 +91,12 @@ export function planOpenapiBaselines(
   const pathItems = new Map<string, Map<string, string>>();
   const components = new Map<string, string>();
   const pins: SurfacePin[] = [];
-  for (const surface of restatedSurfaces(featPlain)) {
+  for (const surface of surfacesOf(featPlain)) {
     // A malformed current entry reads back as absent (readBaselineRecord drops
     // it into `problems`), so this run reports `pinned` and overwrites it —
-    // rebase is the command the gate's `openapi.baseline-invalid` sends people
-    // to, and it must repair what it names.
+    // rebase is the command the gate's `openapi.baseline-invalid` (and
+    // `asyncapi.baseline-invalid`) sends people to, and it must repair what it
+    // names.
     const from = entryFor(current, surface);
     const base = {
       kind: surface.kind,
@@ -112,7 +125,8 @@ export function planOpenapiBaselines(
 
   // The written form drops empty sections, and the whole key when both are —
   // a bare `x-loam-baselines: {}` would be bookkeeping about nothing, in every
-  // delta whose surfaces are all new.
+  // delta whose surfaces are all new. An AsyncAPI document has no path items,
+  // so on that axis `pathItems` is always the empty section dropped here.
   const rebuilt = buildRecord({ pathItems, components });
   const written: Record<string, unknown> = {};
   if (Object.keys(rebuilt.pathItems).length > 0) written["pathItems"] = rebuilt.pathItems;

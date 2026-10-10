@@ -358,7 +358,7 @@ operations:`,
 describe("planAsyncapiBaselines — the surfaces the slot pin cannot reach", () => {
   it("pins a restated surface to the LIVING digest, which is what yields both verdicts", () => {
     const edited = withSchema(eventContract("Authorization landed"), "an amount, per this feature");
-    const plan = planAsyncapiBaselines(edited, LIVING_WITH_SCHEMA, SVC);
+    const plan = planAsyncapiBaselines(edited, LIVING_WITH_SCHEMA);
     expect(plan.pins).toEqual([
       expect.objectContaining({ target: "schemas/Money", status: "pinned" }),
     ]);
@@ -373,14 +373,14 @@ describe("planAsyncapiBaselines — the surfaces the slot pin cannot reach", () 
     // Two identities for one value is the failure: a message carrying both an
     // in-value `x-loam-based-on` and a root record entry would be classified
     // twice, by two verdicts that need not agree.
-    const plan = planAsyncapiBaselines(withSchema(eventContract("edited"), "an amount"), LIVING_WITH_SCHEMA, SVC);
+    const plan = planAsyncapiBaselines(withSchema(eventContract("edited"), "an amount"), LIVING_WITH_SCHEMA);
     expect(plan.pins.map((p) => p.target)).toEqual(["schemas/Money"]);
     expect(Object.keys(parseYaml(plan.text!)["x-loam-baselines"].components)).toEqual(["schemas/Money"]);
   });
 
   it("is idempotent, and reports the second run as unchanged", () => {
-    const once = planAsyncapiBaselines(withSchema(eventContract("edited"), "changed"), LIVING_WITH_SCHEMA, SVC);
-    const twice = planAsyncapiBaselines(once.text!, LIVING_WITH_SCHEMA, SVC);
+    const once = planAsyncapiBaselines(withSchema(eventContract("edited"), "changed"), LIVING_WITH_SCHEMA);
+    const twice = planAsyncapiBaselines(once.text!, LIVING_WITH_SCHEMA);
     expect(twice.text).toBeNull();
     expect(twice.pins.every((p) => p.status === "unchanged")).toBe(true);
   });
@@ -395,7 +395,7 @@ components:
     Discount:
       type: object
 `;
-    const plan = planAsyncapiBaselines(adding, LIVING_WITH_SCHEMA, SVC);
+    const plan = planAsyncapiBaselines(adding, LIVING_WITH_SCHEMA);
     expect(plan.pins).toEqual([
       expect.objectContaining({ target: "schemas/Discount", status: "unresolved", to: null }),
     ]);
@@ -415,7 +415,7 @@ components:
     Discount:
       type: object
 `;
-    const plan = planAsyncapiBaselines(stale, LIVING_WITH_SCHEMA, SVC);
+    const plan = planAsyncapiBaselines(stale, LIVING_WITH_SCHEMA);
     expect(plan.text).not.toBeNull();
     expect(parseYaml(plan.text!)["x-loam-baselines"]).toBeUndefined();
   });
@@ -618,7 +618,7 @@ operations:`,
 
   /** What `loam rebase` would stamp for the SURFACES — the real planner. */
   const pinSurfaces = (feature: string, living: string): string =>
-    planAsyncapiBaselines(feature, living, "fixture").text ?? feature;
+    planAsyncapiBaselines(feature, living).text ?? feature;
 
   it("refuses a stale surface entry, naming both digests and the command that repins", async () => {
     // Both halves pinned, in rebase's own order: the slots in-value, then the
