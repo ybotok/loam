@@ -22,6 +22,9 @@ import {
   type PinOutcome,
 } from "./plan.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
+import { issueFinding, type Issue } from "../../core/vocabulary/issue.js";
+import { retiredLookup } from "../../core/coherence/retired/archived.js";
+import { serviceRevivals } from "../../core/coherence/retired/revived.js";
 import { rebaseLivingLocked } from "./living.js";
 
 /**
@@ -163,6 +166,7 @@ async function rebaseLocked(
   const outcomes: PinOutcome[] = [];
   const capabilityOutcomes: CapabilityPinOutcome[] = [];
   const writes: PlannedWrite[] = [];
+  const revived: Issue[] = [];
   // The business corpus this feature changes. Skipped entirely under `--service`:
   // that flag means "restrict to one service", and a capability names none — so
   // pinning capability deltas under it would write files the caller narrowed the
@@ -205,6 +209,16 @@ async function rebaseLocked(
       const planned = await planCapabilityAxis(repo, doc.id, doc.spec);
       capabilityOutcomes.push(...planned.outcomes);
       if (planned.content !== null) writes.push({ path: doc.spec, content: planned.content });
+    }
+    // An operation or event slot the living docs do not hold reads `unresolved`
+    // above — "this feature is adding it". For one an ARCHIVED feature retired,
+    // that is the false sentence that put retired operations back: unpinned, the
+    // merge upserts it as an addition. Rebase pins nothing either way, so what it
+    // owes is the same finding the gate raises, said here before the archive
+    // refuses it, and the decision left to the human.
+    const retired = retiredLookup(docsDir, repo.fleet);
+    for (const service of services) {
+      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, featureId: id, service, retired, context: repo.fleet })));
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;
@@ -264,6 +278,11 @@ async function rebaseLocked(
       // something false to every consumer that already reads it.
       capabilities: capabilities.map((c) => c.id),
       capabilityPins: capabilityOutcomes,
+      // Additive: the `openapi.op-revived` / `asyncapi.slot-revived` findings
+      // for what this feature spells that an archived feature retired. Their
+      // `pins[]` rows still say `unresolved` — true, and published — and this
+      // key is what says those rows are not additions.
+      revived: revived.map(issueFinding),
       written: dryRun ? [] : writes.map((w) => repoPath(docsDir, w.path)),
       ...(opts.recovered === null ? {} : { recovered: opts.recovered }),
     });
@@ -274,6 +293,7 @@ async function rebaseLocked(
     console.log(
       `${id}: nothing to pin — a baseline only means something for a requirement, an operation, a path-level key, a component or an event slot that already exists in the living docs.`,
     );
+    sayRevived(revived);
     return;
   }
 
@@ -315,7 +335,23 @@ async function rebaseLocked(
   if (unresolved.length > 0) {
     console.log(
       `\n${plural(unresolved.length, "item")} could not be pinned because the living docs do not have them yet — ` +
-        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it.`,
+        `for a requirement, \`loam dependencies ${id}\` says which feature introduces it first; for an operation, this feature is adding it` +
+        (revived.length === 0 ? "." : ", unless an archived feature retired it — those are listed below, and they are not new."),
     );
   }
+  sayRevived(revived);
+}
+
+/**
+ * The revival findings, in the gate's own words. Printed rather than acted on:
+ * deleting a quote and re-adding a retired operation on purpose are both
+ * legitimate, and which one this is is the author's call.
+ */
+function sayRevived(revived: readonly Issue[]): void {
+  if (revived.length === 0) return;
+  console.log(
+    `\n⚠ ${plural(revived.length, "item")} this feature spells ${revived.length === 1 ? "was" : "were"} RETIRED by an archived feature — ` +
+      `nothing was pinned for ${revived.length === 1 ? "it" : "them"}, and \`loam archive\` refuses ${revived.length === 1 ? "it" : "them"} until you decide:`,
+  );
+  for (const issue of revived) console.log(`  ⚠ ${issue.message}`);
 }

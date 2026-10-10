@@ -389,6 +389,7 @@ model {
   loam.commands.rebase -> loam.commands.policy
   loam.commands.rebase -> loam.core.asyncapi
   loam.commands.rebase -> loam.core.capabilities
+  loam.commands.rebase -> loam.core.coherence
   loam.commands.rebase -> loam.core.document
   loam.commands.rebase -> loam.core.envelope
   loam.commands.rebase -> loam.core.fleet_context
@@ -396,6 +397,7 @@ model {
   loam.commands.rebase -> loam.core.openapi
   loam.commands.rebase -> loam.core.repo
   loam.commands.rebase -> loam.core.staging
+  loam.commands.rebase -> loam.core.vocabulary
 
   loam.commands.seed -> loam.commands.policy
   loam.commands.seed -> loam.core.c4

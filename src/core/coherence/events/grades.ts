@@ -57,11 +57,16 @@ export function gradeBaselines(input: AsyncapiBaselineInput, issues: Issue[]): v
     }
     const verdict = classifyBaselineDigests(slot.basedOn, slot.digest, living?.digest);
     if (verdict === "unfounded") {
+      // openapi/baseline/gate.ts's reading, on the slot: a pin is only ever
+      // written over a living slot, so one with nothing behind it usually
+      // means a parallel feature retired the slot — and "drop the marker",
+      // which this used to say, archived the quote as an addition and put the
+      // retired slot back.
       issues.push({
         severity: "error",
         code: "asyncapi.baseline-invalid",
         subject: svc,
-        message: `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — a new channel, operation or message has no living version to be based on; drop the marker`,
+        message: `${svc}: ${label} carries x-loam-based-on, but the living contract has no slot there — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this slot from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`asyncapi.slot-revived\`). A genuinely new channel, operation or message has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {
       issues.push({

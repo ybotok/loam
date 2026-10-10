@@ -22,7 +22,7 @@ import { FleetContext } from "../src/core/fleet-context.js";
 import { retiredLookup } from "../src/core/coherence/retired/archived.js";
 import { docsDirOf } from "../src/core/kernel/ids/dirs.js";
 import type { Finding } from "../src/core/vocabulary/report.js";
-import { makeProject, makeTmpDir, pinFor, runLoam, type Project } from "./helpers/harness.js";
+import { makeProject, makeTmpDir, pinAsyncapi, pinFor, pinOpenapi, runLoam, type Project } from "./helpers/harness.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -144,6 +144,44 @@ describe("openapi.op-revived — an operation an archived feature retired", () =
     expect(approved.code, approved.out).toBe(0);
     expect(approved.out).toMatch(/archiving despite \d+ gating issue/);
     expect(approved.out).toContain("spells 'createOrderV1' (POST /v1/orders), which the living contract no longer has — archived FEAT-112 retired it");
+  });
+
+  it("the pinned variant: baseline-invalid stops sending the author to drop the pin, and rebase does not bless the operation as new", async () => {
+    const f = await exampleFleet();
+    // Pinned while createOrderV1 was still living — exactly what `loam rebase` wrote then.
+    contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", pinOpenapi(QUOTED_V1, f.read(LIVING_ORDER_API)));
+    const pinned = f.read("features/FEAT-304-v1-notes/specs/order-service/openapi.yaml");
+    expect(pinned).toContain("x-loam-based-on:");
+    expect((await runLoam(f.fleet, "archive", "FEAT-112")).code).toBe(0);
+
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-304", "--json")).stdout);
+    const [invalid] = ofCode(all, "openapi.baseline-invalid");
+    expect(invalid!.message).not.toContain("drop the marker");
+    expect(invalid!.message).toContain("re-read the living contract and delete this operation from the delta");
+    expect(invalid!.message).toContain("unless this feature deliberately brings it back");
+    expect(ofCode(all, "openapi.op-revived")).toHaveLength(1);
+
+    const json = await runLoam(f.fleet, "rebase", "FEAT-304", "--json");
+    expect(json.code, json.out).toBe(0);
+    const payload = JSON.parse(json.stdout) as {
+      pins: Array<{ target: string; status: string }>;
+      revived: Array<{ code: string; severity: string; gates: boolean; message: string }>;
+      written: string[];
+    };
+    expect(payload.pins.find((p) => p.target.includes("createOrderV1"))!.status).toBe("unresolved");
+    expect(payload.revived).toEqual([
+      expect.objectContaining({ code: "openapi.op-revived", severity: "warn", gates: true }),
+    ]);
+    expect(payload.revived[0]!.message).toContain("archived FEAT-112 retired it");
+    expect(payload.written).toEqual([]);
+
+    const text = await runLoam(f.fleet, "rebase", "FEAT-304");
+    expect(text.code, text.out).toBe(0);
+    expect(text.out).toContain("unless an archived feature retired it");
+    expect(text.out).toContain("RETIRED by an archived feature");
+    expect(text.out).toContain("spells 'createOrderV1' (POST /v1/orders)");
+    // Nothing was pinned, re-pinned or stripped: the decision is the author's.
+    expect(f.read("features/FEAT-304-v1-notes/specs/order-service/openapi.yaml")).toBe(pinned);
   });
 
   it("a genuinely new operation stays silent — even one reusing the retired path, since identity is the operationId", async () => {
@@ -460,6 +498,36 @@ components:
     }
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
     expect(await eventFindings(p, "FEAT-41")).toHaveLength(1);
+  });
+
+  it("the pinned event variant: baseline-invalid names the delete-the-quote remedy, and rebase prints the revival", async () => {
+    // Pinned while the slots were living — what `loam rebase` wrote then —
+    // and only THEN retired underneath it by FEAT-40's archive.
+    const p = await makeProject({
+      "services/payment-service/spec.md": EVENTS_SPEC,
+      "services/payment-service/asyncapi.yaml": LIVING_EVENTS,
+      "features/FEAT-40-retire-legacy/intent.md": INTENT("FEAT-40"),
+      "features/FEAT-40-retire-legacy/specs/payment-service/spec.md": RETIRE_SPEC,
+      "features/FEAT-40-retire-legacy/specs/payment-service/asyncapi.yaml": RETIRE_EVENTS,
+      "features/FEAT-41-legacy-again/intent.md": INTENT("FEAT-41"),
+      "features/FEAT-41-legacy-again/specs/payment-service/asyncapi.yaml": pinAsyncapi(LIVING_EVENTS, LIVING_EVENTS),
+    });
+    cleanups.push(() => p.destroy());
+    expect((await runLoam(p.workDir, "archive", "FEAT-40")).code).toBe(0);
+
+    const all = findings((await runLoam(p.workDir, "validate", "--feature", "FEAT-41", "--json")).stdout);
+    const invalid = ofCode(all, "asyncapi.baseline-invalid");
+    expect(invalid.length).toBeGreaterThan(0);
+    for (const i of invalid) {
+      expect(i.message).not.toContain("drop the marker");
+      expect(i.message).toContain("delete this slot from the delta, unless this feature deliberately brings it back");
+    }
+    expect(ofCode(all, "asyncapi.slot-revived")).toHaveLength(3);
+
+    const rebased = await runLoam(p.workDir, "rebase", "FEAT-41", "--json");
+    expect(rebased.code, rebased.out).toBe(0);
+    const revived = (JSON.parse(rebased.stdout) as { revived: Array<{ code: string }> }).revived;
+    expect(revived.map((r) => r.code)).toEqual(["asyncapi.slot-revived", "asyncapi.slot-revived", "asyncapi.slot-revived"]);
   });
 
   it("a slot absent from living that nobody retired stays silent", async () => {

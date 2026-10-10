@@ -681,8 +681,10 @@ delta has nothing to pin and needs no rebase. Each quote costs a pin, and a pinn
 operation a parallel feature removes becomes `openapi.baseline-invalid`, an error that blocks the
 archive until the quote is deleted — while an unpinned one is `openapi.op-revived`
 (`asyncapi.slot-revived` on the event axis), which gates the archive too, because the merge would
-read the retired operation as an addition and put it back. Restamping is the last step of
-resolving a collision, not the resolution — the output says which pins moved.
+read the retired operation as an addition and put it back. Rebase pins neither as new: it prints
+the same finding (`revived[]` in `--json`), and whether the quote goes or the feature re-adds the
+operation on purpose is the author's call. Restamping is the last step of resolving a collision,
+not the resolution — the output says which pins moved.
 
 **`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,
 digest-matched, so only a green run confirms one, and the record writes down which file it read
