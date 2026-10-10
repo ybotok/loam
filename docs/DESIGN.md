@@ -285,7 +285,8 @@ the workspace layout differs, and that part is already isolated.
    `rg 'interface \w*(Manager|Handler|Provider|Factory|Repository)' src/` returns zero. Keep it
    zero.
 10. **No `class` unless it is an `Error` subclass or holds per-invocation cache state.** There are
-    18 exported classes: 17 typed errors and `FleetContext`.
+    18 exported classes: 16 typed errors, and the two per-invocation caches — `FleetContext` and the
+    service-model memo it owns, `ServiceModels` (`core/c4/prefetch/fleet.ts`).
 11. **No barrel or index re-export files.** None exist. They would make rule 4 unenforceable by
     hiding the real edge behind a re-export — and under rule 21 they would also defeat the package
     graph, since every import would point at a directory instead of at the module it actually needs.
