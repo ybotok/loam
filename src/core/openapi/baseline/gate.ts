@@ -79,14 +79,20 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
       // archiving past `openapi.op-revived` would answer it at both slots.
       // The living contract says which: a move leaves the id at another slot.
       // The third way — a pin hand-written onto a genuinely new operation —
-      // is the rare one.
+      // is the rare one. The two addresses are a condition ("while it still
+      // lives there"), not a forecast: a delta swapping the id back defines
+      // another operation at the address it lives at, and the merge replaces
+      // it there — the revival check (coherence/retired/revived.ts) stands
+      // down for exactly that delta, so this must not tell its author the
+      // opposite. For the same delta a removal marker at that address cannot
+      // be written beside the other operation, hence the second remedy.
       const movedTo = livingDoc.ops.filter((l) => !l.remove && l.id === op.id).map((l) => `${l.method.toUpperCase()} ${l.path}`);
       issues.push({
         severity: "error",
         code: "openapi.baseline-invalid",
         subject: service,
         message: movedTo.length > 0
-          ? `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — '${op.id}' lives at ${movedTo.join(" and ")} now: a parallel feature moved it. Re-read it there and delete this operation from the delta, making any change at its new address; archived as it stands, it would put '${op.id}' back at ${where} as well, one operationId at two addresses. To move it back on purpose, drop the pin and add a removal marker for '${op.id}' at ${movedTo.join(" and ")} to this delta.`
+          ? `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — '${op.id}' lives at ${movedTo.join(" and ")} now: a parallel feature moved it. Re-read it there and delete this operation from the delta, making any change at its new address; archived while it still lives there, it would put '${op.id}' back at ${where} as well, one operationId at two addresses. To move it back on purpose, drop the pin and add a removal marker for '${op.id}' at ${movedTo.join(" and ")} to this delta, or define another operation there.`
           : `${service}: ${where} ('${op.id}') carries ${OPENAPI_BASELINE_KEY}, but the living contract has no operation at that slot — the version it was pinned to is gone. If a parallel feature retired it, re-read the living contract and delete this operation from the delta, unless this feature deliberately brings it back (then drop the pin and archive with --approve past \`openapi.op-revived\`). A genuinely new operation has no living version to be based on and carries no pin.`,
       });
     } else if (verdict === "stale") {

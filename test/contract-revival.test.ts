@@ -653,6 +653,26 @@ ${CANCEL_OP}`;
     expect(living).toContain("operationId: requestCancellation");
   });
 
+  it("the pinned swap: baseline-invalid asks only for the pin — it does not promise two addresses the swap never leaves", async () => {
+    // Pinned while cancelOrder still stood at /cancel — what rebase wrote
+    // then — and swapped back over FEAT-200's move. The pin is unfounded and
+    // must go; the two addresses are a condition the swap does not meet, and
+    // a marker at /cancellation cannot be written beside requestCancellation.
+    const f = await exampleFleet();
+    contractOnly(f, "FEAT-209", "FEAT-209-swap-cancel", pinOpenapi(SWAP_BACK, f.read(LIVING_ORDER_API)));
+    contractOnly(f, "FEAT-200", "FEAT-200-move-cancel", MOVE_CANCEL);
+    expect((await runLoam(f.fleet, "archive", "FEAT-200")).code).toBe(0);
+
+    const all = findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-209", "--json")).stdout);
+    const [invalid, ...more] = ofCode(all, "openapi.baseline-invalid");
+    expect(more).toEqual([]);
+    expect(invalid!.message).toContain("'cancelOrder' lives at POST /orders/{id}/cancellation now: a parallel feature moved it");
+    expect(invalid!.message).toContain("archived while it still lives there, it would put 'cancelOrder' back at POST /orders/{id}/cancel as well");
+    expect(invalid!.message).toContain("drop the pin and add a removal marker for 'cancelOrder' at POST /orders/{id}/cancellation to this delta, or define another operation there");
+    expect(invalid!.message).not.toContain("archived as it stands");
+    expect(ofCode(all, "openapi.op-revived")).toEqual([]);
+  });
+
   it("a QUOTE of another operation at that address is not written, so cancelOrder stays there and the quote of the old address is still refused", async () => {
     // Pinned to its own content, the /cancellation definition is a quote —
     // the merge keeps the living operation — and archiving would answer
