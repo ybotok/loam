@@ -2,7 +2,8 @@
  * The placeholder strings `loam new` scaffolds, spelled ONCE.
  *
  * Both sides of the placeholder gate read this module: the templates in
- * `commands/new/templates.ts` write these exact strings, and the coherence
+ * `commands/new/templates.ts` and `commands/new/capability-template.ts` write
+ * these exact strings, and the coherence
  * check in `./scaffold.ts` refuses to archive them. Spelling a sentinel in two
  * places is how the gate stops matching the scaffold — a one-character rewording
  * of a template would silently retire the check that guards it.
