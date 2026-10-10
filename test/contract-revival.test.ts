@@ -606,13 +606,16 @@ paths:
 ${CANCEL_OP}`;
     f.write("features/archive/FEAT-091-early-move/specs/order-service/openapi.yaml", away("/orders/{id}/cancellation"));
     f.write("features/archive/FEAT-092-other-move/specs/order-service/openapi.yaml", away("/orders/{id}/stop"));
+    // A second directory carrying FEAT-092's id: one feature, named once,
+    // with both of its destinations.
+    f.write("features/archive/FEAT-092-other-move-copy/specs/order-service/openapi.yaml", away("/orders/{id}/halt"));
     contractOnly(f, "FEAT-201", "FEAT-201-quote-cancel", QUOTED_CANCEL);
     const [warned] = ofCode(
       findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-201", "--json")).stdout),
       "openapi.op-revived",
     );
     expect(warned!.message).toContain(
-      "archived FEAT-091 and FEAT-200 moved it to POST /orders/{id}/cancellation, and FEAT-092 to POST /orders/{id}/stop; it lives at POST /orders/{id}/cancellation now",
+      "archived FEAT-091 and FEAT-200 moved it to POST /orders/{id}/cancellation, and FEAT-092 to POST /orders/{id}/stop and POST /orders/{id}/halt; it lives at POST /orders/{id}/cancellation now",
     );
   });
 
