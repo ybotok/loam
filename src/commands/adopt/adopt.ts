@@ -1,8 +1,7 @@
 import type { Command } from "commander";
 import { closeIds } from "../../core/c4/arch.js";
-import { loadConfig } from "../../core/envelope/config.js";
 import { InvalidIdError, assertServiceId, type PathableService } from "../../core/kernel/ids/service.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE, repoPath } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listFleetTree, listServices } from "../../core/repo/repo.js";
 import { findInTree, nearestTreeNames } from "../../core/repo/tree/find.js";
@@ -187,12 +186,8 @@ export function registerAdopt(program: Command): void {
     .action(async (opts: AdoptOptions) => {
       const json = opts.json === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       // This command writes nothing, but it briefs an agent to write a whole
       // baseline — so a docsDir that does not exist is not a harmless read: it
       // hands over eight target paths under a directory nobody has, at exit 0,

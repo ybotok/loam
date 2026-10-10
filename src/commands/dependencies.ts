@@ -1,9 +1,8 @@
 import type { Command } from "commander";
-import { loadConfig } from "../core/envelope/config.js";
 import { analyzeDependencies } from "../core/dependencies/dependencies.js";
 import { type DependencyGraph, type DependencyReason } from "../core/dependencies/facts.js";
 import { FleetContext } from "../core/fleet-context.js";
-import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../core/envelope/json.js";
 import { missingFeatureMessage, resolveFeature } from "../core/repo/repo.js";
 
 interface DependenciesOptions {
@@ -18,12 +17,8 @@ export function registerDependencies(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureArg: string | undefined, opts: DependenciesOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
 
       const context = new FleetContext();
       const feature = featureArg === undefined

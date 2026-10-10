@@ -2,8 +2,7 @@ import type { Command } from "commander";
 import { statSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { loadConfig } from "../core/envelope/config.js";
-import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
 import { discoverMembers, type Discovery } from "../core/workspace/discover.js";
 import { renderWorkspace, type RenderedFolder } from "../core/workspace/render.js";
@@ -57,12 +56,8 @@ export function registerOpen(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: OpenOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // "docs", not "services": this command enumerates checkouts on the LOCAL
       // filesystem, not services/ in the docs repo, and a docs repo nobody has

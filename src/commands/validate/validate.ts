@@ -15,8 +15,8 @@ import { agentsStaleFinding, binaryBehindFinding } from "../../core/agent/agents
 import { inOrder } from "../../core/kernel/concurrency.js";
 import type { RawServiceId } from "../../core/kernel/ids/service.js";
 import { resolveServiceTarget } from "../../core/repo/service-target.js";
-import { loadConfig, loamOwnedFiles } from "../../core/envelope/config.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import { loamOwnedFiles } from "../../core/envelope/config.js";
+import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { agentsPath as agentsFile, landscapePath as landscapeFile } from "../../core/repo/paths.js";
 import { listFeatures, listServices, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
@@ -96,12 +96,8 @@ export function registerValidate(program: Command): void {
         return;
       }
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // Before anything is enumerated: a docsDir that is not a docs repo must
       // refuse, not report an empty fleet. See docsRepoReady. `--feature` is the

@@ -3,10 +3,9 @@ import { existsSync } from "node:fs";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { commitScaffold } from "./commit.js";
 import { join } from "node:path";
-import { loadConfig } from "../../core/envelope/config.js";
 import { type FeatureId, parseFeatureId } from "../../core/kernel/ids/feature.js";
 import { parseServiceIds } from "../../core/kernel/ids/service.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../../core/kernel/path-safety.js";
 import { featureIdFromDirName, nearestIds } from "../../core/repo/entries.js";
 import { featuresDir, landscapePath } from "../../core/repo/paths.js";
@@ -122,12 +121,8 @@ export function registerNew(program: Command): void {
         if (problem !== null) return fail(json, "invalid-option", problem);
       }
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // Before a single file is scaffolded: a docsDir that is not a docs repo is
       // refused, never written into. `features/<id>/**` lands happily in any

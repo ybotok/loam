@@ -1,6 +1,5 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, fail } from "../../core/envelope/json.js";
 import { message } from "../../core/staging/commit.js";
 import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
 import { InterruptedCommitError } from "../../core/staging/interrupted.js";
@@ -61,12 +60,8 @@ export function registerUnarchive(program: Command): void {
 }
 
 async function runUnarchive(featureId: string, json: boolean, force: boolean): Promise<void> {
-  const loaded = await loadConfig();
-  if (loaded.kind !== "loaded") {
-    reportNoConfig(json, loaded);
-    return;
-  }
-  const config = loaded.config;
+  const config = await configOrRefuse(json);
+  if (config === null) return;
   // The same lock archive takes, for the same reason: unarchive rewrites the
   // living spec, contract and landscape from a snapshot, and an archive landing
   // inside that window would have its merge silently reverted by our restore —

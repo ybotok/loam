@@ -6,8 +6,7 @@
  * computes, the commit swaps.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { fail, reportNoConfig, type ErrorCode } from "../../core/envelope/json.js";
+import { configOrRefuse, fail, type ErrorCode } from "../../core/envelope/json.js";
 import { message } from "../../core/staging/commit.js";
 import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
 import { ArchiveFailure, type ArchiveOptions } from "./plan/refusal.js";
@@ -59,12 +58,8 @@ export function registerArchive(program: Command): void {
 
 async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void> {
   const json = opts.json === true;
-  const loaded = await loadConfig();
-  if (loaded.kind !== "loaded") {
-    reportNoConfig(json, loaded);
-    return;
-  }
-  const config = loaded.config;
+  const config = await configOrRefuse(json);
+  if (config === null) return;
   let release: () => Promise<void>;
   try {
     release = await acquireDocsLock(config.docsDir);
