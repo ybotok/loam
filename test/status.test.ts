@@ -1051,7 +1051,7 @@ describe("the first-hour ladder over an empty docs repo", () => {
     expect(steps[0]!.statement).toContain("loam seed --from fleet.yaml");
     expect(steps[0]!.path).toBe("architecture/landscape.likec4");
     expect(steps[0]!.command).toBe("loam seed --from fleet.yaml");
-    expect(steps[1]!.command).toBe("loam init --docs <path-to-this-docs-repo> --service <service-id>");
+    expect(steps[1]!.command).toBe("loam init --docs <path-to-this-docs-repo> --service <service-id> --agent-profile service");
     expect(steps[2]!.command).toBe("loam adopt --service <service-id> --json");
     expect(steps[0]!.execution).toEqual({
       kind: "command",

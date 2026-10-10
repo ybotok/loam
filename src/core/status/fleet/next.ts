@@ -159,8 +159,13 @@ export function fleetNext(fleet: Fleet, binding: Binding | null): NextStep[] {
         code: "next.bind-service",
         statement:
           "No service repository is bound to this fleet yet. From a service's own repo, point --docs " +
-          "here and --service at its canonical id, then commit the loam.json it writes.",
-        command: "loam init --docs <path-to-this-docs-repo> --service <service-id>",
+          "here and --service at its canonical id with the service agent profile, then commit the " +
+          "loam.json it writes.",
+        // `--agent-profile service`, because the default is `full`, and `full`
+        // writes loam-feature and loam-ship into the service checkout — the two
+        // workflows this docs repo keeps, which README tells every service
+        // repo to leave out. An agent runs this literal, not the README.
+        command: "loam init --docs <path-to-this-docs-repo> --service <service-id> --agent-profile service",
       });
       steps.push({
         code: "next.adopt-first",

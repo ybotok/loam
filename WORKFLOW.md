@@ -116,11 +116,13 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    repo:
 
    ```bash
-   loam init --docs ../docs-repo --service payment-service   # no --create: it JOINS
-   loam doctor                                               # confirms the wiring
+   loam init --docs ../docs-repo --service payment-service --agent-profile service   # no --create: it JOINS
+   loam doctor                                                                        # confirms the wiring
    ```
 
-   `--service` is the binding: without it `loam vouch` and `loam gherkin` refuse outright, and
+   `--agent-profile service` writes the five workflows that run beside the code. Without it the
+   profile is `full`, which also writes `loam-feature` and `loam-ship` — the two workflows the docs
+   repo keeps — into the service checkout. `--service` is the binding: without it `loam vouch` and `loam gherkin` refuse outright, and
    `loam verify --service --record` / `--results` refuse to attest, because none of them will write
    a service's documents from a repo that has not said which service it is. Reading —
    `loam verify --service` on its own — needs no binding, because it writes nothing. Commit the

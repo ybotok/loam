@@ -119,19 +119,19 @@ loam `0.2.0-alpha.8` · fleet `examples/docs` · service `payment-service` · by
 
 | payload | invocation | bytes | ~tokens |
 |---|---|---|---|
-| orientation, always loaded | `AGENTS.md` as `loam init --create` writes it | 10,843 | ~2,711 |
+| orientation, always loaded | `AGENTS.md` as `loam init --create` writes it | 10,999 | ~2,750 |
 | adopt brief | `loam adopt --service payment-service --json` | 60,314 | ~15,079 |
 | adopt brief, per-service part | `loam adopt --service payment-service --json --targets` | 25,200 | ~6,300 |
-| an adopt session before it reads code | the `loam-adopt` page + the full brief | 77,900 | ~19,475 |
-| one code, median of 354 | `loam explain <code> --json` | 582 | ~146 |
+| an adopt session before it reads code | the `loam-adopt` page + the full brief | 78,081 | ~19,520 |
+| one code, median of 354 | `loam explain <code> --json` | 584 | ~146 |
 | one code, smallest / largest | `loam explain <code> --json` | 271 / 2,535 | ~68 / ~634 |
-| the whole code vocabulary | `loam explain --codes --json` | 224,135 | ~56,034 |
+| the whole code vocabulary | `loam explain --codes --json` | 224,271 | ~56,068 |
 
 | page | invocation | bytes | ~tokens | with `--no-fix-tables` |
 |---|---|---|---|---|
-| `loam-adopt` | `loam instructions loam-adopt payment-service` | 17,586 | ~4,397 | same bytes |
+| `loam-adopt` | `loam instructions loam-adopt payment-service` | 17,767 | ~4,442 | same bytes |
 | `loam-feature` | `loam instructions loam-feature FEAT-101 "Split payments"` | 9,977 | ~2,494 | same bytes |
-| `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 11,011 | ~2,753 | same bytes |
+| `loam-implement` | `loam instructions loam-implement FEAT-101 payment-service` | 11,035 | ~2,759 | same bytes |
 | `loam-check` | `loam instructions loam-check FEAT-101` | 112,757 | ~28,189 | 3,542 (~886) |
 | `loam-verify` | `loam instructions loam-verify FEAT-101` | 13,594 | ~3,399 | 9,771 (~2,443) |
 | `loam-ship` | `loam instructions loam-ship FEAT-101` | 6,708 | ~1,677 | same bytes |

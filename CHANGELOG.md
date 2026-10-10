@@ -85,11 +85,32 @@ counts), and what the documentation says a feature's contract delta holds.
 
 - **A run that creates a docs repo and binds no service now ends with `next — the docs repo's first
   hour:`**: `loam seed --from fleet.yaml` (or draw the map by hand), `loam init --docs <docs-repo>
-  --service <id>` in each service's own repo, `loam adopt --service <id> --json` there, and `loam
-  status`. It used to print nothing after the scaffold list. These are WORKFLOW.md's Day zero steps
-  and the rungs `loam status` already names on an empty fleet. A run that binds a service still
-  prints the single-repo trial's hour, and a join still prints neither. Human output only: no code,
-  flag or payload key was added, and the `--json` envelope is unchanged for both variants.
+  --service <id> --agent-profile service` in each service's own repo, `loam adopt --service <id>
+  --json` there, and `loam status`. It used to print nothing after the scaffold list. These are
+  WORKFLOW.md's Day zero steps and the rungs `loam status` already names on an empty fleet. A run
+  that binds a service still prints the single-repo trial's hour, and a join still prints neither.
+  Human output only: no code, flag or payload key was added, and the `--json` envelope is unchanged
+  for both variants.
+
+### Changed — every service bind loam prints names `--agent-profile service`
+
+No code, flag or payload key was added, changed or retired. What changes is printed text and one
+`--json` value.
+
+- **The bind command now reads `loam init --docs <path> --service <id> --agent-profile service`**
+  in `loam status`'s `next.bind-service` step, its `loam explain` entry, the docs repo's first hour,
+  the generated AGENTS.md (`## The cycle`, step 0), and the `loam-adopt` and `loam-implement`
+  protocols. README, QUICKSTART and docs/SERVICE-TEAMS.md already told a fleet to bind each service
+  checkout this way, because `--agent-profile` defaults to `full`, and `full` writes `loam-feature`
+  and `loam-ship` into the service repo. But every bind command loam printed left the flag out, and
+  an agent runs the command loam prints. WORKFLOW.md's Day zero step 3 now spells it too.
+- **`next.bind-service`'s `command` in `status --json` `next[]` carries the new text.** Its
+  `execution` block still names the same two placeholders.
+- **Two binds keep their old form on purpose.**
+  - `loam-adopt` names the single-repo trial (`--create`, used only when the docs repo does not
+    exist yet) as the one bind that keeps the full profile.
+  - `doctor.service-unbound`'s fix is a re-run in a checkout that is already wired. An omitted
+    `--agent-profile` there keeps the profile that checkout recorded.
 
 ### Changed — the OpenSpec compatibility pin moves to v1.14.1, and a weekly canary watches the newest release
 
