@@ -12,7 +12,7 @@
  * Separate from `./merge.ts` because this is `loam rebase`'s half: it plans the
  * pins a delta is missing, while the merge only ever reads pins already written.
  */
-import { isMap, parseDocument } from "yaml";
+import { isMap } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -23,7 +23,7 @@ import {
   operationDigest,
   OPENAPI_BASELINE_KEY,
 } from "../digest.js";
-import { errorMessage, OpenapiMergeError } from "./error.js";
+import { openapiRefusal, readTree, writeTree } from "./error.js";
 import { isRemoval } from "../digest.js";
 import { plainChild } from "./markers.js";
 
@@ -104,23 +104,8 @@ export interface OpenapiPinPlan {
  * path the contract does not serve yet.
  */
 export function pinOpenapiOperations(featureText: string, livingText: string, service: string): OpenapiPinPlan {
-  const doc = parseDocument(featureText);
-  if (doc.errors.length > 0) throw new OpenapiMergeError("feature", service, doc.errors[0]!.message);
-  let featPlain: unknown;
-  let livingPlain: unknown;
-  try {
-    featPlain = doc.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
-  try {
-    const parsed = parseDocument(livingText);
-    if (parsed.errors.length > 0) throw new OpenapiMergeError("living", service, parsed.errors[0]!.message);
-    livingPlain = parsed.toJS() ?? {};
-  } catch (error) {
-    if (error instanceof OpenapiMergeError) throw error;
-    throw new OpenapiMergeError("living", service, errorMessage(error));
-  }
+  const { doc, plain: featPlain } = readTree(featureText, openapiRefusal("feature", service));
+  const { plain: livingPlain } = readTree(livingText, openapiRefusal("living", service));
 
   const featPaths = plainChild(featPlain, "paths");
   if (!isRecord(featPaths)) return { text: null, pins: [] };
@@ -165,11 +150,7 @@ export function pinOpenapiOperations(featureText: string, livingText: string, se
   }
 
   if (!edited) return { text: null, pins };
-  try {
-    return { text: doc.toString(), pins };
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  return { text: writeTree(doc, openapiRefusal("feature", service)), pins };
 }
 
 

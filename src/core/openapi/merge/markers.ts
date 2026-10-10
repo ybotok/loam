@@ -10,7 +10,7 @@
  * "which keys are feature-only" is how one of the two starts leaking a marker.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, isScalar, parseDocument } from "yaml";
+import { isMap, isScalar } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -25,7 +25,7 @@ import {
   OPENAPI_BASELINES_KEY,
 } from "../digest.js";
 import { setComponentValue } from "./components.js";
-import { errorMessage, OpenapiMergeError } from "./error.js";
+import { openapiRefusal, readTree, writeTree } from "./error.js";
 
 /**
  * Remove feature-only operation-removal markers — and the root
@@ -39,16 +39,9 @@ import { errorMessage, OpenapiMergeError } from "./error.js";
  * early returns below.
  */
 export function stripOpenapiRemovalMarkers(featureText: string, service: string): string {
-  const feature = parseDocument(featureText);
-  if (feature.errors.length > 0) {
-    throw new OpenapiMergeError("feature", service, feature.errors[0]!.message);
-  }
-  let plain: unknown;
-  try {
-    plain = feature.toJS() ?? {};
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  // One refusal for every branch below, so each fails the same way.
+  const fail = openapiRefusal("feature", service);
+  const { doc: feature, plain } = readTree(featureText, fail);
   const hasRecord = isRecord(plain) && OPENAPI_BASELINES_KEY in plain;
   // Shape from the RESOLVED tree, for the same reason the merge reads it there:
   // an aliased `paths` or path item is not a map node, and treating it as
@@ -57,7 +50,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   if (!isRecord(paths)) {
     if (!hasRecord) return featureText;
     feature.deleteIn([OPENAPI_BASELINES_KEY]);
-    return serialize(feature, service);
+    return writeTree(feature, fail);
   }
 
   const cleaned: Record<string, unknown> = {};
@@ -92,7 +85,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   if (!stripped) {
     if (!hasRecord) return featureText;
     feature.deleteIn([OPENAPI_BASELINES_KEY]);
-    return serialize(feature, service);
+    return writeTree(feature, fail);
   }
 
   // Edit the AST in place when every node the strip touches IS a node — the
@@ -162,16 +155,7 @@ export function stripOpenapiRemovalMarkers(featureText: string, service: string)
   // bookkeeping exactly like the pins, and the rewrite branch above replaced
   // only `paths`, so the root key survives either way without this.
   if (hasRecord) feature.deleteIn([OPENAPI_BASELINES_KEY]);
-  return serialize(feature, service);
-}
-
-/** One spelling of "hand the document back", so every strip branch fails the same way. */
-function serialize(feature: ReturnType<typeof parseDocument>, service: string): string {
-  try {
-    return feature.toString();
-  } catch (error) {
-    throw new OpenapiMergeError("feature", service, errorMessage(error));
-  }
+  return writeTree(feature, fail);
 }
 
 export function opLabel(before: unknown, after: unknown, method: string, path: string): string {
