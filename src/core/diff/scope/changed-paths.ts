@@ -15,7 +15,9 @@
  * directory is at the five-file limit and because this is a different subject
  * from the semantic diff beside it: `diff` compares two states of the fleet and
  * reports what moved, this one only decides WHICH SUBJECTS a run should look
- * at. Nothing here reads a document.
+ * at. Nothing here reads a document; the one question that has to — which call
+ * edges on the fleet map are this branch's — is `./edges.ts`'s, and it reads
+ * only the map documents the branch changed.
  *
  * What it does NOT do, and the line is not negotiable: a diff-scoped validate
  * cannot see a victim boundary the change did not touch. Removing an operation
@@ -25,10 +27,17 @@
  * the two gates answer "did you document what you touched" and "did you break a
  * consumer", and neither substitutes for the other. Selling a green here that
  * hides a broken join would be worse than shipping no flag at all.
+ *
+ * A join the branch WROTE is a different case, and it is graded: an edge the
+ * branch added or edited on the fleet map is checked against its provider's
+ * contract even with the provider out of scope (`edges` below), because the
+ * edge is the document this branch touched and the provider is only where its
+ * answer lives.
  */
 import { declineDetail, gitText } from "../../provenance/git.js";
 import { repoPath, type ErrorCode } from "../../envelope/json.js";
 import { resolveBase } from "../base-git.js";
+import { edgesSince } from "./edges.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
 import type { FeatureEntry, ServiceEntry } from "../../repo/entries.js";
 
@@ -51,6 +60,18 @@ export interface ValidateScope {
   commit: string;
   /** Did `architecture/` change? The landscape target is the fleet's own subject and has no directory of its own. */
   landscape: boolean;
+  /**
+   * Every docs-relative path that differs from the base, untracked files
+   * included. Kept because the landscape target grades more files than the
+   * map — the fleet vocabularies, AGENTS.md — and `touched` is how the run asks
+   * which of them this branch changed.
+   */
+  changed: readonly string[];
+  /**
+   * The fleet-map call edges this branch introduced or changed, as
+   * `./edges.ts`'s `edgeKey`s. Empty unless `architecture/` changed.
+   */
+  edges: ReadonlySet<string>;
   services: ServiceEntry[];
   features: FeatureEntry[];
   /** The denominators — what the run would have graded without `--base`. */
@@ -135,6 +156,11 @@ function inside(path: string, dir: string): boolean {
   return dir !== "" && (path === dir || path.startsWith(`${dir}/`));
 }
 
+/** Did this branch change `rel` — a docs-relative file, or anything under a docs-relative directory? */
+export function touched(scope: ValidateScope, rel: string): boolean {
+  return scope.changed.some((path) => inside(path, rel));
+}
+
 /** The fleet's own documents — the landscape target's subject, which owns no service directory. */
 const ARCHITECTURE_DIR = "architecture";
 
@@ -187,15 +213,21 @@ export async function scopeSince(request: ScopeRequest): Promise<ScopeOutcome> {
   }
 
   const dirOf = (abs: string): string => repoPath(docsDir, abs);
+  // `architecture/` is the landscape target's whole directory: the fleet map,
+  // the permission/capability/obligation vocabularies and the fleet ADRs all
+  // live there, and every one of them is graded by the landscape target
+  // rather than by any service.
+  const architecture = changed.filter((path) => inside(path, ARCHITECTURE_DIR));
   return {
     kind: "scope",
     ref,
     commit: base.commit,
-    // `architecture/` is the landscape target's whole directory: the fleet map,
-    // the permission/capability/obligation vocabularies and the fleet ADRs all
-    // live there, and every one of them is graded by the landscape target
-    // rather than by any service.
-    landscape: changed.some((path) => inside(path, ARCHITECTURE_DIR)),
+    landscape: architecture.length > 0,
+    changed,
+    edges: await edgesSince(
+      { docsDir, commit: base.commit, prefix: base.prefix },
+      architecture.filter((path) => path.endsWith(".likec4")),
+    ),
     services: request.services.filter((svc) => changed.some((path) => inside(path, dirOf(svc.dir)))),
     features: request.features.filter((feat) => changed.some((path) => inside(path, dirOf(feat.dir)))),
     totals: { services: request.services.length, features: request.features.length },

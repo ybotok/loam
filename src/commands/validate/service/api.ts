@@ -22,7 +22,7 @@ import { type ServicePaths } from "../../../core/repo/paths.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import { responseGovernanceFindings } from "../checks/requirements.js";
 import { type Requirement } from "../../../core/document/spec.js";
-import { readOpenapi } from "../../../core/openapi/doc.js";
+import { readOpenapi, type OpenapiDoc } from "../../../core/openapi/doc.js";
 import { FleetContext } from "../../../core/fleet-context.js";
 
 /** What the service target hands the HTTP axis. */
@@ -67,8 +67,10 @@ export async function apiAxisFindings(
   const api = await readOpenapi(paths.openapi, fleet);
   const removeMarkers = api.ops.filter((o) => o.remove);
   const liveOps = api.ops.filter((o) => !o.remove);
-  const ops = liveOps.map((o) => o.id);
-  const deprecatedOps = new Set(liveOps.filter((o) => o.deprecated).map((o) => o.id));
+  /** No contract to read: deleted, renamed, or never written. */
+  const contractMissing = !existsSync(paths.openapi);
+  const contract = contractOf(api, contractMissing);
+  const { ops, deprecated: deprecatedOps } = contract;
   // Inbound calls the landscape can PROVE: op-linked edges whose target
   // resolves to this service. Null when the landscape proves nothing at all
   // (absent, or it did not parse) — which is not the same fact as "nobody
@@ -80,8 +82,6 @@ export async function apiAxisFindings(
   // The other half of the evidence a contract is owed: the living spec's own
   // `Operations:` lines. A requirement on its way out governs nothing.
   const governedOps = livingReqs.flatMap((r) => r.operations);
-  /** No contract to read: deleted, renamed, or never written. */
-  const contractMissing = !existsSync(paths.openapi);
   if (contractMissing) {
     // A contract that is gone is not a reason to stop grading the API axis —
     // it IS the axis's answer, and every check below used to live inside the
@@ -273,9 +273,21 @@ export async function apiAxisFindings(
     }
   }
 
+  return { findings, contract };
+}
+
+/**
+ * What the spine may conclude from one contract read — spelled once, because a
+ * `--base` run now grades a changed edge against a provider it does not grade
+ * as a target (`../scope.ts`), and two spellings of "which operations are
+ * live" would be two chances for a removal marker to count as defined.
+ */
+export function contractOf(api: OpenapiDoc, missing: boolean): ServiceContract {
+  const live = api.ops.filter((o) => !o.remove);
   return {
-    findings,
-    contract: { ops, deprecated: deprecatedOps, unreadable: api.unreadable || contractMissing },
+    ops: live.map((o) => o.id),
+    deprecated: new Set(live.filter((o) => o.deprecated).map((o) => o.id)),
+    unreadable: api.unreadable || missing,
   };
 }
 

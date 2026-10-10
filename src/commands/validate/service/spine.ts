@@ -31,7 +31,12 @@ export interface Spine {
   treePath: string;
   /** `service` widened for `===` against the resolver's DOCUMENT text — see service.ts. */
   me: string;
-  /** The living landscape, or null when the repo has none. */
+  /**
+   * The living landscape, or null when the repo has none. A `--base` run's
+   * changed-edge grade (`../scope.ts`) hands in the same document narrowed to
+   * the edges the branch wrote, which is why every verdict below is per edge
+   * and none of them is about the edges that are absent.
+   */
   land: LoadedDoc | null;
   /** Its element→service resolver; null exactly when `land` is. */
   landSvcOf: ((id: string) => DeclaredService) | null;
