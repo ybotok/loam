@@ -6,19 +6,26 @@
  * computes, the commit swaps.
  */
 import type { Command } from "commander";
-import { configOrRefuse, fail, type ErrorCode } from "../../core/envelope/json.js";
+import { CodedFailure, configOrRefuse, fail, type ErrorCode } from "../../core/envelope/json.js";
 import { message } from "../../core/staging/commit.js";
 import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
-import { ArchiveFailure, type ArchiveOptions } from "./plan/refusal.js";
+import { type ArchiveOptions } from "./plan/refusal.js";
 import { archiveLocked } from "./run.js";
 import { LandscapeSpliceError } from "../../core/c4/splice/contract.js";
 import { NotUtf8Error } from "../../core/staging/writes.js";
 import { OpenapiMergeError } from "../../core/openapi/merge/error.js";
 import { InterruptedCommitError } from "../../core/staging/interrupted.js";
 
-
+/**
+ * The code a failed archive answers with. A `CodedFailure` is thrown from the
+ * plan phase (nothing written yet) and from the commit's rollback path (whose
+ * message says whether the rollback held). Anything that escapes runArchive and
+ * matches no arm below is a bug, and reports as `internal`.
+ */
 function archiveErrorCode(err: unknown): ErrorCode {
-  if (err instanceof ArchiveFailure) return err.code;
+  if (err instanceof CodedFailure) return err.code;
+  // Another writer holds the docs repo — the lock is taken refuse-fast below.
+  if (err instanceof DocsBusyError) return "docs-busy";
   // Every splice refusal is the mechanical merge answer — see the class.
   if (err instanceof LandscapeSpliceError) return "merge-failed";
   if (err instanceof NotUtf8Error) return "merge-failed";
@@ -60,13 +67,7 @@ async function runArchive(featureId: string, opts: ArchiveOptions): Promise<void
   const json = opts.json === true;
   const config = await configOrRefuse(json);
   if (config === null) return;
-  let release: () => Promise<void>;
-  try {
-    release = await acquireDocsLock(config.docsDir);
-  } catch (err) {
-    if (err instanceof DocsBusyError) throw new ArchiveFailure("docs-busy", err.message);
-    throw err;
-  }
+  const release = await acquireDocsLock(config.docsDir);
   try {
     await archiveLocked(config, featureId, opts);
   } finally {

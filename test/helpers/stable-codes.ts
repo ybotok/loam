@@ -65,8 +65,8 @@ const CODE_TERNARY = /\?\s*"([a-z][a-z0-9.-]*)"\s*:\s*"([a-z][a-z0-9.-]*)"\s*$/;
 
 /**
  * A slot that FORWARDS a code somebody else already spelled: the emitter's own
- * `code` parameter passed on, or a `.code` read off a typed value (an
- * `ArchiveFailure`, a `VerificationRead`). Every literal that can reach one of
+ * `code` parameter passed on, or a `.code` read off a typed value (a
+ * `CodedFailure`, a `VerificationRead`). Every literal that can reach one of
  * those is collected where it is written — as a `code:` property or as a union
  * member — so the slot itself contributes nothing new. Anything outside this
  * list is an emitter shape the collector cannot see, and it says so.
