@@ -266,10 +266,11 @@ export const MCP_TOOLS: readonly McpTool[] = [
     command: "gate",
     description:
       "Can this service deploy? A read-only query over recorded evidence — advisory by default. " +
-      "CLI equivalent: loam gate [--service <id>] [--strict] --json",
+      "CLI equivalent: loam gate [--service <id>] [--since <ref>] [--strict] --json",
     positionals: [],
     flags: [
       { ...SERVICE_FLAG, description: "the service being deployed (defaults to the configured service)" },
+      { property: "since", flag: "--since", kind: "string", description: "also grade features archived after this docs-repo git ref; without it only in-flight features are read" },
       { property: "strict", flag: "--strict", kind: "boolean", description: "exit 1 on any warning too; the payload does not change" },
     ],
   },

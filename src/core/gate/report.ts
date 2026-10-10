@@ -55,17 +55,43 @@ export interface GatePartner {
 }
 
 /**
- * One active feature touching the gated service, with the verification
- * record's own projection beside it. Every field but `id` is
+ * One feature touching the gated service — every active one, plus, under
+ * `--since`, every one archived after the ref — with the verification
+ * record's own projection beside it. Every field but `id` and `archived` is
  * `verificationState`'s (`core/status/verification.ts`) — never a second
  * derivation of "verified".
  */
 export interface GateFeature extends VerificationState {
   id: string;
+  /**
+   * Present, and true, only on a row `--since` added: the feature shipped
+   * after the ref, so its record is frozen history. Absent rather than
+   * `false` on the in-flight rows, so a payload without `--since` is byte for
+   * byte the one it was before the flag existed.
+   */
+  archived?: true;
+}
+
+/**
+ * `--since <ref>`, resolved: the docs-repo commit a deploy pipeline last
+ * shipped from, and the `features/archive/` directory names that already
+ * existed there. Without it the verification check reads in-flight features
+ * only, and a feature drops out of the gate the moment it is archived — which
+ * under `--strict` made archiving the cheapest way past an unverified-feature
+ * warning. With it, every feature archived AFTER the ref (its directory absent
+ * there) is graded too. Nothing is stored: the pipeline already knows its last
+ * deployed docs commit, and git already knows what was archived at it.
+ */
+export interface GateSince {
+  ref: string;
+  commit: string;
+  archivedAtRef: ReadonlySet<string>;
 }
 
 export interface GateReport {
   service: string;
+  /** The `--since` bound the report was computed under, or null for in-flight features only. */
+  since: { ref: string; commit: string } | null;
   landscape: LandscapeRead;
   partners: GatePartner[];
   features: GateFeature[];

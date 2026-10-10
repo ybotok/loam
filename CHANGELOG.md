@@ -327,6 +327,32 @@ maturity rung of every service is unchanged.
   in this repository") in both forms, never through the machine's absolute path.
 - No code, flag, path or payload key was added, changed or retired.
 
+### Added — `loam gate --since <ref>`: the deploy gate no longer forgets a feature at archive
+
+- **`loam gate` used to grade in-flight features only**, so a feature left the verification check
+  the moment it was archived — and `loam archive` reads no verification record, by design. On the
+  example fleet `gate --service order-service --strict` went from exit 1 (FEAT-112 unverified) to
+  exit 0 after `loam archive FEAT-112`; a contract-only feature escaped even a vouched service,
+  because `content_digest` covers the spec bodies and not `openapi.yaml`/`asyncapi.yaml`. Without
+  the new flag that is still exactly what the gate does, and `--help`, WORKFLOW.md and
+  `loam explain gate.feature-unverified` now say so.
+- **New flag `--since <ref>`** on `loam gate`: a docs-repo git ref — the docs commit the pipeline's
+  last deploy recorded. Every feature archived after it (its `features/archive/<FEAT>/` directory
+  absent at the ref) that carries a `specs/<service>/` delta is graded too, by its frozen
+  verification record, under the existing warn-only `gate.feature-unverified` (or the reused
+  `verify.scenario-attested`). Its message names the ref and points at `loam unarchive <FEAT>`
+  rather than a `loam verify --record` an archived feature refuses. The ref is read from the docs
+  repo's own git exactly as `loam diff --base` reads its base, and refused the same way:
+  `repository-unavailable` when git cannot answer from the docs repo (or cannot list
+  `features/archive/` at the ref), `unknown-target` when the ref names no commit. No new code;
+  nothing is stored.
+- **New `--json` payload keys:** top-level `since` — `{ ref, commit }` under `--since`, `null`
+  without it — and `features[].archived`, present and `true` only on a row `--since` added (an
+  in-flight row carries no such key, so a payload without the flag is unchanged apart from
+  `since: null`). The text view titles the block "verification — in flight, and archived since
+  <ref>" and marks those rows `· archived`.
+- **The MCP `loam_gate` tool** gains the matching `since` string argument.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line.

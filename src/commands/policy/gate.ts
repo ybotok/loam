@@ -13,8 +13,14 @@
  * writes to stdout or stderr and sets the exit code. That is a decision about
  * how this process ends, and core modules compute answers rather than end
  * processes.
+ *
+ * A fourth sits at the bottom for the commands that read the docs repo AT a
+ * git ref — `baseOrRefuse`, the same doctrine one step on: a ref git cannot
+ * answer for is "could not look", never an empty base.
  */
 import { fail } from "../../core/envelope/json.js";
+import { resolveBase, type ResolvedBase } from "../../core/diff/base-git.js";
+import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { docsRepoState, type DocsRepoUnavailableError } from "../../core/repo/state.js";
 
 /**
@@ -118,4 +124,60 @@ export function reportRepositoryUnavailable(
         `A file under ${docsDir} could not be read, so ${consequence}. ${why}. ` +
         `The failure named no path — that is how Node reports a directory sitting where a file belongs.`,
   );
+}
+
+/**
+ * The refusals a command owes a docs-repo git ref it cannot read at.
+ *
+ * Two commands read the docs repo AT a ref: `loam diff --base <ref>` (the
+ * whole fleet, to diff against) and `loam gate --since <ref>` (which features
+ * had already shipped, so the ones archived after it are graded too). Both
+ * REFUSE when git cannot answer, unlike provenance's "git will not say": a
+ * missing base is not an empty one, and reading it as empty is a fail-open in
+ * both — diff would report the whole fleet as added, gate would pass a deploy
+ * over every feature archived since a ref it never resolved. One helper, so
+ * the two refusals are one sentence each with the flag swapped in, rather
+ * than two copies drifting.
+ */
+export interface BaseRequest {
+  /** The flag the ref arrived on, as the user typed it: `--base`, `--since`. */
+  flag: string;
+  ref: string;
+  /** What the command reads at the ref, as the subject of a sentence: "loam diff reads the base state". */
+  reads: string;
+}
+
+/**
+ * The resolved base, or null after refusing: `repository-unavailable` when
+ * the docs repo is not somewhere git can answer from, `unknown-target` when
+ * the ref names no commit there (an option-shaped ref included —
+ * `resolveBase` refuses it before it can reach an argv).
+ */
+export async function baseOrRefuse(
+  json: boolean,
+  docsDir: DocsDir,
+  req: BaseRequest,
+): Promise<ResolvedBase | null> {
+  const base = await resolveBase(docsDir, req.ref);
+  if (base.kind === "no-git") {
+    fail(
+      json,
+      "repository-unavailable",
+      `The docs repo at ${docsDir} is not somewhere git can answer from (${base.detail}) — ` +
+        `${req.reads} with read-only git questions (rev-parse/ls-tree/show), so it needs the docs repo ` +
+        `to be a git checkout with the ${req.flag} ref present. Clone the docs repo with its history, then re-run.`,
+    );
+    return null;
+  }
+  if (base.kind === "no-ref") {
+    fail(
+      json,
+      "unknown-target",
+      `${req.flag} ${req.ref} does not resolve to a commit in the docs repo at ${docsDir}` +
+        `${base.detail === "" ? "" : ` (${base.detail})`}. ` +
+        `Pass a ref that exists there — main, origin/main, a tag or a commit sha — fetching first if it lives on the remote.`,
+    );
+    return null;
+  }
+  return { docsDir, commit: base.commit, prefix: base.prefix };
 }

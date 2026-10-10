@@ -1,11 +1,19 @@
 /**
- * Git-at-a-ref reader for the DOCS repo — the base side of `loam diff`.
+ * Git-at-a-ref reader for the DOCS repo — the base side of `loam diff`, and
+ * the "what had already shipped" side of `loam gate --since`.
  *
- * Three questions, all read-only: does this docs directory sit in a git
+ * Four questions, all read-only: does this docs directory sit in a git
  * repository and where (`resolveBase`), what did `services/` hold at the base
- * commit (`listBaseTree`), and what were one file's bytes there
- * (`showBaseFile`). No checkout, no temp writes — the base state is read
- * straight out of the object store with `rev-parse`/`ls-tree`/`show`.
+ * commit (`listBaseTree`), which subdirectories did one docs directory hold
+ * there (`listBaseSubdirs` — gate's `features/archive/` question), and what
+ * were one file's bytes there (`showBaseFile`). No checkout, no temp writes —
+ * the base state is read straight out of the object store with
+ * `rev-parse`/`ls-tree`/`show`.
+ *
+ * Gate takes diff's doctrine below along with the mechanics: a `--since` ref
+ * git cannot answer for is a refusal, never "nothing was archived since",
+ * because that silence would pass a deploy over every feature it could not
+ * see — the same fail-open as a silently empty diff base, one command over.
  *
  * The doctrine here is deliberately NOT provenance's. `../provenance/git.ts`
  * answers every git decline with "git will not say" — null, no finding —
@@ -21,6 +29,7 @@
  * construction.
  */
 import { spawn } from "node:child_process";
+import { relative, sep } from "node:path";
 import { collectStderr, declineDetail, GIT_TIMEOUT_MS, gitSaid, gitText } from "../provenance/git.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -94,15 +103,48 @@ export type BaseTreeListing =
 
 /**
  * Every file path under `services/` at the base commit, DOCS-RELATIVE
- * (`services/...`, prefix already stripped). `--full-tree` anchors both the
- * pathspec and the output at the repository root regardless of cwd, so the
- * one prefix from `resolveBase` is the whole story; `-z` because git quotes
- * non-ASCII paths in line output. An empty answer is git ANSWERING — the base
+ * (`services/...`, prefix already stripped — `lsTree` below holds the
+ * mechanics both listings share). An empty answer is git ANSWERING — the base
  * commit simply has no `services/` — and only a non-zero exit is a failure.
  */
 export async function listBaseTree(base: ResolvedBase): Promise<BaseTreeListing> {
+  return lsTree(base, "-r", "services");
+}
+
+/**
+ * The NAMES of the immediate subdirectories of one docs directory at the base
+ * commit — `loam gate --since`'s question: which `features/archive/<FEAT>/`
+ * directories already existed at the ref, so every other archived feature
+ * shipped after it. `dir` is the absolute path a `repo/paths.ts` builder
+ * spells (`archiveDir`), made docs-relative here, so the layout keeps its one
+ * spelling; the separator is forced to `/` because git paths are slash-joined
+ * on every host. `-d` lists trees only, and the trailing slash asks for the
+ * directory's CHILDREN rather than the directory entry itself. An empty answer
+ * is git answering — the base had no such directory — and only a decline is
+ * `failed`, which the caller refuses on, as `listBaseTree`'s callers do.
+ */
+export async function listBaseSubdirs(
+  base: ResolvedBase,
+  dir: string,
+): Promise<{ kind: "ok"; names: string[] } | { kind: "failed"; detail: string }> {
+  const rel = `${relative(base.docsDir, dir).split(sep).join("/")}/`;
+  const listing = await lsTree(base, "-d", rel);
+  if (listing.kind === "failed") return listing;
+  return {
+    kind: "ok",
+    names: listing.paths.filter((p) => p.startsWith(rel)).map((p) => p.slice(rel.length)),
+  };
+}
+
+/**
+ * The one `ls-tree` both listings ask, DOCS-RELATIVE (prefix already
+ * stripped). `--full-tree` anchors both the pathspec and the output at the
+ * repository root regardless of cwd, so the one prefix from `resolveBase` is
+ * the whole story; `-z` because git quotes non-ASCII paths in line output.
+ */
+async function lsTree(base: ResolvedBase, mode: "-r" | "-d", root: string): Promise<BaseTreeListing> {
   const answer = await gitText(base.docsDir, [
-    "ls-tree", "-r", "-z", "--name-only", "--full-tree", base.commit, "--", `${base.prefix}services`,
+    "ls-tree", mode, "-z", "--name-only", "--full-tree", base.commit, "--", `${base.prefix}${root}`,
   ]);
   if (answer.spawnError !== undefined || answer.code !== 0 || answer.overflowed) {
     return {
