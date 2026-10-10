@@ -585,7 +585,9 @@ repo it runs in, every `init` writes pointers for the six workflow bodies (`loam
 twenty-one targets**: as a command file you type — `/loam-check` for most, `/loam:check` where the
 tool namespaces by directory, `@loam-check` in Amazon Q's prompt library — and as an Agent Skill
 at `<tool-dir>/skills/loam-<x>/SKILL.md`, which the model loads by itself when the task matches. Two
-targets are skills only: Codex reads `.codex/skills/` and loads no custom command files, and
+targets are skills only: Codex loads no custom command files, and its target writes
+`.codex/skills/` — a root Codex still reads but no longer documents (its skills page names only
+`.agents/skills`; select `agents` too if you want the documented one) — and
 `agents` is not a tool at all but the vendor-neutral `.agents/skills/` root that Cursor, GitHub
 Copilot, Codex, Gemini CLI, Zed and Roo Code each document reading — one copy those six share
 instead of six copies of the same bytes. `--no-commands` and `--no-skills` each suppress one

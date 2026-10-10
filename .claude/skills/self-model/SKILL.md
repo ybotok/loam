@@ -140,13 +140,16 @@ to decide whether it is right.
 ## Two traps
 
 **`meta/docs/AGENTS.md` is generated, and `agents.stale` grades the STAMP, not the content.** A
-change to any `AGENTS_MD` section in `src/core/agent/` leaves that file behind while every command
-still reports the repo healthy, because the version in its stamp still matches. In a fleet that is
-somebody else's file and a version bump surfaces it; here the sections and the file are in one
-repository, so one commit can move the first without the second — which is exactly what had happened
-when this was written.
+change to `AGENTS_MD` — since 0.2.0-alpha.1 one `ORIENTATION` literal in
+`src/core/agent/agents-md.ts` — leaves that file behind while every command still reports the repo
+healthy, because the version in its stamp still matches. In a fleet that is somebody else's file and
+a version bump surfaces it; here the source and the file are in one repository, so one commit can
+move the first without the second — which is exactly what had happened when this was written (back
+when AGENTS.md was still assembled from sections).
 
-So after ANY edit under `src/core/agent/agents-md/` or `src/core/agent/workflows/`:
+So after ANY edit to `src/core/agent/agents-md.ts` (the modules under `src/core/agent/agents-md/`
+and `src/core/agent/workflows/` are `loam instructions` pages and never reach the file, though
+running it after touching them costs nothing):
 
 ```bash
 npm run meta:agents
