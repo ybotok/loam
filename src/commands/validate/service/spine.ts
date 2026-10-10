@@ -13,7 +13,6 @@
  * PRODUCER owns the contract and it lives in another repository, so the two
  * could not share a walk even though they share the shape.
  */
-import { relative } from "node:path";
 import { type DeclaredService } from "../../../core/kernel/ids/service.js";
 import { type LoadedDoc } from "../../../core/c4/likec4.js";
 import { type DocsDir } from "../../../core/kernel/ids/dirs.js";
@@ -105,12 +104,12 @@ export function spineFindings(spine: Spine): Finding[] {
           : {
               // Every line carries its own file once more than one document is
               // broken, the fleet arm's rule verbatim: a bare `L8:` across two
-              // documents is unactionable.
-              details: land.errors.map((e) =>
-                e.sourceFsPath === undefined || broken.length < 2
-                  ? errorText(e)
-                  : `${relative(spine.docsDir, e.sourceFsPath).split(/[\\/]/).join("/")} ${errorText(e)}`,
-              ),
+              // documents is unactionable. The prefix is `brokenDocumentPaths`'s
+              // spelling of that one error's document, as the message's list is.
+              details: land.errors.map((e) => {
+                const [file] = broken.length < 2 ? [] : brokenDocumentPaths(spine.docsDir, [e]);
+                return file === undefined ? errorText(e) : `${file} ${errorText(e)}`;
+              }),
             }),
         // The broken document first, the service second: the finding is about a
         // file under `architecture/` and is FILED on this service, and without

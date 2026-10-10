@@ -144,7 +144,7 @@ export interface VerificationCell {
 export async function featureVerification(
   docsDir: DocsDir,
   f: FeatureEntry,
-  fleet?: FleetContext,
+  fleet: FleetContext,
 ): Promise<VerificationCell | null> {
   const { state: s } = await verificationState(docsDir, f, { fleet });
   if (s.state === "absent" || s.state === "unreadable" || s.recorded === null) return null;
