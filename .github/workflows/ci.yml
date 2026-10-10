@@ -1,7 +1,9 @@
 # Supported-runtime gate plus an install-from-tarball smoke. The seven vendored
 # OpenSpec fixtures run in the normal suite; scheduled/manual jobs exercise the
-# three complete corpora — the certified v1.9.0 release and the two older
-# regression pins — from external, commit-pinned checkouts.
+# four complete corpora — the certified v1.14.1 release and the three older
+# regression pins — from external, commit-pinned checkouts. The newest upstream
+# release, which no pin names, is openspec-canary.yml's question, not this
+# gate's.
 name: ci
 
 on:
@@ -147,6 +149,8 @@ jobs:
       matrix:
         include:
           - baseline: release
+            commit: 87c3595ace6a2e22957f39ebe5b74c2f2316e0cb
+          - baseline: previous
             commit: 2826b8889e5223a9a8095d4428b60b56597e1020
           - baseline: legacy
             commit: 4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b

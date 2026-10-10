@@ -6,30 +6,47 @@ is measured, not inferred from a successful directory walk.
 
 ## Version matrix
 
-> **Compatibility boundary:** the v1.9 exact-commit corpus is certified for the parser and one-way
-> migration boundary documented here. That boundary is the Markdown and the staged migration, not
-> OpenSpec's behavior: `audit-openspec` inventories v1.8/v1.9 workspace shapes, and loam does not
-> reimplement v1.9 validation, archive recovery, capability retirement, Store or agent-delivery
-> semantics.
+> **Compatibility boundary:** the v1.14.1 exact-commit corpus is certified for the parser and
+> one-way migration boundary documented here. That boundary is the Markdown and the staged
+> migration, not OpenSpec's behavior: `audit-openspec` inventories the workspace shapes v1.8
+> introduced and v1.14.1 still uses, and loam does not reimplement OpenSpec validation, archive
+> recovery, capability retirement, Store or agent-delivery semantics.
 
 | OpenSpec source | Exact pin | loam coverage | Status |
 |---|---|---|---|
-| [v1.9.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0) | `2826b8889e5223a9a8095d4428b60b56597e1020`, released 2026-08-13 | Full living + active + archived Markdown corpus sweep, seven verbatim regression fixtures re-vendored at this commit, and the documented audit/mapping/staged-apply path. | **Certified for this documented parser/migration boundary.** It is not bidirectional OpenSpec compatibility. |
-| [v1.8.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.8.0) | `d57889664cab4f2f061d236ec3ff82a5578701bb`, released 2026-08-05 | Audit inventories or preserves modern planning roots, Stores, nested capability paths, config context/rules/references, custom schemas/templates, per-change metadata, `skip_specs`, `RENAMED`, and authored artifacts. | **Inventoried, and superseded by the certified v1.9.0 pin.** No v1.8 exact-release sweep of its own runs; the shapes v1.8 introduced are carried by the v1.9 corpus. |
-| [v1.7.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.7.0) | `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | The previously certified corpus, still swept file by file. | **Regression pin.** A parser change may not fix the current corpus by breaking the one somebody already migrated from. |
-| Historical post-v1.7 `main` canary | `45cca5db6137ed209117cc70510eb3e057fb981b` | A third exact living + active + archived parser corpus. | **Regression pin only.** It is not a release and not a moving claim. |
+| [v1.14.1 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.14.1) | `87c3595ace6a2e22957f39ebe5b74c2f2316e0cb`, released 2026-10-05 | Full living + active + archived Markdown corpus sweep through the migration's own reader, the 1.13 requirement grammar described below, and the documented audit/mapping/staged-apply path, run against OpenSpec's own v1.14.1 workspace. | **Certified for this documented parser/migration boundary.** It is not bidirectional OpenSpec compatibility. |
+| v1.10.0 – v1.14.0 releases | — | Carried by the v1.14.1 corpus and grammar; no exact sweep of their own runs. | **Superseded by the certified v1.14.1 pin.** |
+| [v1.9.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.9.0) | `2826b8889e5223a9a8095d4428b60b56597e1020`, released 2026-08-13 | The previously certified corpus, still swept file by file; the seven verbatim regression fixtures are vendored from this commit. | **Regression pin.** A parser change may not fix the current corpus by breaking the one somebody already migrated from. |
+| [v1.8.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.8.0) | `d57889664cab4f2f061d236ec3ff82a5578701bb`, released 2026-08-05 | Audit inventories or preserves modern planning roots, Stores, nested capability paths, config context/rules/references, custom schemas/templates, per-change metadata, `skip_specs`, `RENAMED`, and authored artifacts. | **Inventoried, and superseded.** No v1.8 exact-release sweep of its own runs; the shapes v1.8 introduced are carried by the v1.9.0 and v1.14.1 corpora. |
+| [v1.7.0 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.7.0) | `4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b` | An older certified corpus, still swept file by file. | **Regression pin**, for the same reason. |
+| Historical post-v1.7 `main` canary | `45cca5db6137ed209117cc70510eb3e057fb981b` | A further exact living + active + archived parser corpus. | **Regression pin only.** It is not a release and not a moving claim. |
+| Newest upstream release | None: the newest `vX.Y.Z` tag, resolved each week | The same sweep without a pin (`--baseline latest`), an audit of OpenSpec's own workspace, and a diff of upstream's parser sources against the certified pin, in [openspec-canary.yml](https://github.com/ybotok/loam/blob/main/.github/workflows/openspec-canary.yml). | **Early warning, never a certification.** A red canary means upstream moved; it blocks no pull request and no release. |
 
-The seven verbatim fixtures come from the v1.9.0 commit and run in routine CI. A scheduled/manual
-matrix separately sweeps all three pinned commits across living, active, and archived spec trees:
-v1.9.0 211 files / 746 requirements / 2317 scenarios; v1.7.0 207 / 739 / 2273; canary 209 / 742 /
-2284. These test requirement/scenario parsing, not every v1.8/v1.9 workspace feature. The
+The seven verbatim fixtures come from the v1.9.0 commit and run in routine CI. At v1.14.1 five are
+byte-identical and the other two gained only prose and scenarios of shapes the set already holds, so
+the set was not re-vendored. A scheduled/manual matrix separately sweeps all four pinned commits
+across living, active, and archived spec trees: v1.14.1 223 files / 765 requirements / 2475
+scenarios; v1.9.0 211 / 746 / 2317; v1.7.0 207 / 739 / 2273; canary 209 / 742 / 2284. These test
+requirement/scenario parsing, not every workspace feature. The
 [fixture provenance, immutable upstream paths, and checksums](https://github.com/ybotok/loam/blob/main/test/fixtures/openspec/README.md)
 and the [compatibility tests](https://github.com/ybotok/loam/blob/main/test/openspec-compat.test.ts)
 use absolute GitHub URLs because this guide is also shipped in the npm tarball while `test/` is not.
 
-OpenSpec v1.10.0 (released 2026-08-19) changed no requirement-Markdown format, so the certified
-v1.9.0 boundary also covers documents it writes; its workspace-level additions are inventoried like
-the v1.8/v1.9 shapes above.
+**What moved between v1.9.0 and v1.14.1.** OpenSpec 1.13.0 and 1.13.1 changed the requirement
+grammar: a `*` or `+` bullet lists a `REMOVED` requirement or a `RENAMED` pair exactly as `-`
+always did, a heading's closing `#` run (`### Requirement: Late fees ###`) is not part of the
+requirement's name, and a delta file may repeat a section header with every copy applied.
+`audit-openspec` and `migrate-openspec` read all four the way OpenSpec does. 1.13.1 also stopped
+counting a bare `#### Scenario:` header with no body as a scenario; loam keeps it, and
+`loam validate` names it stepless in the staged target. The rest of v1.10–v1.14 — `show --diff`,
+`status --all`, `validate --archived`, Store-backed apply, new agent targets — is OpenSpec behavior,
+outside the boundary above.
+
+The certification run read OpenSpec's own v1.14.1 workspace: 36 capabilities, 30 active and 85
+archived changes. With the one change still at the proposal stage set aside (the
+`openspec.change-no-specs` case below), apply staged all 251 living requirements and 747 scenarios
+across 36 services, and 145 requirements across 29 features. Its planning roots, artifact kinds and
+change-metadata fields were the ones the v1.9.0 run met.
 
 An audit result of `ready: true` means that the particular files the installed loam inspected
 satisfy loam's documented migration checks. It is not a statement that every behavior of the
@@ -251,11 +268,12 @@ review material until the follow-up checklist is complete.
 ## What carries over mechanically
 
 The exact-commit corpus gate checks living, active, and archived spec trees. The certified corpus is
-the OpenSpec v1.9.0 release `2826b888`: 211 Markdown files, 746 requirements, and 2317 scenarios.
-The v1.7.0 release `4e16790` (207, 739, 2273) and the post-v1.7 main canary `45cca5d` (209, 742,
-2284) remain as regression sweeps. All three sweeps check parse/serialize/parse stability of
-requirement content. Nested bullets, fenced markup, removal prose, CRLF, BOM and non-ASCII names
-survive. `REMOVED` requirements with no scenarios remain legal.
+the OpenSpec v1.14.1 release `87c3595`: 223 Markdown files, 765 requirements, and 2475 scenarios.
+The v1.9.0 release `2826b88` (211, 746, 2317), the v1.7.0 release `4e16790` (207, 739, 2273) and
+the post-v1.7 main canary `45cca5d` (209, 742, 2284) remain as regression sweeps. All four read
+each file as the migration does and check read/serialize/read stability of requirement content.
+Nested bullets, fenced markup, removal prose, CRLF, BOM and non-ASCII names survive. `REMOVED`
+requirements with no scenarios remain legal.
 
 Modern ADDED/MODIFIED/REMOVED deltas are readable, but “readable” is not “ready”: routing to
 services, loam frontmatter, Operations/Covers links and feature identity still require decisions.

@@ -126,12 +126,12 @@ async function mappingFile(inventory: OpenSpecInventory): Promise<{ path: string
 }
 
 describe("OpenSpec audit inventory", () => {
-  it("pins the certified v1.9.0 release separately from the older regression canary", () => {
+  it("pins the certified v1.14.1 release separately from the older regression canary", () => {
     expect(OPENSPEC_BASELINES).toEqual({
       release: {
-        version: "1.9.0",
-        ref: "v1.9.0",
-        commit: "2826b8889e5223a9a8095d4428b60b56597e1020",
+        version: "1.14.1",
+        ref: "v1.14.1",
+        commit: "87c3595ace6a2e22957f39ebe5b74c2f2316e0cb",
       },
       mainCanary: { ref: "main", commit: "45cca5db6137ed209117cc70510eb3e057fb981b" },
     });
@@ -521,6 +521,29 @@ ${DELTA}`;
       expect(codesOf(inventory.unsupported), marker).not.toContain("openspec.change-empty");
       expect(inventory.mechanicallyCompatible, marker).toBe(true);
     }
+  });
+
+  it("reads every copy of a repeated delta section, a case variant included — the OpenSpec 1.13 grammar", async () => {
+    // OpenSpec 1.13.0 applies each copy of a repeated delta header; before it, a
+    // second `## ADDED Requirements` silently kept one body. loam reads a
+    // delta's kind heading by heading, so every copy already counted — this
+    // pins that it still does, because the v1.14.1 certification rests on it
+    // and upstream's own corpus never writes the shape.
+    const repeated = [
+      DELTA,
+      "## Notes\n\nProse between the two copies.\n",
+      DELTA.replace("## ADDED Requirements", "## Added Requirements").replace(/Refund/g, "Void"),
+    ].join("\n");
+    const fixture = await workspace({
+      "config.yaml": "schema: spec-driven\n",
+      "specs/payments/spec.md": LIVING,
+      "changes/add-both/specs/payments/spec.md": repeated,
+    });
+    const inventory = await inventoryOpenSpec(fixture.openspec);
+    expect(inventory.changes.active).toEqual([
+      expect.objectContaining({ id: "add-both", requirements: 2, scenarios: 2 }),
+    ]);
+    expect(inventory.unsupported).toEqual([]);
   });
 
   it("recognizes config-only projects and empty Store roots without inventing a missing-spec blocker", async () => {

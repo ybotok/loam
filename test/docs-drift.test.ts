@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { OPENSPEC_BASELINES } from "../src/core/openspec/model/model.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const PRIVATE_ROUTE_BLOCKER = "<!-- loam-release-blocker: private-security-route -->";
@@ -136,7 +137,13 @@ describe("ecosystem positioning and the separate OpenSpec compatibility boundary
   });
 
   it("the migration guide, not the ecosystem page, owns the certified corpus pin", async () => {
-    expect(await read("MIGRATING-from-OpenSpec.md")).toContain("2826b8889e5223a9a8095d4428b60b56597e1020");
+    // Read from the constant `audit-openspec` prints rather than spelled here:
+    // a literal kept passing after the pin moved, because the guide still names
+    // the old pin as a regression baseline.
+    const { version, commit } = OPENSPEC_BASELINES.release;
+    const guide = await read("MIGRATING-from-OpenSpec.md");
+    expect(guide).toContain(`the v${version} exact-commit corpus is certified`);
+    expect(guide).toContain(commit);
   });
 
   it("README describes COMPARISON as an ecosystem map, not a product duel", async () => {
