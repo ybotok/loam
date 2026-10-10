@@ -19,7 +19,7 @@
  */
 import { isDeepStrictEqual } from "node:util";
 import { isMap } from "yaml";
-import { classifyBaselineDigests } from "../../openapi/digest.js";
+import { classifyBaselineDigests, withoutFeatureKeysDeep } from "../../openapi/digest.js";
 import { asyncapiSlots, slotDigest, type AsyncapiSection } from "../digest.js";
 import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
@@ -34,7 +34,6 @@ import {
   sectionAstPath,
   setSlotValue,
   slotLabel,
-  withoutFeatureMarkers,
   writableSection,
 } from "./markers.js";
 
@@ -184,7 +183,12 @@ export function mergeAsyncapiSlots(
       continue;
     }
     if (verdict === "stale") baselineStale.push(at);
-    const publish = withoutFeatureMarkers(slot.node);
+    // The slot's PUBLISHABLE value: every feature-only key removed, at any
+    // depth — the top-level pin, a nested pin or marker on an inline channel
+    // message, and anything an author buried deeper. What the merge writes
+    // and what the create branch keeps; a removal-marker slot is never
+    // published at all (the merge deletes its target, the strip drops it).
+    const publish = withoutFeatureKeysDeep(slot.node);
     // An unpinned restatement equal to the living slot has nothing to write —
     // the component closure's rule, kept here so a never-rebased delta that
     // merely restates the contract does not churn its bytes.

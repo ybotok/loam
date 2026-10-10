@@ -96,8 +96,11 @@ export const slotBaselineOf = operationBaselineOf;
  */
 export const slotDigest = operationDigest;
 
-/** Entries of a mapping node, or nothing — the walker's one structural read. */
-function entriesOf(node: unknown): [string, unknown][] {
+/**
+ * Entries of a mapping node, or nothing — the walker's one structural read,
+ * and every structural read the reader (./read.ts) makes goes through it too.
+ */
+export function entriesOf(node: unknown): [string, unknown][] {
   if (node === null || typeof node !== "object" || Array.isArray(node)) return [];
   return Object.entries(node as Record<string, unknown>);
 }

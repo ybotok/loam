@@ -9,7 +9,7 @@
  * survives a refactor.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, isScalar } from "yaml";
+import { isMap } from "yaml";
 // Every `isRecord` below asks one question of a resolved plain tree: is this a
 // node that can hold OpenAPI keys — an object, not an array?
 import { isRecord } from "../../kernel/records.js";
@@ -18,7 +18,7 @@ import { OpenapiMergeError, openapiRefusal, readTree, writeTree } from "./error.
 import { classifyOperationBaseline } from "./pin.js";
 import { classifyBaselineDigests, isRemoval, valueDigest } from "../digest.js";
 import { entryFor, readBaselineRecord, restatedSurfaces } from "../baseline/record.js";
-import { opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
+import { dropPathIfNoOperations, opLabel, operationIdOf, plainChild, withoutFeatureMarkers } from "./markers.js";
 import { mergeComponentClosure } from "./components.js";
 
 /** What an OpenAPI path merge computed, including every condition the caller must surface. */
@@ -270,16 +270,10 @@ export function mergeOpenapiPaths(
         living.setIn(["paths", path, m], publishable[m]);
         written.push({ from: `paths ${path}`, value: publishable[m] });
       }
-      // Removing the last method leaves a path the contract still advertises
-      // and nothing answers — and `{}` is only the easy shape of that state: a
-      // surviving path-LEVEL key (`parameters`, `summary`) kept the path alive
-      // with zero operations just as misleadingly. No methods left means the
-      // path goes, whatever else survived beside them. The same cleanup
-      // stripOpenapiRemovalMarkers does on the feature side.
-      const remaining = living.getIn(["paths", path]);
-      if (isMap(remaining) && !remaining.items.some((it) => isScalar(it.key) && HTTP_METHODS.has(String(it.key.value)))) {
-        living.deleteIn(["paths", path]);
-      }
+      // No methods left means the path goes, whatever else survived beside
+      // them — the same cleanup stripOpenapiRemovalMarkers does on the
+      // feature side, and the reason is spelled once, on the helper.
+      dropPathIfNoOperations(living, path);
       continue;
     }
     if (!isRecord(featItemPlain)) {

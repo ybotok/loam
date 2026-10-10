@@ -21,7 +21,7 @@
  * that case.
  */
 import { isDeepStrictEqual } from "node:util";
-import { isMap, isScalar, type Document } from "yaml";
+import { isMap, isScalar, type Document, type Pair } from "yaml";
 import { classifyBaselineDigests, valueDigest, withoutFeatureKeysDeep } from "../digest.js";
 import { entryFor, restatedSurfaces, surfaceIn, type BaselineRecord } from "../baseline/record.js";
 import { collectRefs, resolvePointer } from "../depth.js";
@@ -58,6 +58,27 @@ export interface ComponentClosureOutcome {
   unresolved: Array<{ ref: string; from: string }>;
 }
 
+/** One mapping node's pair for a key, matched AS A STRING — `setKeyed`'s find, reusable at any depth. */
+export function pairAt(node: unknown, key: string): Pair | undefined {
+  return isMap(node) ? node.items.find((it) => isScalar(it.key) && String(it.key.value) === key) : undefined;
+}
+
+/**
+ * Write one value under the mapping at `parent`, matching the existing key AS A
+ * STRING: a living `404:` response is the YAML number 404, and a plain `setIn`
+ * with the string "404" misses it and APPENDS a second pair — the contract then
+ * declares the key twice, forever, with the pre-merge copy first in reading
+ * order. Path-agnostic on purpose, so it is the one upsert both contract axes
+ * write through: a component here and in the strip's twin write on the feature
+ * side, a component surface or a slot on the event axis
+ * (../../asyncapi/merge/{components,markers}.ts).
+ */
+export function setKeyed(doc: Document, parent: string[], key: string, value: unknown): void {
+  const existing = pairAt(doc.getIn(parent), key);
+  if (existing !== undefined) existing.value = doc.createNode(value);
+  else doc.setIn([...parent, key], value);
+}
+
 /**
  * Merge the feature's components into the living document by verdict:
  *
@@ -78,22 +99,6 @@ export interface ComponentClosureOutcome {
  * written content and copied components must resolve in the copy set or the
  * living document.
  */
-/**
- * Write one component's value, matching the existing key AS A STRING: a
- * living `404:` response is the YAML number 404, and a plain `setIn` with the
- * string "404" misses it and APPENDS a second pair — the contract then
- * declares the component twice, forever, with the pre-merge copy first in
- * reading order. Exported for the strip's twin write on the feature side.
- */
-export function setComponentValue(doc: Document, kind: string, name: string, value: unknown): void {
-  const kindNode = doc.getIn(["components", kind]);
-  const existing = isMap(kindNode)
-    ? kindNode.items.find((it) => isScalar(it.key) && String(it.key.value) === name)
-    : undefined;
-  if (existing !== undefined) existing.value = doc.createNode(value);
-  else doc.setIn(["components", kind, name], value);
-}
-
 export function mergeComponentClosure(input: ComponentClosureInput): ComponentClosureOutcome {
   const { living, featPlain, livingPlain, record, written, componentsAreTheDelta } = input;
   const componentsModified: string[] = [];
@@ -217,7 +222,7 @@ export function mergeComponentClosure(input: ComponentClosureInput): ComponentCl
     // walks, and `--approve` once published `x-loam-remove: true` into a
     // living component. Promoted copies go through this same write, so a
     // components-only delta cannot be the one shape that publishes a marker.
-    setComponentValue(living, kind, name, withoutFeatureKeysDeep(value));
+    setKeyed(living, ["components", kind], name, withoutFeatureKeysDeep(value));
   }
 
   return { componentsModified, componentsAdded, componentsQuoted, componentsStale, unresolved };

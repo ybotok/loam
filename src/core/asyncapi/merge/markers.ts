@@ -29,23 +29,12 @@ import { isRecord } from "../../kernel/records.js";
 // rule (the openapi digest module's own failure mode).
 import { FEATURE_ONLY_KEYS, withoutFeatureKeysDeep } from "../../openapi/digest.js";
 import { ASYNCAPI_BASELINES_KEY, isSlotRemoval, type AsyncapiSection } from "../digest.js";
+import { pairAt, setKeyed } from "../../openapi/merge/components.js";
 import { readTree, writeTree, type ContractTree } from "../../openapi/merge/error.js";
 import { AsyncapiMergeError, asyncapiRefusal, type AsyncapiMergeSource } from "./error.js";
 
 /** The three slot sections, in document order — every whole-document walk here goes over them. */
 const SECTIONS: AsyncapiSection[] = ["channels", "operations", "components.messages"];
-
-/**
- * A slot's PUBLISHABLE value: every feature-only key removed, at any depth —
- * the top-level pin, a nested pin or marker on an inline channel message, and
- * anything an author buried deeper. What the merge writes and what the create
- * branch keeps; a removal-marker slot is never published at all (the merge
- * deletes its target, the strip drops it), so this is only ever asked of a
- * slot that survives.
- */
-export function withoutFeatureMarkers(node: unknown): unknown {
-  return withoutFeatureKeysDeep(node);
-}
 
 /**
  * The AST path of a section's own mapping — two levels deep for
@@ -56,11 +45,6 @@ export function withoutFeatureMarkers(node: unknown): unknown {
  */
 export function sectionAstPath(section: AsyncapiSection): string[] {
   return section === "components.messages" ? ["components", "messages"] : [section];
-}
-
-/** One mapping node's pair for a key, matched AS A STRING — `slotPair`'s find, reusable at any depth. */
-function pairAt(node: unknown, key: string): Pair | undefined {
-  return isMap(node) ? node.items.find((it) => isScalar(it.key) && String(it.key.value) === key) : undefined;
 }
 
 /** Delete one pair from a mapping node, string-key-matched. Returns whether a pair actually went. */
@@ -78,20 +62,18 @@ function deleteKeyIn(node: unknown, key: string): boolean {
  * with the string "404" misses it and APPENDS a second pair — the living
  * contract then declares the slot twice, forever, with the pre-merge copy
  * first in reading order. The openapi component write's lesson, applied to
- * every slot access on this axis: the merge's writers below go through it,
- * and so does the pin (./pin.ts), whose raw `getIn` used to grade every
- * non-string-keyed slot `unwritable` with an alias diagnosis nothing in the
- * document backed.
+ * every slot access on this axis: the merge's writers below go through the
+ * same string-matched find (`pairAt`, under `setKeyed`), and so does the pin
+ * (./pin.ts), whose raw `getIn` used to grade every non-string-keyed slot
+ * `unwritable` with an alias diagnosis nothing in the document backed.
  */
 export function slotPair(doc: Document, section: AsyncapiSection, key: string): Pair | undefined {
   return pairAt(doc.getIn(sectionAstPath(section)), key);
 }
 
-/** Write one slot's value, string-key-matched — the merge's one upsert door. */
+/** Write one slot's value through `setKeyed`, string-key-matched — the merge's one upsert door. */
 export function setSlotValue(doc: Document, section: AsyncapiSection, key: string, value: unknown): void {
-  const existing = slotPair(doc, section, key);
-  if (existing !== undefined) existing.value = doc.createNode(value);
-  else doc.setIn([...sectionAstPath(section), key], value);
+  setKeyed(doc, sectionAstPath(section), key, value);
 }
 
 /**

@@ -28,30 +28,19 @@ import { isRemoval } from "../digest.js";
 import { plainChild } from "./markers.js";
 
 /**
- * What a feature's operation IS, relative to the living contract — the one
- * judgement that tells a QUOTE from an EDIT.
- *
- * A feature's openapi.yaml needs only what it adds, changes or removes, but it
- * may also restate living operations it does not change — for context, or a
- * contract pasted whole — and then much of what it spells is quotation. Without
- * a pin the merge cannot tell the two apart and upserts both,
- * which is how a feature that only meant to touch `cancelOrder` silently
- * reverted another team's landed change to `refundOrder` — no overlap between
- * the features required, just two deltas over one service.
- */
-export type OperationBaselineVerdict = ReturnType<typeof classifyBaselineDigests>;
-
-/**
  * Classify one feature operation against its living counterpart, from the raw
- * YAML trees the merge works in. The rule itself lives in ../digest.ts, so
- * the gate and the merge cannot drift apart about which operations get written.
+ * YAML trees the merge works in: what the operation IS, relative to the living
+ * contract — the one judgement that tells a QUOTE from an EDIT (the module
+ * header says why that judgement exists). The rule itself lives in
+ * ../digest.ts, so the gate and the merge cannot drift apart about which
+ * operations get written.
  *
  * A malformed pin matches no digest and lands in `stale`, which merges rather
  * than skips. Deliberate: `openapi.baseline-invalid` refuses it at the gate, and
  * a value nobody can evaluate must never be the reason a merge quietly drops an
  * operation.
  */
-export function classifyOperationBaseline(featureOp: unknown, livingOp: unknown): OperationBaselineVerdict {
+export function classifyOperationBaseline(featureOp: unknown, livingOp: unknown): ReturnType<typeof classifyBaselineDigests> {
   return classifyBaselineDigests(
     operationBaselineOf(featureOp),
     operationDigest(featureOp),
