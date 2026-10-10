@@ -264,12 +264,13 @@ const MAP_REST = `- \`loam validate --service <id>\` grades one service's own ax
 - \`loam instructions [<page>] [args...]\` prints one of the six workflow
   protocols — \`loam-adopt\`, \`loam-feature\`, \`loam-implement\`, \`loam-check\`,
   \`loam-verify\`, \`loam-ship\` — with \`$1\`, \`$2\` filled in from the arguments you
-  pass, or one of the four reference pages — \`loam-codes\`, \`loam-spine\`,
-  \`loam-authoring\`, \`loam-done-check\` — which take no arguments. With no
-  argument at all it lists both sets. The pages ship inside the binary, so they
-  describe the loam you are about to run rather than the one that scaffolded the
-  repository; the command and skill files \`loam init\` writes are pointers at it,
-  and so is AGENTS.md's own "The reference pages" section. It reads no
+  pass, the \`loam-report\` support protocol, or one of the four reference pages —
+  \`loam-codes\`, \`loam-spine\`, \`loam-authoring\`, \`loam-done-check\` — which take
+  no arguments. With no argument at all it lists all three sets. The pages ship
+  inside the binary, so they describe the loam you are about to run rather than
+  the one that scaffolded the repository; the command and skill files
+  \`loam init\` writes are pointers at it, and so is AGENTS.md's own
+  "Reference pages — fetch when needed" section. It reads no
   \`loam.json\` and no docs repo, deliberately: \`loam-adopt\`'s own first step is
   to run \`loam init\` when there is no config, so it cannot be the step that
   requires one.

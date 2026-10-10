@@ -1,7 +1,7 @@
 /**
  * The baseline axis of the feature gate: which of the surfaces this delta
- * SPELLS does it actually edit? A feature's openapi.yaml is a complete
- * document, so most of it is quotation — and until the pins existed the merge
+ * SPELLS does it actually edit? A feature's openapi.yaml needs only what it
+ * changes, but it may quote more — and until the pins existed the merge
  * upserted quotations too, which reverted whatever had landed on them since.
  *
  * Extracted from `coherence/declared.ts` when the operation pin grew its two

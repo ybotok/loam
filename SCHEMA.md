@@ -89,8 +89,8 @@ docs/
     delta.likec4                     C4 delta (architecture)             [authored]
     specs/<svc>/spec.md              requirement delta (ADDED/MODIFIED/REMOVED + scenarios)  [authored]
     specs/<svc>/arch.spec.md         architectural requirement delta, same algebra  [authored]
-    specs/<svc>/openapi.yaml         the endpoints this feature adds     [authored]
-    specs/<svc>/asyncapi.yaml        the event-contract delta, slot-pinned  [authored]
+    specs/<svc>/openapi.yaml         only the endpoints it adds/changes/removes  [authored]
+    specs/<svc>/asyncapi.yaml        only the event slots it adds/changes/removes  [authored]
     capabilities/<cap>/spec.md       capability delta, same requirement grammar  [authored]
     glossary/<term>.md               a word this feature brings with it; create-only  [authored]
     usecases/<name>.likec4           a FLOW this feature brings; views-only, create-only  [authored]
@@ -1287,9 +1287,12 @@ the edges point at channels it is the channels that collect three consumers each
 broker leaves a row of untagged hubs behind it.
 
 **The feature lifecycle, mirrored from the OpenAPI axis.** A feature changes this contract through
-`features/<FEAT>/specs/<svc>/asyncapi.yaml` — a **complete AsyncAPI 3.0 document**, exactly as an
-openapi delta is a complete document: the author restates the living contract around the part they
-are changing, and the machinery tells restatement from edit. Identity is the **slot** — the pair
+`features/<FEAT>/specs/<svc>/asyncapi.yaml` — a self-contained AsyncAPI 3.0 document holding **only
+the slots the feature adds, changes or removes**, exactly as an openapi delta holds only its own
+operations: the merge walks only the slots the delta declares, so a slot it leaves out stays as the
+living contract has it, and an edited slot is written out whole. A slot restated without being
+changed is legal and the machinery tells it from an edit, but it buys nothing and costs a pin,
+which a parallel feature's removal turns into `asyncapi.baseline-invalid`. Identity is the **slot** — the pair
 (section, key) over the three named sections `channels.<key>`, `operations.<key>` and
 `components.messages.<key>` — and the join token stays the message name. Three feature-only keys,
 spelled and shaped exactly as on the OpenAPI axis: `x-loam-based-on` inside a slot's value (written
@@ -1455,14 +1458,24 @@ the source for tests.
   never the resolution itself — a pin says "I read this version", so `loam rebase` reports every
   requirement that moved and says plainly that restamping without re-reading merges your text over
   theirs. There is deliberately no three-way merge: requirement prose does not merge.
-- **The same baseline on the contract axis, where it matters more.** A feature's `openapi.yaml` is a
-  **complete document, not a patch** — authors restate the living contract around the slot they
-  change — and the merge upserts every operation the document spells. The collision therefore needs
-  no overlap between the two features at all: two deltas over one service, editing *different*
-  operations, destroy each other, because whichever archives second pushes its authoring-time copy
-  of the operation it never meant to touch back over what landed in between. On a service with
-  thirty operations a delta quotes twenty-nine of them, and each is a candidate. So every operation
-  in a feature contract carries **`x-loam-based-on`** — the same 16-hex digest, in the
+- **The same baseline on the contract axis.** A feature's `openapi.yaml` is a **self-contained
+  document holding only what the feature adds, changes or removes** — not a copy of the living
+  contract. The merge walks only the paths and methods the delta spells: an operation it leaves out
+  stays exactly as the living contract has it, a local `$ref` (`#/components/schemas/Order`)
+  resolves into the living document, and a brand-new operation, path-level key or component has no
+  living version to pin, so an add-only delta never trips `openapi.baseline-missing` and needs no
+  `loam rebase` at all. What the merge does upsert is every operation the document *does* spell,
+  so an operation quoted without being changed — copied for context, or a whole contract pasted in
+  — is a collision waiting for somebody else's edit: two deltas over one service, each quoting the
+  operation the other edits, destroy each other, because whichever archives second pushes its
+  authoring-time copy back over what landed in between. A quote also costs something even pinned:
+  it is one more pin, and a pinned quote whose living operation a parallel feature removes is
+  `openapi.baseline-invalid` — the living slot is gone, so the pin is founded on nothing — an
+  error that blocks the archive until the quote is deleted. Unpinned, the same quote is worse: with
+  no living operation behind it, it grades as an addition, and the archive puts the retired
+  operation back. So a delta quotes nothing it does not change, and every operation in it that the
+  living contract already holds carries
+  **`x-loam-based-on`** — the same 16-hex digest, in the
   vendor-extension shape this axis already uses for `x-loam-remove`, written by `loam rebase` and
   stripped on merge exactly like `Based-On:`. The digest is taken over the operation's *canonical*
   form (object keys sorted), which is the same comparison `isDeepStrictEqual` makes when the merge
@@ -1477,7 +1490,8 @@ the source for tests.
   decision, reverting an operation nobody edited is a bug. `openapi.baseline-missing` is a warning
   that gates the archive, exactly like its requirement-axis sibling — every unpinned restatement is
   a candidate rollback — and it is reported **once per service** rather than per operation: the fix
-  is one command, and twenty-nine identical findings teach people to filter the code out. **Covered
+  is one command, and the twenty-nine identical findings a contract pasted whole from a
+  thirty-operation service would raise teach people to filter the code out. **Covered
   since the path-item/component baselines landed:** the same discipline now reaches the two surfaces
   the operation pin cannot — path-level keys (`parameters`, `servers`, `summary`, `x-*`) and every
   `components/<kind>/<name>` — through a single feature-only root record **`x-loam-baselines`** (`{
@@ -1744,6 +1758,12 @@ requirement also needs a current `Based-On:` pin before archive; `loam rebase <F
 Omitting or leaving the intent as scaffold text raises the gating `intent.empty` /
 `scaffold.placeholder` warning, so the old one-file shape is not archive-ready.
 
+Below that floor is no feature at all. A change that touches no requirement, no operation and
+no fleet edge — a refactor, a dependency bump, a fix that brings the code back to behaviour the
+living spec already documents — leaves the docs repo untouched: it is a code PR, then
+`loam validate --service <id>` in the service repo, where `sources.stale` names the moved paths, and
+the re-vouch they owe (`loam vouch --pack` is the reading list; the vouch is a person's).
+
 Each axis may be legitimately empty, and the checks grade absence differently from
 emptiness-by-accident:
 
@@ -1754,7 +1774,8 @@ emptiness-by-accident:
   declared-but-untagged is almost always a forgotten tag, while declaring nothing is a legible
   statement that the architecture is unchanged.
 - **openapi delta** — absent whenever the feature adds no operations; a requirement change that
-  stays inside the existing contract has no API axis to speak on.
+  stays inside the existing contract has no API axis to speak on. Present, it holds only the
+  operations the feature adds, changes or removes.
 - **requirement delta** — the axis that is nearly always present, because a feature that changes no
   requirement changes no promised behaviour. The exception is architecture-only work: a new service
   in the C4 delta with no `specs/<svc>/spec.md` gets `service.no-requirement-delta` as a warning,
@@ -1766,6 +1787,16 @@ overridable) fires when the file is missing or says nothing outside the scaffold
 a feature cannot fold into the living docs with its reason unwritten. Its sibling
 `scaffold.placeholder` refuses the rest of an unedited `loam new` scaffold the same way — the exact
 template strings, a requirement or description nobody authored, must not become living truth.
+
+The scaffolded `intent.md` also carries an optional `## Open questions` heading over a comment.
+It is where `loam-feature`'s analyze step — between authoring and `loam rebase` — writes what the
+documents leave open: a SHALL two engineers could build two ways, a value or window two services
+state differently and which side refuses, a `Realizes:` that does not deliver its capability, an
+edge with no stated timeout, retry, partial-failure or compensation answer, a neighbour left out of
+`--touches`. A person answers by editing the file. Nothing grades the section: `intent.empty` reads
+past it, so questions written there are never mistaken for the Why, and they never gate the archive —
+every check loam has is a join between exact tokens, and whether two services MEAN the same thing by
+one is the part no join reads.
 
 ### Where a capability lives (a declared name, and the document behind it)
 

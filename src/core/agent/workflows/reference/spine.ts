@@ -222,16 +222,28 @@ the shape that reverts someone else's landed change at exit 0. A migrated
 corpus is not stranded by this: \`loam rebase <FEAT>\` pins every delta in one
 command, and a human's \`--approve\` archives unpinned when the loss is meant.
 
-### The same pin on the contract axis — and why it matters more there
+### The same pin on the contract axis
 
-A feature's \`openapi.yaml\` is a COMPLETE document, not a patch: you restate the
-living contract around the slot you are changing, and the merge upserts every
-operation the document spells. So the collision on this axis needs no overlap at
-all. Two features touching one service, editing DIFFERENT operations, destroy
-each other — the second to archive quietly pushes its authoring-time copy of the
-operation it never meant to touch back over whatever landed in between.
+A feature's \`openapi.yaml\` is a self-contained document holding ONLY what the
+feature adds, changes or removes — not a copy of the living contract. The merge
+walks only the paths and methods the delta spells: an operation you leave out
+stays exactly as the living contract has it, a local \`$ref\`
+(\`#/components/schemas/Order\`) resolves into the living document, and a new
+operation has no living version to pin — an add-only delta needs no rebase.
 
-The same marker fixes it, as a vendor extension beside \`x-loam-remove\`:
+What the merge does upsert is every operation the document DOES spell. So an
+operation you quote without changing it — copied for context, or a whole
+contract pasted in — is a collision waiting for someone else's edit: two
+features over one service, each quoting the operation the other edits, destroy
+each other, and the second to archive pushes its authoring-time copy back over
+whatever landed in between. Quote nothing you do not change. Each quote costs a
+pin, and a parallel feature that REMOVES the quoted operation makes it worse
+either way: pinned, the quote is \`openapi.baseline-invalid\`, an error that
+blocks your archive until you delete the quote (not the pin); unpinned, it
+reads as a new operation and your archive puts the retired one back.
+
+The guard against that collision, for every living operation the delta does
+spell, is a pin — a vendor extension beside \`x-loam-remove\`:
 
 \`\`\`yaml
 paths:
@@ -241,8 +253,9 @@ paths:
       x-loam-based-on: 86feabe621ed887d
 \`\`\`
 
-\`loam rebase\` writes one on EVERY operation in the delta, pinned to the living
-version. That is what lets the merge tell a QUOTE from an EDIT:
+\`loam rebase\` writes one on every operation in the delta the living contract
+already holds, pinned to the living version; what the feature adds gets none.
+That is what lets the merge tell a QUOTE from an EDIT:
 
 - pin equals the operation's own content → you quoted it → **the merge skips it
   entirely** and the living contract keeps whatever it holds. Archive prints
@@ -251,12 +264,15 @@ version. That is what lets the merge tell a QUOTE from an EDIT:
 - pin matches neither → you edited it AND somebody landed a change to it →
   \`openapi.baseline-stale\`, refused.
 
-Not covered, deliberately, and worth knowing: path-level keys (\`parameters\`,
-\`servers\`) and \`components/schemas\` are still upserted wholesale, so a restated
-schema can still revert another feature's change to it —
-\`openapi.path-item-modified\` and \`openapi.component-modified\` are your only
-warning there. Removal markers carry no pin either; \`openapi.remove-target-mismatch\`
-is what guards those.
+The two surfaces an in-operation key cannot reach — path-level keys
+(\`parameters\`, \`servers\`, \`summary\`, \`x-*\`) and every
+\`components/<kind>/<name>\` — are pinned the same way through one root record,
+\`x-loam-baselines\`, which \`loam rebase\` also writes and the merge strips: a
+quoted key or component is skipped, an edited one is written and warned as
+\`openapi.path-item-modified\` / \`openapi.component-modified\`. A new component
+is copied in when something the merge writes references it; a living one you
+only \`$ref\` needs no copy in the delta at all. Removal markers carry no pin;
+\`openapi.remove-target-mismatch\` is what guards those.
 
 ## Drawing a shared broker
 

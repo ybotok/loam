@@ -19,7 +19,7 @@ that order.
   [Why there is no task list](#why-there-is-no-task-list)
 - [Picking the work back up](#picking-the-work-back-up)
 - [Day zero: onboarding a fleet](#day-zero-onboarding-a-fleet) · [Command notes](#command-notes) ·
-  [The MCP server](#the-mcp-server)
+  [The MCP server](#the-mcp-server) · [Build on the envelope](#build-on-the-envelope)
 
 ## The two flows
 
@@ -159,8 +159,8 @@ configurable graph, because a governed system needs one lifecycle and one meanin
 | `delta.likec4` | feature | no | New elements and edges, each tagged with the feature id. The design. A requirements-only change deletes it |
 | `specs/<svc>/spec.md` | service | yes | The behaviour delta — `ADDED` / `MODIFIED` / `REMOVED` requirements, each with Given/When/Then scenarios |
 | `specs/<svc>/arch.spec.md` | service | no | The architectural obligations a business spec never mentions: outbox, retries, idempotency, alerts. Same grammar, plus `Covers:` lines tying each to the C4 elements it accounts for |
-| `specs/<svc>/openapi.yaml` | service | conditional | The contract delta. Required where the fleet map shows somebody calls this service |
-| `specs/<svc>/asyncapi.yaml` | service | no | The event-contract delta: a complete AsyncAPI 3.0 document restating the living contract around the changed slots. `loam rebase` pins restated slots (`x-loam-based-on`), `x-loam-remove: true` retires one |
+| `specs/<svc>/openapi.yaml` | service | conditional | The contract delta: only the operations the feature adds, changes or removes — an operation it leaves out stays as the living contract has it. Required where the fleet map shows somebody calls this service |
+| `specs/<svc>/asyncapi.yaml` | service | no | The event-contract delta: an AsyncAPI 3.0 document holding only the slots the feature adds, changes or removes. `loam rebase` pins each one the living contract already has (`x-loam-based-on`), `x-loam-remove: true` retires one |
 | `verification/<svc>.yaml` | feature | yes | The done-check record, one file per attesting service: every claim, its answer, its evidence, and who gave it. The all-at-once form writes the one file `verification.yaml` instead |
 
 Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
@@ -348,7 +348,7 @@ the six workflows by a bare `loam instructions`. `init` writes no file for any o
 | Workflow | When | What it drives |
 |---|---|---|
 | `loam-adopt` | Once per service, before any feature touches it | `loam adopt` briefs the baseline; an agent reads the code and writes it as `draft`; validate twice — the service, then the fleet — and hand to a human to vouch |
-| `loam-feature` | Starting a change | `loam explore` to decide what it touches, `loam new` to scaffold, author the delta and the specs, `loam rebase` to pin, `loam validate`, `loam dependencies` |
+| `loam-feature` | Starting a change — after asking whether it needs a feature at all (step 0) | `loam explore` to decide what it touches, `loam new` to scaffold, author the delta and the specs, write what they leave open under `## Open questions` in `intent.md` (ungraded), `loam rebase` to pin, `loam validate`, `loam dependencies` |
 | `loam-implement` | Building one service's slice, in that service's repo | `loam delta` is the task, `loam gherkin` emits the acceptance criteria, step definitions come before code |
 | `loam-check` | Any time; always before shipping | `loam validate`, and fixing what it reports by code |
 | `loam-verify` | When the code is built | `loam verify` derives the checklist; the test runner answers what it can; you answer the rest with evidence |
@@ -397,6 +397,22 @@ them would make the judgement on your behalf while looking derived. Weighing the
 this command just makes sure you are weighing all of it.
 
 ### The honestly-small change
+
+**The smallest change needs no feature at all.** A change that touches no requirement, no operation
+and no fleet edge — a refactor, a dependency bump, a fix that brings the code back to behaviour the
+living spec already documents — changes nothing in the docs repo, so there is nothing to scaffold,
+pin or archive. It is a code PR in the service repo, and then, in that repo:
+
+```bash
+loam validate --service payment-service       # the only place sources.stale is visible
+loam vouch --pack --service payment-service   # read-only: what the moved sources owe a re-read
+```
+
+`sources.stale` names the paths that moved since the spec was last vouched, the pack is the reading
+list, and the vouch itself is a person's. That is lighter than a feature by construction rather than
+by exemption: there is no delta for a gate to grade, and the one signal that did move — the vouch —
+is still owed. The moment the change alters what a requirement promises, it is a feature, however
+small, and the lane below is the floor. `loam-feature`'s step 0 asks the same question first.
 
 Most changes are not cross-service features. A one-service, requirements-only change — a new
 refusal, a tightened invariant, behaviour behind an endpoint that already exists — walks the same
@@ -654,10 +670,16 @@ Deterministic, digest-stamped, regeneration-owned; run in the service's own repo
 on every operation in the contract delta that the living docs already hold; what this feature is
 *adding* has nothing to pin against, and the output says so per item. On the requirement axis that
 stops a second feature rewriting the same requirement from landing on top of the first in silence;
-on the contract axis it also marks the rest of the delta as **quotation** — an `openapi.yaml` is a
-complete document, so without the pin the merge upserts operations you only restated and reverts
-whatever landed on them. Restamping is the last step of resolving a collision, not the resolution —
-the output says which pins moved.
+on the contract axis it also tells an edit from a **quotation** — the merge upserts every operation
+the delta spells, so without the pin an operation you only quoted reverts whatever landed on it.
+The cheaper fix is not to quote: a feature's `openapi.yaml` or `asyncapi.yaml` holds only what it
+adds, changes or removes, the merge leaves every operation it does not spell exactly as the living
+contract has it, and a local `$ref` resolves into the living document — so an add-only contract
+delta has nothing to pin and needs no rebase. Each quote costs a pin, and a pinned quote whose living
+operation a parallel feature removes becomes `openapi.baseline-invalid`, an error that blocks the
+archive until the quote is deleted — while an unpinned one grades as an addition and puts the
+retired operation back. Restamping is the last step of resolving a collision, not the
+resolution — the output says which pins moved.
 
 **`loam verify`** — `--results <report.json>` answers the scenario claims from a test run,
 digest-matched, so only a green run confirms one, and the record writes down which file it read
@@ -775,3 +797,78 @@ gets coherent `no-config` envelopes, not silence. Calls run strictly one at a ti
 `loam_validate` blocks the queue for its duration; MCP requests carry ids and hosts tolerate the
 latency. Even author mode excludes `vouch`, verification recording and a committing archive:
 human trust and irreversible lifecycle transitions stay under the CLI permission flow.
+
+## Build on the envelope
+
+loam makes no network call, so it syncs with no tracker, dashboard or catalog — and does not need
+to. Every command's `--json` is a stable contract, and the integrations are a few lines of shell
+over it, owned by whoever runs them. Three recipes, each run against `examples/docs`.
+
+**Feature work into a tracker.** `loam tasks <FEAT> --json` lists every open unit of a feature:
+`id`, `subject` (the owning service), `claim`, `done` (its `check` is the fact that closes it) and
+`dependsOn` (unit ids to finish first). The unit id is the idempotency key — prefixed with the
+feature id, so one tracker holds every feature's units and each title says which — and a re-run
+opens issues only for units it has not seen:
+
+```bash
+existing=$(gh issue list --state all --limit 1000 --json title --jq '.[].title')
+loam tasks FEAT-101 --json \
+  | jq -r '.feature as $f | .units[] | ["[\($f) \(.id)]", .subject, .claim, .done.check, (.dependsOn | map("[\($f) \(.)]") | join(" "))] | @tsv' \
+  | while IFS=$'\t' read -r key svc claim check after; do
+      grep -qF "$key" <<<"$existing" && continue
+      gh issue create --title "$key $claim" --body "Service: $svc. Done when: $check. After: ${after:-nothing}"
+    done
+```
+
+On the example's FEAT-101 that is nineteen issues the first time and none the second. A finished
+unit leaves `units[]` once the evidence its `check` names is recorded, so the issues to close are a
+set difference against the last export. **A unit's id is a hash of what it says**, which is what
+makes it a key and also its one hazard: rewording a scenario — its name or any Given/When/Then line
+— or renaming a requirement that carries no `Requirement-ID:` mints a new id. The next export opens
+a fresh issue, and the old one is orphaned: it drops out of `units[]` exactly as a finished unit
+does, so read the set difference before closing anything as done, and carry the orphan's history
+over by hand. Renaming a requirement that does carry a `Requirement-ID:` keeps every id. The same
+loop drives `jira` or any CLI that creates an issue from a title and a body.
+
+**The fleet view of every service repo's CI.** Staleness is visible only from each service repo,
+so each one's CI publishes the per-service summary (SCHEMA.md, "The per-service summary a CI
+pipeline publishes") wherever your fleet view reads. Rolling those up is a join against the list of
+services the docs repo knows, so a service that never reported reads as unknown and never as clean:
+
+```bash
+jq -s 'map({(.service): .}) | add // {}' summaries/*.json > reports.json
+loam list --json | jq -r --slurpfile r reports.json '
+  .services[] | .id as $id | $r[0][$id] as $s
+  | [$id,
+     if $s == null then "unknown: no report"
+     elif now - ($s.generatedAt | fromdateiso8601) > 86400 then "unknown: last report \($s.generatedAt)"
+     elif $s.valid | not then "invalid: \($s.errors) error(s)"
+     elif $s.sources.stale + $s.contentStale > 0 then "owes a re-vouch: \($s.sources.stale) source-stale, \($s.contentStale) content-stale"
+     else "clean" end]
+  | @tsv'
+```
+
+The day-old cutoff is a policy and yours to set; what is not a policy is that `generatedAt` comes
+from the CI's clock, never loam's, so an old one means that repo stopped reporting.
+
+**LikeC4's own MCP server beside loam's.** The fleet map is plain LikeC4, so LikeC4's MCP server
+runs on the same docs repo with no configuration — `npx likec4 mcp --stdio .` from the docs root
+exposed eighteen tools on the example, measured at the 1.59.2 pin loam carries: element, view and
+relationship reads, graph traversals, metadata and tag queries. Run the likec4 loam itself depends
+on (`npm ls likec4` names it), so the server parses the grammar loam validates. The two answer
+different questions: `loam mcp` the joins, gates and lifecycle state; `likec4 mcp` the model as a
+graph. One host entry carries both:
+
+```json
+{
+  "mcpServers": {
+    "loam": { "command": "loam", "args": ["mcp"] },
+    "likec4": { "command": "npx", "args": ["likec4", "mcp", "--stdio", "."] }
+  }
+}
+```
+
+Two differences to know. LikeC4's server reads the root project, which excludes `features/**`, so
+it sees the living map and never an in-flight delta — ask `loam show <FEAT> --json` for those. And
+seventeen of its tools advertise `readOnlyHint`; `apply-semantic-layout` does not, so a host will
+ask before running it.

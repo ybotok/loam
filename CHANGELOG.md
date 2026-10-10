@@ -10,6 +10,46 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — `loam-feature` asks whether a feature is owed, and analyzes before it pins
+
+No code, flag or payload key was added, changed or retired. What changes is the protocol text an
+agent is handed, the `intent.md` a new feature starts from (and which of its text `intent.empty`
+counts), and what the documentation says a feature's contract delta holds.
+
+- **`loam instructions loam-feature` opens with a step 0.** A change that touches no requirement,
+  operation or fleet edge — a refactor, a dependency bump, a fix back to behaviour the living spec
+  already documents — needs no feature: a code PR, then `loam validate --service <id>` and
+  `loam vouch --pack --service <id>` in the service repo, and a person's vouch. WORKFLOW.md's "The
+  honestly-small change" now opens with the same lane.
+- **A new, ungraded step 4b, "Analyze before you pin", sits between authoring and `loam rebase`.**
+  The agent reads `loam show <FEAT> --json`, `loam context <service> --feature <FEAT> --json` and the
+  `explore` neighbours, then writes questions under `## Open questions` in `intent.md`: ambiguous
+  SHALLs, values, limits and windows two services state differently (and which side refuses),
+  `Realizes:` lines that do not deliver their capability, each edge's timeout, retry, partial
+  failure and compensation, and neighbours left out of `--touches`. A person answers by editing the
+  file. `loam-implement` sends an ambiguity it meets to the same section.
+- **`loam new` scaffolds an optional `## Open questions` heading in `intent.md`**, over a comment
+  only. **`intent.empty` now reads past that section:** questions an agent writes there are not the
+  feature's Why, so an intent whose only prose is open questions still gates the archive. The generated `loam-feature` command and skill pointers
+  list both new steps in their spine; an unedited pointer refreshes on the next `loam init`.
+- **A feature's `openapi.yaml` / `asyncapi.yaml` is documented as holding only what the feature
+  adds, changes or removes.** SCHEMA.md, WORKFLOW.md, the `loam-spine` and `loam-feature` pages,
+  the `spec.md` scaffold's comment and the example deltas taught "a complete document, not a
+  patch". The merge never needed one: it walks only the paths, methods and slots a delta spells, a
+  local `$ref` resolves into the living contract, and an add-only delta needs no `loam rebase`.
+  Each needless quote is one more pin and, once a parallel feature removes the quoted operation,
+  either a blocking `openapi.baseline-invalid` (pinned) or an archive that puts the retired operation
+  back (unpinned); `loam-check`'s fix for the first now says to delete the quote. The
+  `loam-spine` page also no longer says path-level keys and components go unpinned —
+  `x-loam-baselines` covers them.
+- **WORKFLOW.md gains "Build on the envelope":** a tracker export from `loam tasks <FEAT> --json`
+  keyed on unit ids (and what rewording re-keys one), a rollup of the per-service CI summaries
+  that reads a missing or old report as unknown, and `npx likec4 mcp` beside `loam mcp` on the same
+  docs repo.
+- **The `loam-codes` page points at AGENTS.md's "Reference pages — fetch when needed" section** —
+  it named a "The reference pages" section that does not exist — and lists `loam-report` among the
+  pages `loam instructions` prints.
+
 ### Added — `loam new --modifies <Req-ID>`: a small change is new → edit → archive
 
 - **New repeatable flag `--modifies <Req-ID>` on `loam new`.** Each value names a living

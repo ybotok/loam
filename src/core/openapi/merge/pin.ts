@@ -1,9 +1,10 @@
 /**
  * The pin that tells a QUOTE from an EDIT.
  *
- * A feature's openapi.yaml is a complete document, so most of what it spells is
- * quotation: the author restated the living contract around the slot they were
- * changing. Without a pin the merge cannot tell the two apart and upserts both,
+ * A feature's openapi.yaml needs only what it adds, changes or removes, but it
+ * may also restate living operations it does not change — for context, or a
+ * contract pasted whole — and then much of what it spells is quotation. Without
+ * a pin the merge cannot tell the two apart and upserts both,
  * which is how a feature that only meant to touch `cancelOrder` silently
  * reverted another team's landed change to `refundOrder` — no overlap between
  * the two features required, just two deltas over one service.
@@ -30,9 +31,10 @@ import { plainChild } from "./markers.js";
  * What a feature's operation IS, relative to the living contract — the one
  * judgement that tells a QUOTE from an EDIT.
  *
- * A feature's openapi.yaml is a complete document, so most of what it spells is
- * quotation: the author restated the living contract around the slot they were
- * changing. Without a pin the merge cannot tell the two apart and upserts both,
+ * A feature's openapi.yaml needs only what it adds, changes or removes, but it
+ * may also restate living operations it does not change — for context, or a
+ * contract pasted whole — and then much of what it spells is quotation. Without
+ * a pin the merge cannot tell the two apart and upserts both,
  * which is how a feature that only meant to touch `cancelOrder` silently
  * reverted another team's landed change to `refundOrder` — no overlap between
  * the features required, just two deltas over one service.
