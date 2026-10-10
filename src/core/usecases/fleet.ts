@@ -13,22 +13,26 @@
  * without starting LikeC4 at all.
  *
  * THE CHEAP GATE IS A BYTE SCAN, and it is sound rather than heuristic. A view
- * is a use case only if it carries a reserved tag — `#cap-<slug>` or
- * `#req-<slug>`, `isUseCase` below is the whole test — and LikeC4 refuses an
- * undeclared tag, so a fleet with a use case has the literal text `cap-` or
- * `req-` in the file that declares the view AND in the file that declares the
- * tag. A document set in which no file contains either substring therefore
- * declares no use case, and `{ views: [] }` is the correct answer, not an
- * evasion. The scan reads bytes rather than decoded text on purpose: it is
- * looking for an ASCII substring, and `readFile(path, "utf8")` on a document
- * that is not UTF-8 would substitute U+FFFD and could hide it.
+ * is a use case only if it carries a reserved tag — `#cap-<slug>`,
+ * `#req-<slug>` or `#suite-<name>`, `isUseCase` below is the whole test — and
+ * LikeC4 refuses an undeclared tag, so a fleet with a use case has the literal
+ * text `cap-`, `req-` or `suite-` in the file that declares the view AND in the
+ * file that declares the tag. A document set in which no file contains any of
+ * those substrings therefore declares no use case, and `{ views: [] }` is the
+ * correct answer, not an evasion. The scan reads bytes rather than decoded text
+ * on purpose: it is looking for an ASCII substring, and `readFile(path,
+ * "utf8")` on a document that is not UTF-8 would substitute U+FFFD and could
+ * hide it.
  *
- * BOTH PREFIXES, because the gate and the predicate answer one question and a
+ * EVERY PREFIX, because the gate and the predicate answer one question and a
  * gate narrower than the predicate is silence rather than a smaller answer. A
  * fleet whose only flow is tagged `#req-` alone declares `tag req-…` and no
  * `cap-` anywhere, so a `cap-`-only scan returned `false` and none of the five
  * readers ever loaded the project — the widening below would have fixed nothing
- * without this one.
+ * without this one. The suite prefix joined for the same reason the day a
+ * `#suite-`-only view became a use case: both now read one list,
+ * `USE_CASE_TAG_PREFIXES`, so a fourth prefix cannot be added to one and not
+ * the other.
  *
  * The gate FAILS CLOSED. A document this module cannot open is treated as one
  * that might mention the prefix, so the project load happens and reports the
@@ -44,6 +48,17 @@ import { architectureProjectDocuments, loadArchitecture } from "../c4/project/ar
 import { errorText } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
+import { SUITE_TAG_PREFIX } from "./suites/suites.js";
+
+/**
+ * Every reserved prefix that opts a view in — the one list both the byte gate
+ * and `isUseCase` read, so the two cannot disagree about which tags make a use
+ * case. `cap-` and `req-` are spelled by the capability join that resolves
+ * them; `suite-` by `./suites/suites.ts`, which groups by it and resolves
+ * nothing, because a suite name is checked by LikeC4's own undeclared-tag
+ * refusal rather than by a vocabulary.
+ */
+const USE_CASE_TAG_PREFIXES: readonly string[] = [CAP_TAG_PREFIX, REQ_TAG_PREFIX, SUITE_TAG_PREFIX];
 
 /**
  * What the fleet's use cases are, or the honest refusal to say.
@@ -114,13 +129,14 @@ export interface UseCaseRequest {
  * precisely so that a fleet whose first file declares a use case stops reading
  * the other ninety-nine.
  *
- * `req-` is the looser of the two substrings and that is accepted knowingly: a
- * document mentioning it in prose costs one project load loam would otherwise
- * have skipped, which is a slower right answer. Dropping it costs a wrong one.
+ * `req-` and `suite-` are the looser substrings and that is accepted knowingly:
+ * a document mentioning either in prose ("a test-suite-wide flag") costs one
+ * project load loam would otherwise have skipped, which is a slower right
+ * answer. Dropping one costs a wrong one.
  *
  * Exported for the service-scope reader (`./service/flows.ts`), which asks the
  * same question of the `.likec4` files beside one `model.likec4`: a sibling set
- * that mentions neither prefix declares no use case, so a hand-drawn
+ * that mentions no prefix declares no use case, so a hand-drawn
  * `views.likec4` costs that service no LikeC4 workspace. One gate, two callers,
  * because a second byte scan spelled in the service package would be free to
  * disagree with this one about which prefixes opt a view in.
@@ -129,7 +145,7 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
   for (const path of paths) {
     try {
       const bytes = await readFile(path);
-      if (bytes.includes(CAP_TAG_PREFIX) || bytes.includes(REQ_TAG_PREFIX)) return true;
+      if (USE_CASE_TAG_PREFIXES.some((prefix) => bytes.includes(prefix))) return true;
     } catch {
       // Unreadable is not "no tag": the project load below owns that failure and
       // will report it as a hole naming the document. Answering `false` here
@@ -144,10 +160,14 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
  * Is this a use case at all? — the ONE answer, for `validate` and every reader
  * alike.
  *
- * EITHER RESERVED PREFIX OPTS A VIEW IN. A view carrying `#req-CHK-ONCE` and no
+ * ANY RESERVED PREFIX OPTS A VIEW IN. A view carrying `#req-CHK-ONCE` and no
  * `#cap-` tag is an author who asked to be graded and forgot half the claim; it
  * earns `usecase.requirement-unresolved`'s `unscoped` arm rather than silence,
- * and SCHEMA.md has said so since the tag shipped.
+ * and SCHEMA.md has said so since the tag shipped. A view carrying only
+ * `#suite-<name>` claims no capability and no requirement and is still a use
+ * case — the owner's call, recorded in SCHEMA.md: putting a journey in a suite
+ * is asking for it to be run, and a journey a test stand is provisioned from
+ * must be held to the model hop by hop like any other.
  *
  * It is exported because it was the asymmetry, not the rule, that was the
  * defect. `validate --all` widened here and the readers did not, so a
@@ -158,9 +178,10 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
  * that spells `startsWith` itself is a second answer waiting to drift.
  *
  * The parameter is the smallest shape the test needs rather than `ParsedView`,
- * so a caller holding a view-like row does not have to build one to ask. Both
- * prefix tests match their resolver's exactly, case included, so a view can
- * never be opted in here and read as untagged in `resolveCapabilityTags`.
+ * so a caller holding a view-like row does not have to build one to ask. Every
+ * prefix test matches its reader's exactly, case included, so a view can never
+ * be opted in here and read as untagged in `resolveCapabilityTags` or
+ * `suiteNames`.
  *
  * NOT the same question as `flowsClaiming`'s. That one asks which flows claim
  * capability X and matches the whole `cap-<slug>` tag; a `#req-`-only view
@@ -168,7 +189,7 @@ export async function mentionsTagPrefix(paths: readonly string[]): Promise<boole
  * counting as a use case here.
  */
 export function isUseCase(view: { tags: readonly string[] }): boolean {
-  return view.tags.some((tag) => tag.startsWith(CAP_TAG_PREFIX) || tag.startsWith(REQ_TAG_PREFIX));
+  return view.tags.some((tag) => USE_CASE_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix)));
 }
 
 /**

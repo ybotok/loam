@@ -34,6 +34,7 @@ import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 import { readUseCases, type UseCaseScan } from "./fleet.js";
 import { viewFile } from "./place.js";
+import { participantsOf } from "./suites/participants.js";
 
 /** One flow claiming a capability: enough to name it and to open the file it lives in. */
 export interface ClaimingFlow {
@@ -85,6 +86,14 @@ export function flowsClaiming(scan: UseCaseScan, capability: string): ClaimingFl
  * exactly why it is written down that the reason it exists is the return type,
  * not the call site.
  *
+ * The walk itself is `./suites/participants.ts`' `participantsOf`, which
+ * this function used to spell for itself: a suite asks the same question of a
+ * different set of views and needs the participants that resolve to NO service
+ * as well. The restriction now lives here as a choice — this function reads
+ * `services` and drops `unresolved` — rather than as a filter inside the walk,
+ * so the one union a test stand is provisioned from and the one `explore` seeds
+ * from cannot resolve an element two ways.
+ *
  * The cost of the restriction, stated so the next reader can weigh it: a flow
  * drawn through a service the fleet has not adopted yet contributes no seed.
  * That service has no documentation to explore, so what is lost is a name in a
@@ -94,18 +103,8 @@ export function flowsClaiming(scan: UseCaseScan, capability: string): ClaimingFl
 export function servicesInFlowsClaiming(scan: UseCaseScan, capabilities: readonly string[]): string[] {
   if (scan.kind !== "read") return [];
   const tags = new Set(capabilities.map(tagFor));
-  const known = scan.model.known;
-  const out = new Set<string>();
-  for (const view of scan.views) {
-    if (![...tags].some((tag) => claims(view, tag))) continue;
-    for (const step of view.steps) {
-      for (const id of [step.source, step.target]) {
-        const service = scan.resolve(id);
-        if (known.has(service)) out.add(service);
-      }
-    }
-  }
-  return [...out].sort(compareIds);
+  const claiming = scan.views.filter((view) => [...tags].some((tag) => claims(view, tag)));
+  return participantsOf(scan, claiming).services;
 }
 
 /**
