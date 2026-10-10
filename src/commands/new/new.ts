@@ -20,14 +20,8 @@ import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 import { capabilityIdProblem } from "../../core/kernel/ids/capability.js";
 import { capabilityNotes } from "../../core/capabilities/authoring/notes.js";
 import { modifiedFiles, planModifies } from "./modifies.js";
-import {
-  archSpecTemplate,
-  capabilityDeltaTemplate,
-  deltaTemplate,
-  intentTemplate,
-  openapiTemplate,
-  specTemplate,
-} from "./templates.js";
+import { archSpecTemplate, deltaTemplate, intentTemplate, openapiTemplate, specTemplate } from "./templates.js";
+import { capabilityDeltaTemplate } from "./capability-template.js";
 
 interface NewOptions {
   title?: string;
