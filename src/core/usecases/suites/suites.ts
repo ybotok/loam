@@ -47,7 +47,7 @@ export const SUITE_TAG_PREFIX = "suite-";
  * `#cap-` stays a claim: the prefix is the opt-in however little follows it,
  * and a view that asked to be in a suite must not silently be in none.
  */
-export function suiteNames(view: { tags: readonly string[] }): string[] {
+function suiteNames(view: { tags: readonly string[] }): string[] {
   const names = view.tags.filter((tag) => tag.startsWith(SUITE_TAG_PREFIX)).map((tag) => tag.slice(SUITE_TAG_PREFIX.length));
   return [...new Set(names)].sort(compareIds);
 }
