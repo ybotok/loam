@@ -234,6 +234,46 @@ paths:
     expect(ofCode(all, "openapi.baseline-missing")).toHaveLength(1);
   });
 
+  it("an in-flight feature sharing an archived feature's id is not excused from that feature's retirement", async () => {
+    // Coherence grades only features in flight, so the archived FEAT-112 is
+    // never the feature asking — an in-flight directory carrying the same id
+    // is another feature, and the retirement it would undo is real. The index
+    // used to drop the asking id from the retirers, which could only hide this.
+    const f = await exampleFleet();
+    expect((await runLoam(f.fleet, "archive", "FEAT-112")).code).toBe(0);
+    contractOnly(f, "FEAT-112", "FEAT-112-v1-again", QUOTED_V1);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-112", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("archived FEAT-112 retired it");
+  });
+
+  it("two archived features retiring one operation are both named, in id order, each once", async () => {
+    // FEAT-090 is placed by hand, twice under one id: a directory name is the
+    // only place a feature id is read from, so two archived directories can
+    // carry the same one, and naming it twice would name one feature as two.
+    const f = await exampleFleet();
+    expect((await runLoam(f.fleet, "archive", "FEAT-112")).code).toBe(0);
+    const marker = `openapi: 3.1.0
+paths:
+  /v1/orders:
+    post:
+      operationId: createOrderV1
+      x-loam-remove: true
+`;
+    f.write("features/archive/FEAT-090-early-retire/specs/order-service/openapi.yaml", marker);
+    f.write("features/archive/FEAT-090-early-retire-copy/specs/order-service/openapi.yaml", marker);
+    contractOnly(f, "FEAT-304", "FEAT-304-v1-notes", QUOTED_V1);
+    const [warned, ...more] = ofCode(
+      findings((await runLoam(f.fleet, "validate", "--feature", "FEAT-304", "--json")).stdout),
+      "openapi.op-revived",
+    );
+    expect(more).toEqual([]);
+    expect(warned!.message).toContain("— archived FEAT-090 and FEAT-112 retired it,");
+  });
+
   it("a path-level or anonymous marker retired nothing, so it is never named as the retirer", async () => {
     // Neither shape deletes anything at archive — the merge removes only a
     // living operation whose id the marker names — so a feature carrying them

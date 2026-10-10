@@ -16,7 +16,8 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
 
 - **New `openapi.op-revived` (warn, gates archive).** A feature's `openapi.yaml` spells an
   operation (by operationId) that its service's living contract no longer holds, and an ARCHIVED
-  feature other than this one retired it with an `x-loam-remove: true` marker. Before this, the
+  feature retired it with an `x-loam-remove: true` marker — any archived feature, including one
+  whose directory carries the same feature id as the one being graded. Before this, the
   quote read as an addition: a delta that had only quoted `createOrderV1` archived after the
   feature retiring it and put it back into the living contract at exit 0, with the advisory
   `api.op-unconsumed` the only finding. The message names the operation, the retiring feature(s)

@@ -1551,7 +1551,7 @@ the source for tests.
   `asyncapi.yaml`, through the same relocation rule the gate applies to an in-flight delta (a
   marker on an id the same delta redefines elsewhere moved it, and retired nothing). A delta entry
   that is not itself a removal, that its service's living contract does not hold, and that an
-  archived feature other than this one retired is **`openapi.op-revived`** (by operationId — a
+  archived feature retired is **`openapi.op-revived`** (by operationId — a
   retired operation quoted at a new path is the same operation back) or **`asyncapi.slot-revived`**
   (a `channels` or `operations` slot by its key; a message by its *name*, wherever it is declared).
   Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document

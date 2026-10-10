@@ -40,8 +40,10 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse } from "yaml";
-import { memo } from "../../kernel/concurrency.js";
+import { inOrder, memo } from "../../kernel/concurrency.js";
 import type { DocsDir } from "../../kernel/ids/dirs.js";
+import type { RawServiceId } from "../../kernel/ids/service.js";
+import type { FeatureEntry } from "../../repo/entries.js";
 import { archiveDir, ARTIFACT_FILES, featureSpecPaths } from "../../repo/paths.js";
 import { listFeatures } from "../../repo/repo.js";
 import { readOpenapi } from "../../openapi/doc.js";
@@ -53,14 +55,22 @@ import { readSnapshotPreImage } from "../../staging/snapshot/manifest.js";
 import type { FleetContext } from "../../fleet-context.js";
 import { messageRetirements, operationRetirements } from "./retirement.js";
 
-/** Everything the archived features retired, each entry naming the features that did it (sorted, distinct). */
+/**
+ * The archived features that retired one entry, in id order and distinct —
+ * never empty, because an entry is recorded only together with its first
+ * retirer. The tuple says so to the compiler, so the one sentence that names
+ * them (./revived.ts) cannot be handed nobody.
+ */
+export type ArchivedBy = readonly [string, ...string[]];
+
+/** Everything the archived features retired, each entry naming the features that did it. */
 export interface RetiredIndex {
   /** `retiredKey(service, operationId)` → the archived features whose openapi delta retired it. */
-  operations: ReadonlyMap<string, readonly string[]>;
+  operations: ReadonlyMap<string, ArchivedBy>;
   /** `retiredKey(service, section, key)` for a `channels` or `operations` slot. */
-  slots: ReadonlyMap<string, readonly string[]>;
+  slots: ReadonlyMap<string, ArchivedBy>;
   /** `retiredKey(service, messageName)` — by the join token, wherever the message was declared. */
-  messages: ReadonlyMap<string, readonly string[]>;
+  messages: ReadonlyMap<string, ArchivedBy>;
 }
 
 /** The index's one key spelling. NUL-joined: no id, section, key or message name can contain it. */
@@ -88,8 +98,11 @@ const PER_INVOCATION = new WeakMap<FleetContext, Map<string, Promise<RetiredInde
 
 /**
  * A lazy handle on the index: nothing is read until a grader has a candidate
- * to ask about, so a feature whose every entry the living contract already
- * holds — the common case — never walks `features/archive/` at all. Without a
+ * to ask about — an entry absent from its living contract, which is exactly
+ * the shape the living contract alone cannot call new or retired. A feature
+ * that only edits what the living contract already holds never walks
+ * `features/archive/`; one that adds anything genuinely new does, since an
+ * addition and a revival read the same until the walk answers. Without a
  * context (archive's gate) the handle memoises for its own lifetime, which is
  * one `featureCoherence` call, so the two contract axes still share one walk.
  */
@@ -103,49 +116,65 @@ export function retiredLookup(docsDir: DocsDir, context?: FleetContext): Retired
   };
 }
 
+/** What one archived feature's deltas for one service retired, as index keys. */
+interface ServiceRetirements {
+  featureId: string;
+  operations: string[];
+  slots: string[];
+  messages: string[];
+}
+
+/** The index's parts, in the one order `readRetiredIndex` records them. */
+const PARTS = ["operations", "slots", "messages"] as const;
+
 /** Walk every archived feature's contract deltas and record what each one retired. */
-export async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promise<RetiredIndex> {
-  const operations = new Map<string, string[]>();
-  const slots = new Map<string, string[]>();
-  const messages = new Map<string, string[]>();
+async function readRetiredIndex(docsDir: DocsDir, context?: FleetContext): Promise<RetiredIndex> {
+  const index = { operations: new Map<string, ArchivedBy>(), slots: new Map<string, ArchivedBy>(), messages: new Map<string, ArchivedBy>() };
   // A `features/archive` that is not a directory holds no archived feature,
   // and listing it would throw ENOTDIR out of the feature gate — refusing an
   // archive over a question about OTHER features' history, before the plan
   // that names the real problem (the final move into that path) is reached.
-  if (!isDirectory(archiveDir(docsDir))) return { operations, slots, messages };
-  for (const feature of await listFeatures(docsDir, { includeArchived: true }, context)) {
-    if (!feature.archived) continue;
-    for (const service of feature.services) {
-      const paths = featureSpecPaths(feature.dir, service);
-      // An absent delta reads as an empty document; an unreadable one retired
-      // nothing loam could have merged (archive refuses `merge-failed`).
-      const api = await readOpenapi(paths.openapi, context);
-      if (!api.unreadable) {
-        for (const id of operationRetirements(api.ops).net) record(operations, retiredKey(service, id), feature.id);
-      }
-      if (!existsSync(paths.asyncapi)) continue;
-      const events = await readAsyncapi(paths.asyncapi, context);
-      const text = events.unreadable ? undefined : await readOr(paths.asyncapi, context);
-      if (text === undefined) continue;
-      const eventSlots = asyncapiSlots(parse(text));
-      const removed = eventSlots.filter((s) => s.remove && s.section !== "components.messages");
-      for (const slot of removed) record(slots, retiredKey(service, slot.section, slot.key), feature.id);
-      // The pre-image is asked only when a channel went: that is the one
-      // retirement whose names the delta does not spell.
-      const before = removed.some((s) => s.section === "channels")
-        ? await preImageEvents(feature.dir, service)
-        : NOTHING_DECLARED;
-      for (const name of messageRetirements(events, eventSlots, before).net) {
-        record(messages, retiredKey(service, name), feature.id);
-      }
-    }
+  if (!isDirectory(archiveDir(docsDir))) return index;
+  const archived = (await listFeatures(docsDir, { includeArchived: true }, context)).filter((f) => f.archived);
+  const units = archived.flatMap((feature) => feature.services.map((service) => ({ feature, service })));
+  // Every (feature, service) pair is independent of every other, so they are
+  // read concurrently; the only order that matters is the order retirers are
+  // RECORDED in, and `inOrder` hands the answers back in input order — the
+  // features sorted by `compareIds`, as `listFeatures` returns them.
+  for (const found of await inOrder(units, ({ feature, service }) => serviceRetirements(feature, service, context))) {
+    for (const part of PARTS) for (const key of found[part]) record(index[part], key, found.featureId);
   }
-  return { operations, slots, messages };
+  return index;
 }
 
-/** The archived features that retired this entry, minus the feature asking — empty when none did. */
-export function retiredBy(found: readonly string[] | undefined, asking: string): string[] {
-  return (found ?? []).filter((id) => id !== asking);
+/** One archived feature's retirements on one service. */
+async function serviceRetirements(
+  feature: FeatureEntry,
+  service: RawServiceId,
+  context: FleetContext | undefined,
+): Promise<ServiceRetirements> {
+  const found: ServiceRetirements = { featureId: feature.id, operations: [], slots: [], messages: [] };
+  const paths = featureSpecPaths(feature.dir, service);
+  // An absent delta reads as an empty document; an unreadable one retired
+  // nothing loam could have merged (archive refuses `merge-failed`).
+  const api = await readOpenapi(paths.openapi, context);
+  if (!api.unreadable) {
+    for (const id of operationRetirements(api.ops).net) found.operations.push(retiredKey(service, id));
+  }
+  if (!existsSync(paths.asyncapi)) return found;
+  const events = await readAsyncapi(paths.asyncapi, context);
+  const text = events.unreadable ? undefined : await readOr(paths.asyncapi, context);
+  if (text === undefined) return found;
+  const eventSlots = asyncapiSlots(parse(text));
+  const removed = eventSlots.filter((s) => s.remove && s.section !== "components.messages");
+  for (const slot of removed) found.slots.push(retiredKey(service, slot.section, slot.key));
+  // The pre-image is asked only when a channel went: that is the one
+  // retirement whose names the delta does not spell.
+  const before = removed.some((s) => s.section === "channels")
+    ? await preImageEvents(feature.dir, service)
+    : NOTHING_DECLARED;
+  for (const name of messageRetirements(events, eventSlots, before).net) found.messages.push(retiredKey(service, name));
+  return found;
 }
 
 const NOTHING_DECLARED: AsyncapiDoc = asyncapiFromText("");
@@ -166,11 +195,13 @@ function isDirectory(path: string): boolean {
 }
 
 /**
- * Add one retirer. Already in id order without a sort: `listFeatures` returns
- * the features sorted by `compareIds`, and the walk visits them in that order.
+ * Add one retirer. Already in id order without a sort: the walk records the
+ * features in `listFeatures`' `compareIds` order. Distinct because two
+ * archived directories can carry one feature id (the id is read off the
+ * directory name), and "archived FEAT-7 and FEAT-7" names one feature twice.
  */
-function record(into: Map<string, string[]>, key: string, featureId: string): void {
-  const by = into.get(key) ?? [];
-  if (!by.includes(featureId)) by.push(featureId);
-  into.set(key, by);
+function record(into: Map<string, ArchivedBy>, key: string, featureId: string): void {
+  const by = into.get(key);
+  if (by === undefined) into.set(key, [featureId]);
+  else if (!by.includes(featureId)) into.set(key, [...by, featureId]);
 }

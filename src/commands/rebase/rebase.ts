@@ -218,7 +218,7 @@ async function rebaseLocked(
     // refuses it, and the decision left to the human.
     const retired = retiredLookup(docsDir, repo.fleet);
     for (const service of services) {
-      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, featureId: id, service, retired, context: repo.fleet })));
+      revived.push(...(await serviceRevivals({ docsDir, featureDir: feature.dir, service, retired, context: repo.fleet })));
     }
   } catch (err) {
     if (!(err instanceof NotUtf8DocumentError)) throw err;

@@ -30,13 +30,7 @@ import { asyncapiSlots, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import type { AsyncapiDoc, EventMessage } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
-import { retiredBy, retiredKey, type RetiredIndex, type RetiredLookup } from "./archived.js";
-
-/** Whose delta is being graded, and on which service. */
-export interface RevivalScope {
-  service: string;
-  featureId: string;
-}
+import { retiredKey, type ArchivedBy, type RetiredIndex, type RetiredLookup } from "./archived.js";
 
 /** The two remedies, spelled once: which one applies is the human's call, never loam's. */
 const REMEDY =
@@ -54,18 +48,24 @@ export function absentOperations(featDoc: OpenapiDoc, livingDoc: OpenapiDoc): Op
   return featDoc.ops.filter((op) => !op.remove && !living.has(op.id));
 }
 
-/** `absentOperations` that an archived feature other than this one retired. */
-export function revivedOperations(scope: RevivalScope, absent: readonly Operation[], index: RetiredIndex): Issue[] {
+/**
+ * `absentOperations` that an archived feature retired. Any archived feature —
+ * the one asking is never among them: coherence grades only features in flight
+ * (status/feature/feature.ts), so a retirer bearing the asking feature's id is
+ * another directory carrying the same id, and its retirement is as real as
+ * anyone's. Excluding it by id, as this once did, could only hide a revival.
+ */
+export function revivedOperations(service: string, absent: readonly Operation[], index: RetiredIndex): Issue[] {
   const issues: Issue[] = [];
   for (const op of absent) {
-    const by = retiredBy(index.operations.get(retiredKey(scope.service, op.id)), scope.featureId);
-    if (by.length === 0) continue;
+    const by = index.operations.get(retiredKey(service, op.id));
+    if (by === undefined) continue;
     issues.push({
       severity: "warn",
       gates: true,
       code: "openapi.op-revived",
-      subject: scope.service,
-      message: `${scope.service}: this feature's openapi.yaml spells '${op.id}' (${op.method.toUpperCase()} ${op.path}), which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`,
+      subject: service,
+      message: `${service}: this feature's openapi.yaml spells '${op.id}' (${op.method.toUpperCase()} ${op.path}), which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`,
     });
   }
   return issues;
@@ -102,22 +102,22 @@ export function absentEvents(input: {
   };
 }
 
-/** `absentEvents` that an archived feature other than this one retired. */
-export function revivedEvents(scope: RevivalScope, absent: AbsentEvents, index: RetiredIndex): Issue[] {
+/** `absentEvents` that an archived feature retired — any archived feature, `revivedOperations`' reason. */
+export function revivedEvents(service: string, absent: AbsentEvents, index: RetiredIndex): Issue[] {
   const issues: Issue[] = [];
-  const revive = (what: string, by: string[]): void => {
+  const revive = (what: string, by: ArchivedBy): void => {
     issues.push({
       severity: "warn",
       gates: true,
       code: "asyncapi.slot-revived",
-      subject: scope.service,
-      message: `${scope.service}: this feature's asyncapi.yaml declares ${what}, which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`,
+      subject: service,
+      message: `${service}: this feature's asyncapi.yaml declares ${what}, which the living contract no longer has — ${retirers(by)} retired it, and archiving this delta would put it back. ${REMEDY}`,
     });
   };
   const revivedChannels = new Set<string>();
   for (const slot of absent.slots) {
-    const by = retiredBy(index.slots.get(retiredKey(scope.service, slot.section, slot.key)), scope.featureId);
-    if (by.length === 0) continue;
+    const by = index.slots.get(retiredKey(service, slot.section, slot.key));
+    if (by === undefined) continue;
     if (slot.section === "channels") revivedChannels.add(slot.key);
     revive(`${slot.section}.${slot.key}`, by);
   }
@@ -126,8 +126,8 @@ export function revivedEvents(scope: RevivalScope, absent: AbsentEvents, index: 
     // that channel's interior, and the channel's finding already names the
     // revival — one act, one finding.
     if ([...revivedChannels].some((ck) => message.slot.startsWith(`channels.${ck}.messages.`))) continue;
-    const by = retiredBy(index.messages.get(retiredKey(scope.service, message.name)), scope.featureId);
-    if (by.length === 0) continue;
+    const by = index.messages.get(retiredKey(service, message.name));
+    if (by === undefined) continue;
     revive(`message '${message.name}' (${message.slot})`, by);
   }
   return issues;
@@ -137,7 +137,6 @@ export function revivedEvents(scope: RevivalScope, absent: AbsentEvents, index: 
 export interface ServiceRevivalRequest {
   docsDir: DocsDir;
   featureDir: FeatureDir;
-  featureId: string;
   service: PathableService;
   retired: RetiredLookup;
   context?: FleetContext;
@@ -151,8 +150,7 @@ export interface ServiceRevivalRequest {
  * the contract axis, by slot key and message name on the event axis.
  */
 export async function serviceRevivals(request: ServiceRevivalRequest): Promise<Issue[]> {
-  const { docsDir, featureDir, featureId, service, retired, context } = request;
-  const scope: RevivalScope = { service, featureId };
+  const { docsDir, featureDir, service, retired, context } = request;
   const feature = featureSpecPaths(featureDir, service);
   const living = await locateServicePaths(docsDir, service, context);
   const issues: Issue[] = [];
@@ -160,7 +158,7 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
   const ops = existsSync(feature.openapi)
     ? absentOperations(await readOpenapi(feature.openapi, context), await readOpenapi(living.openapi, context))
     : [];
-  if (ops.length > 0) issues.push(...revivedOperations(scope, ops, await retired()));
+  if (ops.length > 0) issues.push(...revivedOperations(service, ops, await retired()));
 
   if (!existsSync(feature.asyncapi)) return issues;
   const featDoc = await readAsyncapi(feature.asyncapi, context);
@@ -175,12 +173,13 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
     livingDoc,
     livingSlots: new Map(asyncapiSlots(livingText === undefined ? {} : parse(livingText)).map((s) => [`${s.section}\0${s.key}`, s])),
   });
-  if (events.slots.length > 0 || events.messages.length > 0) issues.push(...revivedEvents(scope, events, await retired()));
+  if (events.slots.length > 0 || events.messages.length > 0) issues.push(...revivedEvents(service, events, await retired()));
   return issues;
 }
 
 /** "archived FEAT-112", "archived FEAT-112 and FEAT-140", "archived FEAT-1, FEAT-2 and FEAT-3". */
-function retirers(by: readonly string[]): string {
-  const list = by.length === 1 ? by[0]! : `${by.slice(0, -1).join(", ")} and ${by.at(-1)!}`;
+function retirers(by: ArchivedBy): string {
+  const [first, ...rest] = by;
+  const list = rest.reduce((said, id, i) => `${said}${i === rest.length - 1 ? " and" : ","} ${id}`, first);
   return `archived ${list}`;
 }
