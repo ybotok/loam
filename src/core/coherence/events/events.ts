@@ -94,7 +94,7 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
   // absent from its living contract at all.
   for (const [svc, absent] of declared.revivalCandidates) {
     if (absent.slots.length === 0 && absent.messages.length === 0) continue;
-    issues.push(...revivedEvents({ service: svc, featureId: scope.featureId }, absent, await request.retired()));
+    issues.push(...revivedEvents(svc, absent, await request.retired()));
   }
 
   // Two features declaring one (service, message): both deltas apply

@@ -189,7 +189,7 @@ export async function featureCoherence(request: CoherenceRequest): Promise<Issue
   const retired = retiredLookup(docsDir, context);
   for (const [svc, absent] of revivalCandidates) {
     if (absent.length === 0) continue;
-    issues.push(...revivedOperations({ service: svc, featureId }, absent, await retired()));
+    issues.push(...revivedOperations(svc, absent, await retired()));
   }
   const {
     governedByLivingSpec, edgeConsumers, requirementConsumers, definedElsewhere,
