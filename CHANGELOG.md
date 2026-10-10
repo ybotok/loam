@@ -249,6 +249,49 @@ maturity rung of every service is unchanged.
 - The test harness creates its temporary directories under the canonical (symlink-resolved) temp
   root, so the suite passes on macOS without a `TMPDIR` override.
 
+### Changed — a federated verification record is one file per service (a file-format event)
+
+- **New path written: `features/<FEAT>/verification/<svc>.yaml`.** `loam verify <FEAT> --service
+  <svc> --record` (and `--results` / `--contract-results` under `--service`, and the bound form that
+  substitutes `--service` from loam.json) now writes that service's attestation to a file of its
+  own instead of into one shared `verification.yaml`. Each file is a `schema: 2` record holding
+  exactly one attestation and that service's answers; the directory is the record, and the verdict
+  and counts are computed from the union of its files when anything reads it. What a repo notices:
+  two teams recording two different services on two docs-repo branches no longer conflict when
+  their PRs merge — the shared file conflicted every time (add/add from an empty start, content
+  conflicts on `summary:`, `claims:` and `attestations:` once one attestation had landed).
+- **Old path still read, forever: `features/<FEAT>/verification.yaml`**, active and archived, in
+  every shape loam has written. A one-file federated record reads exactly as before until a service
+  records again; that service's new file then supersedes its share of the old one (the old file is
+  not rewritten), and the write that leaves nothing in it counting removes it. An all-at-once
+  (schema-1) record is removed by the first `--service` write, which lists its answers in
+  `discarded` — the same answers the old overwrite listed.
+- **The all-at-once form is unchanged on disk.** `loam verify <FEAT> --record` without `--service`
+  still writes the one file `verification.yaml` — it answers the whole checklist from one place, so
+  there is no second writer to collide with and no service to name a file after — and is still
+  refused `record-federated` over any record carrying attestations, now including per-service files.
+- **When services answered different versions of the checklist**, a record kept as per-service files
+  counts the answers of the files that answered its newest version only; the others stay in
+  `attestations` and are named by `verify.checklist-forked` until they record again. A one-file
+  record keeps its old reading. The `verify.checklist-forked` message no longer suggests accepting
+  the split.
+- **`record-unreadable` names the file that failed and the repair that is safe for it.** Git conflict
+  markers in any record file are detected before the YAML is parsed and named with their lines. A
+  service's own `verification/<svc>.yaml` is that service's word alone, so its advice is to repair
+  it or delete it and record that service again; the one-file `verification.yaml` may hold other
+  services' attestations, so its advice is to repair it or restore it from version control (after a
+  merge, the copy on the branch you merged into) — never to delete it. The old advice ("delete it
+  and record again") erased other teams' attestations when followed on a shared record, and a
+  `verify.record-miscounted` record's "record the answers again" looped straight back into the same
+  refusal. The same per-file advice reaches `evidence.record-unreadable`, and the `status` and
+  `gate` sentences for an unreadable record no longer say "delete it". A per-service file holding
+  anything but its own service's attestation is unreadable too.
+- **`path` in a recording `verify --json` payload** is the file this run wrote — the service's own
+  `verification/<svc>.yaml` under `--service`. The `path` inside `recorded` on the read and frozen views, and the
+  `verification` artifact's `path` in `status`, name the `verification/` directory once it exists,
+  the one file otherwise. `archive` and `unarchive` carry the directory with the feature they move.
+  No code, flag or payload key was added, changed or retired.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line.

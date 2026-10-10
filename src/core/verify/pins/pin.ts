@@ -94,7 +94,7 @@ export function pinnedDigest(source: string): string {
 }
 
 /**
- * The read-shape guard `asVerification` (../file.ts) asks per claim, on the
+ * The read-shape guard `asVerification` (../read/shape.ts) asks per claim, on the
  * `isConsumedContractReport` model to the letter: absent is fine — every
  * record written before pins existed, and every runner-answered claim, has
  * none — but present must be whole for the four fields the lint dereferences.

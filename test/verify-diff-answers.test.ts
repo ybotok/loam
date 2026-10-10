@@ -21,7 +21,7 @@ import {
   runLoam,
   type Project,
 } from "./helpers/harness.js";
-import { FEAT, PAYMENT, RECORD, SPLIT, type Claim } from "./helpers/federated.js";
+import { anyRecord, FEAT, PAYMENT, RECORD, SPLIT, type Claim } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -86,7 +86,7 @@ describe("loam verify --diff-answers: agreement and disagreement", () => {
     expect(res.payload).not.toHaveProperty("verdict");
     expect(res.payload).not.toHaveProperty("attested");
     // Writes nothing: no verification.yaml appears.
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
     // The file digests are the sha256 of the exact bytes read.
     for (const [name, pin] of [
       [a, res.payload.files.a],
@@ -276,7 +276,7 @@ describe("loam verify --diff-answers: fail-closed refusals name the file", () =>
       expect(res.payload.error.code).toBe("invalid-option");
       expect(res.payload.error.message).toContain("writes nothing");
     }
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses any arity but exactly two files (invalid-option)", async () => {
@@ -400,6 +400,6 @@ describe("loam verify --diff-answers: doctrine pins", () => {
     expect(res.out).toContain("a: confirmed (src/x.ts:12)");
     expect(res.out).toContain("b: unconfirmed — not found");
     expect(res.out).toContain("nothing was written and no verdict changed");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 });

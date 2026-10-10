@@ -142,7 +142,7 @@ eleven rows — `core/c4/` claimed to depend on nothing while importing `repo` a
 | `core/explore/` | the read-only survey `loam explore` prints before a feature exists | c4, capabilities, fleet-context, repo, usecases, vocabulary |
 | `core/mcp/` | the MCP facade's pure half: stdio framing, JSON-RPC routing and resources, the read-only plus opt-in authoring tool tables, output schema and argv boundary | agent, envelope, explain, kernel |
 | `core/pack/` | the context pack — one service's whole docs slice as one deterministic briefing | c4, capabilities, document, envelope, fleet-context, kernel, permissions, projection, provenance, repo, usecases, vocabulary |
-| `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
+| `core/verify/` | the done-check: questions, answers, the record | asyncapi, c4, conflict-markers, document, envelope, fleet-context, gherkin, kernel, openapi, repo, staging, vocabulary |
 | `core/status/` | aggregate answers for a feature (`feature/`) or a fleet (`fleet/`) | coherence, dependencies, document, envelope, fleet-context, kernel, provenance, repo, scaffold, staging, usecases, verify, vocabulary |
 | `core/gate/` | the deploy-time query — `loam gate`'s partner scan and its four checks over recorded evidence | c4, kernel, provenance, repo, staging, status, vocabulary |
 

@@ -49,7 +49,7 @@ import {
   type Project,
   type RunResult,
 } from "./helpers/harness.js";
-import { DIR, FEAT, RECORD, serviceRepo, SPLIT } from "./helpers/federated.js";
+import { anyRecord, DIR, FEAT, RECORD, serviceRecord, serviceRepo, SPLIT } from "./helpers/federated.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -917,7 +917,7 @@ describe("composing --results with --record", () => {
       expect(json.error.message).toContain(c.id);
     }
     // and nothing was recorded
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("an archived feature's record is frozen against --results too", async () => {
@@ -1448,7 +1448,7 @@ describe("federated service verification", () => {
     const err = JSON.parse(result.stdout).error;
     expect(err.code).toBe("repository-unavailable");
     expect(err.message).toContain("git");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it.each([
@@ -1461,7 +1461,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, evidence);
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.code).toBe("answers-unevidenced");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses evidence through a symlink that escapes the service repository", async () => {
@@ -1473,7 +1473,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, "escape.ts:1");
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.message).toContain("symlink");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses evidence changed after the commit being attested", async () => {
@@ -1483,7 +1483,7 @@ describe("federated service verification", () => {
     const attempt = await recordService(repo, SPLIT, "proof.ts:1");
     expect(attempt.result.code).toBe(1);
     expect(attempt.json.error.message).toContain("uncommitted changes");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses to attest when git cannot finish the committed-report check", async () => {
@@ -1519,7 +1519,7 @@ describe("federated service verification", () => {
     expect(err.message).toContain(`Cannot tell whether the test report '${report}' is bound to`);
     expect(err.message).toContain("git could not be run to completion");
     // The whole point: no attestation was written on an unchecked binding.
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   });
 
   it("refuses to attest when git never answers the evidence check, and stops waiting at its deadline", async () => {
@@ -1556,7 +1556,7 @@ describe("federated service verification", () => {
     expect(err.message).toContain("git did not answer within");
     // The shim sleeps for a minute; anything near that means loam waited on it.
     expect(elapsed).toBeLessThan(40_000);
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   }, 90_000);
 
   it("refuses to attest when git answers past the output cap, rather than buffering it", async () => {
@@ -1586,16 +1586,22 @@ describe("federated service verification", () => {
 
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout).error.code).toBe("answers-unevidenced");
-    expect(p.exists(RECORD)).toBe(false);
+    expect(anyRecord(p)).toBe(false);
   }, 90_000);
 
-  it("prunes stale claims and their attestation when another service records against a changed checklist", async () => {
+  it("a service behind a changed checklist stops counting, and its own file is left exactly as it stood", async () => {
+    // The shared record used to settle this by REWRITING: the next writer
+    // pruned the stale claim and its attestation out of everybody's file. Each
+    // service's file is its own now, so nothing prunes it — and the union
+    // counts only the files that answered the newest checklist, so the stale
+    // answer cannot fill the slot of the question that replaced it.
     const p = await project();
     const splitRepo = await serviceRepo(p, SPLIT, "primary");
     const paymentRepo = await serviceRepo(p, "payment-service", "payment-work");
     await recordService(splitRepo, SPLIT);
     const payment = await recordService(paymentRepo, "payment-service");
     const staleId = payment.local[0]!.id;
+    const paymentFile = await p.read(serviceRecord("payment-service"));
 
     await p.write(
       `${DIR}/delta.likec4`,
@@ -1603,11 +1609,18 @@ describe("federated service verification", () => {
     );
     const refreshed = await recordService(splitRepo, SPLIT);
     expect(refreshed.result.code, refreshed.result.out).toBe(0);
-    const record = parse(await p.read(RECORD)) as Record<string, any>;
-    expect(record.claims.some((claim: Record<string, unknown>) => claim.id === staleId)).toBe(false);
-    expect(record.attestations.map((a: Record<string, unknown>) => a.service)).toEqual([SPLIT]);
+    expect(await p.read(serviceRecord("payment-service"))).toBe(paymentFile);
     expect(refreshed.json.verified).toBe(false);
     expect(refreshed.json.summary.unanswered).toBe(1);
+    // Nothing was taken off disk, so nothing is reported discarded.
+    expect(refreshed.json.discarded).toBeUndefined();
+
+    const read = JSON.parse((await runLoam(p.workDir, "verify", FEAT, "--json")).stdout) as Record<string, any>;
+    expect(read.claims.some((claim: Record<string, unknown>) => claim.id === staleId)).toBe(false);
+    expect(read.summary.unanswered).toBe(1);
+    // The service that is behind is named, with the version it answered.
+    const forked = (read.notices as Array<Record<string, any>>).find((n) => n["code"] === "verify.checklist-forked")!;
+    expect(forked["message"]).toContain("payment-service");
   });
 
   it("keeps legacy global --record compatible with arbitrary non-empty evidence", async () => {

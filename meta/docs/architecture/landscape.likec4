@@ -693,6 +693,7 @@ model {
 
   loam.core.verify -> loam.core.asyncapi
   loam.core.verify -> loam.core.c4
+  loam.core.verify -> loam.core.conflict_markers
   loam.core.verify -> loam.core.document
   loam.core.verify -> loam.core.envelope
   loam.core.verify -> loam.core.fleet_context

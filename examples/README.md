@@ -94,8 +94,10 @@ for.
 - **`features/archive/FEAT-088-refunds/`** — shipped, and **`attested`**. It was merged by the real
   `loam archive`, so its `.loam-before/` snapshot holds the exact bytes the merge overwrote and
   `loam unarchive FEAT-088` would put them back. Its `verification.yaml` is the done-check written
-  down: every claim is confirmed, but the scenario claims rest on an agent's word instead of a
-  digest-matched test run. loam does not pretend those are the same thing.
+  down — recorded all at once, so it is the one file (a feature recorded per service carries one
+  `verification/<svc>.yaml` per attesting service instead): every claim is confirmed, but the
+  scenario claims rest on an agent's word instead of a digest-matched test run. loam does not
+  pretend those are the same thing.
 - **`features/archive/FEAT-120-refund-notification/`** — shipped, and **`verified`**. The sequel
   FEAT-088 left open: the money went back and nobody told the customer. It publishes
   `payment.PaymentRefunded` from payment-service and has notification-service turn it into the

@@ -6,8 +6,9 @@
  *
  * The claim shape is structural rather than an import of `../record.js`'s
  * `RecordedClaim`, and not only for the smallest-parameter rule: this package
- * is imported BY `core/verify` (`../file.ts` asks `./pin.ts` for the read
- * guard, `../answers.ts` for the shape), so importing the parent back would
+ * is imported BY `core/verify` and its `read/` sibling (`../read/shape.ts` asks
+ * `./pin.ts` for the read guard, `../answers.ts` for the shape), so importing
+ * the parent back would
  * put a cycle in the package graph that `import/no-cycle` cannot see.
  */
 import { readFile, stat } from "node:fs/promises";

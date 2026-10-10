@@ -55,7 +55,8 @@ features/<FEAT>/                  a change in flight
   specs/<svc>/arch.spec.md        the architectural requirement change, same delta grammar
   specs/<svc>/openapi.yaml        the endpoints this feature adds
   specs/<svc>/asyncapi.yaml       the event-contract delta (optional; a complete AsyncAPI 3 document)
-  verification.yaml               what was checked once the code was built
+  verification/<svc>.yaml         what each service checked once the code was built — one file per service
+  verification.yaml               the same answered all at once (and every record from before the directory)
 features/archive/<FEAT>/          shipped changes — the evolution history
 \`\`\`
 

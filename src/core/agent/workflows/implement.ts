@@ -81,7 +81,7 @@ repository, which needs its own committed ./loam.json — if there is none,
 3. \`loam tasks $1 --service $2 --next --json\` — ONE unit of work, and the loop
    every step below runs inside. Step 2 is the whole brief; this is the next thing
    to do in it. It writes nothing: the projection is derived from the verify
-   checklist, the delta scans, the feature's \`verification.yaml\` and — in this,
+   checklist, the delta scans, the feature's verification record and — in this,
    the bound service repo — the digest stamps in the generated \`.feature\` files.
    Drop \`--next\` to see every open unit instead of only the head.
    Each entry of \`units[]\` carries its \`id\` (the same id the verify checklist uses
@@ -108,7 +108,7 @@ repository, which needs its own committed ./loam.json — if there is none,
    \`done.check\` is the FACT that closes the unit, and the RUNNER decides whether
    that fact holds — never your own reading of the code you just wrote. Done means
    the unit no longer appears, and it stops appearing only once its claim is
-   recorded confirmed in a \`verification.yaml\` that is not stale. So re-run
+   recorded confirmed in a verification record that is not stale. So re-run
    \`loam tasks $1 --service $2 --json\` after every recording instead of working
    down a list you copied out: \`frontier\` (the first ten open unit ids, in order)
    and \`counts\` (\`open\`, \`done\`, \`attested\`) are recomputed from the documents on

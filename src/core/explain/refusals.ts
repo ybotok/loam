@@ -65,9 +65,9 @@ export const REFUSAL_MEANINGS = {
   "repository-unavailable":
     "The repository this operation must be bound to (or read from) cannot be answered for — most commonly a writing `loam verify`, a `loam gherkin` or a `loam vouch` run where loam.json declares no `service` at all (the docs repo, usually), or a docs repo that cannot be enumerated — so the command refuses rather than guessing which service it is about.",
   "record-federated":
-    "`loam verify --record` without `--service` over a federated (schema 2) record — the all-at-once form would erase other repositories' attestations, so it is refused naming the attestors; record per service instead.",
+    "`loam verify --record` without `--service` over a federated (schema 2) record — per-service files under `verification/`, or a one-file record carrying attestations — the all-at-once form would put one unattested answer set over other repositories' attestations, so it is refused naming the attestors; record per service instead.",
   "record-unreadable":
-    "A verification.yaml exists but cannot be read as a record — it is never overwritten and never reported as absent; repair it by hand, or re-record from the service's repo.",
+    "A file of the verification record (`verification.yaml`, or one service's `verification/<svc>.yaml`) exists but cannot be read — broken YAML, git conflict markers, a summary contradicting its claims, or a per-service file holding anything but its own service's attestation. It is never overwritten and never reported as absent. The message names the file and the safe repair: a service's own file holds only that service's word, so it may be repaired, or deleted and recorded again from that service's repo; the one-file `verification.yaml` may hold other services' attestations, so it is repaired or restored from version control (after a merge, the copy on the branch you merged into), never deleted.",
   "record-raced":
     "`loam verify --record` found the record changed between its locked read and the swap — an editor or a lock-ignoring writer landed first; nothing was written, and re-running merges over the record as it now stands.",
   "gherkin-conflict":

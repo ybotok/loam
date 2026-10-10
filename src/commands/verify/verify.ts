@@ -7,8 +7,7 @@ import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/
 import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
 import { docsRepoReady } from "../policy/gate.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
-import { readVerificationState } from "../../core/verify/file.js";
-import { verificationPath } from "../../core/verify/record.js";
+import { readVerificationState } from "../../core/verify/read/file.js";
 import { report } from "./report.js";
 import { reportFrozen } from "./frozen.js";
 import { record } from "./record.js";
@@ -194,20 +193,25 @@ export function registerVerify(program: Command): void {
           return;
         }
 
-        // Before anything else: a verification.yaml that exists but will not read
+        // Before anything else: a record file that exists but will not read
         // is a refusal, not an absence. It holds somebody's answers and — in a
         // fleet — other repositories' attestations; treating it as "not verified"
         // let the next --record silently overwrite all of it, and made the read
         // view say "no record" about a file sitting right there.
+        //
+        // The path is the one FILE that failed, and the advice is that file's:
+        // the record is several files now, and the recipe that is safe for a
+        // service's own attestation file (delete it, record that service again)
+        // is the one that erases a fleet's evidence when the file is the shared
+        // one-file record — which is what this refusal used to tell everyone,
+        // and what a miscounted record's "record again" looped back into.
         const existing = await readVerificationState(feature.dir);
         if (existing.state === "unreadable") {
           return fail(
             json,
             "record-unreadable",
-            `${repoPath(docsDir, verificationPath(feature.dir))} exists but cannot be read as a verification record: ${existing.reason}. ` +
-              (existing.code === "verify.record-miscounted"
-                ? "Record the answers again rather than editing the counts: a summary made to agree by hand still says nothing about what was checked."
-                : "It is plain YAML — repair it by hand, or delete it and record again. loam will not overwrite a record it could not read."),
+            `${repoPath(docsDir, existing.path)} exists but cannot be read as a verification record: ${existing.reason}. ` +
+              `${existing.advice} loam will not overwrite a record it could not read.`,
           );
         }
         const recorded = existing.state === "ok" ? existing.verification : null;
@@ -251,7 +255,7 @@ export function registerVerify(program: Command): void {
             {
               service: opts.service ?? config.service,
               repoDir: config.root ?? process.cwd(),
-              previous: existing.state === "ok" ? { verification: existing.verification, raw: existing.raw } : null,
+              previous: existing.state === "ok" ? { verification: existing.verification, files: existing.files } : null,
             },
             opts,
           );

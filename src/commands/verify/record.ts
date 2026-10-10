@@ -13,15 +13,15 @@ import { emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { today } from "../../core/provenance/stamp.js";
 import { runnerAnswers } from "../../core/results.js";
 import { checkAnswers, type Answer } from "../../core/verify/answers.js";
-import {
-  buildFederatedVerification,
-  buildVerification,
-  type DiscardedAnswer,
-} from "../../core/verify/build.js";
+import { buildServiceRecord, buildVerification, type DiscardedAnswer } from "../../core/verify/build.js";
 import { type Checklist } from "../../core/verify/checklist.js";
 import { contractAnswers } from "../../core/verify/evidence/contract.js";
-import { commitVerification } from "../../core/verify/store/commit.js";
+import { type RecordFiles } from "../../core/verify/read/file.js";
+import { assembleRecord } from "../../core/verify/read/union.js";
+import { commitVerification, type RecordWrite } from "../../core/verify/store/commit.js";
 import {
+  recordLocation,
+  serviceRecordPath,
   tallyRecord,
   type ConsumedReports,
   type Verification,
@@ -62,14 +62,15 @@ export interface Attestor {
   service: string | undefined;
   repoDir: string;
   /**
-   * The existing record as ONE read — the parse the merge consumes and the
-   * exact bytes it was parsed from — or null when there was no record. One
-   * field rather than a `Verification` beside a `Buffer` because the two are
-   * meaningless apart: a pre-image from any other read would let the commit
-   * vouch for a document the merge never saw, and as separate fields that
-   * inconsistent pair is representable and compiles.
+   * The existing record as ONE read — the union the refusals consult and the
+   * files it was added up from, each with the exact bytes it was parsed from —
+   * or null when there was no record. One field rather than a `Verification`
+   * beside a set of `Buffer`s because they are meaningless apart: a pre-image
+   * from any other read would let the commit vouch for a document the merge
+   * never saw, and as separate fields that inconsistent pair is representable
+   * and compiles.
    */
-  previous: { verification: Verification; raw: Buffer } | null;
+  previous: { verification: Verification; files: RecordFiles } | null;
 }
 
 export async function record(
@@ -82,18 +83,21 @@ export async function record(
   const { service, repoDir, previous } = attestor;
   // The legacy all-at-once form answers the WHOLE checklist on one repository's
   // word and writes a schema-1 record — no attestations, no commits. Run over a
-  // federated record it does not merge and it does not migrate: it erases every
-  // other service's commit-bound attestation, and the erasure is invisible
-  // afterwards because what replaces it is a well-formed, plausible record. So
-  // it refuses, and names the repositories whose word is on the file.
+  // federated record it does not merge and it does not migrate: over a one-file
+  // federated record it would erase every other service's commit-bound
+  // attestation, invisibly, because what replaces it is a well-formed,
+  // plausible record; beside a `verification/` directory it would write a file
+  // whose answers can never count (no attestation binds them) while reporting
+  // them as recorded. Either way it refuses, and names the repositories whose
+  // word is on the record.
   const attested = previous?.verification.schema === 2 ? (previous.verification.attestations ?? []) : [];
   if (service === undefined && attested.length > 0) {
     const services = [...new Set(attested.map((a) => a.service))].sort();
     return fail(
       json,
       "record-federated",
-      `${repoPath(docsDir, verificationPath(featureDir))} is a federated record: ${plural(services.length, "service")} (${services.join(", ")}) have attested claims against their own git commits. ` +
-        "Recording without --service would replace all of it with one unattested answer set. " +
+      `${repoPath(docsDir, recordLocation(featureDir))} is a federated record: ${plural(services.length, "service")} (${services.join(", ")}) have attested claims against their own git commits. ` +
+        "Recording without --service would put one unattested answer set over all of it. " +
         `Record this service's claims from its own repo instead: \`loam verify ${checklist.feature} --record answers.json --service <svc>\`.`,
     );
   }
@@ -203,17 +207,33 @@ export async function record(
   }
 
   const recorded = today(new Date());
+  // What goes on disk and what the record reads as afterwards are two
+  // different objects now. The all-at-once form IS its file. A service's write
+  // is one file among several, so the verdict it prints is the union of the
+  // files as they will stand once the commit lands — added up by the very
+  // function the next read will use, so this run cannot print a verdict the
+  // following `loam verify` disagrees with.
   let verification: Verification;
+  let writes: RecordWrite[];
   let discarded: DiscardedAnswer[] = [];
   if (service === undefined) {
     verification = buildVerification(checklist, answers, recorded, reports);
+    // The legacy all-at-once form keeps the one file, deliberately. It answers
+    // the whole checklist from one place on one word, with no commit and no
+    // service, so there is no second writer for it to collide with and no
+    // service to name a file after — and every record it ever wrote, the
+    // example fleet's included, stays byte-for-byte what it is. The moment a
+    // service attests, the refusal above keeps it off the record for good.
+    writes = [{ path: verificationPath(featureDir), record: verification, preImage: previous?.files.legacy?.raw ?? null }];
   } else {
     // The docs side of the pin, and it is ASKED FOR rather than required: a
     // docs repo is not obliged to be a git checkout, and the attestation simply
     // carries no `docsCommit` when git cannot answer. Failing the record over
     // it would refuse a working fleet for a field that is optional by design.
     const docsHead = await repositoryCommit(docsDir);
-    const built = buildFederatedVerification(
+    const files = previous?.files ?? { legacy: null, services: new Map() };
+    const own = files.services.get(service) ?? null;
+    const built = buildServiceRecord(
       checklist,
       {
         service,
@@ -223,16 +243,30 @@ export async function record(
         ...(docsHead.ok ? { docsCommit: docsHead.commit } : {}),
       },
       answers,
-      previous?.verification ?? null,
+      { legacy: files.legacy?.verification ?? null, own: own?.verification ?? null, filed: new Set(files.services.keys()) },
     );
-    verification = built.verification;
     discarded = built.discarded;
+    // This service's own file FIRST — see `commitVerification` for why the
+    // order is what a kill between the two renames leaves standing.
+    writes = [
+      { path: serviceRecordPath(featureDir, service), record: built.record, preImage: own?.raw ?? null },
+      ...(built.dropLegacy && files.legacy !== null
+        ? [{ path: files.legacy.path, record: null, preImage: files.legacy.raw }]
+        : []),
+    ];
+    const after = new Map([...files.services].map(([svc, file]) => [svc, file.verification]));
+    after.set(service, built.record);
+    verification = assembleRecord(
+      built.dropLegacy ? null : (files.legacy?.verification ?? null),
+      [...after.keys()].sort().map((svc) => after.get(svc)!),
+    )!;
   }
   // Staged, compared against the locked read's bytes, swapped in by one
-  // rename — see core/verify/store/commit.ts for what each refusal means.
-  const committed = await commitVerification(featureDir, verification, previous?.raw ?? null, docsDir);
+  // rename per file — see core/verify/store/commit.ts for what each refusal
+  // means.
+  const committed = await commitVerification(writes, docsDir);
   if (!committed.ok) return fail(json, committed.code, committed.message);
-  const path = committed.path;
+  const path = writes[0]!.path;
   const unconfirmed = verification.claims.filter((c) => c.verdict === "unconfirmed");
 
   // The same judgment read mode makes (see report): the record just written IS
@@ -297,7 +331,7 @@ export async function record(
     console.log(`  ✗ ${c.claim}${c.note === undefined ? "" : ` — ${c.note}`}`);
   }
 
-  sayDiscarded(discarded, repoPath(docsDir, verificationPath(featureDir)), verification.feature);
+  sayDiscarded(discarded, repoPath(docsDir, recordLocation(featureDir)), verification.feature);
   console.log("");
   for (const notice of notices) console.log(`  ⚠ ${notice.code}: ${notice.message}`);
   console.log(

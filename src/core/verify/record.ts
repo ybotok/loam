@@ -12,6 +12,7 @@
  * away, which is the fleet loam exists for — the record marks it attested, and
  * `attestedNotice` says so on every surface that reads the record.
  */
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type ClaimKind } from "./claims/identity.js";
 import { ANSWERED_BY, type AnsweredBy, type Verdict } from "./answers.js";
@@ -84,7 +85,7 @@ export interface ConsumedContractReport {
    * documented `loamContractReport: 1` shape, the only one v1 accepts. loam
    * always writes it, but the READ shape keeps it optional: no reader
    * dereferences it, so a hand-written pin without it stays a readable record
-   * (`isConsumedContractReport` in ./file.ts says why) — and it is a string
+   * (`isConsumedContractReport` in ./read/shape.ts says why) — and it is a string
    * rather than a closed union so a format a NEWER loam learned to read stays
    * readable here too.
    */
@@ -258,6 +259,31 @@ export function tallyRecord(v: Verification): RecordTally {
 }
 
 /**
+ * The recorded rows that may answer a checklist, keyed by claim id — the one
+ * spelling of the attestation-scoping rule. A legacy (no `schema`) record is
+ * all-at-once, so every row answers. In a federated record a row only counts
+ * where an attestation from the claim's OWN subject (per `claims`, the live
+ * checklist) listed it, so one repository cannot answer another's claims by
+ * writing their ids into its own attestation. `verify`'s read view and `loam
+ * tasks` each used to carry a copy, the second labelled "a deliberate mirror"
+ * because core could not import the command module the first lived in; the
+ * rule lives here now and both import it.
+ */
+export function countedAnswers(
+  claims: readonly { id: string; subject: string }[],
+  recorded: Verification,
+): Map<string, RecordedClaim> {
+  const subjects = new Map(claims.map((claim) => [claim.id, claim.subject]));
+  const attested =
+    recorded.schema !== 2
+      ? null
+      : new Set(
+          (recorded.attestations ?? []).flatMap((a) => a.claims.filter((id) => subjects.get(id) === a.service)),
+        );
+  return new Map(recorded.claims.filter((c) => attested === null || attested.has(c.id)).map((c) => [c.id, c]));
+}
+
+/**
  * Three states, because two were a lie. `verified` is the strong claim — every
  * question answered, every answer confirmed, and every scenario answered by a
  * digest-matched green run. `attested` is the same completeness resting, for at
@@ -334,8 +360,49 @@ export function openClaimsNotice(tally: RecordTally, feature: string): VerifyNot
  * `features/archive/` with everything else and a reviewer finds it next to the
  * delta it is about. YAML rather than frontmatter or JSON — it is data, it has
  * to survive without loam, and one claim per block is a diff a person can read.
+ *
+ * This is the ONE-FILE form: what the all-at-once `--record` (no `--service`)
+ * writes, and what every federated record written before the per-service
+ * directory existed still is. It is read forever, active and archived alike.
+ * A federated attestation no longer goes here — see {@link serviceRecordPath}.
  */
 export function verificationPath(featureDir: string): string {
   return join(featureDir, "verification.yaml");
+}
+
+/**
+ * The federated record: one file per attesting service, and the DIRECTORY is
+ * the list — the `glossary/` and `capabilities/` rule.
+ *
+ * One shared file was the wrong shape for a fleet. Every service's attestation
+ * rewrote the same `summary`, `recorded` and checklist-ordered `claims`, so two
+ * docs-repo branches recording two DIFFERENT services always conflicted in git
+ * — add/add from an empty start, content conflicts on the summary once one
+ * attestation had merged — and sorting the attestations did not help, because
+ * two insertions at one anchor are a conflict whatever the order. The lock that
+ * serialises writers covers one checkout; a fleet records from many. With one
+ * file per service, two teams' records touch two different paths and merge
+ * cleanly, and the verdict is computed from the union at read time — which it
+ * always was: nothing ever trusted the stored `summary`.
+ */
+export function verificationDir(featureDir: string): string {
+  return join(featureDir, "verification");
+}
+
+/** One service's attestation file. The service id grammar admits no `/`, so this never leaves the directory. */
+export function serviceRecordPath(featureDir: string, service: string): string {
+  return join(verificationDir(featureDir), `${service}.yaml`);
+}
+
+/**
+ * Where a reader should look: the directory once it exists, the one file
+ * otherwise. A single path is lossy on purpose — a record mid-migration is
+ * both — and what a reader is pointed at is where the next attestation will
+ * land. A legacy file beside the directory is still read (see `./read/file.ts`);
+ * it is simply no longer where anything is written for a service.
+ */
+export function recordLocation(featureDir: string): string {
+  const dir = verificationDir(featureDir);
+  return existsSync(dir) ? dir : verificationPath(featureDir);
 }
 

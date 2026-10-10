@@ -25,8 +25,7 @@ import { repoPath } from "../../../core/envelope/json.js";
 import { inOrder } from "../../../core/kernel/concurrency.js";
 import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { listFeatures } from "../../../core/repo/repo.js";
-import { readVerificationState } from "../../../core/verify/file.js";
-import { verificationPath } from "../../../core/verify/record.js";
+import { readVerificationState } from "../../../core/verify/read/file.js";
 import { lintEvidencePins, type PinDrift, type PinLint } from "../../../core/verify/pins/lint.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import type { FleetContext } from "../../../core/fleet-context.js";
@@ -46,7 +45,7 @@ export async function evidencePinFindings(
   const features = await listFeatures(docsDir, {}, fleet);
   type Linted =
     | null
-    | { feature: string; path: string; unreadable: string }
+    | { feature: string; path: string; unreadable: string; advice: string }
     | { feature: string; lint: PinLint };
   const lints = await inOrder(features, async (feature): Promise<Linted> => {
     // Three states, graded apart on purpose. ABSENT is a feature nobody has
@@ -60,7 +59,7 @@ export async function evidencePinFindings(
     // this service, so the finding fires regardless of attestation.
     const read = await readVerificationState(feature.dir);
     if (read.state === "unreadable") {
-      return { feature: feature.id, path: repoPath(docsDir, verificationPath(feature.dir)), unreadable: read.reason };
+      return { feature: feature.id, path: repoPath(docsDir, read.path), unreadable: read.reason, advice: read.advice };
     }
     if (read.state === "absent" || read.verification.schema !== 2) return null;
     if (!(read.verification.attestations ?? []).some((a) => a.service === me)) return null;
@@ -79,9 +78,13 @@ export async function evidencePinFindings(
         code: "evidence.record-unreadable",
         subject: service,
         message:
+          // The reader's own recipe for the one file that failed, never a
+          // fixed one: "re-record" alone sent this finding's reader into
+          // `--record`'s refusal of the very same file, and the safe repair
+          // differs between a service's own attestation file and the
+          // one-file record other services' evidence may sit in.
           `${me}: ${entry.feature}: ${entry.path} exists but cannot be read as a verification record (${entry.unreadable}) — ` +
-          "none of its evidence was checked. It is plain YAML: repair it by hand, or re-record " +
-          `(\`loam verify ${entry.feature} --service ${me} --record answers.json\`); loam never overwrites a record it could not read`,
+          `none of its evidence was checked. ${entry.advice} loam never overwrites a record it could not read`,
       });
       continue;
     }

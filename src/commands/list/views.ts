@@ -18,7 +18,7 @@ import {
 import { type FeatureEntry, type ServiceEntry } from "../../core/repo/entries.js";
 import { landscapePath, servicePathsAt } from "../../core/repo/paths.js";
 import { featureChecklist } from "../../core/verify/checklist.js";
-import { readVerification } from "../../core/verify/file.js";
+import { readVerification } from "../../core/verify/read/file.js";
 import { type AnsweredBy } from "../../core/verify/answers.js";
 import {
   confirmedProvenance,

@@ -161,7 +161,7 @@ configurable graph, because a governed system needs one lifecycle and one meanin
 | `specs/<svc>/arch.spec.md` | service | no | The architectural obligations a business spec never mentions: outbox, retries, idempotency, alerts. Same grammar, plus `Covers:` lines tying each to the C4 elements it accounts for |
 | `specs/<svc>/openapi.yaml` | service | conditional | The contract delta. Required where the fleet map shows somebody calls this service |
 | `specs/<svc>/asyncapi.yaml` | service | no | The event-contract delta: a complete AsyncAPI 3.0 document restating the living contract around the changed slots. `loam rebase` pins restated slots (`x-loam-based-on`), `x-loam-remove: true` retires one |
-| `verification.yaml` | feature | yes | The done-check record: every claim, its answer, its evidence, and who gave it |
+| `verification/<svc>.yaml` | feature | yes | The done-check record, one file per attesting service: every claim, its answer, its evidence, and who gave it. The all-at-once form writes the one file `verification.yaml` instead |
 
 Two fleet/living axes sit beside this feature graph. `services/<svc>/asyncapi.yaml` joins
 `publishes`/`consumes` edges to `Publishes:`/`Consumes:` requirements, and the event axis carries
@@ -179,7 +179,7 @@ present and fine. Marking everything required is how an axis that is optional ev
 reported as missing everywhere and then ignored.
 
 **Dependencies are enablers, not gates — with one real exception.** You can author these in any
-order. `verification.yaml` is the exception, and it is a genuine impossibility rather than a
+order. The verification record is the exception, and it is a genuine impossibility rather than a
 preference: its checklist is *derived* from the delta and the per-service specs, so with none of
 them written there is no question set to answer. That artifact alone comes back `blocked`, naming
 what it is waiting on.
@@ -520,7 +520,7 @@ read forwards — the same claims under the same ids, one unit per promise, each
 closes it — recomputed on every run from the delta, the generated suite and the verification record.
 It is still not a file: nothing to tick, nothing to commit, nothing that can disagree with the
 documents it was derived from, and so the reason there is no `tasks.md` is unchanged. A unit leaves
-the list only when a confirmed claim in a non-stale `verification.yaml` retires it, and an
+the list only when a confirmed claim in a non-stale verification record retires it, and an
 agent-attested scenario stays on it at `attested` rather than being ticked off — the work list must
 not be able to say more than the record does.
 
@@ -646,9 +646,14 @@ digest-matched, so only a green run confirms one, and the record writes down whi
 `--record <answers.json>` takes the agent's answers, refusing anything unevidenced — under
 `--service`, refusing a `file:line` that does not resolve in that repo at the attested commit — and
 a scenario claim answered that way makes the record `attested` rather than `verified`. A
-cross-service feature is recorded **once per service repo** with `--service <id>`, each run adding
-its own commit-bound attestation to one shared record; the `--service`-less `--record` form writes
-the whole record from one place and is refused (`record-federated`) once anyone else has attested.
+cross-service feature is recorded **once per service repo** with `--service <id>`, each run writing
+its own commit-bound attestation to a file of its own, `features/<FEAT>/verification/<id>.yaml` —
+the directory is the record, so two teams' attestations on two docs-repo branches merge cleanly. The
+`--service`-less `--record` form writes the whole record from one place, into the one file
+`verification.yaml`, and is refused (`record-federated`) once anyone else has attested. A record
+file that will not read (`record-unreadable`, git conflict markers included) is named with its safe
+repair: a service's own file may be deleted and recorded again by that service; the one-file
+`verification.yaml` may hold other services' attestations and is restored, never deleted.
 
 **`loam unarchive`** — it refuses rather than guesses: `snapshot-stale` when a merged file moved
 since (`--force` says that was meant), and `snapshot-corrupt` when a pre-image no longer hashes to
