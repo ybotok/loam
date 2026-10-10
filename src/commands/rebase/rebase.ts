@@ -1,9 +1,8 @@
 import type { Command } from "commander";
 import { existsSync } from "node:fs";
-import { loadConfig } from "../../core/envelope/config.js";
 import { NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import { InvalidIdError, assertServiceId } from "../../core/kernel/ids/service.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { compareIds } from "../../core/repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
@@ -77,12 +76,8 @@ export function registerRebase(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (featureId: string | undefined, opts: RebaseOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
 
       // The id grammar on the RAW argument, before it reaches a path join —
       // one grammar for the whole tool (core/kernel/ids/service.ts).

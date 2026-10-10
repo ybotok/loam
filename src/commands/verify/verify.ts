@@ -1,6 +1,5 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, fail, repoPath } from "../../core/envelope/json.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
 import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
@@ -41,12 +40,8 @@ export function registerVerify(program: Command): void {
     .action(async (featureId: string, opts: VerifyOptions) => {
       const json = opts.json === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       const recording =
         opts.record !== undefined || opts.results !== undefined || opts.contractResults !== undefined;

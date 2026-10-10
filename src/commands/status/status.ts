@@ -1,7 +1,6 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../../core/envelope/json.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { featureCandidates, missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { featureStatus } from "../../core/status/feature/feature.js";
@@ -34,12 +33,8 @@ export function registerStatus(program: Command): void {
     .option("--service <id>", "narrow the per-service view to one service")
     .action(async (featureArg: string | undefined, opts: StatusOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as a repo
       // with nothing in it — the doctrine docs-repo-gate.ts's docsRepoReady exists

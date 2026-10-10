@@ -1,6 +1,5 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../../core/envelope/json.js";
 import { parseServiceId } from "../../core/kernel/ids/service.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { assemblePack, packHoles } from "../../core/pack/pack.js";
@@ -27,12 +26,9 @@ export function registerContext(program: Command): void {
     .action(async (serviceArg: string, opts: ContextOptions) => {
       const json = opts.json === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const { docsDir } = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
+      const { docsDir } = config;
       // `services`, not `docs`: the pack is a statement about one service in
       // the fleet, and an empty pack read out of a directory that is not a
       // docs repo would say "nothing is documented here" about a repo nobody

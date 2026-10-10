@@ -18,8 +18,7 @@
  * PR over a file nobody changed.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../../core/envelope/json.js";
 import { findingJson } from "../../core/vocabulary/report.js";
 import { baseOrRefuse, docsRepoReady, reportDocsRepoError, reportRepositoryUnavailable } from "../policy/gate.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
@@ -43,12 +42,9 @@ export function registerDiff(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: DiffOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const { docsDir } = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
+      const { docsDir } = config;
       // "services" on purpose: both sides of the diff are enumerations of the
       // fleet, and a docsDir with no services/ has no fleet to diff.
       if (!docsRepoReady(json, docsDir, "services")) return;

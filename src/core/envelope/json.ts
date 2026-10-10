@@ -21,6 +21,7 @@
  * where a key mirrors a frontmatter field verbatim; camelCase everywhere else.
  */
 import { relative } from "node:path";
+import { loadConfig, type LoamConfig } from "./config.js";
 import { LOAM_VERSION } from "./version.js";
 
 /**
@@ -316,4 +317,22 @@ export function reportNoConfig(json: boolean, load: { kind: "absent" } | { kind:
     return;
   }
   fail(json, "no-config", NO_CONFIG_MESSAGE);
+}
+
+/**
+ * The config a command action stands on, or null once `reportNoConfig` has
+ * refused — the caller's whole answer to null is `return`. Every command that
+ * needs a wired repo opens with this question, and it was spelled as the same
+ * six lines in each of them; one spelling is what keeps the absent/invalid
+ * split above from being forgotten in a twenty-fourth. `init` and `doctor` do
+ * not come through here: a missing or broken config is their subject, not a
+ * reason to stop.
+ */
+export async function configOrRefuse(json: boolean): Promise<LoamConfig | null> {
+  const loaded = await loadConfig();
+  if (loaded.kind !== "loaded") {
+    reportNoConfig(json, loaded);
+    return null;
+  }
+  return loaded.config;
 }

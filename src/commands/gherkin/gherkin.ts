@@ -26,14 +26,13 @@ import type { Command } from "commander";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
-import { loadConfig } from "../../core/envelope/config.js";
 import { decodeDocument, NotUtf8DocumentError } from "../../core/kernel/document-bytes.js";
 import {
+  configOrRefuse,
   emitJson,
   emitJsonError,
   fail,
   NO_SERVICE_MESSAGE,
-  reportNoConfig,
 } from "../../core/envelope/json.js";
 import { featureSpecPaths, SPEC_AXES, type SpecAxis } from "../../core/repo/paths.js";
 import { locateServicePaths } from "../../core/repo/service-target.js";
@@ -72,12 +71,8 @@ export function registerGherkin(program: Command): void {
       const json = opts.json === true;
       const dryRun = opts.dryRun === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const service = opts.service ?? config.service;
       if (service === undefined) {
         return fail(json, "invalid-option", NO_SERVICE_MESSAGE);

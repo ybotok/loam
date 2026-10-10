@@ -24,8 +24,7 @@
  * ref) every reading command shares — including this one, one import below.
  */
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { listBaseSubdirs, subdirsChangedSince } from "../../core/diff/base-git.js";
 import { gateReport } from "../../core/gate/checks.js";
@@ -101,12 +100,8 @@ export function registerGate(program: Command): void {
     .option("--json", "emit the machine contract instead of the human view")
     .action(async (opts: GateOptions) => {
       const json = opts.json === true;
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // The gate joins partners and enumerates features against services/ —
       // a docsDir that is not a docs repo must refuse, never answer "pass"

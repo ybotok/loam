@@ -1,6 +1,5 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail, repoPath } from "../../core/envelope/json.js";
 import { maturityRollup } from "../../core/vocabulary/maturity.js";
 import { FleetContext } from "../../core/fleet-context.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
@@ -100,12 +99,8 @@ export function registerList(program: Command): void {
         return;
       }
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // A docsDir that is not a docs repo is refused, never rendered as an empty
       // fleet — the whole point of the gate (see docs-repo-gate.ts).

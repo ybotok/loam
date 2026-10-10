@@ -1,6 +1,5 @@
 import type { Command } from "commander";
-import { loadConfig } from "../../core/envelope/config.js";
-import { fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
+import { configOrRefuse, fail, NO_SERVICE_MESSAGE } from "../../core/envelope/json.js";
 import { gitIdentity } from "../../core/provenance/git.js";
 import { today } from "../../core/provenance/stamp.js";
 import { serviceTreePathOf } from "../../core/repo/service-target.js";
@@ -83,12 +82,8 @@ export function registerVouch(program: Command): void {
     .action(async (opts: VouchOptions) => {
       const json = opts.json === true;
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
 
       const service = opts.service ?? config.service;
       if (service === undefined) {

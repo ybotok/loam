@@ -1,8 +1,7 @@
 import type { Command } from "commander";
-import { loadConfig } from "../core/envelope/config.js";
 import { explore, type Exploration, type ExploreService } from "../core/explore/explore.js";
 import { FleetContext } from "../core/fleet-context.js";
-import { emitJson, fail, reportNoConfig } from "../core/envelope/json.js";
+import { configOrRefuse, emitJson, fail } from "../core/envelope/json.js";
 import { featureIdProblem } from "../core/kernel/ids/feature.js";
 import { parseServiceIds } from "../core/kernel/ids/service.js";
 import { DocsRepoUnavailableError } from "../core/repo/state.js";
@@ -83,7 +82,7 @@ export function registerExplore(program: Command): void {
 
       // Rule 6 in docs/DESIGN.md: a raw argv string that reaches a path join is
       // guarded at the command boundary. Every id here reaches the service path builders.
-      // Before `loadConfig`, exactly as `loam new` guards its `--touches` list:
+      // Before the config is loaded, exactly as `loam new` guards its `--touches` list:
       // the grammar is a fact about the argument, not about the repository, so
       // an unusable id should answer the same whether or not you are standing
       // in a wired repo.
@@ -97,12 +96,8 @@ export function registerExplore(program: Command): void {
         return;
       }
 
-      const loaded = await loadConfig();
-      if (loaded.kind !== "loaded") {
-        reportNoConfig(json, loaded);
-        return;
-      }
-      const config = loaded.config;
+      const config = await configOrRefuse(json);
+      if (config === null) return;
       const { docsDir } = config;
       // `services`, not `docs`: every answer here is a statement about the
       // fleet, and an empty ring read out of a directory that is not a docs
