@@ -3595,6 +3595,25 @@ describe("overwriting an existing living operation (openapi.op-modified)", () =>
       await p.destroy();
     }
   });
+
+  it("names who the overwrite lands on — the living fleet's consumers, through loam diff's own scan", async () => {
+    // LANDSCAPE draws checkout-web calling authorizePayment. The warning used
+    // to say "overwrites wholesale" and stop there, leaving the reader to go
+    // and find who depends on the operation; the scan `loam diff` runs for
+    // diff.op-modified answers it over the fleet as it stands before the merge.
+    const p = await makeProject(redeclareFixture(REDECLARE_OPENAPI));
+    try {
+      const res = await runLoam(p.workDir, "archive", "FEAT-4", "--dry-run", "--json");
+      expect(res.code).toBe(0);
+      const warn = JSON.parse(res.out).warnings.find((w: { code: string }) => w.code === "openapi.op-modified");
+      expect(warn.message).toContain("1 current consumer(s) still name it");
+      expect(warn.details).toEqual(['edge checkout-web → payment-service ("Calls authorizePayment")']);
+      const human = await runLoam(p.workDir, "archive", "FEAT-4", "--dry-run");
+      expect(human.out).toContain('edge checkout-web → payment-service ("Calls authorizePayment")');
+    } finally {
+      await p.destroy();
+    }
+  });
 });
 
 describe("openapi components ride the merged operations' $refs", () => {

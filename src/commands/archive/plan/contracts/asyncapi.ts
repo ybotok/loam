@@ -20,6 +20,7 @@ import { stripAsyncapiMarkers } from "../../../../core/asyncapi/merge/markers.js
 import { mergeAsyncapiSlots, type AsyncapiMergeResult } from "../../../../core/asyncapi/merge/merge.js";
 import { ArchiveFailure } from "../refusal.js";
 import { type Gated, type Plan } from "../state.js";
+import { consumerClause, type ContractConsumers } from "./consumers.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 import type { IssueCode } from "../../../../core/vocabulary/issue.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
@@ -31,7 +32,7 @@ function modifiedCode(section: AsyncapiSection): IssueCode {
 }
 
 export async function planAsyncapiContracts(
-  config: { docsDir: DocsDir; fleet?: FleetContext },
+  config: { docsDir: DocsDir; fleet?: FleetContext; consumers: ContractConsumers },
   gated: Gated,
   plan: Plan,
   say: (line?: string) => void,
@@ -159,13 +160,23 @@ export async function planAsyncapiContracts(
         say(`      ⚠ overwrites components.${id} — the living definition differs`);
       }
       for (const slot of merge.modified) {
+        // A message is the one slot a consumer names (`Consumes:` lines,
+        // `consumes` edges), so only `asyncapi.message-modified` says who the
+        // overwrite lands on — the OpenAPI planner's sentence, through the
+        // same scan (./consumers.ts). Channels and operations join by nothing.
+        const name = merge.modifiedMessageNames.get(slot.label);
+        const named = name === undefined ? null : consumerClause(await config.consumers.message(svc, name));
         planWarns.push({
           severity: "warn",
           code: modifiedCode(slot.section),
           subject: svc,
-          message: `${svc}: the delta redefines ${slot.label}, which the living AsyncAPI already has — the merge overwrites the living slot wholesale`,
+          message:
+            `${svc}: the delta redefines ${slot.label}, which the living AsyncAPI already has — the merge overwrites the living slot wholesale` +
+            (named === null ? "" : `; ${named.clause}`),
+          ...(named === null ? {} : { details: named.details }),
         });
-        say(`      ⚠ overwrites ${slot.label} — the living definition differs`);
+        say(`      ⚠ overwrites ${slot.label} — the living definition differs${named === null ? "" : `; ${named.clause}`}`);
+        for (const line of named?.details ?? []) say(`          ${line}`);
       }
       for (const ref of merge.unresolved) {
         planGates.push({

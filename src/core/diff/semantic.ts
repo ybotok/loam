@@ -24,7 +24,7 @@ import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
 import type { AxisState, BaseFleet, ServiceState } from "./base-state.js";
 import type { CurrentFleet } from "./current-state.js";
-import { consumerJoinChanges, type ConsumerScan, type VictimIndex } from "./victims.js";
+import { consumerJoinChanges, consumerStance, type VictimIndex } from "./victims.js";
 
 /**
  * The stable finding codes `loam diff` emits. Codes are the machine contract;
@@ -196,13 +196,6 @@ function requirementsDiff(sink: ServiceDiff, pair: { base: ServiceState; current
   }
 }
 
-/** Three honest phrasings of one consumer scan — never a confident negative over a scan that skipped something it could not check. */
-function stance(scan: ConsumerScan): string {
-  return scan.victims.length > 0 ? `${scan.victims.length} current consumer(s) still name it`
-    : scan.suspended.length > 0 ? "whether current consumers name it could not be fully answered"
-    : "no current consumer names it";
-}
-
 /**
  * The second half of every modification message. loam joins consumers to the
  * thing that moved; it does not read what a schema SAYS (core/brief/unchecked.ts
@@ -222,7 +215,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       sink.findings.push(found("diff.op-added", `operation '${id}' added since base (${op.method.toUpperCase()} ${op.path})`));
     } else if (!before.deprecated && op.deprecated) {
       const scan = await victims.opConsumers(sink.id, id);
-      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${stance(scan)}`, [...scan.victims, ...scan.suspended]));
+      sink.findings.push(found("diff.op-deprecated", `operation '${id}' is deprecated since base — ${consumerStance(scan)}`, [...scan.victims, ...scan.suspended]));
     } else if (before.closureDigest !== op.closureDigest || before.path !== op.path || before.method !== op.method) {
       // `else`, because setting the flag moves the digest by itself (it is a
       // key of the node): a deprecation already names the same consumers, and
@@ -233,7 +226,7 @@ async function opsDiff(sink: ServiceDiff, pair: { base: ServiceState; current: S
       const scan = await victims.opConsumers(sink.id, id);
       sink.findings.push(found(
         "diff.op-modified",
-        `operation '${id}' (${op.method.toUpperCase()} ${op.path}) changed since base, in its own definition or a schema it references — ${stance(scan)}; ${notGraded("`oasdiff breaking`")}`,
+        `operation '${id}' (${op.method.toUpperCase()} ${op.path}) changed since base, in its own definition or a schema it references — ${consumerStance(scan)}; ${notGraded("`oasdiff breaking`")}`,
         [...scan.victims, ...scan.suspended],
       ));
     }
@@ -268,7 +261,7 @@ async function messagesDiff(sink: ServiceDiff, pair: { base: ServiceState; curre
       const scan = await victims.messageConsumers(sink.id, name);
       sink.findings.push(found(
         "diff.message-modified",
-        `message '${name}' changed since base, in its declaration or a schema its payload references — ${stance(scan)}; ${notGraded("`asyncapi diff`")}`,
+        `message '${name}' changed since base, in its declaration or a schema its payload references — ${consumerStance(scan)}; ${notGraded("`asyncapi diff`")}`,
         [...scan.victims, ...scan.suspended],
       ));
     }

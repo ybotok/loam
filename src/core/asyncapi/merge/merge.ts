@@ -56,6 +56,15 @@ export interface AsyncapiMergeResult {
   text: string | null;
   /** Living slots overwritten with different content. */
   modified: AsyncapiSlotOutcome[];
+  /**
+   * The message name each overwritten `components.messages` slot carries in
+   * the LIVING contract, keyed by its `modified` label — the join token
+   * consumers name today (`Consumes:` lines, `consumes` edges), which
+   * `loam archive` asks the fleet's consumer scan with to say who the
+   * overwrite lands on. Channels and operations are absent: nothing joins to
+   * them by name.
+   */
+  modifiedMessageNames: ReadonlyMap<string, string>;
   /** Living slots deleted by `x-loam-remove: true` markers. */
   removed: AsyncapiSlotOutcome[];
   /**
@@ -157,6 +166,7 @@ export function mergeAsyncapiSlots(
   const { record } = readBaselineRecord(featPlain);
 
   const modified: AsyncapiSlotOutcome[] = [];
+  const modifiedMessageNames = new Map<string, string>();
   const removed: AsyncapiSlotOutcome[] = [];
   const quoted: AsyncapiSlotOutcome[] = [];
   const baselineStale: AsyncapiSlotOutcome[] = [];
@@ -202,7 +212,10 @@ export function mergeAsyncapiSlots(
     // the component closure's rule, kept here so a never-rebased delta that
     // merely restates the contract does not churn its bytes.
     if (before !== undefined && isDeepStrictEqual(before.node, publish)) continue;
-    if (before !== undefined) modified.push(at);
+    if (before !== undefined) {
+      modified.push(at);
+      if (slot.section === "components.messages") modifiedMessageNames.set(at.label, messageName(before.node, slot.key));
+    }
     writableSection(living, livingPlain, sectionAstPath(slot.section), service);
     // Without the strip the living contract would grow a pin to a version of
     // itself — and, on this axis, a marker nested on an inline channel
@@ -240,7 +253,7 @@ export function mergeAsyncapiSlots(
   // byte-identity under an all-quote delta is the whole point of the pin.
   if (!edited) {
     return {
-      text: null, modified, removed, quoted, baselineStale,
+      text: null, modified, modifiedMessageNames, removed, quoted, baselineStale,
       componentsModified, componentsQuoted, componentsStale, unresolved: [],
     };
   }
@@ -262,7 +275,7 @@ export function mergeAsyncapiSlots(
   const preexisting = new Set(danglingRefs(livingPlain));
   const unresolved = danglingRefs(mergedPlain).filter((ref) => !preexisting.has(ref));
   return {
-    text, modified, removed, quoted, baselineStale,
+    text, modified, modifiedMessageNames, removed, quoted, baselineStale,
     componentsModified, componentsQuoted, componentsStale, unresolved,
   };
 }
@@ -274,7 +287,7 @@ export function mergeAsyncapiSlots(
  */
 function noop(): AsyncapiMergeResult {
   return {
-    text: null, modified: [], removed: [], quoted: [], baselineStale: [],
+    text: null, modified: [], modifiedMessageNames: new Map(), removed: [], quoted: [], baselineStale: [],
     componentsModified: [], componentsQuoted: [], componentsStale: [], unresolved: [],
   };
 }

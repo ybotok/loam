@@ -12,6 +12,14 @@ export interface Issue {
   /** What the breach is about when that is narrower than the feature — usually a service. */
   subject?: string;
   message: string;
+  /**
+   * The evidence lines behind the message, when it has a list to show — the
+   * `details` every `Finding` already carries. `loam archive`'s overwrite
+   * warnings put the current consumers of the overwritten operation or
+   * message here, one per line, so the message stays one sentence however
+   * many there are.
+   */
+  details?: string[];
   locations?: FindingLocation[];
   /**
    * Does this issue stop `loam archive`? Severity and gating answer two
@@ -37,6 +45,7 @@ export function issueFinding(i: Issue): Finding {
     gates: gatesArchive(i),
     ...(i.subject === undefined ? {} : { subject: i.subject }),
     ...(i.locations === undefined ? {} : { locations: i.locations }),
+    ...(i.details === undefined ? {} : { details: i.details }),
     message: i.message,
   };
 }

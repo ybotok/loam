@@ -36,6 +36,8 @@ paths:
     const result = mergeOpenapiPaths(LIVING, feature, "pets");
 
     expect(result.modified).toEqual(["'createPet' (post /pets)"]);
+    // The join key `loam archive` asks the consumer scan with, by label.
+    expect(result.modifiedOperationIds).toEqual(new Map([["'createPet' (post /pets)", "createPet"]]));
     expect(result.componentsModified).toEqual([]);
     expect(result.unresolved).toEqual([]);
     expect(result.text).not.toBeNull();
@@ -136,6 +138,7 @@ paths:
     expect(mergeOpenapiPaths(LIVING, "openapi: 3.1.0\ncomponents: {}\n", "pets")).toEqual({
       text: null,
       modified: [],
+      modifiedOperationIds: new Map(),
       pathItemModified: [],
       removed: [],
       quoted: [],
