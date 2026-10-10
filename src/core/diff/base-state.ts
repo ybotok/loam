@@ -62,9 +62,6 @@ export type AxisState<T> =
   | { kind: "read"; value: T }
   | { kind: "unreadable"; path: string; error: string };
 
-/** The keys of a service state that hold requirement-bearing documents. */
-export type SpecAxisKey = "spec" | "archSpec";
-
 /**
  * One service on one side of the diff — the same shape for the base ref and
  * the working tree (`./current-state.ts` builds the other), which is what

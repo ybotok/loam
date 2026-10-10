@@ -1,14 +1,20 @@
 /**
- * Reading loam's output, in its two deliveries.
+ * Reading loam's output: which codes each invocation can raise.
  *
- * {@link READING_OUTPUT} and {@link REFERENCE_PAGES} are what AGENTS.md keeps:
- * the `--json` envelope, the rule to branch on codes rather than prose, and the
- * index of the pages this file no longer carries. {@link CODE_MAP} is the
- * code-by-code map of `status`, `validate`, `doctor`, `rebase`, `dependencies`,
- * `explore`, `seed` and `instructions` — the part `loam instructions loam-codes`
- * prints. ../workflows/reference/codes.ts composes it with `./map/`,
- * `./map/lenses/` and `./refusals.ts`, in exactly the order ../agents-md.ts used
- * to concatenate them, so the assembled page is the section byte for byte.
+ * {@link CODE_MAP} is the code-by-code map of `status`, `validate`, `doctor`,
+ * `rebase`, `dependencies`, `explore`, `seed` and `instructions` — the part
+ * `loam instructions loam-codes` prints. ../workflows/reference/codes.ts
+ * composes it with `./map/`, `./map/lenses/` and `./refusals.ts`, in exactly the
+ * order ../agents-md.ts used to concatenate them, so the assembled page is the
+ * section byte for byte.
+ *
+ * This module used to hold the other delivery too: `READING_OUTPUT` and
+ * `REFERENCE_PAGES`, the two AGENTS.md sections that stayed behind when the map
+ * left. Since 0.2.0-alpha.1 AGENTS.md is the single ORIENTATION literal in
+ * ../agents-md.ts, which carries its own condensed "Reading loam's output" and
+ * "Reference pages" sections, and nothing assembled the two old constants into
+ * anything loam shipped. They were deleted rather than left to be edited as if a
+ * reader would ever see them.
  *
  * WHY THE MAP LEFT THE FILE, given that this package's whole subject is a file.
  * AGENTS.md is auto-loaded from the working directory by every agents.md-aware
@@ -49,88 +55,13 @@
  * document does not survive being moved to another one; that is the class to
  * check for whenever anything else leaves this file.
  *
- * READING_OUTPUT and REFERENCE_PAGES are sections of the AGENTS.md template.
- * ../agents-md.ts assembles the document by PLAIN CONCATENATION — no join
- * separator — so every section starts at the first character of its opening line
- * and ends with the newline that closes its last one. Keep that shape when
- * editing, or two sections glue onto one line in every docs repo loam scaffolds
- * from now on. CODE_MAP owes the same shape for the same reason, one level up:
- * reference/codes.ts concatenates it with the modules listed above.
+ * CODE_MAP is one part of the `loam-codes` page, which
+ * ../workflows/reference/codes.ts assembles by PLAIN CONCATENATION — no join
+ * separator — so it starts at the first character of its opening line and ends
+ * with the newline that closes its last one. Keep that shape when editing, or
+ * two parts glue onto one line on the printed page.
  */
 import { STATUS_COMMAND } from "./map/status.js";
-
-/**
- * The section AGENTS.md keeps. Three facts an agent needs BEFORE it can form a
- * question — that every command speaks JSON, that the envelope survives a bad
- * invocation, and that codes are the contract and prose is not — plus the two
- * places the detail went.
- */
-export const READING_OUTPUT = `## Reading loam's output
-
-Every command takes \`--json\`, and the envelope holds even when the INVOCATION
-is wrong: with \`--json\` anywhere in the arguments, an unknown flag, unknown
-command or missing argument still yields \`{ ok: false, error: { code:
-"invalid-option" } }\` on stdout with exit 1 (commander's own diagnostic goes
-to stderr; \`--help\` and \`--version\` output pass through untouched). Without
-\`--json\` the same refusal is plain text on stderr with nothing on stdout, and
-like every other refusal it ends on a fix line and the code line
-(\`invalid-option  ·  loam explain invalid-option\`).
-
-Branch on \`findings[].code\`, never on the prose — the wording changes, the codes do
-not.
-
-**What a code MEANS is one command away**, and the answer describes the loam you
-are running rather than the one that scaffolded this repo. \`loam explain <code>\`
-gives one code's meaning, its severity in each scope that grades it, and its fix;
-\`loam explain --codes\` lists the whole vocabulary and \`loam explain --codes --json\`
-is the machine-readable form. Reach for it rather than for a generated pointer:
-this page is printed by the binary that defines the codes.
-
-**Which codes an INVOCATION can raise** is the other half, and it is the one
-thing nothing else carries. It is a reference page rather than a section here:
-\`loam instructions loam-codes\`.
-
-`;
-
-/**
- * The index. A reference nobody can find is content deleted with extra steps,
- * so the exact command is spelled per page rather than described — and
- * test/agents.test.ts asserts that every name in REFERENCES appears here inside
- * its own `loam instructions` line, which is what makes a renamed page fail
- * loudly instead of leaving a pointer at nothing.
- */
-export const REFERENCE_PAGES = `## The reference pages
-
-This file is the orientation: the layout, the cycle, what gates and what only
-advises, and what the words mean. Four things it does NOT carry — the grammars
-you consult while writing ONE document, and the inventory of what each command
-can report — are **reference pages**, printed by the binary rather than written
-here. That is why: this file is auto-loaded on every session and never
-refreshed, while a page out of the binary describes the loam you are actually
-running, and is read at the one moment it is needed.
-
-- \`loam instructions loam-codes\` — which codes each invocation can raise:
-  \`validate --service\` / \`--feature\` / \`--all\`, \`status\`, \`doctor\`, \`gate\`,
-  \`context\`, \`diff\`, \`explore\`, \`dependencies\`, \`rebase\`, \`seed\`, \`subsystem\`,
-  \`mcp\`, the use-case views, the containment refusals, the error envelope, and
-  the OpenSpec migration surface.
-- \`loam instructions loam-spine\` — the ID spine: every join between the
-  artifacts (\`operationId\`, message name, \`Covers:\`, \`Requires:\`,
-  \`Capability:\`, \`Realizes:\`), the \`Based-On:\` baseline pins on both the
-  requirement and the contract axis, how to draw a shared broker, and how to
-  declare a message produced outside the fleet.
-- \`loam instructions loam-authoring\` — the grammars you author against:
-  the architecture spec axis (\`arch.spec.md\` and its \`Covers:\` line), the
-  generated Gherkin suite, and frontmatter with the vouch chain behind it.
-- \`loam instructions loam-done-check\` — the done-check: how \`loam verify\`
-  derives its claims, the three channels that may answer them, the federated
-  recording form, and what separates **verified** from **attested**.
-
-Each takes no arguments and prints whole. \`loam instructions\` with no argument
-lists them beside the six workflow protocols; \`loam explain <code>\` answers any
-single code without opening a page at all.
-
-`;
 
 /**
  * The reference page's own opening: what the map is, where the /loam-check fix

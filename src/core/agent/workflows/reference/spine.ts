@@ -9,9 +9,10 @@
  * This is the grammar a reader consults while writing ONE document, which is
  * why it is a printed page rather than a section of AGENTS.md: it is consulted
  * at a moment you can name, and paying for it on every invocation of every
- * session bought nothing. `## Which element IS which service` deliberately
- * stayed behind in ../../agents-md/spine.ts — an agent cannot read the
- * landscape at all without it, so it is orientation rather than reference.
+ * session bought nothing. Which element IS which service deliberately stayed
+ * in AGENTS.md — today as ORIENTATION's `## The identity rule` in
+ * ../../agents-md.ts — because an agent cannot read the landscape at all
+ * without it, so it is orientation rather than reference.
  *
  * The text is the AGENTS.md section verbatim; nothing was rewritten to move
  * it, so a cross-reference from the remaining file still names the same

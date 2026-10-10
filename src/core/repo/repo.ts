@@ -270,7 +270,8 @@ export type ArchivedPolicy = "exclude" | "include" | "only";
  * directory over `FEAT-5-slug`, whose id is also `FEAT-5`), and under "include"
  * an active feature wins over an archived one. Ties among equally-exact
  * candidates go to the first by name — deterministic, unlike the raw readdir
- * order this replaces; `ambiguousFeatureMessage` lists them for the caller.
+ * order this replaces; `featureCandidates` returns every one of them, for a
+ * caller that must see the tie (`loam status` names the colliding directories).
  */
 export async function resolveFeature(
   docsDir: DocsDir,
@@ -302,19 +303,6 @@ export async function featureCandidates(
         Number(a.archived) - Number(b.archived) ||
         compareIds(a.dirName, b.dirName),
     );
-}
-
-/**
- * The message for an argument that names more than one feature — two directories
- * carrying the same id (`FEAT-6-aaa` and `FEAT-6-zzz`). `resolveFeature` still
- * picks one deterministically, but a command that is about to WRITE should say
- * which directories collided and make the caller spell one out.
- */
-export function ambiguousFeatureMessage(arg: string, candidates: FeatureEntry[]): string {
-  return (
-    `'${arg}' names ${candidates.length} features: ${candidates.map((c) => c.dirName).join(", ")}. ` +
-    "Pass the directory name you mean."
-  );
 }
 
 /**

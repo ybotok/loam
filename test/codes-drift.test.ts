@@ -75,7 +75,11 @@ describe("the code vocabulary does not drift from the docs", () => {
     for (const probe of [
       "delta.no-delta-sections", // `code:` literal — in delta.ts, whose NUL-byte key separator defeats grep but not readFile
       "delta.modified-pending", // ternary arm
-      "sources.unverifiable-from-here", // exists only as a text marker in validate.ts
+      // The text-marker pattern's one code (validate's `⚠ …:` rollup line).
+      // checks/sources.ts now spells the emission as a `code:` literal too, so
+      // this probe no longer isolates the marker pattern — and since this is
+      // the only code that pattern matches, losing it would not shrink the set.
+      "sources.unverifiable-from-here",
       "rollback-incomplete", // ErrorCode union member
       "internal", // union member with neither dot nor dash
       "delta.nothing-tagged", // coherence emission not (yet) in the IssueCode union

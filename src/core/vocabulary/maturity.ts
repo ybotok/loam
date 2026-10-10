@@ -111,8 +111,9 @@ export function maturityRollup(graded: readonly { maturity: Maturity }[]): Recor
  * asks both questions, and `INFRA_KINDS` below is the third they now ask
  * beside them.
  *
- * Extracted on the third strike: `commands/validate/checks/vocabulary.ts`,
- * `core/gate/partners.ts` and `core/verify/checklist.ts` each carried a copy.
+ * Extracted on the third strike: `commands/validate/checks/vocabulary.ts` (a
+ * module since deleted), `core/gate/partners.ts` and `core/verify/checklist.ts`
+ * each carried a copy.
  * Their real home is `core/c4/likec4.ts` beside the model they describe, but
  * that file sits against the 300-line limit and its package holds five files
  * — so the trio lives here, beside `landscapeEvidence`, which reads the same

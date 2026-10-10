@@ -12,9 +12,10 @@
  * meaning, the severity and the fix. See ../../command-map.ts's header for why
  * the gloss left.
  *
- * Same assembly contract as every section: ../../../agents-md.ts concatenates
- * with NO join separator, so this string starts at the first character of its
- * opening line and ends with the newline that closes its last one.
+ * Same assembly contract as every part of the `loam-codes` page:
+ * ../../../workflows/reference/codes.ts concatenates with NO join separator,
+ * so this string starts at the first character of its opening line and ends
+ * with the newline that closes its last one.
  */
 export const DIFF_COMMAND = `- \`loam diff --base <ref>\` reports the fleet-meaningful changes between the
   living docs and a base git ref of the DOCS repo (a branch, \`origin/main\`, a

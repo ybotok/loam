@@ -4,9 +4,10 @@
  * package against the five-file cap, so the tree surface's documentation
  * lives one package down and is concatenated after the map.
  *
- * Same assembly contract as every section: ../agents-md.ts concatenates with
- * NO join separator, so this string starts at the first character of its
- * opening line and ends with the newline that closes its last one.
+ * Same assembly contract as every part of the `loam-codes` page:
+ * ../../workflows/reference/codes.ts concatenates with NO join separator, so this
+ * string starts at the first character of its opening line and ends with
+ * the newline that closes its last one.
  */
 export const SUBSYSTEM_COMMANDS = `- \`loam subsystem <verb>\` manages the grouping tree under \`services/\` — the
   navigable tree no identity depends on: a service id stays its leaf directory
