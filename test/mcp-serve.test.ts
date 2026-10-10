@@ -257,6 +257,41 @@ describe("protocol errors surface per call and never kill the loop", () => {
       await rm(bare, { recursive: true, force: true });
     }
   });
+
+  it("an optional positional after an absent one is invalid params naming the absent one — never read in its place", async () => {
+    // Positionals reach argv by POSITION, so a later optional supplied without
+    // the earlier one used to slide into its slot. `{name: "services"}` became
+    // `list services` and came back ok:true with the services listing — a
+    // wrong answer to a question nobody asked, with nothing saying so; and
+    // `{name: "smoke"}` blamed a section the caller never named. The refusal
+    // is the one a missing required positional already gets: -32602, before
+    // any command runs. A workflow's `args` without the `workflow` slides the
+    // same way, and an empty `args` contributes no token, so nothing shifts.
+    const bare = await makeTmpDir();
+    try {
+      const res = await drive(bare, [
+        JSON.stringify(call(1, "loam_list", { name: "services" })) + "\n",
+        JSON.stringify(call(2, "loam_list", { name: "smoke" })) + "\n",
+        JSON.stringify(call(3, "loam_instructions", { args: ["FEAT-1"] })) + "\n",
+        JSON.stringify(call(4, "loam_list", { section: "suites", name: "smoke" })) + "\n",
+        JSON.stringify(call(5, "loam_instructions", { args: [] })) + "\n",
+      ]);
+      for (const [id, absent, present] of [[1, "section", "name"], [2, "section", "name"], [3, "workflow", "args"]] as const) {
+        const error = errorOf(res.frames, id);
+        expect(error.code, `call ${id}`).toBe(-32602);
+        expect(error.message, `call ${id}`).toContain(`argument '${present}' requires '${absent}'`);
+      }
+      // Both slots filled — and an empty variadic — reach the command: a
+      // result frame (the bare directory's own refusal, or the listing), not
+      // a protocol error.
+      for (const id of [4, 5]) {
+        expect(byId(res.frames, id)["error"], `call ${id}`).toBeUndefined();
+        expect(byId(res.frames, id)["result"], `call ${id}`).toBeDefined();
+      }
+    } finally {
+      await rm(bare, { recursive: true, force: true });
+    }
+  });
 });
 
 /** What a roster probe reads back: the envelope's error, if the call refused. */
