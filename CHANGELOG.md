@@ -35,10 +35,15 @@ Two codes, both added to the `IssueCode` union, and one additive `--json` key we
   id-keyed check saw the id living. That quote is now `openapi.op-revived` too, and its message
   says which archived feature moved the operation and where it lives now. A delta that carries its
   own removal marker for the id is its own relocation (moving it back on purpose) and is not
-  graded. On the event axis the one slot a move vacates is a `components.messages` key whose
-  message name the archived delta declared again under another key; a declaration at the old key
-  is `asyncapi.slot-revived`, naming the new one. A channel or operation slot is its key, so a
-  "moved" one is a retirement, as before.
+  graded, nor is one that defines another operation at the address the id lives at (a swap — the
+  merge replaces what stands at that method and path). On the event axis the one slot a move
+  vacates is a `components.messages` key whose message name the archived delta declared again
+  elsewhere — under another key, or inline under a channel; a declaration at the old key is
+  `asyncapi.slot-revived`, naming where the name is declared now, unless the merge would take it
+  out of there: a delta that restates that channel with a `$ref`, or retires it, is moving the
+  message back. For an inline declaration the remedy names the channel (restate it with a `$ref`,
+  or retire it), never a marker nested on the inline message, which retires nothing. A channel or
+  operation slot is its key, so a "moved" one is a retirement, as before.
 - **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
   with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
   output's "archiving despite" list, naming what came back and whose retirement it reverses.

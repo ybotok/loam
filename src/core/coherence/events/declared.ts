@@ -33,7 +33,6 @@ import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
-import { mergedAsyncapiDoc } from "../retired/merged.js";
 import { messageRetirements } from "../retired/retirement.js";
 import { absentEvents, type AbsentEvents } from "../retired/revived.js";
 import { readEventPair } from "../retired/event-pair.js";
@@ -193,19 +192,19 @@ export async function declaredEvents(
     // Both sides' texts, trees and slots, read the one way rebase's
     // standalone revival read reads them too (../retired/event-pair.ts owns
     // the guards: absent living is an answer, unreadable living is not).
-    const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc }, context);
-    const { featSlots, featText, livingText } = read;
+    const read = await readEventPair({ featPath, featDoc, livingPath, livingDoc, service: svc }, context);
+    const { featSlots, livingText } = read;
     revivalCandidates.set(svc, absentEvents(read));
 
     if (livingText !== undefined) {
       gradeBaselines({ ...read, svc, featureId }, issues);
       gradeMarkers(read, svc, issues);
-      if (featText !== undefined) {
-        const merged = mergedAsyncapiDoc({ livingText, livingDoc, featureText: featText, service: svc });
-        if (merged !== undefined) {
-          mergedDocs.set(svc, merged);
-          stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));
-        }
+      // The pair's one simulation — the revival candidates above may already
+      // have asked it where a message name survives the merge.
+      const merged = read.merged();
+      if (merged !== undefined) {
+        mergedDocs.set(svc, merged);
+        stoppedSending.set(svc, livingDoc.sent.filter((m) => !merged.sent.includes(m)));
       }
     }
 

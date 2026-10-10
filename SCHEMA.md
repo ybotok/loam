@@ -1559,11 +1559,19 @@ the source for tests.
   slots are on the markers. A delta operation at a slot the living contract leaves empty, whose
   operationId it holds at another slot, and whose old address an archived feature moved it away
   from, is `openapi.op-revived` as well: archived, it would answer the id at both addresses. A
-  delta that carries its own removal marker for the id is its own relocation and is not graded.
+  delta that carries its own removal marker for the id is its own relocation and is not graded,
+  and neither is one that defines another operation at every address the id lives at: the merge
+  writes per method and path, so that swap leaves the id at one address. "Lives at" means what
+  the merge would leave, not what the living contract holds today.
   On the event axis the one slot a move vacates is a `components.messages` key (marker on the old
   key, the message name declared again elsewhere): a declaration at the old key of a name the
-  living contract declares elsewhere is `asyncapi.slot-revived`. A channel or operation slot's
-  identity is its key, so moving one is a retirement plus an addition, graded as such.
+  living contract declares elsewhere — and the merge would leave declared there — is
+  `asyncapi.slot-revived`. Read off the merge itself: a delta that restates the channel an inline
+  declaration stands in (with the message as a `$ref`) or retires that channel takes the name out,
+  since a channel upsert replaces the channel's interior; a marker nested on the inline message
+  does not (`asyncapi.remove-marker-inline`), so the finding names the channel as the remedy. A
+  channel or operation slot's identity is its key, so moving one is a retirement plus an
+  addition, graded as such.
   Both are warnings that **gate** the archive, `openapi.baseline-missing`'s doctrine: the document
   is legal, and re-adding a retired operation can be exactly what a feature means — a retirement
   rolled back — so `--approve` carries the call, and the archive output then names what came back

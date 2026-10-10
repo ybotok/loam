@@ -28,6 +28,7 @@ import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { featureSpecPaths } from "../../repo/paths.js";
 import { locateServicePaths } from "../../repo/service-target.js";
 import { readOpenapi, type OpenapiDoc, type Operation } from "../../openapi/doc.js";
+import { classifyBaselineDigests } from "../../openapi/digest.js";
 import { slotKey, type AsyncapiSlot } from "../../asyncapi/digest.js";
 import { readAsyncapi } from "../../asyncapi/read.js";
 import type { EventMessage } from "../../asyncapi/model.js";
@@ -44,7 +45,10 @@ const REMEDY =
  * One delta entry the living contract does not hold as spelled, and where the
  * living contract holds its identity instead: nowhere, for an entry absent by
  * identity (new, or retired); the addresses it lives at now, for one spelled at
- * an address it is not at (new there, or moved away by an archived feature).
+ * an address it is not at (new there, or moved away by an archived feature) —
+ * only those the merge would leave it at. An address this same delta rewrites
+ * is not one archiving would leave the identity at, so it is no second
+ * address, and a delta rewriting every one of them is moving the entry back.
  */
 export interface Absent<T> {
   entry: T;
@@ -63,8 +67,13 @@ const address = (op: Operation): string => `${op.method.toUpperCase()} ${op.path
  * slot-keyed baseline gate (nothing living at the slot) and to the id check
  * above (the id is living). Not when this delta itself carries a removal
  * marker for the id: then the quote is its own relocation, stated, and the
- * merge leaves the id at one address. An unreadable side proves nothing
- * (`openapi.invalid` owns it), so it yields no candidate.
+ * merge leaves the id at one address. Nor when it defines ANOTHER operation
+ * at every slot the id lives at: the merge writes per method and path, so
+ * that definition replaces the living one, and the delta is a swap moving
+ * the id back — which this once called a revival, with a remedy (a marker at
+ * the slot) nobody could write, the YAML key already holding the other
+ * operation. An unreadable side proves nothing (`openapi.invalid` owns it),
+ * so it yields no candidate.
  */
 export function absentOperations(featDoc: OpenapiDoc, livingDoc: OpenapiDoc): Absent<Operation>[] {
   if (featDoc.unreadable || livingDoc.unreadable) return [];
@@ -73,12 +82,35 @@ export function absentOperations(featDoc: OpenapiDoc, livingDoc: OpenapiDoc): Ab
   const absent: Absent<Operation>[] = [];
   for (const op of featDoc.ops) {
     if (op.remove) continue;
-    const livesAt = living.filter((l) => l.id === op.id).map(address);
+    const at = living.filter((l) => l.id === op.id);
+    if (at.length === 0) {
+      absent.push({ entry: op, livesAt: [] });
+      continue;
+    }
     const occupied = living.some((l) => l.method === op.method && l.path === op.path);
-    if (livesAt.length > 0 && (occupied || relocating.has(op.id))) continue;
-    absent.push({ entry: op, livesAt });
+    if (occupied || relocating.has(op.id)) continue;
+    const livesAt = at.filter((l) => !overwritten(l, featDoc.ops)).map(address);
+    if (livesAt.length > 0) absent.push({ entry: op, livesAt });
   }
   return absent;
+}
+
+/**
+ * Does the delta write ANOTHER operation over living `l`'s slot? The merge's
+ * own rule (openapi/merge/merge.ts): a definition at the same method and path
+ * replaces what stands there — unless it is a QUOTE, equal to its own pin,
+ * which the merge never writes, so the living operation stays. A definition
+ * carrying `l`'s own id is a restatement of it, not a replacement.
+ */
+function overwritten(l: Operation, ops: readonly Operation[]): boolean {
+  return ops.some(
+    (o) =>
+      !o.remove &&
+      o.method === l.method &&
+      o.path === l.path &&
+      o.id !== l.id &&
+      classifyBaselineDigests(o.basedOn, o.digest, l.digest) !== "quote",
+  );
 }
 
 /**
@@ -117,9 +149,9 @@ export interface AbsentEvents {
   /**
    * Message declarations whose NAME the living contract lacks — the join
    * token, wherever it is declared — and `components.messages` declarations
-   * of a name the living contract declares under ANOTHER key, at a key it
-   * leaves empty: the operation axis's moved address, on the one slot a
-   * message relocation vacates.
+   * of a name the living contract declares elsewhere and the merge would
+   * leave there, at a key it leaves empty: the operation axis's moved
+   * address, on the one slot a message relocation vacates.
    */
   messages: Absent<EventMessage>[];
 }
@@ -143,15 +175,62 @@ export function absentEvents(read: EventPairRead): AbsentEvents {
   const messages: Absent<EventMessage>[] = [];
   for (const m of featDoc.messages) {
     if (m.remove === true) continue;
-    const livesAt = living.filter((l) => l.name === m.name).map((l) => l.slot);
+    const declaredAt = living.filter((l) => l.name === m.name).map((l) => l.slot);
+    if (declaredAt.length === 0) {
+      messages.push({ entry: m, livesAt: [] });
+      continue;
+    }
     const displaced = m.slot.startsWith("components.messages.") && !occupied.has(m.slot) && !relocating.has(m.name);
-    if (livesAt.length > 0 && !displaced) continue;
-    messages.push({ entry: m, livesAt });
+    if (!displaced) continue;
+    const livesAt = surviving(read, m.name, declaredAt);
+    if (livesAt.length > 0) messages.push({ entry: m, livesAt });
   }
   return {
     slots: featSlots.filter((s) => !s.remove && s.section !== "components.messages" && !livingSlots.has(slotKey(s))),
     messages,
   };
+}
+
+/**
+ * Which of the places the living contract declares `name` the merge would
+ * leave it declared at — read off the pair's merge simulation, not re-derived:
+ * an upsert of a channel replaces its interior wholesale, a channel marker
+ * takes the interior with it, a quoted channel keeps the living one, and a
+ * marker nested on an inline message retires nothing (the deep strip
+ * publishes the message without it). Reading the living contract alone, as
+ * this once did, took a channel restated with a `$ref` as still declaring the
+ * message inline, and called a deliberate move back "one message name in two
+ * places". A merge the pair refuses has no answer, and the living
+ * declarations stand — the archive refuses that merge by name.
+ */
+function surviving(read: EventPairRead, name: string, declaredAt: readonly string[]): string[] {
+  const after = read.merged();
+  if (after === undefined) return [...declaredAt];
+  return declaredAt.filter((slot) => after.messages.some((d) => d.remove !== true && d.name === name && d.slot === slot));
+}
+
+/**
+ * How a delta takes a message name OUT of the places it is declared — the
+ * move-back remedy, per place, toward wherever the message is moved back to
+ * (`to`, a `components.messages` slot). A `components.messages` key is a
+ * slot, and a removal marker there retires what it declares. A declaration
+ * INLINE under a channel is not: it is the channel slot's interior
+ * (SCHEMA.md), so a marker nested on it retires nothing —
+ * `asyncapi.remove-marker-inline`, and the deep strip publishes the message
+ * without the marker. This once said "retire it at
+ * channels.<ck>.messages.<mk>", a remedy that, followed exactly, changed
+ * nothing and drew a second refusal. The channel is the unit: restated with
+ * the message as a `$ref` (an upsert replaces the interior), or retired. The
+ * channel key is read the way the archive plan's remove-marker-inline
+ * message reads it, so the two name the same channel.
+ */
+export function moveBackRemedy(declaredAt: readonly string[], to: string): string {
+  const steps = declaredAt.map((slot) => {
+    if (!slot.startsWith("channels.")) return `retire it at ${slot}`;
+    const channel = slot.slice("channels.".length, slot.lastIndexOf(".messages."));
+    return `restate channel ${channel} with a $ref to ${to}, or retire channel ${channel}`;
+  });
+  return [...new Set(steps)].join("; and ");
 }
 
 /** `absentEvents` that an archived feature retired, or moved away from the key spelled — any archived feature, `revivedOperations`' reason. */
@@ -173,7 +252,7 @@ export function revivedEvents(service: string, absent: AbsentEvents, index: Reti
       gates: true,
       code: "asyncapi.slot-revived",
       subject: service,
-      message: `${service}: this feature's asyncapi.yaml declares message '${message.name}' at ${message.slot}, a key the living contract no longer has — ${retirers(by)} moved it to ${where}, where it is declared now, and archiving this delta would declare it at ${message.slot} as well: one message name in two places. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, retire it at ${where} in this same delta.`,
+      message: `${service}: this feature's asyncapi.yaml declares message '${message.name}' at ${message.slot}, a key the living contract no longer has — ${retirers(by)} moved it to ${where}, where it is declared now, and archiving this delta would declare it at ${message.slot} as well: one message name in two places. Delete the quote if you only restated it, and make any change at ${where}; to move it back on purpose, ${moveBackRemedy(livesAt, message.slot)} in this same delta.`,
     });
   };
   const revivedChannels = new Set<string>();
@@ -233,7 +312,8 @@ export async function serviceRevivals(request: ServiceRevivalRequest): Promise<I
   // An unreadable delta is `asyncapi.invalid` in the gate, which grades
   // nothing else against it; the guards on the living side are the pair's.
   if (featDoc.unreadable) return issues;
-  const sides = { featPath: feature.asyncapi, featDoc, livingPath: living.asyncapi, livingDoc: await readAsyncapi(living.asyncapi, context) };
+  const livingDoc = await readAsyncapi(living.asyncapi, context);
+  const sides = { featPath: feature.asyncapi, featDoc, livingPath: living.asyncapi, livingDoc, service };
   const events = absentEvents(await readEventPair(sides, context));
   if (events.slots.length > 0 || events.messages.length > 0) issues.push(...revivedEvents(service, events, await retired()));
   return issues;
