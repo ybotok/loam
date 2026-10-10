@@ -18,6 +18,7 @@ import { stripOpenapiRemovalMarkers } from "../../../../core/openapi/merge/marke
 import { mergeOpenapiPaths, type OpenapiMergeResult } from "../../../../core/openapi/merge/merge.js";
 import { type Gated, type Plan } from "../state.js";
 import { consumerClause, type ContractConsumers } from "./consumers.js";
+import { sayQuoted, sayStale, warnOverwrite } from "./verdict-lines.js";
 import type { DocsDir } from "../../../../core/kernel/ids/dirs.js";
 import type { FleetContext } from "../../../../core/fleet-context.js";
 
@@ -28,7 +29,7 @@ export async function planOpenapiContracts(
   say: (line?: string) => void,
 ): Promise<void> {
   const { featureDir, deltaServices } = gated;
-  const { writes, planWarns, planGates, openapiRemovals } = plan;
+  const { writes, planGates, openapiRemovals } = plan;
   // OpenAPI merge — fold the feature's openapi deltas into the living service APIs.
   for (const svc of deltaServices) {
     const featOpenapi = featureSpecPaths(featureDir, svc).openapi;
@@ -106,26 +107,12 @@ export async function planOpenapiContracts(
         openapiRemovals.push({ service: svc, operations: removed });
         for (const label of removed) say(`      - removes ${label}`);
       }
-      // Said out loud, because "the plan wrote less than my delta spells" is
-      // the one thing a reader cannot infer from a merged file. Not a warning:
-      // quoting the contract around your change is correct authoring, and
-      // leaving the quote alone is the correct merge. The path-level and
-      // component quotes get the same sentence for the same reason.
-      for (const label of quoted) say(`      · quotes ${label} — unchanged since it was pinned, left as living has it`);
-      for (const label of pathItemQuoted) {
-        say(`      · quotes path-level ${label} — unchanged since it was pinned, left as living has it`);
-      }
-      for (const comp of componentsQuoted) {
-        say(`      · quotes component ${comp} — unchanged since it was pinned, left as living has it`);
-      }
-      // Stale surfaces reaching the merge at all means --approve pushed past
-      // the gate's openapi.baseline-stale — the plan still names what it cost.
-      for (const label of pathItemStale) {
-        say(`      ⚠ stale baseline on path-level ${label} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
-      }
-      for (const comp of componentsStale) {
-        say(`      ⚠ stale baseline on component ${comp} — the living value moved since this delta was pinned; the overwrite is what --approve chose`);
-      }
+      // The quote and stale lines (./verdict-lines.ts says why each is said).
+      sayQuoted(say, quoted);
+      sayQuoted(say, pathItemQuoted.map((label) => `path-level ${label}`));
+      sayQuoted(say, componentsQuoted.map((comp) => `component ${comp}`));
+      sayStale(say, pathItemStale.map((label) => `path-level ${label}`));
+      sayStale(say, componentsStale.map((comp) => `component ${comp}`));
       for (const label of modified) {
         // Who the overwrite lands on: the living fleet's consumers of the
         // operation, through `loam diff`'s own scan (./consumers.ts). An
@@ -133,35 +120,22 @@ export async function planOpenapiContracts(
         // name it by, so the warning stays the sentence it always was.
         const id = modifiedOperationIds.get(label);
         const named = id === undefined ? null : consumerClause(await config.consumers.op(svc, id));
-        planWarns.push({
-          severity: "warn",
-          code: "openapi.op-modified",
-          subject: svc,
-          message:
-            `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale` +
-            (named === null ? "" : `; ${named.clause}`),
-          ...(named === null ? {} : { details: named.details }),
+        warnOverwrite(plan, say, {
+          svc, code: "openapi.op-modified", label, named,
+          message: `${svc}: the delta redefines ${label}, which the living OpenAPI already has — the merge overwrites the living operation wholesale`,
         });
-        say(`      ⚠ overwrites ${label} — the living definition differs${named === null ? "" : `; ${named.clause}`}`);
-        for (const line of named?.details ?? []) say(`          ${line}`);
       }
       for (const label of pathItemModified) {
-        planWarns.push({
-          severity: "warn",
-          code: "openapi.path-item-modified",
-          subject: svc,
+        warnOverwrite(plan, say, {
+          svc, code: "openapi.path-item-modified", label: `path-level ${label}`,
           message: `${svc}: the delta redefines the path-level key ${label}, which the living OpenAPI already has — the merge overwrites it wholesale, and it applies to EVERY operation on that path, including ones this feature never mentions`,
         });
-        say(`      ⚠ overwrites path-level ${label} — the living definition differs`);
       }
       for (const comp of componentsModified) {
-        planWarns.push({
-          severity: "warn",
-          code: "openapi.component-modified",
-          subject: svc,
+        warnOverwrite(plan, say, {
+          svc, code: "openapi.component-modified", label: `component ${comp}`,
           message: `${svc}: the delta declares component '${comp}', which the living OpenAPI already defines differently — the merge overwrites the living component wholesale`,
         });
-        say(`      ⚠ overwrites component ${comp} — the living definition differs`);
       }
       for (const u of unresolved) {
         planGates.push({
