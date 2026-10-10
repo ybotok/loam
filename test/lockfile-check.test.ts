@@ -15,7 +15,7 @@ import { copyFile, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // eslint-disable-next-line -- a .mjs module; vitest transforms it fine.
-import { lockfileInSync } from "../scripts/lockfile-check.mjs";
+import { lockfileInSync, missingFromLock } from "../scripts/lockfile-check.mjs";
 import { makeTmpDir } from "./helpers/harness.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -67,4 +67,51 @@ describe("release:check asks npm whether it will install the lockfile", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+// The refusal above must not depend on which npm answers: npm 10 (Node 22.22.3)
+// installed cafb4d8's lockfile while npm 11 refused it, and CI run 38047258912
+// went red on the difference. These pin the structural walk that runs first.
+describe("missingFromLock reads the lockfile the way Node resolves it", () => {
+  it("finds a dependency hoisted to the root, or nested under an enclosing package", () => {
+    expect(
+      missingFromLock({
+        packages: {
+          "": {},
+          "node_modules/a": { dependencies: { b: "^1", c: "^1" } },
+          "node_modules/a/node_modules/b": { dependencies: { c: "^1" } },
+          "node_modules/c": {},
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("names cafb4d8's shape: an optional package's dependency and a required peer, both absent", () => {
+    expect(
+      missingFromLock({
+        packages: {
+          "": {},
+          "node_modules/binding": { optional: true, dependencies: { core: "^1" } },
+          "node_modules/runtime": { peerDependencies: { core: "^1" } },
+        },
+      }),
+    ).toEqual([
+      { name: "core", requiredBy: "node_modules/binding" },
+      { name: "core", requiredBy: "node_modules/runtime" },
+    ]);
+  });
+
+  it("skips optional peers and workspace links, and never lets a sibling's private copy satisfy another package", () => {
+    expect(
+      missingFromLock({
+        packages: {
+          "": {},
+          "node_modules/x": { peerDependencies: { y: "^1" }, peerDependenciesMeta: { y: { optional: true } } },
+          "node_modules/p/node_modules/q": {},
+          "node_modules/r": { dependencies: { q: "^1" } },
+          "node_modules/ws": { link: true, dependencies: { nowhere: "^1" } },
+        },
+      }),
+    ).toEqual([{ name: "q", requiredBy: "node_modules/r" }]);
+  });
 });

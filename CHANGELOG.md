@@ -495,9 +495,12 @@ maturity rung of every service is unchanged.
 
 ### Contributors — release preflight and test harness
 
-- `npm run release:check` runs `npm ci --dry-run --offline` on a scratch copy of `package.json` and
-  `package-lock.json` (new `scripts/lockfile-check.mjs`): the check that would have refused
-  `0.2.0-alpha.8`'s stripped lockfile before the tag instead of after it.
+- `npm run release:check` checks that every dependency a `package-lock.json` entry names resolves
+  to another entry, the way Node looks it up, and then runs `npm ci --dry-run --offline` on a
+  scratch copy of `package.json` and `package-lock.json` (new `scripts/lockfile-check.mjs`): the
+  check that would have refused `0.2.0-alpha.8`'s stripped lockfile before the tag instead of after
+  it. The structural walk comes first because npm's own verdict depends on the npm asked: npm 11
+  refuses that lockfile, npm 10 (Node 22.22.3) installs it.
 - The test harness creates its temporary directories under the canonical (symlink-resolved) temp
   root, so the suite passes on macOS without a `TMPDIR` override.
 
