@@ -51,10 +51,7 @@ import { openCommitWindow } from "../../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../../core/staging/writes.js";
 import { authoredGeneratedPaths, authoredRefusal } from "../../../core/repo/tree/render/service/header.js";
-import { viewsAgree } from "../../../core/repo/tree/render/views.js";
-import { type ExpectedFile, expectedViews, LANDSCAPE_UNREADABLE_NOTE } from "./views.js";
-
-export type ViewsAction = "created" | "updated" | "removed" | "current";
+import { type ExpectedFile, expectedViews, LANDSCAPE_UNREADABLE_NOTE, planGenerated, type ViewsAction } from "./views.js";
 
 /**
  * What one commit did to EACH generated file, kept apart.
@@ -232,14 +229,9 @@ export async function commitWindow(
 
 /**
  * Compare ONE generated file against what it must say, append the write when
- * they differ, and name what happened.
- *
- * The compare is over CONTENT, not bytes — `viewsAgree` carries the reason,
- * beside the generator that mints them: an ordinary Windows clone hands a
- * generated file back with CRLF and not one fact in it changed, and without
- * this every subsystem move on such a clone folded a rewrite that changed
- * nothing into its transaction and journalled it. What gets WRITTEN is still
- * the LF render as a Buffer, so the decode here is a comparison only.
+ * they differ, and name what happened. The compare is `planGenerated`'s, the
+ * one `../sync.ts` makes too — `./views.ts` says why it is over CONTENT, not
+ * bytes, and why there is one spelling of it.
  *
  * `protect` is the caller's statement that a NULL render is not evidence: the
  * file is left exactly as it is rather than deleted. It is never a licence to
@@ -248,9 +240,8 @@ export async function commitWindow(
  */
 async function stageGenerated(file: ExpectedFile, writes: PlannedWrite[], protect: boolean): Promise<ViewsAction> {
   const current = existsSync(file.path) ? await readFile(file.path, "utf8") : null;
-  if (viewsAgree(current, file.content)) return "current";
-  if (protect && file.content === null) return "current";
-  const bytes = file.content === null ? null : Buffer.from(file.content, "utf8");
-  writes.push({ path: file.path, content: bytes });
-  return current === null ? "created" : bytes === null ? "removed" : "updated";
+  const planned = planGenerated(file, current);
+  if (planned.write === null || (protect && file.content === null)) return "current";
+  writes.push(planned.write);
+  return planned.action;
 }
