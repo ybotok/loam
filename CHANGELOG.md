@@ -108,7 +108,10 @@ No code, flag, path or payload key was added, changed or retired; only documenta
   are serialized. Before, the whole `## Requirements` run was re-serialized, so a living spec
   written without a blank line under `### Requirement:` had one inserted under every untouched
   requirement by its first archive — the diff, `loam vouch --pack` and the re-vouch all widened to
-  the whole section. `loam unarchive` is unchanged and still restores every byte.
+  the whole section. `loam unarchive` is unchanged and still restores every byte. Each kept slice
+  is matched to its requirement by `Requirement-ID:` (the heading when there is none), never by
+  position; if the slices and the living requirements do not match one to one, the whole run is
+  re-serialized as before rather than one requirement's text landing in another's place.
 - **`archive --json` gains the additive `revouchOwed` key** (`[{service, path, owner}]`, on the
   dry run and the real merge alike): every vouched living `spec.md` / `arch.spec.md` the merge
   moves under its vouch stamp, with the frontmatter's `owner` (`null` when none is recorded).
@@ -175,7 +178,8 @@ maturity rung of every service is unchanged.
   and `loam context` print only `spec.md`'s owner, so the other value was a second answer nobody
   saw. Its `details` list each file's value (`spec.md: <owner>`, `arch.spec.md: <owner>`). Silent
   when either file names no owner (that stays `frontmatter.field-missing`). It compares the two
-  files only, never CODEOWNERS.
+  files only, never CODEOWNERS. As a warning it fails `loam validate --strict`, so a service that
+  passed `--strict` with two different owners now exits 1 there until they agree.
 - **`openapi.generated-stale` now says what moved.** The finding gains `details` naming each
   operationId that differs between the build's contract and the committed copy — `served, not in
   the committed copy: <id>` and `committed, no longer served: <id>` — and its message counts both
@@ -205,7 +209,23 @@ maturity rung of every service is unchanged.
   name the version and `asyncapi convert --target-version=3.0.0`, and nothing on the event axis
   graded against it. The same applies to a feature's own `asyncapi.yaml` under `--feature`. The
   `asyncapi.invalid` message, and the `context` / `delta` lines for an unreadable event contract,
-  now say "does not read as AsyncAPI 3.0" rather than "does not parse".
+  now say "does not read as AsyncAPI 3.0" rather than "does not parse". **It is an error:
+  `loam validate` now exits 1 on such a document even where no edge or requirement names its
+  messages** — a document that used to pass. `asyncapi convert --target-version=3.0.0` upgrades it.
+- **`loam diff --base <ref>` exits 1 while a CHANGED `asyncapi.yaml` says 1.x or 2.x.** The
+  document is listed in that service's `unreadable[]` once for each side on which it says 1.x or
+  2.x, counted in the `unreadable` total of `summary`, and the service reads
+  `change: "changed"`; it used to read as a contract with no messages and exit 0. One the branch
+  did not touch does not do this — see the next entry. `asyncapi convert --target-version=3.0.0`
+  upgrades it.
+- **`loam diff --base <ref>` skips an unreadable `openapi.yaml` or `asyncapi.yaml` that the base
+  ref holds byte for byte.** Such a contract is no longer listed in `unreadable[]`, counted in
+  `summary`, or the reason a service reads `change: "changed"`, so an unconverted
+  AsyncAPI 2.x file, or a broken OpenAPI file, that the branch never touched no longer fails every
+  PR's diff with exit 1. A contract the branch changed, or one only one side cannot read, still
+  suspends its axis and exits 1. `spec.md` and `arch.spec.md` are not skipped: an unreadable one
+  stays suspended even when untouched, because another service's removal may be the one that
+  could not be checked against it. No key is added or removed.
 - **Suggested element ids follow `loam seed`'s convention.** For a service the fleet map does not
   draw yet, the `loam adopt` brief and the `loam new` delta scaffold now suggest `svc_<id>` (dots
   and dashes folded to `_`, e.g. `svc_payment_service`) instead of a camel-cased name, and

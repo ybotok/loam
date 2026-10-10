@@ -489,6 +489,115 @@ describe("loam diff — containment: nobody could look is not nothing changed", 
   });
 });
 
+/**
+ * An AsyncAPI 2.x document: it parses, declares its message under `publish`,
+ * and reads as UNREADABLE by policy (core/asyncapi/read.ts reads 3.0 only).
+ */
+const ASYNCAPI_2 = `asyncapi: 2.6.0
+info:
+  title: notification-service events
+  version: "1.0"
+channels:
+  notification.sent:
+    publish:
+      message:
+        name: NotificationSent
+        payload:
+          type: object
+`;
+
+/*
+ * A contract the branch never touched is not a hole in the diff. When the
+ * 2.x refusal landed, every `loam diff --base` over a fleet holding one such
+ * file exited 1 with `unreadable: 2` (the same document, once per side) and
+ * the service read `changed`, whatever the branch did — the "PR gate red, not
+ * caused by the PR" class `validate --base` had just been fixed for. Identical
+ * bytes on both sides now skip the contract axis; anything else still
+ * suspends it.
+ */
+describe("loam diff — an unreadable contract the branch did not touch", () => {
+  it("is skipped, not suspended: no unreadable entry, not `changed`, and the PR's own change still exits 0", async () => {
+    const p = await makeProject({
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/payment-service/openapi.yaml": LIVING_OPENAPI,
+      "services/notification-service/asyncapi.yaml": ASYNCAPI_2,
+      // The other contract axis, unreadable for an ordinary reason.
+      "services/ledger-service/openapi.yaml": "paths: [broken",
+    });
+    try {
+      commitBase(p.docsDir);
+      // What the branch actually changes: one operation removed, nobody names it.
+      await p.write("services/payment-service/openapi.yaml", REMOVED_OP_OPENAPI);
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(0);
+      expect(payload.summary!.unreadable).toBe(0);
+      for (const id of ["notification-service", "ledger-service"]) {
+        expect(service(payload, id)).toEqual({ id, change: "unchanged", findings: [], unreadable: [] });
+      }
+      expect(codes(service(payload, "payment-service"))).toContain("diff.op-removed");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a CHANGED unreadable contract still suspends both sides and exits 1", async () => {
+    const p = await makeProject({
+      "services/notification-service/asyncapi.yaml": ASYNCAPI_2,
+    });
+    try {
+      commitBase(p.docsDir);
+      // Still 2.x, still unreadable — but not the bytes the base held, so
+      // nothing proves the branch left its messages alone.
+      await p.write("services/notification-service/asyncapi.yaml", ASYNCAPI_2.replace("NotificationSent", "NotificationDelivered"));
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(1);
+      expect(payload.summary!.unreadable).toBe(2);
+      const subject = service(payload, "notification-service");
+      expect(subject.change).toBe("changed");
+      expect(subject.unreadable.map((u) => `${u.side}:${u.axis}`)).toEqual(["base:asyncapi", "current:asyncapi"]);
+      expect(subject.unreadable[0]!.error).toContain("asyncapi convert --target-version=3.0.0");
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("a contract that BECAME unreadable on the branch still suspends and exits 1", async () => {
+    const p = await makeProject({
+      "services/payment-service/asyncapi.yaml": LIVING_ASYNCAPI,
+    });
+    try {
+      commitBase(p.docsDir);
+      await p.write("services/payment-service/asyncapi.yaml", ASYNCAPI_2);
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(1);
+      const subject = service(payload, "payment-service");
+      expect(subject.findings).toEqual([]);
+      expect(subject.unreadable.map((u) => `${u.side}:${u.axis}`)).toEqual(["current:asyncapi"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+
+  it("an untouched unreadable SPEC still suspends — another service's removal may be the one it could not be checked against", async () => {
+    const p = await makeProject({
+      "services/payment-service/spec.md": LIVING_SPEC,
+      "services/checkout-web/spec.md": CONSUMER_SPEC,
+    });
+    try {
+      // UTF-16 with its byte-order mark — not a UTF-8 sequence, so both
+      // sides refuse it — committed so, and never touched.
+      const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(CONSUMER_SPEC, "utf16le")]);
+      await writeFile(join(p.docsDir, "services", "checkout-web", "spec.md"), utf16);
+      commitBase(p.docsDir);
+      const { code, payload } = await diffJson(p, "main");
+      expect(code).toBe(1);
+      expect(service(payload, "checkout-web").unreadable.map((u) => `${u.side}:${u.axis}`)).toEqual(["base:spec", "current:spec"]);
+    } finally {
+      await p.destroy();
+    }
+  });
+});
+
 describe("loam diff — identity across placement, prefix, and runs", () => {
   it("a service moved into a subsystem diffs as UNCHANGED — placement is navigation, not identity", async () => {
     const p = await makeProject({

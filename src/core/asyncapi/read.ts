@@ -30,6 +30,9 @@ import type { FleetContext } from "../fleet-context.js";
  * diagnosis the unreadable policy below exists to prevent, so an older
  * version now reads as UNREADABLE (`asyncapiDocOf`): one `asyncapi.invalid`
  * naming the version and the upgrade command, and nothing graded against it.
+ * `loam diff` skips such a document when the base ref holds the same bytes
+ * (core/diff/semantic.ts's `UNTOUCHED_SKIPS`); without that, one unconverted
+ * file suspended the event axis on every run and failed every PR's diff.
  *
  * WHAT THIS READER MUST NEVER DO: join on anything inside a message's `payload`.
  * The payload is JSON Schema today and may be Avro later, and that switch is

@@ -218,8 +218,12 @@ export async function planCapabilities(
  * the adopt brief's own examples taught, had that line inserted under every
  * requirement the feature never mentioned. The diff, the vouch pack and the
  * re-vouch all widened from the delta to the whole section.
+ *
+ * Exported for test/archive.test.ts alone: the slice-to-requirement join
+ * (`verbatimSlices`) can only be handed a disagreeing pair directly, because
+ * the gate refuses every document that would produce one through the CLI.
  */
-function rewriteRequirementsRun(text: string, living: Requirement[], merged: Requirement[]): string {
+export function rewriteRequirementsRun(text: string, living: Requirement[], merged: Requirement[]): string {
   const s = splitRequirementsSection(text);
   // No `## Requirements` at all: the stray guard has already refused any doc
   // whose requirements live elsewhere, so this one has none — open the section.
@@ -242,10 +246,7 @@ const TRAILING_BREAKS = /(?:\r?\n[ \t]*)*$/;
  * Keyed on object identity, which `applyRequirementDelta` keeps for exactly the
  * requirements it did not touch — so there is no second reading here of what
  * the delta changed, and no way for the splice and the algebra to disagree.
- * The slices and `living` come from two walks over one heading-and-fence
- * definition (core/document/parse.ts) and so agree in count; should they ever
- * not, nothing is keyed and every requirement is serialized, which is the old
- * whole-run rewrite — still a correct merge, only a wider diff.
+ * Which slice belongs to which living requirement is `verbatimSlices`' join.
  *
  * Prose BETWEEN requirements rides in the slice of the requirement above it,
  * which is where parseRequirements attributes it too: it survives verbatim
@@ -257,10 +258,7 @@ function spliceRun(
   living: Requirement[],
   merged: Requirement[],
 ): string {
-  const verbatim = new Map<Requirement, string>();
-  if (section.requirements.length === living.length) {
-    living.forEach((requirement, i) => verbatim.set(requirement, section.requirements[i]!));
-  }
+  const verbatim = verbatimSlices(section.requirements, living);
   let out = "";
   let previousVerbatim = true;
   for (const requirement of merged) {
@@ -279,6 +277,47 @@ function spliceRun(
   const ending = section.run.slice(section.run.search(TRAILING_BREAKS));
   const body = out.slice(0, out.search(TRAILING_BREAKS));
   return body + (ending === "" && merged.at(-1) !== living.at(-1) ? "\n" : ending);
+}
+
+/** A requirement's identity as the merge selects it: `Requirement-ID:` when authored, the exact heading otherwise. */
+const identity = (r: Pick<Requirement, "id" | "name">): string => (r.id === undefined ? `name:${r.name}` : `id:${r.id}`);
+
+/**
+ * Each living requirement's raw slice, joined on its IDENTITY — the slice read
+ * back through the same parser that produced `living`, so a slice can only
+ * land in place of the requirement it actually is.
+ *
+ * The join used to be by position, guarded by a count. The two walks agree in
+ * order today (one heading-and-fence definition, core/document/parse.ts, and
+ * the gate's stray guard refusing any requirement outside the section), but
+ * nothing declared that, and equal counts paired differently would have written
+ * one requirement's bytes where another belongs — under its vouch stamp, with
+ * nothing to say so.
+ *
+ * Fails closed to the empty map, which serializes every requirement — the old
+ * whole-run rewrite, still a correct merge and only a wider diff: when the
+ * counts differ, when a slice does not read as exactly one requirement, when
+ * two slices claim one identity, or when a living requirement finds no slice
+ * of its own.
+ */
+function verbatimSlices(slices: string[], living: Requirement[]): Map<Requirement, string> {
+  const none = new Map<Requirement, string>();
+  if (slices.length !== living.length) return none;
+  const byIdentity = new Map<string, string>();
+  for (const slice of slices) {
+    const [only, ...more] = parseRequirements(slice);
+    if (only === undefined || more.length > 0 || byIdentity.has(identity(only))) return none;
+    byIdentity.set(identity(only), slice);
+  }
+  const verbatim = new Map<Requirement, string>();
+  for (const requirement of living) {
+    const slice = byIdentity.get(identity(requirement));
+    if (slice === undefined) return none;
+    // Taken once: a second living requirement of the same identity finds nothing.
+    byIdentity.delete(identity(requirement));
+    verbatim.set(requirement, slice);
+  }
+  return verbatim;
 }
 
 /** `text` ending in a blank line: line breaks appended to make one, nothing rewritten. */

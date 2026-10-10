@@ -16,7 +16,9 @@
  * that subject's axis — recorded in `unreadable[]`, counted in the summary,
  * carried into the exit code by the command — instead of letting an
  * unreadable base read as everything-added or an unreadable working file
- * read as everything-removed.
+ * read as everything-removed. The one thing that is not a suspension is a
+ * contract the base held byte-for-byte: somebody COULD look, at the bytes,
+ * and they did not change (`comparable`, `UNTOUCHED_SKIPS`).
  */
 import { requirementDigest, type Requirement } from "../document/spec.js";
 import type { Severity, Finding } from "../vocabulary/report.js";
@@ -118,11 +120,36 @@ const ABSENT = { kind: "absent" } as const;
 const emptyState = (id: string): ServiceState => ({ id, dir: "", spec: ABSENT, archSpec: ABSENT, openapi: ABSENT, asyncapi: ABSENT });
 
 /**
+ * The axes on which an unreadable document the branch left byte-identical is
+ * SKIPPED rather than suspended: the two contracts. Identical bytes are a
+ * proof, not a guess — the same parser over the same bytes cannot read
+ * differently on the two sides, so there is nothing of this document's own
+ * to diff, and suspending it anyway made every `loam diff` exit 1 over a
+ * fleet that holds one AsyncAPI 2.x file (unreadable by policy since
+ * core/asyncapi/read.ts refused pre-3.0), whatever the branch changed.
+ *
+ * Not the spec axes, and that is the victims scan's doing, not an oversight:
+ * an unreadable spec.md or arch.spec.md is also the document ANOTHER
+ * service's removal could not be checked against (`victims.ts`'s
+ * `scanRequirements`), and its `unreadable[]` entry here is what carries that
+ * suspension to exit 1 (`opsDiff`'s removal branch says so). No scan reads a
+ * contract it could not parse as evidence of anything — `declarers` takes
+ * positive evidence only — so skipping one hides no other answer.
+ */
+const UNTOUCHED_SKIPS: ReadonlySet<UnreadableEntry["axis"]> = new Set(["openapi", "asyncapi"]);
+
+/**
  * Guard one axis pair: record unreadable sides on the sink and say whether
  * the axis may be compared at all. Reading one good side against a suspended
- * one would grade absence it never proved.
+ * one would grade absence it never proved. A contract unreadable on BOTH
+ * sides with one byte hash is the branch's untouched file: not compared and
+ * not recorded either (`UNTOUCHED_SKIPS`). A changed one, or one only one
+ * side cannot read, still suspends.
  */
 function comparable(sink: ServiceDiff, axis: UnreadableEntry["axis"], pair: { base: AxisState<unknown>; current: AxisState<unknown> }): boolean {
+  const { base, current } = pair;
+  if (UNTOUCHED_SKIPS.has(axis) && base.kind === "unreadable" && current.kind === "unreadable" &&
+    base.bytes !== undefined && base.bytes === current.bytes) return false;
   for (const side of ["base", "current"] as const) {
     const state = pair[side];
     if (state.kind === "unreadable") sink.unreadable.push({ side, axis, path: state.path, error: state.error });

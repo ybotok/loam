@@ -614,7 +614,11 @@ there. What it reports is the *joined*, fleet-meaningful delta — a removed ope
 against the landscape edges and living requirements that still name it (`diff.op-removed-consumed`,
 exit 1), a removed message against its `Consumes:` lines and consumes-edges — and an artifact
 unreadable on either side suspends that subject's axis and exits 1, because "nobody could look" must
-never read as "nothing changed". A landscape edge into the provider drawn with no `metadata { op }`
+never read as "nothing changed". The exception is an `openapi.yaml` or `asyncapi.yaml` that cannot be
+read but is byte-identical at the base (an AsyncAPI 2.x file nobody has converted yet): the branch did
+not touch it, so it is skipped rather than failing every PR. A spec file stays suspended even then,
+because another service's removal may be the one that could not be checked against it.
+A landscape edge into the provider drawn with no `metadata { op }`
 is the same doubt at warning strength: it is listed as a consumer nobody could check, never dropped.
 An operation or message whose own node or `$ref` closure moved is `diff.op-modified` /
 `diff.message-modified` — a warning that names the same consumers and does not say whether the

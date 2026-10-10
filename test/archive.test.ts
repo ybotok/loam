@@ -31,7 +31,9 @@ import { rm } from "node:fs/promises";
 import { parse } from "yaml";
 import { loadFile, type LoadedDoc } from "../src/core/c4/likec4.js";
 import { parseRequirements } from "../src/core/document/parse.js";
+import { applyRequirementDelta } from "../src/core/document/apply.js";
 import { contentDigest } from "../src/core/document/frontmatter.js";
+import { rewriteRequirementsRun } from "../src/commands/archive/plan/specs.js";
 import {
   coherentFixture,
   makeProject,
@@ -3437,6 +3439,55 @@ describe("archive splices the delta into the living requirements", () => {
     } finally {
       await p.destroy();
     }
+  });
+});
+
+/*
+ * Which raw slice is which requirement's is a JOIN on identity, never a
+ * position. The splice used to pair `living[i]` with slice `i` behind a count
+ * check, so two lists of equal length in different orders wrote one
+ * requirement's bytes where another belongs. The gate refuses every document
+ * that would hand the merge such a pair through the CLI, which is why these
+ * call the rewrite directly with one built by hand.
+ */
+describe("archive's splice joins each raw slice to the requirement it is", () => {
+  const living = ordersLiving(null);
+  const [place, bill, legacy, ship] = parseRequirements(living);
+
+  it("a living list in another order than the slices still writes every requirement's own bytes", () => {
+    const delta = parseRequirements(`## MODIFIED Requirements
+
+### Requirement: Bill an order
+Requirement-ID: ORD-2
+The service SHALL bill a placed order exactly once per payee.
+
+#### Scenario: Billed once per payee
+- **Given** a placed order with two payees
+- **When** billing runs twice
+- **Then** exactly two charges exist
+`);
+    // Equal count, different pairing: by position, Place an order would have
+    // been written as Bill an order's OLD slice — Bill twice, Place gone.
+    const reordered = [bill!, place!, legacy!, ship!];
+    const merged = applyRequirementDelta(reordered, delta);
+    const out = rewriteRequirementsRun(living, reordered, merged);
+
+    expect(parseRequirements(out).map((r) => r.id)).toEqual(["ORD-2", "ORD-1", "ORD-3", "ORD-4"]);
+    expect(out).toContain(ORD_PLACE);
+    expect(out).toContain(ORD_LEGACY);
+    expect(out).not.toContain("The service SHALL bill a placed order once.");
+  });
+
+  it("a living requirement with no slice of its own fails closed: everything is serialized, nothing borrowed", () => {
+    // Four and four again, but the fourth is not in the text at all. By
+    // position it took Ship an order's bytes.
+    const [split] = parseRequirements(ORD_SPLIT);
+    const out = rewriteRequirementsRun(living, [place!, bill!, legacy!, split!], [place!, bill!, legacy!, split!]);
+
+    expect(parseRequirements(out).map((r) => r.id)).toEqual(["ORD-1", "ORD-2", "ORD-3", "ORD-5"]);
+    expect(out).not.toContain("Ship an order");
+    // The whole-run rewrite: canonical blank lines under every heading.
+    expect(out).toContain("### Requirement: Place an order\n\nRequirement-ID: ORD-1\n");
   });
 });
 
