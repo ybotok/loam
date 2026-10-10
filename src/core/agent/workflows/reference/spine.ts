@@ -239,8 +239,14 @@ each other, and the second to archive pushes its authoring-time copy back over
 whatever landed in between. Quote nothing you do not change. Each quote costs a
 pin, and a parallel feature that REMOVES the quoted operation makes it worse
 either way: pinned, the quote is \`openapi.baseline-invalid\`, an error that
-blocks your archive until you delete the quote (not the pin); unpinned, it
-reads as a new operation and your archive puts the retired one back.
+blocks your archive; unpinned, it is \`openapi.op-revived\` — a warning that
+gates, because the merge would read the dead operation as a new one and put
+it back (\`asyncapi.slot-revived\` is the same finding on a channel, operation
+or message slot). The fix for both is to delete the quote. Keep it only when
+the feature brings the operation back ON PURPOSE: then drop any pin, and a
+human archives with \`--approve\`. The check reads the removal
+markers of the features under \`features/archive/\` — a removal made by
+hand-editing a living contract is invisible to it.
 
 The guard against that collision, for every living operation the delta does
 spell, is a pin — a vendor extension beside \`x-loam-remove\`:

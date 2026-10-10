@@ -25,6 +25,8 @@ import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import { declaredEvents, type EventDeltaScope } from "./declared.js";
 import { eventLookups } from "./lookups.js";
+import type { RetiredLookup } from "../retired/archived.js";
+import { revivedEvents } from "../retired/revived.js";
 
 /** What featureCoherence hands the event axis — the delta facts it already computed. */
 export interface EventCoherenceRequest {
@@ -36,6 +38,8 @@ export interface EventCoherenceRequest {
   /** The element→service resolver over the delta's elements plus the enumerated fleet. */
   svcOf: (id: string) => string;
   context?: FleetContext;
+  /** The retired index, shared with the contract axis so one call walks `features/archive/` once at most. */
+  retired: RetiredLookup;
 }
 
 export async function eventCoherence(request: EventCoherenceRequest): Promise<Issue[]> {
@@ -81,6 +85,16 @@ export async function eventCoherence(request: EventCoherenceRequest): Promise<Is
         message: `${svc}: after this feature's merge, ${svc}'s asyncapi.yaml would no longer declare an action: send operation for '${message}', but the living fleet still consumes it — ${consumers.join("; ")}. Keep an operation sending it, retire the consumer in the same feature, or archive with --approve to break it deliberately.`,
       });
     }
+  }
+
+  // A revival: a slot or message this delta declares that the living
+  // contract no longer has because an ARCHIVED feature retired it — the
+  // contract axis's `openapi.op-revived`, on the slot and the message name
+  // (../retired/revived.ts). Asked of the index only when something is
+  // absent from its living contract at all.
+  for (const [svc, absent] of declared.revivalCandidates) {
+    if (absent.slots.length === 0 && absent.messages.length === 0) continue;
+    issues.push(...revivedEvents({ service: svc, featureId: scope.featureId }, absent, await request.retired()));
   }
 
   // Two features declaring one (service, message): both deltas apply

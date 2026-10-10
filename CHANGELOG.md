@@ -10,6 +10,37 @@ case for a change — the alternative that was rejected, the defect it came from
 generalises — lives where it is maintained: [SCHEMA.md](SCHEMA.md) for the rule,
 [ROADMAP.md](ROADMAP.md) for the priority and its exit criteria, and the commit that landed it._
 
+### Changed — `loam archive` refuses a delta that would bring back an operation another feature retired
+
+Two codes were added, both to the `IssueCode` union. No flag or `--json` key was.
+
+- **New `openapi.op-revived` (warn, gates archive).** A feature's `openapi.yaml` spells an
+  operation (by operationId) that its service's living contract no longer holds, and an ARCHIVED
+  feature other than this one retired it with an `x-loam-remove: true` marker. Before this, the
+  quote read as an addition: a delta that had only quoted `createOrderV1` archived after the
+  feature retiring it and put it back into the living contract at exit 0, with the advisory
+  `api.op-unconsumed` the only finding. The message names the operation, the retiring feature(s)
+  and both remedies — delete the quote if it only restated the operation; archive with `--approve`
+  if the feature brings it back on purpose.
+- **New `asyncapi.slot-revived` (warn, gates archive)** — the same on the event axis: a `channels`
+  or `operations` slot by its key, or a message by its name, that an archived feature retired. A
+  channel-slot removal's inline messages are named from that feature's `.loam-before/` snapshot
+  pre-image, read only while it still hashes to the digest its manifest recorded.
+- **Exit code: `loam archive` now exits 1 (`not-coherent`) on this shape** without `--approve`;
+  with `--approve` it merges as before, and the operation lands in `overridden[]` and the text
+  output's "archiving despite" list, naming what came back and whose retirement it reverses.
+  `loam validate --feature` reports both codes as warnings (exit unchanged), and `loam status`
+  counts them as gating like every warning that gates.
+- **The `/loam-check` rows for `openapi.baseline-invalid` and `asyncapi.baseline-invalid`** (what
+  `loam explain` answers) no longer say an unpinned quote of a retired operation archives as an
+  addition; they say to delete the quote unless the feature deliberately brings it back.
+- **What it reads, and what it cannot see.** Only files under `features/archive/` — the archived
+  deltas' removal markers and, for a channel's inline messages, the snapshot pre-image; no git. A
+  removal made by hand-editing a living contract, or an archived feature deleted from disk, leaves
+  nothing to read, and a quote of such an operation still grades as an addition. A marker with no
+  `operationId` or one written at path level retired nothing when its feature archived, so it is
+  never named as the retirer.
+
 ### Added — `#suite-<name>` tags and `loam list suites`: which services a test suite needs up
 
 No code was added. One reserved tag prefix, one list section and one positional argument were.

@@ -252,7 +252,12 @@ export const LOAM_SHIP: CommandContent = {
      \`overridable: false\`, and the fix is a rename, never the flag.
      \`openapi.remove-marker-path-level\` arrives
      here too: an \`x-loam-remove\` written beside the methods instead of inside the
-     operation retires nothing.
+     operation retires nothing. So do \`openapi.op-revived\` and
+     \`asyncapi.slot-revived\`: the delta spells an operation, slot or message an
+     ARCHIVED feature retired, and the merge would put it back. If the delta only
+     quoted it, delete the quote; whether the feature brings it back on purpose is
+     the human's \`--approve\`, and the archive output then names what came back
+     and whose retirement it reverses.
    - \`living-outside-requirements\` — the LIVING spec holds a requirement outside
      \`## Requirements\`, and the merge would duplicate it. Re-home it, then re-run.
      \`--approve\` does not move this one.

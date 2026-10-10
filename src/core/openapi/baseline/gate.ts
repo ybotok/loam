@@ -167,9 +167,13 @@ export function openapiBaselineIssues(input: BaselineGateInput): Issue[] {
     // (delta/select.ts): the document is legal, but an unpinned quote is
     // exactly the shape that reverts another feature's landed change at exit
     // 0, and every count covers only values the living contract already has —
-    // a genuinely new operation, key or component never trips it. `loam
-    // rebase` pins a whole service in one command; `--approve` says the
-    // unpinned merge is meant.
+    // a genuinely new operation, key or component never trips it. That is
+    // also why it cannot see a quote of an operation a parallel feature
+    // RETIRED: absent from living, it reads exactly like a new one. Telling
+    // the two apart takes the archived features' removal markers, which this
+    // gate never reads — `openapi.op-revived` (core/coherence/retired/) asks
+    // that question. `loam rebase` pins a whole service in one command;
+    // `--approve` says the unpinned merge is meant.
     issues.push({
       severity: "warn",
       gates: true,

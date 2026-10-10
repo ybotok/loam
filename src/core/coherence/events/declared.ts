@@ -38,6 +38,7 @@ import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { mergedAsyncapiDoc } from "./merged.js";
 import { readOr } from "../../openapi/contract-text.js";
 import { messageRetirements } from "../retired/retirement.js";
+import { absentEvents, type AbsentEvents } from "../retired/revived.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -88,6 +89,13 @@ export interface DeclaredEvents {
   links: Map<PathableService, EventLink[]>;
   /** Services whose FEATURE asyncapi.yaml exists but does not parse — every event check suspends for them. */
   unreadable: Set<string>;
+  /**
+   * Per touched service: the slots and messages the delta declares that the
+   * living contract does not hold — new, or RETIRED by an archived feature,
+   * which the living contract alone cannot tell apart. ./events.ts asks the
+   * retired index (../retired/) only when one of these is non-empty.
+   */
+  revivalCandidates: Map<PathableService, AbsentEvents>;
 }
 
 /**
@@ -135,6 +143,7 @@ export async function declaredEvents(
   const stoppedSending = new Map<string, string[]>();
   const links = new Map<PathableService, EventLink[]>();
   const unreadable = new Set<string>();
+  const revivalCandidates = new Map<PathableService, AbsentEvents>();
   for (const svc of svcNames) {
     const featPath = featureSpecPaths(featureDir, svc).asyncapi;
     const { removed: justifiedMsgs, links: svcLinks } = await deltaEventLines(scope, svc, context);
@@ -201,6 +210,11 @@ export async function declaredEvents(
     const livingSlots = new Map<string, AsyncapiSlot>(
       asyncapiSlots(livingPlain).map((s) => [`${s.section}\0${s.key}`, s]),
     );
+    // Absent from living is a candidate; an UNREADABLE living side (no text
+    // above while the file exists) proves nothing, so it yields none.
+    if (livingText !== undefined || !existsSync(livingPath)) {
+      revivalCandidates.set(svc, absentEvents({ featDoc, featSlots, livingDoc, livingSlots }));
+    }
 
     if (livingText !== undefined) {
       gradeBaselines({ featSlots, livingSlots, featPlain, livingPlain, svc, featureId }, issues);
@@ -247,5 +261,5 @@ export async function declaredEvents(
       });
     }
   }
-  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable };
+  return { featureDocs, mergedDocs, netRemoved, stoppedSending, links, unreadable, revivalCandidates };
 }

@@ -535,6 +535,7 @@ model {
   loam.core.coherence -> loam.core.kernel
   loam.core.coherence -> loam.core.openapi
   loam.core.coherence -> loam.core.repo
+  loam.core.coherence -> loam.core.staging
   loam.core.coherence -> loam.core.usecases
 
   loam.core.delta -> loam.core.capabilities
