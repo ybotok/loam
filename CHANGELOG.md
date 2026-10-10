@@ -34,6 +34,31 @@ unchanged.
   `openapi.yaml` stays red until that service has a `model.likec4` — `service.no-model` is the
   ratchet working as designed.
 
+### Fixed — one LikeC4 typo no longer floods agent-facing output
+
+No code, flag, path or payload key was added, changed or removed; what moves is the TEXT of the
+diagnostics LikeC4 hands loam, and one warning that stops cascading.
+
+- **A parser's "Expecting: one of these possible Token sequences" message is cut to its first four
+  alternatives plus `… (+N more)`**, keeping the `but found: '…'` line — on every surface that
+  prints a LikeC4 diagnostic (`validate`, `context`, `show`, `tasks`, `doctor`, `gate`,
+  `archive`). One dropped quote in the example fleet's order-service model made `loam validate
+  --service order-service` print 18,503 lines (434 KB; 458 KB as `--json`); it now prints 27 lines
+  (1.7 KB; 5.5 KB as `--json`).
+- **Each LikeC4 diagnostic is reported once, in line order.** The same message at the same line of
+  the same file used to be listed twice, and the lexer's error led the parser's even when it sat a
+  dozen lines below the fault. The `N error(s)` count in `c4.invalid`, `delta.invalid` and the other
+  parse findings now counts distinct diagnostics.
+- **`covers.unknown` is no longer raised for a service whose own `model.likec4` does not parse.**
+  `c4.invalid` is the one finding; the six `covers.unknown` warnings the example fleet showed for one
+  dropped quote named ids that were spelled right. The same suspension already applied to a model
+  extending a map that does not parse.
+- **A broken document no longer bloats anybody else's briefing.** A dropped quote in a feature's
+  `delta.likec4` made `loam context order-service --json` 626 KB instead of 24 KB (now 27 KB). The
+  fleet map's parse error reached `useCaseScan.error` on every service's `context --json` and the
+  `loam gate` "landscape cannot be used" message raw — 173 KB and 152 KB — and now goes through the
+  same spelling as every other diagnostic, which adds its 1-based `L<n>:` line (23 KB and 2 KB).
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:

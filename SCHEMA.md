@@ -1533,7 +1533,10 @@ scenarios exercise. Comma-separated, same keep-last-line quirk (and the same rep
 
 An entry that resolves to nothing is `covers.unknown` (**warning**, with close ids offered where
 they exist): the typo guard, because a mistyped entry silently costs exactly the coverage it was
-written for.
+written for. It is suspended — every form at once — for a service whose `model.likec4` could not be
+read, whether the model itself does not parse (`c4.invalid`) or it extends a map that does not
+(`spine.landscape-invalid`): an entry naming a container of an unread model is not a typo, and the
+one repair brings the whole grade back on the next run.
 
 **Coverage obligations** — both warnings, deliberately: they never gate `archive`, and `--strict` is
 the CI escalation.

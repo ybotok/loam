@@ -41,6 +41,7 @@ import type { StepScope } from "../c4/resolve/steps.js";
 import { CAP_TAG_PREFIX, REQ_TAG_PREFIX } from "../capabilities/usecase-join.js";
 import type { ParsedView } from "../c4/parsed/dynamic-views.js";
 import { architectureProjectDocuments, loadArchitecture } from "../c4/project/architecture.js";
+import { errorText } from "../c4/likec4.js";
 import { serviceResolver } from "../c4/resolve/service.js";
 import type { DocsDir } from "../kernel/ids/dirs.js";
 
@@ -84,7 +85,13 @@ export type UseCaseScan =
     }
   | {
       kind: "unreadable";
-      /** LikeC4's own messages, so a caller can say WHICH document broke. */
+      /**
+       * LikeC4's own messages, so a caller can say WHICH document broke —
+       * spelled through `errorText` like every other diagnostic loam prints.
+       * They used to travel raw, so the 1-based line was missing and one
+       * dropped quote in the map put a 143 KB parser message into the
+       * `useCaseScan.error` of every service's `loam context --json`.
+       */
       errors: string[];
     };
 
@@ -196,7 +203,7 @@ export async function readUseCases(req: UseCaseRequest): Promise<UseCaseScan> {
   // file with one unresolved element leaves the whole project unusable, and
   // grading a flow against half a map is the wrong answer this refuses to give.
   if (doc.errors.length > 0) {
-    return { kind: "unreadable", errors: doc.errors.map((e) => e.message) };
+    return { kind: "unreadable", errors: doc.errors.map(errorText) };
   }
   return {
     kind: "read",
