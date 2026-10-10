@@ -90,7 +90,9 @@ export const REFUSALS = `- \`loam audit-openspec <root>\` is the read-only OpenS
   \`services-missing\`.
 - Both modes read frontmatter (\`frontmatter.missing\`, \`frontmatter.malformed\`,
   \`frontmatter.field-mismatch\`,
-  \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`); a service's spec.md —
+  \`frontmatter.status-unknown\`, \`frontmatter.field-missing\`, and
+  \`frontmatter.owner-mismatch\` when one service's spec.md and arch.spec.md name two
+  different owners); a service's spec.md —
   and its arch.spec.md, same conventions — additionally carries the sources chain
   (\`sources.absent\`, \`sources.path-missing\`, \`sources.empty\`, \`sources.skipped\`,
   \`sources.unvouched\`, \`sources.stale\`) plus the two doc-side checks,

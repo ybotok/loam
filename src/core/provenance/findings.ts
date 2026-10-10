@@ -53,6 +53,7 @@ export async function serviceProvenance(
 ): Promise<Finding[]> {
   const paths = await locateServicePaths(docsDir, service, opts.fleet);
   const findings: Finding[] = [];
+  const owners: { file: string; owner: string }[] = [];
   // Both requirement-carrying specs get the same pass: arch.spec.md follows
   // spec.md's frontmatter conventions exactly, so the checks are one loop —
   // only the label tells a reader which file moved. The pair comes from
@@ -79,9 +80,47 @@ export async function serviceProvenance(
       findings.push(...(await sourceFindings(fm, service, label, opts.repoDir)));
       findings.push(...contentFindings(fm, raw, service, label));
       findings.push(...scopeFindings(fm, service, label));
+      // Trimmed and non-empty, so `owner: ""` stays the absence it means
+      // rather than a second owner that disagrees with the first.
+      const owner = stringField(fm, "owner")?.trim();
+      if (owner !== undefined && owner.length > 0) owners.push({ file, owner });
     }
   }
+  findings.push(...ownerFindings(service, owners));
   return findings;
+}
+
+/**
+ * The two spec files of ONE service naming two different owners.
+ *
+ * `owner` is free text and loam never decides who owns anything (SCHEMA:
+ * ownership is CODEOWNERS, and there is no permission model to grow). But
+ * `loam show` and `loam context` print spec.md's value as the service's badge,
+ * so when spec.md says `orders-team` and arch.spec.md says a team that left
+ * last quarter, an agent reading arch.spec.md routes its question to one team
+ * while every summary names the other — and nothing said so. That is a
+ * disagreement between two documents in one directory, which is loam's own job
+ * to catch whatever the forge says. Comparing against CODEOWNERS is NOT done
+ * here: that is a separate question with a separate owner decision behind it.
+ *
+ * A WARNING: neither value is wrong on its own, and only a person knows which
+ * one is current. Silent when either file names no owner — absence is
+ * `frontmatter.field-missing`'s finding, and one fact gets one code.
+ */
+function ownerFindings(service: string, owners: { file: string; owner: string }[]): Finding[] {
+  if (new Set(owners.map((o) => o.owner)).size < 2) return [];
+  return [
+    {
+      severity: "warn",
+      code: "frontmatter.owner-mismatch",
+      subject: service,
+      message:
+        `${service}: ${owners.map((o) => `${o.file} names owner '${o.owner}'`).join(", ")} — ` +
+        "one service, two owners, while `loam show` and `loam context` print only spec.md's. " +
+        "Make them agree; only a person knows which one is current",
+      details: owners.map((o) => `${o.file}: ${o.owner}`),
+    },
+  ];
 }
 
 export async function featureProvenance(

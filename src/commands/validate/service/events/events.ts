@@ -119,7 +119,7 @@ export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
       severity: "error",
       code: "asyncapi.invalid",
       subject: service,
-      message: `${service}: asyncapi.yaml does not parse — the event spine is unchecked for this service`,
+      message: `${service}: asyncapi.yaml does not read as AsyncAPI 3.0 (it does not parse, or it declares an older version) — the event spine is unchecked for this service`,
       ...(events.error === undefined ? {} : { details: [events.error] }),
     });
   } else {

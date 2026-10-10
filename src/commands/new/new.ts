@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { existsSync } from "node:fs";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { commitScaffold } from "./commit.js";
 import { join } from "node:path";
@@ -8,7 +9,9 @@ import { parseServiceIds } from "../../core/kernel/ids/service.js";
 import { emitJson, fail, repoPath, reportNoConfig } from "../../core/envelope/json.js";
 import { UnsafePathError, resolveInside } from "../../core/kernel/path-safety.js";
 import { featureIdFromDirName, nearestIds } from "../../core/repo/entries.js";
-import { featuresDir } from "../../core/repo/paths.js";
+import { featuresDir, landscapePath } from "../../core/repo/paths.js";
+import { loadArchitecture } from "../../core/c4/project/architecture.js";
+import { drawnServiceElements } from "../../core/c4/resolve/service.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { listServices } from "../../core/repo/repo.js";
 import { docsRepoReady, reportDocsRepoError } from "../policy/gate.js";
@@ -149,7 +152,7 @@ export function registerNew(program: Command): void {
 
       const files: Record<string, string> = {
         "intent.md": intentTemplate(featureId, opts.title),
-        "delta.likec4": deltaTemplate(featureId, touched, [...created]),
+        "delta.likec4": deltaTemplate(featureId, touched, [...created], await drawnIds(docsDir, touched)),
       };
       for (const svc of [...touched, ...created]) {
         files[join("specs", svc, "spec.md")] = specTemplate(featureId, svc);
@@ -299,6 +302,25 @@ async function unknownServiceNotes(docsDir: DocsDir, touched: string[]): Promise
   return notes;
 }
 
+/**
+ * The element ids the fleet map already draws the touched services as, so the
+ * delta's context lines reuse them instead of guessing — the delta's own
+ * comment tells the author to reuse the map's identifiers, and it used to
+ * hand them a camel-cased guess that never matched a seeded map's `svc_<id>`.
+ *
+ * Best effort by design: `new` is a scaffolder, not a validator. No map, or
+ * one that does not parse, leaves every id to the seed convention, and
+ * `loam validate` reports the map on its own. The project loader and the
+ * resolver are the ones `loam adopt` reads, so the two commands cannot name
+ * one box two ways.
+ */
+async function drawnIds(docsDir: DocsDir, touched: string[]): Promise<ReadonlyMap<string, string>> {
+  if (touched.length === 0 || !existsSync(landscapePath(docsDir))) return new Map();
+  const land = await loadArchitecture(docsDir);
+  if (land.errors.length > 0) return new Map();
+  return drawnServiceElements(land.elements, new Set((await listServices(docsDir)).map((s) => s.id)));
+}
+
 /* ------------------------------------------------------------------ */
 /* Naming                                                              */
 /* ------------------------------------------------------------------ */
@@ -314,5 +336,3 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
-/** A LikeC4 identifier for a service name: `payment-split-service` -> `paymentSplitService`. */

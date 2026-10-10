@@ -60,7 +60,7 @@ export function printPack(pack: ContextPack): void {
     console.log();
   }
   if (pack.asyncapi.unreadable) {
-    console.log(`! asyncapi.yaml does not parse — nothing here lists what ${pack.service} publishes or consumes`);
+    console.log(`! asyncapi.yaml does not read as AsyncAPI 3.0 — nothing here lists what ${pack.service} publishes or consumes`);
     if (pack.asyncapi.error !== undefined) console.log(`  ${pack.asyncapi.error}`);
     console.log();
   }
@@ -229,7 +229,7 @@ function printFeature(f: PackFeature, service: string): void {
   }
 
   if (f.events.unreadable) {
-    console.log("Events: asyncapi.yaml does not parse");
+    console.log("Events: asyncapi.yaml does not read as AsyncAPI 3.0");
     if (f.events.error !== undefined) console.log(`  ${f.events.error}`);
     console.log();
   } else if (f.events.changes.length > 0) {

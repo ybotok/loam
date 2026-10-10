@@ -21,24 +21,21 @@
 import { relative } from "node:path";
 import type { LikeC4Error } from "../../c4/likec4.js";
 import { spellCall, edgeTemplates, type AttestedCall } from "../../c4/resolve/attested.js";
+import { serviceElementId } from "../../c4/seed/template.js";
 import type { BriefTarget } from "../targets.js";
 
-/**
- * The LikeC4 identifier the fleet map's element for a service conventionally
- * carries: the directory name, camel-cased. A suggestion and nothing more —
+/*
+ * The identifier a brief suggests for an element the map does not draw yet is
+ * `serviceElementId` — `loam seed`'s `svc_<id>`, never a convention of the
+ * brief's own. It used to be the directory name camel-cased here, so on a
+ * seeded fleet the brief handed an agent `paymentService` beside a map whose
+ * every box was `svc_payment_service`. A suggestion and nothing more —
  * `metadata { service '<id>' }` is what joins the element to the directory —
  * but a brief handing over a concrete block gets followed, and one describing
- * a block in prose gets improvised on.
+ * a block in prose gets improvised on, so the spelling has to be the fleet's.
+ * The `svc_` prefix also covers what the old helper special-cased by hand: a
+ * service id may open with a digit, a LikeC4 identifier may not.
  */
-function elementIdFor(service: string): string {
-  const parts = service.split(/[^A-Za-z0-9]+/).filter((p) => p !== "");
-  if (parts.length === 0) return "service";
-  const head = parts[0]!.toLowerCase();
-  const tail = parts.slice(1).map((p) => p[0]!.toUpperCase() + p.slice(1).toLowerCase());
-  const id = head + tail.join("");
-  // LikeC4 identifiers cannot open with a digit; a service id can.
-  return /^[0-9]/.test(id) ? `svc${id[0]!.toUpperCase()}${id.slice(1)}` : id;
-}
 
 /* ------------------------------------------------------------------ */
 /* The target                                                          */
@@ -94,7 +91,7 @@ function landscapeBlock(req: LandscapeArtifactRequest): string {
       "}",
     ].join("\n");
   }
-  const id = elementIdFor(service);
+  const id = serviceElementId(service);
   const calls =
     expects.length > 0
       ? expects.map((op) => `//   <caller> -> ${id} 'Calls ${op}' { metadata { op '${op}' } }`)
@@ -236,7 +233,7 @@ export interface InstructionRequest {
  */
 export function instructionFor(req: InstructionRequest): string {
   const { service, state, expects, servicePath } = req;
-  const id = elementIdFor(service);
+  const id = serviceElementId(service);
   const bind = `an element bound with \`metadata { service '${service}' }\``;
   const consequence =
     `Until one resolves, \`loam validate --all\` reports \`landscape.service-unmodelled\` (error) for ` +
@@ -330,7 +327,7 @@ function accountability(req: InstructionRequest, id: string): string {
 
 function edgelessInstruction(req: InstructionRequest): string {
   const { servicePath, attested, foreignTags } = req;
-  const id = req.elementId ?? elementIdFor(req.service);
+  const id = req.elementId ?? serviceElementId(req.service);
   // "the fleet map (architecture/)" rather than the landscape FILE: the map is
   // the whole project, an element may be declared in any document of it, and
   // LikeC4 hands back no source document for an element — so naming a file

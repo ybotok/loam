@@ -97,7 +97,10 @@ no fleet manifest, deliberately — the wiring is one file per repo, and it is r
    entry, in one journaled transaction, and guesses nothing: a human stated every fact in the file,
    which is what keeps seed on the same side of the no-extractor line as `loam new`. Re-running is
    safe — once the landscape has been hand-edited, seed refuses (`seed-landscape-edited`) rather
-   than overwrite it.
+   than overwrite it. That makes seed a day-zero step: list every service id you already know in
+   `fleet.yaml` up front, because the first `metadata { op }` below has no spelling in
+   `fleet.yaml`. From then on the map grows without seed — `loam adopt --service <id>` briefs the
+   element and edges a new service adds, and a feature's C4 delta carries every other change.
 
    Drawing it by hand instead is entirely legal, and the landscape is a **required** artifact
    either way, not an optional one: `loam validate --all` reports `landscape.missing` as an error

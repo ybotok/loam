@@ -59,6 +59,52 @@ diagnostics LikeC4 hands loam, and one warning that stops cascading.
   `loam gate` "landscape cannot be used" message raw — 173 KB and 152 KB — and now goes through the
   same spelling as every other diagnostic, which adds its 1-based `L<n>:` line (23 KB and 2 KB).
 
+### Added
+
+- **New warning `frontmatter.owner-mismatch`** from `loam validate` (`--service` and `--all`) when
+  one service's `spec.md` and `arch.spec.md` both name an `owner` and the two differ. `loam show`
+  and `loam context` print only `spec.md`'s owner, so the other value was a second answer nobody
+  saw. Its `details` list each file's value (`spec.md: <owner>`, `arch.spec.md: <owner>`). Silent
+  when either file names no owner (that stays `frontmatter.field-missing`). It compares the two
+  files only, never CODEOWNERS.
+- **`openapi.generated-stale` now says what moved.** The finding gains `details` naming each
+  operationId that differs between the build's contract and the committed copy — `served, not in
+  the committed copy: <id>` and `committed, no longer served: <id>` — and its message counts both
+  sides, or says every operationId matches when the difference is inside an operation or outside
+  `paths`. The digest still decides whether it fires; same code, same severity.
+
+### Changed
+
+- **An AsyncAPI 1.x or 2.x document is `asyncapi.invalid`, once.** loam reads AsyncAPI 3.0 only,
+  and a document whose `asyncapi:` field says `1.` or `2.` used to read as a 3.0 contract with no
+  messages: one `spine.message-undefined` per landscape edge, one `spec-event.message-undefined` per
+  requirement and a `spine.message-unproduced` on every consumer, none naming the version. It now
+  takes the unreadable path every broken contract takes — one `asyncapi.invalid` whose `details`
+  name the version and `asyncapi convert --target-version=3.0.0`, and nothing on the event axis
+  graded against it. The same applies to a feature's own `asyncapi.yaml` under `--feature`. The
+  `asyncapi.invalid` message, and the `context` / `delta` lines for an unreadable event contract,
+  now say "does not read as AsyncAPI 3.0" rather than "does not parse".
+- **Suggested element ids follow `loam seed`'s convention.** For a service the fleet map does not
+  draw yet, the `loam adopt` brief and the `loam new` delta scaffold now suggest `svc_<id>` (dots
+  and dashes folded to `_`, e.g. `svc_payment_service`) instead of a camel-cased name, and
+  `loam new --touches <id>` reuses the element id the map already draws the service as. A service
+  the map nests inside another element is quoted by its last segment with a note naming the parent,
+  since a dotted id is no top-level declaration. The commented example in a freshly seeded
+  `architecture/landscape.likec4` uses the seeded ids too. Element ids stay cosmetic —
+  `metadata { service '<id>' }` is the join — so nothing already written needs to change.
+- **`seed-landscape-edited` gives advice that can be followed.** The refusal and `loam explain
+  seed-landscape-edited` used to say "fold the edits into fleet.yaml and delete the file", which is
+  impossible once an edge carries `metadata { op }` (fleet.yaml cannot). They now say seed runs
+  once, before any operation is drawn, and that the map grows from then on through
+  `loam adopt --service <id>` and feature C4 deltas. Same code, same exit code.
+- **`migrate-openspec` and `audit-openspec` read the OpenSpec 1.13 requirement grammar.** A
+  `RENAMED` pair written with a `*` or `+` bullet, or with no bullet, is a pair (it was
+  `openspec.renamed-malformed`); a `REMOVED` section written as a bullet list (`-`, `*` or `+`) of
+  requirement headings is read as those removals (it was `openspec.change-empty`); and a closing
+  `#` run on a `### Requirement:` or `#### Scenario:` heading is dropped at ingest, so
+  `### Requirement: Invoice totals ###` stages as `Invoice totals` and a MODIFIED delta naming it
+  no longer fails `loam validate` as `delta.modified-unknown`. loam's own parser is unchanged.
+
 ## [0.2.0-alpha.8] - 2026-09-21
 
 The work packet: the verify checklist read forwards. Still a prerelease on the `alpha` line:
