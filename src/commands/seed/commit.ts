@@ -22,9 +22,9 @@ import { authoredRefusal } from "../../core/repo/tree/render/service/header.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import type { FleetTree } from "../../core/repo/tree/walk.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { planSeedWrites, type SeedPlanInput } from "./plan.js";
 
@@ -73,22 +73,10 @@ export type SeedCommit =
 
 export async function commitSeed(req: SeedCommitRequest): Promise<SeedCommit> {
   const { docsDir } = req;
-  let releaseLock: () => Promise<void>;
+  const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
+  if (!opened.ok) return opened;
+  const { recovered } = opened;
   try {
-    releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-  } catch (err) {
-    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-    throw err;
-  }
-  try {
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(docsDir);
-    } catch (err) {
-      if (!(err instanceof InterruptedCommitError)) throw err;
-      return { ok: false, code: "commit-interrupted", message: err.message };
-    }
-
     // Provenance first, then the tree: both read the repo as this run will
     // leave it, and both refusals must prove nothing was written.
     const landscape = await classifyLandscape(docsDir);
@@ -163,7 +151,7 @@ export async function commitSeed(req: SeedCommitRequest): Promise<SeedCommit> {
       recovered,
     };
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
 

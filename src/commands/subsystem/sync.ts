@@ -113,9 +113,8 @@ import {
 } from "../../core/repo/tree/render/projects.js";
 import type { WalkedService } from "../../core/repo/tree/walk.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { planWrite, type PlannedWrite } from "../../core/staging/writes.js";
 import { readGeneratedFile } from "../../core/repo/tree/render/service/header.js";
@@ -149,26 +148,15 @@ interface ProjectPlan {
 }
 
 export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
-  let releaseLock: () => Promise<void>;
-  try {
-    releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-  } catch (err) {
-    if (!(err instanceof DocsBusyError)) throw err;
-    fail(json, "docs-busy", err.message);
+  // A predecessor's journal is recovered (or refused) before the tree is
+  // read: the views file itself may be the half-written one.
+  const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
+  if (!opened.ok) {
+    fail(json, opened.code, opened.message);
     return;
   }
+  const { recovered } = opened;
   try {
-    // A predecessor's journal is recovered (or refused) before the tree is
-    // read: the views file itself may be the half-written one.
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(docsDir);
-    } catch (err) {
-      if (!(err instanceof InterruptedCommitError)) throw err;
-      fail(json, "commit-interrupted", err.message);
-      return;
-    }
-
     const tree = await listFleetTree(docsDir);
     // BOTH generated files, from ONE read of the map — `./txn/views.ts` says why
     // the pair is one answer and why the parsed document, never a literal, is
@@ -266,7 +254,7 @@ export async function runSync(docsDir: DocsDir, json: boolean): Promise<void> {
     }
     say();
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
 

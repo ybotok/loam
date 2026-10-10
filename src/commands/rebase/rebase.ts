@@ -7,9 +7,8 @@ import { compareIds } from "../../core/repo/entries.js";
 import { featureSpecPaths, SPEC_AXES } from "../../core/repo/paths.js";
 import { missingFeatureMessage, resolveFeature } from "../../core/repo/repo.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLock, DocsBusyError } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 import { plural, sayRecovered } from "../policy/format.js";
@@ -95,25 +94,14 @@ export function registerRebase(program: Command): void {
       // replaced a millisecond later is precisely the false "I read this" the
       // pin exists to make impossible. One writer per docs repo, refusing
       // rather than queueing, exactly as archive takes it.
-      let release: () => Promise<void>;
+      //
+      // A journal in the repo means the LAST write never finished — reading
+      // living documents to compute pins over a half-commit would digest
+      // bytes no run ever produced. Recover (or refuse) first, under the
+      // same lock the commit will hold.
+      const opened = await openCommitWindow(config.docsDir, 0);
+      if (!opened.ok) return fail(json, opened.code, opened.message);
       try {
-        release = await acquireDocsLock(config.docsDir);
-      } catch (err) {
-        if (!(err instanceof DocsBusyError)) throw err;
-        return fail(json, "docs-busy", err.message);
-      }
-      try {
-        // A journal in the repo means the LAST write never finished — reading
-        // living documents to compute pins over a half-commit would digest
-        // bytes no run ever produced. Recover (or refuse) first, under the
-        // same lock the commit will hold.
-        let recovered: CommitRecovery | null;
-        try {
-          recovered = await recoverInterruptedCommit(config.docsDir);
-        } catch (err) {
-          if (!(err instanceof InterruptedCommitError)) throw err;
-          return fail(json, "commit-interrupted", err.message);
-        }
         if (opts.living === true) {
           await rebaseLivingLocked(config.docsDir, opts);
           return;
@@ -128,9 +116,9 @@ export function registerRebase(program: Command): void {
             "loam rebase needs a feature id — e.g. `loam rebase FEAT-101`. To pin the living corpus's `Realizes:` entries instead, run `loam rebase --living`.",
           );
         }
-        await rebaseLocked(config.docsDir, featureId, { ...opts, recovered });
+        await rebaseLocked(config.docsDir, featureId, { ...opts, recovered: opened.recovered });
       } finally {
-        await release();
+        await opened.release();
       }
     });
 }

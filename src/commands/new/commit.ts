@@ -11,9 +11,9 @@ import { type DocsDir } from "../../core/kernel/ids/dirs.js";
 import { resolveFeature } from "../../core/repo/repo.js";
 import { DocsRepoUnavailableError } from "../../core/repo/state.js";
 import { stageWrites } from "../../core/staging/commit.js";
-import { type CommitRecovery, InterruptedCommitError } from "../../core/staging/interrupted.js";
-import { acquireDocsLockWaiting, DocsBusyError, LOCK_WAIT_MS } from "../../core/staging/lock.js";
-import { recoverInterruptedCommit } from "../../core/staging/recovery/recover.js";
+import { type CommitRecovery } from "../../core/staging/interrupted.js";
+import { LOCK_WAIT_MS } from "../../core/staging/lock.js";
+import { openCommitWindow } from "../../core/staging/recovery/recover.js";
 import { commitStaged } from "../../core/staging/txn/transaction.js";
 import { type PlannedWrite } from "../../core/staging/writes.js";
 
@@ -42,21 +42,10 @@ export async function commitScaffold(
   // The commit window holds the docs lock: two `new`s for one id serialise
   // into a stable already-exists, and a predecessor's interrupted commit is
   // rolled forward (or refused) before this one stages anything.
-  let releaseLock: () => Promise<void>;
+  const opened = await openCommitWindow(docsDir, LOCK_WAIT_MS);
+  if (!opened.ok) return opened;
+  const { recovered } = opened;
   try {
-    releaseLock = await acquireDocsLockWaiting(docsDir, LOCK_WAIT_MS);
-  } catch (err) {
-    if (err instanceof DocsBusyError) return { ok: false, code: "docs-busy", message: err.message };
-    throw err;
-  }
-  try {
-    let recovered: CommitRecovery | null;
-    try {
-      recovered = await recoverInterruptedCommit(docsDir);
-    } catch (err) {
-      if (!(err instanceof InterruptedCommitError)) throw err;
-      return { ok: false, code: "commit-interrupted", message: err.message };
-    }
     // The one existence check, UNDER the lock and AFTER recovery: two racing
     // runs serialise on it, and a recovered half-scaffold has been completed
     // by the recovery above, so this refusal is truthful.
@@ -88,6 +77,6 @@ export async function commitScaffold(
     }
     return { ok: true, recovered };
   } finally {
-    await releaseLock();
+    await opened.release();
   }
 }
