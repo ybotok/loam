@@ -6,8 +6,8 @@
  * feature document's readability (`asyncapi.invalid` suspends the rest, the
  * unreadableApis discipline), the baseline pins and removal-marker exactness
  * (./grades.ts, slot-keyed), the removal↔REMOVED-requirement justification
- * join, and the merge simulation (./merged.ts) the cross-axis checks grade
- * against. What it cannot answer alone — who still consumes a message, what
+ * join, and the merge simulation (../retired/merged.ts) the cross-axis
+ * checks grade against. What it cannot answer alone — who still consumes a message, what
  * other features are adding — lives in ./lookups.ts, and the cross-axis
  * grading of edges and requirement lines in ./events.ts.
  *
@@ -33,7 +33,7 @@ import type { AsyncapiDoc } from "../../asyncapi/model.js";
 import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
-import { mergedAsyncapiDoc } from "./merged.js";
+import { mergedAsyncapiDoc } from "../retired/merged.js";
 import { messageRetirements } from "../retired/retirement.js";
 import { absentEvents, type AbsentEvents } from "../retired/revived.js";
 import { readEventPair } from "../retired/event-pair.js";
@@ -58,8 +58,8 @@ export interface DeclaredEvents {
   featureDocs: Map<PathableService, AsyncapiDoc>;
   /**
    * Per touched service: the living contract as the MERGE would leave it
-   * (./merged.ts) — present where a feature delta sits over a readable
-   * living contract and the simulation had an answer. What `declares()` and
+   * (../retired/merged.ts) — present where a feature delta sits over a
+   * readable living contract and the simulation had an answer. What `declares()` and
    * the consumer gate's wire half read, so the gate grades the post-archive
    * contract rather than the union of two documents one of which is leaving.
    */
