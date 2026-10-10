@@ -34,7 +34,7 @@ export interface ApiAxis {
   land: LoadedDoc | null;
   /** Its element→service resolver, built once per run; null exactly when `land` is. */
   landSvcOf: ((id: string) => DeclaredService) | null;
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 /**

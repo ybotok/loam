@@ -15,7 +15,7 @@
  * one module is what stops "new" being decided differently in three places.
  */
 import { existsSync } from "node:fs";
-import { loadFile, type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
+import { type Elem, type LoadedDoc, type Rel } from "../../core/c4/likec4.js";
 import { elementService, serviceResolver } from "../../core/c4/resolve/service.js";
 import { type PathableService } from "../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile } from "../../core/repo/paths.js";
@@ -54,7 +54,14 @@ export interface DeltaArch {
   scenarioText: string;
   /** The living landscape under --all; undefined means "load it if you need it", null "there is none". */
   preloadedLand?: LoadedDoc | null;
-  fleet?: FleetContext;
+  /**
+   * The read index the service models below are read through. Required, for
+   * `validateService`'s reason: `serviceModel` needs the enumeration and a
+   * document memo to answer at all. Every validate mode builds one before it
+   * grades anything — `--feature` included (`validate.ts`) — so there is no
+   * second, unmemoised reading rule here for a run that arrived without one.
+   */
+  fleet: FleetContext;
 }
 
 export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
@@ -71,11 +78,6 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
     fleet,
   } = delta;
   const findings: Finding[] = [];
-  // The read index the service models below are read through. A feature target
-  // may arrive without one (`validate --feature` builds no fleet), and it gets
-  // its own for `validateService`'s reason: `serviceModel` needs the enumeration
-  // and a document memo to answer at all.
-  const context = fleet ?? new FleetContext();
 
   // The delta's own element→service resolver, built once for the whole feature.
   // `serviceOf` is a one-shot wrapper that rebuilds its index on every call, and
@@ -139,11 +141,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
   const livingLandscape = async (): Promise<LoadedDoc | null> => {
     if (living === undefined) {
       const lp = landscapeFile(docsDir);
-      living = existsSync(lp)
-        ? fleet === undefined
-          ? await loadFile(lp)
-          : await fleet.loadLikeC4(lp)
-        : null;
+      living = existsSync(lp) ? await fleet.loadLikeC4(lp) : null;
     }
     return living;
   };
@@ -227,7 +225,7 @@ export async function deltaArchCoverage(delta: DeltaArch): Promise<Finding[]> {
         // convicted as a typo. `mapUnreadable` is the same silence for the same
         // reason: nothing may widen a scope out of a document nobody could read.
         const svcPaths = await locateServicePaths(docsDir, svc, fleet);
-        const model = existsSync(svcPaths.model) ? await context.serviceModel(docsDir, svcPaths) : null;
+        const model = existsSync(svcPaths.model) ? await fleet.serviceModel(docsDir, svcPaths) : null;
         if (model !== null && !model.mapUnreadable && model.doc.errors.length === 0) {
           scope = {
             elements: [...baseElements, ...model.doc.elements],

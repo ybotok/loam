@@ -44,7 +44,7 @@ export async function evidencePinFindings(
   docsDir: DocsDir,
   service: PathableService,
   repoDir: string | undefined,
-  fleet?: FleetContext,
+  fleet: FleetContext,
 ): Promise<Finding[]> {
   if (repoDir === undefined) return [];
   // Membership questions cross the provenance line through plain strings by

@@ -32,7 +32,7 @@ import { FleetContext } from "../../../core/fleet-context.js";
 import { type Finding } from "../../../core/vocabulary/report.js";
 import type { DocsDir } from "../../../core/kernel/ids/dirs.js";
 
-export async function glossaryFindings(docsDir: DocsDir, fleet?: FleetContext): Promise<Finding[]> {
+export async function glossaryFindings(docsDir: DocsDir, fleet: FleetContext): Promise<Finding[]> {
   const root = glossaryDir(docsDir);
   const glossary = await readGlossary(root);
   // The directory's existence is the axis's opt-in, exactly as

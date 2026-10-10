@@ -18,10 +18,8 @@ import { type PathableService } from "../../../core/kernel/ids/service.js";
 import { landscapePath as landscapeFile, permissionsPath } from "../../../core/repo/paths.js";
 import { locateServicePaths } from "../../../core/repo/service-target.js";
 import { readVocabulary } from "../../../core/permissions/permissions.js";
-import { readCapabilityVocabulary } from "../../../core/capabilities/capabilities.js";
 import { capabilityRequirementIndex, capabilityUnknownFindings } from "../../../core/capabilities/findings.js";
 import { realizesStaleFindings, realizesUnknownFindings } from "../../../core/capabilities/realizes/findings.js";
-import { parseRequirements, readRequirementsDocument } from "../../../core/document/parse.js";
 import { requiresUnknownFindings } from "../checks/requirements.js";
 import { listServices } from "../../../core/repo/repo.js";
 import { type Finding, type TargetReport } from "../../../core/vocabulary/report.js";
@@ -79,7 +77,17 @@ interface ServiceCheck {
   /** The living landscape under --all; undefined means "load it if you need it", null means "there is none". */
   preloaded?: LoadedDoc | null;
   gherkinDir?: string;
-  fleet?: FleetContext;
+  /**
+   * The read index this target reads the fleet map and the model through.
+   *
+   * Required, and every validate mode builds one before it grades anything —
+   * the single-service run included (`validate.ts`) — rather than this target
+   * keeping a second reading rule for a run that arrived without one:
+   * `serviceModel` needs the enumeration and a document memo to answer at
+   * all, and both live there. Request-scoped like every other `FleetContext`
+   * — created for the invocation, dropped with it.
+   */
+  fleet: FleetContext;
   /**
    * True when this run ALSO emits a `landscape` target. It decides one thing:
    * whether a landscape parse error's details are repeated here. Under --all
@@ -139,16 +147,6 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // elements this set makes resolvable.
   const known = new Set((await listServices(docsDir, fleet)).map((s) => s.id));
 
-  /**
-   * The read index this target reads the fleet map and the model through.
-   *
-   * A single-service run may arrive without one, and it gets its own rather
-   * than a second reading rule: `serviceModel` needs the enumeration and a
-   * document memo to answer at all, and both live here. Request-scoped like
-   * every other `FleetContext` — created for this call, dropped with it.
-   */
-  const context = fleet ?? new FleetContext();
-
   // C4 model. Its absence is an error — this is where `adopt` comes in — but it
   // must NOT silence the rest of the gate stack: `loam archive` of a feature
   // introducing a new service creates exactly this state (spec.md, arch.spec.md,
@@ -181,7 +179,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       text: { marker: false },
     });
   } else {
-    model = await context.serviceModel(docsDir, paths);
+    model = await fleet.serviceModel(docsDir, paths);
     elements = model.doc.elements;
     relationships = model.doc.relationships;
     if (!model.mapUnreadable && model.doc.errors.length === 0) {
@@ -226,7 +224,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // draws no fleet", and a repo with an `architecture/usecases/` and no map is
   // that state, not a map that loaded empty.
   const land =
-    preloaded ?? (existsSync(landscapeFile(docsDir)) ? await context.architecture(docsDir) : null);
+    preloaded ?? (existsSync(landscapeFile(docsDir)) ? await fleet.architecture(docsDir) : null);
 
   // Where a standalone model's copies of the map's elements have drifted. After
   // `c4.valid` because it is a claim about a model that parsed, and silent for
@@ -301,7 +299,7 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
       land,
       known,
       docsDir,
-      fleet: context,
+      fleet,
     })),
   );
 
@@ -328,16 +326,12 @@ export async function validateService(check: ServiceCheck): Promise<TargetReport
   // rides the same loop against ITS fleet vocabulary; under --all the fleet
   // memo makes that one parse for the whole run.
   const vocabulary = await readVocabulary(permissionsPath(docsDir));
-  const capabilities =
-    fleet === undefined ? await readCapabilityVocabulary(docsDir) : await fleet.capabilities(docsDir);
+  const capabilities = await fleet.capabilities(docsDir);
   // The requirement-level index behind `Realizes:`. Built once for both axes,
   // and behind the same ladder `capabilityUnknownFindings` applies — an absent
   // or unreadable vocabulary means no reads and no grades at all, so a fleet
   // that has not adopted the axis pays nothing for a line it never wrote.
-  const capabilityReqs = await capabilityRequirementIndex(
-    capabilities,
-    fleet === undefined ? async (p) => parseRequirements(await readRequirementsDocument(p)) : (p) => fleet.readRequirements(p),
-  );
+  const capabilityReqs = await capabilityRequirementIndex(capabilities, (p) => fleet.readRequirements(p));
   for (const [label, docReqs] of [
     ["spec.md", reqs],
     ["arch.spec.md", archReqs],

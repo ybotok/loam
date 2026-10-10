@@ -46,7 +46,7 @@ export interface EventAxis {
   landSvcOf: ((id: string) => DeclaredService) | null;
   /** Service directories that exist — the fleet the producer question is asked over. */
   known: ReadonlySet<RawServiceId>;
-  fleet?: FleetContext;
+  fleet: FleetContext;
 }
 
 export async function eventAxisFindings(axis: EventAxis): Promise<Finding[]> {
