@@ -282,8 +282,13 @@ Which features it grades is the one thing a pipeline has to say. Without `--sinc
 deploys after its feature shipped is gated without it — and under `--strict`, archiving would be
 the cheapest way past an unverified-feature warning. `loam gate --since <ref>` closes that: pass
 the docs-repo commit your last deploy recorded, and every feature archived after it (its
-`features/archive/<FEAT>/` directory absent at the ref) that touches the service is graded too,
-under the same `gate.feature-unverified`, its `features[]` row carrying `archived: true`. The ref is
+`features/archive/<FEAT>/` directory absent at the ref, or changed since — a feature unarchived,
+edited and archived again ships again) that touches the service is graded too, under the same
+`gate.feature-unverified`, its `features[]` row carrying `archived: true`. Its record is frozen, but
+held to the checklist `loam archive` captured as the feature merged (`checklistAtArchive` on the
+row): a record that had stopped answering the feature before it shipped reads `stale`, so archiving
+is no longer a way past the warning. A feature archived by a loam that captured no checklist is read
+as frozen history, and the row says so (`checklistAtArchive: null`). The ref is
 read from the docs repo's own git exactly as `loam diff --base` reads its base, with the same
 refusals when git cannot answer. loam stores nothing for it — the pipeline already knows which docs
 commit it deployed from.

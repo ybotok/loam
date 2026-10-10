@@ -38,7 +38,10 @@ export interface RecordView {
  * "nothing left to do" over answers to questions nobody is asking any more.
  */
 export async function readRecordView(featureDir: FeatureDir, checklist: Checklist): Promise<RecordView> {
-  const read = await readVerificationState(featureDir);
+  // The digest rides into the read: a record kept as per-service files counts
+  // the files that answered THIS checklist (`core/verify/read/union.ts`), so
+  // a same-day file answering an older one cannot make the packet look stale.
+  const read = await readVerificationState(featureDir, checklist.digest);
   if (read.state === "absent") return { state: "absent", answers: new Map() };
   if (read.state === "unreadable") return { state: "unreadable", answers: new Map() };
   if (read.verification.checklist !== checklist.digest) return { state: "stale", answers: new Map() };

@@ -27,7 +27,7 @@ import type { Command } from "commander";
 import { loadConfig } from "../../core/envelope/config.js";
 import { emitJson, fail, NO_SERVICE_MESSAGE, reportNoConfig } from "../../core/envelope/json.js";
 import { FleetContext } from "../../core/fleet-context.js";
-import { listBaseSubdirs } from "../../core/diff/base-git.js";
+import { listBaseSubdirs, subdirsChangedSince } from "../../core/diff/base-git.js";
 import { gateReport } from "../../core/gate/checks.js";
 import { gateSummary, gateVerdict, type GateSince } from "../../core/gate/report.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
@@ -55,7 +55,9 @@ interface GateOptions {
  * `--since <ref>` resolved against the docs repo's history, or null after
  * refusing. A listing git declines is a refusal too, never an empty one: "no
  * archive at the ref" grades every archived feature in the repo as shipped
- * since, and reading "could not list" as that would be a guess.
+ * since, and reading "could not list" as that would be a guess. The second
+ * question — which of those directories changed since — has a safe answer to
+ * fall to, and falls to it (see below).
  */
 async function readSince(json: boolean, docsDir: DocsDir, ref: string): Promise<GateSince | null> {
   const base = await baseOrRefuse(json, docsDir, {
@@ -74,7 +76,16 @@ async function readSince(json: boolean, docsDir: DocsDir, ref: string): Promise<
     );
     return null;
   }
-  return { ref, commit: base.commit, archivedAtRef: new Set(listing.names) };
+  // Present at the ref is not enough to have shipped by then: a feature
+  // unarchived, edited and archived again sits at the same path with
+  // different contents, and it is this deploy's to answer for. Only a
+  // directory whose contents are what they were at the ref stays out. When
+  // git will not say what changed, every one of them is graded — the
+  // direction this gate fails in is "looked at too much", never "skipped a
+  // ship" — unlike the listing above, which has no safe default to fall to.
+  const changed = await subdirsChangedSince(base, archiveDir(docsDir));
+  const moved = changed.kind === "ok" ? changed.names : new Set(listing.names);
+  return { ref, commit: base.commit, shippedAtRef: new Set(listing.names.filter((name) => !moved.has(name))) };
 }
 
 export function registerGate(program: Command): void {

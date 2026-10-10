@@ -252,10 +252,12 @@ async function derive(input: ScorecardInput): Promise<Scorecard> {
 
   // Verification: `list`'s own cells, so the two commands cannot disagree
   // about a record's verdict. Active features only — an archived record is
-  // frozen history, not fleet debt. This fan-out is NOT memo hits:
-  // readVerification is one small file read per feature, and a recorded cell
-  // additionally derives its checklist (the same cost `list` pays for the same
-  // column) — real filesystem work, so it runs through the bounded pool.
+  // frozen history, not fleet debt. This fan-out is NOT memo hits: reading a
+  // feature's record is a directory listing plus a small read per record file
+  // (the one-file `verification.yaml` and one `verification/<svc>.yaml` per
+  // attesting service), and a recorded cell additionally derives its checklist
+  // (the same cost `list` pays for the same column) — real filesystem work, so
+  // it runs through the bounded pool.
   const features = await fleet.listFeatures(docsDir);
   const cells = await inOrder(features, (f) => featureVerification(docsDir, f));
   const recorded = cells.filter((c): c is VerificationCell => c !== null);

@@ -29,6 +29,7 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { conflictMarkerLines } from "../../conflict-markers.js";
+import { inOrder } from "../../kernel/concurrency.js";
 import { verificationDir, verificationPath } from "../location.js";
 import { type Verification } from "../record.js";
 import { asVerification, summaryDisagreement } from "./shape.js";
@@ -90,24 +91,46 @@ export interface RecordFiles {
 type Unreadable = Extract<VerificationRead, { state: "unreadable" }>;
 type FileRead = { state: "absent" } | Unreadable | { state: "ok"; file: RecordFile };
 
-export async function readVerificationState(featureDir: string): Promise<VerificationRead> {
+/**
+ * `live` is the digest of the checklist the caller knows is being asked — see
+ * `assembleRecord` for why the union needs it. A caller that only learns it
+ * after the read (it derives the checklist only when there IS a record) adds
+ * the same files up again with {@link answering} instead of reading twice.
+ */
+export async function readVerificationState(featureDir: string, live?: string): Promise<VerificationRead> {
   const legacy = await readRecordFile(verificationPath(featureDir), null);
   if (legacy.state === "unreadable") return legacy;
   const listed = await serviceFiles(featureDir);
   if (!Array.isArray(listed)) return listed;
+  // In parallel — the files are independent, and a fleet-sized feature has
+  // one per service — but graded in the listing's sorted order, so the file a
+  // refusal names is the first unreadable one by name on every machine, never
+  // whichever read happened to fail first.
+  const reads = await inOrder(listed, ({ service, path }) => readRecordFile(path, service));
   const services = new Map<string, RecordFile>();
-  for (const { service, path } of listed) {
-    const read = await readRecordFile(path, service);
+  for (const [i, read] of reads.entries()) {
     if (read.state === "unreadable") return read;
     // Listed and then gone is a file a concurrent writer removed: absent.
-    if (read.state === "ok") services.set(service, read.file);
+    if (read.state === "ok") services.set(listed[i]!.service, read.file);
   }
-  const verification = assembleRecord(
-    legacy.state === "ok" ? legacy.file.verification : null,
-    [...services.values()].map((file) => file.verification),
-  );
+  const files: RecordFiles = { legacy: legacy.state === "ok" ? legacy.file : null, services };
+  const verification = answering(files, live);
   if (verification === null) return { state: "absent" };
-  return { state: "ok", verification, files: { legacy: legacy.state === "ok" ? legacy.file : null, services } };
+  return { state: "ok", verification, files };
+}
+
+/**
+ * The record's files added up for the checklist `live` asks — what
+ * {@link readVerificationState} answers, and what it would have answered for a
+ * caller that only learned `live` after the read. Pure: the files are the ones
+ * that read already graded. Null only when there are no files at all.
+ */
+export function answering(files: RecordFiles, live: string | undefined): Verification | null {
+  return assembleRecord(
+    files.legacy?.verification ?? null,
+    [...files.services.values()].map((file) => file.verification),
+    live,
+  );
 }
 
 /**
@@ -260,21 +283,4 @@ function yamlReason(err: unknown): string {
   const pos = (err as { linePos?: Array<{ line: number; col: number }> } | null)?.linePos;
   const line = Array.isArray(pos) ? pos[0]?.line : undefined;
   return line === undefined ? `YAML error: ${message}` : `YAML error at line ${line}: ${message}`;
-}
-
-/**
- * The record beside a feature, or null when there is none loam can use. Kept
- * for readers that have nothing to say about the difference (`loam list`'s
- * verification column shows one glyph either way); anything that WRITES must
- * use {@link readVerificationState} instead, or it overwrites what it could not
- * read.
- *
- * A record whose summary contradicts its own claims is one of the nulls now, so
- * no reader can print its counts as fact. Reading it as ABSENT is the safe half
- * of the truth and not the whole of it: a reader that can say why should take
- * {@link readVerificationState} and its `code`.
- */
-export async function readVerification(featureDir: string): Promise<Verification | null> {
-  const read = await readVerificationState(featureDir);
-  return read.state === "ok" ? read.verification : null;
 }

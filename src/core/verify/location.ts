@@ -11,6 +11,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { PathableService } from "../kernel/ids/service.js";
 
 /**
  * Where the record lives: inside the feature, so `archive` carries it into
@@ -46,8 +47,14 @@ export function verificationDir(featureDir: string): string {
   return join(featureDir, "verification");
 }
 
-/** One service's attestation file. The service id grammar admits no `/`, so this never leaves the directory. */
-export function serviceRecordPath(featureDir: string, service: string): string {
+/**
+ * One service's attestation file. The service id grammar admits no `/`, so this
+ * never leaves the directory — and the parameter type is what makes that a
+ * guarantee rather than a hope: a `PathableService` is a name whose provenance
+ * is the repository (a validated id, or a directory that exists), so a name a
+ * document merely asserts, or a raw flag nobody checked, does not compile here.
+ */
+export function serviceRecordPath(featureDir: string, service: PathableService): string {
   return join(verificationDir(featureDir), `${service}.yaml`);
 }
 

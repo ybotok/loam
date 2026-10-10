@@ -240,6 +240,7 @@ model {
   loam.commands.archive -> loam.core.repo
   loam.commands.archive -> loam.core.staging
   loam.commands.archive -> loam.core.usecases
+  loam.commands.archive -> loam.core.verify
   loam.commands.archive -> loam.core.vocabulary
 
   loam.commands.context -> loam.commands.policy

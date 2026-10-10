@@ -67,6 +67,12 @@ export interface SnapshotRequest {
   serviceKeyOf: (rel: string) => ServiceKey | null;
   /** Service id → its CURRENT docs-relative directory; null when not enumerated. */
   serviceDirOf: (service: string) => string | null;
+  /**
+   * Recorded verbatim as the manifest's `checklist` when given. Opaque here —
+   * this module parks bytes and never learns what a checklist is; `archive`
+   * derives it and `gate --since` reads it back (`./manifest.ts`).
+   */
+  checklist?: string;
 }
 
 export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
@@ -103,6 +109,7 @@ export async function writeSnapshot(request: SnapshotRequest): Promise<void> {
     feature: featureId,
     dirName,
     archivedAt: new Date().toISOString(),
+    ...(request.checklist === undefined ? {} : { checklist: request.checklist }),
     files,
   };
   // Manifest last: its presence is what says the pre-images beside it are complete.

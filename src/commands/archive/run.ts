@@ -36,6 +36,7 @@ import { planOpenapiContracts } from "./plan/contracts/openapi.js";
 import { planAsyncapiContracts } from "./plan/contracts/asyncapi.js";
 import { planDeployments, planFlows, planLandscape } from "./plan/landscape.js";
 import { emptyPlan } from "./plan/state.js";
+import { checklistAtArchive } from "./shipped.js";
 import type { DocsDir } from "../../core/kernel/ids/dirs.js";
 
 export async function archiveLocked(
@@ -165,6 +166,11 @@ export async function archiveLocked(
     return;
   }
 
+  // The question the feature asks as it ships, captured before anything below
+  // moves the living docs it is derived from — see ./shipped.ts. It rides in
+  // the snapshot manifest; a dry run writes no snapshot, so it pays nothing.
+  const checklist = await checklistAtArchive(read, gated);
+
   // COMMIT — the whole plan computed cleanly. Stage every new version beside its
   // target, snapshot what is about to be overwritten, then swap them into place.
   // Staging touches the filesystem — a read-only `architecture/`, a full disk,
@@ -212,6 +218,7 @@ export async function archiveLocked(
       staged,
       serviceKeyOf,
       serviceDirOf,
+      ...(checklist === undefined ? {} : { checklist }),
     });
     snapshot = true;
     // The journal, fsynced, BEFORE the first rename: swapStaged is N renames and
