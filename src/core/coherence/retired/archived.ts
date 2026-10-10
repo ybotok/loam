@@ -29,12 +29,16 @@
  * and counting it called a genuinely new operation a revival and refused it.
  * So every marker is checked against the contract the merge ran against: the
  * feature's snapshot pre-image (`.loam-before/`, staging/snapshot/manifest.ts).
- * A contract the archive CREATED, or never wrote at all (a merge whose every
- * marker missed changes nothing, and archive snapshots only what it writes),
- * lost nothing to that merge, and reads as an empty pre-image. A feature with
- * no intact snapshot (archived before the snapshot existed, or the snapshot
- * edited or removed since) cannot be checked, and its markers count as
- * written — what the index did before it read pre-images at all.
+ * A contract the archive CREATED, or never wrote at all, lost nothing to that
+ * merge, and reads as an empty pre-image. "Never wrote" is the event merge's
+ * case alone: it returns no text when it changes nothing (an asyncapi delta
+ * whose every marker missed), and archive snapshots only what it writes. The
+ * OpenAPI merge returns text whenever the delta has a path entry, so a
+ * contract it left unchanged has an ordinary pre-image equal to what it
+ * wrote — read like any other, and every missed marker misses it again. A
+ * feature with no intact snapshot (archived before the snapshot existed, or
+ * the snapshot edited or removed since) cannot be checked, and its markers
+ * count as written — what the index did before it read pre-images at all.
  *
  * The pre-image answers one more thing the delta does not spell: a
  * CHANNEL-slot removal retires the messages its living channel declared
