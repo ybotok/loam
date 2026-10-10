@@ -15,7 +15,7 @@
  * are both at their limits and the walk already holds the parsed documents.
  */
 import { existsSync } from "node:fs";
-import { readOr } from "./events/declared.js";
+import { readOr } from "../openapi/contract-text.js";
 import { readFile } from "node:fs/promises";
 import { type PathableService } from "../kernel/ids/service.js";
 import type { Issue } from "../vocabulary/issue.js";
@@ -229,7 +229,7 @@ export async function declaredByService(
       // the gate itself never touches the filesystem.
       if (existsSync(paths.openapi)) {
         const livingOpenapiPath = (await locateServicePaths(docsDir, svc, context)).openapi;
-        // `readOr` (./events/declared.ts, which says why): `context.readText`
+        // `readOr` (../openapi/contract-text.ts, which says why): `context.readText`
         // throws on non-UTF-8 bytes where the no-context `readFile` lets
         // `readOpenapi` flag the document unreadable — the exact
         // context/no-context divergence doc.ts documents as paid for once.

@@ -25,7 +25,8 @@ import {
   OPENAPI_BASELINES_KEY,
 } from "../digest.js";
 import { setKeyed } from "./components.js";
-import { openapiRefusal, readTree, writeTree } from "./error.js";
+import { openapiRefusal } from "./error.js";
+import { readTree, writeTree } from "../contract-tree.js";
 
 /**
  * Remove feature-only operation-removal markers — and the root

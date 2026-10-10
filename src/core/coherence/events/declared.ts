@@ -24,7 +24,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
-import { NotUtf8DocumentError } from "../../kernel/document-bytes.js";
 import { type PathableService } from "../../kernel/ids/service.js";
 import type { Issue } from "../../vocabulary/issue.js";
 import { featureSpecPaths, SPEC_AXES } from "../../repo/paths.js";
@@ -37,6 +36,7 @@ import type { FleetContext } from "../../fleet-context.js";
 import type { DocsDir, FeatureDir } from "../../kernel/ids/dirs.js";
 import { gradeBaselines, gradeMarkers } from "./grades.js";
 import { mergedAsyncapiDoc } from "./merged.js";
+import { readOr } from "../../openapi/contract-text.js";
 
 /** The three facts this walk needs about the feature it is reading. */
 export interface EventDeltaScope {
@@ -119,26 +119,6 @@ export async function deltaEventLines(
     }
   }
   return { removed, links };
-}
-
-/**
- * Read a document's text, answering undefined for bytes that do not decode.
- *
- * `context.readText` DECODES and THROWS on non-UTF-8 bytes, where the
- * no-context `readFile` substitutes U+FFFD and lets the contract reader flag
- * the document unreadable. Uncaught, one service's UTF-16 living contract took
- * down the whole feature target under validate's context while archive's
- * no-context path sailed past. Either text failing to decode gets the answer
- * the baseline gates give an unreadable parse: that side's checks are skipped.
- * Exported for ../declared.ts, the OpenAPI axis's gate, which reads the same way.
- */
-export async function readOr(p: string, context?: FleetContext): Promise<string | undefined> {
-  try {
-    return context === undefined ? await readFile(p, "utf8") : await context.readText(p);
-  } catch (err) {
-    if (err instanceof NotUtf8DocumentError) return undefined;
-    throw err;
-  }
 }
 
 export async function declaredEvents(

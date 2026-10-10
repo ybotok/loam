@@ -25,7 +25,7 @@ import { danglingRefs } from "../depth.js";
 import { messageName } from "../read.js";
 import { readBaselineRecord } from "../../openapi/baseline/record.js";
 import { asyncapiSurfaces } from "../baseline/surfaces.js";
-import { resolveTree, writeTree } from "../../openapi/merge/error.js";
+import { resolveTree, writeTree } from "../../openapi/contract-tree.js";
 import { asyncapiRefusal } from "./error.js";
 import { mergeAsyncapiComponents } from "./components.js";
 import {
